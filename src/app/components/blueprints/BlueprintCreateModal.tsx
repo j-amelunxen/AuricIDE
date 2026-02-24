@@ -8,15 +8,25 @@ interface BlueprintCreateModalProps {
   isOpen: boolean;
   onSave: (blueprint: Omit<Blueprint, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onClose: () => void;
+  initialValues?: Partial<Omit<Blueprint, 'id' | 'createdAt' | 'updatedAt'>>;
 }
 
-function BlueprintCreateForm({ onSave, onClose }: Omit<BlueprintCreateModalProps, 'isOpen'>) {
-  const [name, setName] = useState('');
-  const [techStack, setTechStack] = useState('');
-  const [goal, setGoal] = useState('');
-  const [complexity, setComplexity] = useState<Blueprint['complexity']>('MEDIUM');
-  const [category, setCategory] = useState<Blueprint['category']>('architectures');
-  const [description, setDescription] = useState('');
+function BlueprintCreateForm({
+  onSave,
+  onClose,
+  initialValues,
+}: Omit<BlueprintCreateModalProps, 'isOpen'>) {
+  const [name, setName] = useState(initialValues?.name ?? '');
+  const [techStack, setTechStack] = useState(initialValues?.techStack ?? '');
+  const [goal, setGoal] = useState(initialValues?.goal ?? '');
+  const [complexity, setComplexity] = useState<Blueprint['complexity']>(
+    initialValues?.complexity ?? 'MEDIUM'
+  );
+  const [category, setCategory] = useState<Blueprint['category']>(
+    initialValues?.category ?? 'architectures'
+  );
+  const [description, setDescription] = useState(initialValues?.description ?? '');
+  const [spec, setSpec] = useState(initialValues?.spec ?? '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +38,7 @@ function BlueprintCreateForm({ onSave, onClose }: Omit<BlueprintCreateModalProps
       complexity,
       category,
       description,
+      spec,
     });
   };
 
@@ -36,11 +47,13 @@ function BlueprintCreateForm({ onSave, onClose }: Omit<BlueprintCreateModalProps
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <form
         onSubmit={handleSubmit}
-        className="relative w-[520px] max-h-[85vh] overflow-y-auto bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl custom-scrollbar"
+        className="relative w-[520px] max-h-[92vh] overflow-y-auto bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl custom-scrollbar"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <h3 className="text-sm font-semibold text-foreground">New Blueprint</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            {initialValues?.name ? 'Edit Blueprint' : 'New Blueprint'}
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -148,6 +161,20 @@ function BlueprintCreateForm({ onSave, onClose }: Omit<BlueprintCreateModalProps
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-muted/40 focus:border-primary/50 focus:outline-none resize-none transition-colors font-mono"
             />
           </div>
+
+          {/* Spec */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-foreground-muted">
+              Full Spec
+            </label>
+            <textarea
+              value={spec}
+              onChange={(e) => setSpec(e.target.value)}
+              placeholder="Detailed specification in markdown…"
+              rows={12}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-muted/40 focus:border-primary/50 focus:outline-none resize-y transition-colors font-mono"
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -172,7 +199,11 @@ function BlueprintCreateForm({ onSave, onClose }: Omit<BlueprintCreateModalProps
   );
 }
 
-export function BlueprintCreateModal({ isOpen, ...props }: BlueprintCreateModalProps) {
+export function BlueprintCreateModal({
+  isOpen,
+  initialValues,
+  ...props
+}: BlueprintCreateModalProps) {
   if (!isOpen) return null;
-  return <BlueprintCreateForm {...props} />;
+  return <BlueprintCreateForm initialValues={initialValues} {...props} />;
 }

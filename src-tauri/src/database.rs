@@ -117,6 +117,7 @@ pub struct Blueprint {
     pub complexity: String,
     pub category: String,
     pub description: String,
+    pub spec: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -422,6 +423,28 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
 
         conn.execute(
             "INSERT INTO _migrations (id, name) VALUES (9, 'create_blueprints')",
+            [],
+        )
+        .map_err(|e| format!("Failed to record migration: {}", e))?;
+    }
+
+    // Migration #10: Add spec column to blueprints
+    let applied10: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 10",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if !applied10 {
+        conn.execute_batch(
+            "ALTER TABLE blueprints ADD COLUMN spec TEXT NOT NULL DEFAULT '';",
+        )
+        .map_err(|e| format!("Failed to add spec column to blueprints: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO _migrations (id, name) VALUES (10, 'blueprints_add_spec')",
             [],
         )
         .map_err(|e| format!("Failed to record migration: {}", e))?;
@@ -858,8 +881,8 @@ pub fn blueprints_save_impl(conn: &Connection, payload: &BlueprintState) -> Resu
 
         for bp in &payload.blueprints {
             conn.execute(
-                "INSERT INTO blueprints (id, name, tech_stack, goal, complexity, category, description, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO blueprints (id, name, tech_stack, goal, complexity, category, description, spec, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     bp.id,
                     bp.name,
@@ -868,6 +891,7 @@ pub fn blueprints_save_impl(conn: &Connection, payload: &BlueprintState) -> Resu
                     bp.complexity,
                     bp.category,
                     bp.description,
+                    bp.spec,
                     bp.created_at,
                     bp.updated_at
                 ],
@@ -894,7 +918,7 @@ pub fn blueprints_save_impl(conn: &Connection, payload: &BlueprintState) -> Resu
 pub fn blueprints_load_impl(conn: &Connection) -> Result<BlueprintState, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, tech_stack, goal, complexity, category, description, created_at, updated_at \
+            "SELECT id, name, tech_stack, goal, complexity, category, description, spec, created_at, updated_at \
              FROM blueprints ORDER BY category, name",
         )
         .map_err(|e| format!("Failed to prepare blueprints query: {}", e))?;
@@ -908,8 +932,9 @@ pub fn blueprints_load_impl(conn: &Connection) -> Result<BlueprintState, String>
                 complexity: row.get(4)?,
                 category: row.get(5)?,
                 description: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                spec: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })
         .map_err(|e| format!("Failed to query blueprints: {}", e))?
@@ -972,7 +997,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 9);
+        assert_eq!(count, 10);
 
         // kv_store table should exist
         let table_exists: bool = conn
@@ -994,7 +1019,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 9);
+        assert_eq!(count, 10);
     }
 
     #[test]
@@ -1012,7 +1037,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 9);
+        assert_eq!(count, 10);
     }
 
     #[test]

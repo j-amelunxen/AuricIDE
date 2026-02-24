@@ -10,6 +10,7 @@ interface BlueprintRow {
   complexity: string;
   category: string;
   description: string;
+  spec: string;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +40,7 @@ export function createBlueprint(
     complexity?: string;
     category?: string;
     description?: string;
+    spec?: string;
   }
 ): BlueprintRow {
   const id = crypto.randomUUID();
@@ -47,11 +49,12 @@ export function createBlueprint(
   const complexity = params.complexity ?? 'MEDIUM';
   const category = params.category ?? 'architectures';
   const description = params.description ?? '';
+  const spec = params.spec ?? '';
 
   db.prepare(
-    `INSERT INTO blueprints (id, name, tech_stack, goal, complexity, category, description)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, params.name, techStack, goal, complexity, category, description);
+    `INSERT INTO blueprints (id, name, tech_stack, goal, complexity, category, description, spec)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, params.name, techStack, goal, complexity, category, description, spec);
 
   return db.prepare('SELECT * FROM blueprints WHERE id = ?').get(id) as BlueprintRow;
 }
@@ -98,6 +101,7 @@ export function registerBlueprintTools(server: FastMCP, db: Database.Database): 
         .optional()
         .describe('Blueprint category'),
       description: z.string().optional().describe('Full markdown description'),
+      spec: z.string().optional().describe('Full markdown spec / detailed content'),
     }),
     execute: async (params) => JSON.stringify(createBlueprint(db, params)),
   });

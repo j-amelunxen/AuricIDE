@@ -6,6 +6,7 @@ export interface Blueprint {
   complexity: 'EASY' | 'MEDIUM' | 'HARD';
   category: 'architectures' | 'optimizations' | 'ui-and-marketing';
   description: string;
+  spec: string;
   createdAt: string;
   updatedAt: string;
 }

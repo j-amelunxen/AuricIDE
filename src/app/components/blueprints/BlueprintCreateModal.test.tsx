@@ -51,6 +51,7 @@ describe('BlueprintCreateModal', () => {
       complexity: 'MEDIUM',
       category: 'architectures',
       description: '',
+      spec: '',
     });
   });
 

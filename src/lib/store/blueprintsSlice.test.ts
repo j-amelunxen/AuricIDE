@@ -41,6 +41,7 @@ function makeBlueprint(overrides: Partial<Blueprint> = {}): Blueprint {
     complexity: 'MEDIUM',
     category: 'architectures',
     description: '# Test\nSome description',
+    spec: '',
     createdAt: '2026-01-01',
     updatedAt: '2026-01-01',
     ...overrides,
@@ -60,6 +61,15 @@ describe('blueprintsSlice', () => {
     expect(store.getState().blueprintsModalOpen).toBe(false);
     store.getState().setBlueprintsModalOpen(true);
     expect(store.getState().blueprintsModalOpen).toBe(true);
+  });
+
+  it('setBlueprintsGalleryOpen opens and closes the gallery', () => {
+    const store = createTestStore();
+    expect(store.getState().blueprintsGalleryOpen).toBe(false);
+    store.getState().setBlueprintsGalleryOpen(true);
+    expect(store.getState().blueprintsGalleryOpen).toBe(true);
+    store.getState().setBlueprintsGalleryOpen(false);
+    expect(store.getState().blueprintsGalleryOpen).toBe(false);
   });
 
   it('setSelectedBlueprintId updates selected blueprint', () => {
