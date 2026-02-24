@@ -206,7 +206,7 @@ describe('SettingsModal – Ticket Pattern', () => {
 
   it('shows live preview when branch info is available', () => {
     useStore.setState({
-      branchInfo: { name: 'feature/AB-1234-your-ticket-text', isDetached: false },
+      branchInfo: { name: 'feature/AB-1234-your-ticket-text', ahead: 0, behind: 0, isDetached: false },
     });
 
     render(<SettingsModal isOpen={true} onClose={() => {}} />);
@@ -216,7 +216,7 @@ describe('SettingsModal – Ticket Pattern', () => {
   });
 
   it('shows "(no match)" in preview when pattern does not match', () => {
-    useStore.setState({ branchInfo: { name: 'main', isDetached: false } });
+    useStore.setState({ branchInfo: { name: 'main', ahead: 0, behind: 0, isDetached: false } });
 
     render(<SettingsModal isOpen={true} onClose={() => {}} />);
     const preview = screen.getByTestId('ticket-preview');

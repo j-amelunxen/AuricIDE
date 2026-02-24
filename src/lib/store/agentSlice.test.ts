@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore } from 'zustand/vanilla';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AgentSlice } from './agentSlice';
 import { createAgentSlice, groupAgentsByRepo, MAX_AGENT_LOGS } from './agentSlice';
 
@@ -28,7 +28,7 @@ vi.mock('../tauri/agents', () => ({
 }));
 
 describe('agentSlice', () => {
-  let store: ReturnType<typeof createStore<AgentSlice>>;
+  let store: StoreApi<AgentSlice>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -223,7 +223,7 @@ describe('groupAgentsByRepo', () => {
 });
 
 describe('agentSlice – agent logs buffer cap', () => {
-  let store: ReturnType<typeof createStore<AgentSlice>>;
+  let store: StoreApi<AgentSlice>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -269,7 +269,7 @@ describe('agentSlice – agent logs buffer cap', () => {
 });
 
 describe('agentSlice – killRunningAgent graceful handling', () => {
-  let store: ReturnType<typeof createStore<AgentSlice>>;
+  let store: StoreApi<AgentSlice>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -323,7 +323,7 @@ describe('agentSlice – killRunningAgent graceful handling', () => {
 });
 
 describe('agentSlice – killRunningAgent cleans up logs', () => {
-  let store: ReturnType<typeof createStore<AgentSlice>>;
+  let store: StoreApi<AgentSlice>;
 
   beforeEach(() => {
     vi.clearAllMocks();

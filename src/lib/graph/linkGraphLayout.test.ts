@@ -19,8 +19,8 @@ describe('layoutLinkGraph', () => {
 
   it('creates a node for each file with links', () => {
     const linkIndex = new Map([
-      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'] }],
-      ['/project/b.md', { outgoingLinks: [], targets: [] }],
+      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'], fragmentLinks: [] }],
+      ['/project/b.md', { outgoingLinks: [], targets: [], fragmentLinks: [] }],
     ]);
     const result = layoutLinkGraph(
       makeInput({
@@ -33,8 +33,8 @@ describe('layoutLinkGraph', () => {
 
   it('creates edges for outgoing links', () => {
     const linkIndex = new Map([
-      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'] }],
-      ['/project/b.md', { outgoingLinks: [], targets: [] }],
+      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'], fragmentLinks: [] }],
+      ['/project/b.md', { outgoingLinks: [], targets: [], fragmentLinks: [] }],
     ]);
     const result = layoutLinkGraph(
       makeInput({
@@ -49,7 +49,7 @@ describe('layoutLinkGraph', () => {
   });
 
   it('creates ghost nodes for broken link targets', () => {
-    const linkIndex = new Map([['/project/a.md', { outgoingLinks: [], targets: ['missing.md'] }]]);
+    const linkIndex = new Map([['/project/a.md', { outgoingLinks: [], targets: ['missing.md'], fragmentLinks: [] }]]);
     const brokenLinks = new Map([['/project/a.md', ['missing.md']]]);
     const result = layoutLinkGraph(
       makeInput({
@@ -64,7 +64,7 @@ describe('layoutLinkGraph', () => {
   });
 
   it('marks the active file node', () => {
-    const linkIndex = new Map([['/project/a.md', { outgoingLinks: [], targets: [] }]]);
+    const linkIndex = new Map([['/project/a.md', { outgoingLinks: [], targets: [], fragmentLinks: [] }]]);
     const result = layoutLinkGraph(
       makeInput({
         linkIndex,
@@ -78,9 +78,9 @@ describe('layoutLinkGraph', () => {
 
   it('positions all nodes with non-negative coordinates', () => {
     const linkIndex = new Map([
-      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'] }],
-      ['/project/b.md', { outgoingLinks: [], targets: ['c.md'] }],
-      ['/project/c.md', { outgoingLinks: [], targets: [] }],
+      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'], fragmentLinks: [] }],
+      ['/project/b.md', { outgoingLinks: [], targets: ['c.md'], fragmentLinks: [] }],
+      ['/project/c.md', { outgoingLinks: [], targets: [], fragmentLinks: [] }],
     ]);
     const result = layoutLinkGraph(
       makeInput({
@@ -96,8 +96,8 @@ describe('layoutLinkGraph', () => {
 
   it('computes link and backlink counts in node data', () => {
     const linkIndex = new Map([
-      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'] }],
-      ['/project/b.md', { outgoingLinks: [], targets: ['a.md'] }],
+      ['/project/a.md', { outgoingLinks: [], targets: ['b.md'], fragmentLinks: [] }],
+      ['/project/b.md', { outgoingLinks: [], targets: ['a.md'], fragmentLinks: [] }],
     ]);
     const result = layoutLinkGraph(
       makeInput({
@@ -113,8 +113,8 @@ describe('layoutLinkGraph', () => {
 
   it('does not duplicate nodes', () => {
     const linkIndex = new Map([
-      ['/project/a.md', { outgoingLinks: [], targets: ['b.md', 'b.md'] }],
-      ['/project/b.md', { outgoingLinks: [], targets: [] }],
+      ['/project/a.md', { outgoingLinks: [], targets: ['b.md', 'b.md'], fragmentLinks: [] }],
+      ['/project/b.md', { outgoingLinks: [], targets: [], fragmentLinks: [] }],
     ]);
     const result = layoutLinkGraph(
       makeInput({

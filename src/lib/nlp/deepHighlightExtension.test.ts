@@ -48,8 +48,7 @@ describe('deepHighlightExtension', () => {
           labels: ['instruction', 'explanation', 'warning', 'question', 'context'],
           scores: [0.85, 0.07, 0.04, 0.02, 0.02],
         },
-        0,
-        30
+        0
       );
       expect(decos.size).toBe(1);
     });
@@ -60,8 +59,7 @@ describe('deepHighlightExtension', () => {
           labels: ['instruction', 'explanation', 'warning', 'question', 'context'],
           scores: [0.3, 0.25, 0.2, 0.15, 0.1],
         },
-        0,
-        30
+        0
       );
       expect(decos.size).toBe(0);
     });

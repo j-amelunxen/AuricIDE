@@ -47,10 +47,10 @@ async function renderAndCollect() {
 describe('PerformanceMonitor', () => {
   it('renders nothing in production mode', () => {
     const originalEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'production';
+    (process.env as { NODE_ENV: string }).NODE_ENV = 'production';
     const { container } = render(<PerformanceMonitor />);
     expect(container.innerHTML).toBe('');
-    process.env.NODE_ENV = originalEnv;
+    (process.env as { NODE_ENV: string }).NODE_ENV = originalEnv ?? 'test';
   });
 
   it('renders the monitor badge in development', async () => {

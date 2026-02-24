@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore } from 'zustand/vanilla';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 import { createAgentSlice } from './agentSlice';
 import { createPmSlice } from './pmSlice';
 import { createUISlice } from './uiSlice';
@@ -27,11 +27,11 @@ vi.mock('../tauri/pm', () => ({
 }));
 
 describe('Agent and PM Interaction', () => {
-  let store: ReturnType<typeof createStore<StoreState>>;
+  let store: StoreApi<StoreState>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // @ts-expect-error - Partial store for testing
+    // @ts-expect-error - Partial store for testing (only agent+pm+ui slices)
     store = createStore<StoreState>()((...a) => ({
       ...createAgentSlice(...a),
       ...createPmSlice(...a),
@@ -47,6 +47,8 @@ describe('Agent and PM Interaction', () => {
       name: 'Test Ticket',
       description: 'Desc',
       status: 'in_progress' as const,
+      statusUpdatedAt: '',
+      priority: 'normal' as const,
       sortOrder: 0,
       createdAt: '',
       updatedAt: '',
@@ -58,7 +60,6 @@ describe('Agent and PM Interaction', () => {
       name: 'Agent',
       model: 'model',
       task: 'task',
-      // @ts-expect-error - we'll add this field
       spawnedByTicketId: 'ticket-1',
     });
 

@@ -9,6 +9,7 @@ const makeTicket = (overrides: Partial<PmTicket> = {}): PmTicket => ({
   name: 'Login feature',
   description: 'Implement login',
   status: 'open',
+  statusUpdatedAt: '',
   priority: 'normal',
   sortOrder: 0,
   createdAt: '2026-01-15T00:00:00Z',

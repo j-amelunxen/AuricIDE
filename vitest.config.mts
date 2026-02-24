@@ -25,7 +25,6 @@ export default defineConfig({
         'src/types/**/*',
         'src/app/favicon.ico',
       ],
-      all: true,
     },
   },
 });

@@ -75,7 +75,7 @@ describe('findReferencesKeymap handler', () => {
     const view = createEditorView(doc, 6, callback);
 
     const binding = findReferencesKeymap.find((k) => k.key === 'Alt-F7')!;
-    binding.run(view);
+    binding.run!(view);
 
     expect(callback).toHaveBeenCalledWith('DataPipeline', 'entity', expect.any(Array));
     view.destroy();
@@ -88,7 +88,7 @@ describe('findReferencesKeymap handler', () => {
     const view = createEditorView(doc, 5, callback);
 
     const binding = findReferencesKeymap.find((k) => k.key === 'Alt-F7')!;
-    binding.run(view);
+    binding.run!(view);
 
     expect(callback).toHaveBeenCalledWith('My Heading', 'heading', expect.any(Array));
     view.destroy();
@@ -99,7 +99,7 @@ describe('findReferencesKeymap handler', () => {
     const view = createEditorView(doc, 5);
 
     const binding = findReferencesKeymap.find((k) => k.key === 'Alt-F7')!;
-    expect(() => binding.run(view)).not.toThrow();
+    expect(() => binding.run!(view)).not.toThrow();
     view.destroy();
   });
 });

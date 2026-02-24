@@ -1,15 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { create } from 'zustand';
 import { createPmSlice, type PmSlice } from './pmSlice';
-import type { PmEpic, PmTicket, PmTestCase, PmDependency } from '../tauri/pm';
+import type { PmEpic, PmTicket, PmTestCase, PmDependency, PmStatusHistoryEntry } from '../tauri/pm';
 
-const mockPmLoad = vi.fn(() =>
-  Promise.resolve({ epics: [], tickets: [], testCases: [], dependencies: [] })
+const mockPmLoad = vi.fn<
+  (...args: unknown[]) => Promise<{
+    epics: PmEpic[];
+    tickets: PmTicket[];
+    testCases: PmTestCase[];
+    dependencies: PmDependency[];
+  }>
+>(() => Promise.resolve({ epics: [], tickets: [], testCases: [], dependencies: [] }));
+const mockPmSave = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
+const mockPmClear = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
+const mockPmLoadHistory = vi.fn<(...args: unknown[]) => Promise<PmStatusHistoryEntry[]>>(() =>
+  Promise.resolve([])
 );
-const mockPmSave = vi.fn(() => Promise.resolve());
-const mockPmClear = vi.fn(() => Promise.resolve());
-const mockPmLoadHistory = vi.fn(() => Promise.resolve([]));
-const mockInitProjectDb = vi.fn(() => Promise.resolve());
+const mockInitProjectDb = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 
 vi.mock('../tauri/pm', () => ({
   pmLoad: (...args: unknown[]) => mockPmLoad(...args),

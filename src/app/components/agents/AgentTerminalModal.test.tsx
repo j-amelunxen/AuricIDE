@@ -49,6 +49,7 @@ const agent: AgentInfo = {
   id: 'agent-1',
   name: 'Writer',
   model: 'claude-opus-4-6',
+  provider: 'claude',
   status: 'running',
   currentTask: 'Writing documentation',
   startedAt: 1000,

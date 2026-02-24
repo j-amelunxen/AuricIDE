@@ -7,6 +7,7 @@ export interface BranchInfo {
   name: string;
   ahead: number;
   behind: number;
+  isDetached?: boolean;
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStore } from 'zustand/vanilla';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { ProjectDbSlice } from './projectDbSlice';
 import { createProjectDbSlice } from './projectDbSlice';
 
@@ -9,7 +9,7 @@ vi.mock('../tauri/db', () => ({
 }));
 
 describe('projectDbSlice', () => {
-  let store: ReturnType<typeof createStore<ProjectDbSlice>>;
+  let store: StoreApi<ProjectDbSlice>;
 
   beforeEach(() => {
     vi.clearAllMocks();

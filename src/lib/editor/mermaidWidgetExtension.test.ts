@@ -7,9 +7,10 @@ import {
   MermaidFlowchartWidget,
   mermaidSelfUpdate,
 } from './mermaidWidgetExtension';
+import type { MermaidFlowchartData } from '@/lib/mermaid/mermaidFlowchartParser';
 
 const { mockParseMermaidFlowchart } = vi.hoisted(() => ({
-  mockParseMermaidFlowchart: vi.fn(() => ({
+  mockParseMermaidFlowchart: vi.fn<() => MermaidFlowchartData>(() => ({
     direction: 'TD',
     nodes: [{ id: 'A', label: 'A', shape: 'default', position: { x: 0, y: 0 } }],
     edges: [],

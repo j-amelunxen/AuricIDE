@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createStore } from 'zustand/vanilla';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 import { createCanvasSlice, type CanvasSlice } from './canvasSlice';
 import type { WorkflowNode } from '../canvas/markdownParser';
 
 describe('canvasSlice', () => {
-  let store: ReturnType<typeof createStore<CanvasSlice>>;
+  let store: StoreApi<CanvasSlice>;
 
   beforeEach(() => {
     store = createStore<CanvasSlice>()(createCanvasSlice);
