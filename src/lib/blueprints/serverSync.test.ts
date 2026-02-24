@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  fetchServerBlueprints,
-  pushToServer,
-  syncWithServer,
-} from './serverSync';
+import { fetchServerBlueprints, pushToServer, syncWithServer } from './serverSync';
 import type { Blueprint } from '../tauri/blueprints';
 
 function makeBlueprint(overrides: Partial<Blueprint> = {}): Blueprint {
@@ -36,7 +32,10 @@ describe('serverSync', () => {
 
       const result = await fetchServerBlueprints('https://example.com');
       expect(result).toEqual([bp]);
-      expect(fetch).toHaveBeenCalledWith('https://example.com/api/v1/blueprints', expect.any(Object));
+      expect(fetch).toHaveBeenCalledWith(
+        'https://example.com/api/v1/blueprints',
+        expect.any(Object)
+      );
     });
 
     it('throws on non-ok response', async () => {
@@ -45,7 +44,9 @@ describe('serverSync', () => {
         status: 500,
       } as Response);
 
-      await expect(fetchServerBlueprints('https://example.com')).rejects.toThrow('Server returned 500');
+      await expect(fetchServerBlueprints('https://example.com')).rejects.toThrow(
+        'Server returned 500'
+      );
     });
 
     it('throws on network error (unreachable)', async () => {
@@ -98,7 +99,8 @@ describe('serverSync', () => {
 
     it('returns local-only blueprints in pushedToServer and calls POST', async () => {
       const localBp = makeBlueprint({ id: 'local-only' });
-      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
         .mockResolvedValueOnce({ ok: true, json: async () => [] } as Response)
         .mockResolvedValueOnce({ ok: true } as Response);
 
@@ -112,7 +114,8 @@ describe('serverSync', () => {
 
     it('skips POST when there is nothing to push', async () => {
       const sharedBp = makeBlueprint({ id: 'shared' });
-      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
         .mockResolvedValueOnce({ ok: true, json: async () => [sharedBp] } as Response);
 
       const result = await syncWithServer('https://example.com', [sharedBp]);

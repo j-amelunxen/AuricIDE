@@ -5,13 +5,7 @@ import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
 import type { SyncStatus } from '@/lib/blueprints/serverSync';
 
-function SyncStatusBadge({
-  status,
-  error,
-}: {
-  status: SyncStatus;
-  error: string | null;
-}) {
+function SyncStatusBadge({ status, error }: { status: SyncStatus; error: string | null }) {
   if (status === 'idle') return null;
 
   const config: Record<

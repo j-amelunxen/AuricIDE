@@ -12,6 +12,7 @@ import { ImportSpecDialog } from '@/app/components/agents/ImportSpecDialog';
 import { GenerateDiagramDialog } from '@/app/components/agents/GenerateDiagramDialog';
 import { AgentTerminalModal } from '@/app/components/agents/AgentTerminalModal';
 import { LinkGraphModal } from '@/app/components/graph/LinkGraphModal';
+import { BlueprintsGallery } from '@/app/components/blueprints/BlueprintsGallery';
 import { PerformanceMonitor } from '@/app/components/dev/PerformanceMonitor';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
@@ -149,6 +150,7 @@ export function IDEOverlays({
         onFileSelect={handleFileSelect}
       />
       <ProjectManagerModal />
+      <BlueprintsGallery />
       <SettingsModal isOpen={settingsModalOpen} onClose={() => setSettingsModalOpen(false)} />
       {commandPaletteOpen && (
         <CommandPalette

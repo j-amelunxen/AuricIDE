@@ -32,7 +32,7 @@ export async function pushToServer(url: string, blueprints: Blueprint[]): Promis
 
 export async function syncWithServer(
   url: string,
-  localBlueprints: Blueprint[],
+  localBlueprints: Blueprint[]
 ): Promise<SyncResult> {
   const serverBlueprints = await fetchServerBlueprints(url);
   const localIds = new Set(localBlueprints.map((b) => b.id));

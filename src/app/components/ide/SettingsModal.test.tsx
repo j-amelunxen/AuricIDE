@@ -206,7 +206,12 @@ describe('SettingsModal – Ticket Pattern', () => {
 
   it('shows live preview when branch info is available', () => {
     useStore.setState({
-      branchInfo: { name: 'feature/AB-1234-your-ticket-text', ahead: 0, behind: 0, isDetached: false },
+      branchInfo: {
+        name: 'feature/AB-1234-your-ticket-text',
+        ahead: 0,
+        behind: 0,
+        isDetached: false,
+      },
     });
 
     render(<SettingsModal isOpen={true} onClose={() => {}} />);

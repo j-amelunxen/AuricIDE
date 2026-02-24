@@ -18,6 +18,7 @@ export interface BlueprintsSlice {
   blueprintsDirty: boolean;
   // UI state
   blueprintsModalOpen: boolean;
+  blueprintsGalleryOpen: boolean;
   selectedBlueprintId: string | null;
   // Server sync state
   blueprintServerUrl: string;
@@ -32,6 +33,7 @@ export interface BlueprintsSlice {
   deleteBlueprint: (id: string) => void;
   discardBlueprintChanges: () => void;
   setBlueprintsModalOpen: (open: boolean) => void;
+  setBlueprintsGalleryOpen: (open: boolean) => void;
   setSelectedBlueprintId: (id: string | null) => void;
   setBlueprintServerUrl: (url: string) => void;
   loadBlueprintServerUrl: () => void;
@@ -46,6 +48,7 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
   blueprintsDirty: false,
   // UI state
   blueprintsModalOpen: false,
+  blueprintsGalleryOpen: false,
   selectedBlueprintId: null,
   // Server sync state
   blueprintServerUrl: '',
@@ -110,6 +113,7 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
   },
 
   setBlueprintsModalOpen: (open) => set({ blueprintsModalOpen: open }),
+  setBlueprintsGalleryOpen: (open) => set({ blueprintsGalleryOpen: open }),
   setSelectedBlueprintId: (id) => set({ selectedBlueprintId: id }),
 
   setBlueprintServerUrl: (url) => {

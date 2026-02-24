@@ -14,7 +14,14 @@ vi.mock('./XtermTerminal', () => ({
 }));
 
 const testAgents: AgentInfo[] = [
-  { id: 'agent-1', name: 'Writer', model: 'm', provider: 'claude', status: 'running', startedAt: 0 },
+  {
+    id: 'agent-1',
+    name: 'Writer',
+    model: 'm',
+    provider: 'claude',
+    status: 'running',
+    startedAt: 0,
+  },
   { id: 'agent-2', name: 'Reviewer', model: 'm', provider: 'claude', status: 'idle', startedAt: 0 },
 ];
 

@@ -12,8 +12,22 @@ const mockSummary: CoverageSummary = {
 
 const mockFiles: FileCoverage[] = [
   { path: 'src/app/page.tsx', size: 100, lines: 95, statements: 93, functions: 88, branches: 80 },
-  { path: 'src/lib/tauri/terminal.ts', size: 0, lines: 0, statements: 0, functions: 0, branches: 0 },
-  { path: 'src/lib/store/qaSlice.ts', size: 200, lines: 100, statements: 100, functions: 100, branches: 100 },
+  {
+    path: 'src/lib/tauri/terminal.ts',
+    size: 0,
+    lines: 0,
+    statements: 0,
+    functions: 0,
+    branches: 0,
+  },
+  {
+    path: 'src/lib/store/qaSlice.ts',
+    size: 200,
+    lines: 100,
+    statements: 100,
+    functions: 100,
+    branches: 100,
+  },
   {
     path: 'src/app/components/qa/QAPanel.tsx',
     size: 80,

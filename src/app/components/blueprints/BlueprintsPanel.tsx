@@ -40,7 +40,7 @@ export function BlueprintsPanel() {
         acc[cat].push(bp);
         return acc;
       }, {}),
-    [blueprintsDraft],
+    [blueprintsDraft]
   );
 
   const handleCreate = (data: Omit<Blueprint, 'id' | 'createdAt' | 'updatedAt'>) => {

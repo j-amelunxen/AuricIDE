@@ -49,7 +49,9 @@ describe('layoutLinkGraph', () => {
   });
 
   it('creates ghost nodes for broken link targets', () => {
-    const linkIndex = new Map([['/project/a.md', { outgoingLinks: [], targets: ['missing.md'], fragmentLinks: [] }]]);
+    const linkIndex = new Map([
+      ['/project/a.md', { outgoingLinks: [], targets: ['missing.md'], fragmentLinks: [] }],
+    ]);
     const brokenLinks = new Map([['/project/a.md', ['missing.md']]]);
     const result = layoutLinkGraph(
       makeInput({
@@ -64,7 +66,9 @@ describe('layoutLinkGraph', () => {
   });
 
   it('marks the active file node', () => {
-    const linkIndex = new Map([['/project/a.md', { outgoingLinks: [], targets: [], fragmentLinks: [] }]]);
+    const linkIndex = new Map([
+      ['/project/a.md', { outgoingLinks: [], targets: [], fragmentLinks: [] }],
+    ]);
     const result = layoutLinkGraph(
       makeInput({
         linkIndex,

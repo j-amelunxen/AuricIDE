@@ -27,9 +27,7 @@ describe('analyzeText', () => {
 
     it('detects two-part PascalCase like "DataStore"', () => {
       const result = analyzeText('Use DataStore for persistence');
-      const matched = result.filter(
-        (s) => s.type === 'variable-hash' && s.from === 4
-      );
+      const matched = result.filter((s) => s.type === 'variable-hash' && s.from === 4);
       expect(matched).toHaveLength(1);
       expect(matched[0].to).toBe(13);
     });

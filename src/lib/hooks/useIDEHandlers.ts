@@ -383,6 +383,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         state.setLinkGraphModalOpen(true);
         return;
       }
+      if (id === 'blueprints') {
+        state.setBlueprintsGalleryOpen(true);
+        if (state.rootPath) state.loadBlueprints(state.rootPath);
+        return;
+      }
       state.setActiveActivity(id);
     },
     [state]

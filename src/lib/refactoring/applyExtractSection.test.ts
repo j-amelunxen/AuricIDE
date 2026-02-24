@@ -31,9 +31,7 @@ describe('applyExtractSection', () => {
     );
 
     // New file should be written with section content
-    const newFileCall = writeFile.mock.calls.find(
-      (call) => call[0] === '/project/docs/setup.md'
-    );
+    const newFileCall = writeFile.mock.calls.find((call) => call[0] === '/project/docs/setup.md');
     expect(newFileCall).toBeDefined();
     expect(newFileCall![1]).toBe(sectionContent);
   });
@@ -65,9 +63,7 @@ describe('applyExtractSection', () => {
     );
 
     // Source file should have section replaced with wiki-link
-    const sourceCall = writeFile.mock.calls.find(
-      (call) => call[0] === '/project/docs/guide.md'
-    );
+    const sourceCall = writeFile.mock.calls.find((call) => call[0] === '/project/docs/guide.md');
     expect(sourceCall).toBeDefined();
     const expected =
       sourceContent.slice(0, sectionFrom) + '[[Setup]]\n' + sourceContent.slice(sectionTo);

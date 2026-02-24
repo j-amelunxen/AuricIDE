@@ -88,6 +88,8 @@ export function useIDEState() {
   const loadRecentProjects = useStore((s) => s.loadRecentProjects);
   const loadCustomSlashCommands = useStore((s) => s.loadCustomSlashCommands);
   const loadBlueprintServerUrl = useStore((s) => s.loadBlueprintServerUrl);
+  const setBlueprintsGalleryOpen = useStore((s) => s.setBlueprintsGalleryOpen);
+  const loadBlueprints = useStore((s) => s.loadBlueprints);
   const initProjectDb = useStore((s) => s.initProjectDb);
   const closeProjectDb = useStore((s) => s.closeProjectDb);
   const setAllFiles = useStore((s) => s.setAllFiles);
@@ -220,6 +222,8 @@ export function useIDEState() {
     loadRecentProjects,
     loadCustomSlashCommands,
     loadBlueprintServerUrl,
+    setBlueprintsGalleryOpen,
+    loadBlueprints,
     initProjectDb,
     closeProjectDb,
     setAllFiles,

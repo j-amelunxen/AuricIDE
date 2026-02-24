@@ -23,7 +23,9 @@ export const COMPLEXITY_OPTIONS: {
 ];
 
 export const COMPLEXITY_MAP: Record<string, { label: string; className: string }> =
-  Object.fromEntries(COMPLEXITY_OPTIONS.map((o) => [o.value, { label: o.label, className: o.className }]));
+  Object.fromEntries(
+    COMPLEXITY_OPTIONS.map((o) => [o.value, { label: o.label, className: o.className }])
+  );
 
 export const CATEGORY_OPTIONS: { value: Blueprint['category']; label: string }[] = [
   { value: 'architectures', label: 'Architectures' },
@@ -32,5 +34,5 @@ export const CATEGORY_OPTIONS: { value: Blueprint['category']; label: string }[]
 ];
 
 export const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
-  CATEGORY_OPTIONS.map((o) => [o.value, o.label]),
+  CATEGORY_OPTIONS.map((o) => [o.value, o.label])
 );

@@ -77,7 +77,9 @@ describe('setCoverageData', () => {
   it('sets summary and files and resets status to idle', () => {
     const store = createTestStore();
     const summary = { lines: 80, statements: 75, functions: 70, branches: 65 };
-    const files = [{ path: 'src/a.ts', size: 10, lines: 90, statements: 85, functions: 80, branches: 75 }];
+    const files = [
+      { path: 'src/a.ts', size: 10, lines: 90, statements: 85, functions: 80, branches: 75 },
+    ];
     store.getState().setCoverageData(summary, files);
     expect(store.getState().coverageSummary).toEqual(summary);
     expect(store.getState().fileCoverage).toEqual(files);

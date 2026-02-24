@@ -70,10 +70,7 @@ export function useIDEActions(
       },
       [appendAgentLog]
     ),
-    useCallback(
-      (event) => updateAgentStatus(event.agentId, event.status),
-      [updateAgentStatus]
-    )
+    useCallback((event) => updateAgentStatus(event.agentId, event.status), [updateAgentStatus])
   );
 
   useEffect(() => {

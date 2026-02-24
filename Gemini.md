@@ -81,16 +81,16 @@ export type StoreState = FileTreeSlice & TabsSlice & GitSlice & PmSlice & ...;
 
 Key slices and what they own:
 
-| Slice | Key Concern |
-|---|---|
-| `pmSlice` | Epics, tickets, test cases, dependencies; draft/persisted split with a `pmDirty` flag |
-| `agentSlice` | Running AI agents, per-agent logs |
-| `gitSlice` | Branch, file statuses (A/M/D), staging, commit |
-| `tabsSlice` | Open editor tabs and active tab |
-| `mcpSlice` | MCP server running state and PID |
-| `canvasSlice` | XYFlow nodes/edges for workflow canvas |
-| `uiSlice` | Modal open/closed states, panel visibility |
-| `diagnosticsSlice` | remark-lint errors keyed by file path |
+| Slice              | Key Concern                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `pmSlice`          | Epics, tickets, test cases, dependencies; draft/persisted split with a `pmDirty` flag |
+| `agentSlice`       | Running AI agents, per-agent logs                                                     |
+| `gitSlice`         | Branch, file statuses (A/M/D), staging, commit                                        |
+| `tabsSlice`        | Open editor tabs and active tab                                                       |
+| `mcpSlice`         | MCP server running state and PID                                                      |
+| `canvasSlice`      | XYFlow nodes/edges for workflow canvas                                                |
+| `uiSlice`          | Modal open/closed states, panel visibility                                            |
+| `diagnosticsSlice` | remark-lint errors keyed by file path                                                 |
 
 **PM draft pattern:** `pmDraftEpics` holds in-progress edits; `pmEpics` is the last-persisted snapshot. `savePmData()` flushes drafts to SQLite via IPC.
 
@@ -108,6 +108,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 Rust commands are registered in `src-tauri/src/lib.rs` with `#[tauri::command]` and wired up in `.invoke_handler(tauri::generate_handler![...])`.
 
 **In tests**, mock the IPC layer:
+
 ```typescript
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => mockData) }));
 ```
@@ -138,6 +139,7 @@ Tool implementations are in `src/mcp/tools/` — one file per domain.
 ## Main Page Structure
 
 `src/app/page.tsx` (the only page) splits concerns into three hooks:
+
 - `useIDEState()` – derives all state from the store
 - `useIDEHandlers()` – event handlers and computed props
 - `useIDEActions()` – side-effect setup (file watcher, Tauri event listeners)
@@ -146,11 +148,11 @@ The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirro
 
 ## Rust Backend Modules
 
-| Module | File | Responsibility |
-|---|---|---|
-| Commands | `lib.rs` | IPC command registration, PTY shell (`shell_spawn/write/read`), file watcher |
-| Agents | `agents.rs` | Spawn/kill AI agent processes, stream output |
-| Database | `database.rs` | SQLite schema, all PM CRUD (epics, tickets, test cases, dependencies) |
-| MCP | `mcp.rs` | Start/stop MCP server subprocess |
-| Providers | `providers.rs` | LLM provider config registry |
-| LLM | `llm.rs` | HTTP calls to LLM APIs |
+| Module    | File           | Responsibility                                                               |
+| --------- | -------------- | ---------------------------------------------------------------------------- |
+| Commands  | `lib.rs`       | IPC command registration, PTY shell (`shell_spawn/write/read`), file watcher |
+| Agents    | `agents.rs`    | Spawn/kill AI agent processes, stream output                                 |
+| Database  | `database.rs`  | SQLite schema, all PM CRUD (epics, tickets, test cases, dependencies)        |
+| MCP       | `mcp.rs`       | Start/stop MCP server subprocess                                             |
+| Providers | `providers.rs` | LLM provider config registry                                                 |
+| LLM       | `llm.rs`       | HTTP calls to LLM APIs                                                       |
