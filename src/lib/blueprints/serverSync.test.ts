@@ -36,7 +36,7 @@ describe('serverSync', () => {
 
       const result = await fetchServerBlueprints('https://example.com');
       expect(result).toEqual([bp]);
-      expect(fetch).toHaveBeenCalledWith('https://example.com/api/blueprints', expect.any(Object));
+      expect(fetch).toHaveBeenCalledWith('https://example.com/api/v1/blueprints', expect.any(Object));
     });
 
     it('throws on non-ok response', async () => {
@@ -64,7 +64,7 @@ describe('serverSync', () => {
       const blueprints = [makeBlueprint()];
       await pushToServer('https://example.com', blueprints);
 
-      expect(fetchSpy).toHaveBeenCalledWith('https://example.com/api/blueprints', {
+      expect(fetchSpy).toHaveBeenCalledWith('https://example.com/api/v1/blueprints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(blueprints),

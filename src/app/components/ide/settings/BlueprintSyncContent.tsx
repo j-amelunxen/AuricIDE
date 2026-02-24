@@ -62,8 +62,8 @@ export function BlueprintSyncContent() {
           <div className="flex items-center gap-3">
             <SyncStatusBadge status={blueprintSyncStatus} error={blueprintSyncError} />
             <button
-              disabled={blueprintSyncStatus === 'syncing' || !rootPath}
-              onClick={() => rootPath && syncWithBlueprintServer(rootPath)}
+              disabled={blueprintSyncStatus === 'syncing'}
+              onClick={() => syncWithBlueprintServer(rootPath ?? '')}
               className="rounded border border-primary/20 bg-primary/10 px-4 py-1.5 text-[10px] font-bold text-primary-light uppercase tracking-wider transition-colors hover:bg-primary/20 disabled:opacity-50"
             >
               Sync Now

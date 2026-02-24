@@ -143,13 +143,13 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
         for (const bp of addedLocally) {
           get().addBlueprint(bp);
         }
-        await get().saveBlueprints(projectPath);
+        if (projectPath) await get().saveBlueprints(projectPath);
       }
       set({ blueprintSyncStatus: 'success' });
     } catch (err) {
       const isNetworkError =
-        err instanceof TypeError ||
-        (err instanceof Error && err.name === 'AbortError');
+        (err instanceof Error && err.name === 'AbortError') ||
+        (err instanceof TypeError && /failed to fetch|network|load failed/i.test(err.message));
       if (isNetworkError) {
         set({ blueprintSyncStatus: 'unreachable' });
       } else {
