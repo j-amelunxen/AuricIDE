@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="auric-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#bc13fe" />
+      <stop offset="100%" stop-color="#d66aff" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  
+  <!-- Outer Hexagon Frame -->
+  <path d="M256 40L442.2 147.5V362.5L256 470L69.8 362.5V147.5L256 40Z" 
+        stroke="url(#auric-grad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+  
+  <!-- Stylized "A" Glyph -->
+  <path d="M256 120L360 380H310L256 250L202 380H152L256 120Z" 
+        fill="url(#auric-grad)" filter="url(#glow)" />
+  
+  <!-- Inner Detail / HUD element -->
+  <circle cx="256" cy="256" r="180" stroke="#bc13fe" stroke-width="2" stroke-dasharray="10 20" opacity="0.3" />
+  <path d="M256 180V220M256 290V330M180 256H220M290 256H330" 
+        stroke="white" stroke-width="4" stroke-linecap="round" opacity="0.5" />
+</svg>
