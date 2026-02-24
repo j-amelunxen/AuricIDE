@@ -51,25 +51,27 @@ export function useIDEActions(
   }, []);
 
   // File watcher — debounced refresh on filesystem changes
+  const { handleRefresh } = handlers;
   useFileWatcher(
     state.rootPath,
     useCallback(() => {
       clearTimeout(debouncedRefresh.current);
-      debouncedRefresh.current = setTimeout(() => handlers.handleRefresh(), 300);
-    }, [handlers.handleRefresh])
+      debouncedRefresh.current = setTimeout(() => handleRefresh(), 300);
+    }, [handleRefresh])
   );
 
   // Agent event subscriptions
+  const { appendAgentLog, updateAgentStatus } = state;
   useAgentEvents(
     useCallback(
       (event) => {
-        state.appendAgentLog(event.agentId, event.line);
+        appendAgentLog(event.agentId, event.line);
       },
-      [state.appendAgentLog]
+      [appendAgentLog]
     ),
     useCallback(
-      (event) => state.updateAgentStatus(event.agentId, event.status),
-      [state.updateAgentStatus]
+      (event) => updateAgentStatus(event.agentId, event.status),
+      [updateAgentStatus]
     )
   );
 

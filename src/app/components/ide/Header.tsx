@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 export interface HeadingBreadcrumb {
   title: string;
   lineNumber: number;
@@ -42,10 +44,12 @@ export function Header({
             className="flex items-center gap-2 select-none group cursor-default"
           >
             <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 border border-white/5 group-hover:border-primary/30 transition-colors overflow-hidden">
-              <img
+              <Image
                 src="/logo.svg"
                 alt="Auric Logo"
-                className="h-6 w-6 drop-shadow-[0_0_5px_rgba(188,19,254,0.5)]"
+                width={24}
+                height={24}
+                className="drop-shadow-[0_0_5px_rgba(188,19,254,0.5)]"
               />
             </div>
             <div className="flex flex-col leading-none">

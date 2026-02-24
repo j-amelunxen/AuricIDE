@@ -562,7 +562,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const activeDiagCounts = useMemo(() => {
     if (!state.activeTabId) return { errors: 0, warnings: 0 };
     return state.getDiagnosticCounts(state.activeTabId);
-  }, [state.activeTabId, state]);
+  }, [state]);
 
   const activeDiagnostics = useMemo(() => {
     if (!state.activeTabId) return [];

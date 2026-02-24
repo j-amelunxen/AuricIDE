@@ -90,7 +90,7 @@ function Building({ position, size, coverage, file }: BuildingProps) {
     );
 }
 
-export function CoverageHeatmapModal({ isOpen, onClose, summary, files }: HeatmapProps) {
+export function CoverageHeatmapModal({ isOpen, onClose, summary: _summary, files }: HeatmapProps) {
     const buildings = useMemo(() => {
         // Sort files by path to group folders visually together in the grid
         const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));

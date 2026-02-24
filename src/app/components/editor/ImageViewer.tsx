@@ -112,6 +112,7 @@ export function ImageViewer({ src, fileName }: ImageViewerProps) {
           }}
           className="glass-card p-2 rounded-lg"
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={src}
             alt={fileName}
