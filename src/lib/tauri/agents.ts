@@ -13,6 +13,8 @@ export interface AgentInfo {
 
 export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan' | 'default';
 
+import { invoke } from './invoke';
+
 export interface AgentConfig {
   name: string;
   model: string;
@@ -24,11 +26,6 @@ export interface AgentConfig {
   provider?: string;
   headless?: boolean;
   spawnedByTicketId?: string;
-}
-
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-  return tauriInvoke<T>(cmd, args);
 }
 
 export async function checkCliStatus(providerId?: string): Promise<boolean> {

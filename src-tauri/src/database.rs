@@ -107,6 +107,26 @@ pub struct PmState {
     pub dependencies: Vec<PmDependency>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Blueprint {
+    pub id: String,
+    pub name: String,
+    pub tech_stack: String,
+    pub goal: String,
+    pub complexity: String,
+    pub category: String,
+    pub description: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BlueprintState {
+    pub blueprints: Vec<Blueprint>,
+}
+
 pub fn ensure_auric_dir(project_path: &str) -> Result<PathBuf, String> {
     let auric_dir = Path::new(project_path).join(".auric");
     fs::create_dir_all(&auric_dir).map_err(|e| format!("Failed to create .auric dir: {}", e))?;
@@ -369,6 +389,39 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
 
         conn.execute(
             "INSERT INTO _migrations (id, name) VALUES (8, 'create_pm_status_history')",
+            [],
+        )
+        .map_err(|e| format!("Failed to record migration: {}", e))?;
+    }
+
+    // Migration #9: Blueprints table
+    let applied9: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 9",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if !applied9 {
+        conn.execute_batch(
+            "CREATE TABLE blueprints (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                tech_stack  TEXT NOT NULL DEFAULT '',
+                goal        TEXT NOT NULL DEFAULT '',
+                complexity  TEXT NOT NULL DEFAULT 'MEDIUM',
+                category    TEXT NOT NULL DEFAULT 'architectures',
+                description TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_blueprints_category ON blueprints(category);",
+        )
+        .map_err(|e| format!("Failed to create blueprints table: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO _migrations (id, name) VALUES (9, 'create_blueprints')",
             [],
         )
         .map_err(|e| format!("Failed to record migration: {}", e))?;
@@ -795,6 +848,83 @@ pub fn pm_clear_impl(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("Failed to clear PM tables: {}", e))
 }
 
+pub fn blueprints_save_impl(conn: &Connection, payload: &BlueprintState) -> Result<(), String> {
+    conn.execute_batch("BEGIN TRANSACTION;")
+        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+
+    let result = (|| -> Result<(), String> {
+        conn.execute("DELETE FROM blueprints", [])
+            .map_err(|e| format!("Failed to clear blueprints: {}", e))?;
+
+        for bp in &payload.blueprints {
+            conn.execute(
+                "INSERT INTO blueprints (id, name, tech_stack, goal, complexity, category, description, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    bp.id,
+                    bp.name,
+                    bp.tech_stack,
+                    bp.goal,
+                    bp.complexity,
+                    bp.category,
+                    bp.description,
+                    bp.created_at,
+                    bp.updated_at
+                ],
+            )
+            .map_err(|e| format!("Failed to insert blueprint: {}", e))?;
+        }
+
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT;")
+                .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(e)
+        }
+    }
+}
+
+pub fn blueprints_load_impl(conn: &Connection) -> Result<BlueprintState, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, tech_stack, goal, complexity, category, description, created_at, updated_at \
+             FROM blueprints ORDER BY category, name",
+        )
+        .map_err(|e| format!("Failed to prepare blueprints query: {}", e))?;
+    let blueprints: Vec<Blueprint> = stmt
+        .query_map([], |row| {
+            Ok(Blueprint {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                tech_stack: row.get(2)?,
+                goal: row.get(3)?,
+                complexity: row.get(4)?,
+                category: row.get(5)?,
+                description: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query blueprints: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(BlueprintState { blueprints })
+}
+
+pub fn blueprints_clear_impl(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM blueprints", [])
+        .map_err(|e| format!("Failed to clear blueprints: {}", e))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -842,7 +972,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 8);
+        assert_eq!(count, 9);
 
         // kv_store table should exist
         let table_exists: bool = conn
@@ -864,7 +994,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 8);
+        assert_eq!(count, 9);
     }
 
     #[test]
@@ -882,7 +1012,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 8);
+        assert_eq!(count, 9);
     }
 
     #[test]
@@ -983,6 +1113,7 @@ mod tests {
             "pm_test_cases",
             "pm_dependencies",
             "pm_status_history",
+            "blueprints",
         ];
         for table in &tables {
             let exists: bool = conn
@@ -1001,7 +1132,7 @@ mod tests {
         let migration_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 8);
+        assert_eq!(migration_count, 9);
     }
 
     fn make_test_payload() -> PmSavePayload {

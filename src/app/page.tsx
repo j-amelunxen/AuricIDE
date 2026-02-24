@@ -21,6 +21,7 @@ import { BottomPanelTabs } from './components/ide/BottomPanelTabs';
 import { ProblemsPanel } from './components/problems/ProblemsPanel';
 import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
+import { BlueprintsPanel } from './components/blueprints/BlueprintsPanel';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
@@ -118,6 +119,8 @@ export default function Home() {
         return <ExtensionsPanel />;
       case 'qa':
         return <QAPanel />;
+      case 'blueprints':
+        return <BlueprintsPanel />;
       default:
         return null;
     }

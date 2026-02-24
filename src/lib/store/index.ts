@@ -15,6 +15,7 @@ import { createProjectDbSlice, type ProjectDbSlice } from './projectDbSlice';
 import { createMcpSlice, type McpSlice } from './mcpSlice';
 import { createPmSlice, type PmSlice } from './pmSlice';
 import { createQASlice, type QASlice } from './qaSlice';
+import { createBlueprintsSlice, type BlueprintsSlice } from './blueprintsSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -31,7 +32,8 @@ export type StoreState = FileTreeSlice &
   ProjectDbSlice &
   McpSlice &
   PmSlice &
-  QASlice;
+  QASlice &
+  BlueprintsSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -50,4 +52,5 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createMcpSlice(...a),
   ...createPmSlice(...a),
   ...createQASlice(...a),
+  ...createBlueprintsSlice(...a),
 }));

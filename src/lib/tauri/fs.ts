@@ -1,3 +1,5 @@
+import { invoke } from './invoke';
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -8,11 +10,6 @@ interface RawFileEntry {
   name: string;
   path: string;
   is_directory: boolean;
-}
-
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-  return tauriInvoke<T>(cmd, args);
 }
 
 export async function readDirectory(path: string): Promise<FileEntry[]> {

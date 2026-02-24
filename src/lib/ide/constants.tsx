@@ -9,6 +9,7 @@ export const activityItems: ActivityItem[] = [
   { id: 'source-control', icon: 'commit', label: 'Source Control', badge: 0 },
   { id: 'extensions', icon: 'extension', label: 'Extensions' },
   { id: 'qa', icon: 'fact_check', label: 'QA' },
+  { id: 'blueprints', icon: 'library_books', label: 'Blueprints' },
   { id: 'project-mgmt', icon: 'task_alt', label: 'Project Management' },
   { id: 'settings', icon: 'settings', label: 'Settings' },
 ];

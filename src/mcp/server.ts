@@ -5,6 +5,7 @@ import { registerEpicTools } from './tools/epics';
 import { registerHistoryTools } from './tools/history';
 import { registerTaskTools } from './tools/tasks';
 import { registerTicketTools } from './tools/tickets';
+import { registerBlueprintTools } from './tools/blueprints';
 
 export function createMcpServer(db: Database.Database): FastMCP {
   const server = new FastMCP({
@@ -17,6 +18,7 @@ export function createMcpServer(db: Database.Database): FastMCP {
   registerTaskTools(server, db);
   registerDependencyTools(server, db);
   registerHistoryTools(server, db);
+  registerBlueprintTools(server, db);
 
   return server;
 }

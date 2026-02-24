@@ -1,13 +1,10 @@
+import { invoke } from './invoke';
+
 export interface KvEntry {
   namespace: string;
   key: string;
   value: string;
   updated_at: string;
-}
-
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-  return tauriInvoke<T>(cmd, args);
 }
 
 export async function initProjectDb(projectPath: string): Promise<void> {

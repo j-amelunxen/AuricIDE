@@ -9,6 +9,8 @@ export interface PermissionModeOption {
   description: string;
 }
 
+import { invoke } from './invoke';
+
 export interface ProviderInfo {
   id: string;
   name: string;
@@ -16,11 +18,6 @@ export interface ProviderInfo {
   permissionModes: PermissionModeOption[];
   defaultModel: string;
   defaultPermissionMode: string;
-}
-
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-  return tauriInvoke<T>(cmd, args);
 }
 
 export async function listProviders(): Promise<ProviderInfo[]> {

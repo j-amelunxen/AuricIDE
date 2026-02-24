@@ -6,7 +6,7 @@ mod mcp;
 mod providers;
 
 use agents::AgentManagerState;
-use database::{DatabaseState, KvEntry, PmSavePayload, PmState};
+use database::{BlueprintState, DatabaseState, KvEntry, PmSavePayload, PmState};
 use git2::{Repository, StatusOptions};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -1269,6 +1269,43 @@ fn pm_clear(project_path: String, state: tauri::State<'_, DatabaseState>) -> Res
 }
 
 #[tauri::command]
+fn blueprints_save(
+    project_path: String,
+    payload: BlueprintState,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::blueprints_save_impl(conn, &payload)
+}
+
+#[tauri::command]
+fn blueprints_load(
+    project_path: String,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<BlueprintState, String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::blueprints_load_impl(conn)
+}
+
+#[tauri::command]
+fn blueprints_clear(
+    project_path: String,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::blueprints_clear_impl(conn)
+}
+
+#[tauri::command]
 async fn llm_call(
     request: llm::LlmRequest,
     db_state: tauri::State<'_, database::DatabaseState>,
@@ -1416,6 +1453,9 @@ pub fn run() {
             pm_load,
             pm_load_history,
             pm_clear,
+            blueprints_save,
+            blueprints_load,
+            blueprints_clear,
             append_metrics_log,
             report_frontend_crash,
             list_crash_logs,

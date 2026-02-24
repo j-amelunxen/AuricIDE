@@ -3,16 +3,13 @@ export interface GitFileStatus {
   status: 'added' | 'modified' | 'deleted' | 'untracked' | 'ignored';
 }
 
+import { invoke } from './invoke';
+
 export interface BranchInfo {
   name: string;
   ahead: number;
   behind: number;
   isDetached?: boolean;
-}
-
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-  return tauriInvoke<T>(cmd, args);
 }
 
 export async function getGitStatus(repoPath: string): Promise<GitFileStatus[]> {
