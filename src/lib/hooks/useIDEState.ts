@@ -87,6 +87,7 @@ export function useIDEState() {
   const removeRecentProject = useStore((s) => s.removeRecentProject);
   const loadRecentProjects = useStore((s) => s.loadRecentProjects);
   const loadCustomSlashCommands = useStore((s) => s.loadCustomSlashCommands);
+  const loadBlueprintServerUrl = useStore((s) => s.loadBlueprintServerUrl);
   const initProjectDb = useStore((s) => s.initProjectDb);
   const closeProjectDb = useStore((s) => s.closeProjectDb);
   const setAllFiles = useStore((s) => s.setAllFiles);
@@ -218,6 +219,7 @@ export function useIDEState() {
     removeRecentProject,
     loadRecentProjects,
     loadCustomSlashCommands,
+    loadBlueprintServerUrl,
     initProjectDb,
     closeProjectDb,
     setAllFiles,

@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { create } from 'zustand';
 import { createBlueprintsSlice, type BlueprintsSlice } from './blueprintsSlice';
 import type { Blueprint, BlueprintState } from '../tauri/blueprints';
+import type { SyncResult } from '../blueprints/serverSync';
 
 const mockBlueprintsLoad = vi.fn<(...args: unknown[]) => Promise<BlueprintState>>(() =>
   Promise.resolve({ blueprints: [] })
@@ -9,6 +10,9 @@ const mockBlueprintsLoad = vi.fn<(...args: unknown[]) => Promise<BlueprintState>
 const mockBlueprintsSave = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockBlueprintsClear = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockInitProjectDb = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
+const mockSyncWithServer = vi.fn<(...args: unknown[]) => Promise<SyncResult>>(() =>
+  Promise.resolve({ addedLocally: [], pushedToServer: [] })
+);
 
 vi.mock('../tauri/blueprints', () => ({
   blueprintsLoad: (...args: unknown[]) => mockBlueprintsLoad(...args),
@@ -18,6 +22,10 @@ vi.mock('../tauri/blueprints', () => ({
 
 vi.mock('../tauri/db', () => ({
   initProjectDb: (...args: unknown[]) => mockInitProjectDb(...args),
+}));
+
+vi.mock('../blueprints/serverSync', () => ({
+  syncWithServer: (...args: unknown[]) => mockSyncWithServer(...args),
 }));
 
 function createTestStore() {
@@ -42,6 +50,7 @@ function makeBlueprint(overrides: Partial<Blueprint> = {}): Blueprint {
 describe('blueprintsSlice', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   // --- UI state ---
@@ -151,5 +160,110 @@ describe('blueprintsSlice', () => {
     expect(store.getState().blueprintsDraft).toHaveLength(1);
     expect(store.getState().blueprintsDraft[0].id).toBe('bp1');
     expect(store.getState().blueprintsDirty).toBe(false);
+  });
+
+  // --- Server URL persistence ---
+
+  it('loadBlueprintServerUrl reads from localStorage', () => {
+    localStorage.setItem('auric-blueprint-server-url', 'https://blueprints.example.com');
+    const store = createTestStore();
+    store.getState().loadBlueprintServerUrl();
+    expect(store.getState().blueprintServerUrl).toBe('https://blueprints.example.com');
+  });
+
+  it('setBlueprintServerUrl writes to localStorage', () => {
+    const store = createTestStore();
+    store.getState().setBlueprintServerUrl('https://my-server.com');
+    expect(store.getState().blueprintServerUrl).toBe('https://my-server.com');
+    expect(localStorage.getItem('auric-blueprint-server-url')).toBe('https://my-server.com');
+  });
+
+  it('loadBlueprintServerUrl does nothing when key is absent', () => {
+    const store = createTestStore();
+    store.getState().loadBlueprintServerUrl();
+    expect(store.getState().blueprintServerUrl).toBe('');
+  });
+
+  // --- syncWithBlueprintServer ---
+
+  it('syncWithBlueprintServer sets status to syncing then success', async () => {
+    mockSyncWithServer.mockResolvedValueOnce({ addedLocally: [], pushedToServer: [] });
+    const store = createTestStore();
+    store.setState({ blueprintServerUrl: 'https://example.com' });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(store.getState().blueprintSyncStatus).toBe('success');
+  });
+
+  it('syncWithBlueprintServer calls addBlueprint for each item in addedLocally', async () => {
+    const serverBp = makeBlueprint({ id: 'server-new' });
+    mockSyncWithServer.mockResolvedValueOnce({
+      addedLocally: [serverBp],
+      pushedToServer: [],
+    });
+    const store = createTestStore();
+    store.setState({ blueprintServerUrl: 'https://example.com' });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(store.getState().blueprintsDraft).toContainEqual(serverBp);
+  });
+
+  it('syncWithBlueprintServer calls saveBlueprints when blueprints were added locally', async () => {
+    const serverBp = makeBlueprint({ id: 'server-new' });
+    mockSyncWithServer.mockResolvedValueOnce({
+      addedLocally: [serverBp],
+      pushedToServer: [],
+    });
+    const store = createTestStore();
+    store.setState({ blueprintServerUrl: 'https://example.com' });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(mockBlueprintsSave).toHaveBeenCalled();
+  });
+
+  it('syncWithBlueprintServer does not call saveBlueprints when nothing was added', async () => {
+    mockSyncWithServer.mockResolvedValueOnce({ addedLocally: [], pushedToServer: [] });
+    const store = createTestStore();
+    store.setState({ blueprintServerUrl: 'https://example.com' });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(mockBlueprintsSave).not.toHaveBeenCalled();
+  });
+
+  it('syncWithBlueprintServer sets unreachable on network error', async () => {
+    mockSyncWithServer.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const store = createTestStore();
+    store.setState({ blueprintServerUrl: 'https://example.com' });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(store.getState().blueprintSyncStatus).toBe('unreachable');
+  });
+
+  it('syncWithBlueprintServer sets unreachable on AbortError', async () => {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    mockSyncWithServer.mockRejectedValueOnce(err);
+    const store = createTestStore();
+    store.setState({ blueprintServerUrl: 'https://example.com' });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(store.getState().blueprintSyncStatus).toBe('unreachable');
+  });
+
+  it('syncWithBlueprintServer sets error status on non-network failure', async () => {
+    mockSyncWithServer.mockRejectedValueOnce(new Error('Server returned 500'));
+    const store = createTestStore();
+    store.setState({ blueprintServerUrl: 'https://example.com' });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(store.getState().blueprintSyncStatus).toBe('error');
+    expect(store.getState().blueprintSyncError).toBe('Server returned 500');
   });
 });

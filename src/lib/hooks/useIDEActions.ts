@@ -19,6 +19,7 @@ export function useIDEActions(
   useEffect(() => {
     state.loadRecentProjects();
     state.loadCustomSlashCommands();
+    state.loadBlueprintServerUrl();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

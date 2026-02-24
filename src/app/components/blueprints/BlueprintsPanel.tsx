@@ -13,6 +13,9 @@ export function BlueprintsPanel() {
     blueprintsDirty,
     blueprintsModalOpen,
     selectedBlueprintId,
+    blueprintServerUrl,
+    blueprintSyncStatus,
+    blueprintSyncError,
     rootPath,
     loadBlueprints,
     saveBlueprints,
@@ -58,9 +61,45 @@ export function BlueprintsPanel() {
       <div className="flex h-full flex-col bg-panel-bg">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 bg-white/2 p-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
-            Blueprints
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
+              Blueprints
+            </h2>
+            {blueprintServerUrl && blueprintSyncStatus !== 'idle' && (
+              <span
+                title={
+                  blueprintSyncStatus === 'error'
+                    ? (blueprintSyncError ?? 'Sync error')
+                    : blueprintSyncStatus === 'syncing'
+                      ? 'Syncing…'
+                      : blueprintSyncStatus === 'success'
+                        ? 'Synced'
+                        : 'Server unreachable'
+                }
+                className={
+                  blueprintSyncStatus === 'syncing'
+                    ? 'text-amber-400'
+                    : blueprintSyncStatus === 'success'
+                      ? 'text-emerald-400'
+                      : blueprintSyncStatus === 'error'
+                        ? 'text-rose-400'
+                        : 'text-foreground-muted'
+                }
+              >
+                <span
+                  className={`material-symbols-outlined text-[12px] ${blueprintSyncStatus === 'syncing' ? 'animate-spin' : ''}`}
+                >
+                  {blueprintSyncStatus === 'syncing'
+                    ? 'sync'
+                    : blueprintSyncStatus === 'success'
+                      ? 'check_circle'
+                      : blueprintSyncStatus === 'error'
+                        ? 'error'
+                        : 'wifi_off'}
+                </span>
+              </span>
+            )}
+          </div>
           <button
             onClick={() => setBlueprintsModalOpen(true)}
             className="rounded p-0.5 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"

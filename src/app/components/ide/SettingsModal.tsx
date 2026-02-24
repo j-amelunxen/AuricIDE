@@ -8,13 +8,22 @@ import { EditorContent } from './settings/EditorContent';
 import { AppearanceContent } from './settings/AppearanceContent';
 import { SystemContent } from './settings/SystemContent';
 import { McpSettingsContent } from './McpSettingsContent';
+import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
 
 export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type SettingsCategory = 'agent' | 'llm' | 'commands' | 'editor' | 'appearance' | 'system' | 'mcp';
+type SettingsCategory =
+  | 'agent'
+  | 'llm'
+  | 'commands'
+  | 'editor'
+  | 'appearance'
+  | 'system'
+  | 'mcp'
+  | 'blueprints';
 
 const CATEGORIES: { id: SettingsCategory; icon: string; label: string }[] = [
   { id: 'agent', icon: 'robot_2', label: 'Agent' },
@@ -24,6 +33,7 @@ const CATEGORIES: { id: SettingsCategory; icon: string; label: string }[] = [
   { id: 'appearance', icon: 'palette', label: 'Appearance' },
   { id: 'system', icon: 'info', label: 'System' },
   { id: 'mcp', icon: 'hub', label: 'MCP' },
+  { id: 'blueprints', icon: 'sync', label: 'Blueprints' },
 ];
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
@@ -56,6 +66,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         return <SystemContent />;
       case 'mcp':
         return <McpSettingsContent />;
+      case 'blueprints':
+        return <BlueprintSyncContent />;
     }
   };
 

@@ -6,6 +6,9 @@ import {
   blueprintsClear as ipcBlueprintsClear,
 } from '../tauri/blueprints';
 import { initProjectDb } from '../tauri/db';
+import { syncWithServer, type SyncStatus } from '../blueprints/serverSync';
+
+const SERVER_URL_KEY = 'auric-blueprint-server-url';
 
 export interface BlueprintsSlice {
   // Persisted state (last saved)
@@ -16,6 +19,10 @@ export interface BlueprintsSlice {
   // UI state
   blueprintsModalOpen: boolean;
   selectedBlueprintId: string | null;
+  // Server sync state
+  blueprintServerUrl: string;
+  blueprintSyncStatus: SyncStatus;
+  blueprintSyncError: string | null;
   // Actions
   loadBlueprints: (projectPath: string) => Promise<void>;
   saveBlueprints: (projectPath: string) => Promise<void>;
@@ -26,6 +33,9 @@ export interface BlueprintsSlice {
   discardBlueprintChanges: () => void;
   setBlueprintsModalOpen: (open: boolean) => void;
   setSelectedBlueprintId: (id: string | null) => void;
+  setBlueprintServerUrl: (url: string) => void;
+  loadBlueprintServerUrl: () => void;
+  syncWithBlueprintServer: (projectPath: string) => Promise<void>;
 }
 
 export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) => ({
@@ -37,6 +47,10 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
   // UI state
   blueprintsModalOpen: false,
   selectedBlueprintId: null,
+  // Server sync state
+  blueprintServerUrl: '',
+  blueprintSyncStatus: 'idle',
+  blueprintSyncError: null,
 
   loadBlueprints: async (projectPath) => {
     await initProjectDb(projectPath);
@@ -46,6 +60,10 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
       blueprintsDraft: state.blueprints,
       blueprintsDirty: false,
     });
+    const { blueprintServerUrl } = get();
+    if (blueprintServerUrl) {
+      await get().syncWithBlueprintServer(projectPath);
+    }
   },
 
   saveBlueprints: async (projectPath) => {
@@ -93,4 +111,53 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
 
   setBlueprintsModalOpen: (open) => set({ blueprintsModalOpen: open }),
   setSelectedBlueprintId: (id) => set({ selectedBlueprintId: id }),
+
+  setBlueprintServerUrl: (url) => {
+    set({ blueprintServerUrl: url });
+    try {
+      localStorage.setItem(SERVER_URL_KEY, url);
+    } catch {
+      // storage unavailable — silently ignore
+    }
+  },
+
+  loadBlueprintServerUrl: () => {
+    try {
+      const raw = localStorage.getItem(SERVER_URL_KEY);
+      if (raw !== null) {
+        set({ blueprintServerUrl: raw });
+      }
+    } catch {
+      // corrupted or unavailable — keep default
+    }
+  },
+
+  syncWithBlueprintServer: async (projectPath) => {
+    const { blueprintServerUrl, blueprintsDraft } = get();
+    if (!blueprintServerUrl) return;
+
+    set({ blueprintSyncStatus: 'syncing', blueprintSyncError: null });
+    try {
+      const { addedLocally } = await syncWithServer(blueprintServerUrl, blueprintsDraft);
+      if (addedLocally.length > 0) {
+        for (const bp of addedLocally) {
+          get().addBlueprint(bp);
+        }
+        await get().saveBlueprints(projectPath);
+      }
+      set({ blueprintSyncStatus: 'success' });
+    } catch (err) {
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error && err.name === 'AbortError');
+      if (isNetworkError) {
+        set({ blueprintSyncStatus: 'unreachable' });
+      } else {
+        set({
+          blueprintSyncStatus: 'error',
+          blueprintSyncError: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  },
 });
