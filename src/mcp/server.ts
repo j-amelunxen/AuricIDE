@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
+import { registerContextTools } from './tools/context';
 import { registerDependencyTools } from './tools/dependencies';
 import { registerEpicTools } from './tools/epics';
 import { registerHistoryTools } from './tools/history';
@@ -19,6 +20,7 @@ export function createMcpServer(db: Database.Database): FastMCP {
   registerDependencyTools(server, db);
   registerHistoryTools(server, db);
   registerBlueprintTools(server, db);
+  registerContextTools(server, db);
 
   return server;
 }
