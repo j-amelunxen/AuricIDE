@@ -101,7 +101,7 @@ export function TicketEditPanel({
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
   const rootPath = useStore((s) => s.rootPath);
 
-  const { call: llmCall, isLoading: isLlmLoading } = useLLM();
+  const { call: llmCall, abort: llmAbort, isLoading: isLlmLoading } = useLLM();
   const [proposalModalOpen, setProposalModalOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<{ id: string; name: string; reason: string }[]>(
     []
@@ -464,7 +464,8 @@ export function TicketEditPanel({
               <button
                 type="button"
                 onClick={handleProposeDependencies}
-                className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition-all hover:bg-primary/20"
+                disabled={isLlmLoading}
+                className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition-all hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[14px]">lightbulb</span>
                 Propose Dependencies
@@ -560,7 +561,10 @@ export function TicketEditPanel({
 
       <DependencyProposalModal
         isOpen={proposalModalOpen}
-        onClose={() => setProposalModalOpen(false)}
+        onClose={() => {
+          setProposalModalOpen(false);
+          llmAbort();
+        }}
         onConfirm={handleConfirmSuggestions}
         suggestions={suggestions}
         selectedIds={selectedSuggestionIds}

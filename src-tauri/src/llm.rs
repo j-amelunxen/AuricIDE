@@ -59,7 +59,10 @@ pub async fn llm_call_impl(
     };
 
     // 2. Prepare OpenAI request
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
     let base_url_trimmed = base_url.trim().trim_end_matches('/');
     let url = if base_url_trimmed.ends_with("/chat/completions") {
         base_url_trimmed.to_string()

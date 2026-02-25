@@ -14,6 +14,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={false}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={vi.fn()}
@@ -28,6 +30,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={vi.fn()}
@@ -43,6 +47,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={vi.fn()}
@@ -58,6 +64,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={vi.fn()}
@@ -76,6 +84,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={onSaveAndClose}
@@ -85,7 +95,17 @@ describe('TicketCreateModal', () => {
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText('What needs to be done?'), 'My Ticket');
     await user.click(screen.getByRole('button', { name: 'Create and Close' }));
-    expect(onSaveAndClose).toHaveBeenCalledWith('My Ticket', 'e1', 'open', 'normal', '', undefined);
+    expect(onSaveAndClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'My Ticket',
+        epicId: 'e1',
+        status: 'open',
+        priority: 'normal',
+        description: '',
+        modelPower: undefined,
+      }),
+      []
+    );
   });
 
   it('calls onSave with form values on Create click and resets form', async () => {
@@ -94,6 +114,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={onSave}
         onSaveAndClose={vi.fn()}
@@ -104,7 +126,17 @@ describe('TicketCreateModal', () => {
     const input = screen.getByPlaceholderText('What needs to be done?');
     await user.type(input, 'My Ticket');
     await user.click(screen.getByRole('button', { name: 'Create' }));
-    expect(onSave).toHaveBeenCalledWith('My Ticket', 'e1', 'open', 'normal', '', undefined);
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'My Ticket',
+        epicId: 'e1',
+        status: 'open',
+        priority: 'normal',
+        description: '',
+        modelPower: undefined,
+      }),
+      []
+    );
     expect(input).toHaveValue('');
   });
 
@@ -114,6 +146,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e2"
         onSave={vi.fn()}
         onSaveAndClose={onSaveAndClose}
@@ -123,7 +157,13 @@ describe('TicketCreateModal', () => {
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText('What needs to be done?'), 'Test');
     await user.click(screen.getByRole('button', { name: 'Create and Close' }));
-    expect(onSaveAndClose).toHaveBeenCalledWith('Test', 'e2', 'open', 'normal', '', undefined);
+    expect(onSaveAndClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Test',
+        epicId: 'e2',
+      }),
+      []
+    );
   });
 
   it('allows selecting priority', async () => {
@@ -132,6 +172,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={onSave}
         onSaveAndClose={vi.fn()}
@@ -145,7 +187,13 @@ describe('TicketCreateModal', () => {
     await user.click(within(selector).getByText('Critical'));
 
     await user.click(screen.getByRole('button', { name: 'Create' }));
-    expect(onSave).toHaveBeenCalledWith('Critical Task', 'e1', 'open', 'critical', '', undefined);
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Critical Task',
+        priority: 'critical',
+      }),
+      []
+    );
   });
 
   it('allows selecting model power', async () => {
@@ -154,6 +202,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={onSave}
         onSaveAndClose={vi.fn()}
@@ -167,7 +217,13 @@ describe('TicketCreateModal', () => {
     await user.click(within(selector).getByText('High'));
 
     await user.click(screen.getByRole('button', { name: 'Create' }));
-    expect(onSave).toHaveBeenCalledWith('Heavy Task', 'e1', 'open', 'normal', '', 'high');
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Heavy Task',
+        modelPower: 'high',
+      }),
+      []
+    );
   });
 
   it('calls onClose when Cancel is clicked', async () => {
@@ -176,6 +232,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={vi.fn()}
@@ -192,6 +250,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={vi.fn()}
@@ -207,6 +267,8 @@ describe('TicketCreateModal', () => {
       <TicketCreateModal
         isOpen={true}
         epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
         onSaveAndClose={vi.fn()}
@@ -218,3 +280,4 @@ describe('TicketCreateModal', () => {
     expect(screen.getByRole('button', { name: 'Done' })).toBeDefined();
   });
 });
+
