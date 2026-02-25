@@ -172,42 +172,28 @@ export function ProjectManagerModal() {
 
   const handleTicketCreate = useCallback(
     (
-      name: string,
-      epicId: string,
-      status: PmTicket['status'],
-      priority: PmTicket['priority'],
-      description: string,
-      modelPower?: PmTicket['modelPower']
+      ticketData: Omit<PmTicket, 'createdAt' | 'updatedAt' | 'statusUpdatedAt' | 'sortOrder'>,
+      dependencies: PmDependency[]
     ) => {
       const now = new Date().toISOString();
       addTicket({
-        id: crypto.randomUUID(),
-        epicId,
-        name,
-        description,
-        status,
-        priority,
-        modelPower,
+        ...ticketData,
         statusUpdatedAt: now,
         sortOrder: draftTickets.length,
-        context: [],
         createdAt: now,
         updatedAt: now,
       });
+      dependencies.forEach((dep) => addDependency(dep));
     },
-    [draftTickets.length, addTicket]
+    [draftTickets.length, addTicket, addDependency]
   );
 
   const handleTicketCreateAndClose = useCallback(
     (
-      name: string,
-      epicId: string,
-      status: PmTicket['status'],
-      priority: PmTicket['priority'],
-      description: string,
-      modelPower?: PmTicket['modelPower']
+      ticketData: Omit<PmTicket, 'createdAt' | 'updatedAt' | 'statusUpdatedAt' | 'sortOrder'>,
+      dependencies: PmDependency[]
     ) => {
-      handleTicketCreate(name, epicId, status, priority, description, modelPower);
+      handleTicketCreate(ticketData, dependencies);
       setTicketCreateOpen(false);
     },
     [handleTicketCreate]
@@ -474,6 +460,8 @@ export function ProjectManagerModal() {
       <TicketCreateModal
         isOpen={ticketCreateOpen}
         epics={draftEpics}
+        allTickets={draftTickets}
+        availableItems={availableItems}
         defaultEpicId={selectedEpicId}
         onSave={handleTicketCreate}
         onSaveAndClose={handleTicketCreateAndClose}

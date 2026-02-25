@@ -527,7 +527,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   // UI calculations
   const scBadge = state.fileStatuses.filter((s) => s.status !== 'ignored').length;
   const openTicketsCount = useMemo(
-    () => state.pmDraftTickets.filter((t) => t.status !== 'done').length,
+    () => state.pmDraftTickets.filter((t) => t.status !== 'done' && t.status !== 'archived').length,
     [state.pmDraftTickets]
   );
   const itemsWithBadge = useMemo(

@@ -159,4 +159,27 @@ describe('TicketTable', () => {
 
     expect(screen.queryByTitle('Blocked by dependencies')).toBeNull();
   });
+
+  it('does not show blocked indicator when dependency is archived', () => {
+    const ticket1 = makeTicket({ id: 'tk-1', name: 'Free Ticket' });
+    const ticket2 = makeTicket({ id: 'tk-2', name: 'Dependency', status: 'archived' });
+    const dependency: PmDependency = {
+      id: 'dep-1',
+      sourceType: 'ticket',
+      sourceId: 'tk-1',
+      targetType: 'ticket',
+      targetId: 'tk-2',
+    };
+
+    render(
+      <TicketTable
+        {...defaultProps}
+        tickets={[ticket1]}
+        allTickets={[ticket1, ticket2]}
+        dependencies={[dependency]}
+      />
+    );
+
+    expect(screen.queryByTitle('Blocked by dependencies')).toBeNull();
+  });
 });

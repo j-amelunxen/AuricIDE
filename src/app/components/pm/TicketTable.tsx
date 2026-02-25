@@ -95,12 +95,12 @@ export function TicketTable({
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
 
   const isBlocked = (ticketId: string) => {
-    return dependencies.some(
-      (dep) =>
-        dep.sourceId === ticketId &&
-        dep.targetType === 'ticket' &&
-        allTickets.find((t) => t.id === dep.targetId)?.status !== 'done'
-    );
+    return dependencies.some((dep) => {
+      if (dep.sourceId !== ticketId || dep.targetType !== 'ticket') return false;
+      const target = allTickets.find((t) => t.id === dep.targetId);
+      if (!target) return false;
+      return target.status !== 'done' && target.status !== 'archived';
+    });
   };
 
   const handleContextMenu = (e: React.MouseEvent, ticket: PmTicket) => {
