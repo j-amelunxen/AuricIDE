@@ -110,6 +110,7 @@ function TicketCreateForm({
     description,
     modelPower,
     context: [],
+    needsHumanSupervision: false,
   });
 
   const handleCreateOnly = () => {

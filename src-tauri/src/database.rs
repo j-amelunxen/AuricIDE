@@ -51,6 +51,7 @@ pub struct PmTicket {
     pub context: Option<Vec<PmContextItem>>,
     pub model_power: Option<String>,
     pub priority: String,
+    #[serde(default)]
     pub needs_human_supervision: bool,
     pub created_at: String,
     pub updated_at: String,
