@@ -32,7 +32,11 @@ export async function onTerminalOut(
   return () => {
     if (disposed) return;
     disposed = true;
-    unlisten();
+    try {
+      unlisten();
+    } catch {
+      // Listener may already have been unregistered by Tauri
+    }
   };
 }
 
@@ -49,6 +53,10 @@ export async function onTerminalErr(
   return () => {
     if (disposed) return;
     disposed = true;
-    unlisten();
+    try {
+      unlisten();
+    } catch {
+      // Listener may already have been unregistered by Tauri
+    }
   };
 }

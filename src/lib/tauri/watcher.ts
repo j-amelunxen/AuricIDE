@@ -27,7 +27,11 @@ export function onFsChange(callback: (event: FsChangeEvent) => void): () => void
       });
 
       if (disposed) {
-        unsub();
+        try {
+          unsub();
+        } catch {
+          // Listener may already have been unregistered by Tauri
+        }
       } else {
         unlisten = unsub;
       }
@@ -41,7 +45,11 @@ export function onFsChange(callback: (event: FsChangeEvent) => void): () => void
   return () => {
     disposed = true;
     if (unlisten) {
-      unlisten();
+      try {
+        unlisten();
+      } catch {
+        // Listener may already have been unregistered by Tauri
+      }
       unlisten = null;
     }
   };

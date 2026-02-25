@@ -24,7 +24,7 @@ export function onAgentOutput(callback: (event: AgentOutputEvent) => void): () =
         callback(event.payload);
       }).then((fn) => {
         if (disposed) {
-          fn();
+          try { fn(); } catch { /* already unregistered */ }
         } else {
           unlisten = fn;
         }
@@ -38,7 +38,11 @@ export function onAgentOutput(callback: (event: AgentOutputEvent) => void): () =
     if (disposed) return;
     disposed = true;
     if (unlisten) {
-      unlisten();
+      try {
+        unlisten();
+      } catch {
+        // Listener may already have been unregistered by Tauri
+      }
       unlisten = null;
     }
   };
@@ -55,7 +59,7 @@ export function onAgentStatus(callback: (event: AgentStatusEvent) => void): () =
         callback(event.payload);
       }).then((fn) => {
         if (disposed) {
-          fn();
+          try { fn(); } catch { /* already unregistered */ }
         } else {
           unlisten = fn;
         }
@@ -69,7 +73,11 @@ export function onAgentStatus(callback: (event: AgentStatusEvent) => void): () =
     if (disposed) return;
     disposed = true;
     if (unlisten) {
-      unlisten();
+      try {
+        unlisten();
+      } catch {
+        // Listener may already have been unregistered by Tauri
+      }
       unlisten = null;
     }
   };

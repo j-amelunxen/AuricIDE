@@ -122,6 +122,19 @@ pub(crate) struct ProviderConfig {
     prompt_template: String,
 }
 
+// ── Shell escaping ──────────────────────────────────────────────────
+
+/// Escape a string for use inside double quotes in zsh/bash.
+/// Handles all characters that are special inside double quotes:
+/// `\`, `"`, `` ` ``, `$`, and `!` (zsh history expansion).
+fn shell_escape_double_quoted(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('`', "\\`")
+        .replace('$', "\\$")
+        .replace('!', "\\!")
+}
+
 // ── DynamicProvider ──────────────────────────────────────────────────
 
 pub struct DynamicProvider {
@@ -176,7 +189,7 @@ impl AgentProvider for DynamicProvider {
                     cmd_parts.push(model.to_string());
                 }
                 ArgumentConfig::Task { quote } => {
-                    let escaped_task = task.replace("\"", "\\\"").replace("$", "\\$");
+                    let escaped_task = shell_escape_double_quoted(task);
                     if *quote {
                         cmd_parts.push(format!("\"{}\"", escaped_task));
                     } else {
@@ -282,7 +295,7 @@ impl AgentProvider for CrushProvider {
         _auto_accept_edits: bool,
         _headless: bool,
     ) -> SpawnCommand {
-        let escaped_task = task.replace("\"", "\\\"").replace("$", "\\$");
+        let escaped_task = shell_escape_double_quoted(task);
 
         let mut cmd = "crush".to_string();
 
@@ -573,6 +586,35 @@ mod tests {
             "Expected --yolo in command: {}",
             cmd.command
         );
+    }
+
+    #[test]
+    fn test_shell_escape_backticks_and_parens() {
+        let provider = DynamicProvider::new(get_claude_config());
+        let task = "Call `list_epics()` then `create_epic({ name })` ok";
+        let cmd = provider.build_spawn_command("sonnet", task, None, false, false, true);
+        assert_eq!(
+            cmd.command,
+            "claude --model sonnet -p \"Call \\`list_epics()\\` then \\`create_epic({ name })\\` ok\""
+        );
+    }
+
+    #[test]
+    fn test_shell_escape_backslash_and_dollar() {
+        let provider = DynamicProvider::new(get_claude_config());
+        let task = r#"path C:\Users and $HOME with "quotes""#;
+        let cmd = provider.build_spawn_command("auto", task, None, false, false, true);
+        assert_eq!(
+            cmd.command,
+            r#"claude -p "path C:\\Users and \$HOME with \"quotes\"""#
+        );
+    }
+
+    #[test]
+    fn test_shell_escape_exclamation() {
+        let provider = CrushProvider;
+        let cmd = provider.build_spawn_command("auto", "fix this!", None, false, false, false);
+        assert_eq!(cmd.command, r#"crush "fix this\!""#);
     }
 
     #[test]
