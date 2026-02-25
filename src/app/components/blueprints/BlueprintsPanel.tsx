@@ -43,7 +43,7 @@ export function BlueprintsPanel() {
     [blueprintsDraft]
   );
 
-  const handleCreate = (data: Omit<Blueprint, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleCreate = async (data: Omit<Blueprint, 'id' | 'createdAt' | 'updatedAt'>) => {
     const now = new Date().toISOString();
     addBlueprint({
       id: crypto.randomUUID(),
@@ -51,6 +51,7 @@ export function BlueprintsPanel() {
       updatedAt: now,
       ...data,
     });
+    if (rootPath) await saveBlueprints(rootPath);
     setBlueprintsModalOpen(false);
   };
 
@@ -154,9 +155,10 @@ export function BlueprintsPanel() {
           <div className="flex items-center gap-2 border-t border-white/5 p-3">
             {selectedBlueprintId && (
               <button
-                onClick={() => {
+                onClick={async () => {
                   deleteBlueprint(selectedBlueprintId);
                   setSelectedBlueprintId(null);
+                  if (rootPath) await saveBlueprints(rootPath);
                 }}
                 className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-[10px] font-medium text-rose-300 hover:bg-rose-500/20 transition-colors"
               >

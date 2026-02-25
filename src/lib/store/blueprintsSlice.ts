@@ -16,6 +16,8 @@ export interface BlueprintsSlice {
   // Draft state (local edits before save)
   blueprintsDraft: Blueprint[];
   blueprintsDirty: boolean;
+  // Track which project is currently loaded (to detect project switches)
+  currentBlueprintsProject: string | null;
   // UI state
   blueprintsModalOpen: boolean;
   blueprintsGalleryOpen: boolean;
@@ -46,6 +48,7 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
   // Draft state
   blueprintsDraft: [],
   blueprintsDirty: false,
+  currentBlueprintsProject: null,
   // UI state
   blueprintsModalOpen: false,
   blueprintsGalleryOpen: false,
@@ -58,11 +61,22 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
   loadBlueprints: async (projectPath) => {
     await initProjectDb(projectPath);
     const state: BlueprintState = await ipcBlueprintsLoad(projectPath);
-    set({
-      blueprints: state.blueprints,
-      blueprintsDraft: state.blueprints,
-      blueprintsDirty: false,
-    });
+    const { blueprintsDirty, currentBlueprintsProject } = get();
+    const isNewProject = currentBlueprintsProject !== projectPath;
+
+    if (!blueprintsDirty || isNewProject) {
+      // Safe to overwrite: no unsaved changes, or switching to a different project
+      set({
+        blueprints: state.blueprints,
+        blueprintsDraft: state.blueprints,
+        blueprintsDirty: false,
+        currentBlueprintsProject: projectPath,
+      });
+    } else {
+      // Dirty draft exists for this project — keep draft, only update the persisted snapshot
+      set({ blueprints: state.blueprints, currentBlueprintsProject: projectPath });
+    }
+
     const { blueprintServerUrl } = get();
     if (blueprintServerUrl) {
       await get().syncWithBlueprintServer(projectPath);

@@ -67,17 +67,18 @@ export function BlueprintsGallery() {
   const selectedBlueprint = blueprintsDraft.find((bp) => bp.id === selectedBlueprintId) ?? null;
 
   const handleSave = useCallback(
-    (data: Omit<Blueprint, 'id' | 'createdAt' | 'updatedAt'>) => {
+    async (data: Omit<Blueprint, 'id' | 'createdAt' | 'updatedAt'>) => {
       if (editTarget) {
         updateBlueprint(editTarget.id, { ...data, updatedAt: new Date().toISOString() });
       } else {
         const now = new Date().toISOString();
         addBlueprint({ id: crypto.randomUUID(), createdAt: now, updatedAt: now, ...data });
       }
+      if (rootPath) await saveBlueprints(rootPath);
       setBlueprintsModalOpen(false);
       setEditTarget(null);
     },
-    [editTarget, addBlueprint, updateBlueprint, setBlueprintsModalOpen]
+    [editTarget, addBlueprint, updateBlueprint, saveBlueprints, rootPath, setBlueprintsModalOpen]
   );
 
   const handleEdit = useCallback(
@@ -89,11 +90,12 @@ export function BlueprintsGallery() {
   );
 
   const handleDelete = useCallback(
-    (id: string) => {
+    async (id: string) => {
       deleteBlueprint(id);
       if (selectedBlueprintId === id) setSelectedBlueprintId(null);
+      if (rootPath) await saveBlueprints(rootPath);
     },
-    [deleteBlueprint, selectedBlueprintId, setSelectedBlueprintId]
+    [deleteBlueprint, selectedBlueprintId, setSelectedBlueprintId, saveBlueprints, rootPath]
   );
 
   if (!blueprintsGalleryOpen) return null;

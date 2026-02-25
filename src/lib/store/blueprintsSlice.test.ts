@@ -122,6 +122,49 @@ describe('blueprintsSlice', () => {
     expect(store.getState().blueprints).toHaveLength(1);
     expect(store.getState().blueprintsDraft).toHaveLength(1);
     expect(store.getState().blueprintsDirty).toBe(false);
+    expect(store.getState().currentBlueprintsProject).toBe('/project');
+  });
+
+  it('loadBlueprints preserves dirty draft when reloading the same project', async () => {
+    const persistedBp = makeBlueprint({ id: 'persisted' });
+    const draftOnlyBp = makeBlueprint({ id: 'draft-only', name: 'Unsaved Blueprint' });
+    mockBlueprintsLoad.mockResolvedValueOnce({ blueprints: [persistedBp] });
+
+    const store = createTestStore();
+    store.setState({
+      blueprints: [persistedBp],
+      blueprintsDraft: [persistedBp, draftOnlyBp],
+      blueprintsDirty: true,
+      currentBlueprintsProject: '/project',
+    });
+
+    await store.getState().loadBlueprints('/project');
+
+    expect(store.getState().blueprintsDraft).toContainEqual(draftOnlyBp);
+    expect(store.getState().blueprintsDirty).toBe(true);
+    // Persisted snapshot is updated from IPC
+    expect(store.getState().blueprints).toEqual([persistedBp]);
+    expect(store.getState().currentBlueprintsProject).toBe('/project');
+  });
+
+  it('loadBlueprints resets dirty draft when switching to a different project', async () => {
+    const newProjectBp = makeBlueprint({ id: 'new-project-bp', name: 'New Project Blueprint' });
+    const draftOnlyBp = makeBlueprint({ id: 'draft-only', name: 'Unsaved Blueprint' });
+    mockBlueprintsLoad.mockResolvedValueOnce({ blueprints: [newProjectBp] });
+
+    const store = createTestStore();
+    store.setState({
+      blueprints: [],
+      blueprintsDraft: [draftOnlyBp],
+      blueprintsDirty: true,
+      currentBlueprintsProject: '/old-project',
+    });
+
+    await store.getState().loadBlueprints('/new-project');
+
+    expect(store.getState().blueprintsDraft).toEqual([newProjectBp]);
+    expect(store.getState().blueprintsDirty).toBe(false);
+    expect(store.getState().currentBlueprintsProject).toBe('/new-project');
   });
 
   it('saveBlueprints calls IPC and syncs state', async () => {
@@ -275,5 +318,29 @@ describe('blueprintsSlice', () => {
 
     expect(store.getState().blueprintSyncStatus).toBe('error');
     expect(store.getState().blueprintSyncError).toBe('Server returned 500');
+  });
+
+  it('syncWithBlueprintServer preserves locally-created blueprints when server adds new ones', async () => {
+    const localBp = makeBlueprint({ id: 'local-only', name: 'Local Blueprint' });
+    const serverBp = makeBlueprint({ id: 'server-only', name: 'Server Blueprint' });
+    mockSyncWithServer.mockResolvedValueOnce({
+      addedLocally: [serverBp],
+      pushedToServer: [localBp],
+    });
+
+    const store = createTestStore();
+    store.setState({
+      blueprints: [localBp],
+      blueprintsDraft: [localBp],
+      blueprintsDirty: false,
+      blueprintServerUrl: 'https://example.com',
+    });
+
+    await store.getState().syncWithBlueprintServer('/project');
+
+    expect(store.getState().blueprintsDraft).toContainEqual(localBp);
+    expect(store.getState().blueprintsDraft).toContainEqual(serverBp);
+    expect(mockBlueprintsSave).toHaveBeenCalled();
+    expect(store.getState().blueprintSyncStatus).toBe('success');
   });
 });
