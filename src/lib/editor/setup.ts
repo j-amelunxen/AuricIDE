@@ -8,6 +8,8 @@ import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
+import { xml } from '@codemirror/lang-xml';
+import { yaml } from '@codemirror/lang-yaml';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
@@ -55,6 +57,9 @@ import {
   headingIndexForLintFacet,
   currentFilePathFacet,
 } from '@/lib/editor/markdownLintExtension';
+import { jsonLintExtension, currentFilePathFacetJson } from '@/lib/editor/jsonLintExtension';
+import { xmlLintExtension, currentFilePathFacetXml } from '@/lib/editor/xmlLintExtension';
+import { yamlLintExtension, currentFilePathFacetYaml } from '@/lib/editor/yamlLintExtension';
 import { useStore } from '@/lib/store';
 
 export type EditorCompartments = Record<string, Compartment>;
@@ -79,9 +84,68 @@ export function getLanguageExtension(path?: string) {
       return css();
     case 'json':
       return json();
+    case 'xml':
+    case 'xsl':
+    case 'xslt':
+    case 'svg':
+    case 'xhtml':
+      return xml();
+    case 'yaml':
+    case 'yml':
+      return yaml();
     case 'md':
     case 'markdown':
       return markdown({ base: markdownLanguage, codeLanguages: languages });
+    default:
+      return [];
+  }
+}
+
+export type LintableFileType = 'markdown' | 'json' | 'xml' | 'yaml' | 'none';
+
+export function getLintableFileType(filePath?: string): LintableFileType {
+  if (!filePath) return 'markdown';
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'md':
+    case 'markdown':
+      return 'markdown';
+    case 'json':
+      return 'json';
+    case 'xml':
+    case 'xsl':
+    case 'xslt':
+    case 'svg':
+    case 'xhtml':
+      return 'xml';
+    case 'yaml':
+    case 'yml':
+      return 'yaml';
+    default:
+      return 'none';
+  }
+}
+
+function buildLintExtension(
+  fileType: LintableFileType,
+  filePath: string | undefined,
+  store: ReturnType<typeof useStore.getState>
+) {
+  switch (fileType) {
+    case 'markdown':
+      return [
+        markdownLintExtension,
+        lintConfigFacet.of(store.lintConfig),
+        fileListForLintFacet.of(store.allFilePaths),
+        headingIndexForLintFacet.of(new Map()),
+        currentFilePathFacet.of(filePath ?? ''),
+      ];
+    case 'json':
+      return [jsonLintExtension, currentFilePathFacetJson.of(filePath ?? '')];
+    case 'xml':
+      return [xmlLintExtension, currentFilePathFacetXml.of(filePath ?? '')];
+    case 'yaml':
+      return [yamlLintExtension, currentFilePathFacetYaml.of(filePath ?? '')];
     default:
       return [];
   }
@@ -170,17 +234,7 @@ export function createEditorState({
       isMarkdown ? [renameHeadingExtension, renameHeadingCallbackFacet.of(() => {})] : []
     ),
     compartments.findReferences.of(isMarkdown ? showReferencesFacet.of(() => {}) : []),
-    compartments.lint.of(
-      isMarkdown
-        ? [
-            markdownLintExtension,
-            lintConfigFacet.of(store.lintConfig),
-            fileListForLintFacet.of(store.allFilePaths),
-            headingIndexForLintFacet.of(new Map()),
-            currentFilePathFacet.of(filePath ?? ''),
-          ]
-        : []
-    ),
+    compartments.lint.of(buildLintExtension(getLintableFileType(filePath), filePath, store)),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([

@@ -129,6 +129,21 @@ vi.mock('@/lib/editor/markdownLintExtension', () => ({
   currentFilePathFacet: { of: () => [] },
 }));
 
+vi.mock('@/lib/editor/jsonLintExtension', () => ({
+  jsonLintExtension: [],
+  currentFilePathFacetJson: { of: () => [] },
+}));
+
+vi.mock('@/lib/editor/xmlLintExtension', () => ({
+  xmlLintExtension: [],
+  currentFilePathFacetXml: { of: () => [] },
+}));
+
+vi.mock('@/lib/editor/yamlLintExtension', () => ({
+  yamlLintExtension: [],
+  currentFilePathFacetYaml: { of: () => [] },
+}));
+
 vi.mock('@/lib/store', () => ({
   useStore: Object.assign(() => ({}), {
     getState: () => ({

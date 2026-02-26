@@ -157,7 +157,7 @@ vi.mock('@codemirror/lang-javascript', () => ({ javascript: () => [] }));
 vi.mock('@codemirror/lang-rust', () => ({ rust: () => [] }));
 vi.mock('@codemirror/lang-html', () => ({ html: () => [] }));
 vi.mock('@codemirror/lang-css', () => ({ css: () => [] }));
-vi.mock('@codemirror/lang-json', () => ({ json: () => [] }));
+vi.mock('@codemirror/lang-json', () => ({ json: () => [], jsonParseLinter: () => () => [] }));
 vi.mock('@codemirror/lang-python', () => ({ python: () => [] }));
 vi.mock('@codemirror/commands', () => ({
   defaultKeymap: [],

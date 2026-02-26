@@ -34,6 +34,9 @@ import {
   headingIndexForLintFacet,
   currentFilePathFacet,
 } from '@/lib/editor/markdownLintExtension';
+import { jsonLintExtension, currentFilePathFacetJson } from '@/lib/editor/jsonLintExtension';
+import { xmlLintExtension, currentFilePathFacetXml } from '@/lib/editor/xmlLintExtension';
+import { yamlLintExtension, currentFilePathFacetYaml } from '@/lib/editor/yamlLintExtension';
 import { findAllReferences } from '@/lib/refactoring/findReferences';
 import { RenameHeadingDialog } from '@/app/components/refactoring/RenameHeadingDialog';
 import { ExtractSectionDialog } from '@/app/components/refactoring/ExtractSectionDialog';
@@ -44,8 +47,32 @@ import { SelectionMenu } from './SelectionMenu';
 import {
   createEditorState,
   getLanguageExtension,
+  getLintableFileType,
   buildHeadingTitleIndex,
 } from '@/lib/editor/setup';
+
+function buildLintReconfiguration(
+  fileType: ReturnType<typeof getLintableFileType>,
+  filePath?: string
+) {
+  switch (fileType) {
+    case 'markdown':
+      return [
+        lintConfigFacet.of(useStore.getState().lintConfig),
+        fileListForLintFacet.of(useStore.getState().allFilePaths),
+        headingIndexForLintFacet.of(buildHeadingTitleIndex()),
+        currentFilePathFacet.of(filePath ?? ''),
+      ];
+    case 'json':
+      return [jsonLintExtension, currentFilePathFacetJson.of(filePath ?? '')];
+    case 'xml':
+      return [xmlLintExtension, currentFilePathFacetXml.of(filePath ?? '')];
+    case 'yaml':
+      return [yamlLintExtension, currentFilePathFacetYaml.of(filePath ?? '')];
+    default:
+      return [];
+  }
+}
 
 interface UniversalEditorProps {
   content: string;
@@ -192,14 +219,7 @@ export function MarkdownEditor({
             : []
         ),
         compartments.current.lint.reconfigure(
-          isMarkdown
-            ? [
-                lintConfigFacet.of(useStore.getState().lintConfig),
-                fileListForLintFacet.of(useStore.getState().allFilePaths),
-                headingIndexForLintFacet.of(buildHeadingTitleIndex()),
-                currentFilePathFacet.of(filePath ?? ''),
-              ]
-            : []
+          buildLintReconfiguration(getLintableFileType(filePath), filePath)
         ),
         compartments.current.slashCmds.reconfigure(
           isMarkdown
