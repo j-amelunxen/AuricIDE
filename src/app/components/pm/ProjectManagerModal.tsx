@@ -199,19 +199,22 @@ export function ProjectManagerModal() {
     [handleTicketCreate]
   );
 
-  const handleAddTestCase = useCallback(() => {
-    if (!selectedTicket) return;
-    const now = new Date().toISOString();
-    addTestCase({
-      id: crypto.randomUUID(),
-      ticketId: selectedTicket.id,
-      title: '',
-      body: '',
-      sortOrder: ticketTestCases.length,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }, [selectedTicket, ticketTestCases.length, addTestCase]);
+  const handleAddTestCase = useCallback(
+    (initial?: Partial<PmTestCase>) => {
+      if (!selectedTicket) return;
+      const now = new Date().toISOString();
+      addTestCase({
+        id: crypto.randomUUID(),
+        ticketId: selectedTicket.id,
+        title: initial?.title || '',
+        body: initial?.body || '',
+        sortOrder: ticketTestCases.length,
+        createdAt: now,
+        updatedAt: now,
+      });
+    },
+    [selectedTicket, addTestCase, ticketTestCases.length]
+  );
 
   const handleEpicDialogSave = useCallback(
     (name: string, description: string) => {

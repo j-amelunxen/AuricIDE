@@ -14,6 +14,10 @@ import {
   generateDependencyProposalPrompt,
   parseDependencyResponse,
 } from '@/lib/pm/dependencyProposal';
+import {
+  generateTestCaseDerivationPrompt,
+  parseTestCaseResponse,
+} from '@/lib/pm/testCaseDerivation';
 import { DependencyProposalModal } from './DependencyProposalModal';
 
 interface TicketEditPanelProps {
@@ -29,7 +33,7 @@ interface TicketEditPanelProps {
   onCancel?: () => void;
   onDeleteTicket: (id: string) => void;
   onMoveTicket: (ticketId: string, newEpicId: string) => void;
-  onAddTestCase: () => void;
+  onAddTestCase: (initial?: Partial<PmTestCase>) => void;
   onUpdateTestCase: (id: string, updates: Partial<PmTestCase>) => void;
   onDeleteTestCase: (id: string) => void;
   onAddDependency: (dep: PmDependency) => void;
@@ -139,6 +143,17 @@ export function TicketEditPanel({
 
       setSuggestions(suggestionsWithNames);
       setSelectedSuggestionIds(suggestionsWithNames.map((s) => s.id));
+    }
+  };
+
+  const handleDeriveTestCases = async () => {
+    const prompt = generateTestCaseDerivationPrompt(ticket);
+    const response = await llmCall([{ role: 'user', content: prompt }]);
+    if (response) {
+      const derived = parseTestCaseResponse(response);
+      derived.forEach((tc) => {
+        onAddTestCase(tc);
+      });
     }
   };
 
@@ -441,9 +456,20 @@ export function TicketEditPanel({
 
         {activeTab === 'testcases' && (
           <div className="flex flex-col h-full">
-            <div className="mb-2 flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider">
-              Test Cases
-              <InfoTooltip description={GUIDANCE.pm.testCases} label="i" />
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider">
+                Test Cases
+                <InfoTooltip description={GUIDANCE.pm.testCases} label="i" />
+              </div>
+              <button
+                type="button"
+                onClick={handleDeriveTestCases}
+                disabled={isLlmLoading}
+                className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition-all hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined text-[14px]">psychology</span>
+                Derive Test Cases
+              </button>
             </div>
             <TestCaseEditor
               testCases={testCases}
