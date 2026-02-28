@@ -1,6 +1,7 @@
 'use client';
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { getHeatStyles } from '@/lib/pm/heat';
 
 export function EpicNode({ data }: NodeProps & { data: { label: string; onSelect?: () => void } }) {
   return (
@@ -26,15 +27,24 @@ export function TicketNode({
     status: string;
     priority?: string;
     modelPower?: string;
+    heat?: number;
     onSpawnAgent?: () => void;
   };
 }) {
   const statusColor = getStatusColor(data.status);
   const powerColor = getPowerColor(data.modelPower);
   const priorityColor = getPriorityColor(data.priority);
+  const heatStyles = getHeatStyles(data.heat ?? 0);
+  const nodeBorderColor =
+    heatStyles
+      .split(' ')
+      .find((c) => c.startsWith('border-'))
+      ?.replace('/20', '') || 'border-white/10';
 
   return (
-    <div className="bg-[#16202c] border border-white/10 rounded p-3 text-white min-w-[200px] shadow-xl group">
+    <div
+      className={`bg-[#16202c] border rounded p-3 text-white min-w-[200px] shadow-xl group transition-colors ${nodeBorderColor}`}
+    >
       <Handle type="target" position={Position.Top} className="!bg-white/30" />
       <div className="flex justify-between items-start mb-2">
         <div className="flex gap-1 flex-wrap">
@@ -49,6 +59,15 @@ export function TicketNode({
           {data.modelPower && (
             <div className={`text-[10px] px-1.5 py-0.5 rounded border font-bold ${powerColor}`}>
               {data.modelPower.toUpperCase()}
+            </div>
+          )}
+          {typeof data.heat === 'number' && (
+            <div
+              className={`text-[10px] px-1.5 py-0.5 rounded border font-bold flex items-center gap-0.5 ${heatStyles}`}
+              title={`${data.heat} items depend on this ticket`}
+            >
+              <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+              {data.heat}
             </div>
           )}
         </div>

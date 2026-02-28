@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, type MouseEvent } from 'react';
 import type { PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
 import { useStore } from '@/lib/store';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { calculateHeat, getHeatStyles } from '@/lib/pm/heat';
 
 interface TicketTableProps {
   tickets: PmTicket[];
@@ -345,6 +346,25 @@ export function TicketTable({
                 {ticket.modelPower.charAt(0)}
               </span>
             )}
+
+            {/* Heat Badge */}
+            {(() => {
+              const heat = calculateHeat(ticket.id, dependencies);
+              if (heat === 0) return null;
+              return (
+                <span
+                  className={`shrink-0 rounded px-1 py-0.5 text-[8px] font-bold flex items-center gap-0.5 border ${getHeatStyles(
+                    heat
+                  )}`}
+                  title={`${heat} items depend on this ticket`}
+                >
+                  <span className="material-symbols-outlined text-[10px]">
+                    local_fire_department
+                  </span>
+                  {heat}
+                </span>
+              );
+            })()}
 
             {/* Actions + badge */}
             <div className="flex items-center gap-1.5 shrink-0">

@@ -19,6 +19,7 @@ import dagre from '@dagrejs/dagre';
 import type { PmEpic, PmTicket, PmDependency } from '@/lib/tauri/pm';
 import { EpicNode, TicketNode } from './PmNodes';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { calculateHeat } from '@/lib/pm/heat';
 
 const nodeTypes = {
   epic: EpicNode,
@@ -210,13 +211,14 @@ export function DependencyTreeView({
         status: ticket.status,
         priority: ticket.priority,
         modelPower: ticket.modelPower,
+        heat: calculateHeat(ticket.id, dependencies),
         onSpawnAgent: onSpawnAgent ? () => onSpawnAgent(ticket.id) : undefined,
       },
       position: { x: 0, y: 0 },
     }));
 
     return [...epicNodes, ...ticketNodes];
-  }, [epics, tickets, onSpawnAgent, onSelectEpic]);
+  }, [epics, tickets, dependencies, onSpawnAgent, onSelectEpic]);
 
   const initialEdges = useMemo(() => {
     const depEdges = dependencies.map((dep) => ({
