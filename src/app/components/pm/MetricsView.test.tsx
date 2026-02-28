@@ -153,7 +153,7 @@ describe('MetricsView', () => {
     render(<MetricsView />);
 
     expect(screen.getByText('Burndown')).toBeDefined();
-    expect(screen.getByText('Velocity (Weekly)')).toBeDefined();
+    expect(screen.getByText('Velocity (Daily)')).toBeDefined();
   });
 
   it('renders epic projections table when projections exist', () => {

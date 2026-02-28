@@ -61,7 +61,7 @@ export function MetricsView() {
     () => computeTicketMetrics(historyEntries, ticketInfos),
     [historyEntries, ticketInfos]
   );
-  const velocity = useMemo(() => computeVelocity(historyEntries), [historyEntries]);
+  const velocity = useMemo(() => computeVelocity(historyEntries, 1), [historyEntries]);
   const burndown = useMemo(
     () => computeBurndown(historyEntries, ticketInfos, burndownFilter),
     [historyEntries, ticketInfos, burndownFilter]
@@ -161,7 +161,7 @@ export function MetricsView() {
 
       {/* Velocity Chart */}
       <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-4">
-        <h3 className="text-xs font-semibold text-foreground mb-4">Velocity (Weekly)</h3>
+        <h3 className="text-xs font-semibold text-foreground mb-4">Velocity (Daily)</h3>
         <div className="h-[200px]">
           <VelocityChart data={velocity} />
         </div>
