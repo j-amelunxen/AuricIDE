@@ -212,7 +212,7 @@ describe('MetricsView', () => {
     expect(screen.getAllByText('5')).toHaveLength(2); // One in Epic One, one in Footer
     expect(screen.getByText('33%')).toBeDefined(); // Math.round((5/15)*100)
     expect(screen.getByText('10h')).toBeDefined(); // Unique: (3 + 7)h
-    expect(screen.getByText('2.5/wk')).toBeDefined(); // Sum: 1.5 + 1.0
+    expect(screen.getByText('1.3/wk')).toBeDefined(); // Avg: (1.5 + 1.0) / 2 = 1.25 -> 1.3
     expect(screen.getByText('63d')).toBeDefined(); // Sum: 14 + 49
   });
 

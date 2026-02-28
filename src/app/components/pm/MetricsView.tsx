@@ -278,7 +278,12 @@ export function MetricsView() {
                     : '\u2014'}
                 </td>
                 <td className="py-3 text-center">
-                  {projections.reduce((sum, p) => sum + p.avgVelocity, 0).toFixed(1)}/wk
+                  {projections.length > 0
+                    ? (
+                        projections.reduce((sum, p) => sum + p.avgVelocity, 0) / projections.length
+                      ).toFixed(1)
+                    : '0.0'}
+                  /wk
                 </td>
                 <td className="py-3 text-right">
                   {projections.some((p) => p.estimatedDaysRemaining !== null)
