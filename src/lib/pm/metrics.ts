@@ -83,12 +83,29 @@ export function computeTicketMetrics(
 
 export function computeVelocity(
   history: HistoryEntry[],
+  tickets: TicketInfo[],
   periodDays = 7
 ): { periodStart: string; periodEnd: string; completed: number }[] {
-  const doneEvents = history.filter((e) => e.toStatus === 'done');
-  if (doneEvents.length === 0) return [];
+  // Find the LAST time each CURRENTLY done/archived ticket moved to that status
+  const finalCompletionsByTicket = new Map<string, string>();
+  const currentlyDoneIds = new Set(
+    tickets.filter((t) => t.status === 'done' || t.status === 'archived').map((t) => t.id)
+  );
 
-  const timestamps = doneEvents.map((e) => new Date(e.changedAt).getTime());
+  for (const entry of history) {
+    if (
+      (entry.toStatus === 'done' || entry.toStatus === 'archived') &&
+      currentlyDoneIds.has(entry.ticketId)
+    ) {
+      finalCompletionsByTicket.set(entry.ticketId, entry.changedAt);
+    }
+  }
+
+  if (finalCompletionsByTicket.size === 0) return [];
+
+  const timestamps = Array.from(finalCompletionsByTicket.values()).map((at) =>
+    new Date(at).getTime()
+  );
   const minTime = Math.min(...timestamps);
   const maxTime = Math.max(...timestamps);
 
@@ -136,17 +153,30 @@ export function computeBurndown(
   }
 
   const totalTickets = tickets.length;
-  let completedSoFar = 0;
 
-  // Build a map of date -> number of completions on that date
-  const completionsPerDay = new Map<string, number>();
+  // Find the LAST time each ticket moved to 'done' or 'archived'
+  // BUT ONLY if its current status is 'done' or 'archived'
+  const finalCompletionsByTicket = new Map<string, string>();
+  const currentlyDoneIds = new Set(
+    tickets.filter((t) => t.status === 'done' || t.status === 'archived').map((t) => t.id)
+  );
+
   for (const entry of history) {
-    if (entry.toStatus === 'done') {
-      const date = entry.changedAt.slice(0, 10);
-      completionsPerDay.set(date, (completionsPerDay.get(date) ?? 0) + 1);
+    if (
+      (entry.toStatus === 'done' || entry.toStatus === 'archived') &&
+      currentlyDoneIds.has(entry.ticketId)
+    ) {
+      finalCompletionsByTicket.set(entry.ticketId, entry.changedAt.slice(0, 10));
     }
   }
 
+  // Count completions per day
+  const completionsPerDay = new Map<string, number>();
+  for (const date of finalCompletionsByTicket.values()) {
+    completionsPerDay.set(date, (completionsPerDay.get(date) ?? 0) + 1);
+  }
+
+  let completedSoFar = 0;
   const results: { date: string; remaining: number; completed: number }[] = [];
   for (const date of allDates) {
     completedSoFar += completionsPerDay.get(date) ?? 0;
@@ -181,7 +211,7 @@ export function computeEpicProjections(
   estimatedDaysRemaining: number | null;
 }[] {
   // Compute overall velocity (tickets completed per week)
-  const doneEvents = history.filter((e) => e.toStatus === 'done');
+  const doneEvents = history.filter((e) => e.toStatus === 'done' || e.toStatus === 'archived');
   let avgVelocityPerWeek = 0;
 
   if (doneEvents.length >= 1) {
@@ -195,7 +225,9 @@ export function computeEpicProjections(
   return epics.map((epic) => {
     const epicTickets = tickets.filter((t) => t.epicId === epic.id);
     const totalTickets = epicTickets.length;
-    const completedTickets = epicTickets.filter((t) => t.status === 'done').length;
+    const completedTickets = epicTickets.filter(
+      (t) => t.status === 'done' || t.status === 'archived'
+    ).length;
     const remaining = totalTickets - completedTickets;
 
     let estimatedDaysRemaining: number | null = null;

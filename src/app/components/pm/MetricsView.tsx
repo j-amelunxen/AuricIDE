@@ -61,7 +61,10 @@ export function MetricsView() {
     () => computeTicketMetrics(historyEntries, ticketInfos),
     [historyEntries, ticketInfos]
   );
-  const velocity = useMemo(() => computeVelocity(historyEntries, 1), [historyEntries]);
+  const velocity = useMemo(
+    () => computeVelocity(historyEntries, ticketInfos, 1),
+    [historyEntries, ticketInfos]
+  );
   const burndown = useMemo(
     () => computeBurndown(historyEntries, ticketInfos, burndownFilter),
     [historyEntries, ticketInfos, burndownFilter]

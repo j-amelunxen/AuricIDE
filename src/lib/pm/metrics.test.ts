@@ -158,8 +158,13 @@ describe('metrics', () => {
           changedAt: '2026-01-10T00:00:00Z',
         },
       ];
+      const tickets = [
+        { id: 't1', status: 'done', epicId: 'e1' },
+        { id: 't2', status: 'done', epicId: 'e1' },
+        { id: 't3', status: 'done', epicId: 'e1' },
+      ];
 
-      const result = computeVelocity(history, 7);
+      const result = computeVelocity(history, tickets, 7);
 
       expect(result.length).toBeGreaterThanOrEqual(2);
       // First period should have 2 completions
@@ -179,8 +184,9 @@ describe('metrics', () => {
           changedAt: '2026-01-01T00:00:00Z',
         },
       ];
+      const tickets = [{ id: 't1', status: 'open', epicId: 'e1' }];
 
-      const result = computeVelocity(history);
+      const result = computeVelocity(history, tickets);
       expect(result).toEqual([]);
     });
 
@@ -199,8 +205,12 @@ describe('metrics', () => {
           changedAt: '2026-01-15T00:00:00Z',
         },
       ];
+      const tickets = [
+        { id: 't1', status: 'done', epicId: 'e1' },
+        { id: 't2', status: 'done', epicId: 'e1' },
+      ];
 
-      const result = computeVelocity(history, 14);
+      const result = computeVelocity(history, tickets, 14);
 
       expect(result.length).toBeGreaterThanOrEqual(1);
       expect(result[0].completed).toBe(1);
