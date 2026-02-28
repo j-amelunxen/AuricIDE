@@ -280,4 +280,3 @@ describe('TicketCreateModal', () => {
     expect(screen.getByRole('button', { name: 'Done' })).toBeDefined();
   });
 });
-

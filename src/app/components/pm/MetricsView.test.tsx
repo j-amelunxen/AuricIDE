@@ -129,7 +129,7 @@ describe('MetricsView', () => {
     expect(screen.getByText('Avg Lead Time')).toBeDefined();
     expect(screen.getByText('Current Velocity')).toBeDefined();
     expect(screen.getByText('Total Completed')).toBeDefined();
-    expect(screen.getByText('3/week')).toBeDefined();
+    expect(screen.getByText('3/wk (0.04/h)')).toBeDefined();
     expect(screen.getByText('1')).toBeDefined(); // total completed
   });
 
@@ -181,6 +181,9 @@ describe('MetricsView', () => {
         estimatedDaysRemaining: 14,
       },
     ]);
+    vi.mocked(computeTicketMetrics).mockReturnValue([
+      { ticketId: 't1', cycleTime: 3600000, leadTime: 7200000 },
+    ]);
 
     render(<MetricsView />);
 
@@ -188,6 +191,10 @@ describe('MetricsView', () => {
     expect(screen.getByText('Epic One')).toBeDefined();
     expect(screen.getByText('5')).toBeDefined();
     expect(screen.getByText('2')).toBeDefined();
+    expect(screen.getByText('Progress')).toBeDefined();
+    expect(screen.getByText('40%')).toBeDefined();
+    expect(screen.getByText('Est. Work-time')).toBeDefined();
+    expect(screen.getByText('3h')).toBeDefined();
     expect(screen.getByText('1.5/wk')).toBeDefined();
     expect(screen.getByText('14d')).toBeDefined();
   });

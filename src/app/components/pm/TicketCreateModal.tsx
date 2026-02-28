@@ -116,7 +116,7 @@ function TicketCreateForm({
   const handleCreateOnly = () => {
     if (!name.trim() || !epicId) return;
     onSave(getTicketData(), localDependencies);
-    
+
     setTicketId(crypto.randomUUID());
     setName('');
     setDescription('');

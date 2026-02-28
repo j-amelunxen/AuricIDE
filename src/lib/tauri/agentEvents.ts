@@ -24,7 +24,11 @@ export function onAgentOutput(callback: (event: AgentOutputEvent) => void): () =
         callback(event.payload);
       }).then((fn) => {
         if (disposed) {
-          try { fn(); } catch { /* already unregistered */ }
+          try {
+            fn();
+          } catch {
+            /* already unregistered */
+          }
         } else {
           unlisten = fn;
         }
@@ -59,7 +63,11 @@ export function onAgentStatus(callback: (event: AgentStatusEvent) => void): () =
         callback(event.payload);
       }).then((fn) => {
         if (disposed) {
-          try { fn(); } catch { /* already unregistered */ }
+          try {
+            fn();
+          } catch {
+            /* already unregistered */
+          }
         } else {
           unlisten = fn;
         }

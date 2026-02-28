@@ -67,7 +67,7 @@ describe('context tools', () => {
     });
 
     it('returns the stored context items', () => {
-      db.prepare("UPDATE pm_tickets SET context = ? WHERE id = ?").run(
+      db.prepare('UPDATE pm_tickets SET context = ? WHERE id = ?').run(
         JSON.stringify([{ id: 'c1', type: 'snippet', value: 'console.log("hello")' }]),
         ticketId
       );

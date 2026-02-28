@@ -84,6 +84,7 @@ export function MetricsView() {
     (t) => t.status === 'done' || t.status === 'archived'
   ).length;
   const recentVelocity = velocity.length > 0 ? velocity[velocity.length - 1].completed : 0;
+  const velocityPerHour = avgCycleTime ? 3600000 / avgCycleTime : 0;
 
   if (loading) {
     return (
@@ -111,7 +112,10 @@ export function MetricsView() {
             value: avgCycleTime ? formatDuration(avgCycleTime) : '\u2014',
           },
           { label: 'Avg Lead Time', value: avgLeadTime ? formatDuration(avgLeadTime) : '\u2014' },
-          { label: 'Current Velocity', value: `${recentVelocity}/week` },
+          {
+            label: 'Current Velocity',
+            value: `${recentVelocity}/wk (${velocityPerHour.toFixed(2)}/h)`,
+          },
           { label: 'Total Completed', value: String(totalCompleted) },
         ].map((card) => (
           <div
@@ -173,6 +177,8 @@ export function MetricsView() {
                 <th className="pb-2 font-medium">Epic</th>
                 <th className="pb-2 font-medium text-center">Total</th>
                 <th className="pb-2 font-medium text-center">Done</th>
+                <th className="pb-2 font-medium text-center">Progress</th>
+                <th className="pb-2 font-medium text-center">Est. Work-time</th>
                 <th className="pb-2 font-medium text-center">Velocity</th>
                 <th className="pb-2 font-medium text-right">Est. Completion</th>
               </tr>
@@ -183,6 +189,31 @@ export function MetricsView() {
                   <td className="py-2 text-foreground">{p.epicName}</td>
                   <td className="py-2 text-center text-foreground-muted">{p.totalTickets}</td>
                   <td className="py-2 text-center text-foreground-muted">{p.completedTickets}</td>
+                  <td className="py-2 text-center">
+                    <div className="flex items-center gap-2 justify-center">
+                      <div className="w-12 h-1 bg-white/5 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500/50"
+                          style={{
+                            width: `${
+                              p.totalTickets > 0 ? (p.completedTickets / p.totalTickets) * 100 : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-foreground-muted w-7 text-right">
+                        {p.totalTickets > 0
+                          ? Math.round((p.completedTickets / p.totalTickets) * 100)
+                          : 0}
+                        %
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2 text-center text-foreground-muted">
+                    {avgCycleTime
+                      ? `${Math.ceil(((p.totalTickets - p.completedTickets) * avgCycleTime) / 3600000)}h`
+                      : '\u2014'}
+                  </td>
                   <td className="py-2 text-center text-foreground-muted">
                     {p.avgVelocity.toFixed(1)}/wk
                   </td>
