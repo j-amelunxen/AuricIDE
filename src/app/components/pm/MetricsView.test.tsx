@@ -212,7 +212,7 @@ describe('MetricsView', () => {
     expect(screen.getAllByText('5')).toHaveLength(2); // One in Epic One, one in Footer
     expect(screen.getByText('33%')).toBeDefined(); // Math.round((5/15)*100)
     expect(screen.getByText('10h')).toBeDefined(); // Unique: (3 + 7)h
-    expect(screen.getAllByText('49d')).toHaveLength(2); // One in Epic Two, one in Footer
+    expect(screen.getByText('63d')).toBeDefined(); // Sum: 14 + 49
   });
 
   it('renders burndown filter buttons', () => {

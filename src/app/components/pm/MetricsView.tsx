@@ -280,9 +280,9 @@ export function MetricsView() {
                 <td className="py-3 text-center">\u2014</td>
                 <td className="py-3 text-right">
                   {projections.some((p) => p.estimatedDaysRemaining !== null)
-                    ? `${Math.max(...projections.map((p) => p.estimatedDaysRemaining ?? 0)).toFixed(
-                        0
-                      )}d`
+                    ? `${projections
+                        .reduce((sum, p) => sum + (p.estimatedDaysRemaining ?? 0), 0)
+                        .toFixed(0)}d`
                     : '\u2014'}
                 </td>
               </tr>
