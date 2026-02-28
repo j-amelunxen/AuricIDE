@@ -225,6 +225,65 @@ export function MetricsView() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="text-foreground font-semibold border-t border-white/[0.08]">
+                <td className="py-3">Total</td>
+                <td className="py-3 text-center">
+                  {projections.reduce((sum, p) => sum + p.totalTickets, 0)}
+                </td>
+                <td className="py-3 text-center">
+                  {projections.reduce((sum, p) => sum + p.completedTickets, 0)}
+                </td>
+                <td className="py-3 text-center">
+                  <div className="flex items-center gap-2 justify-center">
+                    <div className="w-12 h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500/50"
+                        style={{
+                          width: `${
+                            projections.reduce((sum, p) => sum + p.totalTickets, 0) > 0
+                              ? (projections.reduce((sum, p) => sum + p.completedTickets, 0) /
+                                  projections.reduce((sum, p) => sum + p.totalTickets, 0)) *
+                                100
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-foreground-muted w-7 text-right">
+                      {projections.reduce((sum, p) => sum + p.totalTickets, 0) > 0
+                        ? Math.round(
+                            (projections.reduce((sum, p) => sum + p.completedTickets, 0) /
+                              projections.reduce((sum, p) => sum + p.totalTickets, 0)) *
+                              100
+                          )
+                        : 0}
+                      %
+                    </span>
+                  </div>
+                </td>
+                <td className="py-3 text-center">
+                  {avgCycleTime
+                    ? `${Math.ceil(
+                        (projections.reduce(
+                          (sum, p) => sum + (p.totalTickets - p.completedTickets),
+                          0
+                        ) *
+                          avgCycleTime) /
+                          3600000
+                      )}h`
+                    : '\u2014'}
+                </td>
+                <td className="py-3 text-center">\u2014</td>
+                <td className="py-3 text-right">
+                  {projections.some((p) => p.estimatedDaysRemaining !== null)
+                    ? `${Math.max(...projections.map((p) => p.estimatedDaysRemaining ?? 0)).toFixed(
+                        0
+                      )}d`
+                    : '\u2014'}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

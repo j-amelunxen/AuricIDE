@@ -180,6 +180,14 @@ describe('MetricsView', () => {
         avgVelocity: 1.5,
         estimatedDaysRemaining: 14,
       },
+      {
+        epicId: 'e2',
+        epicName: 'Epic Two',
+        totalTickets: 10,
+        completedTickets: 3,
+        avgVelocity: 1.0,
+        estimatedDaysRemaining: 49,
+      },
     ]);
     vi.mocked(computeTicketMetrics).mockReturnValue([
       { ticketId: 't1', cycleTime: 3600000, leadTime: 7200000 },
@@ -189,14 +197,22 @@ describe('MetricsView', () => {
 
     expect(screen.getByText('Epic Projections')).toBeDefined();
     expect(screen.getByText('Epic One')).toBeDefined();
-    expect(screen.getByText('5')).toBeDefined();
-    expect(screen.getByText('2')).toBeDefined();
+    expect(screen.getByText('Epic Two')).toBeDefined();
     expect(screen.getByText('Progress')).toBeDefined();
-    expect(screen.getByText('40%')).toBeDefined();
+    expect(screen.getByText('40%')).toBeDefined(); // (2/5)
+    expect(screen.getByText('30%')).toBeDefined(); // (3/10)
     expect(screen.getByText('Est. Work-time')).toBeDefined();
-    expect(screen.getByText('3h')).toBeDefined();
-    expect(screen.getByText('1.5/wk')).toBeDefined();
-    expect(screen.getByText('14d')).toBeDefined();
+    expect(screen.getByText('3h')).toBeDefined(); // (5-2) * 1h
+    expect(screen.getByText('7h')).toBeDefined(); // (10-3) * 1h
+
+    // Check footer totals
+    const totals = screen.getAllByText('Total');
+    expect(totals[1]).toBeDefined(); // The footer "Total"
+    expect(screen.getByText('15')).toBeDefined(); // Unique: 5 + 10
+    expect(screen.getAllByText('5')).toHaveLength(2); // One in Epic One, one in Footer
+    expect(screen.getByText('33%')).toBeDefined(); // Math.round((5/15)*100)
+    expect(screen.getByText('10h')).toBeDefined(); // Unique: (3 + 7)h
+    expect(screen.getAllByText('49d')).toHaveLength(2); // One in Epic Two, one in Footer
   });
 
   it('renders burndown filter buttons', () => {
