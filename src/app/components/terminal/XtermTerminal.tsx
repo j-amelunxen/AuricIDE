@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { CanvasAddon } from '@xterm/addon-canvas';
 import '@xterm/xterm/css/xterm.css';
 import {
   spawnShell,
@@ -77,21 +76,6 @@ export function XtermTerminal({
     term.loadAddon(fitAddon);
 
     term.open(containerRef.current);
-
-    // Fit immediately and again after a short delay
-    setTimeout(() => {
-      try {
-        fitAddon.fit();
-      } catch {}
-    }, 100);
-
-    // Canvas renderer: more stable than WebGL on macOS/DPI-scaled displays
-    try {
-      const canvasAddon = new CanvasAddon();
-      term.loadAddon(canvasAddon);
-    } catch {
-      // Canvas not available — DOM renderer is fine as fallback
-    }
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
@@ -172,12 +156,31 @@ export function XtermTerminal({
     let sessionCleanup: (() => void) | undefined;
     let isMounted = true;
 
-    setupSession().then((c) => {
-      if (!isMounted) {
-        c?.();
-      } else {
-        sessionCleanup = c;
-      }
+    // Wait for the first browser paint so the container has its final CSS dimensions,
+    // then fit the terminal and spawn the shell with the correct cols/rows.
+    requestAnimationFrame(() => {
+      if (!isMounted) return;
+      try {
+        fitAddon.fit();
+      } catch {}
+
+      setupSession().then((c) => {
+        if (!isMounted) {
+          c?.();
+        } else {
+          sessionCleanup = c;
+        }
+      });
+
+      // Re-fit when custom fonts finish loading.
+      // fitAddon.fit() measures char width from the DOM; if JetBrains Mono hasn't
+      // loaded yet the fallback font metrics produce a wrong cols count. Calling
+      // fit() again after fonts are ready corrects the PTY size via resizeShell.
+      document.fonts.ready
+        .then(() => {
+          if (isMounted) fitAddonRef.current?.fit();
+        })
+        .catch(() => {});
     });
 
     return () => {

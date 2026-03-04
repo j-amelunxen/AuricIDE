@@ -33,17 +33,6 @@ vi.mock('@xterm/addon-fit', () => ({
   },
 }));
 
-const mockWebglAddon = {
-  onContextLoss: vi.fn(),
-  dispose: vi.fn(),
-};
-
-vi.mock('@xterm/addon-webgl', () => ({
-  WebglAddon: function () {
-    return mockWebglAddon;
-  },
-}));
-
 const mockWriteToShell = vi.fn().mockResolvedValue(undefined);
 const mockResizeShell = vi.fn().mockResolvedValue(undefined);
 
@@ -71,6 +60,16 @@ vi.stubGlobal(
     disconnect() {}
   }
 );
+
+vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+  cb(0);
+  return 0;
+});
+
+Object.defineProperty(document, 'fonts', {
+  value: { ready: Promise.resolve() },
+  configurable: true,
+});
 
 import { XtermTerminal } from './XtermTerminal';
 
@@ -119,12 +118,10 @@ describe('XtermTerminal', () => {
     expect(result).toBe(true);
   });
 
-  it('loads the WebGL addon after opening the terminal', () => {
+  it('loads only the FitAddon on open', () => {
     render(<XtermTerminal id="test-session" />);
-
-    // loadAddon is called for FitAddon + WebglAddon
-    expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockWebglAddon);
-    expect(mockWebglAddon.onContextLoss).toHaveBeenCalledTimes(1);
+    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(1);
+    expect(mockTerminal.loadAddon).toHaveBeenCalledWith({ fit: expect.any(Function) });
   });
 
   it('registers an onResize handler', () => {
@@ -139,17 +136,5 @@ describe('XtermTerminal', () => {
 
     resizeHandler!({ rows: 50, cols: 120 });
     expect(mockResizeShell).toHaveBeenCalledWith('test-session', 50, 120);
-  });
-
-  it('falls back gracefully when WebGL addon loading fails', () => {
-    // Make loadAddon throw only for the WebGL addon (second call)
-    let callCount = 0;
-    mockTerminal.loadAddon.mockImplementation(() => {
-      callCount++;
-      if (callCount === 2) throw new Error('WebGL not supported');
-    });
-
-    // Should not throw — DOM renderer is used as fallback
-    expect(() => render(<XtermTerminal id="webgl-fail" />)).not.toThrow();
   });
 });
