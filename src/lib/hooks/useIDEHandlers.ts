@@ -93,6 +93,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const handleCloseProject = useCallback(() => {
     state.closeProject();
     state.closeAllTabs();
+    state.clearLinkIndex();
+    state.clearHeadingIndex();
+    state.clearEntityIndex();
+    state.resetPmInMemory();
+    state.resetBlueprintsInMemory();
     state.setProjectFiles([]);
     state.setEditorContent('');
     state.setImageData(null);
@@ -160,28 +165,42 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [handleFileSelect]
   );
 
+  const clearProjectState = useCallback(() => {
+    state.closeAllTabs();
+    state.setFileTree([]);
+    state.clearLinkIndex();
+    state.clearHeadingIndex();
+    state.clearEntityIndex();
+    state.resetPmInMemory();
+    state.resetBlueprintsInMemory();
+    state.setProjectFiles([]);
+    state.setEditorContent('');
+    state.setImageData(null);
+    state.setMindmapData(null);
+    state.setDiffContent(null);
+  }, [state]);
+
   const handleOpenFolder = useCallback(async () => {
     const selected = await openFolderDialog();
-    if (selected) {
-      state.closeAllTabs();
-      state.setRootPath(selected);
-      state.addRecentProject(selected);
-      state.initProjectDb(selected);
-      const entries = await handleRefresh(selected, true);
-      if (entries) openReadmeIfExists(entries);
-    }
-  }, [state, handleRefresh, openReadmeIfExists]);
+    if (!selected) return;
+    clearProjectState();
+    state.setRootPath(selected);
+    state.addRecentProject(selected);
+    state.initProjectDb(selected);
+    const entries = await handleRefresh(selected, true);
+    if (entries) openReadmeIfExists(entries);
+  }, [state, clearProjectState, handleRefresh, openReadmeIfExists]);
 
   const handleOpenRecent = useCallback(
     async (path: string) => {
-      state.closeAllTabs();
+      clearProjectState();
       state.setRootPath(path);
       state.addRecentProject(path);
       state.initProjectDb(path);
       const entries = await handleRefresh(path, true);
       if (entries) openReadmeIfExists(entries);
     },
-    [state, handleRefresh, openReadmeIfExists]
+    [state, clearProjectState, handleRefresh, openReadmeIfExists]
   );
 
   const handleSave = useCallback(async () => {

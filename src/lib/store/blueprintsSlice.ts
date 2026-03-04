@@ -30,6 +30,7 @@ export interface BlueprintsSlice {
   loadBlueprints: (projectPath: string) => Promise<void>;
   saveBlueprints: (projectPath: string) => Promise<void>;
   clearBlueprints: (projectPath: string) => Promise<void>;
+  resetBlueprintsInMemory: () => void;
   addBlueprint: (blueprint: Blueprint) => void;
   updateBlueprint: (id: string, updates: Partial<Blueprint>) => void;
   deleteBlueprint: (id: string) => void;
@@ -102,6 +103,9 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
       blueprintsDirty: false,
     });
   },
+
+  resetBlueprintsInMemory: () =>
+    set({ blueprints: [], blueprintsDraft: [], blueprintsDirty: false }),
 
   addBlueprint: (blueprint) =>
     set((s) => ({ blueprintsDraft: [...s.blueprintsDraft, blueprint], blueprintsDirty: true })),
