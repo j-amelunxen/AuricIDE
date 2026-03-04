@@ -49,6 +49,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             .then(() => useStore.getState().fileStatuses)
             .catch(() => []),
         ]);
+        const currentTree = useStore.getState().fileTree ?? [];
+        const existingByPath = new Map<string, FileNode>(currentTree.map((n) => [n.path, n]));
         const tree: FileNode[] = entries.map((e) => {
           const relativePath = e.path.replace(path.endsWith('/') ? path : path + '/', '');
           const statusEntry = statuses.find((s) => s.path === relativePath);
@@ -60,12 +62,13 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             else if (statusEntry.status === 'deleted') gitStatus = 'deleted';
             else if (statusEntry.status === 'ignored') gitStatus = 'ignored';
           }
+          const existing = existingByPath.get(e.path);
           return {
             name: e.name,
             path: e.path,
             isDirectory: e.isDirectory,
-            expanded: false,
-            children: e.isDirectory ? [] : undefined,
+            expanded: existing?.expanded ?? false,
+            children: existing?.children ?? (e.isDirectory ? [] : undefined),
             gitStatus,
           };
         });
