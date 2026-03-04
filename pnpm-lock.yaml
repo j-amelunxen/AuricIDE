@@ -83,12 +83,12 @@ dependencies:
   '@tauri-apps/plugin-fs':
     specifier: ^2.4.5
     version: 2.4.5
+  '@xterm/addon-canvas':
+    specifier: ^0.7.0
+    version: 0.7.0(@xterm/xterm@6.0.0)
   '@xterm/addon-fit':
     specifier: ^0.11.0
     version: 0.11.0
-  '@xterm/addon-webgl':
-    specifier: ^0.19.0
-    version: 0.19.0
   '@xterm/xterm':
     specifier: ^6.0.0
     version: 6.0.0
@@ -3596,12 +3596,16 @@ packages:
   /@webgpu/types@0.1.69:
     resolution: {integrity: sha512-RPmm6kgRbI8e98zSD3RVACvnuktIja5+yLgDAkTmxLr90BEwdTXRQWNLF3ETTTyH/8mKhznZuN5AveXYFEsMGQ==}
 
-  /@xterm/addon-fit@0.11.0:
-    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
+  /@xterm/addon-canvas@0.7.0(@xterm/xterm@6.0.0):
+    resolution: {integrity: sha512-LF5LYcfvefJuJ7QotNRdRSPc9YASAVDeoT5uyXS/nZshZXjYplGXRECBGiznwvhNL2I8bq1Lf5MzRwstsYQ2Iw==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+    dependencies:
+      '@xterm/xterm': 6.0.0
     dev: false
 
-  /@xterm/addon-webgl@0.19.0:
-    resolution: {integrity: sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==}
+  /@xterm/addon-fit@0.11.0:
+    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
     dev: false
 
   /@xterm/xterm@6.0.0:

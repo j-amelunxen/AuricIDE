@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebglAddon } from '@xterm/addon-webgl';
+import { CanvasAddon } from '@xterm/addon-canvas';
 import '@xterm/xterm/css/xterm.css';
 import {
   spawnShell,
@@ -85,15 +85,12 @@ export function XtermTerminal({
       } catch {}
     }, 100);
 
-    // Load WebGL renderer for GPU-accelerated drawing
+    // Canvas renderer: more stable than WebGL on macOS/DPI-scaled displays
     try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-      });
-      term.loadAddon(webglAddon);
+      const canvasAddon = new CanvasAddon();
+      term.loadAddon(canvasAddon);
     } catch {
-      // WebGL not available — DOM renderer is fine as fallback
+      // Canvas not available — DOM renderer is fine as fallback
     }
 
     termRef.current = term;

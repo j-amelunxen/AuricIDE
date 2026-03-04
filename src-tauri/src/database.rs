@@ -439,10 +439,8 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         .unwrap_or(false);
 
     if !applied10 {
-        conn.execute_batch(
-            "ALTER TABLE blueprints ADD COLUMN spec TEXT NOT NULL DEFAULT '';",
-        )
-        .map_err(|e| format!("Failed to add spec column to blueprints: {}", e))?;
+        conn.execute_batch("ALTER TABLE blueprints ADD COLUMN spec TEXT NOT NULL DEFAULT '';")
+            .map_err(|e| format!("Failed to add spec column to blueprints: {}", e))?;
 
         conn.execute(
             "INSERT INTO _migrations (id, name) VALUES (10, 'blueprints_add_spec')",
@@ -1158,7 +1156,7 @@ mod tests {
         let migration_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 9);
+        assert_eq!(migration_count, 10);
     }
 
     fn make_test_payload() -> PmSavePayload {
