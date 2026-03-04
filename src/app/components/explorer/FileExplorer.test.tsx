@@ -117,4 +117,63 @@ describe('FileExplorer', () => {
     );
     expect(screen.getByTestId('tree-item-/README.md')).toHaveClass('bg-primary/10');
   });
+
+  it('makes .md files draggable', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const mdButton = screen.getByTestId('tree-item-/README.md');
+    expect(mdButton).toHaveAttribute('draggable', 'true');
+  });
+
+  it('does not make non-markdown files draggable', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const tsButton = screen.getByTestId('tree-item-/src/main.ts');
+    expect(tsButton).not.toHaveAttribute('draggable');
+  });
+
+  it('does not make directories draggable', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const dirButton = screen.getByTestId('tree-item-/src');
+    expect(dirButton).not.toHaveAttribute('draggable');
+  });
+
+  it('sets dataTransfer with file path on dragStart for .md files', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const mdButton = screen.getByTestId('tree-item-/README.md');
+    const setData = vi.fn();
+    const dataTransfer = { setData, effectAllowed: '' };
+    const event = new Event('dragstart', { bubbles: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    mdButton.dispatchEvent(event);
+
+    expect(setData).toHaveBeenCalledWith('text/plain', '/README.md');
+    expect(dataTransfer.effectAllowed).toBe('copy');
+  });
 });

@@ -62,13 +62,13 @@ describe('createMcpServer', () => {
   });
 
   it('returns a FastMCP instance', () => {
-    const server = createMcpServer(db);
+    const server = createMcpServer(db, '/tmp/test-project');
     expect(server).toBeDefined();
     expect(typeof server.start).toBe('function');
   });
 
   it('registers all 7 tools', () => {
-    const server = createMcpServer(db);
+    const server = createMcpServer(db, '/tmp/test-project');
     // FastMCP stores tools internally; we verify by checking the server has them
     // The server object should exist and be properly configured
     expect(server).toBeDefined();

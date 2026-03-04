@@ -9,6 +9,7 @@ export type ContextMenuOption =
       type?: 'item';
       label: string;
       icon?: string;
+      iconColor?: string;
       action?: () => void;
       danger?: boolean;
     };
@@ -22,20 +23,40 @@ interface ContextMenuProps {
 
 export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
+    onCloseRef.current = onClose;
+  });
+
+  // Close on Escape + click-outside (capture phase so stopPropagation in children can't block it)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCloseRef.current();
       }
     };
-    window.addEventListener('mousedown', handleClickOutside);
-    return () => window.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onCloseRef.current();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('mousedown', handleClickOutside, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, []);
+
+  // Focus first menu-item on mount
+  useEffect(() => {
+    const firstButton = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+    firstButton?.focus();
+  }, []);
 
   // Adjust position if menu goes off screen
   const menuWidth = 160;
-  const itemHeight = 28;
+  const itemHeight = 44;
   const menuHeight = options.reduce((acc, opt) => {
     if (opt.type === 'separator') return acc + 9;
     if (opt.type === 'header') return acc + 24;
@@ -48,19 +69,22 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
   return (
     <div
       ref={menuRef}
+      role="menu"
+      aria-label="Context menu"
       className="fixed z-[200] w-44 overflow-hidden rounded-lg border border-white/10 bg-[#0a0a10]/95 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in duration-100"
       style={{ left: adjustedX, top: adjustedY }}
     >
       <div className="py-1">
         {options.map((option, i) => {
           if (option.type === 'separator') {
-            return <div key={i} className="my-1 border-t border-white/5" />;
+            return <div key={i} role="separator" className="my-1 border-t border-white/5" />;
           }
 
           if (option.type === 'header') {
             return (
               <div
                 key={i}
+                role="presentation"
                 className="px-3 py-1 text-[9px] font-bold text-foreground-muted/50 uppercase tracking-wider"
               >
                 {option.label}
@@ -71,19 +95,25 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
           return (
             <button
               key={i}
+              role="menuitem"
               onClick={(e) => {
                 e.stopPropagation();
                 option.action?.();
                 onClose();
               }}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors ${
+              className={`flex w-full items-center gap-2 px-3 min-h-11 text-left text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
                 option.danger
-                  ? 'text-red-400 hover:bg-red-500/10'
-                  : 'text-foreground-muted hover:bg-primary/10 hover:text-foreground'
+                  ? 'text-red-400 hover:bg-red-500/10 focus-visible:bg-red-500/20'
+                  : 'text-foreground-muted hover:bg-primary/10 hover:text-foreground focus-visible:bg-primary/20'
               }`}
             >
               {option.icon && (
-                <span className="material-symbols-outlined text-[14px]">{option.icon}</span>
+                <span
+                  className="material-symbols-outlined text-[14px]"
+                  style={option.iconColor ? { color: option.iconColor } : undefined}
+                >
+                  {option.icon}
+                </span>
               )}
               <span className="font-medium">{option.label}</span>
             </button>

@@ -12,8 +12,6 @@ const config: KnipConfig = {
     'remark-lint',
     // tsx — used as runtime via `npx tsx` to run the MCP server subprocess
     'tsx',
-    // mdast — type-only import, types come from @types/mdast (transitive dep of remark-parse)
-    'mdast',
   ],
   // Don't flag exports that are also used within the same file
   // (e.g., React Props interfaces, shared type aliases co-located with implementations)

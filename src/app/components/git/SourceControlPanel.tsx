@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
+import { ContextMenu } from '../ide/ContextMenu';
 import type { GitFileStatus } from '@/lib/tauri/git';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 
@@ -44,23 +45,6 @@ function FileList({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(
     null
   );
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setContextMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setContextMenu(null);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [contextMenu]);
 
   return (
     <div data-testid={testId}>
@@ -92,23 +76,19 @@ function FileList({
         );
       })}
       {contextMenu && onDiscardFile && (
-        <div
-          ref={menuRef}
-          style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 1000 }}
-          className="rounded border border-white/10 bg-panel-bg shadow-lg py-1 min-w-[160px]"
-          data-testid="discard-context-menu"
-        >
-          <button
-            onClick={() => {
-              onDiscardFile(contextMenu.path);
-              setContextMenu(null);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground-muted hover:bg-red-500/10 hover:text-red-400 transition-colors"
-          >
-            <span className="material-symbols-outlined text-sm">undo</span>
-            Discard Changes
-          </button>
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          options={[
+            {
+              label: 'Discard Changes',
+              icon: 'undo',
+              danger: true,
+              action: () => onDiscardFile(contextMenu.path),
+            },
+          ]}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );

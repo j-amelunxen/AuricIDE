@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
+import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 
 export interface TabItem {
   id: string;
@@ -30,18 +31,6 @@ export function TabBar({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(
     null
   );
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setContextMenu(null);
-      }
-    };
-    window.addEventListener('mousedown', handleClickOutside);
-    return () => window.removeEventListener('mousedown', handleClickOutside);
-  }, [contextMenu]);
 
   if (tabs.length === 0) return null;
 
@@ -50,13 +39,9 @@ export function TabBar({
     setContextMenu({ x: e.clientX, y: e.clientY, tabId });
   };
 
-  const menuActions = contextMenu
+  const menuOptions: ContextMenuOption[] = contextMenu
     ? [
-        {
-          label: 'Close',
-          icon: 'close',
-          action: () => onClose(contextMenu.tabId),
-        },
+        { label: 'Close', icon: 'close', action: () => onClose(contextMenu.tabId) },
         {
           label: 'Close Others',
           icon: 'tab_close_right',
@@ -67,6 +52,7 @@ export function TabBar({
           icon: 'keyboard_tab',
           action: () => onCloseToRight?.(contextMenu.tabId),
         },
+        { type: 'separator' } as const,
         {
           label: 'Close All',
           icon: 'close_fullscreen',
@@ -127,31 +113,12 @@ export function TabBar({
       </div>
 
       {contextMenu && (
-        <div
-          ref={menuRef}
-          className="fixed z-[200] w-48 overflow-hidden rounded-lg border border-white/10 bg-[#0a0a10]/95 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in duration-100"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <div className="py-1">
-            {menuActions.map((item) => (
-              <button
-                key={item.label}
-                onClick={() => {
-                  item.action();
-                  setContextMenu(null);
-                }}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors ${
-                  item.danger
-                    ? 'text-red-400 hover:bg-red-500/10'
-                    : 'text-foreground-muted hover:bg-primary/10 hover:text-foreground'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[14px]">{item.icon}</span>
-                <span className="font-medium">{item.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          options={menuOptions}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </>
   );

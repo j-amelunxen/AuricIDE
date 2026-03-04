@@ -102,13 +102,32 @@ export function useIDEState() {
   const getDiagnosticCounts = useStore((s) => s.getDiagnosticCounts);
   const setProblemsPanelOpen = useStore((s) => s.setProblemsPanelOpen);
   const setPmModalOpen = useStore((s) => s.setPmModalOpen);
+  const setPmSelectedEpicId = useStore((s) => s.setPmSelectedEpicId);
+  const setPmSelectedTicketId = useStore((s) => s.setPmSelectedTicketId);
   const loadPmData = useStore((s) => s.loadPmData);
+  const pmDraftEpics = useStore((s) => s.pmDraftEpics);
   const pmDraftTickets = useStore((s) => s.pmDraftTickets);
+  const addTicket = useStore((s) => s.addTicket);
+  const addDependency = useStore((s) => s.addDependency);
+  const savePmData = useStore((s) => s.savePmData);
   const providers = useStore((s) => s.providers);
   const setProviders = useStore((s) => s.setProviders);
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
   const spawnAgentTicketId = useStore((s) => s.spawnAgentTicketId);
   const refreshGitStatus = useStore((s) => s.refreshGitStatus);
+
+  // Obsidian Canvas
+  const ocNodes = useStore((s) => s.ocNodes);
+  const ocEdges = useStore((s) => s.ocEdges);
+  const setObsidianCanvasData = useStore((s) => s.setObsidianCanvasData);
+  const updateOcNode = useStore((s) => s.updateOcNode);
+  const selectOcNode = useStore((s) => s.selectOcNode);
+  const addOcNode = useStore((s) => s.addOcNode);
+  const updateOcNodeSize = useStore((s) => s.updateOcNodeSize);
+  const updateOcNodeColor = useStore((s) => s.updateOcNodeColor);
+
+  const canvasContextMenu = useStore((s) => s.canvasContextMenu);
+  const setCanvasContextMenu = useStore((s) => s.setCanvasContextMenu);
 
   const [defaultProvider, setDefaultProvider] = useState<ProviderInfo>(FALLBACK_CRUSH_PROVIDER);
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
@@ -124,6 +143,8 @@ export function useIDEState() {
   } | null>(null);
   const [extraTerminals, setExtraTerminals] = useState<ExtraTerminal[]>([]);
   const [diagramDialogFolder, setDiagramDialogFolder] = useState<string | null>(null);
+  const canvasTicketCreate = useStore((s) => s.canvasTicketCreate);
+  const setCanvasTicketCreate = useStore((s) => s.setCanvasTicketCreate);
 
   const ticketCwd = useMemo(
     () =>
@@ -258,5 +279,23 @@ export function useIDEState() {
     diagramDialogFolder,
     setDiagramDialogFolder,
     ticketCwd,
+    ocNodes,
+    ocEdges,
+    setObsidianCanvasData,
+    updateOcNode,
+    addOcNode,
+    selectOcNode,
+    updateOcNodeSize,
+    updateOcNodeColor,
+    canvasContextMenu,
+    setCanvasContextMenu,
+    setPmSelectedEpicId,
+    setPmSelectedTicketId,
+    pmDraftEpics,
+    addTicket,
+    addDependency,
+    savePmData,
+    canvasTicketCreate,
+    setCanvasTicketCreate,
   };
 }

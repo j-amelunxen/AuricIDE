@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { resolveBlueprintId } from './resolve';
 
 interface BlueprintRow {
   id: string;
@@ -76,10 +77,11 @@ export function registerBlueprintTools(server: FastMCP, db: Database.Database): 
     name: 'get_blueprint',
     description: 'Get a single blueprint by ID with full description',
     parameters: z.object({
-      id: z.string().describe('The blueprint ID to retrieve'),
+      id: z.string().describe('The blueprint ID to retrieve (full UUID or unique prefix)'),
     }),
     execute: async ({ id }) => {
-      const result = getBlueprint(db, id);
+      const resolved = resolveBlueprintId(db, id);
+      const result = getBlueprint(db, resolved);
       if (!result) return JSON.stringify({ error: 'Blueprint not found' });
       return JSON.stringify(result, null, 2);
     },

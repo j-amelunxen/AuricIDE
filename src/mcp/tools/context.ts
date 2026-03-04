@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { resolveTicketId } from './resolve';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,45 +104,30 @@ export function registerContextTools(server: FastMCP, db: Database.Database): vo
       'Get all context items (snippets and file references) attached to a ticket. ' +
       'Context items are injected into the agent prompt when working on the ticket.',
     parameters: z.object({
-      ticketId: z.string().describe('The ticket ID'),
+      ticketId: z.string().describe('The ticket ID (full UUID or unique prefix)'),
     }),
     execute: async ({ ticketId }) => {
-      const items = getTicketContext(db, ticketId);
+      const resolved = resolveTicketId(db, ticketId);
+      const items = getTicketContext(db, resolved);
       return JSON.stringify(items, null, 2);
     },
   });
 
   server.addTool({
-    name: 'add_context_snippet',
+    name: 'add_context_item',
     description:
-      'Attach a text/code snippet to a ticket as context. ' +
-      'The snippet will be included verbatim in the agent prompt. ' +
+      'Attach a context item (text/code snippet or file reference) to a ticket. ' +
+      'Snippets are included verbatim in the agent prompt; ' +
+      'file references cause the file content to be read and included. ' +
       'Returns the full updated context.',
     parameters: z.object({
-      ticketId: z.string().describe('The ticket ID'),
-      value: z.string().describe('The snippet text or code to attach'),
+      ticketId: z.string().describe('The ticket ID (full UUID or unique prefix)'),
+      type: z.enum(['snippet', 'file']).describe('Whether this is a text snippet or a file path'),
+      value: z.string().describe('Text/code snippet, or relative file path from project root'),
     }),
-    execute: async ({ ticketId, value }) => {
-      const items = addContextItem(db, ticketId, 'snippet', value);
-      return JSON.stringify(items, null, 2);
-    },
-  });
-
-  server.addTool({
-    name: 'add_context_file',
-    description:
-      'Attach a file reference to a ticket as context. ' +
-      'The file path is relative to the project root. ' +
-      'The file content will be read and included in the agent prompt. ' +
-      'Returns the full updated context.',
-    parameters: z.object({
-      ticketId: z.string().describe('The ticket ID'),
-      filePath: z
-        .string()
-        .describe('Relative path to the file from the project root (e.g. src/lib/utils.ts)'),
-    }),
-    execute: async ({ ticketId, filePath }) => {
-      const items = addContextItem(db, ticketId, 'file', filePath);
+    execute: async ({ ticketId, type, value }) => {
+      const resolved = resolveTicketId(db, ticketId);
+      const items = addContextItem(db, resolved, type, value);
       return JSON.stringify(items, null, 2);
     },
   });
@@ -153,11 +139,12 @@ export function registerContextTools(server: FastMCP, db: Database.Database): vo
       'Use get_ticket_context to retrieve item ids first. ' +
       'Returns the full updated context.',
     parameters: z.object({
-      ticketId: z.string().describe('The ticket ID'),
+      ticketId: z.string().describe('The ticket ID (full UUID or unique prefix)'),
       itemId: z.string().describe('The context item ID to remove'),
     }),
     execute: async ({ ticketId, itemId }) => {
-      const items = removeContextItem(db, ticketId, itemId);
+      const resolved = resolveTicketId(db, ticketId);
+      const items = removeContextItem(db, resolved, itemId);
       return JSON.stringify(items, null, 2);
     },
   });
@@ -166,11 +153,12 @@ export function registerContextTools(server: FastMCP, db: Database.Database): vo
     name: 'clear_ticket_context',
     description: 'Remove all context items (snippets and file references) from a ticket.',
     parameters: z.object({
-      ticketId: z.string().describe('The ticket ID'),
+      ticketId: z.string().describe('The ticket ID (full UUID or unique prefix)'),
     }),
     execute: async ({ ticketId }) => {
-      clearTicketContext(db, ticketId);
-      return JSON.stringify({ ticketId, context: [] });
+      const resolved = resolveTicketId(db, ticketId);
+      clearTicketContext(db, resolved);
+      return JSON.stringify({ ticketId: resolved, context: [] });
     },
   });
 }

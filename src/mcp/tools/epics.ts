@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { resolveEpicId } from './resolve';
 
 interface EpicRow {
   id: string;
@@ -91,17 +92,6 @@ export function getEpicWithTickets(db: Database.Database, epicId: string): EpicW
   return { ...epic, tickets };
 }
 
-export function listEpicsWithTickets(db: Database.Database): EpicWithTickets[] {
-  const epics = db.prepare('SELECT * FROM pm_epics ORDER BY sort_order').all() as EpicRow[];
-
-  return epics.map((epic) => {
-    const tickets = db
-      .prepare('SELECT * FROM pm_tickets WHERE epic_id = ? ORDER BY sort_order')
-      .all(epic.id) as TicketRow[];
-    return { ...epic, tickets };
-  });
-}
-
 export function registerEpicTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
     name: 'list_epics',
@@ -124,19 +114,13 @@ export function registerEpicTools(server: FastMCP, db: Database.Database): void 
     name: 'get_epic_with_tickets',
     description: 'Get a single epic with all its tickets nested',
     parameters: z.object({
-      epicId: z.string().describe('The epic ID to retrieve'),
+      epicId: z.string().describe('The epic ID to retrieve (full UUID or unique prefix)'),
     }),
     execute: async ({ epicId }) => {
-      const result = getEpicWithTickets(db, epicId);
+      const resolved = resolveEpicId(db, epicId);
+      const result = getEpicWithTickets(db, resolved);
       if (!result) return JSON.stringify({ error: 'Epic not found' });
       return JSON.stringify(result, null, 2);
     },
-  });
-
-  server.addTool({
-    name: 'list_epics_with_tickets',
-    description: 'List all epics with their full tickets nested inside each epic',
-    parameters: z.object({}),
-    execute: async () => JSON.stringify(listEpicsWithTickets(db), null, 2),
   });
 }
