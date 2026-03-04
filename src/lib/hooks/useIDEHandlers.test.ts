@@ -16,12 +16,14 @@ vi.mock('@/lib/tauri/fs', () => ({
 
 // Mock Store
 const mockRefreshGitStatus = vi.fn();
+let mockFileTree: unknown[] = [];
 vi.mock('@/lib/store', () => ({
   useStore: {
     getState: () => ({
       refreshGitStatus: mockRefreshGitStatus,
       fileStatuses: [],
       activeTabId: null,
+      fileTree: mockFileTree,
     }),
   },
 }));
@@ -53,6 +55,7 @@ describe('useIDEHandlers', () => {
     vi.clearAllMocks();
     mockRefreshGitStatus.mockResolvedValue([]);
     mockState.rootPath = null;
+    mockFileTree = [];
   });
 
   it('opens README.md automatically when opening a folder', async () => {
@@ -94,6 +97,39 @@ describe('useIDEHandlers', () => {
 
     expect(mockState.setRootPath).toHaveBeenCalledWith(projectPath);
     expect(mockState.selectFile).toHaveBeenCalledWith(`${projectPath}/readme.txt`);
+  });
+
+  it('preserves expanded state of directories on refresh', async () => {
+    const projectPath = '/path/to/project';
+    mockState.rootPath = projectPath;
+    mockFileTree = [
+      { name: 'src', path: `${projectPath}/src`, isDirectory: true, expanded: true, children: [] },
+      {
+        name: 'docs',
+        path: `${projectPath}/docs`,
+        isDirectory: true,
+        expanded: false,
+        children: [],
+      },
+    ];
+    mockReadDirectory.mockResolvedValue([
+      { name: 'src', path: `${projectPath}/src`, isDirectory: true },
+      { name: 'docs', path: `${projectPath}/docs`, isDirectory: true },
+      { name: 'README.md', path: `${projectPath}/README.md`, isDirectory: false },
+    ]);
+
+    const { result } = renderHook(() => useIDEHandlers(mockState));
+
+    await result.current.handleRefresh();
+
+    const tree = (mockState.setFileTree as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const src = tree.find((n: { path: string }) => n.path === `${projectPath}/src`);
+    const docs = tree.find((n: { path: string }) => n.path === `${projectPath}/docs`);
+    const readme = tree.find((n: { path: string }) => n.path === `${projectPath}/README.md`);
+
+    expect(src.expanded).toBe(true);
+    expect(docs.expanded).toBe(false);
+    expect(readme.expanded).toBe(false);
   });
 
   it('does not open anything if README does not exist', async () => {
