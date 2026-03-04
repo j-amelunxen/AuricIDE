@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { insertStatusHistory } from './history';
+import { resolveEpicId, resolveTicketId } from './resolve';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,6 +143,77 @@ export function updateTicket(db: Database.Database, params: UpdateTicketParams):
   return db.prepare('SELECT * FROM pm_tickets WHERE id = ?').get(params.id) as Ticket;
 }
 
+export interface UnfinishedOverview {
+  epicName: string;
+  tickets: {
+    id: string;
+    name: string;
+    status: string;
+    heat: number;
+    blockedBy: string[];
+  }[];
+}
+
+export function getUnfinishedOverview(db: Database.Database): UnfinishedOverview[] {
+  const epics = db.prepare('SELECT id, name FROM pm_epics ORDER BY sort_order').all() as {
+    id: string;
+    name: string;
+  }[];
+
+  const tickets = db
+    .prepare(
+      `SELECT id, epic_id, name, status
+       FROM pm_tickets
+       WHERE status NOT IN ('done', 'archived')
+       ORDER BY sort_order`
+    )
+    .all() as { id: string; epic_id: string; name: string; status: string }[];
+
+  const dependencies = db
+    .prepare(
+      `SELECT d.source_id, d.target_id, t.name as target_name
+       FROM pm_dependencies d
+       JOIN pm_tickets t ON d.target_id = t.id
+       WHERE d.source_type = 'ticket' AND d.target_type = 'ticket'`
+    )
+    .all() as { source_id: string; target_id: string; target_name: string }[];
+
+  const heatMap = new Map<string, number>();
+  for (const dep of dependencies) {
+    heatMap.set(dep.target_id, (heatMap.get(dep.target_id) || 0) + 1);
+  }
+
+  const blockedByMap = new Map<string, string[]>();
+  for (const dep of dependencies) {
+    const list = blockedByMap.get(dep.source_id) || [];
+    list.push(dep.target_name);
+    blockedByMap.set(dep.source_id, list);
+  }
+
+  const result: UnfinishedOverview[] = [];
+
+  for (const epic of epics) {
+    const epicTickets = tickets
+      .filter((t) => t.epic_id === epic.id)
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        status: t.status,
+        heat: heatMap.get(t.id) || 0,
+        blockedBy: blockedByMap.get(t.id) || [],
+      }));
+
+    if (epicTickets.length > 0) {
+      result.push({
+        epicName: epic.name,
+        tickets: epicTickets,
+      });
+    }
+  }
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // MCP tool registration
 // ---------------------------------------------------------------------------
@@ -149,14 +221,29 @@ export function updateTicket(db: Database.Database, params: UpdateTicketParams):
 export function registerTicketTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
     name: 'list_tickets',
-    description: 'List tickets with optional status and epicId filters',
+    description:
+      'List tickets with optional status and epicId filters. ' +
+      'Use status="in_progress" to list in-progress tickets.',
     parameters: z.object({
       status: z.string().optional().describe('Filter by ticket status (e.g. open, done)'),
-      epicId: z.string().optional().describe('Filter by epic ID'),
+      epicId: z.string().optional().describe('Filter by epic ID (full UUID or unique prefix)'),
     }),
     execute: async (params) => {
-      const tickets = listTickets(db, params);
+      const epicId = params.epicId ? resolveEpicId(db, params.epicId) : undefined;
+      const tickets = listTickets(db, { ...params, epicId });
       return JSON.stringify(tickets, null, 2);
+    },
+  });
+
+  server.addTool({
+    name: 'get_unfinished_tickets_overview',
+    description:
+      'Provides a high-level overview of all unfinished tickets (not done/archived), grouped by epic. ' +
+      'Includes heat (number of dependents) and blocking dependency names. Minimal details for context efficiency.',
+    parameters: z.object({}),
+    execute: async () => {
+      const overview = getUnfinishedOverview(db);
+      return JSON.stringify(overview, null, 2);
     },
   });
 
@@ -164,13 +251,16 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
     name: 'create_ticket',
     description: 'Create a new ticket in an epic',
     parameters: z.object({
-      epicId: z.string().describe('The epic ID to create the ticket in'),
+      epicId: z
+        .string()
+        .describe('The epic ID to create the ticket in (full UUID or unique prefix)'),
       name: z.string().describe('Ticket name'),
       description: z.string().optional().describe('Ticket description'),
       priority: z.string().optional().describe('Ticket priority (default: normal)'),
     }),
     execute: async (params) => {
-      const ticket = createTicket(db, params);
+      const epicId = resolveEpicId(db, params.epicId);
+      const ticket = createTicket(db, { ...params, epicId });
       return JSON.stringify(ticket, null, 2);
     },
   });
@@ -179,7 +269,7 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
     name: 'update_ticket',
     description: 'Update an existing ticket',
     parameters: z.object({
-      id: z.string().describe('The ticket ID to update'),
+      id: z.string().describe('The ticket ID to update (full UUID or unique prefix)'),
       status: z.string().optional().describe('New status'),
       name: z.string().optional().describe('New name'),
       description: z.string().optional().describe('New description'),
@@ -190,7 +280,8 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
         .describe('Flag to require human supervision (skipped by automatic task fetching)'),
     }),
     execute: async (params) => {
-      const ticket = updateTicket(db, params);
+      const id = resolveTicketId(db, params.id);
+      const ticket = updateTicket(db, { ...params, id });
       return JSON.stringify(ticket, null, 2);
     },
   });

@@ -88,6 +88,7 @@ function TreeNode({
   const paddingLeft = `${12 + depth * 16}px`;
 
   const fileInfo = !node.isDirectory ? getFileIcon(node.name) : null;
+  const isMarkdown = !node.isDirectory && /\.(md|markdown)$/i.test(node.name);
 
   const handleClick = () => {
     if (node.isDirectory) {
@@ -103,6 +104,15 @@ function TreeNode({
         data-testid={`tree-item-${node.path}`}
         onClick={handleClick}
         onContextMenu={(e) => onContextMenu?.(e, node)}
+        draggable={isMarkdown || undefined}
+        onDragStart={
+          isMarkdown
+            ? (e) => {
+                e.dataTransfer.setData('text/plain', node.path);
+                e.dataTransfer.effectAllowed = 'copy';
+              }
+            : undefined
+        }
         className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-colors hover:bg-white/5 ${
           isSelected
             ? 'bg-primary/10 border-l-2 border-primary text-foreground'

@@ -14,6 +14,7 @@ import { TerminalPanel } from './components/terminal/TerminalPanel';
 import { AgentsPanel } from './components/agents/AgentsPanel';
 import { DiffViewer } from './components/editor/DiffViewer';
 import { CanvasView } from './components/canvas/CanvasView';
+import { ObsidianCanvasView } from './components/obsidian-canvas/ObsidianCanvasView';
 import { MindmapView } from './components/mindmap/MindmapView';
 import { IDEOverlays } from './components/ide/IDEOverlays';
 import { OutlinePanel } from './components/outline/OutlinePanel';
@@ -21,6 +22,10 @@ import { BottomPanelTabs } from './components/ide/BottomPanelTabs';
 import { ProblemsPanel } from './components/problems/ProblemsPanel';
 import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
+import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
+import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
+import type { ObsidianColor, ObsidianNode } from '@/lib/obsidian-canvas/types';
+import { TicketCreateModal } from './components/pm/TicketCreateModal';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
@@ -34,6 +39,51 @@ const MemoizedFileExplorer = memo(FileExplorer);
 const MemoizedTabBar = memo(TabBar);
 const MemoizedTerminalPanel = memo(TerminalPanel);
 const MemoizedAgentsPanel = memo(AgentsPanel);
+
+const CANVAS_COLOR_OPTIONS: { key: ObsidianColor; label: string }[] = [
+  { key: '1', label: 'Red' },
+  { key: '2', label: 'Orange' },
+  { key: '3', label: 'Yellow' },
+  { key: '4', label: 'Green' },
+  { key: '5', label: 'Teal' },
+  { key: '6', label: 'Purple' },
+];
+
+function buildCanvasContextMenuOptions(
+  nodeId: string,
+  nodes: ObsidianNode[],
+  onColorChange: (nodeId: string, color: ObsidianColor | undefined) => void,
+  onCreateTicket: (nodeId: string) => void
+): ContextMenuOption[] {
+  const node = nodes.find((n) => n.id === nodeId);
+  const canCreateTicket = node && (node.type === 'text' || node.type === 'file');
+
+  return [
+    ...(canCreateTicket
+      ? [
+          {
+            label: 'Create Ticket from Note',
+            icon: 'confirmation_number',
+            action: () => onCreateTicket(nodeId),
+          },
+          { type: 'separator' as const },
+        ]
+      : []),
+    { type: 'header', label: 'Color' },
+    ...CANVAS_COLOR_OPTIONS.map(({ key, label }) => ({
+      label,
+      icon: 'circle',
+      iconColor: OBSIDIAN_COLORS[key],
+      action: () => onColorChange(nodeId, key),
+    })),
+    { type: 'separator' },
+    {
+      label: 'Remove color',
+      icon: 'format_color_reset',
+      action: () => onColorChange(nodeId, undefined),
+    },
+  ];
+}
 
 export default function Home() {
   const state = useIDEState();
@@ -126,6 +176,35 @@ export default function Home() {
   return (
     <>
       <IDEOverlays {...state} {...handlers} />
+      {state.canvasContextMenu && (
+        <ContextMenu
+          x={state.canvasContextMenu.x}
+          y={state.canvasContextMenu.y}
+          options={buildCanvasContextMenuOptions(
+            state.canvasContextMenu.nodeId,
+            state.ocNodes,
+            handlers.handleOcNodeColorChange,
+            handlers.handleCreateTicketFromNode
+          )}
+          onClose={() => state.setCanvasContextMenu(null)}
+        />
+      )}
+      {state.canvasTicketCreate && (
+        <TicketCreateModal
+          isOpen
+          epics={state.pmDraftEpics}
+          allTickets={state.pmDraftTickets}
+          availableItems={[]}
+          defaultEpicId={null}
+          initialValues={state.canvasTicketCreate.initialValues}
+          onSave={handlers.handleCanvasTicketSave}
+          onSaveAndClose={(data, deps) => {
+            handlers.handleCanvasTicketSave(data, deps);
+            state.setCanvasTicketCreate(null);
+          }}
+          onClose={() => state.setCanvasTicketCreate(null)}
+        />
+      )}
       <IDEShell
         bottomCollapsed={state.bottomCollapsed}
         onBottomToggle={state.setBottomCollapsed}
@@ -168,6 +247,21 @@ export default function Home() {
                   <ImageViewer
                     src={state.imageData}
                     fileName={state.activeTabId.split('/').pop() || ''}
+                  />
+                ) : handlers.isObsidianCanvas ? (
+                  <ObsidianCanvasView
+                    nodes={state.ocNodes}
+                    edges={state.ocEdges}
+                    onNodesChange={handlers.handleOcNodesChange}
+                    onEdgesChange={handlers.handleOcEdgesChange}
+                    onTextEdit={handlers.handleOcTextEdit}
+                    onResize={handlers.handleOcResize}
+                    onFileOpen={handlers.handleOcFileOpen}
+                    onNodeSelect={state.selectOcNode}
+                    loadFileContent={handlers.loadFileContent}
+                    onFileDrop={handlers.handleOcFileDrop}
+                    onNodeContextMenu={handlers.handleOcNodeContextMenu}
+                    onTicketClick={handlers.handleTicketBadgeClick}
                   />
                 ) : handlers.isWorkflowFile ? (
                   <CanvasView

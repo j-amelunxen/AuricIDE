@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { insertStatusHistory } from './history';
+import { resolveTicketId } from './resolve';
 
 interface Ticket {
   id: string;
@@ -20,22 +21,6 @@ interface Ticket {
   updated_at: string;
 }
 
-const FETCH_NEXT_TASK_SQL = `
-  SELECT id FROM pm_tickets
-  WHERE status = 'open'
-    AND needs_human_supervision = 0
-  ORDER BY
-    CASE priority
-      WHEN 'critical' THEN 0
-      WHEN 'high' THEN 1
-      WHEN 'normal' THEN 2
-      WHEN 'low' THEN 3
-      ELSE 4
-    END,
-    sort_order ASC
-  LIMIT 1
-`;
-
 const UPDATE_STATUS_SQL = `
   UPDATE pm_tickets
   SET status = ?, status_updated_at = datetime('now'), updated_at = datetime('now')
@@ -51,27 +36,6 @@ const UPDATE_DESCRIPTION_SQL = `
   SET description = ?, updated_at = datetime('now')
   WHERE id = ?
 `;
-
-/**
- * Finds the highest-priority open ticket, atomically sets it to 'in_progress',
- * and returns the updated ticket. Returns null if no open tickets exist.
- */
-export function fetchNextTask(db: Database.Database): Ticket | null {
-  const transact = db.transaction(() => {
-    const candidate = db.prepare(FETCH_NEXT_TASK_SQL).get() as { id: string } | undefined;
-
-    if (!candidate) {
-      return null;
-    }
-
-    db.prepare(UPDATE_STATUS_SQL).run('in_progress', candidate.id);
-    insertStatusHistory(db, candidate.id, 'open', 'in_progress', 'mcp');
-
-    return db.prepare(SELECT_TICKET_SQL).get(candidate.id) as Ticket;
-  });
-
-  return transact();
-}
 
 const FETCH_NEXT_UNBLOCKED_TASK_SQL = `
   SELECT id FROM pm_tickets
@@ -96,9 +60,9 @@ const FETCH_NEXT_UNBLOCKED_TASK_SQL = `
 `;
 
 /**
- * Like fetchNextTask but dependency-aware: skips tickets whose dependencies
- * are not yet done/archived. Returns the highest-priority unblocked open ticket,
- * atomically sets it to 'in_progress'. Returns null if none available.
+ * Fetches the highest-priority open ticket that has no unfinished dependencies,
+ * atomically sets it to 'in_progress', and returns it. Returns null if none available.
+ * Skips tickets flagged as needing human supervision.
  */
 export function fetchNextUnblockedTask(db: Database.Database): Ticket | null {
   const transact = db.transaction(() => {
@@ -149,29 +113,16 @@ export function completeTask(
 }
 
 /**
- * Registers the fetch_next_task and complete_task tools with a FastMCP server.
+ * Registers task-related tools with a FastMCP server.
  */
 export function registerTaskTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
-    name: 'fetch_next_task',
-    description:
-      'Fetches the highest-priority open ticket, atomically sets it to in_progress, ' +
-      'and returns it. Returns null if no open tickets exist. ' +
-      'Skips tickets flagged as needing human supervision. ' +
-      'Priority order: critical > high > normal > low.',
-    parameters: z.object({}),
-    execute: async () => {
-      const ticket = fetchNextTask(db);
-      return JSON.stringify(ticket);
-    },
-  });
-
-  server.addTool({
     name: 'fetch_next_unblocked_task',
     description:
-      'Like fetch_next_task but dependency-aware. Fetches the highest-priority open ticket ' +
-      'that has NO unfinished dependencies (all dependencies must be done or archived). ' +
-      'Atomically sets it to in_progress. Returns null if no unblocked open tickets exist. ' +
+      'Fetches the highest-priority open ticket that has NO unfinished dependencies ' +
+      '(all dependencies must be done or archived). ' +
+      'Atomically sets it to in_progress and returns the full ticket. ' +
+      'Returns null if no unblocked open tickets exist. ' +
       'Skips tickets flagged as needing human supervision. ' +
       'Priority order: critical > high > normal > low.',
     parameters: z.object({}),
@@ -186,14 +137,15 @@ export function registerTaskTools(server: FastMCP, db: Database.Database): void 
     description:
       'Marks a ticket as done. Optionally appends a completion summary to the description.',
     parameters: z.object({
-      id: z.string().describe('The ticket ID to mark as complete'),
+      id: z.string().describe('The ticket ID to mark as complete (full UUID or unique prefix)'),
       summary: z
         .string()
         .optional()
         .describe('Optional completion summary to append to the description'),
     }),
     execute: async (args) => {
-      const ticket = completeTask(db, args);
+      const id = resolveTicketId(db, args.id);
+      const ticket = completeTask(db, { ...args, id });
       return JSON.stringify(ticket);
     },
   });

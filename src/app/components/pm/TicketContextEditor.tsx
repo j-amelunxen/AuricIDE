@@ -97,10 +97,14 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[16px] text-foreground-muted">
-                    {item.type === 'snippet' ? 'description' : 'insert_drive_file'}
+                    {item.type === 'snippet'
+                      ? 'description'
+                      : item.type === 'canvas-node'
+                        ? 'dashboard'
+                        : 'insert_drive_file'}
                   </span>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted">
-                    {item.type}
+                    {item.type === 'canvas-node' ? 'Canvas Node' : item.type}
                   </span>
                 </div>
                 <button
@@ -120,6 +124,15 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
                   placeholder="Paste context snippet here..."
                   className="w-full bg-black/20 border border-white/5 rounded px-2 py-1.5 text-xs text-foreground focus:border-primary/50 focus:outline-none resize-none min-h-[60px]"
                 />
+              ) : item.type === 'canvas-node' ? (
+                <div className="flex items-center gap-2 bg-black/20 border border-white/5 rounded px-2 py-1.5">
+                  <span className="material-symbols-outlined text-[14px] text-primary-light">
+                    dashboard
+                  </span>
+                  <span className="flex-1 text-xs text-foreground font-mono truncate">
+                    {item.value}
+                  </span>
+                </div>
               ) : (
                 <div className="flex items-center gap-2 bg-black/20 border border-white/5 rounded px-2 py-1.5">
                   <input

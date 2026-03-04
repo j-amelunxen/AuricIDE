@@ -1,0 +1,404 @@
+{
+  "nodes": [
+    {
+      "id": "f7641d584ba38583",
+      "x": -20,
+      "y": -140,
+      "width": 220,
+      "height": 80,
+      "type": "text",
+      "text": "# software-architecture.ai"
+    },
+    {
+      "id": "2a8841bc7469c4e8",
+      "x": 200,
+      "y": 0,
+      "width": 100,
+      "height": 60,
+      "type": "text",
+      "text": "## Leads"
+    },
+    {
+      "id": "fbbd3b87638ccb23",
+      "x": -340.45558991663574,
+      "y": -128.09111798332714,
+      "width": 100,
+      "height": 60,
+      "type": "text",
+      "text": "# mgm"
+    },
+    {
+      "id": "5ade8578af6413a0",
+      "x": 72.71525630210266,
+      "y": 249.48975916038347,
+      "width": 102,
+      "height": 60,
+      "color": "4",
+      "type": "text",
+      "text": "1x pitch"
+    },
+    {
+      "id": "6441456fc3e4fe99",
+      "x": 248.5896040671027,
+      "y": 151.5299737659642,
+      "width": 190,
+      "height": 74,
+      "color": "4",
+      "auricTicketId": "24858371-4ec0-4682-89e6-b28de36d4f1f",
+      "type": "text",
+      "text": "tenderflow startbar machen"
+    },
+    {
+      "id": "83b6aa95b6379c88",
+      "x": -70,
+      "y": 0,
+      "width": 100,
+      "height": 60,
+      "type": "text",
+      "text": "## Dev cap."
+    },
+    {
+      "id": "042738e9591f964c",
+      "x": -140,
+      "y": 180,
+      "width": 140,
+      "height": 86,
+      "color": "4",
+      "type": "text",
+      "text": "QA sytem in Auric"
+    },
+    {
+      "id": "94bc958c4e4eed16",
+      "x": -540,
+      "y": -5,
+      "width": 120,
+      "height": 70,
+      "type": "text",
+      "text": "## OSACA"
+    },
+    {
+      "id": "55a034d88490e56d",
+      "x": -340,
+      "y": 0,
+      "width": 120,
+      "height": 70,
+      "type": "text",
+      "text": "## IBIS"
+    },
+    {
+      "id": "0621bf39498bdffd",
+      "x": 440,
+      "y": 5,
+      "width": 250,
+      "height": 60,
+      "type": "text",
+      "text": "## Marketing "
+    },
+    {
+      "id": "c85b3b137d6a7a4d",
+      "x": 500,
+      "y": 213,
+      "width": 250,
+      "height": 60,
+      "type": "text",
+      "text": "Präsi Slide skill testne"
+    },
+    {
+      "id": "1190568f92b5f78a",
+      "x": 800,
+      "y": 5,
+      "width": 250,
+      "height": 60,
+      "type": "text",
+      "text": "## Vibe CEO"
+    },
+    {
+      "id": "298e3764207d076f",
+      "x": 840,
+      "y": 213,
+      "width": 280,
+      "height": 327,
+      "color": "3",
+      "type": "text",
+      "text": "Task Stream. X like Task Stream. Mit Gemacht / Abbruch als Möglichkeiten\n\nInterface zum planen von Aufgaben \"pro Tag\" bzw zum zuweisen von Aufgaben auf Tage und irgendwie müssen wir \"work units\" tracken können\n\nMCP Server, so dass die AI dir aufgaben eintellen kann. Notification System"
+    },
+    {
+      "id": "e46ad242a0eb0a2c",
+      "x": -499.74886247351236,
+      "y": 405.99598384305716,
+      "width": 250,
+      "height": 60,
+      "color": "4",
+      "type": "text",
+      "text": "Setup Comp Analysis"
+    },
+    {
+      "id": "91a03259d5dd97e1",
+      "x": -210.85033429509906,
+      "y": 503.40080323138864,
+      "width": 250,
+      "height": 60,
+      "color": "4",
+      "type": "text",
+      "text": "Exchange ASCII repair algo"
+    },
+    {
+      "id": "815e48ec48204dc5",
+      "x": -140,
+      "y": 314,
+      "width": 140,
+      "height": 86,
+      "color": "4",
+      "type": "text",
+      "text": "commit and push"
+    },
+    {
+      "id": "ffb9fa800e0a1a55",
+      "x": -280,
+      "y": 327,
+      "width": 95,
+      "height": 60,
+      "color": "4",
+      "type": "text",
+      "text": "Spec Import"
+    },
+    {
+      "id": "5167d223939d06b9",
+      "x": -694,
+      "y": 547,
+      "width": 250,
+      "height": 60,
+      "type": "text",
+      "text": "Streamline to Core features"
+    },
+    {
+      "id": "4df0a221a1e1b32f",
+      "x": -819,
+      "y": 30,
+      "width": 250,
+      "height": 60,
+      "color": "4",
+      "type": "text",
+      "text": "Sicherheitsunterweisung"
+    },
+    {
+      "id": "447db2fa9698bdcb",
+      "x": -504,
+      "y": 740,
+      "width": 140,
+      "height": 86,
+      "color": "4",
+      "type": "text",
+      "text": "commit and push"
+    },
+    {
+      "id": "4fc0db29df9cbe63",
+      "x": 182.60725038426003,
+      "y": 364.13757463054674,
+      "width": 250,
+      "height": 60,
+      "color": "2",
+      "type": "text",
+      "text": "Insta Post Content Format prüfen 2"
+    },
+    {
+      "id": "1fd233bf5e9bf3ce",
+      "x": -790,
+      "y": 180,
+      "width": 140,
+      "height": 86,
+      "color": "4",
+      "type": "text",
+      "text": "A12 Migration"
+    },
+    {
+      "id": "75993edee83040aa",
+      "x": -449,
+      "y": 180,
+      "width": 140,
+      "height": 86,
+      "color": "4",
+      "type": "text",
+      "text": "Test Stack laufen lassen"
+    },
+    {
+      "id": "3fe50094c1edcd19",
+      "x": -819,
+      "y": 400,
+      "width": 250,
+      "height": 60,
+      "type": "text",
+      "text": "Repo specific llm und feature toggle config"
+    }
+  ],
+  "edges": [
+    {
+      "id": "aef82c0342aaecc7",
+      "fromNode": "f7641d584ba38583",
+      "fromSide": "bottom",
+      "toNode": "2a8841bc7469c4e8",
+      "toSide": "top"
+    },
+    {
+      "id": "b70dc99e64830026",
+      "fromNode": "83b6aa95b6379c88",
+      "fromSide": "bottom",
+      "toNode": "042738e9591f964c",
+      "toSide": "top"
+    },
+    {
+      "id": "dd2564cbfa085c2f",
+      "fromNode": "fbbd3b87638ccb23",
+      "fromSide": "bottom",
+      "toNode": "94bc958c4e4eed16",
+      "toSide": "top"
+    },
+    {
+      "id": "d151b4d86af0895e",
+      "fromNode": "fbbd3b87638ccb23",
+      "fromSide": "bottom",
+      "toNode": "55a034d88490e56d",
+      "toSide": "top"
+    },
+    {
+      "id": "26db0413ee82fe27",
+      "fromNode": "f7641d584ba38583",
+      "fromSide": "bottom",
+      "toNode": "83b6aa95b6379c88",
+      "toSide": "top"
+    },
+    {
+      "id": "6f31b9cd24797298",
+      "fromNode": "83b6aa95b6379c88",
+      "fromSide": "bottom",
+      "toNode": "042738e9591f964c",
+      "toSide": "top"
+    },
+    {
+      "id": "f7295643f95c42ea",
+      "fromNode": "2a8841bc7469c4e8",
+      "fromSide": "bottom",
+      "toNode": "5ade8578af6413a0",
+      "toSide": "top"
+    },
+    {
+      "id": "8783194ea2994e2c",
+      "fromNode": "2a8841bc7469c4e8",
+      "fromSide": "bottom",
+      "toNode": "6441456fc3e4fe99",
+      "toSide": "top"
+    },
+    {
+      "id": "677e621ff247749d",
+      "fromNode": "55a034d88490e56d",
+      "fromSide": "bottom",
+      "toNode": "75993edee83040aa",
+      "toSide": "top"
+    },
+    {
+      "id": "a27eea723e4f9eb4",
+      "fromNode": "94bc958c4e4eed16",
+      "fromSide": "bottom",
+      "toNode": "1fd233bf5e9bf3ce",
+      "toSide": "top"
+    },
+    {
+      "id": "dfb05498b17b2fc9",
+      "fromNode": "0621bf39498bdffd",
+      "fromSide": "bottom",
+      "toNode": "c85b3b137d6a7a4d",
+      "toSide": "top"
+    },
+    {
+      "id": "c8137d8b8b3f39d5",
+      "fromNode": "f7641d584ba38583",
+      "fromSide": "bottom",
+      "toNode": "0621bf39498bdffd",
+      "toSide": "top"
+    },
+    {
+      "id": "77b21a6f9769b3c9",
+      "fromNode": "1190568f92b5f78a",
+      "fromSide": "bottom",
+      "toNode": "298e3764207d076f",
+      "toSide": "top"
+    },
+    {
+      "id": "ce93372d1cbd1d6f",
+      "fromNode": "f7641d584ba38583",
+      "fromSide": "bottom",
+      "toNode": "1190568f92b5f78a",
+      "toSide": "top"
+    },
+    {
+      "id": "25cf00b9c37dfbe7",
+      "fromNode": "fbbd3b87638ccb23",
+      "fromSide": "bottom",
+      "toNode": "4df0a221a1e1b32f",
+      "toSide": "top"
+    },
+    {
+      "id": "c0e2509362900bc5",
+      "fromNode": "fbbd3b87638ccb23",
+      "fromSide": "bottom",
+      "toNode": "ffb9fa800e0a1a55",
+      "toSide": "top"
+    },
+    {
+      "id": "86bf2215b43c9f87",
+      "fromNode": "94bc958c4e4eed16",
+      "fromSide": "bottom",
+      "toNode": "3fe50094c1edcd19",
+      "toSide": "top"
+    },
+    {
+      "id": "40fba2bcc0e04adc",
+      "fromNode": "fbbd3b87638ccb23",
+      "fromSide": "bottom",
+      "toNode": "e46ad242a0eb0a2c",
+      "toSide": "top"
+    },
+    {
+      "id": "b6666847c09d2bb1",
+      "fromNode": "fbbd3b87638ccb23",
+      "fromSide": "bottom",
+      "toNode": "91a03259d5dd97e1",
+      "toSide": "top"
+    },
+    {
+      "id": "fc69280224ea8a90",
+      "fromNode": "042738e9591f964c",
+      "fromSide": "bottom",
+      "toNode": "815e48ec48204dc5",
+      "toSide": "top"
+    },
+    {
+      "id": "b3a0924fcdfbda63",
+      "fromNode": "94bc958c4e4eed16",
+      "fromSide": "bottom",
+      "toNode": "5167d223939d06b9",
+      "toSide": "top"
+    },
+    {
+      "id": "5d3a32378b4c96a2",
+      "fromNode": "91a03259d5dd97e1",
+      "fromSide": "bottom",
+      "toNode": "447db2fa9698bdcb",
+      "toSide": "top"
+    },
+    {
+      "id": "8cebd7ebe1e2055d",
+      "fromNode": "ffb9fa800e0a1a55",
+      "fromSide": "bottom",
+      "toNode": "447db2fa9698bdcb",
+      "toSide": "top"
+    },
+    {
+      "id": "5f3da85252169581",
+      "fromNode": "f7641d584ba38583",
+      "fromSide": "bottom",
+      "toNode": "4fc0db29df9cbe63",
+      "toSide": "top"
+    }
+  ]
+}

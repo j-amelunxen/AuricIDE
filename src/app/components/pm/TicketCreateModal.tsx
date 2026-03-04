@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { PmEpic, PmTicket, PmDependency } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket, PmDependency, PmContextItem } from '@/lib/tauri/pm';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useLLM } from '@/lib/hooks/useLLM';
@@ -18,6 +18,11 @@ interface TicketCreateModalProps {
   allTickets: PmTicket[];
   availableItems: { id: string; type: 'epic' | 'ticket'; name: string; status?: string }[];
   defaultEpicId: string | null;
+  initialValues?: {
+    name?: string;
+    description?: string;
+    context?: PmContextItem[];
+  };
   onSave: (
     ticket: Omit<PmTicket, 'createdAt' | 'updatedAt' | 'statusUpdatedAt' | 'sortOrder'>,
     dependencies: PmDependency[]
@@ -80,17 +85,19 @@ function TicketCreateForm({
   allTickets,
   availableItems,
   defaultEpicId,
+  initialValues,
   onSave,
   onSaveAndClose,
   onClose,
 }: Omit<TicketCreateModalProps, 'isOpen'>) {
   const [ticketId, setTicketId] = useState(() => crypto.randomUUID());
-  const [name, setName] = useState('');
+  const [name, setName] = useState(initialValues?.name ?? '');
   const [epicId, setEpicId] = useState(defaultEpicId ?? epics[0]?.id ?? '');
   const [status, setStatus] = useState<PmTicket['status']>('open');
   const [priority, setPriority] = useState<PmTicket['priority']>('normal');
   const [modelPower, setModelPower] = useState<PmTicket['modelPower']>(undefined);
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(initialValues?.description ?? '');
+  const [context] = useState<PmContextItem[]>(initialValues?.context ?? []);
   const [localDependencies, setLocalDependencies] = useState<PmDependency[]>([]);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
 
@@ -109,7 +116,7 @@ function TicketCreateForm({
     priority,
     description,
     modelPower,
-    context: [],
+    context,
     needsHumanSupervision: false,
   });
 

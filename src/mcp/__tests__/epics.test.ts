@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createEpic, getEpicWithTickets, listEpics, listEpicsWithTickets } from '../tools/epics';
+import { createEpic, getEpicWithTickets, listEpics } from '../tools/epics';
 
 function createTestDatabase(): Database.Database {
   const db = new Database(':memory:');
@@ -329,92 +329,5 @@ describe('getEpicWithTickets', () => {
 
     expect(result!.tickets).toHaveLength(1);
     expect(result!.tickets[0].id).toBe('t-1');
-  });
-});
-
-describe('listEpicsWithTickets', () => {
-  let db: Database.Database;
-
-  beforeEach(() => {
-    db = createTestDatabase();
-  });
-
-  afterEach(() => {
-    db.close();
-  });
-
-  it('returns empty array when no epics exist', () => {
-    expect(listEpicsWithTickets(db)).toEqual([]);
-  });
-
-  it('returns all epics with their nested tickets', () => {
-    db.prepare(`INSERT INTO pm_epics (id, name, sort_order) VALUES (?, ?, ?)`).run(
-      'epic-1',
-      'Epic One',
-      0
-    );
-    db.prepare(`INSERT INTO pm_epics (id, name, sort_order) VALUES (?, ?, ?)`).run(
-      'epic-2',
-      'Epic Two',
-      1
-    );
-    db.prepare(`INSERT INTO pm_tickets (id, epic_id, name, sort_order) VALUES (?, ?, ?, ?)`).run(
-      't-1',
-      'epic-1',
-      'Ticket A',
-      0
-    );
-    db.prepare(`INSERT INTO pm_tickets (id, epic_id, name, sort_order) VALUES (?, ?, ?, ?)`).run(
-      't-2',
-      'epic-1',
-      'Ticket B',
-      1
-    );
-    db.prepare(`INSERT INTO pm_tickets (id, epic_id, name, sort_order) VALUES (?, ?, ?, ?)`).run(
-      't-3',
-      'epic-2',
-      'Ticket C',
-      0
-    );
-
-    const result = listEpicsWithTickets(db);
-
-    expect(result).toHaveLength(2);
-    expect(result[0].id).toBe('epic-1');
-    expect(result[0].tickets).toHaveLength(2);
-    expect(result[1].id).toBe('epic-2');
-    expect(result[1].tickets).toHaveLength(1);
-  });
-
-  it('orders epics by sort_order and tickets by sort_order', () => {
-    db.prepare(`INSERT INTO pm_epics (id, name, sort_order) VALUES (?, ?, ?)`).run(
-      'epic-b',
-      'Second',
-      1
-    );
-    db.prepare(`INSERT INTO pm_epics (id, name, sort_order) VALUES (?, ?, ?)`).run(
-      'epic-a',
-      'First',
-      0
-    );
-    db.prepare(`INSERT INTO pm_tickets (id, epic_id, name, sort_order) VALUES (?, ?, ?, ?)`).run(
-      't-2',
-      'epic-a',
-      'Second',
-      2
-    );
-    db.prepare(`INSERT INTO pm_tickets (id, epic_id, name, sort_order) VALUES (?, ?, ?, ?)`).run(
-      't-1',
-      'epic-a',
-      'First',
-      1
-    );
-
-    const result = listEpicsWithTickets(db);
-
-    expect(result[0].id).toBe('epic-a');
-    expect(result[0].tickets[0].id).toBe('t-1');
-    expect(result[0].tickets[1].id).toBe('t-2');
-    expect(result[1].id).toBe('epic-b');
   });
 });

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { resolveId, resolveTicketId, typeToTable } from './resolve';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,16 +13,6 @@ export interface DependencyRow {
   source_id: string;
   target_type: string;
   target_id: string;
-}
-
-export interface TestCaseRow {
-  id: string;
-  ticket_id: string;
-  title: string;
-  body: string;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface CreateDependencyParams {
@@ -45,12 +36,6 @@ export interface DependencyInfo {
   target_id: string;
   target_name: string;
   target_status: string;
-}
-
-export interface CreateTestCaseParams {
-  ticketId: string;
-  title: string;
-  body?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,25 +90,6 @@ export function listDependencies(
   return db.prepare(baseSql).all() as DependencyInfo[];
 }
 
-export function createTestCase(db: Database.Database, params: CreateTestCaseParams): TestCaseRow {
-  const id = crypto.randomUUID();
-  const body = params.body ?? '';
-
-  const maxRow = db
-    .prepare(
-      'SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM pm_test_cases WHERE ticket_id = ?'
-    )
-    .get(params.ticketId) as { max_sort: number };
-  const sortOrder = maxRow.max_sort + 1;
-
-  db.prepare(
-    `INSERT INTO pm_test_cases (id, ticket_id, title, body, sort_order)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(id, params.ticketId, params.title, body, sortOrder);
-
-  return db.prepare('SELECT * FROM pm_test_cases WHERE id = ?').get(id) as TestCaseRow;
-}
-
 // ---------------------------------------------------------------------------
 // MCP tool registration
 // ---------------------------------------------------------------------------
@@ -134,13 +100,19 @@ export function registerDependencyTools(server: FastMCP, db: Database.Database):
     description:
       'Create a dependency between two items (tickets or epics). Idempotent — duplicates are ignored.',
     parameters: z.object({
-      sourceId: z.string().describe('The source item ID'),
-      targetId: z.string().describe('The target item ID (the item that source depends on)'),
+      sourceId: z.string().describe('The source item ID (full UUID or unique prefix)'),
+      targetId: z
+        .string()
+        .describe(
+          'The target item ID (the item that source depends on, full UUID or unique prefix)'
+        ),
       sourceType: z.string().optional().describe('Source type (default: ticket)'),
       targetType: z.string().optional().describe('Target type (default: ticket)'),
     }),
     execute: async (params) => {
-      const dep = createDependency(db, params);
+      const sourceId = resolveId(db, typeToTable(params.sourceType ?? 'ticket'), params.sourceId);
+      const targetId = resolveId(db, typeToTable(params.targetType ?? 'ticket'), params.targetId);
+      const dep = createDependency(db, { ...params, sourceId, targetId });
       return JSON.stringify(dep, null, 2);
     },
   });
@@ -155,25 +127,14 @@ export function registerDependencyTools(server: FastMCP, db: Database.Database):
       ticketId: z
         .string()
         .optional()
-        .describe('Optional ticket ID to filter dependencies for (as source or target)'),
+        .describe(
+          'Optional ticket ID to filter dependencies for (as source or target, full UUID or unique prefix)'
+        ),
     }),
     execute: async (params) => {
-      const deps = listDependencies(db, params);
+      const ticketId = params.ticketId ? resolveTicketId(db, params.ticketId) : undefined;
+      const deps = listDependencies(db, { ticketId });
       return JSON.stringify(deps, null, 2);
-    },
-  });
-
-  server.addTool({
-    name: 'create_test_case',
-    description: 'Create a test case linked to a ticket',
-    parameters: z.object({
-      ticketId: z.string().describe('The ticket ID to link the test case to'),
-      title: z.string().describe('Test case title'),
-      body: z.string().optional().describe('Test case body/description'),
-    }),
-    execute: async (params) => {
-      const tc = createTestCase(db, params);
-      return JSON.stringify(tc, null, 2);
     },
   });
 }

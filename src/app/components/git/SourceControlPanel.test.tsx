@@ -224,7 +224,7 @@ describe('SourceControlPanel', () => {
     render(<SourceControlPanel {...defaultProps} onDiscardFile={onDiscardFile} />);
 
     fireEvent.contextMenu(screen.getByText('README.md'));
-    expect(screen.getByTestId('discard-context-menu')).toBeInTheDocument();
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     expect(screen.getByText('Discard Changes')).toBeInTheDocument();
   });
 
@@ -232,7 +232,7 @@ describe('SourceControlPanel', () => {
     render(<SourceControlPanel {...defaultProps} />);
 
     fireEvent.contextMenu(screen.getByText('README.md'));
-    expect(screen.queryByTestId('discard-context-menu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('calls onDiscardFile with the file path when Discard Changes is clicked', async () => {
@@ -251,9 +251,9 @@ describe('SourceControlPanel', () => {
     render(<SourceControlPanel {...defaultProps} onDiscardFile={onDiscardFile} />);
 
     fireEvent.contextMenu(screen.getByText('README.md'));
-    expect(screen.getByTestId('discard-context-menu')).toBeInTheDocument();
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.click(screen.getByText('Discard Changes'));
-    expect(screen.queryByTestId('discard-context-menu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('closes context menu when clicking outside', async () => {
@@ -262,8 +262,8 @@ describe('SourceControlPanel', () => {
     render(<SourceControlPanel {...defaultProps} onDiscardFile={onDiscardFile} />);
 
     fireEvent.contextMenu(screen.getByText('README.md'));
-    expect(screen.getByTestId('discard-context-menu')).toBeInTheDocument();
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.click(document.body);
-    expect(screen.queryByTestId('discard-context-menu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 });

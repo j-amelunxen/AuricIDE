@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { resolveTicketId } from './resolve';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,10 +53,14 @@ export function registerHistoryTools(server: FastMCP, db: Database.Database): vo
     name: 'list_status_history',
     description: 'List status change history for all tickets or a specific ticket',
     parameters: z.object({
-      ticketId: z.string().optional().describe('Optional ticket ID to filter by'),
+      ticketId: z
+        .string()
+        .optional()
+        .describe('Optional ticket ID to filter by (full UUID or unique prefix)'),
     }),
     execute: async (params) => {
-      const history = listStatusHistory(db, params.ticketId);
+      const ticketId = params.ticketId ? resolveTicketId(db, params.ticketId) : undefined;
+      const history = listStatusHistory(db, ticketId);
       return JSON.stringify(history, null, 2);
     },
   });

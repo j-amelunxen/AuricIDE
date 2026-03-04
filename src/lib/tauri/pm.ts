@@ -9,7 +9,7 @@ export interface PmEpic {
 
 export interface PmContextItem {
   id: string;
-  type: 'snippet' | 'file';
+  type: 'snippet' | 'file' | 'canvas-node';
   value: string;
 }
 
