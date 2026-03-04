@@ -46,10 +46,10 @@ export function useIDEActions(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cleanup debounce timer on unmount
+  // Cleanup debounce timer on unmount and on rootPath change (prevents stale refresh from prior project)
   useEffect(() => {
     return () => clearTimeout(debouncedRefresh.current);
-  }, []);
+  }, [state.rootPath]);
 
   // File watcher — debounced refresh on filesystem changes
   const { handleRefresh } = handlers;
@@ -74,37 +74,44 @@ export function useIDEActions(
   );
 
   useEffect(() => {
-    if (state.rootPath) {
-      // Check if direct LLM is configured
-      import('@/lib/tauri/db').then((m) => {
-        m.dbGet(state.rootPath!, 'llm_settings', 'api_key').then((k) => {
-          state.setLlmConfigured(!!k);
-        });
+    if (!state.rootPath) return;
+    let canceled = false;
+    const path = state.rootPath;
+
+    // Check if direct LLM is configured
+    import('@/lib/tauri/db').then((m) => {
+      m.dbGet(path, 'llm_settings', 'api_key').then((k) => {
+        if (canceled) return;
+        state.setLlmConfigured(!!k);
       });
+    });
 
-      import('@/lib/tauri/fs').then((m) => {
-        m.listAllFiles(state.rootPath!).then(async (files) => {
-          state.setProjectFiles(files);
-          state.setAllFiles(files);
+    import('@/lib/tauri/fs').then((m) => {
+      m.listAllFiles(path).then(async (files) => {
+        if (canceled) return;
+        state.setProjectFiles(files);
+        state.setAllFiles(files);
 
-          const mdFiles = files.filter((f) => /\.(md|markdown)$/i.test(f));
-          const results = await Promise.allSettled(mdFiles.map((f) => m.readFile(f)));
-          const entries = results
-            .map((r, i) => ({ filePath: mdFiles[i], result: r }))
-            .filter(
-              (x): x is { filePath: string; result: PromiseFulfilledResult<string> } =>
-                x.result.status === 'fulfilled'
-            )
-            .map(({ filePath, result }) => ({ filePath, content: result.value }));
-          state.bulkUpdateFilesInIndex(entries);
-        });
+        const mdFiles = files.filter((f) => /\.(md|markdown)$/i.test(f));
+        const results = await Promise.allSettled(mdFiles.map((f) => m.readFile(f)));
+        if (canceled) return;
+        const entries = results
+          .map((r, i) => ({ filePath: mdFiles[i], result: r }))
+          .filter(
+            (x): x is { filePath: string; result: PromiseFulfilledResult<string> } =>
+              x.result.status === 'fulfilled'
+          )
+          .map(({ filePath, result }) => ({ filePath, content: result.value }));
+        state.bulkUpdateFilesInIndex(entries);
       });
+    });
 
-      state.initProjectDb(state.rootPath);
-      state.loadPmData(state.rootPath);
-    }
+    state.initProjectDb(path);
+    state.loadPmData(path);
+
     return () => {
-      if (state.rootPath) state.closeProjectDb(state.rootPath);
+      canceled = true;
+      state.closeProjectDb(path);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.rootPath]);

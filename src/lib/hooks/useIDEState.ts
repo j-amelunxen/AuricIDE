@@ -90,6 +90,7 @@ export function useIDEState() {
   const loadBlueprintServerUrl = useStore((s) => s.loadBlueprintServerUrl);
   const setBlueprintsGalleryOpen = useStore((s) => s.setBlueprintsGalleryOpen);
   const loadBlueprints = useStore((s) => s.loadBlueprints);
+  const resetBlueprintsInMemory = useStore((s) => s.resetBlueprintsInMemory);
   const initProjectDb = useStore((s) => s.initProjectDb);
   const closeProjectDb = useStore((s) => s.closeProjectDb);
   const setAllFiles = useStore((s) => s.setAllFiles);
@@ -105,6 +106,7 @@ export function useIDEState() {
   const setPmSelectedEpicId = useStore((s) => s.setPmSelectedEpicId);
   const setPmSelectedTicketId = useStore((s) => s.setPmSelectedTicketId);
   const loadPmData = useStore((s) => s.loadPmData);
+  const resetPmInMemory = useStore((s) => s.resetPmInMemory);
   const pmDraftEpics = useStore((s) => s.pmDraftEpics);
   const pmDraftTickets = useStore((s) => s.pmDraftTickets);
   const addTicket = useStore((s) => s.addTicket);
@@ -258,6 +260,8 @@ export function useIDEState() {
     setProblemsPanelOpen,
     setPmModalOpen,
     loadPmData,
+    resetPmInMemory,
+    resetBlueprintsInMemory,
     pmDraftTickets,
     providers,
     setProviders,

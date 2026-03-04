@@ -34,6 +34,7 @@ export interface PmSlice {
   refreshPmData: (projectPath: string) => Promise<void>;
   savePmData: (projectPath: string) => Promise<void>;
   clearPmData: (projectPath: string) => Promise<void>;
+  resetPmInMemory: () => void;
   discardPmChanges: () => void;
   addEpic: (epic: PmEpic) => void;
   updateEpic: (id: string, updates: Partial<PmEpic>) => void;
@@ -260,6 +261,19 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
       pmDirty: false,
     });
   },
+
+  resetPmInMemory: () =>
+    set({
+      pmEpics: [],
+      pmTickets: [],
+      pmTestCases: [],
+      pmDependencies: [],
+      pmDraftEpics: [],
+      pmDraftTickets: [],
+      pmDraftTestCases: [],
+      pmDraftDependencies: [],
+      pmDirty: false,
+    }),
 
   discardPmChanges: () => {
     const { pmEpics, pmTickets, pmTestCases, pmDependencies } = get();
