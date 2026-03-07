@@ -38,6 +38,15 @@ AuricIDE is built on the premise that **natural language is the new source code*
 - **Visual Process Canvas:** A node-based editor (`@xyflow/react`) that maps bi-directionally to structured Markdown files—ideal for designing AI workflows.
 - **WikiLink Ecosystem:** Full support for `[[WikiLinks]]` with completion, hover previews, and broken link detection.
 
+### 📋 Requirements Management
+
+- **Application Invariants:** Define long-lived invariants (functional & non-functional) that your project must continuously satisfy — unlike tickets, requirements are never "done". Link test cases to prove invariants hold, track verification freshness, and scope requirements to specific code paths (`appliesTo`).
+- **Lifecycle Tracking:** Each requirement moves through `draft → active → implemented → verified → deprecated`, with `lastVerifiedAt` timestamps showing when the invariant was last proven. Stale requirements (>30 days unverified) are visually flagged.
+- **Test Linkage:** Connect requirements to test cases that prove them. The join table cascades on delete and is exposed via MCP tools for agentic verification workflows.
+- **Category & Priority Filtering:** Organize requirements by category (e.g. `auth`, `perf`) with automatic ID generation (`REQ-AUTH-01`) and filter by priority, status, or verification freshness (Fresh / Stale / Unverified).
+- **MCP-Integrated:** AI agents can list, create, update, verify, link/unlink test cases, and query requirements through 10 built-in MCP tools.
+- **Acceptance Criteria:** Attach Markdown checklists to each requirement that define what "fulfilled" means — bridging the gap between spec and test.
+
 ### 🛠️ Developer-Grade Tooling
 
 - **Integrated Git Control:** File explorer status indicators (A/M/D), gutter markers for line-level changes, and a dedicated source control panel.

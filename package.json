@@ -71,6 +71,7 @@
     "js-yaml": "^4.1.1",
     "mermaid": "^11.12.2",
     "next": "16.1.6",
+    "pdfjs-dist": "^5.5.207",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",

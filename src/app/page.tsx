@@ -9,6 +9,7 @@ import { FileExplorer } from './components/explorer/FileExplorer';
 import { TabBar } from './components/editor/TabBar';
 import { MarkdownEditor } from './components/editor/MarkdownEditor';
 import { ImageViewer } from './components/editor/ImageViewer';
+import { PDFViewer } from './components/editor/PDFViewer';
 import { SourceControlPanel } from './components/git/SourceControlPanel';
 import { TerminalPanel } from './components/terminal/TerminalPanel';
 import { AgentsPanel } from './components/agents/AgentsPanel';
@@ -26,6 +27,7 @@ import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMen
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianColor, ObsidianNode } from '@/lib/obsidian-canvas/types';
 import { TicketCreateModal } from './components/pm/TicketCreateModal';
+import { RequirementsModal } from './components/requirements/RequirementsModal';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
@@ -205,6 +207,7 @@ export default function Home() {
           onClose={() => state.setCanvasTicketCreate(null)}
         />
       )}
+      <RequirementsModal />
       <IDEShell
         bottomCollapsed={state.bottomCollapsed}
         onBottomToggle={state.setBottomCollapsed}
@@ -246,6 +249,11 @@ export default function Home() {
                 ) : state.imageData ? (
                   <ImageViewer
                     src={state.imageData}
+                    fileName={state.activeTabId.split('/').pop() || ''}
+                  />
+                ) : state.pdfData ? (
+                  <PDFViewer
+                    src={state.pdfData}
                     fileName={state.activeTabId.split('/').pop() || ''}
                   />
                 ) : handlers.isObsidianCanvas ? (

@@ -10,6 +10,7 @@ export const activityItems: ActivityItem[] = [
   { id: 'extensions', icon: 'extension', label: 'Extensions' },
   { id: 'qa', icon: 'fact_check', label: 'QA' },
   { id: 'blueprints', icon: 'library_books', label: 'Blueprints' },
+  { id: 'requirements', icon: 'checklist', label: 'Requirements' },
   { id: 'project-mgmt', icon: 'task_alt', label: 'Project Management' },
   { id: 'settings', icon: 'settings', label: 'Settings' },
 ];

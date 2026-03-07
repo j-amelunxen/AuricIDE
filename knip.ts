@@ -3,14 +3,6 @@ import type { KnipConfig } from 'knip';
 const config: KnipConfig = {
   entry: ['src/lib/nlp/deepAnalysisWorker.ts'],
   project: ['src/**/*.{ts,tsx}'],
-  ignoreFiles: [
-    // Requirements UI components — wired into page.tsx when task #5 completes
-    'src/app/components/requirements/RequirementFilterPanel.tsx',
-    'src/app/components/requirements/RequirementList.tsx',
-    'src/app/components/requirements/RequirementCreateDialog.tsx',
-    'src/app/components/requirements/RequirementDetailPanel.tsx',
-    'src/app/components/requirements/RequirementsModal.tsx',
-  ],
   ignoreDependencies: [
     // Tailwind typography plugin — loaded via CSS @plugin directive, invisible to JS
     '@tailwindcss/typography',
