@@ -10,6 +10,7 @@ import { registerTaskTools } from './tools/tasks';
 import { registerTicketTools } from './tools/tickets';
 import { registerBlueprintTools } from './tools/blueprints';
 import { registerCanvasTools } from './tools/canvas';
+import { registerRequirementTools } from './tools/requirements';
 
 export function createMcpServer(db: Database.Database, projectRoot: string): FastMCP {
   const server = new FastMCP({
@@ -26,6 +27,7 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   registerBlueprintTools(server, db);
   registerContextTools(server, db);
   registerCanvasTools(server, projectRoot);
+  registerRequirementTools(server, db);
 
   return server;
 }

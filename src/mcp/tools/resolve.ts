@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 
-type ResolvableTable = 'pm_tickets' | 'pm_epics' | 'blueprints';
+type ResolvableTable = 'pm_tickets' | 'pm_epics' | 'blueprints' | 'pm_requirements';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN_PREFIX_LENGTH = 4;
@@ -9,6 +9,7 @@ const TABLE_LABELS: Record<ResolvableTable, string> = {
   pm_tickets: 'tickets',
   pm_epics: 'epics',
   blueprints: 'blueprints',
+  pm_requirements: 'requirements',
 };
 
 /**
@@ -57,6 +58,33 @@ export function resolveEpicId(db: Database.Database, prefix: string): string {
 
 export function resolveBlueprintId(db: Database.Database, prefix: string): string {
   return resolveId(db, 'blueprints', prefix);
+}
+
+export function resolveRequirementId(db: Database.Database, idOrReqId: string): string {
+  // First try as req_id (e.g. "REQ-AUTH-01")
+  if (/^REQ-/i.test(idOrReqId)) {
+    const row = db.prepare('SELECT id FROM pm_requirements WHERE req_id = ?').get(idOrReqId) as
+      | { id: string }
+      | undefined;
+    if (row) return row.id;
+    // Try case-insensitive prefix match
+    const rows = db
+      .prepare("SELECT id, req_id FROM pm_requirements WHERE req_id LIKE ? || '%'")
+      .all(idOrReqId) as { id: string; req_id: string }[];
+    if (rows.length === 1) return rows[0].id;
+    if (rows.length > 1) {
+      const examples = rows
+        .slice(0, 5)
+        .map((r) => r.req_id)
+        .join(', ');
+      throw new Error(
+        `Ambiguous req_id prefix '${idOrReqId}' matches ${rows.length} requirements (e.g. ${examples})`
+      );
+    }
+    throw new Error(`No requirement found for req_id '${idOrReqId}'`);
+  }
+  // Fall back to UUID/prefix resolution
+  return resolveId(db, 'pm_requirements', idOrReqId);
 }
 
 /**
