@@ -6,7 +6,7 @@ mod mcp;
 mod providers;
 
 use agents::AgentManagerState;
-use database::{BlueprintState, DatabaseState, KvEntry, PmSavePayload, PmState};
+use database::{BlueprintState, DatabaseState, KvEntry, PmSavePayload, PmState, RequirementsState};
 use git2::{Repository, StatusOptions};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -171,6 +171,10 @@ async fn shell_spawn(
     if let Some(ref c) = cwd {
         cmd.cwd(c);
     }
+    // Ensure child processes see a proper terminal type.
+    // GUI apps on macOS do not inherit TERM from the user's shell.
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
 
     let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
@@ -1358,6 +1362,43 @@ fn blueprints_clear(
 }
 
 #[tauri::command]
+fn requirements_save(
+    project_path: String,
+    payload: RequirementsState,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::requirements_save_impl(conn, &payload)
+}
+
+#[tauri::command]
+fn requirements_load(
+    project_path: String,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<RequirementsState, String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::requirements_load_impl(conn)
+}
+
+#[tauri::command]
+fn requirements_clear(
+    project_path: String,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::requirements_clear_impl(conn)
+}
+
+#[tauri::command]
 async fn llm_call(
     request: llm::LlmRequest,
     db_state: tauri::State<'_, database::DatabaseState>,
@@ -1508,6 +1549,9 @@ pub fn run() {
             blueprints_save,
             blueprints_load,
             blueprints_clear,
+            requirements_save,
+            requirements_load,
+            requirements_clear,
             append_metrics_log,
             report_frontend_crash,
             list_crash_logs,
