@@ -143,6 +143,8 @@ pub struct PmRequirement {
     pub rationale: String,
     pub acceptance_criteria: String,
     pub source: String,
+    pub applies_to: String,
+    pub last_verified_at: Option<String>,
     pub sort_order: i32,
     pub created_at: String,
     pub updated_at: String,
@@ -150,8 +152,18 @@ pub struct PmRequirement {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct PmRequirementTestLink {
+    pub id: String,
+    pub requirement_id: String,
+    pub test_case_id: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct RequirementsState {
     pub requirements: Vec<PmRequirement>,
+    pub test_links: Vec<PmRequirementTestLink>,
 }
 
 pub fn ensure_auric_dir(project_path: &str) -> Result<PathBuf, String> {
@@ -507,6 +519,38 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
 
         conn.execute(
             "INSERT INTO _migrations (id, name) VALUES (11, 'create_pm_requirements')",
+            [],
+        )
+        .map_err(|e| format!("Failed to record migration: {}", e))?;
+    }
+
+    // Migration #12: Add applies_to, last_verified_at to pm_requirements; add pm_requirement_test_links
+    let applied12: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 12",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if !applied12 {
+        conn.execute_batch(
+            "ALTER TABLE pm_requirements ADD COLUMN applies_to TEXT NOT NULL DEFAULT '[]';
+             ALTER TABLE pm_requirements ADD COLUMN last_verified_at TEXT;
+             CREATE TABLE pm_requirement_test_links (
+                 id              TEXT PRIMARY KEY,
+                 requirement_id  TEXT NOT NULL REFERENCES pm_requirements(id) ON DELETE CASCADE,
+                 test_case_id    TEXT NOT NULL REFERENCES pm_test_cases(id) ON DELETE CASCADE,
+                 created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                 UNIQUE(requirement_id, test_case_id)
+             );
+             CREATE INDEX idx_req_test_links_req ON pm_requirement_test_links(requirement_id);
+             CREATE INDEX idx_req_test_links_tc ON pm_requirement_test_links(test_case_id);",
+        )
+        .map_err(|e| format!("Failed to apply migration 12: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO _migrations (id, name) VALUES (12, 'requirements_applies_to_test_links')",
             [],
         )
         .map_err(|e| format!("Failed to record migration: {}", e))?;
@@ -1025,8 +1069,8 @@ pub fn requirements_save_impl(
 
         for req in &payload.requirements {
             conn.execute(
-                "INSERT INTO pm_requirements (id, req_id, title, description, type, category, priority, status, rationale, acceptance_criteria, source, sort_order, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                "INSERT INTO pm_requirements (id, req_id, title, description, type, category, priority, status, rationale, acceptance_criteria, source, applies_to, last_verified_at, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     req.id,
                     req.req_id,
@@ -1039,12 +1083,23 @@ pub fn requirements_save_impl(
                     req.rationale,
                     req.acceptance_criteria,
                     req.source,
+                    req.applies_to,
+                    req.last_verified_at,
                     req.sort_order,
                     req.created_at,
                     req.updated_at
                 ],
             )
             .map_err(|e| format!("Failed to insert requirement: {}", e))?;
+        }
+
+        for link in &payload.test_links {
+            conn.execute(
+                "INSERT INTO pm_requirement_test_links (id, requirement_id, test_case_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![link.id, link.requirement_id, link.test_case_id, link.created_at],
+            )
+            .map_err(|e| format!("Failed to insert requirement test link: {}", e))?;
         }
 
         Ok(())
@@ -1066,7 +1121,7 @@ pub fn requirements_save_impl(
 pub fn requirements_load_impl(conn: &Connection) -> Result<RequirementsState, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, req_id, title, description, type, category, priority, status, rationale, acceptance_criteria, source, sort_order, created_at, updated_at \
+            "SELECT id, req_id, title, description, type, category, priority, status, rationale, acceptance_criteria, source, applies_to, last_verified_at, sort_order, created_at, updated_at \
              FROM pm_requirements ORDER BY sort_order, req_id",
         )
         .map_err(|e| format!("Failed to prepare requirements query: {}", e))?;
@@ -1084,21 +1139,48 @@ pub fn requirements_load_impl(conn: &Connection) -> Result<RequirementsState, St
                 rationale: row.get(8)?,
                 acceptance_criteria: row.get(9)?,
                 source: row.get(10)?,
-                sort_order: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                applies_to: row.get(11)?,
+                last_verified_at: row.get(12)?,
+                sort_order: row.get(13)?,
+                created_at: row.get(14)?,
+                updated_at: row.get(15)?,
             })
         })
         .map_err(|e| format!("Failed to query requirements: {}", e))?
         .filter_map(|r| r.ok())
         .collect();
 
-    Ok(RequirementsState { requirements })
+    let mut link_stmt = conn
+        .prepare(
+            "SELECT id, requirement_id, test_case_id, created_at \
+             FROM pm_requirement_test_links ORDER BY created_at",
+        )
+        .map_err(|e| format!("Failed to prepare test links query: {}", e))?;
+    let test_links: Vec<PmRequirementTestLink> = link_stmt
+        .query_map([], |row| {
+            Ok(PmRequirementTestLink {
+                id: row.get(0)?,
+                requirement_id: row.get(1)?,
+                test_case_id: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query test links: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(RequirementsState {
+        requirements,
+        test_links,
+    })
 }
 
 pub fn requirements_clear_impl(conn: &Connection) -> Result<(), String> {
-    conn.execute("DELETE FROM pm_requirements", [])
-        .map_err(|e| format!("Failed to clear requirements: {}", e))?;
+    conn.execute_batch(
+        "DELETE FROM pm_requirement_test_links;
+         DELETE FROM pm_requirements;",
+    )
+    .map_err(|e| format!("Failed to clear requirements: {}", e))?;
     Ok(())
 }
 
@@ -1149,7 +1231,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 11);
+        assert_eq!(count, 12);
 
         // kv_store table should exist
         let table_exists: bool = conn
@@ -1171,7 +1253,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 11);
+        assert_eq!(count, 12);
     }
 
     #[test]
@@ -1189,7 +1271,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 11);
+        assert_eq!(count, 12);
     }
 
     #[test]
@@ -1292,6 +1374,7 @@ mod tests {
             "pm_status_history",
             "blueprints",
             "pm_requirements",
+            "pm_requirement_test_links",
         ];
         for table in &tables {
             let exists: bool = conn
@@ -1310,7 +1393,7 @@ mod tests {
         let migration_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 11);
+        assert_eq!(migration_count, 12);
     }
 
     fn make_test_payload() -> PmSavePayload {
@@ -1705,10 +1788,13 @@ mod tests {
                 rationale: "Core feature".to_string(),
                 acceptance_criteria: "- Can log in with email".to_string(),
                 source: "spec.md".to_string(),
+                applies_to: "[]".to_string(),
+                last_verified_at: None,
                 sort_order: 0,
                 created_at: "2026-01-01 00:00:00".to_string(),
                 updated_at: "2026-01-01 00:00:00".to_string(),
             }],
+            test_links: vec![],
         };
 
         requirements_save_impl(&conn, &payload).unwrap();
@@ -1720,6 +1806,7 @@ mod tests {
         assert_eq!(state.requirements[0].title, "User Login");
         assert_eq!(state.requirements[0].r#type, "functional");
         assert_eq!(state.requirements[0].category, "auth");
+        assert_eq!(state.test_links.len(), 0);
     }
 
     #[test]
@@ -1738,15 +1825,19 @@ mod tests {
                 rationale: "".to_string(),
                 acceptance_criteria: "".to_string(),
                 source: "".to_string(),
+                applies_to: "[]".to_string(),
+                last_verified_at: None,
                 sort_order: 0,
                 created_at: "2026-01-01 00:00:00".to_string(),
                 updated_at: "2026-01-01 00:00:00".to_string(),
             }],
+            test_links: vec![],
         };
         requirements_save_impl(&conn, &payload).unwrap();
         requirements_clear_impl(&conn).unwrap();
         let state = requirements_load_impl(&conn).unwrap();
         assert_eq!(state.requirements.len(), 0);
+        assert_eq!(state.test_links.len(), 0);
     }
 
     #[test]
@@ -1765,10 +1856,13 @@ mod tests {
                 rationale: "".to_string(),
                 acceptance_criteria: "".to_string(),
                 source: "".to_string(),
+                applies_to: "[]".to_string(),
+                last_verified_at: None,
                 sort_order: 0,
                 created_at: "2026-01-01 00:00:00".to_string(),
                 updated_at: "2026-01-01 00:00:00".to_string(),
             }],
+            test_links: vec![],
         };
         requirements_save_impl(&conn, &payload1).unwrap();
 
@@ -1785,10 +1879,13 @@ mod tests {
                 rationale: "".to_string(),
                 acceptance_criteria: "".to_string(),
                 source: "".to_string(),
+                applies_to: r#"["module-a"]"#.to_string(),
+                last_verified_at: Some("2026-03-01 00:00:00".to_string()),
                 sort_order: 0,
                 created_at: "2026-01-01 00:00:00".to_string(),
                 updated_at: "2026-01-01 00:00:00".to_string(),
             }],
+            test_links: vec![],
         };
         requirements_save_impl(&conn, &payload2).unwrap();
 
@@ -1796,5 +1893,120 @@ mod tests {
         assert_eq!(state.requirements.len(), 1);
         assert_eq!(state.requirements[0].id, "r2");
         assert_eq!(state.requirements[0].title, "New");
+        assert_eq!(state.requirements[0].applies_to, r#"["module-a"]"#);
+        assert_eq!(
+            state.requirements[0].last_verified_at,
+            Some("2026-03-01 00:00:00".to_string())
+        );
+    }
+
+    fn make_test_requirement(id: &str, req_id: &str) -> PmRequirement {
+        PmRequirement {
+            id: id.to_string(),
+            req_id: req_id.to_string(),
+            title: format!("Requirement {}", id),
+            description: "".to_string(),
+            r#type: "functional".to_string(),
+            category: "".to_string(),
+            priority: "normal".to_string(),
+            status: "draft".to_string(),
+            rationale: "".to_string(),
+            acceptance_criteria: "".to_string(),
+            source: "".to_string(),
+            applies_to: "[]".to_string(),
+            last_verified_at: None,
+            sort_order: 0,
+            created_at: "2026-01-01 00:00:00".to_string(),
+            updated_at: "2026-01-01 00:00:00".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_requirement_test_links_save_and_load() {
+        let conn = setup_in_memory_db();
+
+        // Need a ticket and test case for the FK to work
+        let pm_payload = make_test_payload();
+        pm_save_impl(&conn, &pm_payload).unwrap();
+
+        let payload = RequirementsState {
+            requirements: vec![make_test_requirement("r1", "REQ-01")],
+            test_links: vec![PmRequirementTestLink {
+                id: "tl1".to_string(),
+                requirement_id: "r1".to_string(),
+                test_case_id: "tc1".to_string(),
+                created_at: "2026-01-01 00:00:00".to_string(),
+            }],
+        };
+
+        requirements_save_impl(&conn, &payload).unwrap();
+        let state = requirements_load_impl(&conn).unwrap();
+
+        assert_eq!(state.requirements.len(), 1);
+        assert_eq!(state.test_links.len(), 1);
+        assert_eq!(state.test_links[0].id, "tl1");
+        assert_eq!(state.test_links[0].requirement_id, "r1");
+        assert_eq!(state.test_links[0].test_case_id, "tc1");
+    }
+
+    #[test]
+    fn test_requirement_test_links_cleared_with_requirements() {
+        let conn = setup_in_memory_db();
+
+        let pm_payload = make_test_payload();
+        pm_save_impl(&conn, &pm_payload).unwrap();
+
+        let payload = RequirementsState {
+            requirements: vec![make_test_requirement("r1", "REQ-01")],
+            test_links: vec![PmRequirementTestLink {
+                id: "tl1".to_string(),
+                requirement_id: "r1".to_string(),
+                test_case_id: "tc1".to_string(),
+                created_at: "2026-01-01 00:00:00".to_string(),
+            }],
+        };
+        requirements_save_impl(&conn, &payload).unwrap();
+
+        requirements_clear_impl(&conn).unwrap();
+        let state = requirements_load_impl(&conn).unwrap();
+
+        assert_eq!(state.requirements.len(), 0);
+        assert_eq!(state.test_links.len(), 0);
+    }
+
+    #[test]
+    fn test_requirement_applies_to_and_last_verified_at_roundtrip() {
+        let conn = setup_in_memory_db();
+
+        let mut req = make_test_requirement("r1", "REQ-01");
+        req.applies_to = r#"["auth","payments"]"#.to_string();
+        req.last_verified_at = Some("2026-03-07 12:00:00".to_string());
+
+        let payload = RequirementsState {
+            requirements: vec![req],
+            test_links: vec![],
+        };
+        requirements_save_impl(&conn, &payload).unwrap();
+        let state = requirements_load_impl(&conn).unwrap();
+
+        assert_eq!(state.requirements[0].applies_to, r#"["auth","payments"]"#);
+        assert_eq!(
+            state.requirements[0].last_verified_at,
+            Some("2026-03-07 12:00:00".to_string())
+        );
+    }
+
+    #[test]
+    fn test_requirement_last_verified_at_nullable() {
+        let conn = setup_in_memory_db();
+
+        let payload = RequirementsState {
+            requirements: vec![make_test_requirement("r1", "REQ-01")],
+            test_links: vec![],
+        };
+        requirements_save_impl(&conn, &payload).unwrap();
+        let state = requirements_load_impl(&conn).unwrap();
+
+        assert_eq!(state.requirements[0].last_verified_at, None);
     }
 }
