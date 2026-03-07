@@ -10,15 +10,25 @@ export interface PmRequirement {
   rationale: string;
   acceptanceCriteria: string;
   source: string;
+  lastVerifiedAt: string | null;
+  appliesTo: string[];
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PmRequirementTestLink {
+  id: string;
+  requirementId: string;
+  testCaseId: string;
+  createdAt: string;
 }
 
 import { invoke } from './invoke';
 
 export interface RequirementsState {
   requirements: PmRequirement[];
+  testLinks: PmRequirementTestLink[];
 }
 
 export async function requirementsLoad(projectPath: string): Promise<RequirementsState> {

@@ -94,6 +94,47 @@ Key slices and what they own:
 
 **PM draft pattern:** `pmDraftEpics` holds in-progress edits; `pmEpics` is the last-persisted snapshot. `savePmData()` flushes drafts to SQLite via IPC.
 
+## Requirements vs. Tickets
+
+Requirements and Tickets serve fundamentally different purposes:
+
+- **Requirements** are **application invariants** — analogous to loop invariants in formal verification. An invariant is provable, continuously checked, and when it breaks, you know the code is wrong. Requirements are never "done"; they are either fulfilled or violated. They are linked to test cases (proof of the invariant), tracked for verification freshness (`lastVerifiedAt`), and scoped to specific code paths (`appliesTo`).
+- **Tickets** are transient work items — tasks that get completed and closed. Tickets are created _to fulfill_ requirements. Once a ticket is done, the requirement it serves should be verified (status → `verified`).
+
+The lifecycle: `draft` → `active` → `implemented` (code exists) → `verified` (tests confirm it) → optionally `deprecated`. Verification is not permanent — a requirement can become _stale_ if not re-verified within 30 days.
+
+### Requirements Data Model (`PmRequirement`)
+
+Defined in `src/lib/tauri/requirements.ts`. Key fields:
+
+| Field                | Type                                                                 | Purpose                                                                  |
+| -------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `reqId`              | `string`                                                             | Human-readable ID, auto-generated from category (e.g. `REQ-AUTH-01`)     |
+| `title`              | `string`                                                             | Short name (only true required field at creation)                        |
+| `type`               | `'functional' \| 'non_functional'`                                   | Functional requirement vs. NFR (performance, security, etc.)             |
+| `category`           | `string`                                                             | Grouping key (e.g. `auth`, `perf`) — used for filtering and reqId prefix |
+| `priority`           | `'low' \| 'normal' \| 'high' \| 'critical'`                          | Business priority                                                        |
+| `status`             | `'draft' \| 'active' \| 'implemented' \| 'verified' \| 'deprecated'` | Fulfillment lifecycle                                                    |
+| `description`        | `string`                                                             | Full Markdown description                                                |
+| `rationale`          | `string`                                                             | Why this requirement exists                                              |
+| `acceptanceCriteria` | `string`                                                             | Markdown checklist that defines "fulfilled"                              |
+| `source`             | `string`                                                             | Origin document (e.g. `spec.md`)                                         |
+| `lastVerifiedAt`     | `string \| null`                                                     | Timestamp of last verification (null = never verified)                   |
+| `appliesTo`          | `string[]`                                                           | Code paths this invariant covers (e.g. `src/auth/`)                      |
+
+### Requirements Stack
+
+```
+UI (RequirementsModal)  →  Zustand (requirementsSlice)  →  IPC  →  Rust/SQLite (pm_requirements + pm_requirement_test_links)
+                            ↕
+                        MCP Tools (list/get/create/update/delete/import/link/unlink/verify/get_tests)
+```
+
+- **Store:** `src/lib/store/requirementsSlice.ts` — same draft pattern as PM (draft + persisted + dirty flag); includes test link drafts and selector helpers (`getStaleRequirements`, `getUnverifiedRequirements`, `getTestLinksForRequirement`)
+- **IPC:** `src/lib/tauri/requirements.ts` — `requirementsLoad`, `requirementsSave`, `requirementsClear`; `RequirementsState` includes `testLinks: PmRequirementTestLink[]`
+- **MCP:** `src/mcp/tools/requirements.ts` — 10 tools, supports `resolveRequirementId` (UUID, prefix, or reqId like `REQ-AUTH-01`)
+- **UI:** `src/app/components/requirements/` — Modal with FilterPanel (includes verification freshness filter), List (verification indicator), DetailPanel (verify button, appliesTo chips, linked tests), CreateDialog (appliesTo input)
+
 ## Tauri IPC Pattern
 
 All IPC wrappers live in `src/lib/tauri/*.ts`. They all use a lazy dynamic import to avoid breaking browser/test environments:

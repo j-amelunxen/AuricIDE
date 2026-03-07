@@ -12,6 +12,7 @@ export function useIDEState() {
   const [activeActivity, setActiveActivity] = useState('explorer');
   const [editorContent, setEditorContent] = useState('');
   const [imageData, setImageData] = useState<string | null>(null);
+  const [pdfData, setPdfData] = useState<string | null>(null);
   const [mindmapData, setMindmapData] = useState<MindmapData | null>(null);
   const [diffContent, setDiffContent] = useState<string | null>(null);
   const [bottomCollapsed, setBottomCollapsed] = useState(true);
@@ -91,6 +92,9 @@ export function useIDEState() {
   const setBlueprintsGalleryOpen = useStore((s) => s.setBlueprintsGalleryOpen);
   const loadBlueprints = useStore((s) => s.loadBlueprints);
   const resetBlueprintsInMemory = useStore((s) => s.resetBlueprintsInMemory);
+  const setRequirementsModalOpen = useStore((s) => s.setRequirementsModalOpen);
+  const loadRequirements = useStore((s) => s.loadRequirements);
+  const resetRequirementsInMemory = useStore((s) => s.resetRequirementsInMemory);
   const initProjectDb = useStore((s) => s.initProjectDb);
   const closeProjectDb = useStore((s) => s.closeProjectDb);
   const setAllFiles = useStore((s) => s.setAllFiles);
@@ -163,6 +167,8 @@ export function useIDEState() {
     setEditorContent,
     imageData,
     setImageData,
+    pdfData,
+    setPdfData,
     mindmapData,
     setMindmapData,
     diffContent,
@@ -262,6 +268,9 @@ export function useIDEState() {
     loadPmData,
     resetPmInMemory,
     resetBlueprintsInMemory,
+    setRequirementsModalOpen,
+    loadRequirements,
+    resetRequirementsInMemory,
     pmDraftTickets,
     providers,
     setProviders,

@@ -98,9 +98,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.clearEntityIndex();
     state.resetPmInMemory();
     state.resetBlueprintsInMemory();
+    state.resetRequirementsInMemory();
     state.setProjectFiles([]);
     state.setEditorContent('');
     state.setImageData(null);
+    state.setPdfData(null);
     state.setMindmapData(null);
     state.setDiffContent(null);
   }, [state]);
@@ -116,6 +118,15 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         // Guard: user may have switched tabs while the file was loading
         if (useStore.getState().activeTabId !== path) return;
         state.setImageData(data);
+        state.setPdfData(null);
+        state.setEditorContent('');
+        state.setMindmapData(null);
+      } else if (ext === 'pdf') {
+        const data = await readFileBase64(path);
+        // Guard: user may have switched tabs while the file was loading
+        if (useStore.getState().activeTabId !== path) return;
+        state.setPdfData(data);
+        state.setImageData(null);
         state.setEditorContent('');
         state.setMindmapData(null);
       } else {
@@ -173,9 +184,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.clearEntityIndex();
     state.resetPmInMemory();
     state.resetBlueprintsInMemory();
+    state.resetRequirementsInMemory();
     state.setProjectFiles([]);
     state.setEditorContent('');
     state.setImageData(null);
+    state.setPdfData(null);
     state.setMindmapData(null);
     state.setDiffContent(null);
   }, [state]);
@@ -599,6 +612,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       if (id === 'blueprints') {
         state.setBlueprintsGalleryOpen(true);
         if (state.rootPath) state.loadBlueprints(state.rootPath);
+        return;
+      }
+      if (id === 'requirements') {
+        state.setRequirementsModalOpen(true);
+        if (state.rootPath) state.loadRequirements(state.rootPath);
         return;
       }
       state.setActiveActivity(id);
