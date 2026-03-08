@@ -96,13 +96,18 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
   loadRequirements: async (projectPath) => {
     await initProjectDb(projectPath);
     const state: RequirementsState = await ipcRequirementsLoad(projectPath);
+    // Rust stores applies_to as a JSON string — parse it into a real array
+    const requirements = state.requirements.map((r) => ({
+      ...r,
+      appliesTo: typeof r.appliesTo === 'string' ? JSON.parse(r.appliesTo) : (r.appliesTo ?? []),
+    }));
     const { requirementsDirty, currentRequirementsProject } = get();
     const isNewProject = currentRequirementsProject !== projectPath;
 
     if (!requirementsDirty || isNewProject) {
       set({
-        requirements: state.requirements,
-        requirementsDraft: state.requirements,
+        requirements,
+        requirementsDraft: requirements,
         requirementTestLinks: state.testLinks,
         requirementTestLinksDraft: state.testLinks,
         requirementsDirty: false,
@@ -110,7 +115,7 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
       });
     } else {
       set({
-        requirements: state.requirements,
+        requirements,
         requirementTestLinks: state.testLinks,
         currentRequirementsProject: projectPath,
       });
@@ -120,8 +125,13 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
   saveRequirements: async (projectPath) => {
     await initProjectDb(projectPath);
     const { requirementsDraft, requirementTestLinksDraft } = get();
+    // Rust expects applies_to as a JSON string
+    const serialized = requirementsDraft.map((r) => ({
+      ...r,
+      appliesTo: Array.isArray(r.appliesTo) ? JSON.stringify(r.appliesTo) : (r.appliesTo ?? '[]'),
+    }));
     await ipcRequirementsSave(projectPath, {
-      requirements: requirementsDraft,
+      requirements: serialized as unknown as PmRequirement[],
       testLinks: requirementTestLinksDraft,
     });
     set({

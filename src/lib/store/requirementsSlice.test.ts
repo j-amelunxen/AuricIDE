@@ -207,8 +207,13 @@ describe('requirementsSlice', () => {
     await store.getState().saveRequirements('/project');
 
     expect(mockInitProjectDb).toHaveBeenCalledWith('/project');
+    // IPC receives appliesTo serialized as a JSON string
+    const expectedReqs = store.getState().requirements.map((r) => ({
+      ...r,
+      appliesTo: JSON.stringify(r.appliesTo),
+    }));
     expect(mockRequirementsSave).toHaveBeenCalledWith('/project', {
-      requirements: store.getState().requirements,
+      requirements: expectedReqs,
       testLinks: store.getState().requirementTestLinksDraft,
     });
     expect(store.getState().requirementsDirty).toBe(false);
@@ -284,8 +289,13 @@ describe('requirementsSlice', () => {
 
     await store.getState().saveRequirements('/project');
 
+    // IPC receives appliesTo serialized as a JSON string
+    const expectedReqs = store.getState().requirements.map((r) => ({
+      ...r,
+      appliesTo: JSON.stringify(r.appliesTo),
+    }));
     expect(mockRequirementsSave).toHaveBeenCalledWith('/project', {
-      requirements: store.getState().requirements,
+      requirements: expectedReqs,
       testLinks: [link],
     });
   });
