@@ -1,32 +1,13 @@
-import Database from 'better-sqlite3';
 import { describe, expect, it, beforeEach } from 'vitest';
+import type Database from 'better-sqlite3';
 import { listBlueprints, getBlueprint, createBlueprint } from './blueprints';
-
-function setupDb(): Database.Database {
-  const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE blueprints (
-      id          TEXT PRIMARY KEY,
-      name        TEXT NOT NULL,
-      tech_stack  TEXT NOT NULL DEFAULT '',
-      goal        TEXT NOT NULL DEFAULT '',
-      complexity  TEXT NOT NULL DEFAULT 'MEDIUM',
-      category    TEXT NOT NULL DEFAULT 'architectures',
-      description TEXT NOT NULL DEFAULT '',
-      spec        TEXT NOT NULL DEFAULT '',
-      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX idx_blueprints_category ON blueprints(category);
-  `);
-  return db;
-}
+import { createTestDb } from '../db';
 
 describe('blueprint MCP tools', () => {
   let db: Database.Database;
 
   beforeEach(() => {
-    db = setupDb();
+    db = createTestDb();
   });
 
   describe('listBlueprints', () => {

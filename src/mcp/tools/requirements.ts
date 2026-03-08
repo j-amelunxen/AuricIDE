@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
@@ -210,9 +211,10 @@ export function linkTestToRequirement(
   requirementId: string,
   testCaseId: string
 ): { linked: true } {
+  const id = crypto.randomUUID();
   db.prepare(
-    'INSERT OR IGNORE INTO pm_requirement_test_links (requirement_id, test_case_id) VALUES (?, ?)'
-  ).run(requirementId, testCaseId);
+    'INSERT OR IGNORE INTO pm_requirement_test_links (id, requirement_id, test_case_id) VALUES (?, ?, ?)'
+  ).run(id, requirementId, testCaseId);
   return { linked: true };
 }
 

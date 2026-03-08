@@ -1,43 +1,7 @@
-import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type Database from 'better-sqlite3';
 import { insertStatusHistory, listStatusHistory } from '../tools/history';
-
-const SCHEMA = `
-  CREATE TABLE pm_epics (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE pm_tickets (
-    id TEXT PRIMARY KEY,
-    epic_id TEXT NOT NULL REFERENCES pm_epics(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'open',
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    context TEXT NOT NULL DEFAULT '[]',
-    status_updated_at TEXT NOT NULL DEFAULT '2026-01-01 00:00:00',
-    working_directory TEXT,
-    priority TEXT NOT NULL DEFAULT 'normal',
-    model_power TEXT,
-    needs_human_supervision INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE pm_status_history (
-    id TEXT PRIMARY KEY,
-    ticket_id TEXT NOT NULL REFERENCES pm_tickets(id) ON DELETE CASCADE,
-    from_status TEXT,
-    to_status TEXT NOT NULL,
-    changed_at TEXT NOT NULL DEFAULT (datetime('now')),
-    source TEXT NOT NULL DEFAULT 'mcp'
-  );
-`;
+import { createTestDb } from '../db';
 
 function seedEpic(db: Database.Database, id: string, name: string): void {
   db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run(id, name);
@@ -51,9 +15,7 @@ describe('history tools', () => {
   let db: Database.Database;
 
   beforeEach(() => {
-    db = new Database(':memory:');
-    db.pragma('foreign_keys = ON');
-    db.exec(SCHEMA);
+    db = createTestDb();
     seedEpic(db, 'epic-1', 'Epic One');
     seedTicket(db, 'ticket-1', 'epic-1', 'Ticket One');
     seedTicket(db, 'ticket-2', 'epic-1', 'Ticket Two');
