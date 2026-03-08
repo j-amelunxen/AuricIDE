@@ -1,5 +1,5 @@
-import Database from 'better-sqlite3';
 import { describe, expect, it, beforeEach } from 'vitest';
+import type Database from 'better-sqlite3';
 import {
   listRequirements,
   getRequirement,
@@ -13,53 +13,13 @@ import {
   verifyRequirement,
 } from './requirements';
 import { resolveRequirementId } from './resolve';
-
-function setupDb(): Database.Database {
-  const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE pm_requirements (
-      id                  TEXT PRIMARY KEY,
-      req_id              TEXT NOT NULL UNIQUE,
-      title               TEXT NOT NULL,
-      description         TEXT NOT NULL DEFAULT '',
-      type                TEXT NOT NULL DEFAULT 'functional',
-      category            TEXT NOT NULL DEFAULT '',
-      priority            TEXT NOT NULL DEFAULT 'normal',
-      status              TEXT NOT NULL DEFAULT 'draft',
-      rationale           TEXT NOT NULL DEFAULT '',
-      acceptance_criteria TEXT NOT NULL DEFAULT '',
-      source              TEXT NOT NULL DEFAULT '',
-      sort_order          INTEGER NOT NULL DEFAULT 0,
-      last_verified_at    TEXT,
-      applies_to          TEXT NOT NULL DEFAULT '[]',
-      created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE UNIQUE INDEX idx_pm_requirements_req_id ON pm_requirements(req_id);
-    CREATE TABLE pm_requirement_test_links (
-      requirement_id TEXT NOT NULL,
-      test_case_id   TEXT NOT NULL,
-      PRIMARY KEY (requirement_id, test_case_id),
-      FOREIGN KEY (requirement_id) REFERENCES pm_requirements(id) ON DELETE CASCADE
-    );
-    CREATE TABLE pm_test_cases (
-      id         TEXT PRIMARY KEY,
-      ticket_id  TEXT,
-      title      TEXT,
-      body       TEXT,
-      sort_order INTEGER,
-      created_at TEXT,
-      updated_at TEXT
-    );
-  `);
-  return db;
-}
+import { createTestDb } from '../db';
 
 describe('requirement MCP tools', () => {
   let db: Database.Database;
 
   beforeEach(() => {
-    db = setupDb();
+    db = createTestDb();
   });
 
   describe('listRequirements', () => {
@@ -346,14 +306,31 @@ describe('requirement MCP tools', () => {
   describe('linkTestToRequirement', () => {
     it('links a test case to a requirement', () => {
       const req = createRequirement(db, { reqId: 'REQ-01', title: 'Test' });
-      db.prepare(`INSERT INTO pm_test_cases (id, title) VALUES ('tc-1', 'My Test')`).run();
+      // Need an epic+ticket to create a test case (FK constraint)
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('e1', 'Epic');
+      db.prepare('INSERT INTO pm_tickets (id, epic_id, name) VALUES (?, ?, ?)').run(
+        't1',
+        'e1',
+        'Ticket'
+      );
+      db.prepare(
+        `INSERT INTO pm_test_cases (id, ticket_id, title) VALUES ('tc-1', 't1', 'My Test')`
+      ).run();
       const result = linkTestToRequirement(db, req.id, 'tc-1');
       expect(result).toEqual({ linked: true });
     });
 
     it('is idempotent (INSERT OR IGNORE)', () => {
       const req = createRequirement(db, { reqId: 'REQ-01', title: 'Test' });
-      db.prepare(`INSERT INTO pm_test_cases (id, title) VALUES ('tc-1', 'My Test')`).run();
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('e1', 'Epic');
+      db.prepare('INSERT INTO pm_tickets (id, epic_id, name) VALUES (?, ?, ?)').run(
+        't1',
+        'e1',
+        'Ticket'
+      );
+      db.prepare(
+        `INSERT INTO pm_test_cases (id, ticket_id, title) VALUES ('tc-1', 't1', 'My Test')`
+      ).run();
       linkTestToRequirement(db, req.id, 'tc-1');
       expect(() => linkTestToRequirement(db, req.id, 'tc-1')).not.toThrow();
     });
@@ -362,7 +339,15 @@ describe('requirement MCP tools', () => {
   describe('unlinkTestFromRequirement', () => {
     it('unlinks an existing link and returns { unlinked: true }', () => {
       const req = createRequirement(db, { reqId: 'REQ-01', title: 'Test' });
-      db.prepare(`INSERT INTO pm_test_cases (id, title) VALUES ('tc-1', 'My Test')`).run();
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('e1', 'Epic');
+      db.prepare('INSERT INTO pm_tickets (id, epic_id, name) VALUES (?, ?, ?)').run(
+        't1',
+        'e1',
+        'Ticket'
+      );
+      db.prepare(
+        `INSERT INTO pm_test_cases (id, ticket_id, title) VALUES ('tc-1', 't1', 'My Test')`
+      ).run();
       linkTestToRequirement(db, req.id, 'tc-1');
       const result = unlinkTestFromRequirement(db, req.id, 'tc-1');
       expect(result).toEqual({ unlinked: true });
@@ -378,8 +363,14 @@ describe('requirement MCP tools', () => {
   describe('getRequirementTests', () => {
     it('returns test cases linked to requirement', () => {
       const req = createRequirement(db, { reqId: 'REQ-01', title: 'Test' });
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('e1', 'Epic');
+      db.prepare('INSERT INTO pm_tickets (id, epic_id, name) VALUES (?, ?, ?)').run(
+        't1',
+        'e1',
+        'Ticket'
+      );
       db.prepare(
-        `INSERT INTO pm_test_cases (id, title, body) VALUES ('tc-1', 'TC Title', 'TC Body')`
+        `INSERT INTO pm_test_cases (id, ticket_id, title, body) VALUES ('tc-1', 't1', 'TC Title', 'TC Body')`
       ).run();
       linkTestToRequirement(db, req.id, 'tc-1');
       const tests = getRequirementTests(db, req.id);
@@ -410,7 +401,15 @@ describe('requirement MCP tools', () => {
   describe('cascade delete on requirement', () => {
     it('removes linked tests when requirement is deleted', () => {
       const req = createRequirement(db, { reqId: 'REQ-01', title: 'Test' });
-      db.prepare(`INSERT INTO pm_test_cases (id, title) VALUES ('tc-1', 'My Test')`).run();
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('e1', 'Epic');
+      db.prepare('INSERT INTO pm_tickets (id, epic_id, name) VALUES (?, ?, ?)').run(
+        't1',
+        'e1',
+        'Ticket'
+      );
+      db.prepare(
+        `INSERT INTO pm_test_cases (id, ticket_id, title) VALUES ('tc-1', 't1', 'My Test')`
+      ).run();
       linkTestToRequirement(db, req.id, 'tc-1');
       deleteRequirement(db, req.id);
       const links = db
