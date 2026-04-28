@@ -141,6 +141,10 @@ pnpm test:e2e         # Run Playwright end-to-end tests
 
 ---
 
+Driven by: https://software-architecture.ai
+
+---
+
 ## 📜 License
 
 Licensed under **AGPL v3**. Commercial licensing available on request.
