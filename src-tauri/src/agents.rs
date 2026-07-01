@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 
 // ── Data types ──────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ pub struct AgentStatusEvent {
 
 pub struct AgentProcess {
     pub info: AgentInfo,
-    pub _child: Box<dyn PtyChild + Send + Sync>,
+    pub child: Box<dyn PtyChild + Send + Sync>,
 }
 
 pub struct AgentManager {
@@ -95,6 +95,62 @@ pub type AgentManagerState = Arc<Mutex<AgentManager>>;
 
 pub fn new_agent_manager_state() -> AgentManagerState {
     Arc::new(Mutex::new(AgentManager::new()))
+}
+
+// ── Cached login-shell environment ──────────────────────────────────
+//
+// Agent processes need the PATH (and any other env vars) that a user's
+// login shell would set up (e.g. nvm/homebrew entries from .zprofile /
+// .zshrc), because GUI apps on macOS are launched with a minimal PATH.
+// Spawning a *login* shell (`-l`) for every single agent re-parses those
+// rc files on every spawn, which dominates spawn latency on machines with
+// heavier shell configs. Instead we resolve the login-shell environment
+// once, cache it for the lifetime of the app, and spawn agents with a
+// plain (non-login) shell plus the cached env applied explicitly.
+static SHELL_ENV_CACHE: OnceCell<Vec<(String, String)>> = OnceCell::const_new();
+
+/// Pre-resolves the cached login-shell environment so the first real agent
+/// spawn doesn't have to pay for it. Safe to call multiple times.
+pub async fn warm_shell_env_cache() {
+    cached_login_shell_env().await;
+}
+
+pub(crate) async fn cached_login_shell_env() -> &'static [(String, String)] {
+    SHELL_ENV_CACHE
+        .get_or_init(|| async {
+            tokio::task::spawn_blocking(resolve_login_shell_env)
+                .await
+                .unwrap_or_default()
+        })
+        .await
+        .as_slice()
+}
+
+fn resolve_login_shell_env() -> Vec<(String, String)> {
+    let (shell, flag) = if cfg!(target_os = "windows") {
+        return Vec::new();
+    } else if cfg!(target_os = "macos") {
+        ("/bin/zsh", "-lc")
+    } else {
+        ("sh", "-lc")
+    };
+
+    match std::process::Command::new(shell)
+        .arg(flag)
+        .arg("env -0")
+        .output()
+    {
+        Ok(out) if out.status.success() => parse_env_output(&out.stdout),
+        _ => Vec::new(),
+    }
+}
+
+fn parse_env_output(bytes: &[u8]) -> Vec<(String, String)> {
+    String::from_utf8_lossy(bytes)
+        .split('\0')
+        .filter_map(|entry| entry.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 // ── list_agents ─────────────────────────────────────────────────────
@@ -130,10 +186,13 @@ pub async fn spawn_agent_impl(
         })
         .map_err(|e| e.to_string())?;
 
+    // Non-login shell: the PATH/env a login shell would source is applied
+    // explicitly below via the cached login-shell environment, so we avoid
+    // re-parsing rc files on every single agent spawn.
     let (shell, args) = if cfg!(target_os = "windows") {
         ("cmd", vec!["/C".to_string()])
     } else if cfg!(target_os = "macos") {
-        ("/bin/zsh", vec!["-lc".to_string()])
+        ("/bin/zsh", vec!["-c".to_string()])
     } else {
         ("sh", vec!["-c".to_string()])
     };
@@ -158,6 +217,9 @@ pub async fn spawn_agent_impl(
     }
     cmd.arg(&spawn_cmd.command);
 
+    for (key, value) in cached_login_shell_env().await {
+        cmd.env(key, value);
+    }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
 
@@ -205,7 +267,7 @@ pub async fn spawn_agent_impl(
 
     let process = AgentProcess {
         info: info.clone(),
-        _child: child,
+        child,
     };
 
     // Stream PTY output to the frontend (batched at ~30fps to avoid IPC saturation)
@@ -341,10 +403,15 @@ pub async fn kill_agent_impl(
     app: &AppHandle,
 ) -> Result<(), String> {
     let mut manager = state.lock().await;
-    let _process = manager
+    let mut process = manager
         .agents
         .remove(agent_id)
         .ok_or_else(|| format!("Agent not found: {}", agent_id))?;
+    drop(manager);
+
+    // Removing the AgentProcess only drops our handle to the child — the
+    // PTY child process itself keeps running unless explicitly killed.
+    let _ = process.child.kill();
 
     let _ = app.emit(
         "agent-status",
@@ -352,7 +419,7 @@ pub async fn kill_agent_impl(
             agent_id: agent_id.to_string(),
             status: AgentStatus::Idle,
             exit_code: None,
-            repo_path: None,
+            repo_path: process.info.repo_path,
         },
     );
 
@@ -439,5 +506,84 @@ mod tests {
         assert!(config.auto_accept_edits.is_none());
         assert!(config.provider.is_none());
         assert!(config.headless.is_none());
+    }
+
+    #[test]
+    fn test_parse_env_output_splits_nul_separated_pairs() {
+        let raw = b"FOO=bar\0PATH=/usr/bin:/bin\0EMPTY=\0";
+        let parsed = parse_env_output(raw);
+        assert_eq!(
+            parsed,
+            vec![
+                ("FOO".to_string(), "bar".to_string()),
+                ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+                ("EMPTY".to_string(), "".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_env_output_keeps_equals_signs_in_value() {
+        let raw = b"CONNSTRING=user=admin;pass=1\0";
+        let parsed = parse_env_output(raw);
+        assert_eq!(
+            parsed,
+            vec![("CONNSTRING".to_string(), "user=admin;pass=1".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_parse_env_output_skips_entries_without_equals() {
+        let raw = b"MALFORMED\0FOO=bar\0";
+        let parsed = parse_env_output(raw);
+        assert_eq!(parsed, vec![("FOO".to_string(), "bar".to_string())]);
+    }
+
+    /// Regression test: dropping an `AgentProcess` (e.g. after removing it
+    /// from the manager's map) must NOT be relied upon to terminate the
+    /// underlying PTY child. `kill_agent_impl` must explicitly call
+    /// `.kill()`, otherwise "killed" agents keep running as orphaned
+    /// processes indefinitely.
+    #[test]
+    fn test_child_kill_terminates_the_process() {
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("failed to open pty");
+
+        let mut cmd = CommandBuilder::new("sleep");
+        cmd.arg("30");
+
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .expect("failed to spawn sleep");
+        drop(pair.slave);
+
+        assert!(
+            child.try_wait().expect("try_wait failed").is_none(),
+            "process should still be running right after spawn"
+        );
+
+        child.kill().expect("kill should succeed");
+
+        let mut terminated = false;
+        for _ in 0..100 {
+            if child.try_wait().expect("try_wait failed").is_some() {
+                terminated = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        assert!(
+            terminated,
+            "process should have exited after calling kill() on the child handle"
+        );
     }
 }

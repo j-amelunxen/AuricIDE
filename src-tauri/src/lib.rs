@@ -70,7 +70,16 @@ async fn check_cli_status(
     };
     let vc = provider.version_check();
 
-    let output = Command::new(&vc.command).args(&vc.args).output().await;
+    // Match the environment agents are actually spawned with (see
+    // agents::cached_login_shell_env) — otherwise this check can report the
+    // CLI as "missing" when it's only reachable via the user's shell PATH
+    // (e.g. installed via nvm), even though spawning an agent would work fine.
+    let mut command = Command::new(&vc.command);
+    command.args(&vc.args);
+    for (key, value) in agents::cached_login_shell_env().await {
+        command.env(key, value);
+    }
+    let output = command.output().await;
 
     Ok(output.is_ok() && output.unwrap().status.success())
 }
@@ -1487,6 +1496,9 @@ pub fn run() {
                 crashlog::set_crash_log_dir(log_dir);
             }
             app.manage(providers::new_provider_registry(Some(app.handle())));
+            // Pre-resolve the login-shell environment in the background so the
+            // first agent spawn doesn't pay for it (see agents::warm_shell_env_cache).
+            tauri::async_runtime::spawn(agents::warm_shell_env_cache());
             Ok(())
         })
         .manage(DatabaseState {
