@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AgentSlice } from './agentSlice';
-import { createAgentSlice, groupAgentsByRepo, MAX_AGENT_LOGS } from './agentSlice';
+import {
+  createAgentSlice,
+  groupAgentsByRepo,
+  MAX_AGENT_LOGS,
+  MAX_FINISHED_AGENTS,
+} from './agentSlice';
 
 vi.mock('../tauri/agents', () => ({
   spawnAgent: vi.fn(async (config: { name: string; model: string; task: string }) => ({
@@ -356,5 +361,83 @@ describe('agentSlice – killRunningAgent cleans up logs', () => {
     await store.getState().killRunningAgent('mock-agent-1');
     expect(store.getState().agentLogs['mock-agent-1']).toBeUndefined();
     expect(store.getState().agentLogs['other-agent']).toEqual(['other log']);
+  });
+});
+
+describe('agentSlice – bounded finished-agent retention', () => {
+  let store: StoreApi<AgentSlice>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  function finishedAgent(id: string, startedAt: number) {
+    return {
+      id,
+      name: id,
+      model: 'm',
+      provider: 'claude',
+      status: 'idle' as const,
+      startedAt,
+    };
+  }
+
+  it('evicts the oldest finished agents once MAX_FINISHED_AGENTS is exceeded', () => {
+    const agents = Array.from({ length: MAX_FINISHED_AGENTS }, (_, i) =>
+      finishedAgent(`agent-${i}`, i)
+    );
+    store.setState({
+      agents: [
+        ...agents,
+        {
+          id: 'agent-new',
+          name: 'new',
+          model: 'm',
+          provider: 'claude',
+          status: 'running' as const,
+          startedAt: 1000,
+        },
+      ],
+      agentLogs: Object.fromEntries(agents.map((a) => [a.id, [`log for ${a.id}`]])),
+    });
+
+    // The new agent finishes, pushing the finished count past the cap
+    store.getState().updateAgentStatus('agent-new', 'idle');
+
+    const state = store.getState();
+    expect(state.agents).toHaveLength(MAX_FINISHED_AGENTS);
+    expect(state.agents.find((a) => a.id === 'agent-0')).toBeUndefined();
+    expect(state.agentLogs['agent-0']).toBeUndefined();
+    expect(state.agents.find((a) => a.id === 'agent-new')).toBeDefined();
+    // Newer finished agents are kept
+    expect(state.agents.find((a) => a.id === `agent-${MAX_FINISHED_AGENTS - 1}`)).toBeDefined();
+  });
+
+  it('never evicts running or queued agents to make room', () => {
+    const finished = Array.from({ length: MAX_FINISHED_AGENTS }, (_, i) =>
+      finishedAgent(`agent-${i}`, i)
+    );
+    const running = {
+      id: 'running-agent',
+      name: 'r',
+      model: 'm',
+      provider: 'claude',
+      status: 'running' as const,
+      startedAt: 0,
+    };
+    store.setState({ agents: [running, ...finished] });
+
+    store.getState().updateAgentStatus('agent-0', 'error');
+
+    expect(store.getState().agents.find((a) => a.id === 'running-agent')).toBeDefined();
+  });
+
+  it('keeps all finished agents when under the cap', () => {
+    store.setState({
+      agents: [finishedAgent('a', 0), finishedAgent('b', 1)],
+    });
+    store.getState().updateAgentStatus('a', 'idle');
+    expect(store.getState().agents).toHaveLength(2);
   });
 });

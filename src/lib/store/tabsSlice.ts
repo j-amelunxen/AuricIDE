@@ -19,6 +19,19 @@ export interface TabsSlice {
   markDirty: (id: string, dirty: boolean) => void;
 }
 
+// Diagnostics live in a sibling slice (DiagnosticsSlice) but are keyed by
+// the same file path as a tab's id. Closed tabs must not keep their lint
+// results around forever, so we reach across slices via the combined store —
+// the same cross-slice pattern used in agentSlice.ts.
+function clearDiagnosticsFor(get: () => TabsSlice, ids: string[]): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const combined = get() as any;
+  if (typeof combined.clearDiagnostics !== 'function') return;
+  for (const id of ids) {
+    combined.clearDiagnostics(id);
+  }
+}
+
 export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
   openTabs: [],
   activeTabId: null,
@@ -53,24 +66,31 @@ export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
     }
 
     set({ openTabs: newTabs, activeTabId: newActiveId });
+    clearDiagnosticsFor(get, [id]);
   },
 
   closeOtherTabs: (id) => {
     const { openTabs } = get();
     const kept = openTabs.filter((t) => t.id === id);
+    const closedIds = openTabs.filter((t) => t.id !== id).map((t) => t.id);
     set({ openTabs: kept, activeTabId: kept.length > 0 ? id : null });
+    clearDiagnosticsFor(get, closedIds);
   },
 
   closeAllTabs: () => {
+    const closedIds = get().openTabs.map((t) => t.id);
     set({ openTabs: [], activeTabId: null });
+    clearDiagnosticsFor(get, closedIds);
   },
 
   closeTabsToRight: (id) => {
     const { openTabs, activeTabId } = get();
     const idx = openTabs.findIndex((t) => t.id === id);
     const kept = openTabs.slice(0, idx + 1);
+    const closedIds = openTabs.slice(idx + 1).map((t) => t.id);
     const activeStillOpen = kept.some((t) => t.id === activeTabId);
     set({ openTabs: kept, activeTabId: activeStillOpen ? activeTabId : id });
+    clearDiagnosticsFor(get, closedIds);
   },
 
   setActiveTab: (id) => set({ activeTabId: id }),

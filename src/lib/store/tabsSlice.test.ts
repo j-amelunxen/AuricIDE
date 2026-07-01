@@ -95,3 +95,61 @@ describe('tabsSlice', () => {
     expect(useStore.getState().activeTabId).toBe('/a.md');
   });
 });
+
+describe('tabsSlice - diagnostics cleanup on tab close', () => {
+  beforeEach(() => {
+    useStore.setState({
+      openTabs: [],
+      activeTabId: null,
+      diagnostics: new Map(),
+    });
+  });
+
+  const sampleDiag = {
+    line: 1,
+    column: 1,
+    message: 'oops',
+    ruleId: 'rule',
+    severity: 'error' as const,
+  };
+
+  it('closeTab clears diagnostics for the closed file', () => {
+    useStore.getState().openTab({ id: '/a.md', path: '/a.md', name: 'a.md' });
+    useStore.getState().setDiagnostics('/a.md', [sampleDiag]);
+    expect(useStore.getState().diagnostics.get('/a.md')).toHaveLength(1);
+
+    useStore.getState().closeTab('/a.md');
+    expect(useStore.getState().diagnostics.has('/a.md')).toBe(false);
+  });
+
+  it('closeAllTabs clears diagnostics for every open file', () => {
+    useStore.getState().openTab({ id: '/a.md', path: '/a.md', name: 'a.md' });
+    useStore.getState().openTab({ id: '/b.md', path: '/b.md', name: 'b.md' });
+    useStore.getState().setDiagnostics('/a.md', [sampleDiag]);
+    useStore.getState().setDiagnostics('/b.md', [sampleDiag]);
+
+    useStore.getState().closeAllTabs();
+    expect(useStore.getState().diagnostics.size).toBe(0);
+  });
+
+  it('closeOtherTabs clears diagnostics for the closed files but keeps the kept one', () => {
+    useStore.getState().openTab({ id: '/a.md', path: '/a.md', name: 'a.md' });
+    useStore.getState().openTab({ id: '/b.md', path: '/b.md', name: 'b.md' });
+    useStore.getState().setDiagnostics('/a.md', [sampleDiag]);
+    useStore.getState().setDiagnostics('/b.md', [sampleDiag]);
+
+    useStore.getState().closeOtherTabs('/b.md');
+    expect(useStore.getState().diagnostics.has('/a.md')).toBe(false);
+    expect(useStore.getState().diagnostics.has('/b.md')).toBe(true);
+  });
+
+  it('closeTabsToRight clears diagnostics for the closed files', () => {
+    useStore.getState().openTab({ id: '/a.md', path: '/a.md', name: 'a.md' });
+    useStore.getState().openTab({ id: '/b.md', path: '/b.md', name: 'b.md' });
+    useStore.getState().openTab({ id: '/c.md', path: '/c.md', name: 'c.md' });
+    useStore.getState().setDiagnostics('/c.md', [sampleDiag]);
+
+    useStore.getState().closeTabsToRight('/a.md');
+    expect(useStore.getState().diagnostics.has('/c.md')).toBe(false);
+  });
+});

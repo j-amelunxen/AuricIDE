@@ -3,6 +3,10 @@ import type { AgentConfig, AgentInfo } from '../tauri/agents';
 import { killAgent, killAgentsForRepo, listAgents, spawnAgent } from '../tauri/agents';
 
 export const MAX_AGENT_LOGS = 5_000;
+// Finished agents (idle/error) stay visible so their output can be reviewed,
+// but without a bound they and their logs accumulate for the app's whole
+// lifetime. Cap how many finished agents are retained, evicting the oldest.
+export const MAX_FINISHED_AGENTS = 20;
 
 export interface AgentSlice {
   agents: AgentInfo[];
@@ -60,8 +64,24 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   },
 
   updateAgentStatus: (agentId, status) => {
+    const { agentLogs } = get();
+    const updatedAgents = get().agents.map((a) => (a.id === agentId ? { ...a, status } : a));
+
+    const finished = updatedAgents.filter((a) => a.status === 'idle' || a.status === 'error');
+    const excess = finished.length - MAX_FINISHED_AGENTS;
+    if (excess <= 0) {
+      set({ agents: updatedAgents });
+      return;
+    }
+
+    const oldestFirst = [...finished].sort((a, b) => a.startedAt - b.startedAt);
+    const evictedIds = new Set(oldestFirst.slice(0, excess).map((a) => a.id));
+
     set({
-      agents: get().agents.map((a) => (a.id === agentId ? { ...a, status } : a)),
+      agents: updatedAgents.filter((a) => !evictedIds.has(a.id)),
+      agentLogs: Object.fromEntries(
+        Object.entries(agentLogs).filter(([id]) => !evictedIds.has(id))
+      ),
     });
   },
 
