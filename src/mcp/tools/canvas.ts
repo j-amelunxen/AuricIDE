@@ -110,6 +110,14 @@ function resolveRef(raw: string, refMap: Record<string, string>, opIndex: number
   return id;
 }
 
+function countNodeTypes(nodes: ObsidianNode[]): Record<string, number> {
+  const nodeTypes: Record<string, number> = {};
+  for (const node of nodes) {
+    nodeTypes[node.type] = (nodeTypes[node.type] ?? 0) + 1;
+  }
+  return nodeTypes;
+}
+
 // ---------------------------------------------------------------------------
 // Core pure function
 // ---------------------------------------------------------------------------
@@ -395,10 +403,6 @@ export function registerCanvasTools(server: FastMCP, projectRoot: string): void 
     execute: async ({ filePath }) => {
       const safePath = assertWithinProject(projectRoot, filePath);
       const data = await readCanvasFile(safePath);
-      const nodeTypes: Record<string, number> = {};
-      for (const node of data.nodes) {
-        nodeTypes[node.type] = (nodeTypes[node.type] ?? 0) + 1;
-      }
       return JSON.stringify(
         {
           nodes: data.nodes,
@@ -406,7 +410,7 @@ export function registerCanvasTools(server: FastMCP, projectRoot: string): void 
           summary: {
             nodeCount: data.nodes.length,
             edgeCount: data.edges.length,
-            nodeTypes,
+            nodeTypes: countNodeTypes(data.nodes),
           },
         },
         null,
@@ -459,11 +463,6 @@ export function registerCanvasTools(server: FastMCP, projectRoot: string): void 
       const { data, refMap } = applyOperations(existing, operations);
       await writeCanvasFile(safePath, data);
 
-      const nodeTypes: Record<string, number> = {};
-      for (const node of data.nodes) {
-        nodeTypes[node.type] = (nodeTypes[node.type] ?? 0) + 1;
-      }
-
       return JSON.stringify(
         {
           canvas: { nodes: data.nodes, edges: data.edges },
@@ -471,7 +470,7 @@ export function registerCanvasTools(server: FastMCP, projectRoot: string): void 
           summary: {
             nodeCount: data.nodes.length,
             edgeCount: data.edges.length,
-            nodeTypes,
+            nodeTypes: countNodeTypes(data.nodes),
             operationsApplied: operations.length,
           },
         },
@@ -539,11 +538,6 @@ export function registerCanvasTools(server: FastMCP, projectRoot: string): void 
       const { data, refMap } = applyOperations(existing, ops);
       await writeCanvasFile(safeCanvasPath, data);
 
-      const nodeTypes: Record<string, number> = {};
-      for (const node of data.nodes) {
-        nodeTypes[node.type] = (nodeTypes[node.type] ?? 0) + 1;
-      }
-
       return JSON.stringify(
         {
           canvas: { nodes: data.nodes, edges: data.edges },
@@ -551,7 +545,7 @@ export function registerCanvasTools(server: FastMCP, projectRoot: string): void 
           summary: {
             nodeCount: data.nodes.length,
             edgeCount: data.edges.length,
-            nodeTypes,
+            nodeTypes: countNodeTypes(data.nodes),
             filesEmbedded: files.length,
             layout,
           },

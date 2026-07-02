@@ -24,8 +24,7 @@ export interface TabsSlice {
 // results around forever, so we reach across slices via the combined store —
 // the same cross-slice pattern used in agentSlice.ts.
 function clearDiagnosticsFor(get: () => TabsSlice, ids: string[]): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const combined = get() as any;
+  const combined = get() as TabsSlice & { clearDiagnostics?: (id: string) => void };
   if (typeof combined.clearDiagnostics !== 'function') return;
   for (const id of ids) {
     combined.clearDiagnostics(id);

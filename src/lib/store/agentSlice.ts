@@ -53,8 +53,10 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     // If this agent was spawned for a specific ticket, mark it as done
     if (agent?.spawnedByTicketId) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pmSlice = get() as any; // Access PmSlice via combined store
+      // Access PmSlice via combined store
+      const pmSlice = get() as AgentSlice & {
+        updateTicket?: (id: string, updates: { status: string }) => void;
+      };
       if (pmSlice.updateTicket) {
         pmSlice.updateTicket(agent.spawnedByTicketId, { status: 'done' });
       }

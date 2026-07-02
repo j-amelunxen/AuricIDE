@@ -179,6 +179,35 @@ pub fn ensure_auric_dir(project_path: &str) -> Result<PathBuf, String> {
     Ok(auric_dir)
 }
 
+/// Applies a single migration if it has not already been recorded, then records
+/// it. Each migration's SQL runs via `execute_batch`, so multi-statement bodies
+/// are supported. Idempotent: a migration whose id is already in `_migrations`
+/// is skipped.
+fn apply_migration(conn: &Connection, id: i64, name: &str, sql: &str) -> Result<(), String> {
+    let applied: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if applied {
+        return Ok(());
+    }
+
+    conn.execute_batch(sql)
+        .map_err(|e| format!("Failed to apply migration {} ({}): {}", id, name, e))?;
+
+    conn.execute(
+        "INSERT INTO _migrations (id, name) VALUES (?1, ?2)",
+        params![id, name],
+    )
+    .map_err(|e| format!("Failed to record migration {}: {}", id, e))?;
+
+    Ok(())
+}
+
 pub fn run_migrations(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (
@@ -189,372 +218,194 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to create _migrations table: {}", e))?;
 
-    let applied: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
+    apply_migration(
+        conn,
+        1,
+        "create_kv_store",
+        "CREATE TABLE kv_store (
+            namespace  TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            value      TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (namespace, key)
+        );",
+    )?;
 
-    if !applied {
-        conn.execute_batch(
-            "CREATE TABLE kv_store (
-                namespace  TEXT NOT NULL,
-                key        TEXT NOT NULL,
-                value      TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                PRIMARY KEY (namespace, key)
-            );",
-        )
-        .map_err(|e| format!("Failed to create kv_store table: {}", e))?;
+    apply_migration(
+        conn,
+        2,
+        "create_pm_tables",
+        "CREATE TABLE pm_epics (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
 
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (1, 'create_kv_store')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
+        CREATE TABLE pm_tickets (
+            id          TEXT PRIMARY KEY,
+            epic_id     TEXT NOT NULL REFERENCES pm_epics(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            status      TEXT NOT NULL DEFAULT 'open',
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_tickets_epic ON pm_tickets(epic_id);
 
-    // Migration #2: PM tables
-    let applied2: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 2",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
+        CREATE TABLE pm_test_cases (
+            id          TEXT PRIMARY KEY,
+            ticket_id   TEXT NOT NULL REFERENCES pm_tickets(id) ON DELETE CASCADE,
+            title       TEXT NOT NULL,
+            body        TEXT NOT NULL DEFAULT '',
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_test_cases_ticket ON pm_test_cases(ticket_id);
 
-    if !applied2 {
-        conn.execute_batch(
-            "CREATE TABLE pm_epics (
-                id          TEXT PRIMARY KEY,
-                name        TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                sort_order  INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+        CREATE TABLE pm_dependencies (
+            id          TEXT PRIMARY KEY,
+            source_type TEXT NOT NULL,
+            source_id   TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id   TEXT NOT NULL,
+            UNIQUE(source_id, target_id)
+        );
+        CREATE INDEX idx_deps_source ON pm_dependencies(source_id);
+        CREATE INDEX idx_deps_target ON pm_dependencies(target_id);",
+    )?;
 
-            CREATE TABLE pm_tickets (
-                id          TEXT PRIMARY KEY,
-                epic_id     TEXT NOT NULL REFERENCES pm_epics(id) ON DELETE CASCADE,
-                name        TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                status      TEXT NOT NULL DEFAULT 'open',
-                sort_order  INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            CREATE INDEX idx_tickets_epic ON pm_tickets(epic_id);
+    apply_migration(
+        conn,
+        3,
+        "add_ticket_context",
+        "ALTER TABLE pm_tickets ADD COLUMN context TEXT NOT NULL DEFAULT '[]';",
+    )?;
 
-            CREATE TABLE pm_test_cases (
-                id          TEXT PRIMARY KEY,
-                ticket_id   TEXT NOT NULL REFERENCES pm_tickets(id) ON DELETE CASCADE,
-                title       TEXT NOT NULL,
-                body        TEXT NOT NULL DEFAULT '',
-                sort_order  INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            CREATE INDEX idx_test_cases_ticket ON pm_test_cases(ticket_id);
+    apply_migration(
+        conn,
+        4,
+        "add_status_updated_at_working_directory",
+        "ALTER TABLE pm_tickets ADD COLUMN status_updated_at TEXT NOT NULL DEFAULT '2026-01-01 00:00:00';
+         ALTER TABLE pm_tickets ADD COLUMN working_directory TEXT;",
+    )?;
 
-            CREATE TABLE pm_dependencies (
-                id          TEXT PRIMARY KEY,
-                source_type TEXT NOT NULL,
-                source_id   TEXT NOT NULL,
-                target_type TEXT NOT NULL,
-                target_id   TEXT NOT NULL,
-                UNIQUE(source_id, target_id)
-            );
-            CREATE INDEX idx_deps_source ON pm_dependencies(source_id);
-            CREATE INDEX idx_deps_target ON pm_dependencies(target_id);",
-        )
-        .map_err(|e| format!("Failed to create PM tables: {}", e))?;
+    apply_migration(
+        conn,
+        5,
+        "add_ticket_priority",
+        "ALTER TABLE pm_tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';",
+    )?;
 
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (2, 'create_pm_tables')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
+    apply_migration(
+        conn,
+        6,
+        "add_ticket_model_power",
+        "ALTER TABLE pm_tickets ADD COLUMN model_power TEXT;",
+    )?;
 
-    // Migration #3: Add context to pm_tickets
-    let applied3: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 3",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
+    apply_migration(
+        conn,
+        7,
+        "add_ticket_needs_human_supervision",
+        "ALTER TABLE pm_tickets ADD COLUMN needs_human_supervision INTEGER NOT NULL DEFAULT 0;",
+    )?;
 
-    if !applied3 {
-        conn.execute(
-            "ALTER TABLE pm_tickets ADD COLUMN context TEXT NOT NULL DEFAULT '[]'",
-            [],
-        )
-        .map_err(|e| format!("Failed to add context column: {}", e))?;
+    apply_migration(
+        conn,
+        8,
+        "create_pm_status_history",
+        "CREATE TABLE pm_status_history (
+            id TEXT PRIMARY KEY,
+            ticket_id TEXT NOT NULL,
+            from_status TEXT,
+            to_status TEXT NOT NULL,
+            changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            source TEXT NOT NULL DEFAULT 'ui'
+        );
+        CREATE INDEX idx_status_history_ticket ON pm_status_history(ticket_id);
 
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (3, 'add_ticket_context')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
+        -- Backfill creation events
+        INSERT INTO pm_status_history (id, ticket_id, from_status, to_status, changed_at, source)
+        SELECT hex(randomblob(16)), id, NULL,
+          CASE WHEN status IN ('done','archived','in_progress') THEN 'open' ELSE status END,
+          created_at, 'backfill'
+        FROM pm_tickets;
 
-    // Migration #4: Add status_updated_at and working_directory to pm_tickets
-    let applied4: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 4",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
+        -- Backfill current-status events for non-open tickets
+        INSERT INTO pm_status_history (id, ticket_id, from_status, to_status, changed_at, source)
+        SELECT hex(randomblob(16)), id, 'open', status, status_updated_at, 'backfill'
+        FROM pm_tickets WHERE status != 'open';",
+    )?;
 
-    if !applied4 {
-        conn.execute_batch(
-            "ALTER TABLE pm_tickets ADD COLUMN status_updated_at TEXT NOT NULL DEFAULT '2026-01-01 00:00:00';
-             ALTER TABLE pm_tickets ADD COLUMN working_directory TEXT;",
-        )
-        .map_err(|e| format!("Failed to add columns: {}", e))?;
+    apply_migration(
+        conn,
+        9,
+        "create_blueprints",
+        "CREATE TABLE blueprints (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            tech_stack  TEXT NOT NULL DEFAULT '',
+            goal        TEXT NOT NULL DEFAULT '',
+            complexity  TEXT NOT NULL DEFAULT 'MEDIUM',
+            category    TEXT NOT NULL DEFAULT 'architectures',
+            description TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_blueprints_category ON blueprints(category);",
+    )?;
 
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (4, 'add_status_updated_at_working_directory')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
+    apply_migration(
+        conn,
+        10,
+        "blueprints_add_spec",
+        "ALTER TABLE blueprints ADD COLUMN spec TEXT NOT NULL DEFAULT '';",
+    )?;
 
-    // Migration #5: Add priority to pm_tickets
-    let applied5: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 5",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
+    apply_migration(
+        conn,
+        11,
+        "create_pm_requirements",
+        "CREATE TABLE pm_requirements (
+            id                  TEXT PRIMARY KEY,
+            req_id              TEXT NOT NULL UNIQUE,
+            title               TEXT NOT NULL,
+            description         TEXT NOT NULL DEFAULT '',
+            type                TEXT NOT NULL DEFAULT 'functional',
+            category            TEXT NOT NULL DEFAULT '',
+            priority            TEXT NOT NULL DEFAULT 'normal',
+            status              TEXT NOT NULL DEFAULT 'draft',
+            rationale           TEXT NOT NULL DEFAULT '',
+            acceptance_criteria TEXT NOT NULL DEFAULT '',
+            source              TEXT NOT NULL DEFAULT '',
+            sort_order          INTEGER NOT NULL DEFAULT 0,
+            created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE UNIQUE INDEX idx_pm_requirements_req_id ON pm_requirements(req_id);",
+    )?;
 
-    if !applied5 {
-        conn.execute(
-            "ALTER TABLE pm_tickets ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'",
-            [],
-        )
-        .map_err(|e| format!("Failed to add priority column: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (5, 'add_ticket_priority')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
-
-    // Migration #6: Add model_power to pm_tickets
-    let applied6: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 6",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !applied6 {
-        conn.execute("ALTER TABLE pm_tickets ADD COLUMN model_power TEXT", [])
-            .map_err(|e| format!("Failed to add model_power column: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (6, 'add_ticket_model_power')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
-
-    // Migration #7: Add needs_human_supervision to pm_tickets
-    let applied7: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 7",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !applied7 {
-        conn.execute(
-            "ALTER TABLE pm_tickets ADD COLUMN needs_human_supervision INTEGER NOT NULL DEFAULT 0",
-            [],
-        )
-        .map_err(|e| format!("Failed to add needs_human_supervision column: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (7, 'add_ticket_needs_human_supervision')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
-
-    // Migration #8: pm_status_history table
-    let applied8: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 8",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !applied8 {
-        conn.execute_batch(
-            "CREATE TABLE pm_status_history (
-                id TEXT PRIMARY KEY,
-                ticket_id TEXT NOT NULL,
-                from_status TEXT,
-                to_status TEXT NOT NULL,
-                changed_at TEXT NOT NULL DEFAULT (datetime('now')),
-                source TEXT NOT NULL DEFAULT 'ui'
-            );
-            CREATE INDEX idx_status_history_ticket ON pm_status_history(ticket_id);
-
-            -- Backfill creation events
-            INSERT INTO pm_status_history (id, ticket_id, from_status, to_status, changed_at, source)
-            SELECT hex(randomblob(16)), id, NULL,
-              CASE WHEN status IN ('done','archived','in_progress') THEN 'open' ELSE status END,
-              created_at, 'backfill'
-            FROM pm_tickets;
-
-            -- Backfill current-status events for non-open tickets
-            INSERT INTO pm_status_history (id, ticket_id, from_status, to_status, changed_at, source)
-            SELECT hex(randomblob(16)), id, 'open', status, status_updated_at, 'backfill'
-            FROM pm_tickets WHERE status != 'open';",
-        )
-        .map_err(|e| format!("Failed to create pm_status_history table: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (8, 'create_pm_status_history')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
-
-    // Migration #9: Blueprints table
-    let applied9: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 9",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !applied9 {
-        conn.execute_batch(
-            "CREATE TABLE blueprints (
-                id          TEXT PRIMARY KEY,
-                name        TEXT NOT NULL,
-                tech_stack  TEXT NOT NULL DEFAULT '',
-                goal        TEXT NOT NULL DEFAULT '',
-                complexity  TEXT NOT NULL DEFAULT 'MEDIUM',
-                category    TEXT NOT NULL DEFAULT 'architectures',
-                description TEXT NOT NULL DEFAULT '',
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            CREATE INDEX idx_blueprints_category ON blueprints(category);",
-        )
-        .map_err(|e| format!("Failed to create blueprints table: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (9, 'create_blueprints')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
-
-    // Migration #10: Add spec column to blueprints
-    let applied10: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 10",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !applied10 {
-        conn.execute_batch("ALTER TABLE blueprints ADD COLUMN spec TEXT NOT NULL DEFAULT '';")
-            .map_err(|e| format!("Failed to add spec column to blueprints: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (10, 'blueprints_add_spec')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
-
-    // Migration #11: Requirements table
-    let applied11: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 11",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !applied11 {
-        conn.execute_batch(
-            "CREATE TABLE pm_requirements (
-                id                  TEXT PRIMARY KEY,
-                req_id              TEXT NOT NULL UNIQUE,
-                title               TEXT NOT NULL,
-                description         TEXT NOT NULL DEFAULT '',
-                type                TEXT NOT NULL DEFAULT 'functional',
-                category            TEXT NOT NULL DEFAULT '',
-                priority            TEXT NOT NULL DEFAULT 'normal',
-                status              TEXT NOT NULL DEFAULT 'draft',
-                rationale           TEXT NOT NULL DEFAULT '',
-                acceptance_criteria TEXT NOT NULL DEFAULT '',
-                source              TEXT NOT NULL DEFAULT '',
-                sort_order          INTEGER NOT NULL DEFAULT 0,
-                created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            CREATE UNIQUE INDEX idx_pm_requirements_req_id ON pm_requirements(req_id);",
-        )
-        .map_err(|e| format!("Failed to create pm_requirements table: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (11, 'create_pm_requirements')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
-
-    // Migration #12: Add applies_to, last_verified_at to pm_requirements; add pm_requirement_test_links
-    let applied12: bool = conn
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM _migrations WHERE id = 12",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !applied12 {
-        conn.execute_batch(
-            "ALTER TABLE pm_requirements ADD COLUMN applies_to TEXT NOT NULL DEFAULT '[]';
-             ALTER TABLE pm_requirements ADD COLUMN last_verified_at TEXT;
-             CREATE TABLE pm_requirement_test_links (
-                 id              TEXT PRIMARY KEY,
-                 requirement_id  TEXT NOT NULL REFERENCES pm_requirements(id) ON DELETE CASCADE,
-                 test_case_id    TEXT NOT NULL REFERENCES pm_test_cases(id) ON DELETE CASCADE,
-                 created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-                 UNIQUE(requirement_id, test_case_id)
-             );
-             CREATE INDEX idx_req_test_links_req ON pm_requirement_test_links(requirement_id);
-             CREATE INDEX idx_req_test_links_tc ON pm_requirement_test_links(test_case_id);",
-        )
-        .map_err(|e| format!("Failed to apply migration 12: {}", e))?;
-
-        conn.execute(
-            "INSERT INTO _migrations (id, name) VALUES (12, 'requirements_applies_to_test_links')",
-            [],
-        )
-        .map_err(|e| format!("Failed to record migration: {}", e))?;
-    }
+    apply_migration(
+        conn,
+        12,
+        "requirements_applies_to_test_links",
+        "ALTER TABLE pm_requirements ADD COLUMN applies_to TEXT NOT NULL DEFAULT '[]';
+         ALTER TABLE pm_requirements ADD COLUMN last_verified_at TEXT;
+         CREATE TABLE pm_requirement_test_links (
+             id              TEXT PRIMARY KEY,
+             requirement_id  TEXT NOT NULL REFERENCES pm_requirements(id) ON DELETE CASCADE,
+             test_case_id    TEXT NOT NULL REFERENCES pm_test_cases(id) ON DELETE CASCADE,
+             created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+             UNIQUE(requirement_id, test_case_id)
+         );
+         CREATE INDEX idx_req_test_links_req ON pm_requirement_test_links(requirement_id);
+         CREATE INDEX idx_req_test_links_tc ON pm_requirement_test_links(test_case_id);",
+    )?;
 
     Ok(())
 }
@@ -683,13 +534,30 @@ pub fn validate_no_cycles(deps: &[PmDependency]) -> Result<(), String> {
     }
 }
 
-pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), String> {
-    validate_no_cycles(&payload.dependencies)?;
-
+/// Runs `f` inside a SQLite transaction, committing on success and rolling back
+/// on any error. The error from `f` is propagated unchanged.
+fn with_transaction<F>(conn: &Connection, f: F) -> Result<(), String>
+where
+    F: FnOnce() -> Result<(), String>,
+{
     conn.execute_batch("BEGIN TRANSACTION;")
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
-    let result = (|| -> Result<(), String> {
+    match f() {
+        Ok(()) => conn
+            .execute_batch("COMMIT;")
+            .map_err(|e| format!("Failed to commit transaction: {}", e)),
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(e)
+        }
+    }
+}
+
+pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), String> {
+    validate_no_cycles(&payload.dependencies)?;
+
+    with_transaction(conn, || {
         // Read existing ticket statuses before delete for history tracking
         let mut old_statuses: HashMap<String, String> = HashMap::new();
         {
@@ -819,19 +687,7 @@ pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), St
         }
 
         Ok(())
-    })();
-
-    match result {
-        Ok(()) => {
-            conn.execute_batch("COMMIT;")
-                .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-            Ok(())
-        }
-        Err(e) => {
-            let _ = conn.execute_batch("ROLLBACK;");
-            Err(e)
-        }
-    }
+    })
 }
 
 pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
@@ -978,10 +834,7 @@ pub fn pm_clear_impl(conn: &Connection) -> Result<(), String> {
 }
 
 pub fn blueprints_save_impl(conn: &Connection, payload: &BlueprintState) -> Result<(), String> {
-    conn.execute_batch("BEGIN TRANSACTION;")
-        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
-
-    let result = (|| -> Result<(), String> {
+    with_transaction(conn, || {
         conn.execute("DELETE FROM blueprints", [])
             .map_err(|e| format!("Failed to clear blueprints: {}", e))?;
 
@@ -1006,19 +859,7 @@ pub fn blueprints_save_impl(conn: &Connection, payload: &BlueprintState) -> Resu
         }
 
         Ok(())
-    })();
-
-    match result {
-        Ok(()) => {
-            conn.execute_batch("COMMIT;")
-                .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-            Ok(())
-        }
-        Err(e) => {
-            let _ = conn.execute_batch("ROLLBACK;");
-            Err(e)
-        }
-    }
+    })
 }
 
 pub fn blueprints_load_impl(conn: &Connection) -> Result<BlueprintState, String> {
@@ -1060,10 +901,7 @@ pub fn requirements_save_impl(
     conn: &Connection,
     payload: &RequirementsState,
 ) -> Result<(), String> {
-    conn.execute_batch("BEGIN TRANSACTION;")
-        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
-
-    let result = (|| -> Result<(), String> {
+    with_transaction(conn, || {
         conn.execute("DELETE FROM pm_requirements", [])
             .map_err(|e| format!("Failed to clear requirements: {}", e))?;
 
@@ -1103,19 +941,7 @@ pub fn requirements_save_impl(
         }
 
         Ok(())
-    })();
-
-    match result {
-        Ok(()) => {
-            conn.execute_batch("COMMIT;")
-                .map_err(|e| format!("Failed to commit transaction: {}", e))?;
-            Ok(())
-        }
-        Err(e) => {
-            let _ = conn.execute_batch("ROLLBACK;");
-            Err(e)
-        }
-    }
+    })
 }
 
 pub fn requirements_load_impl(conn: &Connection) -> Result<RequirementsState, String> {
