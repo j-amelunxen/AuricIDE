@@ -26,6 +26,7 @@ export interface PmTicket {
   modelPower?: 'low' | 'medium' | 'high';
   priority: 'low' | 'normal' | 'high' | 'critical';
   needsHumanSupervision?: boolean;
+  goalId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 
-type ResolvableTable = 'pm_tickets' | 'pm_epics' | 'blueprints' | 'pm_requirements';
+type ResolvableTable = 'pm_tickets' | 'pm_epics' | 'blueprints' | 'pm_requirements' | 'pm_goals';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MIN_PREFIX_LENGTH = 4;
@@ -10,6 +10,7 @@ const TABLE_LABELS: Record<ResolvableTable, string> = {
   pm_epics: 'epics',
   blueprints: 'blueprints',
   pm_requirements: 'requirements',
+  pm_goals: 'goals',
 };
 
 /**
@@ -58,6 +59,10 @@ export function resolveEpicId(db: Database.Database, prefix: string): string {
 
 export function resolveBlueprintId(db: Database.Database, prefix: string): string {
   return resolveId(db, 'blueprints', prefix);
+}
+
+export function resolveGoalId(db: Database.Database, prefix: string): string {
+  return resolveId(db, 'pm_goals', prefix);
 }
 
 export function resolveRequirementId(db: Database.Database, idOrReqId: string): string {

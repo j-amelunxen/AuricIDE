@@ -619,6 +619,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         if (state.rootPath) state.loadRequirements(state.rootPath);
         return;
       }
+      if (id === 'goals') {
+        useStore.getState().setGoalsModalOpen(true);
+        return;
+      }
       state.setActiveActivity(id);
     },
     [state]
@@ -761,6 +765,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     () => state.pmDraftTickets.filter((t) => t.status !== 'done' && t.status !== 'archived').length,
     [state.pmDraftTickets]
   );
+  const runningAgentsCount = useMemo(
+    () => state.agents.filter((a) => a.status === 'running').length,
+    [state.agents]
+  );
   const itemsWithBadge = useMemo(
     () =>
       activityItems.map((item) => {
@@ -768,9 +776,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           return { ...item, badge: scBadge > 0 ? scBadge : undefined };
         if (item.id === 'project-mgmt')
           return { ...item, badge: openTicketsCount > 0 ? openTicketsCount : undefined };
+        if (item.id === 'agents')
+          return { ...item, badge: runningAgentsCount > 0 ? runningAgentsCount : undefined };
         return item;
       }),
-    [scBadge, openTicketsCount]
+    [scBadge, openTicketsCount, runningAgentsCount]
   );
 
   const dailyTip = useMemo(() => {

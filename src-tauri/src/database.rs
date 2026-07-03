@@ -53,6 +53,8 @@ pub struct PmTicket {
     pub priority: String,
     #[serde(default)]
     pub needs_human_supervision: bool,
+    #[serde(default)]
+    pub goal_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -164,6 +166,75 @@ pub struct PmRequirementTestLink {
 pub struct RequirementsState {
     pub requirements: Vec<PmRequirement>,
     pub test_links: Vec<PmRequirementTestLink>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PmGoal {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub name: String,
+    pub description: String,
+    pub success_criteria: String,
+    pub status: String,
+    pub priority: String,
+    pub goal_prompt: String,
+    pub created_by: String,
+    pub achieved_at: Option<String>,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PmGoalRun {
+    pub id: String,
+    pub goal_id: String,
+    pub agent_id: String,
+    pub ticket_id: Option<String>,
+    pub prompt: String,
+    pub model: String,
+    pub provider: String,
+    pub source: String,
+    pub outcome: String,
+    pub summary: String,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PmGoalRequirementLink {
+    pub id: String,
+    pub goal_id: String,
+    pub requirement_id: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalsState {
+    pub goals: Vec<PmGoal>,
+    pub goal_runs: Vec<PmGoalRun>,
+    pub requirement_links: Vec<PmGoalRequirementLink>,
+}
+
+/// Row-level sync payload: upserts + explicit deletions. Unlike a replace-all
+/// save, rows written concurrently by the MCP server (agent-created goals,
+/// runs, links) survive a frontend save untouched.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalsSyncPayload {
+    pub goals: Vec<PmGoal>,
+    pub goal_runs: Vec<PmGoalRun>,
+    pub requirement_links: Vec<PmGoalRequirementLink>,
+    #[serde(default)]
+    pub deleted_goal_ids: Vec<String>,
+    #[serde(default)]
+    pub deleted_run_ids: Vec<String>,
+    #[serde(default)]
+    pub deleted_link_ids: Vec<String>,
 }
 
 pub fn ensure_auric_dir(project_path: &str) -> Result<PathBuf, String> {
@@ -407,6 +478,56 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
          CREATE INDEX idx_req_test_links_tc ON pm_requirement_test_links(test_case_id);",
     )?;
 
+    apply_migration(
+        conn,
+        13,
+        "create_pm_goals",
+        "CREATE TABLE pm_goals (
+            id               TEXT PRIMARY KEY,
+            parent_id        TEXT REFERENCES pm_goals(id) ON DELETE CASCADE,
+            name             TEXT NOT NULL,
+            description      TEXT NOT NULL DEFAULT '',
+            success_criteria TEXT NOT NULL DEFAULT '',
+            status           TEXT NOT NULL DEFAULT 'draft',
+            priority         TEXT NOT NULL DEFAULT 'normal',
+            goal_prompt      TEXT NOT NULL DEFAULT '',
+            created_by       TEXT NOT NULL DEFAULT 'ui',
+            achieved_at      TEXT,
+            sort_order       INTEGER NOT NULL DEFAULT 0,
+            created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_goals_parent ON pm_goals(parent_id);
+
+        ALTER TABLE pm_tickets ADD COLUMN goal_id TEXT;
+        CREATE INDEX idx_tickets_goal ON pm_tickets(goal_id);
+
+        CREATE TABLE pm_goal_runs (
+            id          TEXT PRIMARY KEY,
+            goal_id     TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+            agent_id    TEXT NOT NULL DEFAULT '',
+            ticket_id   TEXT,
+            prompt      TEXT NOT NULL DEFAULT '',
+            model       TEXT NOT NULL DEFAULT '',
+            provider    TEXT NOT NULL DEFAULT '',
+            source      TEXT NOT NULL DEFAULT 'ui',
+            outcome     TEXT NOT NULL DEFAULT 'running',
+            summary     TEXT NOT NULL DEFAULT '',
+            started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            finished_at TEXT
+        );
+        CREATE INDEX idx_goal_runs_goal ON pm_goal_runs(goal_id);
+
+        CREATE TABLE pm_goal_requirement_links (
+            id             TEXT PRIMARY KEY,
+            goal_id        TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+            requirement_id TEXT NOT NULL REFERENCES pm_requirements(id) ON DELETE CASCADE,
+            created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(goal_id, requirement_id)
+        );
+        CREATE INDEX idx_goal_req_links_goal ON pm_goal_requirement_links(goal_id);",
+    )?;
+
     Ok(())
 }
 
@@ -605,8 +726,8 @@ pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), St
             conn.execute(
                 "INSERT INTO pm_tickets (id, epic_id, name, description, status, \
                  status_updated_at, sort_order, working_directory, context, model_power, priority, \
-                 needs_human_supervision, created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 needs_human_supervision, goal_id, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     ticket.id,
                     ticket.epic_id,
@@ -620,6 +741,7 @@ pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), St
                     ticket.model_power,
                     ticket.priority,
                     ticket.needs_human_supervision,
+                    ticket.goal_id,
                     ticket.created_at,
                     ticket.updated_at
                 ],
@@ -716,7 +838,7 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
         .prepare(
             "SELECT id, epic_id, name, description, status, status_updated_at, sort_order, \
              working_directory, context, model_power, priority, needs_human_supervision, \
-             created_at, updated_at FROM pm_tickets ORDER BY sort_order",
+             goal_id, created_at, updated_at FROM pm_tickets ORDER BY sort_order",
         )
         .map_err(|e| format!("Failed to prepare tickets query: {}", e))?;
     let tickets: Vec<PmTicket> = ticket_stmt
@@ -743,8 +865,9 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
                 model_power: row.get(9)?,
                 priority: row.get(10)?,
                 needs_human_supervision: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                goal_id: row.get(12)?,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         })
         .map_err(|e| format!("Failed to query tickets: {}", e))?
@@ -1010,6 +1133,203 @@ pub fn requirements_clear_impl(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// Row-level goals sync: upserts every row in the payload and deletes only the
+/// explicitly listed ids. Rows created concurrently by the MCP subprocess are
+/// never touched — the frontend draft is NOT the source of truth for rows it
+/// has never seen.
+pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<(), String> {
+    with_transaction(conn, || {
+        // Goals may arrive in any order; defer FK checks so a child can be
+        // upserted before its parent within the transaction.
+        conn.execute_batch("PRAGMA defer_foreign_keys = ON;")
+            .map_err(|e| format!("Failed to defer foreign keys: {}", e))?;
+
+        for id in &payload.deleted_goal_ids {
+            // Cascades to child goals, runs, and requirement links
+            conn.execute("DELETE FROM pm_goals WHERE id = ?1", params![id])
+                .map_err(|e| format!("Failed to delete goal: {}", e))?;
+        }
+        for id in &payload.deleted_run_ids {
+            conn.execute("DELETE FROM pm_goal_runs WHERE id = ?1", params![id])
+                .map_err(|e| format!("Failed to delete goal run: {}", e))?;
+        }
+        for id in &payload.deleted_link_ids {
+            conn.execute(
+                "DELETE FROM pm_goal_requirement_links WHERE id = ?1",
+                params![id],
+            )
+            .map_err(|e| format!("Failed to delete goal requirement link: {}", e))?;
+        }
+
+        for goal in &payload.goals {
+            conn.execute(
+                "INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, \
+                 status, priority, goal_prompt, created_by, achieved_at, sort_order, \
+                 created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
+                 ON CONFLICT(id) DO UPDATE SET \
+                 parent_id = excluded.parent_id, name = excluded.name, \
+                 description = excluded.description, \
+                 success_criteria = excluded.success_criteria, status = excluded.status, \
+                 priority = excluded.priority, goal_prompt = excluded.goal_prompt, \
+                 created_by = excluded.created_by, achieved_at = excluded.achieved_at, \
+                 sort_order = excluded.sort_order, updated_at = excluded.updated_at",
+                params![
+                    goal.id,
+                    goal.parent_id,
+                    goal.name,
+                    goal.description,
+                    goal.success_criteria,
+                    goal.status,
+                    goal.priority,
+                    goal.goal_prompt,
+                    goal.created_by,
+                    goal.achieved_at,
+                    goal.sort_order,
+                    goal.created_at,
+                    goal.updated_at
+                ],
+            )
+            .map_err(|e| format!("Failed to upsert goal: {}", e))?;
+        }
+
+        for run in &payload.goal_runs {
+            conn.execute(
+                "INSERT INTO pm_goal_runs (id, goal_id, agent_id, ticket_id, prompt, model, \
+                 provider, source, outcome, summary, started_at, finished_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+                 ON CONFLICT(id) DO UPDATE SET \
+                 goal_id = excluded.goal_id, agent_id = excluded.agent_id, \
+                 ticket_id = excluded.ticket_id, prompt = excluded.prompt, \
+                 model = excluded.model, provider = excluded.provider, \
+                 source = excluded.source, outcome = excluded.outcome, \
+                 summary = excluded.summary, finished_at = excluded.finished_at",
+                params![
+                    run.id,
+                    run.goal_id,
+                    run.agent_id,
+                    run.ticket_id,
+                    run.prompt,
+                    run.model,
+                    run.provider,
+                    run.source,
+                    run.outcome,
+                    run.summary,
+                    run.started_at,
+                    run.finished_at
+                ],
+            )
+            .map_err(|e| format!("Failed to upsert goal run: {}", e))?;
+        }
+
+        for link in &payload.requirement_links {
+            conn.execute(
+                "INSERT INTO pm_goal_requirement_links (id, goal_id, requirement_id, created_at) \
+                 VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT(id) DO NOTHING",
+                params![link.id, link.goal_id, link.requirement_id, link.created_at],
+            )
+            .map_err(|e| format!("Failed to upsert goal requirement link: {}", e))?;
+        }
+
+        Ok(())
+    })
+}
+
+pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
+    let mut goal_stmt = conn
+        .prepare(
+            "SELECT id, parent_id, name, description, success_criteria, status, priority, \
+             goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at \
+             FROM pm_goals ORDER BY sort_order, created_at",
+        )
+        .map_err(|e| format!("Failed to prepare goals query: {}", e))?;
+    let goals: Vec<PmGoal> = goal_stmt
+        .query_map([], |row| {
+            Ok(PmGoal {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                description: row.get(3)?,
+                success_criteria: row.get(4)?,
+                status: row.get(5)?,
+                priority: row.get(6)?,
+                goal_prompt: row.get(7)?,
+                created_by: row.get(8)?,
+                achieved_at: row.get(9)?,
+                sort_order: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query goals: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut run_stmt = conn
+        .prepare(
+            "SELECT id, goal_id, agent_id, ticket_id, prompt, model, provider, source, \
+             outcome, summary, started_at, finished_at \
+             FROM pm_goal_runs ORDER BY started_at",
+        )
+        .map_err(|e| format!("Failed to prepare goal runs query: {}", e))?;
+    let goal_runs: Vec<PmGoalRun> = run_stmt
+        .query_map([], |row| {
+            Ok(PmGoalRun {
+                id: row.get(0)?,
+                goal_id: row.get(1)?,
+                agent_id: row.get(2)?,
+                ticket_id: row.get(3)?,
+                prompt: row.get(4)?,
+                model: row.get(5)?,
+                provider: row.get(6)?,
+                source: row.get(7)?,
+                outcome: row.get(8)?,
+                summary: row.get(9)?,
+                started_at: row.get(10)?,
+                finished_at: row.get(11)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query goal runs: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut link_stmt = conn
+        .prepare(
+            "SELECT id, goal_id, requirement_id, created_at \
+             FROM pm_goal_requirement_links ORDER BY created_at",
+        )
+        .map_err(|e| format!("Failed to prepare goal requirement links query: {}", e))?;
+    let requirement_links: Vec<PmGoalRequirementLink> = link_stmt
+        .query_map([], |row| {
+            Ok(PmGoalRequirementLink {
+                id: row.get(0)?,
+                goal_id: row.get(1)?,
+                requirement_id: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query goal requirement links: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(GoalsState {
+        goals,
+        goal_runs,
+        requirement_links,
+    })
+}
+
+pub fn goals_clear_impl(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "DELETE FROM pm_goal_requirement_links;
+         DELETE FROM pm_goal_runs;
+         DELETE FROM pm_goals;",
+    )
+    .map_err(|e| format!("Failed to clear goals: {}", e))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1057,7 +1377,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 12);
+        assert_eq!(count, 13);
 
         // kv_store table should exist
         let table_exists: bool = conn
@@ -1079,7 +1399,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 12);
+        assert_eq!(count, 13);
     }
 
     #[test]
@@ -1097,7 +1417,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 12);
+        assert_eq!(count, 13);
     }
 
     #[test]
@@ -1201,6 +1521,9 @@ mod tests {
             "blueprints",
             "pm_requirements",
             "pm_requirement_test_links",
+            "pm_goals",
+            "pm_goal_runs",
+            "pm_goal_requirement_links",
         ];
         for table in &tables {
             let exists: bool = conn
@@ -1219,7 +1542,7 @@ mod tests {
         let migration_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 12);
+        assert_eq!(migration_count, 13);
     }
 
     fn make_test_payload() -> PmSavePayload {
@@ -1249,6 +1572,7 @@ mod tests {
                 model_power: Some("high".to_string()),
                 priority: "normal".to_string(),
                 needs_human_supervision: false,
+                goal_id: None,
                 created_at: "2026-01-01 00:00:00".to_string(),
                 updated_at: "2026-01-01 00:00:00".to_string(),
             }],
@@ -1834,5 +2158,200 @@ mod tests {
         let state = requirements_load_impl(&conn).unwrap();
 
         assert_eq!(state.requirements[0].last_verified_at, None);
+    }
+
+    fn make_test_goal(id: &str, parent_id: Option<&str>) -> PmGoal {
+        PmGoal {
+            id: id.to_string(),
+            parent_id: parent_id.map(|p| p.to_string()),
+            name: format!("Goal {}", id),
+            description: "".to_string(),
+            success_criteria: "".to_string(),
+            status: "draft".to_string(),
+            priority: "normal".to_string(),
+            goal_prompt: "".to_string(),
+            created_by: "ui".to_string(),
+            achieved_at: None,
+            sort_order: 0,
+            created_at: "2026-01-01 00:00:00".to_string(),
+            updated_at: "2026-01-01 00:00:00".to_string(),
+        }
+    }
+
+    fn sync_payload(
+        goals: Vec<PmGoal>,
+        goal_runs: Vec<PmGoalRun>,
+        requirement_links: Vec<PmGoalRequirementLink>,
+    ) -> GoalsSyncPayload {
+        GoalsSyncPayload {
+            goals,
+            goal_runs,
+            requirement_links,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_goals_save_and_load_roundtrip() {
+        let conn = setup_in_memory_db();
+
+        let mut root = make_test_goal("g1", None);
+        root.name = "Ship orchestration".to_string();
+        root.success_criteria = "- All sub-goals achieved".to_string();
+        root.status = "active".to_string();
+        root.goal_prompt = "Achieve orchestration".to_string();
+
+        // Child listed BEFORE its parent to prove save order is not a constraint
+        let payload = sync_payload(vec![make_test_goal("g2", Some("g1")), root], vec![], vec![]);
+
+        goals_sync_impl(&conn, &payload).unwrap();
+        let state = goals_load_impl(&conn).unwrap();
+
+        assert_eq!(state.goals.len(), 2);
+        let g1 = state.goals.iter().find(|g| g.id == "g1").unwrap();
+        let g2 = state.goals.iter().find(|g| g.id == "g2").unwrap();
+        assert_eq!(g1.name, "Ship orchestration");
+        assert_eq!(g1.success_criteria, "- All sub-goals achieved");
+        assert_eq!(g1.status, "active");
+        assert_eq!(g1.goal_prompt, "Achieve orchestration");
+        assert_eq!(g1.parent_id, None);
+        assert_eq!(g2.parent_id, Some("g1".to_string()));
+    }
+
+    #[test]
+    fn test_goals_clear() {
+        let conn = setup_in_memory_db();
+        let payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        goals_sync_impl(&conn, &payload).unwrap();
+        goals_clear_impl(&conn).unwrap();
+        let state = goals_load_impl(&conn).unwrap();
+        assert_eq!(state.goals.len(), 0);
+        assert_eq!(state.goal_runs.len(), 0);
+        assert_eq!(state.requirement_links.len(), 0);
+    }
+
+    #[test]
+    fn test_goal_runs_and_requirement_links_roundtrip() {
+        let conn = setup_in_memory_db();
+
+        let req_payload = RequirementsState {
+            requirements: vec![make_test_requirement("r1", "REQ-01")],
+            test_links: vec![],
+        };
+        requirements_save_impl(&conn, &req_payload).unwrap();
+
+        let payload = sync_payload(
+            vec![make_test_goal("g1", None)],
+            vec![PmGoalRun {
+                id: "run1".to_string(),
+                goal_id: "g1".to_string(),
+                agent_id: "agent-1".to_string(),
+                ticket_id: None,
+                prompt: "Do the thing".to_string(),
+                model: "sonnet".to_string(),
+                provider: "claude".to_string(),
+                source: "conductor".to_string(),
+                outcome: "running".to_string(),
+                summary: "".to_string(),
+                started_at: "2026-01-01 00:00:00".to_string(),
+                finished_at: None,
+            }],
+            vec![PmGoalRequirementLink {
+                id: "grl1".to_string(),
+                goal_id: "g1".to_string(),
+                requirement_id: "r1".to_string(),
+                created_at: "2026-01-01 00:00:00".to_string(),
+            }],
+        );
+
+        goals_sync_impl(&conn, &payload).unwrap();
+        let state = goals_load_impl(&conn).unwrap();
+
+        assert_eq!(state.goal_runs.len(), 1);
+        assert_eq!(state.goal_runs[0].prompt, "Do the thing");
+        assert_eq!(state.goal_runs[0].source, "conductor");
+        assert_eq!(state.goal_runs[0].outcome, "running");
+        assert_eq!(state.goal_runs[0].finished_at, None);
+        assert_eq!(state.requirement_links.len(), 1);
+        assert_eq!(state.requirement_links[0].requirement_id, "r1");
+    }
+
+    #[test]
+    fn test_ticket_goal_id_roundtrip() {
+        let conn = setup_in_memory_db();
+
+        let goals = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        goals_sync_impl(&conn, &goals).unwrap();
+
+        let mut pm_payload = make_test_payload();
+        pm_payload.tickets[0].goal_id = Some("g1".to_string());
+        pm_save_impl(&conn, &pm_payload).unwrap();
+
+        let state = pm_load_impl(&conn).unwrap();
+        let ticket = state.tickets.iter().find(|t| t.id == "t1").unwrap();
+        assert_eq!(ticket.goal_id, Some("g1".to_string()));
+    }
+
+    #[test]
+    fn test_goals_sync_preserves_mcp_created_rows() {
+        let conn = setup_in_memory_db();
+
+        // Frontend saves its draft
+        let payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        // MCP subprocess concurrently creates a goal + run the frontend never saw
+        conn.execute(
+            "INSERT INTO pm_goals (id, parent_id, name) VALUES ('mcp-goal', 'g1', 'Agent subgoal')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO pm_goal_runs (id, goal_id, agent_id, prompt) VALUES ('mcp-run', 'mcp-goal', 'agent-9', 'p')",
+            [],
+        )
+        .unwrap();
+
+        // Frontend saves again — MCP rows must survive
+        let mut g1 = make_test_goal("g1", None);
+        g1.name = "Renamed by UI".to_string();
+        let payload2 = sync_payload(vec![g1], vec![], vec![]);
+        goals_sync_impl(&conn, &payload2).unwrap();
+
+        let state = goals_load_impl(&conn).unwrap();
+        assert_eq!(state.goals.len(), 2);
+        assert!(state.goals.iter().any(|g| g.id == "mcp-goal"));
+        assert_eq!(state.goal_runs.len(), 1);
+        assert_eq!(
+            state.goals.iter().find(|g| g.id == "g1").unwrap().name,
+            "Renamed by UI"
+        );
+    }
+
+    #[test]
+    fn test_goals_sync_deletes_only_listed_ids() {
+        let conn = setup_in_memory_db();
+
+        let payload = sync_payload(
+            vec![
+                make_test_goal("keep", None),
+                make_test_goal("doomed", None),
+                make_test_goal("doomed-child", Some("doomed")),
+            ],
+            vec![],
+            vec![],
+        );
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        let delete_payload = GoalsSyncPayload {
+            deleted_goal_ids: vec!["doomed".to_string()],
+            ..Default::default()
+        };
+        goals_sync_impl(&conn, &delete_payload).unwrap();
+
+        let state = goals_load_impl(&conn).unwrap();
+        // Cascade removes the child; "keep" survives
+        assert_eq!(state.goals.len(), 1);
+        assert_eq!(state.goals[0].id, "keep");
     }
 }

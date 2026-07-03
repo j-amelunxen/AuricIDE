@@ -8,6 +8,7 @@ import { FileSelector } from '@/app/components/ide/FileSelector';
 import { SettingsModal } from '@/app/components/ide/SettingsModal';
 import { ProjectManagerModal } from '@/app/components/pm/ProjectManagerModal';
 import { SpawnAgentDialog } from '@/app/components/agents/SpawnAgentDialog';
+import { useStore } from '@/lib/store';
 import { ImportSpecDialog } from '@/app/components/agents/ImportSpecDialog';
 import { GenerateDiagramDialog } from '@/app/components/agents/GenerateDiagramDialog';
 import { AgentTerminalModal } from '@/app/components/agents/AgentTerminalModal';
@@ -112,6 +113,7 @@ export function IDEOverlays({
   setFileSelectorOpen,
   ticketCwd,
 }: IDEOverlaysProps) {
+  const goalsDraft = useStore((s) => s.goalsDraft);
   return (
     <>
       <SpawnAgentDialog
@@ -126,6 +128,7 @@ export function IDEOverlays({
         spawnedByTicketId={spawnAgentTicketId}
         initialRepoPath={ticketCwd || rootPath || ''}
         recentPaths={recentProjects.map((p) => p.path)}
+        goals={goalsDraft}
       />
       <ImportSpecDialog
         isOpen={importSpecDialogOpen}

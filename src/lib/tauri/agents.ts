@@ -9,6 +9,7 @@ export interface AgentInfo {
   lastActivityAt?: number;
   repoPath?: string;
   spawnedByTicketId?: string;
+  spawnedByGoalId?: string;
 }
 
 export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan' | 'default';
@@ -26,6 +27,9 @@ export interface AgentConfig {
   provider?: string;
   headless?: boolean;
   spawnedByTicketId?: string;
+  spawnedByGoalId?: string;
+  /** Frontend-only provenance hint for goal runs; ignored by the Rust backend. */
+  runSource?: 'ui' | 'conductor';
 }
 
 export async function checkCliStatus(providerId?: string): Promise<boolean> {

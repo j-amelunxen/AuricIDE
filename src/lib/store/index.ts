@@ -18,6 +18,8 @@ import { createQASlice, type QASlice } from './qaSlice';
 import { createBlueprintsSlice, type BlueprintsSlice } from './blueprintsSlice';
 import { createObsidianCanvasSlice, type ObsidianCanvasSlice } from './obsidianCanvasSlice';
 import { createRequirementsSlice, type RequirementsSlice } from './requirementsSlice';
+import { createGoalsSlice, type GoalsSlice } from './goalsSlice';
+import { createConductorSlice, type ConductorSlice } from './conductorSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -37,7 +39,9 @@ export type StoreState = FileTreeSlice &
   QASlice &
   BlueprintsSlice &
   ObsidianCanvasSlice &
-  RequirementsSlice;
+  RequirementsSlice &
+  GoalsSlice &
+  ConductorSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -59,4 +63,6 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createBlueprintsSlice(...a),
   ...createObsidianCanvasSlice(...a),
   ...createRequirementsSlice(...a),
+  ...createGoalsSlice(...a),
+  ...createConductorSlice(...a),
 }));

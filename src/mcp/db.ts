@@ -210,6 +210,58 @@ function runMigrations(db: Database.Database): void {
     `);
     record(12, 'requirements_applies_to_test_links');
   }
+
+  // Migration #13: Goals (goal tree, goal runs, goal↔requirement links, ticket.goal_id)
+  // Keep in sync with src-tauri/src/database.rs migration 13.
+  if (!applied(13)) {
+    db.exec(`
+      CREATE TABLE pm_goals (
+        id               TEXT PRIMARY KEY,
+        parent_id        TEXT REFERENCES pm_goals(id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        description      TEXT NOT NULL DEFAULT '',
+        success_criteria TEXT NOT NULL DEFAULT '',
+        status           TEXT NOT NULL DEFAULT 'draft',
+        priority         TEXT NOT NULL DEFAULT 'normal',
+        goal_prompt      TEXT NOT NULL DEFAULT '',
+        created_by       TEXT NOT NULL DEFAULT 'ui',
+        achieved_at      TEXT,
+        sort_order       INTEGER NOT NULL DEFAULT 0,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_goals_parent ON pm_goals(parent_id);
+
+      ALTER TABLE pm_tickets ADD COLUMN goal_id TEXT;
+      CREATE INDEX idx_tickets_goal ON pm_tickets(goal_id);
+
+      CREATE TABLE pm_goal_runs (
+        id          TEXT PRIMARY KEY,
+        goal_id     TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+        agent_id    TEXT NOT NULL DEFAULT '',
+        ticket_id   TEXT,
+        prompt      TEXT NOT NULL DEFAULT '',
+        model       TEXT NOT NULL DEFAULT '',
+        provider    TEXT NOT NULL DEFAULT '',
+        source      TEXT NOT NULL DEFAULT 'ui',
+        outcome     TEXT NOT NULL DEFAULT 'running',
+        summary     TEXT NOT NULL DEFAULT '',
+        started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        finished_at TEXT
+      );
+      CREATE INDEX idx_goal_runs_goal ON pm_goal_runs(goal_id);
+
+      CREATE TABLE pm_goal_requirement_links (
+        id             TEXT PRIMARY KEY,
+        goal_id        TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+        requirement_id TEXT NOT NULL REFERENCES pm_requirements(id) ON DELETE CASCADE,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(goal_id, requirement_id)
+      );
+      CREATE INDEX idx_goal_req_links_goal ON pm_goal_requirement_links(goal_id);
+    `);
+    record(13, 'create_pm_goals');
+  }
 }
 
 export function openDatabase(path: string): Database.Database {

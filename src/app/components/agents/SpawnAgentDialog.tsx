@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
+import type { PmGoal } from '@/lib/tauri/goals';
 import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
@@ -14,6 +15,9 @@ interface SpawnAgentDialogProps {
   spawnedByTicketId?: string | null;
   initialRepoPath?: string;
   recentPaths?: string[];
+  /** Goals available for binding the agent's work to a goal. */
+  goals?: PmGoal[];
+  initialGoalId?: string | null;
 }
 
 export function SpawnAgentDialog({
@@ -24,9 +28,12 @@ export function SpawnAgentDialog({
   spawnedByTicketId = null,
   initialRepoPath = '',
   recentPaths = [],
+  goals = [],
+  initialGoalId = null,
 }: SpawnAgentDialogProps) {
   const [repoPath, setRepoPath] = useState(initialRepoPath);
   const [task, setTask] = useState(initialTask);
+  const [goalId, setGoalId] = useState<string>(initialGoalId ?? '');
   const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
   const [selectedProviderId, setSelectedProviderId] = useState(FALLBACK_CRUSH_PROVIDER.id);
   const [model, setModel] = useState(FALLBACK_CRUSH_PROVIDER.defaultModel);
@@ -57,8 +64,9 @@ export function SpawnAgentDialog({
     if (isOpen) {
       setTask(initialTask);
       setRepoPath(initialRepoPath);
+      setGoalId(initialGoalId ?? '');
     }
-  }, [isOpen, initialTask, initialRepoPath]);
+  }, [isOpen, initialTask, initialRepoPath, initialGoalId]);
 
   // Sync model/permission defaults when provider changes
   useEffect(() => {
@@ -80,6 +88,7 @@ export function SpawnAgentDialog({
       provider: selectedProviderId,
       headless: headless || undefined,
       spawnedByTicketId: spawnedByTicketId ?? undefined,
+      spawnedByGoalId: goalId || undefined,
     });
     setRepoPath('');
     setTask('');
@@ -175,6 +184,31 @@ export function SpawnAgentDialog({
               placeholder="What should the agent achieve?"
             />
           </div>
+
+          {goals.length > 0 && (
+            <div className="space-y-1.5">
+              <label
+                htmlFor="goal-select"
+                className="flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider"
+              >
+                Serves Goal
+              </label>
+              <select
+                id="goal-select"
+                data-testid="spawn-goal-select"
+                value={goalId}
+                onChange={(e) => setGoalId(e.target.value)}
+                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+              >
+                <option value="">— none —</option>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {providers.length > 1 && (
             <div className="space-y-1.5">

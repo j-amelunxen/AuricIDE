@@ -4,6 +4,7 @@ import { type ActivityItem } from '@/app/components/ide/ActivityBar';
 
 export const activityItems: ActivityItem[] = [
   { id: 'explorer', icon: 'folder', label: 'Explorer' },
+  { id: 'agents', icon: 'smart_toy', label: 'Agent Fleet' },
   { id: 'outline', icon: 'toc', label: 'Outline' },
   { id: 'graph', icon: 'hub', label: 'Link Graph' },
   { id: 'source-control', icon: 'commit', label: 'Source Control', badge: 0 },
@@ -11,6 +12,7 @@ export const activityItems: ActivityItem[] = [
   { id: 'qa', icon: 'fact_check', label: 'QA' },
   { id: 'blueprints', icon: 'library_books', label: 'Blueprints' },
   { id: 'requirements', icon: 'checklist', label: 'Requirements' },
+  { id: 'goals', icon: 'flag', label: 'Goals & Orchestration' },
   { id: 'project-mgmt', icon: 'task_alt', label: 'Project Management' },
   { id: 'settings', icon: 'settings', label: 'Settings' },
 ];

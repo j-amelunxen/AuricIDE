@@ -13,6 +13,7 @@ import { PDFViewer } from './components/editor/PDFViewer';
 import { SourceControlPanel } from './components/git/SourceControlPanel';
 import { TerminalPanel } from './components/terminal/TerminalPanel';
 import { AgentsPanel } from './components/agents/AgentsPanel';
+import { AgentFleetPanel } from './components/agents/AgentFleetPanel';
 import { DiffViewer } from './components/editor/DiffViewer';
 import { CanvasView } from './components/canvas/CanvasView';
 import { ObsidianCanvasView } from './components/obsidian-canvas/ObsidianCanvasView';
@@ -28,6 +29,8 @@ import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianColor, ObsidianNode } from '@/lib/obsidian-canvas/types';
 import { TicketCreateModal } from './components/pm/TicketCreateModal';
 import { RequirementsModal } from './components/requirements/RequirementsModal';
+import { GoalsModal } from './components/goals/GoalsModal';
+import { OrchestrationModal } from './components/goals/OrchestrationModal';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
@@ -166,6 +169,15 @@ export default function Home() {
             onHeadingClick={(line) => state.setScrollToLine(line)}
           />
         );
+      case 'agents':
+        return (
+          <AgentFleetPanel
+            agents={state.agents}
+            onOpenAgent={(agent) => state.setFullscreenAgent(agent)}
+            onKillAgent={(agentId) => void state.killRunningAgent(agentId)}
+            onNewAgent={() => state.setSpawnDialogOpen(true)}
+          />
+        );
       case 'extensions':
         return <ExtensionsPanel />;
       case 'qa':
@@ -208,6 +220,8 @@ export default function Home() {
         />
       )}
       <RequirementsModal />
+      <GoalsModal />
+      <OrchestrationModal />
       <IDEShell
         bottomCollapsed={state.bottomCollapsed}
         onBottomToggle={state.setBottomCollapsed}

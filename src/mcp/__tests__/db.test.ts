@@ -61,11 +61,11 @@ describe('openDatabase', () => {
     db.close();
   });
 
-  it('records all 12 migrations', () => {
+  it('records all 13 migrations', () => {
     const dbPath = join(tempDir, 'test.db');
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(12);
+    expect(row.cnt).toBe(13);
     db.close();
   });
 
@@ -75,7 +75,7 @@ describe('openDatabase', () => {
     db1.close();
     const db2 = openDatabase(dbPath);
     const row = db2.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(12);
+    expect(row.cnt).toBe(13);
     db2.close();
   });
 
@@ -150,10 +150,10 @@ describe('openDatabase', () => {
     `);
     setup.close();
 
-    // Now open with our migrations — should not fail
+    // Now open with our migrations — the JS side applies the missing #13 on top
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(12);
+    expect(row.cnt).toBe(13);
     db.close();
   });
 });
