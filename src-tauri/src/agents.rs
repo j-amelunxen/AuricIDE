@@ -21,6 +21,10 @@ pub struct AgentConfig {
     pub auto_accept_edits: Option<bool>,
     pub provider: Option<String>,
     pub headless: Option<bool>,
+    #[serde(default)]
+    pub spawned_by_ticket_id: Option<String>,
+    #[serde(default)]
+    pub spawned_by_goal_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -44,6 +48,8 @@ pub struct AgentInfo {
     pub started_at: u64,
     pub last_activity_at: Option<u64>,
     pub repo_path: Option<String>,
+    pub spawned_by_ticket_id: Option<String>,
+    pub spawned_by_goal_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -168,6 +174,10 @@ pub async fn spawn_agent_impl(
     state: &AgentManagerState,
     app: &AppHandle,
     providers: &ProviderRegistryState,
+    // Invoked with the agent id once the process has terminated naturally —
+    // the caller owns the terminal-session registry and must drop the PTY
+    // handles there, or every finished agent leaks its session + FDs.
+    on_exit: impl FnOnce(String) + Send + 'static,
 ) -> Result<
     (
         AgentInfo,
@@ -263,6 +273,8 @@ pub async fn spawn_agent_impl(
         started_at: now,
         last_activity_at: Some(now),
         repo_path: config.cwd.clone(),
+        spawned_by_ticket_id: config.spawned_by_ticket_id.clone(),
+        spawned_by_goal_id: config.spawned_by_goal_id.clone(),
     };
 
     let process = AgentProcess {
@@ -270,8 +282,11 @@ pub async fn spawn_agent_impl(
         child,
     };
 
-    // Stream PTY output to the frontend (batched at ~30fps to avoid IPC saturation)
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    // Stream PTY output to the frontend (batched at ~30fps to avoid IPC
+    // saturation). Bounded channel: if the emit task ever lags, the read
+    // thread blocks instead of buffering PTY output without limit — the
+    // same backpressure a real terminal applies to a fast writer.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
 
     // Thread for blocking read from PTY
     std::thread::spawn(move || {
@@ -280,7 +295,7 @@ pub async fn spawn_agent_impl(
             if n == 0 {
                 break;
             }
-            if tx.send(buffer[..n].to_vec()).is_err() {
+            if tx.blocking_send(buffer[..n].to_vec()).is_err() {
                 break;
             }
         }
@@ -336,7 +351,6 @@ pub async fn spawn_agent_impl(
 
         if !has_produced_output {
             let error_msg = format!("\r\n\x1b[31mError: Agent process terminated without output. Check if '{}' CLI is installed.\x1b[0m\r\n", cli_name);
-            let _ = app_clone.emit(&format!("terminal-out-agent-{}", id_clone), &error_msg);
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -355,20 +369,46 @@ pub async fn spawn_agent_impl(
         }
 
         // Clean up AgentProcess on natural termination (release PTY resources)
-        {
+        let proc_opt = {
             let mut mgr = state_clone.lock().await;
-            mgr.agents.remove(&id_clone);
-        }
+            mgr.agents.remove(&id_clone)
+        };
+
+        // Reap the child to get the REAL exit code — a crashed or failed agent
+        // must surface as Error, not Idle, so the conductor requeues instead of
+        // marking the ticket done.
+        let exit_code: i32 = match proc_opt {
+            Some(mut process) => tokio::task::spawn_blocking(move || {
+                process
+                    .child
+                    .wait()
+                    .map(|status| if status.success() { 0 } else { 1 })
+                    .unwrap_or(-1)
+            })
+            .await
+            .unwrap_or(-1),
+            // Already removed by the explicit kill path, which emits its own event
+            None => 0,
+        };
+
+        let status = if exit_code == 0 {
+            AgentStatus::Idle
+        } else {
+            AgentStatus::Error
+        };
 
         let _ = app_clone.emit(
             "agent-status",
             AgentStatusEvent {
-                agent_id: id_clone,
-                status: AgentStatus::Idle,
-                exit_code: Some(0),
+                agent_id: id_clone.clone(),
+                status,
+                exit_code: Some(exit_code),
                 repo_path: rp_clone,
             },
         );
+
+        // Release the caller-held terminal session (PTY master + writer).
+        on_exit(id_clone);
     });
 
     manager.agents.insert(id, process);
@@ -382,17 +422,19 @@ async fn emit_agent_output(app: &AppHandle, id: &str, repo_path: &Option<String>
         .unwrap_or_default()
         .as_millis() as u64;
 
+    // Single event channel: the frontend store is the sole consumer and all
+    // terminal surfaces replay from it. A parallel terminal-out emit doubled
+    // IPC traffic and let terminals drift out of sync with the store.
     let _ = app.emit(
         "agent-output",
         AgentOutputEvent {
             agent_id: id.to_string(),
             stream: "stdout".to_string(),
-            line: data.clone(),
+            line: data,
             timestamp,
             repo_path: repo_path.clone(),
         },
     );
-    let _ = app.emit(&format!("terminal-out-agent-{}", id), data);
 }
 
 // ── kill_agent ──────────────────────────────────────────────────────

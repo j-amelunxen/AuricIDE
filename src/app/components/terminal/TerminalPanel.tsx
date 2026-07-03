@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { sendToAgent } from '@/lib/tauri/agents';
 import { XtermTerminal } from './XtermTerminal';
 import { useNow } from '@/lib/hooks/useNow';
-import { useStore } from '@/lib/store';
 
 export type TerminalTabId = 'terminal' | string;
 
@@ -41,7 +40,6 @@ export function TerminalPanel({
 }: TerminalPanelProps) {
   const [activeTab, setActiveTab] = useState<TerminalTabId>('terminal');
   const now = useNow();
-  const agentLogs = useStore(useCallback((s) => s.agentLogs, []));
 
   // Synchronize activeTab with selectedAgentId
   const [prevAgentId, setPrevAgentId] = useState(selectedAgentId);
@@ -153,7 +151,7 @@ export function TerminalPanel({
                 id={termId}
                 initialCommand={tabId === 'terminal' ? shellCmd : extra ? shellCmd : undefined}
                 cwd={termCwd}
-                replayData={isAgent ? agentLogs[tabId] : undefined}
+                agentId={isAgent ? tabId : undefined}
                 onInput={isAgent ? (data) => sendToAgent(tabId, data) : undefined}
               />
             </div>

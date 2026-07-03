@@ -1,11 +1,15 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
+import { stripAnsi } from '@/lib/terminal/ansi';
 
 const EMPTY_LOGS: string[] = [];
+// The card preview is ~10 lines tall — rendering the whole retained buffer
+// (up to MAX_AGENT_LOG_BYTES) per streamed chunk wastes CPU for nothing.
+const LOG_PREVIEW_CHUNKS = 50;
 
 export interface AgentCardProps {
   agent: AgentInfo;
@@ -20,9 +24,20 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
   const isLive = agent.lastActivityAt && now - agent.lastActivityAt < 2000;
   const isIdling = isRunning && !isLive;
 
-  // Subscribe only to this agent's logs (not ALL terminal logs) to avoid re-rendering
-  // every AgentCard whenever any agent produces output
-  const logs = useStore(useCallback((s) => s.agentLogs[agent.id] ?? EMPTY_LOGS, [agent.id]));
+  // Subscribe only to this agent's logs, and only while the terminal preview
+  // is visible — in status mode the stable EMPTY_LOGS reference means log
+  // appends don't re-render the card at all.
+  const showTerminal = viewMode === 'terminal';
+  const logs = useStore(
+    useCallback(
+      (s) => (showTerminal ? (s.agentLogs[agent.id] ?? EMPTY_LOGS) : EMPTY_LOGS),
+      [agent.id, showTerminal]
+    )
+  );
+
+  // Memoized: the card re-renders every second via useNow, but the preview
+  // only changes when this agent's logs do.
+  const logPreview = useMemo(() => stripAnsi(logs.slice(-LOG_PREVIEW_CHUNKS).join('')), [logs]);
 
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -178,9 +193,7 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
                 </div>
               ) : (
                 <div className="whitespace-pre-wrap break-all text-primary-light/80">
-                  {logs.map((log, i) => (
-                    <span key={i}>{log}</span>
-                  ))}
+                  {logPreview}
                 </div>
               )}
               <div ref={logEndRef} />

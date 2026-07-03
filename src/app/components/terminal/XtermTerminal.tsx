@@ -13,22 +13,17 @@ import {
 } from '@/lib/tauri/terminal';
 import { getPromptTemplate, FALLBACK_PROMPT_TEMPLATE } from '@/lib/tauri/providers';
 import { xtermMounted, xtermUnmounted } from '@/lib/metrics';
+import { attachAgentStream } from '@/lib/terminal/agentStream';
 
 interface XtermTerminalProps {
   id: string; // Session ID (agent-id or 'main-terminal')
   cwd?: string; // Working directory
   initialCommand?: string; // e.g. /bin/zsh
-  replayData?: string[]; // Historical log lines to write on mount (agent replay)
+  agentId?: string; // Agent mode: stream this agent's output from the store
   onInput?: (data: string) => void; // Custom input handler (e.g. sendToAgent)
 }
 
-export function XtermTerminal({
-  id,
-  cwd,
-  initialCommand,
-  replayData,
-  onInput,
-}: XtermTerminalProps) {
+export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: XtermTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -81,8 +76,9 @@ export function XtermTerminal({
     fitAddonRef.current = fitAddon;
     xtermMounted();
 
-    // Propagate xterm resize events to PTY backend (skip for agent replay — no shell)
-    if (!replayData) {
+    // Propagate xterm resize events to PTY backend (skip for agent tabs —
+    // the fullscreen modal owns the agent PTY size)
+    if (!agentId) {
       term.onResize(({ rows, cols }) => {
         resizeShell(id, rows, cols).catch(() => {});
       });
@@ -120,16 +116,12 @@ export function XtermTerminal({
     });
 
     const setupSession = async () => {
-      // Agent replay mode — write historical logs and subscribe to live output
-      if (replayData) {
-        for (const line of replayData) {
-          term.write(line);
-        }
-        const unsubOut = await onTerminalOut(id, (data) => term.write(data));
+      // Agent mode — replay + live output from the store (single source,
+      // synchronous attach: no gap or duplication against the backfill)
+      if (agentId) {
+        const detach = attachAgentStream(term, agentId);
         setIsInitialized(true);
-        return () => {
-          unsubOut();
-        };
+        return detach;
       }
 
       if (id === 'main-terminal' && !cwd) {
@@ -193,7 +185,7 @@ export function XtermTerminal({
       xtermUnmounted();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, cwd, initialCommand]);
+  }, [id, cwd, initialCommand, agentId]);
 
   return (
     <div className="h-full w-full relative">

@@ -6,7 +6,10 @@ mod mcp;
 mod providers;
 
 use agents::AgentManagerState;
-use database::{BlueprintState, DatabaseState, KvEntry, PmSavePayload, PmState, RequirementsState};
+use database::{
+    BlueprintState, DatabaseState, GoalsState, GoalsSyncPayload, KvEntry, PmSavePayload, PmState,
+    RequirementsState,
+};
 use git2::{Repository, StatusOptions};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -253,9 +256,8 @@ async fn shell_spawn(
             // Emit batched output every ~16 ms or when the buffer is large enough
             if last_emit.elapsed() >= batch_interval || accumulated.len() > 32_000 {
                 if !accumulated.is_empty() {
-                    let _ = app_stdout
-                        .emit(&format!("terminal-out-{}", id_stdout), accumulated.clone());
-                    accumulated.clear();
+                    let batch = std::mem::take(&mut accumulated);
+                    let _ = app_stdout.emit(&format!("terminal-out-{}", id_stdout), batch);
                 }
                 last_emit = std::time::Instant::now();
             }
@@ -1063,8 +1065,21 @@ async fn spawn_agent(
     provider_state: tauri::State<'_, ProviderRegistryState>,
     app: tauri::AppHandle,
 ) -> Result<agents::AgentInfo, String> {
-    let (info, writer, master) =
-        agents::spawn_agent_impl(config, &state, &app, &provider_state).await?;
+    // On natural termination the reaper drops the terminal session — without
+    // this, every finished agent leaked its PTY master, writer, and FDs.
+    let app_for_cleanup = app.clone();
+    let (info, writer, master) = agents::spawn_agent_impl(
+        config,
+        &state,
+        &app,
+        &provider_state,
+        move |agent_id: String| {
+            let ts = app_for_cleanup.state::<TerminalState>();
+            let mut sessions = ts.sessions.lock().unwrap();
+            sessions.remove(&format!("agent-{}", agent_id));
+        },
+    )
+    .await?;
 
     // Register agent PTY writer and master in the global terminal state
     let session = Arc::new(AsyncMutex::new(TerminalSession {
@@ -1075,6 +1090,16 @@ async fn spawn_agent(
     {
         let mut sessions = terminal_state.sessions.lock().unwrap();
         sessions.insert(format!("agent-{}", info.id), session);
+    }
+
+    // Close the fast-exit race: if the agent already terminated (the reaper
+    // removed it from the registry before this insert), drop the session now.
+    {
+        let manager = state.lock().await;
+        if !manager.agents.contains_key(&info.id) {
+            let mut sessions = terminal_state.sessions.lock().unwrap();
+            sessions.remove(&format!("agent-{}", info.id));
+        }
     }
 
     Ok(info)
@@ -1408,6 +1433,40 @@ fn requirements_clear(
 }
 
 #[tauri::command]
+fn goals_save(
+    project_path: String,
+    payload: GoalsSyncPayload,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::goals_sync_impl(conn, &payload)
+}
+
+#[tauri::command]
+fn goals_load(
+    project_path: String,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<GoalsState, String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::goals_load_impl(conn)
+}
+
+#[tauri::command]
+fn goals_clear(project_path: String, state: tauri::State<'_, DatabaseState>) -> Result<(), String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::goals_clear_impl(conn)
+}
+
+#[tauri::command]
 async fn llm_call(
     request: llm::LlmRequest,
     db_state: tauri::State<'_, database::DatabaseState>,
@@ -1564,6 +1623,9 @@ pub fn run() {
             requirements_save,
             requirements_load,
             requirements_clear,
+            goals_save,
+            goals_load,
+            goals_clear,
             append_metrics_log,
             report_frontend_crash,
             list_crash_logs,

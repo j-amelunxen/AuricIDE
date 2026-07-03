@@ -3,9 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AgentTerminalModal } from './AgentTerminalModal';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import { useStore } from '@/lib/store';
 
-// Module-level spy so individual tests can control the return value
+// Module-level spies so individual tests can control/inspect behavior
 const mockGetSelection = vi.fn().mockReturnValue('');
+const mockWrite = vi.fn();
+const mockFit = vi.fn();
 
 // Mock xterm.js — AgentXterm dynamically imports these
 vi.mock('@xterm/xterm', () => ({
@@ -14,7 +17,9 @@ vi.mock('@xterm/xterm', () => ({
     cols = 80;
     loadAddon() {}
     open() {}
-    write() {}
+    write(data: string) {
+      mockWrite(data);
+    }
     onData() {}
     onResize() {}
     getSelection() {
@@ -34,7 +39,9 @@ vi.stubGlobal(
 );
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
-    fit() {}
+    fit() {
+      mockFit();
+    }
   },
 }));
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}));
@@ -104,6 +111,103 @@ describe('AgentTerminalModal', () => {
     render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
     // The modal should have the terminal icon in the header
     expect(screen.getByText('terminal')).toBeInTheDocument();
+  });
+
+  describe('terminal stream (single-source from store)', () => {
+    beforeEach(() => {
+      mockWrite.mockClear();
+      mockFit.mockClear();
+      useStore.setState({ agentLogs: {}, agentLogMeta: {} });
+    });
+
+    // Unique agent id per test: earlier tests in this file mount terminals
+    // for `agent-1`, and their store subscriptions can linger a tick under
+    // load — distinct ids make each test's write assertions airtight.
+    function streamAgent(id: string): AgentInfo {
+      return { ...agent, id };
+    }
+
+    async function flushSetup() {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+
+    it('replays store history as a single write', async () => {
+      useStore.getState().appendAgentLog('stream-replay', 'chunk-a');
+      useStore.getState().appendAgentLog('stream-replay', 'chunk-b');
+
+      render(<AgentTerminalModal agent={streamAgent('stream-replay')} onClose={vi.fn()} />);
+      await flushSetup();
+
+      expect(mockWrite).toHaveBeenCalledTimes(1);
+      expect(mockWrite).toHaveBeenCalledWith('chunk-achunk-b');
+    });
+
+    it('fits the terminal BEFORE replaying history', async () => {
+      useStore.getState().appendAgentLog('stream-fit', 'history');
+
+      render(<AgentTerminalModal agent={streamAgent('stream-fit')} onClose={vi.fn()} />);
+      await flushSetup();
+
+      expect(mockFit).toHaveBeenCalled();
+      expect(mockWrite).toHaveBeenCalled();
+      expect(mockFit.mock.invocationCallOrder[0]).toBeLessThan(
+        mockWrite.mock.invocationCallOrder[0]
+      );
+    });
+
+    it('writes chunks appended after mount exactly once (no duplication)', async () => {
+      useStore.getState().appendAgentLog('stream-live', 'old');
+
+      render(<AgentTerminalModal agent={streamAgent('stream-live')} onClose={vi.fn()} />);
+      await flushSetup();
+      mockWrite.mockClear();
+
+      act(() => {
+        useStore.getState().appendAgentLog('stream-live', 'live-1');
+        useStore.getState().appendAgentLog('stream-live', 'live-2');
+      });
+
+      const written = mockWrite.mock.calls.map((c) => c[0]).join('');
+      expect(written).toBe('live-1live-2');
+    });
+
+    it('does not subscribe to the terminal-out event channel', async () => {
+      const { onTerminalOut } = await import('@/lib/tauri/terminal');
+      vi.mocked(onTerminalOut).mockClear();
+      render(<AgentTerminalModal agent={streamAgent('stream-noevent')} onClose={vi.fn()} />);
+      await flushSetup();
+
+      expect(onTerminalOut).not.toHaveBeenCalled();
+    });
+
+    it('ignores chunks for other agents', async () => {
+      render(<AgentTerminalModal agent={streamAgent('stream-ignore')} onClose={vi.fn()} />);
+      await flushSetup();
+      mockWrite.mockClear();
+
+      act(() => {
+        useStore.getState().appendAgentLog('stream-ignore-other', 'noise');
+      });
+
+      expect(mockWrite).not.toHaveBeenCalled();
+    });
+
+    it('stops writing after unmount', async () => {
+      const { unmount } = render(
+        <AgentTerminalModal agent={streamAgent('stream-unmount')} onClose={vi.fn()} />
+      );
+      await flushSetup();
+      unmount();
+      mockWrite.mockClear();
+
+      act(() => {
+        useStore.getState().appendAgentLog('stream-unmount', 'after-unmount');
+      });
+
+      expect(mockWrite).not.toHaveBeenCalled();
+    });
   });
 
   describe('context menu', () => {

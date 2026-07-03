@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
-import { useStore } from '@/lib/store';
+import { attachAgentStream } from '@/lib/terminal/agentStream';
 import { ContextMenu } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
 
@@ -54,6 +54,12 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
+      // Fit BEFORE replaying history: TUI agents redraw via cursor-relative
+      // escape sequences, so replaying at the default 80-col width and
+      // reflowing afterwards leaves duplicated fragments on screen.
+      try {
+        fitAddon.fit();
+      } catch {}
       setTimeout(() => {
         try {
           fitAddon.fit();
@@ -71,21 +77,14 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       };
       containerRef.current.addEventListener('contextmenu', handleContextMenu);
 
-      // Replay historical logs from the store
-      const logs = useStore.getState().agentLogs[agentId] ?? [];
-      for (const line of logs) {
-        term.write(line);
-      }
-
-      // Subscribe to live PTY output
-      const { onTerminalOut, resizeShell } = await import('@/lib/tauri/terminal');
-      const sessionId = `agent-${agentId}`;
-      const unsub = await onTerminalOut(sessionId, (data) => {
-        if (!disposed) term.write(data);
-      });
+      // Single source of truth: the store (see attachAgentStream). A second
+      // Tauri event channel had an await gap between backfill and live
+      // subscribe, so chunks got lost or shown twice.
+      const unsubStore = attachAgentStream(term, agentId);
 
       // Forward keyboard input to the agent PTY
-      const { writeToShell } = await import('@/lib/tauri/terminal');
+      const { writeToShell, resizeShell } = await import('@/lib/tauri/terminal');
+      const sessionId = `agent-${agentId}`;
       term.onData((data) => {
         writeToShell(sessionId, data);
       });
@@ -114,7 +113,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 
       return () => {
         disposed = true;
-        unsub();
+        unsubStore();
         clearTimeout(resizeTimer);
         resizeObserver.disconnect();
         containerRef.current?.removeEventListener('contextmenu', handleContextMenu);
@@ -125,13 +124,17 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
     let sessionCleanup: (() => void) | undefined;
     let isMounted = true;
 
-    setup().then((c) => {
-      if (!isMounted) {
-        c?.();
-      } else {
-        sessionCleanup = c;
-      }
-    });
+    setup()
+      .then((c) => {
+        if (!isMounted) {
+          c?.();
+        } else {
+          sessionCleanup = c;
+        }
+      })
+      .catch(() => {
+        // Setup failure (browser/test mode) must not surface as unhandled
+      });
 
     return () => {
       isMounted = false;
