@@ -52,6 +52,17 @@ describe('collectStoreMetrics', () => {
     expect(metrics.agentLogsByAgent['agent-2']).toBe(1);
   });
 
+  it('reports retained log bytes per agent from appendAgentLog', () => {
+    useStore.getState().appendAgentLog('agent-1', 'abcd');
+    useStore.getState().appendAgentLog('agent-1', 'ef');
+    useStore.getState().appendAgentLog('agent-2', 'x');
+
+    const metrics = collectStoreMetrics();
+    expect(metrics.agentLogBytesByAgent['agent-1']).toBe(6);
+    expect(metrics.agentLogBytesByAgent['agent-2']).toBe(1);
+    expect(metrics.agentLogBytesTotal).toBe(7);
+  });
+
   it('counts agents by status', () => {
     useStore.setState({
       agents: [

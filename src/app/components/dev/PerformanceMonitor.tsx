@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { MemorySnapshot, StoreMetrics } from '@/lib/metrics/types';
 import { getMetricsCollector, destroyMetricsCollector } from '@/lib/metrics';
 import { MAX_TERMINAL_LOGS } from '@/lib/store/uiSlice';
-import { MAX_AGENT_LOGS } from '@/lib/store/agentSlice';
+import { MAX_AGENT_LOGS, MAX_AGENT_LOG_BYTES } from '@/lib/store/agentSlice';
 
 interface TauriProcessEntry {
   label: string;
@@ -301,14 +301,18 @@ export function PerformanceMonitor() {
                   {/* Per-agent log breakdown */}
                   {snapshot && Object.keys(snapshot.store.agentLogsByAgent).length > 0 && (
                     <div className="ml-2 mt-0.5 space-y-0.5">
-                      {Object.entries(snapshot.store.agentLogsByAgent).map(([agentId, count]) => (
-                        <div key={agentId} className="flex justify-between text-[10px]">
-                          <span className="truncate max-w-[140px]">{agentId}</span>
-                          <span className={`font-mono ${capColor(count, MAX_AGENT_LOGS)}`}>
-                            {count.toLocaleString()}/{MAX_AGENT_LOGS.toLocaleString()}
-                          </span>
-                        </div>
-                      ))}
+                      {Object.entries(snapshot.store.agentLogsByAgent).map(([agentId, count]) => {
+                        const bytes = snapshot.store.agentLogBytesByAgent[agentId] ?? 0;
+                        return (
+                          <div key={agentId} className="flex justify-between text-[10px]">
+                            <span className="truncate max-w-[140px]">{agentId}</span>
+                            <span className={`font-mono ${capColor(bytes, MAX_AGENT_LOG_BYTES)}`}>
+                              {count.toLocaleString()}/{MAX_AGENT_LOGS.toLocaleString()} ·{' '}
+                              {(bytes / 1024).toFixed(0)} KB
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 

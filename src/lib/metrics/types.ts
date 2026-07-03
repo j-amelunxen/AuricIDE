@@ -2,6 +2,8 @@ export interface StoreMetrics {
   terminalLogsCount: number;
   agentLogsTotal: number;
   agentLogsByAgent: Record<string, number>;
+  agentLogBytesTotal: number;
+  agentLogBytesByAgent: Record<string, number>;
   agentCount: number;
   agentsByStatus: Record<string, number>;
   entityIndexSize: number;

@@ -21,6 +21,13 @@ export function collectStoreMetrics(): StoreMetrics {
     agentLogsTotal += logs.length;
   }
 
+  const agentLogBytesByAgent: Record<string, number> = {};
+  let agentLogBytesTotal = 0;
+  for (const [agentId, meta] of Object.entries(state.agentLogMeta)) {
+    agentLogBytesByAgent[agentId] = meta.bytes;
+    agentLogBytesTotal += meta.bytes;
+  }
+
   const agentsByStatus: Record<string, number> = {};
   for (const agent of state.agents) {
     agentsByStatus[agent.status] = (agentsByStatus[agent.status] ?? 0) + 1;
@@ -35,6 +42,8 @@ export function collectStoreMetrics(): StoreMetrics {
     terminalLogsCount: state.terminalLogs.length,
     agentLogsTotal,
     agentLogsByAgent,
+    agentLogBytesTotal,
+    agentLogBytesByAgent,
     agentCount: state.agents.length,
     agentsByStatus,
     entityIndexSize: state.entityIndex.size,

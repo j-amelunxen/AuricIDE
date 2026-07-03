@@ -5,6 +5,7 @@ import {
   createAgentSlice,
   groupAgentsByRepo,
   MAX_AGENT_LOGS,
+  MAX_AGENT_LOG_BYTES,
   MAX_FINISHED_AGENTS,
 } from './agentSlice';
 
@@ -173,6 +174,40 @@ describe('agentSlice', () => {
     expect(store.getState().agents).toHaveLength(1);
     expect(store.getState().agents[0].id).toBe('2');
   });
+
+  it('killAgentsForRepoPath drops logs and metadata of killed agents', async () => {
+    store.setState({
+      agents: [
+        {
+          id: '1',
+          name: 'A',
+          model: 'm',
+          provider: 'claude',
+          status: 'running' as const,
+          startedAt: 0,
+          repoPath: '/repo-a',
+        },
+        {
+          id: '2',
+          name: 'B',
+          model: 'm',
+          provider: 'claude',
+          status: 'running' as const,
+          startedAt: 0,
+          repoPath: '/repo-b',
+        },
+      ],
+    });
+    store.getState().appendAgentLog('1', 'a-log');
+    store.getState().appendAgentLog('2', 'b-log');
+
+    await store.getState().killAgentsForRepoPath('/repo-a');
+
+    expect(store.getState().agentLogs['1']).toBeUndefined();
+    expect(store.getState().agentLogMeta['1']).toBeUndefined();
+    expect(store.getState().agentLogs['2']).toEqual(['b-log']);
+    expect(store.getState().agentLogMeta['2']).toBeDefined();
+  });
 });
 
 describe('groupAgentsByRepo', () => {
@@ -270,6 +305,96 @@ describe('agentSlice – agent logs buffer cap', () => {
     expect(store.getState().agentLogs['agent-1']).toHaveLength(MAX_AGENT_LOGS);
     expect(store.getState().agentLogs['agent-2']).toHaveLength(2);
     expect(store.getState().agentLogs['agent-2'][0]).toBe('a2-first');
+  });
+});
+
+describe('agentSlice – byte-bounded agent logs', () => {
+  let store: StoreApi<AgentSlice>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('trims oldest chunks once MAX_AGENT_LOG_BYTES is exceeded', () => {
+    // Five chunks of ~1/3 the cap → only the newest chunks that fit remain
+    const chunkSize = Math.ceil(MAX_AGENT_LOG_BYTES / 3);
+    for (let i = 0; i < 5; i++) {
+      store.getState().appendAgentLog('agent-1', `${i}`.padEnd(chunkSize, 'x'));
+    }
+    const logs = store.getState().agentLogs['agent-1'];
+    const totalBytes = logs.reduce((sum, l) => sum + l.length, 0);
+    expect(totalBytes).toBeLessThanOrEqual(MAX_AGENT_LOG_BYTES);
+    // Newest chunk is always last, oldest chunks were dropped
+    expect(logs[logs.length - 1].startsWith('4')).toBe(true);
+    expect(logs[0].startsWith('0')).toBe(false);
+  });
+
+  it('keeps the newest chunk even when it alone exceeds the cap', () => {
+    store.getState().appendAgentLog('agent-1', 'small');
+    store.getState().appendAgentLog('agent-1', 'y'.repeat(MAX_AGENT_LOG_BYTES + 10));
+    const logs = store.getState().agentLogs['agent-1'];
+    expect(logs).toHaveLength(1);
+    expect(logs[0].startsWith('y')).toBe(true);
+  });
+
+  it('tracks a monotonically increasing seq across trims', () => {
+    const chunkSize = Math.ceil(MAX_AGENT_LOG_BYTES / 2);
+    for (let i = 0; i < 6; i++) {
+      store.getState().appendAgentLog('agent-1', 'x'.repeat(chunkSize));
+    }
+    expect(store.getState().agentLogMeta['agent-1'].seq).toBe(6);
+    expect(store.getState().agentLogs['agent-1'].length).toBeLessThan(6);
+  });
+
+  it('tracks retained byte size per agent', () => {
+    store.getState().appendAgentLog('agent-1', 'abcd');
+    store.getState().appendAgentLog('agent-1', 'ef');
+    expect(store.getState().agentLogMeta['agent-1'].bytes).toBe(6);
+  });
+
+  it('killRunningAgent clears log metadata for the killed agent', async () => {
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    store.getState().appendAgentLog('mock-agent-1', 'log');
+    store.getState().appendAgentLog('other-agent', 'other');
+
+    await store.getState().killRunningAgent('mock-agent-1');
+    expect(store.getState().agentLogMeta['mock-agent-1']).toBeUndefined();
+    expect(store.getState().agentLogMeta['other-agent']).toBeDefined();
+  });
+
+  it('finished-agent eviction clears log metadata of evicted agents', () => {
+    const agents = Array.from({ length: MAX_FINISHED_AGENTS }, (_, i) => ({
+      id: `agent-${i}`,
+      name: `agent-${i}`,
+      model: 'm',
+      provider: 'claude',
+      status: 'idle' as const,
+      startedAt: i,
+    }));
+    store.setState({
+      agents: [
+        ...agents,
+        {
+          id: 'agent-new',
+          name: 'new',
+          model: 'm',
+          provider: 'claude',
+          status: 'running' as const,
+          startedAt: 1000,
+        },
+      ],
+    });
+    for (const a of agents) store.getState().appendAgentLog(a.id, `log for ${a.id}`);
+
+    store.getState().updateAgentStatus('agent-new', 'idle');
+
+    expect(store.getState().agentLogMeta['agent-0']).toBeUndefined();
+    expect(store.getState().agentLogMeta[`agent-${MAX_FINISHED_AGENTS - 1}`]).toBeDefined();
   });
 });
 

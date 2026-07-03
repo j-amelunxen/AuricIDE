@@ -29,7 +29,7 @@ impl McpServerState {
 }
 
 pub fn start_mcp_server(db_path: &str, script_path: &str) -> Result<Child, String> {
-    let child = Command::new("npx")
+    let mut child = Command::new("npx")
         .args(["tsx", script_path, db_path])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -37,7 +37,29 @@ pub fn start_mcp_server(db_path: &str, script_path: &str) -> Result<Child, Strin
         .spawn()
         .map_err(|e| format!("Failed to start MCP server: {}", e))?;
 
+    drain_pipes(&mut child);
+
     Ok(child)
+}
+
+/// Continuously drain a child's stdout/stderr into the void. Nothing consumes
+/// these pipes (agents spawn their own MCP transport), but an undrained pipe
+/// blocks the subprocess as soon as ~64KB of log output accumulate.
+pub fn drain_pipes(child: &mut Child) {
+    use std::io::Read;
+
+    if let Some(mut out) = child.stdout.take() {
+        std::thread::spawn(move || {
+            let mut sink = [0u8; 8192];
+            while matches!(out.read(&mut sink), Ok(n) if n > 0) {}
+        });
+    }
+    if let Some(mut err) = child.stderr.take() {
+        std::thread::spawn(move || {
+            let mut sink = [0u8; 8192];
+            while matches!(err.read(&mut sink), Ok(n) if n > 0) {}
+        });
+    }
 }
 
 pub fn stop_mcp_server(child: &mut Child) -> Result<(), String> {
@@ -112,6 +134,27 @@ mod tests {
 
         assert!(child.id() > 0);
         stop_mcp_server(&mut child).unwrap();
+    }
+
+    #[test]
+    fn test_drain_pipes_prevents_pipe_full_blocking() {
+        // Writes ~1MB to stdout — far past the ~64KB pipe buffer. Without
+        // draining, the child blocks mid-write and wait() hangs forever.
+        let mut child = Command::new("/bin/sh")
+            .args([
+                "-c",
+                "head -c 1000000 /dev/zero; head -c 1000000 /dev/zero 1>&2",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn writer");
+
+        drain_pipes(&mut child);
+
+        let status = child.wait().expect("wait failed");
+        assert!(status.success());
     }
 
     #[test]
