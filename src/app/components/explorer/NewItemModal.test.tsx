@@ -14,6 +14,11 @@ describe('NewItemModal', () => {
     expect(screen.getByText('New File')).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog', () => {
+    render(<NewItemModal type="file" onConfirm={() => {}} onCancel={() => {}} />);
+    expect(screen.getByRole('dialog', { name: /new file/i })).toBeInTheDocument();
+  });
+
   it('calls onConfirm with entered name when OK is clicked', async () => {
     const onConfirm = vi.fn();
     const user = userEvent.setup();

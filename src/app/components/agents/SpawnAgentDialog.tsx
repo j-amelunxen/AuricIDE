@@ -6,6 +6,7 @@ import type { PmGoal } from '@/lib/tauri/goals';
 import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface SpawnAgentDialogProps {
   isOpen: boolean;
@@ -20,7 +21,24 @@ interface SpawnAgentDialogProps {
   initialGoalId?: string | null;
 }
 
-export function SpawnAgentDialog({
+export function SpawnAgentDialog(props: SpawnAgentDialogProps) {
+  if (!props.isOpen) return null;
+  return <SpawnAgentDialogPanel {...props} />;
+}
+
+/** Dropdown affordance for `appearance-none` selects. */
+function SelectChevron() {
+  return (
+    <span
+      aria-hidden="true"
+      className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
+    >
+      expand_more
+    </span>
+  );
+}
+
+function SpawnAgentDialogPanel({
   isOpen,
   onClose,
   onSpawn,
@@ -31,6 +49,7 @@ export function SpawnAgentDialog({
   goals = [],
   initialGoalId = null,
 }: SpawnAgentDialogProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const [repoPath, setRepoPath] = useState(initialRepoPath);
   const [task, setTask] = useState(initialTask);
   const [goalId, setGoalId] = useState<string>(initialGoalId ?? '');
@@ -74,8 +93,6 @@ export function SpawnAgentDialog({
     setPermissionMode(currentProvider.defaultPermissionMode as PermissionMode);
   }, [currentProvider]);
 
-  if (!isOpen) return null;
-
   const handleDeploy = () => {
     const folderName = repoPath ? repoPath.split('/').pop() : '';
     const name = folderName ? `Agent (${folderName})` : 'Agent';
@@ -111,15 +128,25 @@ export function SpawnAgentDialog({
     <div
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="spawn-agent-title"
         className="glass-card w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">rocket_launch</span>
-          <h2 className="text-sm font-bold tracking-tight text-foreground uppercase">
-            Deploy New Agent
+          <h2
+            id="spawn-agent-title"
+            className="text-sm font-bold tracking-tight text-foreground uppercase"
+          >
+            New Agent
           </h2>
         </div>
 
@@ -150,21 +177,24 @@ export function SpawnAgentDialog({
               </button>
             </div>
             {recentPaths.length > 0 && (
-              <select
-                data-testid="recent-dirs"
-                value=""
-                onChange={(e) => {
-                  if (e.target.value) setRepoPath(e.target.value);
-                }}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground-muted outline-none focus:border-primary/50 transition-colors appearance-none"
-              >
-                <option value="">Recent directories...</option>
-                {recentPaths.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  data-testid="recent-dirs"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) setRepoPath(e.target.value);
+                  }}
+                  className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground-muted outline-none focus:border-primary/50 transition-colors appearance-none"
+                >
+                  <option value="">Recent directories...</option>
+                  {recentPaths.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
             )}
           </div>
 
@@ -193,20 +223,23 @@ export function SpawnAgentDialog({
               >
                 Serves Goal
               </label>
-              <select
-                id="goal-select"
-                data-testid="spawn-goal-select"
-                value={goalId}
-                onChange={(e) => setGoalId(e.target.value)}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
-              >
-                <option value="">— none —</option>
-                {goals.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="goal-select"
+                  data-testid="spawn-goal-select"
+                  value={goalId}
+                  onChange={(e) => setGoalId(e.target.value)}
+                  className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+                >
+                  <option value="">None</option>
+                  {goals.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
             </div>
           )}
 
@@ -219,18 +252,21 @@ export function SpawnAgentDialog({
                 Provider
                 <InfoTooltip description={GUIDANCE.agents.provider} label="i" />
               </label>
-              <select
-                id="provider-select"
-                value={selectedProviderId}
-                onChange={(e) => setSelectedProviderId(e.target.value)}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
-              >
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="provider-select"
+                  value={selectedProviderId}
+                  onChange={(e) => setSelectedProviderId(e.target.value)}
+                  className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+                >
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
             </div>
           )}
 
@@ -240,21 +276,24 @@ export function SpawnAgentDialog({
                 htmlFor="model-select"
                 className="flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider"
               >
-                Intelligence Model
+                Model
                 <InfoTooltip description={GUIDANCE.agents.model} label="i" />
               </label>
-              <select
-                id="model-select"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
-              >
-                {currentProvider.models.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="model-select"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+                >
+                  {currentProvider.models.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -265,18 +304,21 @@ export function SpawnAgentDialog({
                 Permission Mode
                 <InfoTooltip description={GUIDANCE.agents.permissionMode} label="i" />
               </label>
-              <select
-                id="permission-mode"
-                value={permissionMode}
-                onChange={(e) => setPermissionMode(e.target.value as PermissionMode)}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
-              >
-                {currentProvider.permissionModes.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="permission-mode"
+                  value={permissionMode}
+                  onChange={(e) => setPermissionMode(e.target.value as PermissionMode)}
+                  className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+                >
+                  {currentProvider.permissionModes.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
             </div>
           </div>
 
@@ -295,7 +337,7 @@ export function SpawnAgentDialog({
               Headless Mode
               <InfoTooltip description={GUIDANCE.agents.headless} label="i" />
               <span className="text-[10px] ml-1 opacity-60">
-                — Agent runs unattended and exits after completion
+                Agent runs unattended and exits after completion
               </span>
             </span>
           </label>
@@ -306,7 +348,7 @@ export function SpawnAgentDialog({
               onClick={onClose}
               className="px-4 py-2 text-xs font-medium text-foreground-muted hover:text-foreground transition-colors"
             >
-              Discard
+              Cancel
             </button>
             <button
               type="button"
@@ -314,7 +356,7 @@ export function SpawnAgentDialog({
               onClick={handleDeploy}
               className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(188,19,254,0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
             >
-              INITIALIZE
+              Start Agent
             </button>
           </div>
         </div>

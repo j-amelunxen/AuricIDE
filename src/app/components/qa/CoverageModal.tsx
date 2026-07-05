@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import type { CoverageSummary, FileCoverage } from '@/lib/qa/coverageParser';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 type SortKey = 'lines' | 'statements' | 'functions' | 'branches' | 'name';
 
@@ -12,10 +13,11 @@ interface CoverageModalProps {
   files: FileCoverage[];
 }
 
-export function CoverageModal({ isOpen, onClose, summary, files }: CoverageModalProps) {
+function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalProps, 'isOpen'>) {
   const [sortKey, setSortKey] = useState<SortKey>('lines');
   const [sortAsc, setSortAsc] = useState(true);
   const [filter, setFilter] = useState('');
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   const sortedFiles = useMemo(() => {
     const filtered = filter
@@ -42,8 +44,6 @@ export function CoverageModal({ isOpen, onClose, summary, files }: CoverageModal
     }
   };
 
-  if (!isOpen) return null;
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -55,6 +55,10 @@ export function CoverageModal({ isOpen, onClose, summary, files }: CoverageModal
 
       {/* Panel */}
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="coverage-modal-title"
         className="relative z-10 flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0e0e14] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -62,7 +66,12 @@ export function CoverageModal({ isOpen, onClose, summary, files }: CoverageModal
         <div className="flex items-center justify-between border-b border-white/8 bg-white/2 px-6 py-4">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-xl text-primary">analytics</span>
-            <h2 className="text-sm font-bold tracking-wide text-foreground">Coverage Report</h2>
+            <h2
+              id="coverage-modal-title"
+              className="text-sm font-bold tracking-wide text-foreground"
+            >
+              Coverage Report
+            </h2>
             <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-semibold text-foreground-muted">
               {files.length} files
             </span>
@@ -154,6 +163,11 @@ export function CoverageModal({ isOpen, onClose, summary, files }: CoverageModal
       </div>
     </div>
   );
+}
+
+export function CoverageModal({ isOpen, ...props }: CoverageModalProps) {
+  if (!isOpen) return null;
+  return <CoverageModalContent {...props} />;
 }
 
 function SortButton({

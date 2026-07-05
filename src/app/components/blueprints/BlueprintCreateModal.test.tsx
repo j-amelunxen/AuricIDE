@@ -17,6 +17,11 @@ describe('BlueprintCreateModal', () => {
     expect(screen.getByPlaceholderText('Blueprint name')).toBeDefined();
   });
 
+  it('exposes an accessible dialog', () => {
+    render(<BlueprintCreateModal isOpen={true} onSave={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: /new blueprint/i })).toBeInTheDocument();
+  });
+
   it('Save & Close button is disabled when name is empty', () => {
     render(<BlueprintCreateModal isOpen={true} onSave={vi.fn()} onClose={vi.fn()} />);
     const btn = screen.getByRole('button', { name: 'Save & Close' });

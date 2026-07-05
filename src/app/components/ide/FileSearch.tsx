@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import fuzzysort from 'fuzzysort';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface FileSearchProps {
   files: string[];
@@ -12,18 +13,17 @@ interface FileSearchProps {
 }
 
 export function FileSearch({ files, isOpen, onClose, onSelect, rootPath }: FileSearchProps) {
+  if (!isOpen) return null;
+  return (
+    <FileSearchDialog files={files} onClose={onClose} onSelect={onSelect} rootPath={rootPath} />
+  );
+}
+
+function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearchProps, 'isOpen'>) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [prevOpen, setPrevOpen] = useState(false);
-
-  if (isOpen && !prevOpen) {
-    setQuery('');
-    setSelectedIndex(0);
-    setPrevOpen(true);
-  } else if (!isOpen && prevOpen) {
-    setPrevOpen(false);
-  }
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   const results = useMemo(() => {
     if (!query) {
@@ -70,10 +70,8 @@ export function FileSearch({ files, isOpen, onClose, onSelect, rootPath }: FileS
   }, [query, files]);
 
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 10);
-    }
-  }, [isOpen]);
+    setTimeout(() => inputRef.current?.focus(), 10);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -90,14 +88,16 @@ export function FileSearch({ files, isOpen, onClose, onSelect, rootPath }: FileS
     }
   };
 
-  if (!isOpen) return null;
-
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Go to file"
         className="glass-card w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 shadow-2xl animate-in fade-in zoom-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >

@@ -99,7 +99,7 @@ export function EpicSidebar({
                   e.stopPropagation();
                   onEditEpic(epic);
                 }}
-                className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10 hover:text-foreground transition-all"
+                className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10 hover:text-foreground transition"
               >
                 <span className="material-symbols-outlined text-[13px]">edit</span>
               </button>
@@ -111,7 +111,7 @@ export function EpicSidebar({
                   e.stopPropagation();
                   onDeleteEpic(epic.id);
                 }}
-                className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-all"
+                className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-red-500/10 hover:text-red-400 transition"
               >
                 <span className="material-symbols-outlined text-[13px]">close</span>
               </button>

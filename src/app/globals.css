@@ -95,6 +95,21 @@ body {
   }
 }
 
+/* Unified keyboard focus ring (unlayered so it wins over outline-none utilities) */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible,
+[role='dialog']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='option']:focus-visible,
+[role='tab']:focus-visible {
+  outline: 2px solid rgba(214, 106, 255, 0.7);
+  outline-offset: 2px;
+}
+
 /* Minimalist Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -196,29 +211,29 @@ body {
   color: #fbbf24;
 }
 
-/* Paragraph Intent Borders (line decorations) */
+/* Paragraph Intent Markers (line decorations, change-bar idiom) */
 .cm-intent-instruction {
-  border-left: 3px solid #4ade80;
+  border-left: 2px solid rgba(74, 222, 128, 0.55);
   padding-left: 8px;
 }
 
 .cm-intent-explanation {
-  border-left: 3px solid #60a5fa;
+  border-left: 2px solid rgba(96, 165, 250, 0.55);
   padding-left: 8px;
 }
 
 .cm-intent-warning {
-  border-left: 3px solid #f87171;
+  border-left: 2px solid rgba(248, 113, 113, 0.55);
   padding-left: 8px;
 }
 
 .cm-intent-question {
-  border-left: 3px solid #fbbf24;
+  border-left: 2px solid rgba(251, 191, 36, 0.55);
   padding-left: 8px;
 }
 
 .cm-intent-context {
-  border-left: 3px solid #6b7280;
+  border-left: 2px solid rgba(107, 114, 128, 0.55);
   padding-left: 8px;
 }
 
@@ -411,8 +426,9 @@ body {
 .cm-semantic-prompt-context {
   color: #60a5fa !important; /* Soft Blue */
   font-weight: 700;
-  border-left: 3px solid #60a5fa;
-  padding-left: 4px;
+  background: rgba(96, 165, 250, 0.12);
+  border-radius: 3px;
+  padding: 0 3px;
 }
 
 .cm-semantic-prompt-constraint {
@@ -556,7 +572,6 @@ body {
   background: rgba(12, 18, 25, 0.6);
   min-height: 200px;
   /* height is set inline via JS based on dagre bounds */
-  transition: height 0.3s ease;
   position: relative;
 }
 

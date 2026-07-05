@@ -25,6 +25,7 @@ describe('DependencyProposalModal', () => {
       />
     );
 
+    expect(screen.getByRole('dialog', { name: /proposed dependencies/i })).toBeTruthy();
     expect(screen.getByText('Proposed Dependencies')).toBeTruthy();
     expect(screen.getByText('Database schema')).toBeTruthy();
     expect(screen.getByText('Needed for users')).toBeTruthy();

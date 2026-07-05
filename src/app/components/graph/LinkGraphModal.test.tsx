@@ -40,6 +40,11 @@ describe('LinkGraphModal', () => {
     expect(screen.getByText('Link Graph Overview')).toBeDefined();
   });
 
+  it('exposes an accessible dialog', () => {
+    render(<LinkGraphModal isOpen={true} onClose={onClose} onFileSelect={onFileSelect} />);
+    expect(screen.getByRole('dialog', { name: /link graph overview/i })).toBeInTheDocument();
+  });
+
   it('passes hideFullscreen to LinkGraphView', () => {
     render(<LinkGraphModal isOpen={true} onClose={onClose} onFileSelect={onFileSelect} />);
     expect(screen.getByTestId('link-graph-view').dataset.hideFullscreen).toBe('true');

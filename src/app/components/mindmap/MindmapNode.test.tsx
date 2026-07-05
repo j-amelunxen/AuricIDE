@@ -86,11 +86,12 @@ describe('MindmapNode – heading', () => {
     expect(onEdit).toHaveBeenCalledWith('test-node', 'Enter Edit');
   });
 
-  it('applies purple border class for level 1', () => {
+  it('applies purple level indicator for level 1', () => {
     const { container } = renderHeadingNode({
       data: { content: 'Level 1', level: 1, onEdit: vi.fn() },
     });
-    expect(container.firstElementChild!.className).toContain('border-l-purple-500');
+    expect(container.firstElementChild!.className).not.toContain('border-l-');
+    expect(screen.getByTestId('level-indicator').className).toContain('bg-purple-500');
   });
 
   it('has target and source handles', () => {
@@ -118,6 +119,12 @@ describe('MindmapNode – leaf', () => {
     const textarea = screen.getByRole('textbox');
     expect(textarea).toBeInTheDocument();
     expect(textarea).toHaveValue('This is a leaf content paragraph.');
+  });
+
+  it('opened modal exposes an accessible dialog', () => {
+    renderLeafNode();
+    fireEvent.click(screen.getByTestId('leaf-node'));
+    expect(screen.getByRole('dialog', { name: /edit node/i })).toBeInTheDocument();
   });
 
   it('modal Save calls onEdit and closes modal', () => {

@@ -32,6 +32,11 @@ describe('EpicEditDialog', () => {
     expect(screen.getByText('New Epic')).toBeDefined();
   });
 
+  it('exposes an accessible dialog when open', () => {
+    render(<EpicEditDialog {...defaultProps} epic={null} />);
+    expect(screen.getByRole('dialog', { name: /new epic/i })).toBeInTheDocument();
+  });
+
   it('shows "Edit Epic" when epic is provided', () => {
     render(<EpicEditDialog {...defaultProps} epic={makeEpic()} />);
     expect(screen.getByText('Edit Epic')).toBeDefined();

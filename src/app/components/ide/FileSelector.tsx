@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { ProjectFileInfo } from '@/lib/tauri/fs';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface FileSelectorProps {
   files: ProjectFileInfo[];
@@ -10,11 +11,12 @@ interface FileSelectorProps {
   rootPath: string | null;
 }
 
-export function FileSelector({ files, isOpen, onClose, rootPath }: FileSelectorProps) {
+function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps, 'isOpen'>) {
   const [extension, setExtension] = useState('');
   const [minLines, setMinLines] = useState<number | ''>('');
   const [maxLines, setMaxLines] = useState<number | ''>('');
   const [query, setQuery] = useState('');
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   const filtered = useMemo(() => {
     return files.filter((f) => {
@@ -48,19 +50,24 @@ export function FileSelector({ files, isOpen, onClose, rootPath }: FileSelectorP
     // Maybe show a toast or temporary "Copied!" state
   };
 
-  if (!isOpen) return null;
-
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="file-selector-title"
         className="glass-card w-full max-w-3xl overflow-hidden rounded-xl border border-white/10 shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[80vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+          <h2
+            id="file-selector-title"
+            className="text-sm font-bold uppercase tracking-wider text-foreground"
+          >
             Advanced File Selection
           </h2>
           <button onClick={onClose} className="text-foreground-muted hover:text-foreground">
@@ -176,4 +183,9 @@ export function FileSelector({ files, isOpen, onClose, rootPath }: FileSelectorP
       </div>
     </div>
   );
+}
+
+export function FileSelector({ files, isOpen, onClose, rootPath }: FileSelectorProps) {
+  if (!isOpen) return null;
+  return <FileSelectorDialog files={files} onClose={onClose} rootPath={rootPath} />;
 }

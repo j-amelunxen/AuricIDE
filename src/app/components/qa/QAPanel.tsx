@@ -64,13 +64,13 @@ export function QAPanel() {
         <div className="flex gap-2">
           <button
             onClick={handleSetupCoverage}
-            className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white transition-all hover:bg-primary-light hover:shadow-[0_0_15px_rgba(188,19,254,0.4)]"
+            className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white transition hover:bg-primary-light hover:shadow-[0_0_15px_rgba(188,19,254,0.4)]"
           >
             Setup Coverage
           </button>
           <button
             onClick={handleConfigureCoverageLocation}
-            className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-foreground-muted transition-all hover:border-white/20 hover:bg-white/10 hover:text-foreground"
+            className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-foreground-muted transition hover:border-white/20 hover:bg-white/10 hover:text-foreground"
           >
             Configure Coverage Location
           </button>
@@ -124,13 +124,13 @@ export function QAPanel() {
             </div>
             <button
               onClick={() => setModalOpen(true)}
-              className="w-full rounded-lg bg-primary/15 px-4 py-2 text-xs font-bold text-primary transition-all hover:bg-primary/25 hover:shadow-[0_0_12px_rgba(188,19,254,0.25)]"
+              className="w-full rounded-lg bg-primary/15 px-4 py-2 text-xs font-bold text-primary transition hover:bg-primary/25 hover:shadow-[0_0_12px_rgba(188,19,254,0.25)]"
             >
               View Full Report
             </button>
             <button
               onClick={() => setHeatmapOpen(true)}
-              className="w-full mt-2 rounded-lg border border-primary/30 bg-black/20 px-4 py-2 text-xs font-bold text-primary-light transition-all hover:border-primary/50 hover:bg-primary/10 hover:shadow-[0_0_15px_rgba(188,19,254,0.2)] flex items-center justify-center gap-2"
+              className="w-full mt-2 rounded-lg border border-primary/30 bg-black/20 px-4 py-2 text-xs font-bold text-primary-light transition hover:border-primary/50 hover:bg-primary/10 hover:shadow-[0_0_15px_rgba(188,19,254,0.2)] flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-[14px]">3d_rotation</span>
               Show 3D Heatmap
@@ -158,7 +158,7 @@ export function QAPanel() {
 
 function CoverageCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-white/5 bg-white/2 p-3 text-center transition-all hover:border-primary/20 hover:bg-primary/5">
+    <div className="rounded-xl border border-white/5 bg-white/2 p-3 text-center transition hover:border-primary/20 hover:bg-primary/5">
       <div className={`text-xl font-black tracking-tight ${getCoverageColor(value)}`}>
         {Math.round(value)}%
       </div>

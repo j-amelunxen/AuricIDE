@@ -19,7 +19,7 @@ export function BlueprintCard({ blueprint, selected, onSelect }: BlueprintCardPr
   return (
     <button
       onClick={() => onSelect(blueprint.id)}
-      className={`w-full text-left rounded-lg border p-3 transition-all ${
+      className={`w-full text-left rounded-lg border p-3 transition ${
         selected
           ? 'border-primary/40 bg-primary/10'
           : 'border-white/5 bg-white/2 hover:border-white/10 hover:bg-white/5'

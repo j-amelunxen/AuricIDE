@@ -51,7 +51,7 @@ describe('AgentsPanel', () => {
     const onSpawn = vi.fn();
     render(<AgentsPanel agents={agents} onSpawn={onSpawn} onKill={vi.fn()} />);
 
-    await user.click(screen.getByText('Deploy New Instance'));
+    await user.click(screen.getByText('New Agent…'));
     expect(onSpawn).toHaveBeenCalled();
   });
 

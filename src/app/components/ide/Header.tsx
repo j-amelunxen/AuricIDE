@@ -73,7 +73,10 @@ export function Header({
                   className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-300"
                 >
                   {i > 0 && (
-                    <span className="opacity-30 material-symbols-outlined text-[10px]">
+                    <span
+                      aria-hidden="true"
+                      className="opacity-30 material-symbols-outlined text-[10px]"
+                    >
                       chevron_right
                     </span>
                   )}
@@ -93,14 +96,19 @@ export function Header({
             data-testid="heading-breadcrumbs"
             className="flex items-center gap-1.5 text-xs font-medium text-foreground-muted pl-[3.75rem]"
           >
-            <span className="material-symbols-outlined text-[10px] opacity-50">description</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[10px] opacity-50">
+              description
+            </span>
             {headingBreadcrumbs.map((crumb, i) => (
               <span
                 key={i}
                 className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-300"
               >
                 {i > 0 && (
-                  <span className="opacity-30 material-symbols-outlined text-[10px]">
+                  <span
+                    aria-hidden="true"
+                    className="opacity-30 material-symbols-outlined text-[10px]"
+                  >
                     chevron_right
                   </span>
                 )}
@@ -123,7 +131,10 @@ export function Header({
           onClick={onCommandPalette}
           className="group flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 px-3 py-1.5 text-xs text-foreground-muted transition-all hover:border-primary/30 hover:bg-white/10 hover:text-foreground hover:shadow-[0_0_15px_rgba(188,19,254,0.15)]"
         >
-          <span className="material-symbols-outlined text-sm opacity-70 group-hover:opacity-100">
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined text-sm opacity-70 group-hover:opacity-100"
+          >
             search
           </span>
           <span className="font-medium">Find Agent...</span>
@@ -134,6 +145,7 @@ export function Header({
 
         <div
           data-testid="connection-badge"
+          title={isConnected ? 'Connected to the agent CLI' : 'Start the agent CLI to connect'}
           className={`flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium backdrop-blur-sm ${
             isConnected ? 'text-green-400' : 'text-red-400'
           }`}
@@ -151,14 +163,19 @@ export function Header({
 
         <div
           data-testid="llm-status-badge"
+          title={
+            llmConfigured
+              ? 'An LLM provider is configured'
+              : 'Configure an LLM provider in Settings'
+          }
           className={`flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium backdrop-blur-sm ${
             llmConfigured ? 'text-primary-light' : 'text-orange-400'
           }`}
         >
-          <span className="material-symbols-outlined text-[12px]">
+          <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
             {llmConfigured ? 'psychology' : 'warning'}
           </span>
-          {llmConfigured ? 'Direct LLM Active' : 'Direct LLM Missing'}
+          {llmConfigured ? 'Direct LLM Active' : 'LLM not configured'}
         </div>
       </div>
     </header>

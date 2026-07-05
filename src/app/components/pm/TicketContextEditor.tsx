@@ -65,7 +65,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
           <button
             type="button"
             onClick={handleAddSnippet}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition-all"
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition"
           >
             <span className="material-symbols-outlined text-[16px]">add</span>
             Add Snippet
@@ -73,7 +73,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
           <button
             type="button"
             onClick={handleLinkFile}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition-all"
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition"
           >
             <span className="material-symbols-outlined text-[16px]">link</span>
             Link File
@@ -111,7 +111,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
                   type="button"
                   aria-label="Remove context item"
                   onClick={() => handleRemoveItem(item.id)}
-                  className="rounded p-1 text-foreground-muted opacity-0 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 transition-all"
+                  className="rounded p-1 text-foreground-muted opacity-0 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 transition"
                 >
                   <span className="material-symbols-outlined text-[16px]">delete</span>
                 </button>

@@ -70,7 +70,7 @@ export function SystemContent() {
         <div className="grid grid-cols-2 gap-4">
           <button
             onClick={handleExport}
-            className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-primary/30 transition-all group text-left"
+            className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-primary/30 transition group text-left"
           >
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-sm text-primary group-hover:neon-glow">
@@ -85,7 +85,7 @@ export function SystemContent() {
 
           <button
             onClick={handleImport}
-            className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-red-500/30 transition-all group text-left"
+            className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-red-500/30 transition group text-left"
           >
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-sm text-red-400">upload</span>
@@ -99,7 +99,7 @@ export function SystemContent() {
           <button
             data-testid="clear-pm-button"
             onClick={handleClearTickets}
-            className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-red-500/30 transition-all group text-left"
+            className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-red-500/30 transition group text-left"
           >
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-sm text-red-500">delete_sweep</span>

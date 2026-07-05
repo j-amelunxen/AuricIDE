@@ -283,7 +283,7 @@ export function MarkdownEditor({
   }, [scrollToLine]);
 
   const handleExtractSection = useCallback(
-    (title: string, line: number) => {
+    (_title: string, line: number) => {
       const extraction = computeSectionExtraction(content, line);
       if (!extraction) return;
       setExtractDialog({
@@ -351,7 +351,7 @@ export function MarkdownEditor({
         <div className="absolute top-2 right-2 z-40">
           <button
             onClick={() => setShowPreview(!showPreview)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg bg-panel-bg border border-white/10 text-foreground-muted hover:text-primary hover:border-primary/30 transition-all shadow-lg"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg bg-panel-bg border border-white/10 text-foreground-muted hover:text-primary hover:border-primary/30 transition shadow-lg"
             title={showPreview ? 'Hide preview' : 'Show preview'}
             data-testid="preview-toggle"
           >
@@ -364,10 +364,7 @@ export function MarkdownEditor({
       )}
 
       <div className="flex h-full w-full">
-        <div
-          className={showPreview ? 'w-1/2 border-r border-white/10' : 'w-full'}
-          style={{ transition: 'width 0.2s ease-in-out' }}
-        >
+        <div className={showPreview ? 'w-1/2 border-r border-white/10' : 'w-full'}>
           <div
             ref={containerRef}
             data-testid="markdown-editor"

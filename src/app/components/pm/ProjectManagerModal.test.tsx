@@ -66,6 +66,12 @@ describe('ProjectManagerModal', () => {
     expect(screen.getByText('Project Management')).toBeDefined();
   });
 
+  it('exposes an accessible dialog when open', () => {
+    mockStore.pmModalOpen = true;
+    render(<ProjectManagerModal />);
+    expect(screen.getByRole('dialog', { name: /project management/i })).toBeInTheDocument();
+  });
+
   it('shows "Project Management" header', () => {
     mockStore.pmModalOpen = true;
     render(<ProjectManagerModal />);

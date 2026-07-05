@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect } from 'react';
 import { LinkGraphView } from './LinkGraphView';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface LinkGraphModalProps {
   isOpen: boolean;
@@ -10,6 +11,13 @@ interface LinkGraphModalProps {
 }
 
 export function LinkGraphModal({ isOpen, onClose, onFileSelect }: LinkGraphModalProps) {
+  if (!isOpen) return null;
+  return <LinkGraphDialog onClose={onClose} onFileSelect={onFileSelect} />;
+}
+
+function LinkGraphDialog({ onClose, onFileSelect }: Omit<LinkGraphModalProps, 'isOpen'>) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
+
   // Close on Escape
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -19,12 +27,9 @@ export function LinkGraphModal({ isOpen, onClose, onFileSelect }: LinkGraphModal
   );
 
   useEffect(() => {
-    if (!isOpen) return;
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleKeyDown]);
-
-  if (!isOpen) return null;
+  }, [handleKeyDown]);
 
   return (
     <div
@@ -33,6 +38,10 @@ export function LinkGraphModal({ isOpen, onClose, onFileSelect }: LinkGraphModal
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="link-graph-modal-title"
         className="flex flex-col w-full h-full rounded-2xl border border-white/10 bg-[#050510] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-300"
         onClick={(e) => e.stopPropagation()}
       >
@@ -43,7 +52,10 @@ export function LinkGraphModal({ isOpen, onClose, onFileSelect }: LinkGraphModal
               <span className="material-symbols-outlined text-xl">hub</span>
             </div>
             <div>
-              <h2 className="text-sm font-bold text-foreground tracking-tight">
+              <h2
+                id="link-graph-modal-title"
+                className="text-sm font-bold text-foreground tracking-tight"
+              >
                 Link Graph Overview
               </h2>
               <p className="text-[10px] text-foreground-muted uppercase tracking-[0.2em] font-medium opacity-70">

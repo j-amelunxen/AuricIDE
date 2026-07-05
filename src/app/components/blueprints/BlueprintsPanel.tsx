@@ -120,7 +120,7 @@ export function BlueprintsPanel() {
               <p className="text-xs text-foreground-muted">No blueprints yet</p>
               <button
                 onClick={() => setBlueprintsModalOpen(true)}
-                className="mt-3 rounded-lg bg-primary/15 px-4 py-2 text-xs font-bold text-primary transition-all hover:bg-primary/25"
+                className="mt-3 rounded-lg bg-primary/15 px-4 py-2 text-xs font-bold text-primary transition hover:bg-primary/25"
               >
                 Create Blueprint
               </button>

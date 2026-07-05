@@ -53,6 +53,13 @@ describe('CoverageModal', () => {
     expect(screen.getByText(/Coverage Report/i)).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog when open', () => {
+    render(
+      <CoverageModal isOpen={true} onClose={vi.fn()} summary={mockSummary} files={mockFiles} />
+    );
+    expect(screen.getByRole('dialog', { name: /coverage report/i })).toBeInTheDocument();
+  });
+
   it('displays all four summary metrics', () => {
     render(
       <CoverageModal isOpen={true} onClose={vi.fn()} summary={mockSummary} files={mockFiles} />

@@ -24,6 +24,11 @@ describe('ExtractSectionDialog', () => {
     expect(screen.getByText(/My Section/)).toBeDefined();
   });
 
+  it('exposes an accessible dialog', () => {
+    render(<ExtractSectionDialog {...defaultProps} />);
+    expect(screen.getByRole('dialog', { name: /extract section/i })).toBeInTheDocument();
+  });
+
   it('shows content preview', () => {
     render(<ExtractSectionDialog {...defaultProps} contentPreview="Some preview content here" />);
 

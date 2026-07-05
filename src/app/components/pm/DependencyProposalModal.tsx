@@ -1,5 +1,7 @@
 'use client';
 
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+
 interface DependencySuggestion {
   id: string;
   name: string;
@@ -16,26 +18,33 @@ interface DependencyProposalModalProps {
   isLoading: boolean;
 }
 
-export function DependencyProposalModal({
-  isOpen,
+function DependencyProposalDialog({
   onClose,
   onConfirm,
   suggestions,
   selectedIds,
   onToggleSuggestion,
   isLoading,
-}: DependencyProposalModalProps) {
-  if (!isOpen) return null;
+}: Omit<DependencyProposalModalProps, 'isOpen'>) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-[500px] max-h-[80vh] flex flex-col bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dependency-proposal-title"
+        className="relative w-[500px] max-h-[80vh] flex flex-col bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[20px]">lightbulb</span>
-            <h3 className="text-sm font-semibold text-foreground">Proposed Dependencies</h3>
+            <h3 id="dependency-proposal-title" className="text-sm font-semibold text-foreground">
+              Proposed Dependencies
+            </h3>
           </div>
           <button
             type="button"
@@ -135,4 +144,9 @@ export function DependencyProposalModal({
       </div>
     </div>
   );
+}
+
+export function DependencyProposalModal({ isOpen, ...props }: DependencyProposalModalProps) {
+  if (!isOpen) return null;
+  return <DependencyProposalDialog {...props} />;
 }

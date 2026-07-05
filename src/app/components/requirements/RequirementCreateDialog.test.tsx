@@ -57,6 +57,7 @@ describe('RequirementCreateDialog', () => {
     );
     expect(screen.getByTestId('requirement-create-dialog')).toBeInTheDocument();
     expect(screen.getByText('New Requirement')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /new requirement/i })).toBeInTheDocument();
   });
 
   it('shows auto-generated reqId preview "REQ-01" with no category', () => {

@@ -3,13 +3,15 @@
 import { useEffect, useCallback, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { RequirementFilterPanel } from './RequirementFilterPanel';
 import { RequirementList } from './RequirementList';
 import { RequirementDetailPanel } from './RequirementDetailPanel';
 import { RequirementCreateDialog } from './RequirementCreateDialog';
 import type { PmRequirement } from '@/lib/tauri/requirements';
 
-export function RequirementsModal() {
+function RequirementsDialog() {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const requirementsModalOpen = useStore((s) => s.requirementsModalOpen);
   const requirementsDraft = useStore((s) => s.requirementsDraft);
   const requirementsDirty = useStore((s) => s.requirementsDirty);
@@ -151,12 +153,20 @@ export function RequirementsModal() {
         if (e.target === e.currentTarget) handleClose();
       }}
     >
-      <div className="flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="requirements-modal-title"
+        className="flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-primary-light">checklist</span>
-            <h1 className="text-sm font-bold text-foreground">Requirements</h1>
+            <h1 id="requirements-modal-title" className="text-sm font-bold text-foreground">
+              Requirements
+            </h1>
             <span className="text-[10px] text-foreground-muted">
               {requirementsDraft.length} total
             </span>
@@ -244,4 +254,10 @@ export function RequirementsModal() {
     </div>,
     document.body
   );
+}
+
+export function RequirementsModal() {
+  const requirementsModalOpen = useStore((s) => s.requirementsModalOpen);
+  if (!requirementsModalOpen) return null;
+  return <RequirementsDialog />;
 }

@@ -15,12 +15,8 @@ export function ObsidianLinkNode({ data, selected }: NodeProps & { data: Obsidia
 
   return (
     <div
-      className={[
-        'min-w-[220px] bg-[#16202c] border border-[#2a3b4d]',
-        'border-l-4',
-        containerStyle,
-      ].join(' ')}
-      style={{ borderLeftColor: borderColor }}
+      className={['min-w-[220px] bg-[#16202c] border', containerStyle].join(' ')}
+      style={{ borderColor }}
     >
       <Handle type="target" position={Position.Top} id="top" />
       <Handle type="target" position={Position.Left} id="left" />

@@ -286,7 +286,7 @@ export function TicketEditPanel({
               type="button"
               disabled={!pmDirty}
               onClick={onSave}
-              className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-[10px] font-medium text-foreground hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+              className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-[10px] font-medium text-foreground hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition"
             >
               Save
             </button>
@@ -294,7 +294,7 @@ export function TicketEditPanel({
               type="button"
               disabled={!pmDirty}
               onClick={onSaveAndClose}
-              className="rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light hover:bg-primary/20 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+              className="rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light hover:bg-primary/20 disabled:opacity-25 disabled:cursor-not-allowed transition"
             >
               Save and Close
             </button>
@@ -305,7 +305,7 @@ export function TicketEditPanel({
           <button
             type="button"
             onClick={handleSpawnAgent}
-            className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary-light transition-all hover:bg-primary/20"
+            className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary-light transition hover:bg-primary/20"
           >
             <span className="material-symbols-outlined text-[16px]">smart_toy</span>
             Spawn Agent
@@ -315,7 +315,7 @@ export function TicketEditPanel({
             type="button"
             onClick={handleCopyPrompt}
             title="Copy prompt to clipboard"
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
               copied
                 ? 'bg-green-500/10 border-green-500/20 text-green-400'
                 : 'bg-white/5 border-white/10 text-foreground-muted hover:bg-white/10 hover:text-foreground'
@@ -465,7 +465,7 @@ export function TicketEditPanel({
                 type="button"
                 onClick={handleDeriveTestCases}
                 disabled={isLlmLoading}
-                className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition-all hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[14px]">psychology</span>
                 Derive Test Cases
@@ -491,7 +491,7 @@ export function TicketEditPanel({
                 type="button"
                 onClick={handleProposeDependencies}
                 disabled={isLlmLoading}
-                className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition-all hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[14px]">lightbulb</span>
                 Propose Dependencies
@@ -540,7 +540,7 @@ export function TicketEditPanel({
                       console.error('Failed to open directory dialog:', err);
                     }
                   }}
-                  className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition-all flex items-center gap-1.5"
+                  className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition flex items-center gap-1.5"
                 >
                   <span className="material-symbols-outlined text-[16px]">folder_open</span>
                   Browse
@@ -577,7 +577,7 @@ export function TicketEditPanel({
               </button>
               <p className="mt-1.5 text-[10px] text-foreground-muted">
                 {ticket.needsHumanSupervision
-                  ? 'This ticket requires human supervision. It will be skipped by automatic task fetching — only a human can assign or start it.'
+                  ? 'This ticket requires human supervision. It will be skipped by automatic task fetching; only a human can assign or start it.'
                   : 'Agents can automatically pick up this ticket. Enable to require manual assignment.'}
               </p>
             </div>

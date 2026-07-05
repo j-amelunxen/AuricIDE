@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import type { CoverageSummary, FileCoverage } from '@/lib/qa/coverageParser';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface HeatmapProps {
   isOpen: boolean;
@@ -97,7 +98,12 @@ function Building({ position, size, coverage, file }: BuildingProps) {
   );
 }
 
-export function CoverageHeatmapModal({ isOpen, onClose, summary: _summary, files }: HeatmapProps) {
+function CoverageHeatmapContent({
+  onClose,
+  summary: _summary,
+  files,
+}: Omit<HeatmapProps, 'isOpen'>) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const buildings = useMemo(() => {
     // Sort files by path to group folders visually together in the grid
     const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
@@ -127,14 +133,16 @@ export function CoverageHeatmapModal({ isOpen, onClose, summary: _summary, files
     });
   }, [files]);
 
-  if (!isOpen) return null;
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="coverage-heatmap-title"
         className="relative z-10 flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0e0e14] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -142,7 +150,10 @@ export function CoverageHeatmapModal({ isOpen, onClose, summary: _summary, files
         <div className="flex items-center justify-between border-b border-white/8 bg-white/2 px-6 py-4">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-xl text-primary">3d_rotation</span>
-            <h2 className="text-sm font-bold tracking-wide text-foreground">
+            <h2
+              id="coverage-heatmap-title"
+              className="text-sm font-bold tracking-wide text-foreground"
+            >
               3D Coverage Code City
             </h2>
             <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-semibold text-foreground-muted">
@@ -241,4 +252,9 @@ export function CoverageHeatmapModal({ isOpen, onClose, summary: _summary, files
       </div>
     </div>
   );
+}
+
+export function CoverageHeatmapModal({ isOpen, ...props }: HeatmapProps) {
+  if (!isOpen) return null;
+  return <CoverageHeatmapContent {...props} />;
 }

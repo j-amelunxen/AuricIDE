@@ -97,13 +97,17 @@ export function TerminalPanel({
               >
                 {isAgent && (
                   <span
+                    aria-hidden="true"
                     className={`material-symbols-outlined text-[14px] ${isLive ? 'text-primary animate-pulse' : 'text-primary/50'}`}
                   >
                     {isLive ? 'sensors' : 'smart_toy'}
                   </span>
                 )}
                 {isExtra && (
-                  <span className="material-symbols-outlined text-[14px] text-green-400/70">
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined text-[14px] text-green-400/70"
+                  >
                     terminal
                   </span>
                 )}

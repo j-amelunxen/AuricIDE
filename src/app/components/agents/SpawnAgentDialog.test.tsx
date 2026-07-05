@@ -40,26 +40,39 @@ describe('SpawnAgentDialog', () => {
 
   it('renders dialog when isOpen is true', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByText('Deploy New Agent')).toBeInTheDocument();
+    expect(screen.getByText('New Agent')).toBeInTheDocument();
+  });
+
+  it('exposes an accessible dialog', () => {
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: /new agent/i })).toBeInTheDocument();
   });
 
   it('renders repo path input, task textarea, model select', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     expect(screen.getByLabelText(/working directory/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/instruction/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/intelligence model/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/model/i)).toBeInTheDocument();
+  });
+
+  it('renders a dropdown chevron affordance next to the model select', () => {
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    const modelSelect = screen.getByLabelText(/model/i);
+    const chevron = modelSelect.parentElement?.querySelector('[aria-hidden="true"]');
+    expect(chevron).not.toBeNull();
+    expect(chevron).toHaveTextContent('expand_more');
   });
 
   it('deploy button is disabled when task is empty', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /initialize/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
   });
 
   it('deploy button is enabled when task has content', async () => {
     const user = userEvent.setup();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
-    expect(screen.getByRole('button', { name: /initialize/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeEnabled();
   });
 
   it('calls onSpawn with correct config on deploy', async () => {
@@ -69,7 +82,7 @@ describe('SpawnAgentDialog', () => {
 
     await user.type(screen.getByLabelText(/working directory/i), '/my/repo');
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -85,7 +98,7 @@ describe('SpawnAgentDialog', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: /discard/i }));
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -94,7 +107,7 @@ describe('SpawnAgentDialog', () => {
     const onClose = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={vi.fn()} />);
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -111,7 +124,7 @@ describe('SpawnAgentDialog', () => {
 
     await user.type(screen.getByLabelText(/working directory/i), '/my/repo');
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -126,7 +139,7 @@ describe('SpawnAgentDialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -154,7 +167,7 @@ describe('SpawnAgentDialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -170,7 +183,7 @@ describe('SpawnAgentDialog', () => {
 
     await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
     await user.type(screen.getByLabelText(/instruction/i), 'Refactor auth');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -186,7 +199,7 @@ describe('SpawnAgentDialog', () => {
 
     await user.selectOptions(screen.getByLabelText(/permission mode/i), 'default');
     await user.type(screen.getByLabelText(/instruction/i), 'Update styles');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -235,7 +248,7 @@ describe('SpawnAgentDialog', () => {
 
     await user.selectOptions(screen.getByTestId('recent-dirs'), '/projects/beta');
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
-    await user.click(screen.getByRole('button', { name: /initialize/i }));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -54,19 +54,28 @@ function GoalNode({
 
   return (
     <div>
-      <button
+      <div
         data-testid={`goal-node-${goal.id}`}
+        role="button"
+        tabIndex={0}
         onClick={() => onSelect(goal.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(goal.id);
+          }
+        }}
         style={{ paddingLeft: `${12 + depth * 20}px` }}
-        className={`group flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-left transition-colors ${
+        className={`group flex w-full cursor-pointer items-center gap-2 rounded-lg py-2 pr-3 text-left transition-colors ${
           isSelected ? 'bg-primary/15 ring-1 ring-primary/30' : 'hover:bg-white/5'
         }`}
       >
         {children.length > 0 ? (
-          <span
+          <button
+            type="button"
             data-testid={`goal-toggle-${goal.id}`}
-            role="button"
-            tabIndex={-1}
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? 'Expand sub-goals' : 'Collapse sub-goals'}
             onClick={(e) => {
               e.stopPropagation();
               onToggle(goal.id);
@@ -74,7 +83,7 @@ function GoalNode({
             className="material-symbols-outlined -ml-1 w-4 shrink-0 cursor-pointer text-sm text-foreground-muted hover:text-foreground"
           >
             {isCollapsed ? 'chevron_right' : 'expand_more'}
-          </span>
+          </button>
         ) : (
           <span className="-ml-1 w-4 shrink-0" />
         )}
@@ -111,7 +120,7 @@ function GoalNode({
             <span className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
               <span
                 data-testid={`goal-progress-${goal.id}`}
-                className={`block h-full rounded-full transition-all ${percent === 100 ? 'bg-green-400' : 'bg-primary'}`}
+                className={`block h-full rounded-full transition ${percent === 100 ? 'bg-green-400' : 'bg-primary'}`}
                 style={{ width: `${percent}%` }}
               />
             </span>
@@ -120,7 +129,7 @@ function GoalNode({
             </span>
           </span>
         )}
-      </button>
+      </div>
 
       {!isCollapsed &&
         children.map((child) => (

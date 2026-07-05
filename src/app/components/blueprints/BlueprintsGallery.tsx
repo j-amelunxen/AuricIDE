@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useStore } from '@/lib/store';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { BlueprintCreateModal } from './BlueprintCreateModal';
 import type { Blueprint } from '@/lib/tauri/blueprints';
 import {
@@ -14,6 +15,13 @@ import {
 } from '@/lib/blueprints/constants';
 
 export function BlueprintsGallery() {
+  const blueprintsGalleryOpen = useStore((s) => s.blueprintsGalleryOpen);
+  if (!blueprintsGalleryOpen) return null;
+  return <BlueprintsGalleryContent />;
+}
+
+function BlueprintsGalleryContent() {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const blueprintsGalleryOpen = useStore((s) => s.blueprintsGalleryOpen);
   const setBlueprintsGalleryOpen = useStore((s) => s.setBlueprintsGalleryOpen);
   const blueprintsDraft = useStore((s) => s.blueprintsDraft);
@@ -98,8 +106,6 @@ export function BlueprintsGallery() {
     [deleteBlueprint, selectedBlueprintId, setSelectedBlueprintId, saveBlueprints, rootPath]
   );
 
-  if (!blueprintsGalleryOpen) return null;
-
   const syncIcon =
     blueprintSyncStatus === 'syncing'
       ? 'sync'
@@ -122,14 +128,22 @@ export function BlueprintsGallery() {
 
   return (
     <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center">
-      <div className="w-[95vw] h-[90vh] flex flex-col bg-[#0a0a10] rounded-xl border border-white/10 shadow-2xl overflow-hidden">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="blueprints-gallery-title"
+        className="w-[95vw] h-[90vh] flex flex-col bg-[#0a0a10] rounded-xl border border-white/10 shadow-2xl overflow-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-primary-light text-[20px]">
               library_books
             </span>
-            <h2 className="text-sm font-bold text-foreground">Blueprints</h2>
+            <h2 id="blueprints-gallery-title" className="text-sm font-bold text-foreground">
+              Blueprints
+            </h2>
             {blueprintServerUrl && blueprintSyncStatus !== 'idle' && syncIcon && (
               <span
                 title={
@@ -445,104 +459,11 @@ export function BlueprintsGallery() {
       </div>
 
       {readingOpen && selectedBlueprint && (
-        <div className="fixed inset-0 z-[310] bg-[#07070f]/95 backdrop-blur-sm overflow-y-auto custom-scrollbar">
-          <div className="max-w-3xl mx-auto px-6 py-10">
-            {/* Reading header */}
-            <div className="flex items-center justify-between mb-8">
-              <button
-                onClick={() => setReadingOpen(false)}
-                className="flex items-center gap-1.5 text-xs font-medium text-foreground-muted hover:text-foreground transition-colors"
-              >
-                <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-                Back to gallery
-              </button>
-              <button
-                onClick={() => handleEdit(selectedBlueprint)}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
-              >
-                <span className="material-symbols-outlined text-[14px]">edit</span>
-                Edit
-              </button>
-            </div>
-
-            {/* Title */}
-            <h1 className="text-3xl font-bold text-foreground mb-4 leading-tight">
-              {selectedBlueprint.name}
-            </h1>
-
-            {/* Badges */}
-            <div className="flex flex-wrap gap-2 mb-6">
-              {COMPLEXITY_MAP[selectedBlueprint.complexity] && (
-                <span
-                  className={`rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${COMPLEXITY_MAP[selectedBlueprint.complexity].className}`}
-                >
-                  {COMPLEXITY_MAP[selectedBlueprint.complexity].label}
-                </span>
-              )}
-              <span className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-medium text-foreground-muted">
-                {CATEGORY_LABELS[selectedBlueprint.category] ?? selectedBlueprint.category}
-              </span>
-            </div>
-
-            {/* Tech stack */}
-            {selectedBlueprint.techStack && (
-              <div className="mb-5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-2">
-                  Tech Stack
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedBlueprint.techStack.split(',').map((t) => (
-                    <span
-                      key={t}
-                      className="rounded border border-primary/15 bg-primary/5 px-2 py-0.5 text-[11px] font-mono text-primary-light"
-                    >
-                      {t.trim()}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Goal */}
-            {selectedBlueprint.goal && (
-              <div className="mb-6">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-2">
-                  Goal
-                </p>
-                <p className="text-base text-foreground/80 leading-relaxed">
-                  {selectedBlueprint.goal}
-                </p>
-              </div>
-            )}
-
-            <div className="border-t border-white/10 mb-8" />
-
-            {/* Full description */}
-            {selectedBlueprint.description ? (
-              <div className="[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:text-foreground [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mb-3 [&_h2]:mt-8 [&_h2]:text-foreground [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-2 [&_h3]:mt-6 [&_h3]:text-foreground [&_p]:text-foreground/75 [&_p]:leading-[1.8] [&_p]:mb-4 [&_p]:text-base [&_code]:font-mono [&_code]:text-primary-light [&_code]:bg-primary/5 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_pre]:bg-white/5 [&_pre]:border [&_pre]:border-white/10 [&_pre]:rounded-xl [&_pre]:p-5 [&_pre]:overflow-x-auto [&_pre]:mb-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:mb-4 [&_ul]:pl-5 [&_ol]:mb-4 [&_ol]:pl-5 [&_li]:text-foreground/75 [&_li]:text-base [&_li]:leading-[1.8] [&_li]:mb-1 [&_strong]:text-foreground [&_a]:text-primary-light [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:text-foreground-muted [&_hr]:border-white/10 [&_hr]:my-6 [&_table]:w-full [&_table]:mb-4 [&_th]:text-left [&_th]:text-xs [&_th]:font-bold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground-muted [&_th]:pb-2 [&_th]:border-b [&_th]:border-white/10 [&_td]:py-2 [&_td]:text-sm [&_td]:text-foreground/70 [&_td]:border-b [&_td]:border-white/5">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {selectedBlueprint.description}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <p className="text-base text-foreground-muted/50 italic">No description.</p>
-            )}
-
-            {selectedBlueprint.spec && (
-              <>
-                <div className="border-t border-white/10 my-8" />
-                <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-6">
-                  Full Spec
-                </p>
-                <div className="[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:text-foreground [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mb-3 [&_h2]:mt-8 [&_h2]:text-foreground [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-2 [&_h3]:mt-6 [&_h3]:text-foreground [&_p]:text-foreground/75 [&_p]:leading-[1.8] [&_p]:mb-4 [&_p]:text-base [&_code]:font-mono [&_code]:text-primary-light [&_code]:bg-primary/5 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_pre]:bg-white/5 [&_pre]:border [&_pre]:border-white/10 [&_pre]:rounded-xl [&_pre]:p-5 [&_pre]:overflow-x-auto [&_pre]:mb-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:mb-4 [&_ul]:pl-5 [&_ol]:mb-4 [&_ol]:pl-5 [&_li]:text-foreground/75 [&_li]:text-base [&_li]:leading-[1.8] [&_li]:mb-1 [&_strong]:text-foreground [&_a]:text-primary-light [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:text-foreground-muted [&_hr]:border-white/10 [&_hr]:my-6 [&_table]:w-full [&_table]:mb-4 [&_th]:text-left [&_th]:text-xs [&_th]:font-bold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground-muted [&_th]:pb-2 [&_th]:border-b [&_th]:border-white/10 [&_td]:py-2 [&_td]:text-sm [&_td]:text-foreground/70 [&_td]:border-b [&_td]:border-white/5">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {selectedBlueprint.spec}
-                  </ReactMarkdown>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <BlueprintReadingOverlay
+          blueprint={selectedBlueprint}
+          onBack={() => setReadingOpen(false)}
+          onEdit={() => handleEdit(selectedBlueprint)}
+        />
       )}
 
       <BlueprintCreateModal
@@ -554,6 +475,120 @@ export function BlueprintsGallery() {
         }}
         initialValues={editTarget ?? undefined}
       />
+    </div>
+  );
+}
+
+interface BlueprintReadingOverlayProps {
+  blueprint: Blueprint;
+  onBack: () => void;
+  onEdit: () => void;
+}
+
+function BlueprintReadingOverlay({ blueprint, onBack, onEdit }: BlueprintReadingOverlayProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
+
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="blueprint-reading-title"
+      className="fixed inset-0 z-[310] bg-[#07070f]/95 backdrop-blur-sm overflow-y-auto custom-scrollbar"
+    >
+      <div className="max-w-3xl mx-auto px-6 py-10">
+        {/* Reading header */}
+        <div className="flex items-center justify-between mb-8">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-xs font-medium text-foreground-muted hover:text-foreground transition-colors"
+          >
+            <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+            Back to gallery
+          </button>
+          <button
+            onClick={onEdit}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
+          >
+            <span className="material-symbols-outlined text-[14px]">edit</span>
+            Edit
+          </button>
+        </div>
+
+        {/* Title */}
+        <h1
+          id="blueprint-reading-title"
+          className="text-3xl font-bold text-foreground mb-4 leading-tight"
+        >
+          {blueprint.name}
+        </h1>
+
+        {/* Badges */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {COMPLEXITY_MAP[blueprint.complexity] && (
+            <span
+              className={`rounded-md border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${COMPLEXITY_MAP[blueprint.complexity].className}`}
+            >
+              {COMPLEXITY_MAP[blueprint.complexity].label}
+            </span>
+          )}
+          <span className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-medium text-foreground-muted">
+            {CATEGORY_LABELS[blueprint.category] ?? blueprint.category}
+          </span>
+        </div>
+
+        {/* Tech stack */}
+        {blueprint.techStack && (
+          <div className="mb-5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-2">
+              Tech Stack
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {blueprint.techStack.split(',').map((t) => (
+                <span
+                  key={t}
+                  className="rounded border border-primary/15 bg-primary/5 px-2 py-0.5 text-[11px] font-mono text-primary-light"
+                >
+                  {t.trim()}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Goal */}
+        {blueprint.goal && (
+          <div className="mb-6">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-2">
+              Goal
+            </p>
+            <p className="text-base text-foreground/80 leading-relaxed">{blueprint.goal}</p>
+          </div>
+        )}
+
+        <div className="border-t border-white/10 mb-8" />
+
+        {/* Full description */}
+        {blueprint.description ? (
+          <div className="[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:text-foreground [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mb-3 [&_h2]:mt-8 [&_h2]:text-foreground [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-2 [&_h3]:mt-6 [&_h3]:text-foreground [&_p]:text-foreground/75 [&_p]:leading-[1.8] [&_p]:mb-4 [&_p]:text-base [&_code]:font-mono [&_code]:text-primary-light [&_code]:bg-primary/5 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_pre]:bg-white/5 [&_pre]:border [&_pre]:border-white/10 [&_pre]:rounded-xl [&_pre]:p-5 [&_pre]:overflow-x-auto [&_pre]:mb-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:mb-4 [&_ul]:pl-5 [&_ol]:mb-4 [&_ol]:pl-5 [&_li]:text-foreground/75 [&_li]:text-base [&_li]:leading-[1.8] [&_li]:mb-1 [&_strong]:text-foreground [&_a]:text-primary-light [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:text-foreground-muted [&_hr]:border-white/10 [&_hr]:my-6 [&_table]:w-full [&_table]:mb-4 [&_th]:text-left [&_th]:text-xs [&_th]:font-bold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground-muted [&_th]:pb-2 [&_th]:border-b [&_th]:border-white/10 [&_td]:py-2 [&_td]:text-sm [&_td]:text-foreground/70 [&_td]:border-b [&_td]:border-white/5">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{blueprint.description}</ReactMarkdown>
+          </div>
+        ) : (
+          <p className="text-base text-foreground-muted/50 italic">No description.</p>
+        )}
+
+        {blueprint.spec && (
+          <>
+            <div className="border-t border-white/10 my-8" />
+            <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted mb-6">
+              Full Spec
+            </p>
+            <div className="[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:text-foreground [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mb-3 [&_h2]:mt-8 [&_h2]:text-foreground [&_h3]:text-base [&_h3]:font-bold [&_h3]:mb-2 [&_h3]:mt-6 [&_h3]:text-foreground [&_p]:text-foreground/75 [&_p]:leading-[1.8] [&_p]:mb-4 [&_p]:text-base [&_code]:font-mono [&_code]:text-primary-light [&_code]:bg-primary/5 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_pre]:bg-white/5 [&_pre]:border [&_pre]:border-white/10 [&_pre]:rounded-xl [&_pre]:p-5 [&_pre]:overflow-x-auto [&_pre]:mb-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:mb-4 [&_ul]:pl-5 [&_ol]:mb-4 [&_ol]:pl-5 [&_li]:text-foreground/75 [&_li]:text-base [&_li]:leading-[1.8] [&_li]:mb-1 [&_strong]:text-foreground [&_a]:text-primary-light [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:text-foreground-muted [&_hr]:border-white/10 [&_hr]:my-6 [&_table]:w-full [&_table]:mb-4 [&_th]:text-left [&_th]:text-xs [&_th]:font-bold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-foreground-muted [&_th]:pb-2 [&_th]:border-b [&_th]:border-white/10 [&_td]:py-2 [&_td]:text-sm [&_td]:text-foreground/70 [&_td]:border-b [&_td]:border-white/5">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{blueprint.spec}</ReactMarkdown>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

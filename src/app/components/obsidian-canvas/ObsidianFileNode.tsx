@@ -63,11 +63,11 @@ export function ObsidianFileNode({ data, selected }: NodeProps & { data: Obsidia
     <div
       data-testid="file-node-card"
       className={[
-        'relative min-w-[220px] bg-[#16202c] border border-[#2a3b4d]',
-        'border-l-4 flex flex-col h-full',
+        'relative min-w-[220px] bg-[#16202c] border',
+        'flex flex-col h-full',
         containerStyle,
       ].join(' ')}
-      style={{ borderLeftColor: borderColor }}
+      style={{ borderColor }}
       onDoubleClick={handleDoubleClick}
     >
       {data.auricTicketId && (

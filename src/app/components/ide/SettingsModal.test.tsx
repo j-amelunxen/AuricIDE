@@ -43,6 +43,11 @@ describe('SettingsModal – Visibility', () => {
     render(<SettingsModal isOpen={true} onClose={() => {}} />);
     expect(screen.getByText('Settings')).toBeInTheDocument();
   });
+
+  it('exposes an accessible dialog when open', () => {
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    expect(screen.getByRole('dialog', { name: /settings/i })).toBeInTheDocument();
+  });
 });
 
 // ─── Close Behaviors ───────────────────────────────────────────────────────────

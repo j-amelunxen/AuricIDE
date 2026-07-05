@@ -58,11 +58,11 @@ export function ObsidianTextNode({
   return (
     <div
       className={[
-        'relative min-w-[200px] min-h-[80px] bg-[#16202c] border border-[#2a3b4d]',
-        'border-l-4 p-3',
+        'relative min-w-[200px] min-h-[80px] bg-[#16202c] border',
+        'p-3',
         containerStyle,
       ].join(' ')}
-      style={{ borderLeftColor: borderColor }}
+      style={{ borderColor }}
     >
       {data.auricTicketId && (
         <CanvasTicketBadge ticketId={data.auricTicketId} onTicketClick={data.onTicketClick} />

@@ -67,4 +67,21 @@ describe('StatusBar', () => {
     fireEvent.click(screen.getByTestId('problems-indicator'));
     expect(onClick).toHaveBeenCalledOnce();
   });
+
+  it('exposes the sync status control by an accessible label', () => {
+    render(<StatusBar syncStatus="syncing" />);
+    expect(screen.getByRole('button', { name: 'Sync status' })).toBeInTheDocument();
+  });
+
+  it('exposes the problems indicator by an accessible label', () => {
+    render(<StatusBar errorCount={2} warningCount={3} />);
+    expect(screen.getByRole('button', { name: 'Problems' })).toBeInTheDocument();
+  });
+
+  it('hides icon glyphs from assistive technology', () => {
+    const { container } = render(<StatusBar branch="main" syncStatus="syncing" />);
+    const icons = container.querySelectorAll('.material-symbols-outlined');
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
+  });
 });

@@ -24,6 +24,7 @@ import type {
 } from '@/lib/mermaid/mermaidFlowchartParser';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 const nodeTypes = { flowchart: FlowchartNode };
 
@@ -55,6 +56,55 @@ export function computeNewNodePosition(
 interface MermaidFlowchartViewProps {
   data: MermaidFlowchartData;
   onDataChange?: (data: MermaidFlowchartData) => void;
+}
+
+interface FlowchartFullscreenProps {
+  flowProps: React.ComponentProps<typeof ReactFlow>;
+  showAddNode: boolean;
+  onAddNode: () => void;
+  onClose: () => void;
+}
+
+function FlowchartFullscreen({
+  flowProps,
+  showAddNode,
+  onAddNode,
+  onClose,
+}: FlowchartFullscreenProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
+
+  return createPortal(
+    <div
+      ref={dialogRef}
+      className="flowchart-fullscreen-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Flowchart fullscreen"
+    >
+      <ReactFlow {...flowProps}>
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1e2d3d" />
+        <Controls />
+        <MiniMap />
+        <Panel position="top-right">
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {showAddNode && (
+              <button className="flowchart-expand-btn" onClick={onAddNode} aria-label="Add node">
+                {'+'} Add Node
+              </button>
+            )}
+            <button
+              className="flowchart-expand-btn"
+              onClick={onClose}
+              aria-label="Close fullscreen"
+            >
+              {'✕'} Close
+            </button>
+          </div>
+        </Panel>
+      </ReactFlow>
+    </div>,
+    document.body
+  );
 }
 
 function edgeStyleProps(style: EdgeStyle) {
@@ -225,7 +275,7 @@ export function MermaidFlowchartView({ data, onDataChange }: MermaidFlowchartVie
                   onClick={handleAddNode}
                   aria-label="Add node"
                 >
-                  {'\u002B'} Add Node
+                  {'+'} Add Node
                 </button>
               )}
               <button
@@ -233,48 +283,20 @@ export function MermaidFlowchartView({ data, onDataChange }: MermaidFlowchartVie
                 onClick={() => setIsFullscreen(true)}
                 aria-label="Expand"
               >
-                {'\u26F6'} Expand
+                {'⛶'} Expand
               </button>
             </div>
           </Panel>
         </ReactFlow>
       </div>
-      {isFullscreen &&
-        createPortal(
-          <div
-            className="flowchart-fullscreen-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Flowchart fullscreen"
-          >
-            <ReactFlow {...flowProps}>
-              <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1e2d3d" />
-              <Controls />
-              <MiniMap />
-              <Panel position="top-right">
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {onDataChange && (
-                    <button
-                      className="flowchart-expand-btn"
-                      onClick={handleAddNode}
-                      aria-label="Add node"
-                    >
-                      {'\u002B'} Add Node
-                    </button>
-                  )}
-                  <button
-                    className="flowchart-expand-btn"
-                    onClick={() => setIsFullscreen(false)}
-                    aria-label="Close fullscreen"
-                  >
-                    {'\u2715'} Close
-                  </button>
-                </div>
-              </Panel>
-            </ReactFlow>
-          </div>,
-          document.body
-        )}
+      {isFullscreen && (
+        <FlowchartFullscreen
+          flowProps={flowProps}
+          showAddNode={Boolean(onDataChange)}
+          onAddNode={handleAddNode}
+          onClose={() => setIsFullscreen(false)}
+        />
+      )}
     </>
   );
 }

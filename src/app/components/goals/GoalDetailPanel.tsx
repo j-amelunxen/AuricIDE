@@ -144,7 +144,7 @@ export function GoalDetailPanel({
           {satisfaction.satisfied ? (
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-medium text-green-300">
-                All checks green — ready to achieve.
+                All checks green. Ready to achieve.
               </p>
               {goal.status !== 'achieved' && (
                 <button
@@ -332,7 +332,7 @@ export function GoalDetailPanel({
             </option>
             {linkableRequirements.map((r) => (
               <option key={r.id} value={r.id} className="bg-background-dark">
-                {r.reqId} — {r.title}
+                {r.reqId} · {r.title}
               </option>
             ))}
           </select>

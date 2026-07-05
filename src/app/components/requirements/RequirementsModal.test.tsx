@@ -97,6 +97,12 @@ describe('RequirementsModal', () => {
     expect(screen.getByTestId('requirements-modal')).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog when open', () => {
+    storeState.requirementsModalOpen = true;
+    render(<RequirementsModal />);
+    expect(screen.getByRole('dialog', { name: /requirements/i })).toBeInTheDocument();
+  });
+
   it('loads requirements on open', () => {
     storeState.requirementsModalOpen = true;
     render(<RequirementsModal />);

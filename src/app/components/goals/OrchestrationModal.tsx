@@ -10,6 +10,7 @@ import {
   type OrchestrationNodeData,
 } from '@/lib/orchestration/graphBuilder';
 import { OrchestrationNode } from './OrchestrationNode';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 const nodeTypes = { orchestration: OrchestrationNode };
 
@@ -19,6 +20,13 @@ const nodeTypes = { orchestration: OrchestrationNode };
  * updates as agents start, stream, and finish.
  */
 export function OrchestrationModal() {
+  const orchestrationOpen = useStore((s) => s.orchestrationOpen);
+  if (!orchestrationOpen) return null;
+  return <OrchestrationModalContent />;
+}
+
+function OrchestrationModalContent() {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const orchestrationOpen = useStore((s) => s.orchestrationOpen);
   const setOrchestrationOpen = useStore((s) => s.setOrchestrationOpen);
   const goalsDraft = useStore((s) => s.goalsDraft);
@@ -77,12 +85,14 @@ export function OrchestrationModal() {
     [setSelectedGoalId, setGoalsModalOpen, setOrchestrationOpen]
   );
 
-  if (!orchestrationOpen) return null;
-
   const runningAgents = agents.filter((a) => a.status === 'running').length;
 
   return createPortal(
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="orchestration-modal-title"
       data-testid="orchestration-modal"
       className="fixed inset-0 z-[105] flex flex-col bg-black/80 backdrop-blur-sm"
     >
@@ -90,7 +100,9 @@ export function OrchestrationModal() {
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-primary-light">graph_3</span>
-          <h1 className="text-sm font-bold text-foreground">Orchestration</h1>
+          <h1 id="orchestration-modal-title" className="text-sm font-bold text-foreground">
+            Orchestration
+          </h1>
           <span className="text-[10px] text-foreground-muted">
             {goalsDraft.length} goals · {runningAgents} running agent(s)
           </span>
@@ -139,7 +151,7 @@ export function OrchestrationModal() {
             </span>
             <p className="text-xs text-foreground-muted">Nothing to orchestrate yet.</p>
             <p className="max-w-[300px] text-[10px] text-foreground-muted/70">
-              Create goals, attach tickets, and launch agents — the live graph appears here.
+              Create goals, attach tickets, and launch agents. The live graph appears here.
             </p>
           </div>
         ) : (

@@ -54,6 +54,15 @@ describe('TerminalPanel', () => {
     expect(screen.queryByTestId('xterm-agent-agent-2')).not.toBeInTheDocument();
   });
 
+  it('hides decorative tab icon glyphs from assistive technology', () => {
+    const { container } = render(
+      <TerminalPanel agents={testAgents} extraTerminals={[{ id: 'x', label: 'shell', cwd: '/' }]} />
+    );
+    const icons = container.querySelectorAll('.material-symbols-outlined');
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
+  });
+
   it('switches active tab when agent tab is clicked', async () => {
     const user = userEvent.setup();
     const onSelectAgent = vi.fn();

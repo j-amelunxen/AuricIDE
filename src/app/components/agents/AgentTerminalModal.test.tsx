@@ -113,6 +113,11 @@ describe('AgentTerminalModal', () => {
     expect(screen.getByText('terminal')).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog named after the agent', () => {
+    render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: /writer/i })).toBeInTheDocument();
+  });
+
   describe('terminal stream (single-source from store)', () => {
     beforeEach(() => {
       mockWrite.mockClear();

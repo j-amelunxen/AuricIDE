@@ -5,6 +5,7 @@ import type { PmEpic, PmTicket, PmDependency, PmContextItem } from '@/lib/tauri/
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useLLM } from '@/lib/hooks/useLLM';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import {
   generateDependencyProposalPrompt,
   parseDependencyResponse,
@@ -100,6 +101,7 @@ function TicketCreateForm({
   const [context] = useState<PmContextItem[]>(initialValues?.context ?? []);
   const [localDependencies, setLocalDependencies] = useState<PmDependency[]>([]);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   const { call: llmCall, abort: llmAbort, isLoading: isLlmLoading } = useLLM();
   const [proposalModalOpen, setProposalModalOpen] = useState(false);
@@ -190,10 +192,18 @@ function TicketCreateForm({
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-[500px] flex flex-col bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ticket-create-title"
+        className="relative w-[500px] flex flex-col bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
-          <h3 className="text-sm font-semibold text-foreground">New Ticket</h3>
+          <h3 id="ticket-create-title" className="text-sm font-semibold text-foreground">
+            New Ticket
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -275,7 +285,7 @@ function TicketCreateForm({
                     </select>
                   ) : (
                     <p className="text-xs text-foreground-muted py-2.5">
-                      No epics — create one first
+                      No epics yet. Create one first.
                     </p>
                   )}
                 </div>

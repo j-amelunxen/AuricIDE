@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { PmRequirement } from '@/lib/tauri/requirements';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface RequirementCreateDialogProps {
   isOpen: boolean;
@@ -27,12 +28,12 @@ function generateNextReqId(category: string, existing: PmRequirement[]): string 
   return `${prefix}-${String(max + 1).padStart(2, '0')}`;
 }
 
-export function RequirementCreateDialog({
-  isOpen,
+function RequirementCreateForm({
   existingRequirements,
   onSave,
   onClose,
-}: RequirementCreateDialogProps) {
+}: Omit<RequirementCreateDialogProps, 'isOpen'>) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const [category, setCategory] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -99,8 +100,6 @@ export function RequirementCreateDialog({
     reset,
   ]);
 
-  if (!isOpen) return null;
-
   const reqIdPreview = generateNextReqId(category, existingRequirements);
 
   return createPortal(
@@ -111,8 +110,16 @@ export function RequirementCreateDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-lg rounded-xl border border-white/10 bg-background-dark p-6 shadow-2xl">
-        <h2 className="text-sm font-bold text-foreground">New Requirement</h2>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="requirement-create-title"
+        className="w-full max-w-lg rounded-xl border border-white/10 bg-background-dark p-6 shadow-2xl"
+      >
+        <h2 id="requirement-create-title" className="text-sm font-bold text-foreground">
+          New Requirement
+        </h2>
         <p className="mt-1 text-[10px] text-foreground-muted">
           Will be assigned: <span className="font-mono text-primary-light">{reqIdPreview}</span>
         </p>
@@ -257,4 +264,9 @@ export function RequirementCreateDialog({
     </div>,
     document.body
   );
+}
+
+export function RequirementCreateDialog({ isOpen, ...props }: RequirementCreateDialogProps) {
+  if (!isOpen) return null;
+  return <RequirementCreateForm {...props} />;
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { Command } from '@/lib/commands/registry';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 export interface CommandPaletteProps {
   commands: Command[];
@@ -35,6 +36,7 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   const filtered = filterCommands(commands, query);
 
@@ -92,6 +94,10 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
       onKeyDown={handleKeyDown}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         data-testid="command-palette-modal"
         className="w-[560px] max-h-[400px] rounded-lg border border-border-dark bg-panel-bg shadow-2xl"
       >
@@ -102,7 +108,7 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           placeholder="Type a command..."
-          className="w-full border-b border-border-dark bg-editor-bg px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted focus:outline-none"
+          className="w-full border-b border-border-dark bg-editor-bg px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted outline-none focus:ring-2 focus:ring-primary/50 focus:ring-inset"
           autoFocus
         />
 

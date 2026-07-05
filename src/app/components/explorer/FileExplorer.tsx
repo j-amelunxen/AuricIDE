@@ -123,12 +123,13 @@ function TreeNode({
         style={{ paddingLeft }}
       >
         {node.isDirectory && (
-          <span className="material-symbols-outlined text-[14px] opacity-60">
+          <span aria-hidden="true" className="material-symbols-outlined text-[14px] opacity-60">
             {node.expanded ? 'expand_more' : 'chevron_right'}
           </span>
         )}
 
         <span
+          aria-hidden="true"
           className={`material-symbols-outlined text-[16px] ${node.isDirectory ? 'text-primary/30' : fileInfo?.color || 'text-foreground-muted'}`}
         >
           {node.isDirectory ? (node.expanded ? 'folder_open' : 'folder') : fileInfo?.icon}
@@ -181,22 +182,31 @@ export function FileExplorer({
           onClick={onOpenFolder}
           className="p-1 text-foreground-muted hover:text-foreground transition-colors"
           title="Open Folder"
+          aria-label="Open Folder"
         >
-          <span className="material-symbols-outlined text-[16px]">create_new_folder</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+            create_new_folder
+          </span>
         </button>
         <button
           onClick={onNewFile}
           className="p-1 text-foreground-muted hover:text-foreground transition-colors"
           title="New File"
+          aria-label="New File"
         >
-          <span className="material-symbols-outlined text-[16px]">add_box</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+            add_box
+          </span>
         </button>
         <button
           onClick={onRefresh}
           className="p-1 text-foreground-muted hover:text-foreground transition-colors"
           title="Refresh"
+          aria-label="Refresh"
         >
-          <span className="material-symbols-outlined text-[16px]">refresh</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+            refresh
+          </span>
         </button>
       </div>
       <div className="py-1 flex-1 overflow-y-auto">

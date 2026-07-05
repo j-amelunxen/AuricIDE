@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { PmEpic } from '@/lib/tauri/pm';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface EpicEditDialogProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ function EpicEditForm({
 }: Omit<EpicEditDialogProps, 'isOpen'>) {
   const [name, setName] = useState(epic?.name ?? '');
   const [description, setDescription] = useState(epic?.description ?? '');
+  const dialogRef = useDialogA11y<HTMLFormElement>();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,10 +34,14 @@ function EpicEditForm({
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <form
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="epic-edit-title"
         onSubmit={handleSubmit}
         className="w-[440px] bg-background-secondary border border-border-dark rounded-xl p-6 shadow-2xl"
       >
-        <h3 className="mb-4 text-sm font-semibold text-foreground">
+        <h3 id="epic-edit-title" className="mb-4 text-sm font-semibold text-foreground">
           {epic ? 'Edit Epic' : 'New Epic'}
         </h3>
 

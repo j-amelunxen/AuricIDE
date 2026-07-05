@@ -38,13 +38,15 @@ export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: Act
               data-testid={`activity-item-${item.id}`}
               onClick={() => onSelect(item.id)}
               title={item.label}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300 ${
+              aria-label={item.label}
+              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition duration-300 ${
                 isActive
                   ? 'bg-primary/10 text-primary neon-glow'
                   : 'text-foreground-muted hover:bg-white/5 hover:text-foreground'
               }`}
             >
               <span
+                aria-hidden="true"
                 className={`material-symbols-outlined text-xl transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}
               >
                 {iconMap[item.icon] || item.icon}
@@ -72,9 +74,15 @@ export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: Act
       <button
         onClick={onTerminalToggle}
         title="Toggle Terminal (⌘J)"
-        className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-all duration-300 hover:bg-white/5 hover:text-foreground"
+        aria-label="Toggle Terminal (⌘J)"
+        className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-300 hover:bg-white/5 hover:text-foreground"
       >
-        <span className="material-symbols-outlined text-xl group-hover:scale-110">terminal</span>
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined text-xl group-hover:scale-110"
+        >
+          terminal
+        </span>
       </button>
     </nav>
   );

@@ -5,6 +5,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
 import { ContextMenu } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface AgentXtermProps {
   agentId: string;
@@ -176,6 +177,21 @@ interface AgentTerminalModalProps {
 }
 
 export function AgentTerminalModal({ agent, onClose, onSelectionSpawn }: AgentTerminalModalProps) {
+  if (!agent) return null;
+  return (
+    <AgentTerminalDialog agent={agent} onClose={onClose} onSelectionSpawn={onSelectionSpawn} />
+  );
+}
+
+interface AgentTerminalDialogProps {
+  agent: AgentInfo;
+  onClose: () => void;
+  onSelectionSpawn?: (selection: string) => void;
+}
+
+function AgentTerminalDialog({ agent, onClose, onSelectionSpawn }: AgentTerminalDialogProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
+
   // Close on Escape
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -187,12 +203,9 @@ export function AgentTerminalModal({ agent, onClose, onSelectionSpawn }: AgentTe
   const now = useNow();
 
   useEffect(() => {
-    if (!agent) return;
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [agent, handleKeyDown]);
-
-  if (!agent) return null;
+  }, [handleKeyDown]);
 
   const isRunning = agent.status === 'running';
   const isLive = agent.lastActivityAt && now - agent.lastActivityAt < 2000;
@@ -204,6 +217,10 @@ export function AgentTerminalModal({ agent, onClose, onSelectionSpawn }: AgentTe
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-terminal-modal-title"
         className="flex flex-col w-[95vw] h-[90vh] rounded-xl border border-white/10 bg-[#050510] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >
@@ -223,7 +240,9 @@ export function AgentTerminalModal({ agent, onClose, onSelectionSpawn }: AgentTe
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-foreground">{agent.name}</h2>
+                <h2 id="agent-terminal-modal-title" className="text-sm font-bold text-foreground">
+                  {agent.name}
+                </h2>
                 <span
                   className={`text-[9px] font-black uppercase tracking-widest ${isRunning ? 'text-primary' : 'text-foreground-muted'}`}
                 >

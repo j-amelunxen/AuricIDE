@@ -113,6 +113,13 @@ describe('MermaidFlowchartView', () => {
     expect(document.querySelector('.flowchart-fullscreen-overlay')).not.toBeNull();
   });
 
+  it('fullscreen overlay exposes an accessible dialog', async () => {
+    const user = userEvent.setup();
+    render(<MermaidFlowchartView data={sampleData} />);
+    await user.click(screen.getByRole('button', { name: /expand/i }));
+    expect(screen.getByRole('dialog', { name: /flowchart fullscreen/i })).toBeInTheDocument();
+  });
+
   it('fullscreen overlay contains a close button', async () => {
     const user = userEvent.setup();
     render(<MermaidFlowchartView data={sampleData} />);

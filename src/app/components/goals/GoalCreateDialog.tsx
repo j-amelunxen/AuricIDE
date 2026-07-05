@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { PmGoal } from '@/lib/tauri/goals';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface GoalCreateDialogProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export function GoalCreateDialog({
   const [successCriteria, setSuccessCriteria] = useState('');
   const [priority, setPriority] = useState<PmGoal['priority']>('normal');
   const [parentId, setParentId] = useState<string>(defaultParentId ?? '');
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   if (!isOpen) return null;
 
@@ -66,10 +68,16 @@ export function GoalCreateDialog({
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSave();
       }}
     >
-      <div className="w-[520px] max-w-[92vw] rounded-2xl border border-white/10 bg-background-dark p-5 shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="goal-create-dialog-title"
+        className="w-[520px] max-w-[92vw] rounded-2xl border border-white/10 bg-background-dark p-5 shadow-2xl"
+      >
         <div className="mb-4 flex items-center gap-2">
           <span className="material-symbols-outlined text-primary-light">flag</span>
-          <h2 className="text-sm font-bold text-foreground">
+          <h2 id="goal-create-dialog-title" className="text-sm font-bold text-foreground">
             {parentId ? 'New sub-goal' : 'New goal'}
           </h2>
         </div>
@@ -136,7 +144,7 @@ export function GoalCreateDialog({
                 className={inputCls}
               >
                 <option value="" className="bg-background-dark">
-                  — root goal —
+                  None (root goal)
                 </option>
                 {goals.map((g) => (
                   <option key={g.id} value={g.id} className="bg-background-dark">

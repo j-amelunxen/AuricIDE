@@ -17,6 +17,19 @@ describe('RenameHeadingDialog', () => {
     expect(input).toBeDefined();
   });
 
+  it('exposes an accessible dialog', () => {
+    render(
+      <RenameHeadingDialog
+        oldTitle="Introduction"
+        referenceCount={3}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('dialog', { name: /rename heading/i })).toBeInTheDocument();
+  });
+
   it('shows reference count', () => {
     render(
       <RenameHeadingDialog

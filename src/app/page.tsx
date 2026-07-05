@@ -231,7 +231,7 @@ export default function Home() {
             headingBreadcrumbs={handlers.headingBreadcrumbs}
             onHeadingBreadcrumbClick={state.setScrollToLine}
             isConnected={state.cliConnected}
-            connectionLabel={state.cliConnected ? 'Agentic CLI Connected' : 'Agentic CLI Missing'}
+            connectionLabel={state.cliConnected ? 'CLI connected' : 'CLI not detected'}
             llmConfigured={state.llmConfigured}
             onCommandPalette={() => state.setCommandPaletteOpen(true)}
           />

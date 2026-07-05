@@ -146,7 +146,7 @@ export function MetricsView() {
               <button
                 key={opt.label}
                 onClick={() => setBurndownFilter(opt.value)}
-                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
                   burndownFilter === opt.value
                     ? 'bg-white/15 text-white'
                     : 'text-foreground-muted hover:text-foreground'

@@ -42,4 +42,33 @@ describe('ActivityBar', () => {
     render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
     expect(screen.getByTestId('badge-source-control')).toHaveTextContent('3');
   });
+
+  it('exposes each activity item by an accessible label', () => {
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Explorer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Source Control' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Extensions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+  });
+
+  it('exposes the terminal toggle by an accessible label', () => {
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Toggle Terminal (⌘J)' })).toBeInTheDocument();
+  });
+
+  it('hides icon glyphs from assistive technology', () => {
+    const { container } = render(
+      <ActivityBar items={items} activeId="explorer" onSelect={() => {}} />
+    );
+    const icons = container.querySelectorAll('.material-symbols-outlined');
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
+  });
+
+  it('uses a color-only transition on the terminal toggle', () => {
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    const toggle = screen.getByRole('button', { name: 'Toggle Terminal (⌘J)' });
+    expect(toggle).toHaveClass('transition-colors');
+    expect(toggle).not.toHaveClass('transition-all');
+  });
 });

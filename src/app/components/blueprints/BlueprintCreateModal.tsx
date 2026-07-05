@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { Blueprint } from '@/lib/tauri/blueprints';
 import { COMPLEXITY_OPTIONS, CATEGORY_OPTIONS } from '@/lib/blueprints/constants';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface BlueprintCreateModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ function BlueprintCreateForm({
   );
   const [description, setDescription] = useState(initialValues?.description ?? '');
   const [spec, setSpec] = useState(initialValues?.spec ?? '');
+  const dialogRef = useDialogA11y<HTMLFormElement>();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,15 +45,24 @@ function BlueprintCreateForm({
   };
 
   return (
-    <div className="fixed inset-0 z-[210] flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-[210] flex items-center justify-center"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+    >
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <form
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="blueprint-create-title"
         onSubmit={handleSubmit}
         className="relative w-[520px] max-h-[92vh] overflow-y-auto bg-[#0e0e18] border border-white/10 rounded-2xl shadow-2xl custom-scrollbar"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <h3 className="text-sm font-semibold text-foreground">
+          <h3 id="blueprint-create-title" className="text-sm font-semibold text-foreground">
             {initialValues?.name ? 'Edit Blueprint' : 'New Blueprint'}
           </h3>
           <button

@@ -71,8 +71,21 @@ describe('AgentCard', () => {
     const onKill = vi.fn();
     render(<AgentCard agent={runningAgent} onKill={onKill} />);
 
-    await user.click(screen.getByTitle('Terminate Agent'));
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
     expect(onKill).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('exposes icon-only controls by accessible labels', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Terminate Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show Terminal' })).toBeInTheDocument();
+  });
+
+  it('hides icon glyphs from assistive technology', () => {
+    const { container } = render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    const icons = container.querySelectorAll('.material-symbols-outlined');
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });
 
   it('renders with glass-card styling', () => {

@@ -301,7 +301,7 @@ export function TicketTable({
                 type="button"
                 onClick={(e) => handleSpawnAgent(ticket, e)}
                 title="Spawn Agent"
-                className="opacity-0 group-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-primary/20 text-primary-light transition-all"
+                className="opacity-0 group-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-primary/20 text-primary-light transition"
               >
                 <span className="material-symbols-outlined text-[14px]">smart_toy</span>
               </button>

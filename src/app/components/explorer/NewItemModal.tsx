@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface NewItemModalProps {
   type: 'file' | 'folder';
@@ -11,6 +12,7 @@ interface NewItemModalProps {
 export function NewItemModal({ type, onConfirm, onCancel }: NewItemModalProps) {
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -25,8 +27,16 @@ export function NewItemModal({ type, onConfirm, onCancel }: NewItemModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-background-secondary border border-border-dark rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-item-modal-title"
+        className="bg-background-secondary border border-border-dark rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-4"
+      >
+        <h2 id="new-item-modal-title" className="text-sm font-semibold text-foreground">
+          {title}
+        </h2>
         <input
           ref={inputRef}
           type="text"

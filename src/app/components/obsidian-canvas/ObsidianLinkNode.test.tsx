@@ -55,7 +55,8 @@ describe('ObsidianLinkNode', () => {
       data: { url: 'https://example.com', color: '1' },
     });
     const root = container.firstElementChild as HTMLElement;
-    expect(root.style.borderLeftColor).toBe('rgb(251, 70, 76)');
+    expect(root.className).not.toContain('border-l-4');
+    expect(root.style.borderColor).toBe('rgb(251, 70, 76)');
   });
 
   it('renders long URLs without overflow breaking layout', () => {

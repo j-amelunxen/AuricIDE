@@ -28,6 +28,11 @@ describe('ImportSpecDialog', () => {
     expect(screen.getByText('Import Project Spec')).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog', () => {
+    render(<ImportSpecDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: /import project spec/i })).toBeInTheDocument();
+  });
+
   it('renders a textarea for the specification', () => {
     render(<ImportSpecDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     expect(screen.getByPlaceholderText(/paste.*spec/i)).toBeInTheDocument();
@@ -35,7 +40,7 @@ describe('ImportSpecDialog', () => {
 
   it('renders model and permission mode dropdowns', () => {
     render(<ImportSpecDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByLabelText(/intelligence model/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/model/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/permission mode/i)).toBeInTheDocument();
   });
 

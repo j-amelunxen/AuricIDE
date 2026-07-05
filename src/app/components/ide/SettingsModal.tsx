@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { LlmContent } from './settings/LlmContent';
 import { AgentContent } from './settings/AgentContent';
 import { CommandsContent } from './settings/CommandsContent';
@@ -36,19 +37,17 @@ const CATEGORIES: { id: SettingsCategory; icon: string; label: string }[] = [
   { id: 'blueprints', icon: 'sync', label: 'Blueprints' },
 ];
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('agent');
+  const dialogRef = useDialogA11y<HTMLDivElement>();
 
   useEffect(() => {
-    if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
+  }, [onClose]);
 
   const renderContent = () => {
     switch (activeCategory) {
@@ -78,6 +77,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
         data-testid="settings-modal"
         className="glass-card w-[900px] max-w-[95vw] h-[78vh] overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -86,7 +89,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-sm">settings</span>
-            <h2 className="text-sm font-bold tracking-tight text-foreground uppercase">Settings</h2>
+            <h2
+              id="settings-modal-title"
+              className="text-sm font-bold tracking-tight text-foreground uppercase"
+            >
+              Settings
+            </h2>
           </div>
           <button
             data-testid="settings-modal-close"
@@ -127,4 +135,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       </div>
     </div>
   );
+}
+
+export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+  if (!isOpen) return null;
+  return <SettingsDialog onClose={onClose} />;
 }

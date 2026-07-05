@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { AgentConfig } from '@/lib/tauri/agents';
 import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 interface GenerateDiagramDialogProps {
   isOpen: boolean;
@@ -67,12 +68,29 @@ Detail level: ${detailLevel}
 Write the result as a Markdown file with a mermaid code block to: ${folderPath}/diagram.md`;
 }
 
-export function GenerateDiagramDialog({
-  isOpen,
+export function GenerateDiagramDialog(props: GenerateDiagramDialogProps) {
+  if (!props.isOpen) return null;
+  return <GenerateDiagramDialogPanel {...props} />;
+}
+
+/** Dropdown affordance for `appearance-none` selects. */
+function SelectChevron() {
+  return (
+    <span
+      aria-hidden="true"
+      className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
+    >
+      expand_more
+    </span>
+  );
+}
+
+function GenerateDiagramDialogPanel({
   onClose,
   onGenerate,
   folderPath,
 }: GenerateDiagramDialogProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const [diagramType, setDiagramType] = useState('flowchart');
   const [detailLevel, setDetailLevel] = useState('abstract');
   const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
@@ -90,8 +108,6 @@ export function GenerateDiagramDialog({
         // Browser mode — keep fallback
       });
   }, []);
-
-  if (!isOpen) return null;
 
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const found = providers.find((p) => p.id === e.target.value);
@@ -119,14 +135,24 @@ export function GenerateDiagramDialog({
     <div
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="generate-diagram-title"
         className="glass-card w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">schema</span>
-          <h2 className="text-sm font-bold tracking-tight text-foreground uppercase">
+          <h2
+            id="generate-diagram-title"
+            className="text-sm font-bold tracking-tight text-foreground uppercase"
+          >
             Generate Diagram
           </h2>
         </div>
@@ -143,18 +169,21 @@ export function GenerateDiagramDialog({
             >
               Provider
             </label>
-            <select
-              id="provider"
-              value={selectedProvider.id}
-              onChange={handleProviderChange}
-              className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
-            >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                id="provider"
+                value={selectedProvider.id}
+                onChange={handleProviderChange}
+                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+              >
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <SelectChevron />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -165,18 +194,21 @@ export function GenerateDiagramDialog({
               >
                 Diagram Type
               </label>
-              <select
-                id="diagram-type"
-                value={diagramType}
-                onChange={(e) => setDiagramType(e.target.value)}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
-              >
-                {diagramTypeOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="diagram-type"
+                  value={diagramType}
+                  onChange={(e) => setDiagramType(e.target.value)}
+                  className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+                >
+                  {diagramTypeOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -186,18 +218,21 @@ export function GenerateDiagramDialog({
               >
                 Detail Level
               </label>
-              <select
-                id="detail-level"
-                value={detailLevel}
-                onChange={(e) => setDetailLevel(e.target.value)}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
-              >
-                {detailLevelOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="detail-level"
+                  value={detailLevel}
+                  onChange={(e) => setDetailLevel(e.target.value)}
+                  className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+                >
+                  {detailLevelOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
             </div>
           </div>
 

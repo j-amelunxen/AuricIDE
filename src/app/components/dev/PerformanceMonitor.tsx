@@ -183,10 +183,12 @@ export function PerformanceMonitor() {
       <button
         data-testid="perf-monitor"
         onClick={toggle}
-        className={`fixed bottom-8 right-3 z-[9999] flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-bold shadow-lg transition-all hover:scale-105 ${colorClass}`}
-        title="Performance Monitor — click to expand"
+        className={`fixed bottom-1 right-1.5 z-[9999] flex h-6 items-center gap-1.5 px-2 rounded-md text-[11px] font-mono font-bold shadow-lg transition-[filter] hover:brightness-110 ${colorClass}`}
+        title="Performance Monitor: click to expand"
       >
-        <span className="material-symbols-outlined text-sm">memory</span>
+        <span className="material-symbols-outlined text-sm" aria-hidden="true">
+          memory
+        </span>
         {badgeText}
         {processes.length > 1 && (
           <span className="ml-0.5 px-1 rounded-full bg-white/20 text-[10px]">
@@ -203,12 +205,18 @@ export function PerformanceMonitor() {
       {expanded && (
         <div
           data-testid="perf-panel"
-          className="fixed bottom-16 right-3 z-[9999] w-80 max-h-[70vh] rounded-xl bg-panel-bg border border-white/15 shadow-2xl text-xs text-foreground-muted overflow-y-auto"
+          className="fixed bottom-9 right-1.5 z-[9999] w-80 max-h-[70vh] rounded-xl bg-panel-bg border border-white/15 shadow-2xl text-xs text-foreground-muted overflow-y-auto"
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 sticky top-0 bg-panel-bg z-10">
             <span className="font-semibold text-foreground">Performance Monitor</span>
-            <button onClick={toggle} className="text-foreground-muted hover:text-foreground">
-              <span className="material-symbols-outlined text-sm">close</span>
+            <button
+              onClick={toggle}
+              aria-label="Close performance monitor"
+              className="text-foreground-muted hover:text-foreground"
+            >
+              <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                close
+              </span>
             </button>
           </div>
 
@@ -226,7 +234,7 @@ export function PerformanceMonitor() {
                     </div>
                     <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all ${procColor(p.rssMB)}`}
+                        className={`h-full rounded-full transition ${procColor(p.rssMB)}`}
                         style={{
                           width: `${Math.min(100, maxProcessMB > 0 ? (p.rssMB / maxProcessMB) * 100 : 0)}%`,
                         }}

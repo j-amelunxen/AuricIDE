@@ -157,6 +157,34 @@ describe('FileExplorer', () => {
     expect(dirButton).not.toHaveAttribute('draggable');
   });
 
+  it('exposes toolbar controls by accessible labels', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Open Folder' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New File' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+
+  it('hides icon glyphs from assistive technology', () => {
+    const { container } = render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const icons = container.querySelectorAll('.material-symbols-outlined');
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
+  });
+
   it('sets dataTransfer with file path on dragStart for .md files', () => {
     render(
       <FileExplorer

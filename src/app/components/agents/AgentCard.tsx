@@ -83,7 +83,7 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
                   : 'from-white/5 to-transparent'
             }`}
           >
-            <span className="material-symbols-outlined text-lg text-foreground">
+            <span aria-hidden="true" className="material-symbols-outlined text-lg text-foreground">
               {viewMode === 'terminal' ? 'terminal' : 'smart_toy'}
             </span>
             {isRunning && (
@@ -128,8 +128,9 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
             onClick={toggleView}
             className={`rounded p-1.5 transition-all hover:bg-white/10 ${viewMode === 'terminal' ? 'text-primary bg-primary/10' : 'text-foreground-muted'}`}
             title={viewMode === 'terminal' ? 'Show Status' : 'Show Terminal'}
+            aria-label={viewMode === 'terminal' ? 'Show Status' : 'Show Terminal'}
           >
-            <span className="material-symbols-outlined text-sm">
+            <span aria-hidden="true" className="material-symbols-outlined text-sm">
               {viewMode === 'terminal' ? 'analytics' : 'terminal'}
             </span>
           </button>
@@ -140,8 +141,11 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
             }}
             className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
             title="Terminate Agent"
+            aria-label="Terminate Agent"
           >
-            <span className="material-symbols-outlined text-sm">power_settings_new</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-sm">
+              power_settings_new
+            </span>
           </button>
         </div>
       </div>
@@ -206,7 +210,7 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
                 type="text"
                 autoFocus
                 placeholder="Reply to agent..."
-                className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:opacity-20 text-[9px]"
+                className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:opacity-20 text-[9px] focus:ring-1 focus:ring-primary/50 rounded px-1"
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter') {
                     const val = e.currentTarget.value;

@@ -42,6 +42,22 @@ describe('TicketCreateModal', () => {
     expect(screen.getByPlaceholderText('What needs to be done?')).toBeDefined();
   });
 
+  it('exposes an accessible dialog when open', () => {
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId="e1"
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('dialog', { name: /new ticket/i })).toBeInTheDocument();
+  });
+
   it('Create and Close button is disabled when name is empty', () => {
     render(
       <TicketCreateModal

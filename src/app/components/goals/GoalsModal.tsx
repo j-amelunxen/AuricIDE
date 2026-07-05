@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { GoalTree } from './GoalTree';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import { GoalCreateDialog } from './GoalCreateDialog';
@@ -29,6 +30,13 @@ export function buildGoalLaunchPrompt(goal: PmGoal): string {
 }
 
 export function GoalsModal() {
+  const goalsModalOpen = useStore((s) => s.goalsModalOpen);
+  if (!goalsModalOpen) return null;
+  return <GoalsModalContent />;
+}
+
+function GoalsModalContent() {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const goalsModalOpen = useStore((s) => s.goalsModalOpen);
   const goalsDraft = useStore((s) => s.goalsDraft);
   const goalRunsDraft = useStore((s) => s.goalRunsDraft);
@@ -182,8 +190,6 @@ export function GoalsModal() {
     void conductorTick();
   }, [startConductor, selectedGoalId, conductorTick]);
 
-  if (!goalsModalOpen) return null;
-
   return createPortal(
     <div
       data-testid="goals-modal"
@@ -192,12 +198,20 @@ export function GoalsModal() {
         if (e.target === e.currentTarget) handleClose();
       }}
     >
-      <div className="flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="goals-modal-title"
+        className="flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-primary-light">flag</span>
-            <h1 className="text-sm font-bold text-foreground">Goals</h1>
+            <h1 id="goals-modal-title" className="text-sm font-bold text-foreground">
+              Goals
+            </h1>
             <span className="text-[10px] text-foreground-muted">{goalsDraft.length} total</span>
             {goalsDirty && (
               <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">

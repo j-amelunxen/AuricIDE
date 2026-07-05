@@ -80,6 +80,19 @@ describe('Header', () => {
     expect(screen.queryByTestId('heading-breadcrumbs')).not.toBeInTheDocument();
   });
 
+  it('hides decorative icon glyphs from assistive technology', () => {
+    const { container } = render(
+      <Header
+        breadcrumbs={['AuricIDE', 'README.md']}
+        headingBreadcrumbs={[{ title: 'Setup', lineNumber: 1 }]}
+        llmConfigured
+      />
+    );
+    const icons = container.querySelectorAll('.material-symbols-outlined');
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
+  });
+
   it('renders chevron separators between heading crumbs', () => {
     render(
       <Header

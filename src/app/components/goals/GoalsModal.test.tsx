@@ -101,6 +101,11 @@ describe('GoalsModal', () => {
     expect(mocks.loadRequirements).toHaveBeenCalledWith('/project');
   });
 
+  it('exposes an accessible dialog', () => {
+    render(<GoalsModal />);
+    expect(screen.getByRole('dialog', { name: /goals/i })).toBeInTheDocument();
+  });
+
   it('opens the create dialog', async () => {
     const user = userEvent.setup();
     render(<GoalsModal />);

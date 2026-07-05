@@ -29,18 +29,26 @@ export function StatusBar({
       <div className="flex items-center gap-4">
         {branch && (
           <button className="flex items-center gap-1.5 hover:text-primary transition-colors">
-            <span className="material-symbols-outlined text-[12px]">source</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
+              source
+            </span>
             <span>{branch}</span>
           </button>
         )}
         {syncStatus && (
-          <button className="flex items-center gap-1.5 hover:text-foreground transition-colors">
-            <span className="material-symbols-outlined text-[12px] animate-spin">sync</span>
+          <button
+            aria-label="Sync status"
+            className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[12px] animate-spin">
+              sync
+            </span>
           </button>
         )}
         {(errorCount > 0 || warningCount > 0) && (
           <button
             data-testid="problems-indicator"
+            aria-label="Problems"
             onClick={onProblemsClick}
             className="flex items-center gap-1.5 hover:text-foreground transition-colors"
           >

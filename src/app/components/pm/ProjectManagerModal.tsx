@@ -3,6 +3,7 @@
 import { useEffect, useCallback, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
+import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { EpicSidebar } from './EpicSidebar';
 import { TicketTable } from './TicketTable';
 import { TicketEditPanel } from './TicketEditPanel';
@@ -10,12 +11,13 @@ import { EpicEditDialog } from './EpicEditDialog';
 import { TicketCreateModal } from './TicketCreateModal';
 import { DependencyTreeView } from './DependencyTreeView';
 import { MetricsView } from './MetricsView';
-import type { PmEpic, PmTicket } from '@/lib/tauri/pm';
+import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
 import { generateTicketPrompt } from '@/lib/pm/prompt';
 
 const EMPTY: never[] = [];
 
-export function ProjectManagerModal() {
+function ProjectManagerDialog() {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
   const pmModalOpen = useStore((s) => s.pmModalOpen);
   const pmDirty = useStore((s) => s.pmDirty);
   const draftEpics = useStore((s) => s.pmDraftEpics) ?? EMPTY;
@@ -260,14 +262,23 @@ export function ProjectManagerModal() {
     <>
       <div className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm" onClick={handleClose} />
 
-      <div className="fixed inset-3 z-[201] flex flex-col bg-[#09090f] border border-white/[0.08] rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)]">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="project-manager-title"
+        className="fixed inset-3 z-[201] flex flex-col bg-[#09090f] border border-white/[0.08] rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)]"
+      >
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-white/[0.015] shrink-0">
           <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-[15px] text-primary-light/40 select-none">
               checklist
             </span>
-            <h2 className="text-sm font-semibold text-foreground tracking-tight">
+            <h2
+              id="project-manager-title"
+              className="text-sm font-semibold text-foreground tracking-tight"
+            >
               Project Management
             </h2>
             {pmDirty && (
@@ -473,4 +484,10 @@ export function ProjectManagerModal() {
     </>,
     document.body
   );
+}
+
+export function ProjectManagerModal() {
+  const pmModalOpen = useStore((s) => s.pmModalOpen);
+  if (!pmModalOpen) return null;
+  return <ProjectManagerDialog />;
 }

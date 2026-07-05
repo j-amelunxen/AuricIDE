@@ -78,7 +78,7 @@ export function AgentsPanel({
                   key={agent.id}
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, agent.id)}
-                  className="rounded transition-all hover:ring-2 hover:ring-primary/50"
+                  className="rounded transition hover:ring-2 hover:ring-primary/50"
                 >
                   <AgentCard agent={agent} onKill={onKill} onSelect={onSelectAgent} />
                 </div>
@@ -92,9 +92,9 @@ export function AgentsPanel({
         <button
           type="button"
           onClick={onSpawn}
-          className="w-full text-xs py-1.5 rounded bg-primary text-white hover:brightness-110 transition-all"
+          className="w-full text-xs py-1.5 rounded bg-primary text-white hover:brightness-110 transition-[filter]"
         >
-          Deploy New Instance
+          New Agent…
         </button>
       </div>
     </div>

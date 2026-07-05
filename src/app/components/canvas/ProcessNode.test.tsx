@@ -50,7 +50,7 @@ describe('ProcessNode', () => {
     expect(screen.getByTestId('handle-source')).toBeInTheDocument();
   });
 
-  it('applies correct border color for trigger type', () => {
+  it('applies correct indicator color for trigger type', () => {
     const { container } = renderProcessNode({
       data: {
         title: 'Trigger',
@@ -59,43 +59,41 @@ describe('ProcessNode', () => {
       },
     });
     const card = container.firstElementChild as HTMLElement;
-    expect(card.className).toContain('border-l-purple-500');
+    expect(card.className).not.toContain('border-l-');
+    expect(screen.getByTestId('node-type-indicator').className).toContain('bg-purple-500');
   });
 
-  it('applies correct border color for agent type', () => {
-    const { container } = renderProcessNode({
+  it('applies correct indicator color for agent type', () => {
+    renderProcessNode({
       data: {
         title: 'Agent',
         description: '',
         nodeType: 'agent',
       },
     });
-    const card = container.firstElementChild as HTMLElement;
-    expect(card.className).toContain('border-l-blue-500');
+    expect(screen.getByTestId('node-type-indicator').className).toContain('bg-blue-500');
   });
 
-  it('applies correct border color for script type', () => {
-    const { container } = renderProcessNode({
+  it('applies correct indicator color for script type', () => {
+    renderProcessNode({
       data: {
         title: 'Script',
         description: '',
         nodeType: 'script',
       },
     });
-    const card = container.firstElementChild as HTMLElement;
-    expect(card.className).toContain('border-l-orange-500');
+    expect(screen.getByTestId('node-type-indicator').className).toContain('bg-orange-500');
   });
 
-  it('applies correct border color for output type', () => {
-    const { container } = renderProcessNode({
+  it('applies correct indicator color for output type', () => {
+    renderProcessNode({
       data: {
         title: 'Output',
         description: '',
         nodeType: 'output',
       },
     });
-    const card = container.firstElementChild as HTMLElement;
-    expect(card.className).toContain('border-l-green-500');
+    expect(screen.getByTestId('node-type-indicator').className).toContain('bg-green-500');
   });
 
   it('applies selected styling when selected', () => {

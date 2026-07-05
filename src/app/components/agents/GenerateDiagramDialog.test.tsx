@@ -41,6 +41,11 @@ describe('GenerateDiagramDialog', () => {
     expect(screen.getByLabelText(/provider/i)).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog', () => {
+    render(<GenerateDiagramDialog {...defaultProps} />);
+    expect(screen.getByRole('dialog', { name: /generate diagram/i })).toBeInTheDocument();
+  });
+
   it('diagram type dropdown shows "Flowchart"', () => {
     render(<GenerateDiagramDialog {...defaultProps} />);
     expect(screen.getByText('Flowchart')).toBeInTheDocument();

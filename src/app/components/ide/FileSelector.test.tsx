@@ -23,6 +23,11 @@ describe('FileSelector', () => {
     expect(screen.getByText('README.md')).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog when open', () => {
+    render(<FileSelector files={mockFiles} isOpen={true} onClose={() => {}} rootPath="/root" />);
+    expect(screen.getByRole('dialog', { name: /advanced file selection/i })).toBeInTheDocument();
+  });
+
   it('filters by extension', () => {
     render(<FileSelector files={mockFiles} isOpen={true} onClose={() => {}} rootPath="/root" />);
     const extInput = screen.getByPlaceholderText('e.g. ts, rs');

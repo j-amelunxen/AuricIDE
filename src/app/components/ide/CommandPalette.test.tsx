@@ -37,6 +37,11 @@ describe('CommandPalette', () => {
     expect(screen.getByTestId('command-palette-overlay')).toBeInTheDocument();
   });
 
+  it('exposes an accessible dialog', () => {
+    renderPalette({ isOpen: true });
+    expect(screen.getByRole('dialog', { name: /command palette/i })).toBeInTheDocument();
+  });
+
   it('does not render when isOpen is false', () => {
     renderPalette({ isOpen: false });
     expect(screen.queryByTestId('command-palette-overlay')).not.toBeInTheDocument();
