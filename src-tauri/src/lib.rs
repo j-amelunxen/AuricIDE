@@ -689,6 +689,54 @@ fn create_directory(path: String) -> Result<(), String> {
     fs::create_dir_all(&path).map_err(|e| e.to_string())
 }
 
+/// Move a file or directory to a new absolute path (drag-and-drop in the
+/// explorer). Refuses to clobber an existing target or move a directory into
+/// its own subtree, and falls back to copy+delete across filesystems.
+#[tauri::command]
+fn move_path(source: String, destination: String) -> Result<(), String> {
+    let src = Path::new(&source);
+    let dest = Path::new(&destination);
+
+    if !src.exists() {
+        return Err(format!("Source no longer exists: {}", source));
+    }
+    if dest.exists() {
+        let name = dest
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("that name");
+        return Err(format!("An item named \"{}\" already exists here", name));
+    }
+    // Never move a directory into itself or one of its descendants.
+    if src.is_dir() {
+        if let (Ok(src_canon), Some(parent)) = (src.canonicalize(), dest.parent()) {
+            if let Ok(parent_canon) = parent.canonicalize() {
+                if parent_canon == src_canon || parent_canon.starts_with(&src_canon) {
+                    return Err("Cannot move a folder into itself".to_string());
+                }
+            }
+        }
+    }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    match fs::rename(src, dest) {
+        Ok(()) => Ok(()),
+        // rename() fails across filesystems (EXDEV): fall back to copy + delete.
+        Err(_) => {
+            if src.is_dir() {
+                copy_dir_recursive(src, dest).map_err(|e| e.to_string())?;
+                fs::remove_dir_all(src).map_err(|e| e.to_string())?;
+            } else {
+                fs::copy(src, dest).map_err(|e| e.to_string())?;
+                fs::remove_file(src).map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct GitFileStatus {
     path: String,
@@ -1583,6 +1631,7 @@ pub fn run() {
             copy_file,
             delete_file,
             create_directory,
+            move_path,
             save_temp_image,
             save_image_to_path,
             check_cli_status,
@@ -1670,6 +1719,87 @@ mod tests {
             .output()
             .unwrap();
         dir
+    }
+
+    #[test]
+    fn test_move_path_moves_file_between_dirs() {
+        let dir = TempDir::new().unwrap();
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let src = dir.path().join("note.md");
+        fs::write(&src, "hello").unwrap();
+        let dest = sub.join("note.md");
+
+        move_path(
+            src.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+        )
+        .unwrap();
+
+        assert!(!src.exists());
+        assert!(dest.exists());
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_move_path_moves_directory() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("folder");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("a.txt"), "x").unwrap();
+        let target_parent = dir.path().join("dest");
+        fs::create_dir(&target_parent).unwrap();
+        let dest = target_parent.join("folder");
+
+        move_path(
+            src.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+        )
+        .unwrap();
+
+        assert!(!src.exists());
+        assert!(dest.join("a.txt").exists());
+    }
+
+    #[test]
+    fn test_move_path_refuses_to_overwrite_existing() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("a.txt");
+        fs::write(&src, "one").unwrap();
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let dest = sub.join("a.txt");
+        fs::write(&dest, "two").unwrap();
+
+        let err = move_path(
+            src.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("already exists"));
+        // Nothing was moved or clobbered.
+        assert_eq!(fs::read_to_string(&src).unwrap(), "one");
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "two");
+    }
+
+    #[test]
+    fn test_move_path_rejects_folder_into_own_subtree() {
+        let dir = TempDir::new().unwrap();
+        let folder = dir.path().join("folder");
+        let child = folder.join("child");
+        fs::create_dir_all(&child).unwrap();
+        // Move `folder` into `folder/child` — illegal.
+        let dest = child.join("folder");
+
+        let err = move_path(
+            folder.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("into itself"));
+        assert!(folder.exists());
     }
 
     #[test]

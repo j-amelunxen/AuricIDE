@@ -131,7 +131,7 @@ describe('FileExplorer', () => {
     expect(mdButton).toHaveAttribute('draggable', 'true');
   });
 
-  it('does not make non-markdown files draggable', () => {
+  it('makes non-markdown files draggable so they can be moved', () => {
     render(
       <FileExplorer
         tree={mockTree}
@@ -141,10 +141,10 @@ describe('FileExplorer', () => {
       />
     );
     const tsButton = screen.getByTestId('tree-item-/src/main.ts');
-    expect(tsButton).not.toHaveAttribute('draggable');
+    expect(tsButton).toHaveAttribute('draggable', 'true');
   });
 
-  it('does not make directories draggable', () => {
+  it('makes directories draggable so they can be moved', () => {
     render(
       <FileExplorer
         tree={mockTree}
@@ -154,7 +154,7 @@ describe('FileExplorer', () => {
       />
     );
     const dirButton = screen.getByTestId('tree-item-/src');
-    expect(dirButton).not.toHaveAttribute('draggable');
+    expect(dirButton).toHaveAttribute('draggable', 'true');
   });
 
   it('exposes toolbar controls by accessible labels', () => {
@@ -185,7 +185,7 @@ describe('FileExplorer', () => {
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });
 
-  it('sets dataTransfer with file path on dragStart for .md files', () => {
+  it('sets both the editor-embed and move payloads on dragStart for .md files', () => {
     render(
       <FileExplorer
         tree={mockTree}
@@ -201,7 +201,103 @@ describe('FileExplorer', () => {
     Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
     mdButton.dispatchEvent(event);
 
+    // Editor embed payload preserved…
     expect(setData).toHaveBeenCalledWith('text/plain', '/README.md');
-    expect(dataTransfer.effectAllowed).toBe('copy');
+    // …plus the explorer-internal move payload.
+    expect(setData).toHaveBeenCalledWith('application/x-auric-move', '/README.md');
+    expect(dataTransfer.effectAllowed).toBe('copyMove');
+  });
+
+  it('sets the move payload on dragStart for non-markdown files', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const tsButton = screen.getByTestId('tree-item-/src/main.ts');
+    const setData = vi.fn();
+    const dataTransfer = { setData, effectAllowed: '' };
+    const event = new Event('dragstart', { bubbles: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    tsButton.dispatchEvent(event);
+
+    expect(setData).toHaveBeenCalledWith('application/x-auric-move', '/src/main.ts');
+    expect(dataTransfer.effectAllowed).toBe('move');
+  });
+
+  it('calls onMoveNode when a file is dropped onto a folder', () => {
+    const onMoveNode = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={onMoveNode}
+      />
+    );
+    const folder = screen.getByTestId('tree-item-/src');
+    const dataTransfer = {
+      types: ['application/x-auric-move'],
+      getData: (t: string) => (t === 'application/x-auric-move' ? '/README.md' : ''),
+      dropEffect: '',
+    };
+    const event = new Event('drop', { bubbles: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    folder.dispatchEvent(event);
+
+    expect(onMoveNode).toHaveBeenCalledWith('/README.md', '/src');
+  });
+
+  it('does not call onMoveNode when a folder is dropped onto itself', () => {
+    const onMoveNode = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={onMoveNode}
+      />
+    );
+    const folder = screen.getByTestId('tree-item-/src');
+    const dataTransfer = {
+      types: ['application/x-auric-move'],
+      getData: (t: string) => (t === 'application/x-auric-move' ? '/src' : ''),
+      dropEffect: '',
+    };
+    const event = new Event('drop', { bubbles: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    folder.dispatchEvent(event);
+
+    expect(onMoveNode).not.toHaveBeenCalled();
+  });
+
+  it('does not call onMoveNode when a file is dropped onto the folder it already lives in', () => {
+    const onMoveNode = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={onMoveNode}
+      />
+    );
+    // main.ts already lives in /src — dropping it back onto /src is a no-op.
+    const folder = screen.getByTestId('tree-item-/src');
+    const dataTransfer = {
+      types: ['application/x-auric-move'],
+      getData: (t: string) => (t === 'application/x-auric-move' ? '/src/main.ts' : ''),
+      dropEffect: '',
+    };
+    const event = new Event('drop', { bubbles: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    folder.dispatchEvent(event);
+
+    expect(onMoveNode).not.toHaveBeenCalled();
   });
 });

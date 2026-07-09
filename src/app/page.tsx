@@ -134,6 +134,8 @@ export default function Home() {
               onRefresh={handlers.handleRefresh}
               onOpenFolder={handlers.handleOpenFolder}
               onContextMenu={handlers.handleContextMenu}
+              onMoveNode={handlers.handleMoveNode}
+              rootPath={state.rootPath}
             />
           </div>
         );

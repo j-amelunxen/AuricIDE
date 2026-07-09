@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 export interface FileTreeNode {
   name: string;
   path: string;
@@ -7,6 +9,27 @@ export interface FileTreeNode {
   expanded?: boolean;
   children?: FileTreeNode[];
   gitStatus?: 'added' | 'modified' | 'deleted' | 'ignored';
+}
+
+/**
+ * Explorer-internal drag payload for moving a node into a folder. Kept separate
+ * from the `text/plain` payload (which markdown files also set, so they can be
+ * dropped into the editor to embed) so the two drag purposes never collide.
+ */
+export const MOVE_MIME = 'application/x-auric-move';
+
+function parentDir(path: string): string {
+  const idx = path.lastIndexOf('/');
+  return idx <= 0 ? '/' : path.slice(0, idx);
+}
+
+/** A move is a no-op or illegal if it lands on itself, its own folder, or its subtree. */
+export function isInvalidMove(source: string, destDir: string): boolean {
+  if (!source) return true;
+  if (source === destDir) return true;
+  if (parentDir(source) === destDir) return true;
+  if (destDir === source || destDir.startsWith(source + '/')) return true;
+  return false;
 }
 
 interface FileExplorerProps {
@@ -18,6 +41,10 @@ interface FileExplorerProps {
   onRefresh?: () => void;
   onOpenFolder?: () => void;
   onContextMenu?: (e: React.MouseEvent, node: FileTreeNode) => void;
+  /** Move `sourcePath` into `destDir`. Enables drag-and-drop reordering. */
+  onMoveNode?: (sourcePath: string, destDir: string) => void;
+  /** Project root — enables dropping onto empty space to move an item to the root. */
+  rootPath?: string | null;
 }
 
 const gitBadgeMap = {
@@ -75,6 +102,7 @@ function TreeNode({
   onSelectFile,
   onToggleDir,
   onContextMenu,
+  onMoveNode,
 }: {
   node: FileTreeNode;
   depth: number;
@@ -82,13 +110,16 @@ function TreeNode({
   onSelectFile: (path: string) => void;
   onToggleDir: (path: string) => void;
   onContextMenu?: (e: React.MouseEvent, node: FileTreeNode) => void;
+  onMoveNode?: (sourcePath: string, destDir: string) => void;
 }) {
   const isSelected = selectedPath === node.path;
   const isIgnored = node.gitStatus === 'ignored';
   const paddingLeft = `${12 + depth * 16}px`;
+  const [isDropTarget, setIsDropTarget] = useState(false);
 
   const fileInfo = !node.isDirectory ? getFileIcon(node.name) : null;
   const isMarkdown = !node.isDirectory && /\.(md|markdown)$/i.test(node.name);
+  const canDrop = node.isDirectory && !!onMoveNode;
 
   const handleClick = () => {
     if (node.isDirectory) {
@@ -104,21 +135,50 @@ function TreeNode({
         data-testid={`tree-item-${node.path}`}
         onClick={handleClick}
         onContextMenu={(e) => onContextMenu?.(e, node)}
-        draggable={isMarkdown || undefined}
-        onDragStart={
-          isMarkdown
+        draggable
+        onDragStart={(e) => {
+          // Explorer-internal move payload (every node can be moved)…
+          e.dataTransfer.setData(MOVE_MIME, node.path);
+          if (isMarkdown) {
+            // …plus the editor-embed payload for markdown (drop into the editor).
+            e.dataTransfer.setData('text/plain', node.path);
+            e.dataTransfer.effectAllowed = 'copyMove';
+          } else {
+            e.dataTransfer.effectAllowed = 'move';
+          }
+        }}
+        onDragOver={
+          canDrop
             ? (e) => {
-                e.dataTransfer.setData('text/plain', node.path);
-                e.dataTransfer.effectAllowed = 'copy';
+                if (e.dataTransfer.types.includes(MOVE_MIME)) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setIsDropTarget(true);
+                }
+              }
+            : undefined
+        }
+        onDragLeave={canDrop ? () => setIsDropTarget(false) : undefined}
+        onDrop={
+          canDrop
+            ? (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDropTarget(false);
+                const source = e.dataTransfer.getData(MOVE_MIME);
+                if (isInvalidMove(source, node.path)) return;
+                onMoveNode!(source, node.path);
               }
             : undefined
         }
         className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-colors hover:bg-white/5 ${
-          isSelected
-            ? 'bg-primary/10 border-l-2 border-primary text-foreground'
-            : isIgnored
-              ? 'text-foreground-muted opacity-40'
-              : 'text-foreground-muted hover:text-foreground'
+          isDropTarget
+            ? 'bg-primary/20 ring-1 ring-inset ring-primary/50 text-foreground'
+            : isSelected
+              ? 'bg-primary/10 border-l-2 border-primary text-foreground'
+              : isIgnored
+                ? 'text-foreground-muted opacity-40'
+                : 'text-foreground-muted hover:text-foreground'
         }`}
         style={{ paddingLeft }}
       >
@@ -157,6 +217,7 @@ function TreeNode({
               onSelectFile={onSelectFile}
               onToggleDir={onToggleDir}
               onContextMenu={onContextMenu}
+              onMoveNode={onMoveNode}
             />
           ))}
         </div>
@@ -174,7 +235,12 @@ export function FileExplorer({
   onRefresh,
   onOpenFolder,
   onContextMenu,
+  onMoveNode,
+  rootPath,
 }: FileExplorerProps) {
+  const [isRootDropTarget, setIsRootDropTarget] = useState(false);
+  const canDropToRoot = !!onMoveNode && !!rootPath;
+
   return (
     <div data-testid="file-explorer" className="flex flex-1 flex-col min-h-0">
       <div className="flex items-center justify-end gap-1 border-b border-white/5 px-2 py-1.5 glass flex-shrink-0">
@@ -209,7 +275,35 @@ export function FileExplorer({
           </span>
         </button>
       </div>
-      <div className="py-1 flex-1 overflow-y-auto">
+      <div
+        data-testid="file-explorer-root-dropzone"
+        className={`py-1 flex-1 overflow-y-auto ${
+          isRootDropTarget ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''
+        }`}
+        onDragOver={
+          canDropToRoot
+            ? (e) => {
+                if (e.dataTransfer.types.includes(MOVE_MIME)) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setIsRootDropTarget(true);
+                }
+              }
+            : undefined
+        }
+        onDragLeave={canDropToRoot ? () => setIsRootDropTarget(false) : undefined}
+        onDrop={
+          canDropToRoot
+            ? (e) => {
+                e.preventDefault();
+                setIsRootDropTarget(false);
+                const source = e.dataTransfer.getData(MOVE_MIME);
+                if (isInvalidMove(source, rootPath!)) return;
+                onMoveNode!(source, rootPath!);
+              }
+            : undefined
+        }
+      >
         {tree.map((node) => (
           <TreeNode
             key={node.path}
@@ -219,6 +313,7 @@ export function FileExplorer({
             onSelectFile={onSelectFile}
             onToggleDir={onToggleDir}
             onContextMenu={onContextMenu}
+            onMoveNode={onMoveNode}
           />
         ))}
       </div>

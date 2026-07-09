@@ -49,6 +49,11 @@ export async function createDirectory(path: string): Promise<void> {
   await invoke('create_directory', { path });
 }
 
+/** Move a file or directory to a new absolute path (explorer drag-and-drop). */
+export async function movePath(source: string, destination: string): Promise<void> {
+  await invoke('move_path', { source, destination });
+}
+
 export interface ProjectFileInfo {
   path: string;
   extension: string;

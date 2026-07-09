@@ -17,6 +17,7 @@ import {
   openFolderDialog,
   readDirectory,
   createDirectory,
+  movePath,
   type FileEntry,
 } from '@/lib/tauri/fs';
 import {
@@ -173,6 +174,24 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     await handleRefresh();
     handleFileSelect(newPath);
   }, [state, handleRefresh, handleFileSelect]);
+
+  const handleMoveNode = useCallback(
+    async (sourcePath: string, destDir: string) => {
+      const name = sourcePath.split('/').pop();
+      if (!name) return;
+      const destination = `${destDir}/${name}`;
+      if (destination === sourcePath) return;
+      try {
+        await movePath(sourcePath, destination);
+      } catch (err) {
+        // Collision / illegal move — leave the tree untouched.
+        console.error(`Failed to move ${sourcePath} -> ${destination}:`, err);
+        return;
+      }
+      await handleRefresh();
+    },
+    [handleRefresh]
+  );
 
   const openReadmeIfExists = useCallback(
     (entries: FileEntry[]) => {
@@ -882,6 +901,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleFileSelect,
     handleToggleDir,
     handleNewFile,
+    handleMoveNode,
     handleOpenFolder,
     handleOpenRecent,
     handleNewProject,
