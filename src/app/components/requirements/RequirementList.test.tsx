@@ -33,9 +33,19 @@ describe('RequirementList', () => {
     vi.clearAllMocks();
   });
 
-  it('shows "No requirements match" when empty', () => {
-    render(<RequirementList requirements={[]} selectedId={null} onSelect={onSelect} />);
+  it('shows "No requirements match" when filtered to empty but some exist', () => {
+    render(
+      <RequirementList requirements={[]} selectedId={null} onSelect={onSelect} totalCount={5} />
+    );
     expect(screen.getByText(/No requirements match/)).toBeInTheDocument();
+  });
+
+  it('shows an onboarding empty state when none exist at all', () => {
+    render(
+      <RequirementList requirements={[]} selectedId={null} onSelect={onSelect} totalCount={0} />
+    );
+    expect(screen.getByText(/No requirements yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/match the current filters/)).not.toBeInTheDocument();
   });
 
   it('renders table headers', () => {

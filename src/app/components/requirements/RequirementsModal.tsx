@@ -231,6 +231,7 @@ function RequirementsDialog() {
               requirements={filtered}
               selectedId={selectedRequirementId}
               onSelect={setSelectedRequirementId}
+              totalCount={requirementsDraft.length}
             />
           </div>
 

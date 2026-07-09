@@ -6,6 +6,8 @@ interface RequirementListProps {
   requirements: PmRequirement[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Unfiltered total — lets the empty state distinguish "none yet" from "filtered out". */
+  totalCount?: number;
 }
 
 const TYPE_BADGE: Record<string, { label: string; className: string }> = {
@@ -45,14 +47,34 @@ function getVerificationIndicator(req: PmRequirement): {
   return { className: 'bg-amber-400', label: 'stale', type: 'dot' };
 }
 
-export function RequirementList({ requirements, selectedId, onSelect }: RequirementListProps) {
+export function RequirementList({
+  requirements,
+  selectedId,
+  onSelect,
+  totalCount,
+}: RequirementListProps) {
   if (requirements.length === 0) {
+    const noneExist = totalCount === 0;
     return (
       <div
         data-testid="requirement-list-empty"
-        className="flex flex-1 items-center justify-center text-sm text-foreground-muted"
+        className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
       >
-        No requirements match the current filters
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined text-2xl text-foreground-muted opacity-40"
+        >
+          checklist
+        </span>
+        <p className="text-sm text-foreground-muted">
+          {noneExist ? 'No requirements yet' : 'No requirements match the current filters'}
+        </p>
+        {noneExist && (
+          <p className="max-w-xs text-xs leading-relaxed text-foreground-muted opacity-60">
+            Requirements are application invariants — provable and continuously checked. Create one
+            to start tracking what must always hold.
+          </p>
+        )}
       </div>
     );
   }

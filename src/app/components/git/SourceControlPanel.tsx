@@ -155,7 +155,7 @@ export function SourceControlPanel({
               type="checkbox"
               checked={agenticCommit}
               onChange={(e) => onAgenticToggle?.(e.target.checked)}
-              className="w-3 h-3 rounded border-white/10 bg-black/40 text-primary focus:ring-primary/50"
+              className="h-3.5 w-3.5 accent-primary"
             />
             <span className="text-xs text-foreground-muted">Agentic</span>
           </label>

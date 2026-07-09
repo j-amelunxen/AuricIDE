@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
+import { SettingsToggle } from '../ui/settings/SettingsToggle';
 
 export function McpSettingsContent() {
   const rootPath = useStore((s) => s.rootPath);
@@ -58,23 +59,13 @@ export function McpSettingsContent() {
         </div>
 
         <div className="space-y-3 pl-1">
-          <label className="flex items-center justify-between group cursor-pointer">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xs text-foreground group-hover:text-primary-light transition-colors">
-                Auto-Start MCP Server
-              </span>
-              <span className="text-[9px] text-foreground-muted opacity-60">
-                Start MCP server when project opens
-              </span>
-            </div>
-            <input
-              type="checkbox"
-              data-testid="mcp-autostart-toggle"
-              checked={mcpAutoStart}
-              onChange={(e) => setMcpAutoStart(e.target.checked)}
-              className="w-3 h-3 rounded border-white/10 bg-black/40 text-primary focus:ring-primary/50"
-            />
-          </label>
+          <SettingsToggle
+            label="Auto-Start MCP Server"
+            description="Start MCP server when project opens"
+            checked={mcpAutoStart}
+            onChange={setMcpAutoStart}
+            testId="mcp-autostart-toggle"
+          />
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
