@@ -150,11 +150,14 @@ function TreeNode({
         onDragOver={
           canDrop
             ? (e) => {
-                if (e.dataTransfer.types.includes(MOVE_MIME)) {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  setIsDropTarget(true);
-                }
+                // Always preventDefault so the browser permits the drop. WebKit
+                // (Tauri's macOS webview) doesn't expose custom MIME types in
+                // `types` during dragover, so gating on it would silently block
+                // the drop. The actual payload is validated on drop instead.
+                e.preventDefault();
+                e.stopPropagation(); // don't also light up the root dropzone
+                e.dataTransfer.dropEffect = 'move';
+                setIsDropTarget(true);
               }
             : undefined
         }
@@ -283,11 +286,10 @@ export function FileExplorer({
         onDragOver={
           canDropToRoot
             ? (e) => {
-                if (e.dataTransfer.types.includes(MOVE_MIME)) {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  setIsRootDropTarget(true);
-                }
+                // Unconditional preventDefault (WebKit-safe — see TreeNode).
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setIsRootDropTarget(true);
               }
             : undefined
         }

@@ -276,6 +276,57 @@ describe('FileExplorer', () => {
     expect(onMoveNode).not.toHaveBeenCalled();
   });
 
+  it('allows the drop by preventing default on dragOver over a folder (WebKit-safe)', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={() => {}}
+      />
+    );
+    const folder = screen.getByTestId('tree-item-/src');
+    // WebKit doesn't expose custom MIME types in `types` during dragover, so the
+    // handler must preventDefault regardless — otherwise the browser rejects the drop.
+    let defaultPrevented = false;
+    const dataTransfer = { types: [] as string[], dropEffect: '' };
+    const event = new Event('dragover', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    Object.defineProperty(event, 'preventDefault', {
+      value: () => {
+        defaultPrevented = true;
+      },
+    });
+    folder.dispatchEvent(event);
+    expect(defaultPrevented).toBe(true);
+  });
+
+  it('allows the drop by preventing default on dragOver over the root dropzone', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={() => {}}
+        rootPath="/"
+      />
+    );
+    const zone = screen.getByTestId('file-explorer-root-dropzone');
+    let defaultPrevented = false;
+    const dataTransfer = { types: [] as string[], dropEffect: '' };
+    const event = new Event('dragover', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    Object.defineProperty(event, 'preventDefault', {
+      value: () => {
+        defaultPrevented = true;
+      },
+    });
+    zone.dispatchEvent(event);
+    expect(defaultPrevented).toBe(true);
+  });
+
   it('does not call onMoveNode when a file is dropped onto the folder it already lives in', () => {
     const onMoveNode = vi.fn();
     render(
