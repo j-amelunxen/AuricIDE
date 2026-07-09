@@ -14,6 +14,7 @@ import {
 import { getPromptTemplate, FALLBACK_PROMPT_TEMPLATE } from '@/lib/tauri/providers';
 import { xtermMounted, xtermUnmounted } from '@/lib/metrics';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
+import { accentColor, accentRgb } from '@/lib/theme/accent';
 
 interface XtermTerminalProps {
   id: string; // Session ID (agent-id or 'main-terminal')
@@ -53,8 +54,8 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       theme: {
         background: '#00000000', // Inherit from parent container
         foreground: '#ffffff',
-        cursor: '#bc13fe',
-        selectionBackground: 'rgba(188, 19, 254, 0.4)',
+        cursor: accentColor(),
+        selectionBackground: `rgba(${accentRgb()}, 0.4)`,
         black: '#000000',
         red: '#ff5555',
         green: '#50fa7b',

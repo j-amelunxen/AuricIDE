@@ -46,7 +46,7 @@ export function MindmapView({ nodes, edges, onNodeEdit, onNodesChange }: Mindmap
         source: edge.source,
         target: edge.target,
         animated: true,
-        style: { stroke: '#bc13fe' },
+        style: { stroke: 'var(--primary)' },
       })),
     [edges]
   );

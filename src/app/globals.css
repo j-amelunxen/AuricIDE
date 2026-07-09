@@ -35,6 +35,7 @@
   --primary: #bc13fe;
   --primary-rgb: 188, 19, 254;
   --primary-light: #d66aff;
+  --primary-light-rgb: 214, 106, 255;
 
   --border-dark: #1f1f2e;
   --panel-bg: rgba(10, 10, 16, 0.7);
@@ -47,10 +48,63 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Accent themes — an optional, user-selectable primary color.
+   Purple is the base (above); each block below re-tints the shared
+   primary tokens so every `*-primary` utility, `neon-glow`, and the
+   focus ring switch live. Applied via `data-accent` on <html>.
+   ───────────────────────────────────────────────────────────── */
+:root[data-accent='blue'] {
+  --color-primary: #2f6bff;
+  --color-primary-light: #6b9bff;
+  --primary: #2f6bff;
+  --primary-rgb: 47, 107, 255;
+  --primary-light: #6b9bff;
+  --primary-light-rgb: 107, 155, 255;
+}
+
+:root[data-accent='cyan'] {
+  --color-primary: #13d5fe;
+  --color-primary-light: #6ae5ff;
+  --primary: #13d5fe;
+  --primary-rgb: 19, 213, 254;
+  --primary-light: #6ae5ff;
+  --primary-light-rgb: 106, 229, 255;
+}
+
+:root[data-accent='emerald'] {
+  --color-primary: #13d98a;
+  --color-primary-light: #5ff0b4;
+  --primary: #13d98a;
+  --primary-rgb: 19, 217, 138;
+  --primary-light: #5ff0b4;
+  --primary-light-rgb: 95, 240, 180;
+}
+
+:root[data-accent='amber'] {
+  --color-primary: #ffb020;
+  --color-primary-light: #ffca6a;
+  --primary: #ffb020;
+  --primary-rgb: 255, 176, 32;
+  --primary-light: #ffca6a;
+  --primary-light-rgb: 255, 202, 106;
+}
+
+:root[data-accent='pink'] {
+  --color-primary: #ff3ba7;
+  --color-primary-light: #ff7ac2;
+  --primary: #ff3ba7;
+  --primary-rgb: 255, 59, 167;
+  --primary-light: #ff7ac2;
+  --primary-light-rgb: 255, 122, 194;
+}
+
 body {
   background: radial-gradient(circle at top left, #12121a, #000000);
   color: var(--foreground);
-  font-family: var(--font-mono);
+  /* UI chrome uses the proportional display face; code/paths/terminal/metrics
+     opt back into mono explicitly via `font-mono`. */
+  font-family: var(--font-display), 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   overflow: hidden;
   height: 100vh;
   width: 100vw;
@@ -106,7 +160,7 @@ textarea:focus-visible,
 [role='menuitem']:focus-visible,
 [role='option']:focus-visible,
 [role='tab']:focus-visible {
-  outline: 2px solid rgba(214, 106, 255, 0.7);
+  outline: 2px solid rgba(var(--primary-light-rgb), 0.7);
   outline-offset: 2px;
 }
 
@@ -155,21 +209,79 @@ textarea:focus-visible,
   animation: pulse-soft 3s ease-in-out infinite;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Accessibility preferences — reduced motion / transparency / contrast
+   (Apple HIG §14). Decorative, continuously-oscillating motion and
+   heavy translucency are the two things we roll back first.
+   ───────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  /* Neutralize decorative transitions/animations app-wide, but keep
+     essential state changes legible via a short cross-fade. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Kill the perpetual glow oscillation and soft pulses outright. */
+  .animate-pulse-soft,
+  .cm-semantic-action,
+  .cm-mermaid-loading,
+  .react-flow__edge.animated path {
+    animation: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-panel,
+  .glass-card {
+    background: #0a0a10 !important;
+    backdrop-filter: none !important;
+  }
+
+  .cm-wikilink-tooltip,
+  .cm-tooltip-lint,
+  .react-flow__controls,
+  .react-flow__minimap {
+    backdrop-filter: none !important;
+    background: rgba(10, 10, 16, 0.98) !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --foreground-muted: #a8a8b8;
+    --color-foreground-muted: #a8a8b8;
+    --color-muted-foreground: #a8a8b8;
+  }
+
+  .glass,
+  .glass-panel,
+  .glass-card {
+    border-color: rgba(255, 255, 255, 0.25) !important;
+  }
+}
+
 /* Semantic Highlighting (Pattern + NLP Engine) */
 .cm-semantic-entity {
   /* This is now mostly handled by variable-hash, but kept as fallback for generic entities */
-  color: #d66aff !important;
+  color: var(--primary-light) !important;
   font-weight: 700;
-  border-bottom: 1px solid rgba(214, 106, 255, 0.3);
-  text-shadow: 0 0 10px rgba(214, 106, 255, 0.2);
+  border-bottom: 1px solid rgba(var(--primary-light-rgb), 0.3);
+  text-shadow: 0 0 10px rgba(var(--primary-light-rgb), 0.2);
 }
 
 .cm-semantic-action {
   color: #22d3ee !important;
   font-weight: 500;
   font-style: italic;
+  /* Static accent glow — a perpetual pulse on every action token competes
+     for attention and reads as noise (Apple HIG §14). */
   text-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
-  animation: neon-pulse 3s infinite alternate;
 }
 
 .cm-semantic-keyword {
@@ -239,16 +351,16 @@ textarea:focus-visible,
 
 /* ─── Wiki-Link Highlighting ─── */
 .syntax-wikilink {
-  color: #d66aff !important;
+  color: var(--primary-light) !important;
   text-decoration: underline;
-  text-decoration-color: rgba(214, 106, 255, 0.5);
+  text-decoration-color: rgba(var(--primary-light-rgb), 0.5);
   text-underline-offset: 3px;
   cursor: pointer;
   transition: text-shadow 0.15s ease;
 }
 
 .syntax-wikilink:hover {
-  text-shadow: 0 0 8px rgba(214, 106, 255, 0.4);
+  text-shadow: 0 0 8px rgba(var(--primary-light-rgb), 0.4);
 }
 
 .syntax-wikilink-broken {
@@ -261,7 +373,7 @@ textarea:focus-visible,
 /* ─── Wiki-Link Hover Tooltip ─── */
 .cm-wikilink-tooltip {
   background: rgba(10, 10, 16, 0.95);
-  border: 1px solid rgba(214, 106, 255, 0.3);
+  border: 1px solid rgba(var(--primary-light-rgb), 0.3);
   border-radius: 8px;
   padding: 10px 14px;
   max-width: 360px;
@@ -271,12 +383,12 @@ textarea:focus-visible,
   color: #e0e0e0;
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.5),
-    0 0 15px rgba(214, 106, 255, 0.1);
+    0 0 15px rgba(var(--primary-light-rgb), 0.1);
 }
 
 .cm-wikilink-tooltip-header {
   font-weight: 700;
-  color: #d66aff;
+  color: var(--primary-light);
   margin-bottom: 6px;
   display: flex;
   align-items: center;
@@ -317,7 +429,8 @@ textarea:focus-visible,
 
 .cm-wikilink-tooltip-footer {
   font-size: 10px;
-  color: #606070;
+  /* Raised from #606070 to clear WCAG AA on the near-black tooltip surface. */
+  color: #8a8a9a;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-top: 6px;
 }
@@ -336,19 +449,19 @@ textarea:focus-visible,
 }
 
 .react-flow__handle {
-  background: #bc13fe !important;
+  background: var(--primary) !important;
   border: 2px solid #0a0a10 !important;
   width: 8px;
   height: 8px;
 }
 
 .react-flow__handle:hover {
-  background: #d66aff !important;
-  box-shadow: 0 0 8px rgba(188, 19, 254, 0.6);
+  background: var(--primary-light) !important;
+  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.6);
 }
 
 .react-flow__edge-path {
-  stroke: #bc13fe !important;
+  stroke: var(--primary) !important;
   stroke-width: 2;
 }
 
@@ -364,8 +477,8 @@ textarea:focus-visible,
 }
 
 .react-flow__selection {
-  background: rgba(188, 19, 254, 0.08) !important;
-  border: 1px solid rgba(188, 19, 254, 0.4) !important;
+  background: rgba(var(--primary-rgb), 0.08) !important;
+  border: 1px solid rgba(var(--primary-rgb), 0.4) !important;
 }
 
 .react-flow__controls {
@@ -406,7 +519,7 @@ textarea:focus-visible,
 }
 
 .react-flow__minimap-node {
-  fill: #bc13fe !important;
+  fill: var(--primary) !important;
   stroke: none !important;
 }
 
@@ -484,8 +597,8 @@ textarea:focus-visible,
 }
 
 .flowchart-node:hover {
-  border-color: rgba(188, 19, 254, 0.4);
-  box-shadow: 0 0 8px rgba(188, 19, 254, 0.2);
+  border-color: rgba(var(--primary-rgb), 0.4);
+  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.2);
 }
 
 .flowchart-node-rect {
@@ -663,7 +776,7 @@ textarea:focus-visible,
 }
 
 .cm-panel.cm-panel-lint ul [aria-selected] {
-  background: rgba(188, 19, 254, 0.1);
+  background: rgba(var(--primary-rgb), 0.1);
 }
 
 .cm-panel.cm-panel-lint button {

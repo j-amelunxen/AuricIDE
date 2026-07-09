@@ -71,4 +71,24 @@ describe('ActivityBar', () => {
     expect(toggle).toHaveClass('transition-colors');
     expect(toggle).not.toHaveClass('transition-all');
   });
+
+  it('renders a fast in-app tooltip label for each item instead of the slow native title', () => {
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    // Custom tooltip carries the label...
+    const tip = screen.getByTestId('activity-tooltip-extensions');
+    expect(tip).toHaveTextContent('Extensions');
+    expect(tip).toHaveAttribute('role', 'tooltip');
+    // ...and the native title (≈1s OS delay, unstyled) is gone.
+    expect(screen.getByTestId('activity-item-extensions')).not.toHaveAttribute('title');
+  });
+
+  it('gives activity items a snappy press-and-hover feedback', () => {
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    const item = screen.getByTestId('activity-item-extensions');
+    // Instant, color-scoped hover (no sluggish 300ms transition-all)
+    expect(item).toHaveClass('transition-colors');
+    expect(item).not.toHaveClass('transition-all');
+    // Tactile pressed state
+    expect(item.className).toMatch(/active:scale-/);
+  });
 });

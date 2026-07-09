@@ -289,7 +289,7 @@ function BlueprintsGalleryContent() {
                         onClick={() => setSelectedBlueprintId(isSelected ? null : bp.id)}
                         className={`text-left rounded-xl border p-3 transition-all ${
                           isSelected
-                            ? 'bg-primary/10 border-primary/30 shadow-[0_0_12px_rgba(188,19,254,0.1)]'
+                            ? 'bg-primary/10 border-primary/30 shadow-[0_0_12px_rgba(var(--primary-rgb),0.1)]'
                             : 'bg-white/2 border-white/8 hover:bg-white/5 hover:border-white/15'
                         }`}
                       >

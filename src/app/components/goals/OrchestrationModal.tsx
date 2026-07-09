@@ -57,7 +57,7 @@ function OrchestrationModalContent() {
     () =>
       edges.map((e) => ({
         ...e,
-        style: { stroke: e.animated ? '#bc13fe' : 'rgba(255,255,255,0.25)' },
+        style: { stroke: e.animated ? 'var(--primary)' : 'rgba(255,255,255,0.25)' },
       })),
     [edges]
   );

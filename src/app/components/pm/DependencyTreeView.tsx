@@ -21,6 +21,7 @@ import { EpicNode, TicketNode } from './PmNodes';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { buildTicketStatusPriorityPowerOptions } from './ticketContextMenu';
 import { calculateHeat } from '@/lib/pm/heat';
+import { accentColor } from '@/lib/theme/accent';
 
 const nodeTypes = {
   epic: EpicNode,
@@ -153,8 +154,8 @@ export function DependencyTreeView({
       target: dep.targetId,
       label: 'depends on',
       labelStyle: { fill: '#888', fontSize: 10 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#bc13fe' },
-      style: { stroke: '#bc13fe' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: accentColor() },
+      style: { stroke: 'var(--primary)' },
     }));
 
     const containmentEdges = tickets.map((ticket) => ({
@@ -162,7 +163,7 @@ export function DependencyTreeView({
       source: ticket.epicId,
       target: ticket.id,
       animated: true,
-      style: { stroke: 'rgba(188, 19, 254, 0.3)', strokeDasharray: '5,5' },
+      style: { stroke: 'rgba(var(--primary-rgb), 0.3)', strokeDasharray: '5,5' },
     }));
 
     return [...depEdges, ...containmentEdges];

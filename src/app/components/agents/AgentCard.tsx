@@ -54,10 +54,10 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
 
   // Card border + glow varies by agent activity state
   const cardGlowClass = isLive
-    ? 'border-primary/50 shadow-[0_0_35px_rgba(188,19,254,0.25),0_0_70px_rgba(188,19,254,0.08)] hover:shadow-[0_0_45px_rgba(188,19,254,0.35)]'
+    ? 'border-primary/50 shadow-[0_0_35px_rgba(var(--primary-rgb),0.25),0_0_70px_rgba(var(--primary-rgb),0.08)] hover:shadow-[0_0_45px_rgba(var(--primary-rgb),0.35)]'
     : isIdling
       ? 'border-amber-500/25 hover:border-amber-500/40 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]'
-      : 'hover:border-primary/30 hover:shadow-[0_0_20px_rgba(188,19,254,0.1)]';
+      : 'hover:border-primary/30 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]';
 
   return (
     <div

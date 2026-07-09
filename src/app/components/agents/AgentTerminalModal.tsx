@@ -6,6 +6,7 @@ import { attachAgentStream } from '@/lib/terminal/agentStream';
 import { ContextMenu } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { accentColor, accentRgb } from '@/lib/theme/accent';
 
 interface AgentXtermProps {
   agentId: string;
@@ -38,8 +39,8 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         theme: {
           background: '#050510',
           foreground: '#ffffff',
-          cursor: '#bc13fe',
-          selectionBackground: 'rgba(188, 19, 254, 0.4)',
+          cursor: accentColor(),
+          selectionBackground: `rgba(${accentRgb()}, 0.4)`,
           black: '#000000',
           red: '#ff5555',
           green: '#50fa7b',

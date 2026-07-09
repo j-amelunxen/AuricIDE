@@ -23,6 +23,25 @@ const iconMap: Record<string, string> = {
   hub: 'hub',
 };
 
+/**
+ * Fast, on-brand hover label. Replaces the native `title` tooltip (≈1s OS
+ * delay, unstyled) so an icon-only rail stays discoverable and consistent
+ * with the rest of the polish (Apple HIG §16 wayfinding). Purely visual —
+ * assistive tech reads the button's `aria-label`, so this is aria-hidden.
+ */
+function ActivityTooltip({ id, label }: { id: string; label: string }) {
+  return (
+    <span
+      role="tooltip"
+      aria-hidden="true"
+      data-testid={`activity-tooltip-${id}`}
+      className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-white/10 bg-[rgba(10,10,16,0.92)] px-2 py-1 text-xs font-medium text-foreground opacity-0 shadow-lg backdrop-blur-md transition-[opacity,transform] duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
+
 export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: ActivityBarProps) {
   return (
     <nav
@@ -37,9 +56,8 @@ export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: Act
               key={item.id}
               data-testid={`activity-item-${item.id}`}
               onClick={() => onSelect(item.id)}
-              title={item.label}
               aria-label={item.label}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition duration-300 ${
+              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-150 active:scale-95 ${
                 isActive
                   ? 'bg-primary/10 text-primary neon-glow'
                   : 'text-foreground-muted hover:bg-white/5 hover:text-foreground'
@@ -47,7 +65,7 @@ export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: Act
             >
               <span
                 aria-hidden="true"
-                className={`material-symbols-outlined text-xl transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}
+                className={`material-symbols-outlined text-xl transition-transform duration-150 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}
               >
                 {iconMap[item.icon] || item.icon}
               </span>
@@ -65,6 +83,8 @@ export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: Act
                   {item.badge}
                 </span>
               )}
+
+              <ActivityTooltip id={item.id} label={item.label} />
             </button>
           );
         })}
@@ -73,16 +93,16 @@ export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: Act
       {/* Terminal Toggle at the bottom */}
       <button
         onClick={onTerminalToggle}
-        title="Toggle Terminal (⌘J)"
         aria-label="Toggle Terminal (⌘J)"
-        className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-300 hover:bg-white/5 hover:text-foreground"
+        className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
       >
         <span
           aria-hidden="true"
-          className="material-symbols-outlined text-xl group-hover:scale-110"
+          className="material-symbols-outlined text-xl transition-transform duration-150 group-hover:scale-110"
         >
           terminal
         </span>
+        <ActivityTooltip id="terminal" label="Toggle Terminal (⌘J)" />
       </button>
     </nav>
   );

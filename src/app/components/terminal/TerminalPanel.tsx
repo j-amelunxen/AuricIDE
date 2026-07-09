@@ -91,7 +91,7 @@ export function TerminalPanel({
                 }}
                 className={`group flex items-center gap-2 px-4 h-[85%] text-[10px] font-black uppercase tracking-[0.1em] transition-all duration-300 whitespace-nowrap rounded-t-lg border-x border-t ${
                   isActive
-                    ? 'bg-primary/20 text-white border-primary/40 shadow-[0_0_15px_rgba(188,19,254,0.2)] z-10'
+                    ? 'bg-primary/20 text-white border-primary/40 shadow-[0_0_15px_rgba(var(--primary-rgb),0.2)] z-10'
                     : 'bg-black/40 text-foreground-muted border-white/5 hover:bg-white/5 hover:text-foreground'
                 }`}
               >

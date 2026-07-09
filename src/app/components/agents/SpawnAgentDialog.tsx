@@ -354,7 +354,7 @@ function SpawnAgentDialogPanel({
               type="button"
               disabled={!task.trim()}
               onClick={handleDeploy}
-              className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(188,19,254,0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
+              className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
             >
               Start Agent
             </button>

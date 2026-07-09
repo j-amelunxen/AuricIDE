@@ -13,6 +13,7 @@ import '@xyflow/react/dist/style.css';
 import { useStore } from '@/lib/store';
 import { layoutLinkGraph } from '@/lib/graph/linkGraphLayout';
 import { LinkGraphNode } from './LinkGraphNode';
+import { accentColor } from '@/lib/theme/accent';
 
 const nodeTypes: NodeTypes = {
   // XYFlow requires NodeTypes to accept generic node props
@@ -133,7 +134,7 @@ export function LinkGraphView({ onFileSelect, hideFullscreen }: LinkGraphViewPro
           <MiniMap
             nodeColor={(node) => {
               if (node.data?.isBroken) return '#ff4a4a';
-              if (node.data?.isActive) return '#bc13fe';
+              if (node.data?.isActive) return accentColor();
               return '#2a3b4d';
             }}
             maskColor="rgba(0, 0, 0, 0.7)"

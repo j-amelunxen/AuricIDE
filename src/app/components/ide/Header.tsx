@@ -34,7 +34,7 @@ export function Header({
   return (
     <header
       data-testid="header"
-      className={`glass flex items-center justify-between px-4 z-10 transition-all duration-300 ${baseHeight}`}
+      className={`glass flex items-center justify-between px-4 z-10 transition-[height] duration-300 ${baseHeight}`}
     >
       {/* Left: Brand & Breadcrumbs */}
       <div className="flex flex-col justify-center gap-0.5">
@@ -49,7 +49,7 @@ export function Header({
                 alt="Auric Logo"
                 width={24}
                 height={24}
-                className="drop-shadow-[0_0_5px_rgba(188,19,254,0.5)]"
+                className="drop-shadow-[0_0_5px_rgba(var(--primary-rgb),0.5)]"
               />
             </div>
             <div className="flex flex-col leading-none">
@@ -81,7 +81,7 @@ export function Header({
                     </span>
                   )}
                   <span
-                    className={`${i === breadcrumbs.length - 1 ? 'text-primary-light drop-shadow-[0_0_8px_rgba(214,106,255,0.3)]' : 'hover:text-foreground transition-colors'}`}
+                    className={`${i === breadcrumbs.length - 1 ? 'text-primary-light drop-shadow-[0_0_8px_rgba(var(--primary-light-rgb),0.3)]' : 'hover:text-foreground transition-colors'}`}
                   >
                     {crumb}
                   </span>
@@ -114,7 +114,7 @@ export function Header({
                 )}
                 <button
                   onClick={() => onHeadingBreadcrumbClick?.(crumb.lineNumber)}
-                  className={`hover:text-foreground transition-colors cursor-pointer ${i === headingBreadcrumbs.length - 1 ? 'text-primary-light drop-shadow-[0_0_8px_rgba(214,106,255,0.3)]' : ''}`}
+                  className={`hover:text-foreground transition-colors cursor-pointer ${i === headingBreadcrumbs.length - 1 ? 'text-primary-light drop-shadow-[0_0_8px_rgba(var(--primary-light-rgb),0.3)]' : ''}`}
                 >
                   {crumb.title}
                 </button>
@@ -129,7 +129,7 @@ export function Header({
         <button
           data-testid="command-palette-trigger"
           onClick={onCommandPalette}
-          className="group flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 px-3 py-1.5 text-xs text-foreground-muted transition-all hover:border-primary/30 hover:bg-white/10 hover:text-foreground hover:shadow-[0_0_15px_rgba(188,19,254,0.15)]"
+          className="group flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 px-3 py-1.5 text-xs text-foreground-muted transition-[background-color,border-color,color,box-shadow] duration-150 hover:border-primary/30 hover:bg-white/10 hover:text-foreground hover:shadow-[0_0_15px_rgba(var(--primary-rgb),0.15)] active:scale-[0.98]"
         >
           <span
             aria-hidden="true"

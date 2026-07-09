@@ -23,7 +23,7 @@ function LinkGraphNodeBase({ data }: LinkGraphNodeProps) {
   return (
     <div
       data-testid="link-graph-node"
-      className={`rounded-lg bg-[#16202c] border px-4 py-2 font-mono text-xs text-[#e2e8f0] cursor-pointer transition duration-150 hover:border-primary/40 hover:shadow-[0_0_8px_rgba(188,19,254,0.2)] ${borderClass} ${extraClass}`}
+      className={`rounded-lg bg-[#16202c] border px-4 py-2 font-mono text-xs text-[#e2e8f0] cursor-pointer transition duration-150 hover:border-primary/40 hover:shadow-[0_0_8px_rgba(var(--primary-rgb),0.2)] ${borderClass} ${extraClass}`}
       style={{ minWidth: 100 }}
     >
       <Handle

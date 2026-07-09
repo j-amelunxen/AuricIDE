@@ -12,16 +12,16 @@ export const auricTheme = EditorView.theme(
       textRendering: 'optimizeLegibility',
     },
     '.cm-content': {
-      caretColor: '#bc13fe',
+      caretColor: 'var(--primary)',
       padding: '12px 0',
     },
     '.cm-cursor, .cm-dropCursor': {
-      borderLeftColor: '#bc13fe',
+      borderLeftColor: 'var(--primary)',
       borderLeftWidth: '2px',
-      boxShadow: '0 0 8px rgba(188, 19, 254, 0.6)',
+      boxShadow: '0 0 8px rgba(var(--primary-rgb), 0.6)',
     },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: 'rgba(188, 19, 254, 0.25)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.25)',
     },
     '.cm-activeLine': {
       backgroundColor: 'rgba(255, 255, 255, 0.03)',
@@ -33,15 +33,15 @@ export const auricTheme = EditorView.theme(
     },
     '.cm-activeLineGutter': {
       backgroundColor: 'rgba(255, 255, 255, 0.05)',
-      color: '#bc13fe',
+      color: 'var(--primary)',
     },
     '.cm-lineNumbers .cm-gutterElement': {
       padding: '0 12px 0 16px',
       minWidth: '44px',
     },
     '.cm-foldPlaceholder': {
-      backgroundColor: 'rgba(188, 19, 254, 0.1)',
-      border: '1px solid rgba(188, 19, 254, 0.2)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.1)',
+      border: '1px solid rgba(var(--primary-rgb), 0.2)',
       color: '#94a3b8',
     },
     '.cm-foldGutter .cm-gutterElement': {
@@ -51,7 +51,7 @@ export const auricTheme = EditorView.theme(
       transition: 'color 0.15s',
     },
     '.cm-foldGutter .cm-gutterElement:hover': {
-      color: '#bc13fe',
+      color: 'var(--primary)',
     },
     '.cm-tooltip': {
       backgroundColor: '#0a0a10',
@@ -60,7 +60,7 @@ export const auricTheme = EditorView.theme(
       backdropFilter: 'blur(8px)',
     },
     '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {
-      backgroundColor: 'rgba(188, 19, 254, 0.2)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.2)',
     },
     '.cm-slash-option': {
       display: 'flex',
@@ -85,11 +85,11 @@ export const auricTheme = EditorView.theme(
       padding: '0 4px',
     },
     '.cm-blockquote': {
-      borderLeft: '3px solid #bc13fe',
+      borderLeft: '3px solid var(--primary)',
       paddingLeft: '12px',
       color: '#94a3b8',
       fontStyle: 'italic',
-      backgroundColor: 'rgba(188, 19, 254, 0.03)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.03)',
       margin: '4px 0',
     },
     '.cm-codeBlock': {
@@ -106,7 +106,7 @@ export const auricTheme = EditorView.theme(
       borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
     },
     '.cm-panels.cm-panels-top': {
-      borderBottom: '1px solid rgba(188, 19, 254, 0.2)',
+      borderBottom: '1px solid rgba(var(--primary-rgb), 0.2)',
     },
     '.cm-search': {
       padding: '6px 12px',
@@ -130,12 +130,12 @@ export const auricTheme = EditorView.theme(
       outline: 'none',
     },
     '.cm-search input:focus': {
-      borderColor: 'rgba(188, 19, 254, 0.5)',
-      boxShadow: '0 0 6px rgba(188, 19, 254, 0.2)',
+      borderColor: 'rgba(var(--primary-rgb), 0.5)',
+      boxShadow: '0 0 6px rgba(var(--primary-rgb), 0.2)',
     },
     '.cm-button': {
-      backgroundColor: 'rgba(188, 19, 254, 0.1)',
-      border: '1px solid rgba(188, 19, 254, 0.2)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.1)',
+      border: '1px solid rgba(var(--primary-rgb), 0.2)',
       borderRadius: '4px',
       color: '#c084fc',
       padding: '2px 8px',
@@ -143,14 +143,14 @@ export const auricTheme = EditorView.theme(
       cursor: 'pointer',
     },
     '.cm-button:hover': {
-      backgroundColor: 'rgba(188, 19, 254, 0.2)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.2)',
     },
     '.cm-searchMatch': {
-      backgroundColor: 'rgba(188, 19, 254, 0.25)',
-      outline: '1px solid rgba(188, 19, 254, 0.4)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.25)',
+      outline: '1px solid rgba(var(--primary-rgb), 0.4)',
     },
     '.cm-searchMatch-selected': {
-      backgroundColor: 'rgba(188, 19, 254, 0.45)',
+      backgroundColor: 'rgba(var(--primary-rgb), 0.45)',
     },
     '.cm-selectionMatch': {
       backgroundColor: 'rgba(255, 255, 255, 0.08)',
@@ -167,7 +167,11 @@ export const auricHighlightStyle = syntaxHighlighting(
       color: '#c084fc',
       fontWeight: 'bold',
     },
-    { tag: [tags.controlKeyword, tags.moduleKeyword], color: '#d66aff', fontWeight: 'bold' },
+    {
+      tag: [tags.controlKeyword, tags.moduleKeyword],
+      color: 'var(--primary-light)',
+      fontWeight: 'bold',
+    },
 
     // Comments
     { tag: tags.comment, color: '#6a7c8f', fontStyle: 'italic' },
@@ -191,12 +195,16 @@ export const auricHighlightStyle = syntaxHighlighting(
     // Markdown specific
     {
       tag: tags.heading,
-      color: '#bc13fe',
+      color: 'var(--primary)',
       fontWeight: 'bold',
-      textShadow: '0 0 10px rgba(188, 19, 254, 0.3)',
+      textShadow: '0 0 10px rgba(var(--primary-rgb), 0.3)',
     },
-    { tag: tags.heading1, fontSize: '1.6em', borderBottom: '1px solid rgba(188, 19, 254, 0.2)' },
-    { tag: tags.heading2, fontSize: '1.4em', color: '#d66aff' },
+    {
+      tag: tags.heading1,
+      fontSize: '1.6em',
+      borderBottom: '1px solid rgba(var(--primary-rgb), 0.2)',
+    },
+    { tag: tags.heading2, fontSize: '1.4em', color: 'var(--primary-light)' },
     { tag: tags.heading3, fontSize: '1.2em', color: '#e086ff' },
     { tag: tags.emphasis, fontStyle: 'italic', color: '#93c5fd' },
     {
@@ -210,7 +218,7 @@ export const auricHighlightStyle = syntaxHighlighting(
     { tag: tags.strikethrough, textDecoration: 'line-through', opacity: 0.5 },
 
     // Markdown structure
-    { tag: tags.list, color: '#bc13fe', fontWeight: 'bold' },
+    { tag: tags.list, color: 'var(--primary)', fontWeight: 'bold' },
     { tag: tags.quote, color: '#94a3b8', fontStyle: 'italic' },
     {
       tag: tags.monospace,
@@ -221,10 +229,10 @@ export const auricHighlightStyle = syntaxHighlighting(
       border: '1px solid rgba(0, 240, 255, 0.2)',
     },
     { tag: tags.meta, color: '#6a7c8f' },
-    { tag: tags.contentSeparator, color: '#bc13fe', fontWeight: 'bold' },
+    { tag: tags.contentSeparator, color: 'var(--primary)', fontWeight: 'bold' },
 
     // Web / XML
-    { tag: tags.tagName, color: '#bc13fe' },
+    { tag: tags.tagName, color: 'var(--primary)' },
     { tag: tags.attributeName, color: '#93c5fd' },
     { tag: tags.attributeValue, color: '#86efac' },
 

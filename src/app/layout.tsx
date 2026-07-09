@@ -26,6 +26,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className="dark">
       <head>
         <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+        {/* Apply the saved accent before paint so there's no purple flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var a=localStorage.getItem('auric.accent');if(a)document.documentElement.setAttribute('data-accent',a)}catch(e){}",
+          }}
+        />
       </head>
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} subpixel-antialiased`}>
         <GlobalErrorHandlers />

@@ -46,7 +46,7 @@ export function CanvasView({ nodes, edges, onNodesChange, onNodeSelect }: Canvas
         source: edge.source,
         target: edge.target,
         animated: true,
-        style: { stroke: '#bc13fe' }, // Auric purple for edges
+        style: { stroke: 'var(--primary)' }, // Auric purple for edges
       })),
     [edges]
   );

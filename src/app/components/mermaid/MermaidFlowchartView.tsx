@@ -108,7 +108,7 @@ function FlowchartFullscreen({
 }
 
 function edgeStyleProps(style: EdgeStyle) {
-  const base = { stroke: '#bc13fe' };
+  const base = { stroke: 'var(--primary)' };
   switch (style) {
     case 'arrow':
       return { animated: true, style: base };

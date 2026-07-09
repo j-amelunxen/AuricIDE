@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, memo } from 'react';
+import { useMemo, useState, memo } from 'react';
 import { ActivityBar } from './components/ide/ActivityBar';
 import { Header } from './components/ide/Header';
 import { IDEShell } from './components/ide/IDEShell';
@@ -31,6 +31,7 @@ import { TicketCreateModal } from './components/pm/TicketCreateModal';
 import { RequirementsModal } from './components/requirements/RequirementsModal';
 import { GoalsModal } from './components/goals/GoalsModal';
 import { OrchestrationModal } from './components/goals/OrchestrationModal';
+import { NewProjectModal, type NewProjectOptions } from './components/ide/NewProjectModal';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
@@ -94,6 +95,12 @@ export default function Home() {
   const state = useIDEState();
   const handlers = useIDEHandlers(state);
   useIDEActions(state, handlers);
+
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const handleCreateProject = async (options: NewProjectOptions) => {
+    await handlers.handleNewProject(options);
+    setNewProjectOpen(false);
+  };
 
   const leftPanelContent = useMemo(() => {
     switch (state.activeActivity) {
@@ -222,6 +229,11 @@ export default function Home() {
       <RequirementsModal />
       <GoalsModal />
       <OrchestrationModal />
+      <NewProjectModal
+        isOpen={newProjectOpen}
+        onCreate={handleCreateProject}
+        onClose={() => setNewProjectOpen(false)}
+      />
       <IDEShell
         bottomCollapsed={state.bottomCollapsed}
         onBottomToggle={state.setBottomCollapsed}
@@ -319,15 +331,25 @@ export default function Home() {
                     AURIC
                     <span className="text-primary-light font-thin tracking-widest ml-2">IDE</span>
                   </h1>
-                  <p className="mt-4 text-sm text-foreground-muted uppercase tracking-[0.3em] font-medium opacity-70">
+                  <p className="mt-4 text-sm text-foreground-muted uppercase tracking-[0.3em] font-medium">
                     AI-native Development
                   </p>
-                  <button
-                    onClick={handlers.handleOpenFolder}
-                    className="mt-10 rounded-xl bg-primary/10 border border-primary/20 px-8 py-3 text-sm font-bold text-primary-light transition-all hover:bg-primary/20 hover:shadow-[0_0_30px_rgba(188,19,254,0.2)]"
-                  >
-                    Open Project Folder
-                  </button>
+                  <div className="mt-10 flex items-center justify-center gap-3">
+                    <button
+                      onClick={handlers.handleOpenFolder}
+                      className="rounded-xl bg-primary/10 border border-primary/20 px-8 py-3 text-sm font-bold text-primary-light transition-[background-color,box-shadow] duration-150 hover:bg-primary/20 hover:shadow-[0_0_30px_rgba(var(--primary-rgb),0.2)] active:scale-[0.98]"
+                    >
+                      Open Project Folder
+                    </button>
+                    <button
+                      onClick={() => setNewProjectOpen(true)}
+                      data-testid="new-project-button"
+                      className="flex items-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm font-bold text-foreground transition-[background-color,border-color] duration-150 hover:bg-white/5 hover:border-white/20 active:scale-[0.98]"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">add</span>
+                      New
+                    </button>
+                  </div>
                   {state.recentProjects.length > 0 && (
                     <div className="mt-8 w-80 mx-auto text-left" data-testid="recent-projects">
                       <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted mb-3">

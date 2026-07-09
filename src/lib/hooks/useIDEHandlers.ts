@@ -16,8 +16,14 @@ import {
   writeFile,
   openFolderDialog,
   readDirectory,
+  createDirectory,
   type FileEntry,
 } from '@/lib/tauri/fs';
+import {
+  joinProjectPath,
+  scaffoldProjectFiles,
+  type NewProjectOptions,
+} from '@/lib/project/newProject';
 import { type AgentConfig } from '@/lib/tauri/agents';
 import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -211,6 +217,28 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       state.addRecentProject(path);
       state.initProjectDb(path);
       const entries = await handleRefresh(path, true);
+      if (entries) openReadmeIfExists(entries);
+    },
+    [state, clearProjectState, handleRefresh, openReadmeIfExists]
+  );
+
+  const handleNewProject = useCallback(
+    async ({ name, parentDir, template }: NewProjectOptions) => {
+      const projectDir = joinProjectPath(parentDir, name);
+      const files = scaffoldProjectFiles(projectDir, name, template);
+      // Create the project directory (recursive) before writing scaffold files.
+      await createDirectory(projectDir);
+      for (const file of files) {
+        // Ensure the file's parent directory exists (templates may nest).
+        const parent = file.path.replace(/[\\/][^\\/]+$/, '');
+        if (parent && parent !== projectDir) await createDirectory(parent);
+        await writeFile(file.path, file.content);
+      }
+      clearProjectState();
+      state.setRootPath(projectDir);
+      state.addRecentProject(projectDir);
+      state.initProjectDb(projectDir);
+      const entries = await handleRefresh(projectDir, true);
       if (entries) openReadmeIfExists(entries);
     },
     [state, clearProjectState, handleRefresh, openReadmeIfExists]
@@ -856,6 +884,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleNewFile,
     handleOpenFolder,
     handleOpenRecent,
+    handleNewProject,
     handleSave,
     handleEditorChange,
     handleSelectionSpawn,
