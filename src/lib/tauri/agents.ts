@@ -12,7 +12,7 @@ export interface AgentInfo {
   spawnedByGoalId?: string;
 }
 
-export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan' | 'default';
+export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan' | 'auto' | 'default';
 
 import { invoke } from './invoke';
 

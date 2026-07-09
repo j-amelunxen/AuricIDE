@@ -460,7 +460,8 @@ mod tests {
             { "type": "model", "flag": "--model", "ignoreIfAuto": true },
             { "type": "headless", "flag": "-p" },
             { "type": "task", "quote": true },
-            { "type": "permission", "map": { 
+            { "type": "permission", "map": {
+                "auto": "--permission-mode auto",
                 "bypassPermissions": "--permission-mode bypassPermissions",
                 "acceptEdits": "--permission-mode acceptEdits",
                 "plan": "--permission-mode plan"
@@ -505,6 +506,18 @@ mod tests {
             cmd.command,
             "claude --model sonnet \"task\" --permission-mode plan"
         );
+    }
+
+    #[test]
+    fn test_dynamic_claude_auto_permission_mode() {
+        let provider = DynamicProvider::new(get_claude_config());
+        // Claude Code's explicit auto mode is distinct from bypassPermissions.
+        let cmd = provider.build_spawn_command("sonnet", "task", Some("auto"), false, false, false);
+        assert_eq!(
+            cmd.command,
+            "claude --model sonnet \"task\" --permission-mode auto"
+        );
+        assert!(!cmd.command.contains("bypassPermissions"));
     }
 
     // ── Dynamic Provider Tests (Gemini Emulation) ─────────────────────
