@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tauri::Manager;
 
 // ── Serializable types for the frontend ──────────────────────────────
@@ -334,8 +334,12 @@ impl AgentProvider for CrushProvider {
 // ── ProviderRegistry ────────────────────────────────────────────────
 
 pub struct ProviderRegistry {
-    providers: HashMap<String, Arc<dyn AgentProvider>>,
-    default_id: String,
+    // Interior mutability so providers can be imported at runtime (the packaged
+    // app ships without dynamic-providers/, so users bring their own configs).
+    providers: RwLock<HashMap<String, Arc<dyn AgentProvider>>>,
+    default_id: RwLock<String>,
+    /// Where imported configs are persisted (app_data_dir/dynamic-providers).
+    import_dir: Option<PathBuf>,
 }
 
 impl ProviderRegistry {
@@ -406,34 +410,80 @@ impl ProviderRegistry {
             "crush".to_string()
         };
 
+        let import_dir = app.and_then(|a| {
+            a.path()
+                .app_data_dir()
+                .ok()
+                .map(|d| d.join("dynamic-providers"))
+        });
+
         Self {
-            providers,
-            default_id,
+            providers: RwLock::new(providers),
+            default_id: RwLock::new(default_id),
+            import_dir,
         }
     }
 
-    pub fn get(&self, id: &str) -> Option<&Arc<dyn AgentProvider>> {
-        self.providers.get(id)
+    pub fn get(&self, id: &str) -> Option<Arc<dyn AgentProvider>> {
+        self.providers.read().unwrap().get(id).cloned()
     }
 
-    pub fn default_provider(&self) -> &Arc<dyn AgentProvider> {
-        self.providers
-            .get(&self.default_id)
-            .expect("default provider must exist")
+    pub fn default_provider(&self) -> Arc<dyn AgentProvider> {
+        let default_id = self.default_id.read().unwrap().clone();
+        let providers = self.providers.read().unwrap();
+        providers
+            .get(&default_id)
+            .or_else(|| providers.values().next())
+            .expect("registry always has at least the crush provider")
+            .clone()
     }
 
     pub fn list_providers(&self) -> Vec<ProviderInfo> {
-        let mut infos: Vec<ProviderInfo> = self.providers.values().map(|p| p.info()).collect();
+        let default_id = self.default_id.read().unwrap().clone();
+        let providers = self.providers.read().unwrap();
+        let mut infos: Vec<ProviderInfo> = providers.values().map(|p| p.info()).collect();
         infos.sort_by(|a, b| {
-            if a.id == self.default_id {
+            if a.id == default_id {
                 std::cmp::Ordering::Less
-            } else if b.id == self.default_id {
+            } else if b.id == default_id {
                 std::cmp::Ordering::Greater
             } else {
                 a.id.cmp(&b.id)
             }
         });
         infos
+    }
+
+    /// Import a dynamic provider config at runtime: validate JSON, persist it to
+    /// the import dir, and register it live. Returns the imported provider's info.
+    pub fn import_provider(&self, json: &str) -> Result<ProviderInfo, String> {
+        let config: ProviderConfig =
+            serde_json::from_str(json).map_err(|e| format!("Invalid provider config: {}", e))?;
+        let id = config.id.trim().to_string();
+        if id.is_empty() {
+            return Err("Provider config is missing an \"id\"".to_string());
+        }
+        if id == "crush" {
+            return Err(
+                "\"crush\" is a built-in provider id and cannot be overwritten".to_string(),
+            );
+        }
+
+        // Persist so the import survives a restart.
+        if let Some(dir) = &self.import_dir {
+            fs::create_dir_all(dir).map_err(|e| format!("Could not create provider dir: {}", e))?;
+            fs::write(dir.join(format!("{}.json", id)), json)
+                .map_err(|e| format!("Could not save provider: {}", e))?;
+        }
+
+        let provider = Arc::new(DynamicProvider::new(config));
+        let info = provider.info();
+        self.providers.write().unwrap().insert(id.clone(), provider);
+        // A freshly-imported claude becomes the default (matches startup logic).
+        if id == "claude" {
+            *self.default_id.write().unwrap() = "claude".to_string();
+        }
+        Ok(info)
     }
 }
 
@@ -506,6 +556,54 @@ mod tests {
             cmd.command,
             "claude --model sonnet \"task\" --permission-mode plan"
         );
+    }
+
+    fn empty_registry() -> ProviderRegistry {
+        let mut providers: HashMap<String, Arc<dyn AgentProvider>> = HashMap::new();
+        providers.insert("crush".to_string(), Arc::new(CrushProvider));
+        ProviderRegistry {
+            providers: RwLock::new(providers),
+            default_id: RwLock::new("crush".to_string()),
+            import_dir: None, // no persistence in tests
+        }
+    }
+
+    #[test]
+    fn test_import_provider_registers_and_lists_it() {
+        let registry = empty_registry();
+        assert!(registry.get("claude").is_none());
+
+        let json = r#"{
+            "id": "claude", "name": "Claude Code", "executable": "claude",
+            "arguments": [{ "type": "task", "quote": true }],
+            "info": { "models": [], "permissionModes": [], "defaultModel": "sonnet", "defaultPermissionMode": "acceptEdits" },
+            "versionCheck": { "command": "claude", "args": ["--version"] },
+            "promptTemplate": "claude -p \""
+        }"#;
+        let info = registry.import_provider(json).unwrap();
+
+        assert_eq!(info.id, "claude");
+        assert!(registry.get("claude").is_some());
+        assert!(registry.list_providers().iter().any(|p| p.id == "claude"));
+        // A freshly-imported claude becomes the default.
+        assert_eq!(registry.default_provider().info().id, "claude");
+    }
+
+    #[test]
+    fn test_import_provider_rejects_invalid_json() {
+        let registry = empty_registry();
+        let err = registry.import_provider("{ not valid").unwrap_err();
+        assert!(err.contains("Invalid provider config"));
+    }
+
+    #[test]
+    fn test_import_provider_rejects_crush_id() {
+        let registry = empty_registry();
+        let json = r#"{"id":"crush","name":"x","executable":"x","arguments":[],
+            "info":{"models":[],"permissionModes":[],"defaultModel":"","defaultPermissionMode":""},
+            "versionCheck":{"command":"x","args":[]},"promptTemplate":""}"#;
+        let err = registry.import_provider(json).unwrap_err();
+        assert!(err.contains("crush"));
     }
 
     #[test]

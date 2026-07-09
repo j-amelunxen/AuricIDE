@@ -1206,6 +1206,14 @@ fn list_providers(state: tauri::State<'_, ProviderRegistryState>) -> Vec<provide
 }
 
 #[tauri::command]
+fn import_provider(
+    json: String,
+    state: tauri::State<'_, ProviderRegistryState>,
+) -> Result<providers::ProviderInfo, String> {
+    state.import_provider(&json)
+}
+
+#[tauri::command]
 fn get_prompt_template(
     provider_id: Option<String>,
     state: tauri::State<'_, ProviderRegistryState>,
@@ -1652,6 +1660,7 @@ pub fn run() {
             kill_agent,
             kill_agents_for_repo,
             list_providers,
+            import_provider,
             get_prompt_template,
             get_system_memory,
             init_project_db,

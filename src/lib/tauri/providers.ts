@@ -24,6 +24,11 @@ export async function listProviders(): Promise<ProviderInfo[]> {
   return await invoke<ProviderInfo[]>('list_providers');
 }
 
+/** Import a dynamic provider config (JSON) at runtime; returns the imported provider. */
+export async function importProvider(json: string): Promise<ProviderInfo> {
+  return await invoke<ProviderInfo>('import_provider', { json });
+}
+
 export async function getPromptTemplate(providerId?: string): Promise<string> {
   const result = await invoke<{ template: string }>('get_prompt_template', {
     providerId: providerId ?? null,

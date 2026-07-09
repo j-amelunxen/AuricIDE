@@ -6,14 +6,35 @@ import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
 import { GUIDANCE } from '@/lib/ui/descriptions';
+import { importProvider, listProviders } from '@/lib/tauri/providers';
 
 export function AgentContent() {
   const agentSettings = useStore((s) => s.agentSettings);
   const updateAgentSettings = useStore((s) => s.updateAgentSettings);
   const providers = useStore((s) => s.providers);
+  const setProviders = useStore((s) => s.setProviders);
+  const showToast = useStore((s) => s.showToast);
   const branchName = useStore((s) => s.branchInfo?.name ?? '');
 
   const selectedProviderId = agentSettings.commitProviderId || providers[0]?.id;
+
+  const handleImportProvider = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Provider Config', extensions: ['json'] }],
+      });
+      if (!selected || typeof selected !== 'string') return;
+      const { readFile } = await import('@/lib/tauri/fs');
+      const json = await readFile(selected);
+      const imported = await importProvider(json);
+      setProviders(await listProviders());
+      showToast(`Imported agent provider "${imported.name}"`, 'success');
+    } catch (err) {
+      showToast(typeof err === 'string' ? err : 'Could not import provider', 'error');
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -89,6 +110,34 @@ export function AgentContent() {
             </div>
           )}
         </div>
+      </SettingsSection>
+
+      <SettingsSection title="Agent Providers" icon="extension">
+        <p className="text-xs text-foreground-muted leading-relaxed">
+          Agent CLIs (Claude Code, Gemini, …) are configured via dynamic-provider JSON files. Import
+          one to make it available for spawning — useful in the packaged app, which ships without
+          them.
+        </p>
+        <div className="flex flex-wrap gap-1.5" data-testid="provider-list">
+          {providers.map((p) => (
+            <span
+              key={p.id}
+              className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-foreground-muted"
+            >
+              {p.name}
+            </span>
+          ))}
+        </div>
+        <button
+          onClick={handleImportProvider}
+          data-testid="import-provider-button"
+          className="mt-1 flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-bold text-primary-light transition-colors duration-150 hover:bg-primary/20 active:scale-[0.98]"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+            upload_file
+          </span>
+          Import Provider…
+        </button>
       </SettingsSection>
     </div>
   );
