@@ -20,6 +20,7 @@ import { createObsidianCanvasSlice, type ObsidianCanvasSlice } from './obsidianC
 import { createRequirementsSlice, type RequirementsSlice } from './requirementsSlice';
 import { createGoalsSlice, type GoalsSlice } from './goalsSlice';
 import { createConductorSlice, type ConductorSlice } from './conductorSlice';
+import { createToastSlice, type ToastSlice } from './toastSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -41,7 +42,8 @@ export type StoreState = FileTreeSlice &
   ObsidianCanvasSlice &
   RequirementsSlice &
   GoalsSlice &
-  ConductorSlice;
+  ConductorSlice &
+  ToastSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -65,4 +67,5 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createRequirementsSlice(...a),
   ...createGoalsSlice(...a),
   ...createConductorSlice(...a),
+  ...createToastSlice(...a),
 }));

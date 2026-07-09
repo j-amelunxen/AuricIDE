@@ -41,6 +41,8 @@ export function useIDEState() {
   const closeTabsToRight = useStore((s) => s.closeTabsToRight);
   const setActiveTab = useStore((s) => s.setActiveTab);
   const markDirty = useStore((s) => s.markDirty);
+  const renamePath = useStore((s) => s.renamePath);
+  const showToast = useStore((s) => s.showToast);
   const branchInfo = useStore((s) => s.branchInfo);
   const fileStatuses = useStore((s) => s.fileStatuses);
   const commitMessage = useStore((s) => s.commitMessage);
@@ -203,6 +205,8 @@ export function useIDEState() {
     closeTabsToRight,
     setActiveTab,
     markDirty,
+    renamePath,
+    showToast,
     branchInfo,
     fileStatuses,
     commitMessage,

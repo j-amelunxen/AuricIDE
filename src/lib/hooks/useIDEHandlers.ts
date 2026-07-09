@@ -184,13 +184,19 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       try {
         await movePath(sourcePath, destination);
       } catch (err) {
-        // Collision / illegal move — leave the tree untouched.
-        console.error(`Failed to move ${sourcePath} -> ${destination}:`, err);
+        // Collision / illegal move — surface it and leave the tree untouched.
+        const message = typeof err === 'string' ? err : `Could not move "${name}"`;
+        state.showToast(message, 'error');
         return;
+      }
+      // Keep open tabs and the selection pointing at the moved item.
+      state.renamePath(sourcePath, destination);
+      if (state.selectedPath === sourcePath || state.selectedPath?.startsWith(sourcePath + '/')) {
+        state.selectFile(state.selectedPath.replace(sourcePath, destination));
       }
       await handleRefresh();
     },
-    [handleRefresh]
+    [state, handleRefresh]
   );
 
   const openReadmeIfExists = useCallback(

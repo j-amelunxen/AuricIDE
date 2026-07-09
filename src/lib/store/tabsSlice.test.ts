@@ -152,4 +152,38 @@ describe('tabsSlice - diagnostics cleanup on tab close', () => {
     useStore.getState().closeTabsToRight('/a.md');
     expect(useStore.getState().diagnostics.has('/c.md')).toBe(false);
   });
+
+  it('renamePath re-points an open tab (id, path, name, active) when its file moves', () => {
+    useStore.getState().openTab({ id: '/note.md', path: '/note.md', name: 'note.md' });
+    useStore.getState().renamePath('/note.md', '/docs/note.md');
+
+    const state = useStore.getState();
+    expect(state.openTabs).toHaveLength(1);
+    expect(state.openTabs[0]).toMatchObject({
+      id: '/docs/note.md',
+      path: '/docs/note.md',
+      name: 'note.md',
+    });
+    expect(state.activeTabId).toBe('/docs/note.md');
+  });
+
+  it('renamePath follows tabs for files under a moved folder', () => {
+    useStore.getState().openTab({ id: '/src/a.md', path: '/src/a.md', name: 'a.md' });
+    useStore.getState().openTab({ id: '/other.md', path: '/other.md', name: 'other.md' });
+
+    useStore.getState().renamePath('/src', '/lib/src');
+
+    const paths = useStore.getState().openTabs.map((t) => t.path);
+    expect(paths).toContain('/lib/src/a.md');
+    expect(paths).toContain('/other.md'); // unrelated tab untouched
+  });
+
+  it('renamePath drops stale diagnostics keyed by the old path', () => {
+    useStore.getState().openTab({ id: '/note.md', path: '/note.md', name: 'note.md' });
+    useStore.getState().setDiagnostics('/note.md', [sampleDiag]);
+
+    useStore.getState().renamePath('/note.md', '/docs/note.md');
+
+    expect(useStore.getState().diagnostics.has('/note.md')).toBe(false);
+  });
 });

@@ -19,6 +19,7 @@ import { CanvasView } from './components/canvas/CanvasView';
 import { ObsidianCanvasView } from './components/obsidian-canvas/ObsidianCanvasView';
 import { MindmapView } from './components/mindmap/MindmapView';
 import { IDEOverlays } from './components/ide/IDEOverlays';
+import { ToastHost } from './components/ide/ToastHost';
 import { OutlinePanel } from './components/outline/OutlinePanel';
 import { BottomPanelTabs } from './components/ide/BottomPanelTabs';
 import { ProblemsPanel } from './components/problems/ProblemsPanel';
@@ -199,6 +200,7 @@ export default function Home() {
   return (
     <>
       <IDEOverlays {...state} {...handlers} />
+      <ToastHost />
       {state.canvasContextMenu && (
         <ContextMenu
           x={state.canvasContextMenu.x}

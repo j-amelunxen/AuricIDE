@@ -17,6 +17,12 @@ export interface TabsSlice {
   closeTabsToRight: (id: string) => void;
   setActiveTab: (id: string) => void;
   markDirty: (id: string, dirty: boolean) => void;
+  /**
+   * Follow a moved/renamed path: re-point any open tab for `oldPath` (or a file
+   * beneath it, when a folder moved) to its new location so the tab doesn't go
+   * stale. Stale diagnostics under the old path are dropped.
+   */
+  renamePath: (oldPath: string, newPath: string) => void;
 }
 
 // Diagnostics live in a sibling slice (DiagnosticsSlice) but are keyed by
@@ -98,4 +104,31 @@ export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
     set((state) => ({
       openTabs: state.openTabs.map((t) => (t.id === id ? { ...t, isDirty: dirty } : t)),
     })),
+
+  renamePath: (oldPath, newPath) => {
+    const { openTabs, activeTabId } = get();
+    const remap = (p: string): string | null => {
+      if (p === oldPath) return newPath;
+      if (p.startsWith(oldPath + '/')) return newPath + p.slice(oldPath.length);
+      return null;
+    };
+
+    let newActiveId = activeTabId;
+    const staleIds: string[] = [];
+    const nextTabs = openTabs.map((t) => {
+      const mappedPath = remap(t.path);
+      if (mappedPath === null) return t;
+      // Plain file tabs use the path as their id; synthetic tabs (diff:/mindmap)
+      // embed the path, so patch it in place and keep their descriptive name.
+      const isPlain = t.id === t.path;
+      const newId = isPlain ? mappedPath : t.id.replace(t.path, mappedPath);
+      const newName = isPlain ? (mappedPath.split('/').pop() ?? mappedPath) : t.name;
+      if (activeTabId === t.id) newActiveId = newId;
+      if (newId !== t.id) staleIds.push(t.id);
+      return { ...t, id: newId, path: mappedPath, name: newName };
+    });
+
+    set({ openTabs: nextTabs, activeTabId: newActiveId });
+    clearDiagnosticsFor(get, staleIds);
+  },
 });
