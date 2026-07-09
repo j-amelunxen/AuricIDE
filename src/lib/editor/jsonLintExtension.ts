@@ -23,7 +23,8 @@ export function jsonLintSource(view: EditorView): Diagnostic[] {
         column: d.from - view.state.doc.lineAt(d.from).from + 1,
         message: d.message,
         ruleId: d.source ?? 'json',
-        severity: d.severity,
+        // CodeMirror's 'hint' severity has no store equivalent — treat as info.
+        severity: d.severity === 'hint' ? 'info' : d.severity,
       }))
     );
   }

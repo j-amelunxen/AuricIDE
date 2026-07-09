@@ -21,6 +21,7 @@ function makeBlueprint(overrides: Partial<Blueprint> = {}): Blueprint {
     complexity: 'MEDIUM',
     category: 'architectures',
     description: '# Test',
+    spec: '# Spec',
     createdAt: '2026-01-01',
     updatedAt: '2026-01-01',
     ...overrides,

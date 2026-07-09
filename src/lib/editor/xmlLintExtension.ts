@@ -28,7 +28,7 @@ export function parseXmlErrors(text: string): XmlParseError[] {
   const column = colMatch ? parseInt(colMatch[1], 10) : 1;
   const message =
     errorText
-      .replace(/Below is a rendering of the page.*$/s, '')
+      .replace(/Below is a rendering of the page[\s\S]*$/, '')
       .replace(/This page contains the following errors:?\s*/i, '')
       .trim() || 'XML parse error';
 
