@@ -142,6 +142,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         if (useStore.getState().activeTabId !== path) return;
         state.setEditorContent(content);
         state.setImageData(null);
+        state.setPdfData(null);
         if (path.endsWith('.mindmap.md')) {
           const { parseMindmapMarkdown } = await import('@/lib/mindmap/mindmapParser');
           state.setMindmapData(parseMindmapMarkdown(content));
@@ -899,6 +900,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const isWorkflowFile = !!state.activeTabId?.endsWith('.workflow.md');
   const isMindmapTab = !!state.activeTabId?.endsWith('.mindmap.md');
   const isObsidianCanvas = !!state.activeTabId?.endsWith('.canvas');
+  const isHtmlTab = /\.html?$/i.test(state.activeTabId ?? '');
 
   return {
     toFileTreeNodes,
@@ -961,5 +963,6 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     isWorkflowFile,
     isMindmapTab,
     isObsidianCanvas,
+    isHtmlTab,
   };
 }

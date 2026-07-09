@@ -10,6 +10,7 @@ import { TabBar } from './components/editor/TabBar';
 import { MarkdownEditor } from './components/editor/MarkdownEditor';
 import { ImageViewer } from './components/editor/ImageViewer';
 import { PDFViewer } from './components/editor/PDFViewer';
+import { HtmlViewer } from './components/editor/HtmlViewer';
 import { SourceControlPanel } from './components/git/SourceControlPanel';
 import { TerminalPanel } from './components/terminal/TerminalPanel';
 import { AgentsPanel } from './components/agents/AgentsPanel';
@@ -314,6 +315,11 @@ export default function Home() {
                     edges={state.mindmapData.edges}
                     onNodeEdit={handlers.handleMindmapNodeEdit}
                     onNodesChange={handlers.handleMindmapNodesChange}
+                  />
+                ) : handlers.isHtmlTab ? (
+                  <HtmlViewer
+                    content={state.editorContent}
+                    fileName={state.activeTabId.split('/').pop() || ''}
                   />
                 ) : (
                   <MarkdownEditor
