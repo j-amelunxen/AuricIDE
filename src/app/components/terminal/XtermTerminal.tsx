@@ -14,6 +14,7 @@ import {
 import { getPromptTemplate, FALLBACK_PROMPT_TEMPLATE } from '@/lib/tauri/providers';
 import { xtermMounted, xtermUnmounted } from '@/lib/metrics';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
+import { createRenderKeepAlive } from '@/lib/terminal/renderKeepAlive';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 
 interface XtermTerminalProps {
@@ -77,6 +78,14 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     fitAddonRef.current = fitAddon;
     xtermMounted();
 
+    // Flush xterm's rAF-driven render even when WKWebView parks the compositor
+    // between interactions (otherwise new output only paints on the next input).
+    const keepAlive = createRenderKeepAlive();
+    const writeTerm = (data: string) => {
+      term.write(data);
+      keepAlive.nudge();
+    };
+
     // Propagate xterm resize events to PTY backend (skip for agent tabs —
     // the fullscreen modal owns the agent PTY size)
     if (!agentId) {
@@ -120,7 +129,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       // Agent mode — replay + live output from the store (single source,
       // synchronous attach: no gap or duplication against the backfill)
       if (agentId) {
-        const detach = attachAgentStream(term, agentId);
+        const detach = attachAgentStream({ write: writeTerm }, agentId);
         setIsInitialized(true);
         return detach;
       }
@@ -134,8 +143,8 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
         await spawnShell(id, initialCommand || 'bash', [], cwd, term.rows, term.cols);
         setIsInitialized(true);
 
-        const unsubOut = await onTerminalOut(id, (data) => term.write(data));
-        const unsubErr = await onTerminalErr(id, (data) => term.write(data));
+        const unsubOut = await onTerminalOut(id, (data) => writeTerm(data));
+        const unsubErr = await onTerminalErr(id, (data) => writeTerm(data));
 
         return () => {
           unsubOut();
@@ -179,6 +188,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     return () => {
       isMounted = false;
       sessionCleanup?.();
+      keepAlive.stop();
       clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       term.dispose();
