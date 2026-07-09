@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { ConductorDecision } from '@/lib/store/conductorSlice';
+import type { ProviderInfo } from '@/lib/tauri/providers';
 
 interface ConductorPanelProps {
   running: boolean;
@@ -12,9 +13,14 @@ interface ConductorPanelProps {
   pendingApprovals: PmTicket[];
   decisions: ConductorDecision[];
   canStart: boolean;
+  providers: ProviderInfo[];
+  providerId: string | null;
+  model: string | null;
   onStart: () => void;
   onStop: () => void;
   onSetMaxConcurrent: (n: number) => void;
+  onSetProvider: (id: string | null) => void;
+  onSetModel: (model: string | null) => void;
   onApprove: (ticketId: string) => void;
   onDismiss: (ticketId: string) => void;
 }
@@ -38,13 +44,22 @@ export function ConductorPanel({
   pendingApprovals,
   decisions,
   canStart,
+  providers,
+  providerId,
+  model,
   onStart,
   onStop,
   onSetMaxConcurrent,
+  onSetProvider,
+  onSetModel,
   onApprove,
   onDismiss,
 }: ConductorPanelProps) {
   const [logExpanded, setLogExpanded] = useState(false);
+  const providerList = providers ?? [];
+  const activeProvider = providerList.find((p) => p.id === providerId) ?? providerList[0];
+  const selectCls =
+    'rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-foreground outline-none focus:ring-1 focus:ring-primary/30';
 
   return (
     <div data-testid="conductor-panel" className="border-t border-white/5 bg-black/20 px-4 py-2.5">
@@ -76,6 +91,44 @@ export function ConductorPanel({
             className="w-12 rounded bg-white/5 px-1.5 py-0.5 text-center text-[10px] text-foreground outline-none focus:ring-1 focus:ring-primary/30"
           />
         </label>
+
+        {/* Agent + model selection (before a run starts) */}
+        {!running && providerList.length > 0 && (
+          <>
+            <label className="flex items-center gap-1.5 text-[10px] text-foreground-muted">
+              agent
+              <select
+                data-testid="conductor-provider-select"
+                value={providerId ?? ''}
+                onChange={(e) => onSetProvider(e.target.value || null)}
+                className={selectCls}
+              >
+                <option value="">Default</option>
+                {providerList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-[10px] text-foreground-muted">
+              model
+              <select
+                data-testid="conductor-model-select"
+                value={model ?? ''}
+                onChange={(e) => onSetModel(e.target.value || null)}
+                className={selectCls}
+              >
+                <option value="">Auto (per ticket)</option>
+                {activeProvider?.models.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <button

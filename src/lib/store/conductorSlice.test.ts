@@ -199,6 +199,38 @@ describe('conductorSlice', () => {
     expect(state.conductorDecisions.filter((d) => d.action === 'spawn')).toHaveLength(2);
   });
 
+  it('stopConductor kills all running agents (stopping actually stops)', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' }), makeTicket({ id: 't2' })],
+      conductorMaxConcurrent: 2,
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    expect(store.getState().agents).toHaveLength(2);
+
+    store.getState().stopConductor();
+    await new Promise((r) => setTimeout(r, 0)); // flush the async kills
+
+    expect(store.getState().conductorRunning).toBe(false);
+    expect(store.getState().agents).toHaveLength(0);
+    expect(store.getState().conductorAssignments).toEqual({});
+  });
+
+  it('uses the conductor provider/model override when set', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+      conductorProviderId: 'gemini',
+      conductorModel: 'opus',
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+
+    const agent = store.getState().agents[0];
+    expect(agent.model).toBe('opus');
+    expect(agent.provider).toBe('gemini');
+  });
+
   it('does not spawn when conductor is stopped', async () => {
     store.setState({ pmDraftTickets: [makeTicket()] });
     await store.getState().conductorTick();

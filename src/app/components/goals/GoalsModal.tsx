@@ -74,6 +74,11 @@ function GoalsModalContent() {
   const startConductor = useStore((s) => s.startConductor);
   const stopConductor = useStore((s) => s.stopConductor);
   const setConductorMaxConcurrent = useStore((s) => s.setConductorMaxConcurrent);
+  const providers = useStore((s) => s.providers);
+  const conductorProviderId = useStore((s) => s.conductorProviderId);
+  const conductorModel = useStore((s) => s.conductorModel);
+  const setConductorProviderId = useStore((s) => s.setConductorProviderId);
+  const setConductorModel = useStore((s) => s.setConductorModel);
   const conductorTick = useStore((s) => s.conductorTick);
   const approveConductorTicket = useStore((s) => s.approveConductorTicket);
   const dismissConductorApproval = useStore((s) => s.dismissConductorApproval);
@@ -300,9 +305,14 @@ function GoalsModalContent() {
           pendingApprovals={pendingApprovalTickets}
           decisions={conductorDecisions}
           canStart={rootPath !== null}
+          providers={providers}
+          providerId={conductorProviderId}
+          model={conductorModel}
           onStart={handleConductorStart}
           onStop={() => stopConductor()}
           onSetMaxConcurrent={setConductorMaxConcurrent}
+          onSetProvider={setConductorProviderId}
+          onSetModel={setConductorModel}
           onApprove={(id) => void approveConductorTicket(id)}
           onDismiss={dismissConductorApproval}
         />

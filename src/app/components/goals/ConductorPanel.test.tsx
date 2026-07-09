@@ -28,9 +28,14 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     pendingApprovals: [] as PmTicket[],
     decisions: [],
     canStart: true,
+    providers: [],
+    providerId: null,
+    model: null,
     onStart: vi.fn(),
     onStop: vi.fn(),
     onSetMaxConcurrent: vi.fn(),
+    onSetProvider: vi.fn(),
+    onSetModel: vi.fn(),
     onApprove: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
@@ -40,6 +45,36 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
 }
 
 describe('ConductorPanel', () => {
+  const providers = [
+    {
+      id: 'claude',
+      name: 'Claude Code',
+      models: [
+        { value: 'sonnet', label: 'Sonnet' },
+        { value: 'opus', label: 'Opus' },
+      ],
+      permissionModes: [],
+      defaultModel: 'sonnet',
+      defaultPermissionMode: 'acceptEdits',
+    },
+  ];
+
+  it('lets the user pick an agent provider and model before starting', () => {
+    const props = renderPanel({ providers });
+    const providerSelect = screen.getByTestId('conductor-provider-select');
+    fireEvent.change(providerSelect, { target: { value: 'claude' } });
+    expect(props.onSetProvider).toHaveBeenCalledWith('claude');
+
+    const modelSelect = screen.getByTestId('conductor-model-select');
+    fireEvent.change(modelSelect, { target: { value: 'opus' } });
+    expect(props.onSetModel).toHaveBeenCalledWith('opus');
+  });
+
+  it('hides the agent/model selectors while running', () => {
+    renderPanel({ providers, running: true });
+    expect(screen.queryByTestId('conductor-provider-select')).not.toBeInTheDocument();
+  });
+
   it('starts the conductor', () => {
     const props = renderPanel();
     fireEvent.click(screen.getByTestId('conductor-start-btn'));

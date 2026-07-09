@@ -137,6 +137,10 @@ export interface ConductorSlice {
   conductorRunning: boolean;
   conductorGoalId: string | null;
   conductorMaxConcurrent: number;
+  /** Provider (agent CLI) override for conductor-spawned agents; null = default. */
+  conductorProviderId: string | null;
+  /** Model override for conductor-spawned agents; null/'' = per-ticket capability. */
+  conductorModel: string | null;
   /** ticketId -> agentId for tickets currently being worked by conductor agents. */
   conductorAssignments: Record<string, string>;
   /** Tickets requiring human approval before the conductor may spawn for them. */
@@ -149,6 +153,8 @@ export interface ConductorSlice {
   startConductor: (goalId: string | null) => void;
   stopConductor: (reason?: string) => void;
   setConductorMaxConcurrent: (n: number) => void;
+  setConductorProviderId: (id: string | null) => void;
+  setConductorModel: (model: string | null) => void;
   conductorTick: () => Promise<void>;
   approveConductorTicket: (ticketId: string) => Promise<void>;
   dismissConductorApproval: (ticketId: string) => void;
@@ -211,6 +217,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorRunning: false,
     conductorGoalId: null,
     conductorMaxConcurrent: 2,
+    conductorProviderId: null,
+    conductorModel: null,
     conductorAssignments: {},
     conductorPendingApprovals: [],
     conductorApprovedTickets: [],
@@ -241,10 +249,28 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
     stopConductor: (reason) => {
       halt();
-      addDecision({ action: 'stop', detail: reason ?? 'Conductor stopped' });
+      // Stopping must actually stop: kill every agent this run launched,
+      // otherwise the conductor "stops" but its agents keep running.
+      const full = cross();
+      const runningAgentIds = Object.values(get().conductorAssignments).filter(
+        (a) => a !== PENDING_SPAWN
+      );
+      runningAgentIds.forEach((agentId) => void full.killRunningAgent?.(agentId));
+      addDecision({
+        action: 'stop',
+        detail:
+          reason ??
+          (runningAgentIds.length > 0
+            ? `Conductor stopped — killing ${runningAgentIds.length} running agent(s)`
+            : 'Conductor stopped'),
+      });
     },
 
     setConductorMaxConcurrent: (n) => set({ conductorMaxConcurrent: Math.max(1, n) }),
+
+    setConductorProviderId: (id) => set({ conductorProviderId: id || null }),
+
+    setConductorModel: (model) => set({ conductorModel: model || null }),
 
     conductorTick: async () => {
       if (!get().conductorRunning) return;
@@ -324,7 +350,10 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         const goal = goals.find((g) => g.id === effectiveGoalId);
         const testCases = (full.pmDraftTestCases ?? []).filter((tc) => tc.ticketId === ticket.id);
         const prompt = buildConductorPrompt(ticket, goal, testCases);
-        const model = modelForPower(ticket.modelPower);
+        // A conductor-wide override wins; otherwise derive the model from the
+        // ticket's declared capability need.
+        const model = get().conductorModel || modelForPower(ticket.modelPower);
+        const providerOverride = get().conductorProviderId ?? undefined;
 
         // Reserve the ticket synchronously BEFORE the async spawn so a
         // concurrent tick can never double-spawn for the same ticket.
@@ -337,6 +366,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           agent = await full.spawnNewAgent?.({
             name: `conductor:${ticket.name.slice(0, 40)}`,
             model,
+            provider: providerOverride,
             task: prompt,
             cwd: ticket.workingDirectory ?? full.rootPath ?? undefined,
             permissionMode: 'acceptEdits',
