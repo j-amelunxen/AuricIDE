@@ -32,6 +32,35 @@ export interface AgentConfig {
   runSource?: 'ui' | 'conductor';
 }
 
+/** One remembered agent start prompt in the per-project history (capped at 100). */
+export interface AgentPromptHistoryEntry {
+  id: string;
+  prompt: string;
+  agentName: string;
+  model: string;
+  provider: string;
+  cwd?: string | null;
+  source: string;
+  createdAt?: string;
+}
+
+export async function recordAgentPromptHistory(
+  projectPath: string,
+  entry: AgentPromptHistoryEntry
+): Promise<void> {
+  await invoke('agent_prompt_history_add', { projectPath, entry });
+}
+
+export async function listAgentPromptHistory(
+  projectPath: string,
+  limit?: number
+): Promise<AgentPromptHistoryEntry[]> {
+  return await invoke<AgentPromptHistoryEntry[]>('agent_prompt_history_list', {
+    projectPath,
+    limit: limit ?? null,
+  });
+}
+
 export async function checkCliStatus(providerId?: string): Promise<boolean> {
   return await invoke<boolean>('check_cli_status', { providerId: providerId ?? null });
 }

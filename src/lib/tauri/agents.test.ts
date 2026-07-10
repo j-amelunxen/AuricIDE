@@ -68,6 +68,52 @@ describe('agent IPC wrappers', () => {
     });
   });
 
+  describe('recordAgentPromptHistory', () => {
+    it('calls invoke with projectPath and entry', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      const { recordAgentPromptHistory } = await import('./agents');
+      const entry = {
+        id: 'h1',
+        prompt: 'Fix bug',
+        agentName: 'Writer',
+        model: 'm',
+        provider: 'claude',
+        cwd: '/repo',
+        source: 'ui',
+      };
+      await recordAgentPromptHistory('/my/project', entry);
+      expect(mockInvoke).toHaveBeenCalledWith('agent_prompt_history_add', {
+        projectPath: '/my/project',
+        entry,
+      });
+    });
+  });
+
+  describe('listAgentPromptHistory', () => {
+    it('calls invoke with projectPath and null limit by default', async () => {
+      mockInvoke.mockResolvedValueOnce([]);
+      const { listAgentPromptHistory } = await import('./agents');
+      const result = await listAgentPromptHistory('/my/project');
+      expect(result).toEqual([]);
+      expect(mockInvoke).toHaveBeenCalledWith('agent_prompt_history_list', {
+        projectPath: '/my/project',
+        limit: null,
+      });
+    });
+
+    it('passes limit when given', async () => {
+      const entries = [{ id: 'h1', prompt: 'p', createdAt: '2026-07-10 00:00:00' }];
+      mockInvoke.mockResolvedValueOnce(entries);
+      const { listAgentPromptHistory } = await import('./agents');
+      const result = await listAgentPromptHistory('/my/project', 10);
+      expect(result).toEqual(entries);
+      expect(mockInvoke).toHaveBeenCalledWith('agent_prompt_history_list', {
+        projectPath: '/my/project',
+        limit: 10,
+      });
+    });
+  });
+
   describe('listAgents', () => {
     it('returns agent list from invoke', async () => {
       const agents = [{ id: '1', name: 'A1', status: 'idle', model: 'm', provider: 'claude' }];

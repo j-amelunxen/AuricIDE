@@ -1,6 +1,12 @@
 import type { StateCreator } from 'zustand';
 import type { AgentConfig, AgentInfo } from '../tauri/agents';
-import { killAgent, killAgentsForRepo, listAgents, spawnAgent } from '../tauri/agents';
+import {
+  killAgent,
+  killAgentsForRepo,
+  listAgents,
+  recordAgentPromptHistory,
+  spawnAgent,
+} from '../tauri/agents';
 import type { GoalsSlice } from './goalsSlice';
 import type { PmGoalRun } from '../tauri/goals';
 
@@ -69,6 +75,21 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   spawnNewAgent: async (config) => {
     const agent = await spawnAgent(config);
     set({ agents: [...get().agents, agent] });
+
+    // Remember the start prompt in the project DB (last 100). Fire-and-forget:
+    // history bookkeeping must never fail or delay the spawn itself.
+    const { rootPath } = get() as AgentSlice & { rootPath?: string | null };
+    if (rootPath && config.task.trim()) {
+      recordAgentPromptHistory(rootPath, {
+        id: crypto.randomUUID(),
+        prompt: config.task,
+        agentName: config.name,
+        model: config.model,
+        provider: config.provider ?? agent.provider,
+        cwd: config.cwd ?? agent.repoPath ?? null,
+        source: config.runSource ?? 'ui',
+      }).catch(() => {});
+    }
 
     // If this agent works toward a goal, persist the launch (with its exact
     // prompt) as a goal run — the prompt is a first-class artifact.
