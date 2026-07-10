@@ -11,6 +11,7 @@ export interface AgentsPanelProps {
   onKillRepo?: (repoPath: string) => void;
   onSelectAgent?: (agentId: string) => void;
   onImageDrop?: (agentId: string, imageData: string) => void;
+  onCollapse?: () => void;
 }
 
 export function AgentsPanel({
@@ -20,6 +21,7 @@ export function AgentsPanel({
   onKillRepo,
   onSelectAgent,
   onImageDrop,
+  onCollapse,
 }: AgentsPanelProps): React.JSX.Element {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -47,10 +49,22 @@ export function AgentsPanel({
 
   return (
     <div data-testid="agents-panel" className="flex flex-col h-full bg-panel-bg">
-      <div className="px-3 py-2 border-b border-border-dark">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border-dark">
         <h2 className="text-xs font-semibold tracking-wider text-foreground-muted">
           ACTIVE AGENTS
         </h2>
+        {onCollapse && (
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="Hide agents panel"
+            className="group flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-base">
+              right_panel_close
+            </span>
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">

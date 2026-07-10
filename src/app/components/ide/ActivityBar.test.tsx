@@ -65,6 +65,33 @@ describe('ActivityBar', () => {
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });
 
+  it('exposes the agents panel toggle by an accessible label', () => {
+    render(
+      <ActivityBar
+        items={items}
+        activeId="explorer"
+        onSelect={() => {}}
+        onAgentsToggle={() => {}}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Toggle Agents Panel' })).toBeInTheDocument();
+  });
+
+  it('calls onAgentsToggle when the agents toggle is clicked', async () => {
+    const user = userEvent.setup();
+    const onAgentsToggle = vi.fn();
+    render(
+      <ActivityBar
+        items={items}
+        activeId="explorer"
+        onSelect={() => {}}
+        onAgentsToggle={onAgentsToggle}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Toggle Agents Panel' }));
+    expect(onAgentsToggle).toHaveBeenCalledTimes(1);
+  });
+
   it('uses a color-only transition on the terminal toggle', () => {
     render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
     const toggle = screen.getByRole('button', { name: 'Toggle Terminal (⌘J)' });

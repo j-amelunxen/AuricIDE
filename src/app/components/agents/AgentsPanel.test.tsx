@@ -106,4 +106,24 @@ describe('AgentsPanel', () => {
     await user.click(screen.getByText('Kill All'));
     expect(onKillRepo).toHaveBeenCalledWith('/repo-a');
   });
+
+  it('renders a collapse button when onCollapse is provided', () => {
+    render(<AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={vi.fn()} onCollapse={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Hide agents panel' })).toBeInTheDocument();
+  });
+
+  it('does not render a collapse button without onCollapse', () => {
+    render(<AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Hide agents panel' })).not.toBeInTheDocument();
+  });
+
+  it('calls onCollapse when the collapse button is clicked', async () => {
+    const user = userEvent.setup();
+    const onCollapse = vi.fn();
+    render(
+      <AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={vi.fn()} onCollapse={onCollapse} />
+    );
+    await user.click(screen.getByRole('button', { name: 'Hide agents panel' }));
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
 });

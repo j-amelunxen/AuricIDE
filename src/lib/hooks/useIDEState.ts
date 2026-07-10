@@ -16,6 +16,7 @@ export function useIDEState() {
   const [mindmapData, setMindmapData] = useState<MindmapData | null>(null);
   const [diffContent, setDiffContent] = useState<string | null>(null);
   const [bottomCollapsed, setBottomCollapsed] = useState(true);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
   const [fullscreenAgent, setFullscreenAgent] = useState<AgentInfo | null>(null);
   const [scrollToLine, setScrollToLine] = useState<number | undefined>(undefined);
   const [linkGraphModalOpen, setLinkGraphModalOpen] = useState(false);
@@ -180,6 +181,8 @@ export function useIDEState() {
     setDiffContent,
     bottomCollapsed,
     setBottomCollapsed,
+    rightCollapsed,
+    setRightCollapsed,
     fullscreenAgent,
     setFullscreenAgent,
     scrollToLine,
