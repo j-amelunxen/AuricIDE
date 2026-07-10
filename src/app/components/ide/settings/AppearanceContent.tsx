@@ -1,11 +1,14 @@
 'use client';
 
 import { SettingsSection } from '../../ui/settings/SettingsSection';
+import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { ACCENTS } from '@/lib/theme/accent';
 import { useAccent } from '@/lib/theme/useAccent';
+import { useAttribution } from '@/lib/settings/attribution';
 
 export function AppearanceContent() {
   const [accent, selectAccent] = useAccent();
+  const [showAttribution, setShowAttribution] = useAttribution();
 
   return (
     <div className="space-y-6">
@@ -62,6 +65,16 @@ export function AppearanceContent() {
             );
           })}
         </div>
+      </SettingsSection>
+
+      <SettingsSection title="Attribution" icon="favorite">
+        <SettingsToggle
+          label="Show attribution"
+          description={'Show "Made with ♥ by software-architecture.ai" in the status bar.'}
+          checked={showAttribution}
+          onChange={setShowAttribution}
+          testId="attribution-toggle"
+        />
       </SettingsSection>
 
       <SettingsSection title="Interface Architecture" icon="dashboard" className="opacity-50">

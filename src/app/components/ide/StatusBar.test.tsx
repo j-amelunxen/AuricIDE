@@ -1,8 +1,15 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StatusBar } from './StatusBar';
+import { ATTRIBUTION_STORAGE_KEY } from '@/lib/settings/attribution';
+import { useStore } from '@/lib/store';
 
 describe('StatusBar', () => {
+  afterEach(() => {
+    localStorage.removeItem(ATTRIBUTION_STORAGE_KEY);
+    useStore.setState({ requirementsDraft: [] });
+  });
+
   it('renders the status bar', () => {
     render(<StatusBar />);
     expect(screen.getByTestId('status-bar')).toBeInTheDocument();
@@ -66,6 +73,53 @@ describe('StatusBar', () => {
     render(<StatusBar errorCount={1} warningCount={0} onProblemsClick={onClick} />);
     fireEvent.click(screen.getByTestId('problems-indicator'));
     expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('hides the attribution credit by default', () => {
+    render(<StatusBar />);
+    expect(screen.queryByTestId('made-with-credit')).not.toBeInTheDocument();
+  });
+
+  it('shows the software-architecture.ai credit when attribution is enabled', () => {
+    localStorage.setItem(ATTRIBUTION_STORAGE_KEY, 'true');
+    render(<StatusBar />);
+    const credit = screen.getByTestId('made-with-credit');
+    expect(credit).toHaveTextContent('Made with');
+    expect(credit).toHaveTextContent('by software-architecture.ai');
+  });
+
+  it('hides the credit heart glyph from assistive technology', () => {
+    localStorage.setItem(ATTRIBUTION_STORAGE_KEY, 'true');
+    render(<StatusBar />);
+    const heart = screen.getByTestId('made-with-credit').querySelector('[aria-hidden="true"]');
+    expect(heart).not.toBeNull();
+  });
+
+  it('shows the truths light once requirements exist', () => {
+    useStore.setState({
+      requirementsDraft: [
+        {
+          id: 'r1',
+          reqId: 'REQ-TEST-01',
+          title: 'A truth',
+          description: '',
+          type: 'functional',
+          category: 'test',
+          priority: 'normal',
+          status: 'verified',
+          rationale: '',
+          acceptanceCriteria: '',
+          source: '',
+          lastVerifiedAt: new Date().toISOString(),
+          appliesTo: [],
+          sortOrder: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    render(<StatusBar />);
+    expect(screen.getByTestId('truths-light')).toBeInTheDocument();
   });
 
   it('exposes the sync status control by an accessible label', () => {

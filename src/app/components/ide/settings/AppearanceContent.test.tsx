@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AppearanceContent } from './AppearanceContent';
 import { ACCENTS, ACCENT_STORAGE_KEY } from '@/lib/theme/accent';
+import { loadShowAttribution } from '@/lib/settings/attribution';
 
 describe('AppearanceContent — accent picker', () => {
   beforeEach(() => {
@@ -37,5 +38,30 @@ describe('AppearanceContent — accent picker', () => {
     expect(document.documentElement.dataset.accent).toBe('blue');
     expect(localStorage.getItem(ACCENT_STORAGE_KEY)).toBe('blue');
     expect(screen.getByRole('radio', { name: 'Electric Blue' })).toBeChecked();
+  });
+});
+
+describe('AppearanceContent — attribution toggle', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('renders the attribution toggle switched off by default', () => {
+    render(<AppearanceContent />);
+    expect(screen.getByTestId('attribution-toggle')).not.toBeChecked();
+  });
+
+  it('persists the attribution setting when toggled on', async () => {
+    const user = userEvent.setup();
+    render(<AppearanceContent />);
+
+    await user.click(screen.getByTestId('attribution-toggle'));
+
+    expect(screen.getByTestId('attribution-toggle')).toBeChecked();
+    expect(loadShowAttribution()).toBe(true);
   });
 });
