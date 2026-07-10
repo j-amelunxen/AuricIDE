@@ -86,6 +86,8 @@ export const defaultCommands: Omit<Command, 'action'>[] = [
     shortcut: '⌘⇧G',
   },
   { id: 'view.link-graph', label: 'Show Link Graph', category: 'view' },
+  { id: 'view.cockpit', label: 'Open Mission Control', category: 'view' },
+  { id: 'view.goals', label: 'Open Goals & Orchestration', category: 'view' },
   {
     id: 'markdown.rename-heading',
     label: 'Rename Heading',

@@ -6,12 +6,15 @@ import { useIDEHandlers } from './useIDEHandlers';
 const mockReadDirectory = vi.fn();
 const mockOpenFolderDialog = vi.fn();
 const mockReadFile = vi.fn();
+const mockWriteFile = vi.fn();
+const mockCreateDirectory = vi.fn();
 
 vi.mock('@/lib/tauri/fs', () => ({
   readDirectory: (...args: unknown[]) => mockReadDirectory(...args),
   openFolderDialog: () => mockOpenFolderDialog(),
   readFile: (...args: unknown[]) => mockReadFile(...args),
-  writeFile: vi.fn(),
+  writeFile: (...args: unknown[]) => mockWriteFile(...args),
+  createDirectory: (...args: unknown[]) => mockCreateDirectory(...args),
 }));
 
 // Mock Store
@@ -45,6 +48,10 @@ describe('useIDEHandlers', () => {
     resetRequirementsInMemory: vi.fn(),
     setRequirementsModalOpen: vi.fn(),
     loadRequirements: vi.fn(),
+    loadPmData: vi.fn(),
+    loadGoals: vi.fn(),
+    loadExcalidrawSpecLinks: vi.fn(),
+    resetExcalidrawInMemory: vi.fn(),
     setProjectFiles: vi.fn(),
     selectFile: vi.fn(),
     openTab: vi.fn(),
@@ -68,45 +75,77 @@ describe('useIDEHandlers', () => {
     mockFileTree = [];
   });
 
-  it('opens README.md automatically when opening a folder', async () => {
+  it('lands in the cockpit instead of auto-opening README when opening a folder', async () => {
     const selectedPath = '/path/to/project';
     mockOpenFolderDialog.mockResolvedValue(selectedPath);
     mockReadDirectory.mockResolvedValue([
       { name: 'README.md', path: `${selectedPath}/README.md`, isDirectory: false },
       { name: 'src', path: `${selectedPath}/src`, isDirectory: true },
     ]);
-    mockReadFile.mockResolvedValue('# Hello README');
 
     const { result } = renderHook(() => useIDEHandlers(mockState));
 
     await result.current.handleOpenFolder();
 
-    // Verify root path was set
     expect(mockState.setRootPath).toHaveBeenCalledWith(selectedPath);
-
-    // Verify handleFileSelect was called for README.md
-    // handleFileSelect calls state.selectFile and state.openTab
-    expect(mockState.selectFile).toHaveBeenCalledWith(`${selectedPath}/README.md`);
-    expect(mockState.openTab).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: `${selectedPath}/README.md`,
-      })
-    );
+    // No document steals focus from Mission Control
+    expect(mockState.selectFile).not.toHaveBeenCalled();
+    expect(mockState.openTab).not.toHaveBeenCalled();
   });
 
-  it('opens README.md automatically when opening a recent project', async () => {
+  it('lands in the cockpit when opening a recent project', async () => {
     const projectPath = '/path/to/recent';
     mockReadDirectory.mockResolvedValue([
       { name: 'readme.txt', path: `${projectPath}/readme.txt`, isDirectory: false },
     ]);
-    mockReadFile.mockResolvedValue('Hello README txt');
 
     const { result } = renderHook(() => useIDEHandlers(mockState));
 
     await result.current.handleOpenRecent(projectPath);
 
     expect(mockState.setRootPath).toHaveBeenCalledWith(projectPath);
-    expect(mockState.selectFile).toHaveBeenCalledWith(`${projectPath}/readme.txt`);
+    expect(mockState.selectFile).not.toHaveBeenCalled();
+  });
+
+  it('loads pm, requirements and goals data when opening a project', async () => {
+    const projectPath = '/path/to/recent';
+    mockReadDirectory.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useIDEHandlers(mockState));
+
+    await result.current.handleOpenRecent(projectPath);
+
+    expect(mockState.loadPmData).toHaveBeenCalledWith(projectPath);
+    expect(mockState.loadRequirements).toHaveBeenCalledWith(projectPath);
+    expect(mockState.loadGoals).toHaveBeenCalledWith(projectPath);
+    expect(mockState.loadExcalidrawSpecLinks).toHaveBeenCalledWith(projectPath);
+  });
+
+  it('creates a spec under specs/ and opens it in the editor', async () => {
+    mockState.rootPath = '/path/to/project';
+    mockReadDirectory.mockResolvedValue([]);
+    mockReadFile.mockResolvedValue('');
+
+    const { result } = renderHook(() => useIDEHandlers(mockState));
+
+    await result.current.handleNewSpec();
+
+    expect(mockCreateDirectory).toHaveBeenCalledWith('/path/to/project/specs');
+    const [writtenPath, template] = mockWriteFile.mock.calls[0] as [string, string];
+    expect(writtenPath).toMatch(/^\/path\/to\/project\/specs\/spec-.+\.md$/);
+    expect(template).toContain('# ');
+    expect(mockState.selectFile).toHaveBeenCalledWith(writtenPath);
+    expect(mockState.openTab).toHaveBeenCalledWith(expect.objectContaining({ path: writtenPath }));
+  });
+
+  it('does nothing on new spec without an open project', async () => {
+    mockState.rootPath = null;
+    const { result } = renderHook(() => useIDEHandlers(mockState));
+
+    await result.current.handleNewSpec();
+
+    expect(mockCreateDirectory).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
   });
 
   it('preserves expanded state of directories on refresh', async () => {
@@ -140,19 +179,5 @@ describe('useIDEHandlers', () => {
     expect(src.expanded).toBe(true);
     expect(docs.expanded).toBe(false);
     expect(readme.expanded).toBe(false);
-  });
-
-  it('does not open anything if README does not exist', async () => {
-    const projectPath = '/path/to/no-readme';
-    mockReadDirectory.mockResolvedValue([
-      { name: 'main.rs', path: `${projectPath}/main.rs`, isDirectory: false },
-    ]);
-
-    const { result } = renderHook(() => useIDEHandlers(mockState));
-
-    await result.current.handleOpenRecent(projectPath);
-
-    expect(mockState.setRootPath).toHaveBeenCalledWith(projectPath);
-    expect(mockState.selectFile).not.toHaveBeenCalled();
   });
 });

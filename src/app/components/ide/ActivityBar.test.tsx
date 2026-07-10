@@ -82,6 +82,32 @@ describe('ActivityBar', () => {
     expect(screen.getByTestId('activity-item-extensions')).not.toHaveAttribute('title');
   });
 
+  it('separates primary destinations from demoted tools', () => {
+    const sectioned = [
+      { id: 'cockpit', icon: 'space_dashboard', label: 'Mission Control' },
+      { id: 'explorer', icon: 'folder', label: 'Explorer' },
+      { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools' as const },
+      { id: 'settings', icon: 'settings', label: 'Settings', section: 'tools' as const },
+    ];
+    render(<ActivityBar items={sectioned} activeId="cockpit" onSelect={() => {}} />);
+    expect(screen.getByTestId('activity-section-separator')).toBeInTheDocument();
+  });
+
+  it('renders tool items visually smaller than primary destinations', () => {
+    const sectioned = [
+      { id: 'explorer', icon: 'folder', label: 'Explorer' },
+      { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools' as const },
+    ];
+    render(<ActivityBar items={sectioned} activeId="explorer" onSelect={() => {}} />);
+    expect(screen.getByTestId('activity-item-explorer')).toHaveClass('h-10');
+    expect(screen.getByTestId('activity-item-outline')).toHaveClass('h-8');
+  });
+
+  it('renders no separator when every item is primary', () => {
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    expect(screen.queryByTestId('activity-section-separator')).not.toBeInTheDocument();
+  });
+
   it('gives activity items a snappy press-and-hover feedback', () => {
     render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
     const item = screen.getByTestId('activity-item-extensions');

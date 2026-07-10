@@ -14,7 +14,6 @@ import { HtmlViewer } from './components/editor/HtmlViewer';
 import { SourceControlPanel } from './components/git/SourceControlPanel';
 import { TerminalPanel } from './components/terminal/TerminalPanel';
 import { AgentsPanel } from './components/agents/AgentsPanel';
-import { AgentFleetPanel } from './components/agents/AgentFleetPanel';
 import { DiffViewer } from './components/editor/DiffViewer';
 import { CanvasView } from './components/canvas/CanvasView';
 import { ObsidianCanvasView } from './components/obsidian-canvas/ObsidianCanvasView';
@@ -27,6 +26,7 @@ import { ProblemsPanel } from './components/problems/ProblemsPanel';
 import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
+import { MissionControl } from './components/cockpit/MissionControl';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianColor, ObsidianNode } from '@/lib/obsidian-canvas/types';
 import { TicketCreateModal } from './components/pm/TicketCreateModal';
@@ -180,15 +180,6 @@ export default function Home() {
             onHeadingClick={(line) => state.setScrollToLine(line)}
           />
         );
-      case 'agents':
-        return (
-          <AgentFleetPanel
-            agents={state.agents}
-            onOpenAgent={(agent) => state.setFullscreenAgent(agent)}
-            onKillAgent={(agentId) => void state.killRunningAgent(agentId)}
-            onNewAgent={() => state.setSpawnDialogOpen(true)}
-          />
-        );
       case 'extensions':
         return <ExtensionsPanel />;
       case 'qa':
@@ -333,6 +324,10 @@ export default function Home() {
                     onWikiLinkNavigate={handlers.handleWikiLinkNavigate}
                   />
                 )}
+              </div>
+            ) : state.rootPath ? (
+              <div className="flex-1 overflow-hidden">
+                <MissionControl onCreateSpec={() => void handlers.handleNewSpec()} />
               </div>
             ) : (
               <div className="flex flex-1 items-center justify-center text-center">

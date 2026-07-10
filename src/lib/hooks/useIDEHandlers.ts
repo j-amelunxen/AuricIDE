@@ -176,6 +176,19 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleFileSelect(newPath);
   }, [state, handleRefresh, handleFileSelect]);
 
+  const handleNewSpec = useCallback(async () => {
+    if (!state.rootPath) return;
+    const specsDir = `${state.rootPath}/specs`;
+    await createDirectory(specsDir);
+    const newPath = `${specsDir}/spec-${Date.now()}.md`;
+    await writeFile(
+      newPath,
+      '# New Spec\n\n## Context\n\nWhat problem does this solve, and for whom?\n\n## Requirements\n\n-\n\n## Acceptance Criteria\n\n- [ ]\n'
+    );
+    await handleRefresh();
+    handleFileSelect(newPath);
+  }, [state, handleRefresh, handleFileSelect]);
+
   const handleMoveNode = useCallback(
     async (sourcePath: string, destDir: string) => {
       const name = sourcePath.split('/').pop();
@@ -200,12 +213,15 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state, handleRefresh]
   );
 
-  const openReadmeIfExists = useCallback(
-    (entries: FileEntry[]) => {
-      const readme = entries.find((e) => !e.isDirectory && /^readme\.(md|txt)$/i.test(e.name));
-      if (readme) handleFileSelect(readme.path);
+  // Mission Control is the home surface: no document steals focus on project
+  // open, but the cockpit needs its numbers (tickets, invariants, goals) live.
+  const loadProjectData = useCallback(
+    (projectPath: string) => {
+      void state.loadPmData(projectPath);
+      void state.loadRequirements(projectPath);
+      void state.loadGoals(projectPath);
     },
-    [handleFileSelect]
+    [state]
   );
 
   const clearProjectState = useCallback(() => {
@@ -232,9 +248,9 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.setRootPath(selected);
     state.addRecentProject(selected);
     state.initProjectDb(selected);
-    const entries = await handleRefresh(selected, true);
-    if (entries) openReadmeIfExists(entries);
-  }, [state, clearProjectState, handleRefresh, openReadmeIfExists]);
+    loadProjectData(selected);
+    await handleRefresh(selected, true);
+  }, [state, clearProjectState, handleRefresh, loadProjectData]);
 
   const handleOpenRecent = useCallback(
     async (path: string) => {
@@ -242,10 +258,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       state.setRootPath(path);
       state.addRecentProject(path);
       state.initProjectDb(path);
-      const entries = await handleRefresh(path, true);
-      if (entries) openReadmeIfExists(entries);
+      loadProjectData(path);
+      await handleRefresh(path, true);
     },
-    [state, clearProjectState, handleRefresh, openReadmeIfExists]
+    [state, clearProjectState, handleRefresh, loadProjectData]
   );
 
   const handleNewProject = useCallback(
@@ -264,10 +280,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       state.setRootPath(projectDir);
       state.addRecentProject(projectDir);
       state.initProjectDb(projectDir);
-      const entries = await handleRefresh(projectDir, true);
-      if (entries) openReadmeIfExists(entries);
+      loadProjectData(projectDir);
+      await handleRefresh(projectDir, true);
     },
-    [state, clearProjectState, handleRefresh, openReadmeIfExists]
+    [state, clearProjectState, handleRefresh, loadProjectData]
   );
 
   const handleSave = useCallback(async () => {
@@ -650,6 +666,12 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleActivitySelect = useCallback(
     (id: string) => {
+      if (id === 'cockpit') {
+        // Home: clear document focus so Mission Control takes the center.
+        state.setActiveTab(null);
+        state.setActiveActivity('cockpit');
+        return;
+      }
       if (id === 'project-mgmt') {
         state.setPmModalOpen(true);
         if (state.rootPath) state.loadPmData(state.rootPath);
@@ -796,6 +818,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'view.focus-explorer': () => state.setActiveActivity('explorer'),
       'view.focus-source-control': () => state.setActiveActivity('source-control'),
       'view.link-graph': () => state.setLinkGraphModalOpen(true),
+      'view.cockpit': () => {
+        state.setActiveTab(null);
+        state.setActiveActivity('cockpit');
+      },
+      'view.goals': () => useStore.getState().setGoalsModalOpen(true),
     }),
     [state, handleNewFile, handleOpenFolder, handleSave, handleCommit]
   );
@@ -819,10 +846,6 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     () => state.pmDraftTickets.filter((t) => t.status !== 'done' && t.status !== 'archived').length,
     [state.pmDraftTickets]
   );
-  const runningAgentsCount = useMemo(
-    () => state.agents.filter((a) => a.status === 'running').length,
-    [state.agents]
-  );
   const itemsWithBadge = useMemo(
     () =>
       activityItems.map((item) => {
@@ -830,11 +853,9 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           return { ...item, badge: scBadge > 0 ? scBadge : undefined };
         if (item.id === 'project-mgmt')
           return { ...item, badge: openTicketsCount > 0 ? openTicketsCount : undefined };
-        if (item.id === 'agents')
-          return { ...item, badge: runningAgentsCount > 0 ? runningAgentsCount : undefined };
         return item;
       }),
-    [scBadge, openTicketsCount, runningAgentsCount]
+    [scBadge, openTicketsCount]
   );
 
   const dailyTip = useMemo(() => {
@@ -909,6 +930,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleFileSelect,
     handleToggleDir,
     handleNewFile,
+    handleNewSpec,
     handleMoveNode,
     handleOpenFolder,
     handleOpenRecent,

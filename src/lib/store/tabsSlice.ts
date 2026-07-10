@@ -15,7 +15,8 @@ export interface TabsSlice {
   closeOtherTabs: (id: string) => void;
   closeAllTabs: () => void;
   closeTabsToRight: (id: string) => void;
-  setActiveTab: (id: string) => void;
+  /** null clears document focus — Mission Control takes the center stage. */
+  setActiveTab: (id: string | null) => void;
   markDirty: (id: string, dirty: boolean) => void;
   /**
    * Follow a moved/renamed path: re-point any open tab for `oldPath` (or a file

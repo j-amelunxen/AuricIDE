@@ -2,19 +2,24 @@
 
 import { type ActivityItem } from '@/app/components/ide/ActivityBar';
 
+/**
+ * The rail leads with the loop: Cockpit → Files → Git → Plan → Requirements
+ * are destinations a supervisor lives in. Everything below the separator is
+ * a tool — a means, reachable but not shouting. Goals & Orchestration has no
+ * slot: the conductor pulse (header) and Mission Control own that path.
+ */
 export const activityItems: ActivityItem[] = [
+  { id: 'cockpit', icon: 'space_dashboard', label: 'Mission Control' },
   { id: 'explorer', icon: 'folder', label: 'Explorer' },
-  { id: 'agents', icon: 'smart_toy', label: 'Agent Fleet' },
-  { id: 'outline', icon: 'toc', label: 'Outline' },
-  { id: 'graph', icon: 'hub', label: 'Link Graph' },
   { id: 'source-control', icon: 'commit', label: 'Source Control', badge: 0 },
-  { id: 'extensions', icon: 'extension', label: 'Extensions' },
-  { id: 'qa', icon: 'fact_check', label: 'QA' },
-  { id: 'blueprints', icon: 'library_books', label: 'Blueprints' },
+  { id: 'project-mgmt', icon: 'task_alt', label: 'Plan' },
   { id: 'requirements', icon: 'checklist', label: 'Requirements' },
-  { id: 'goals', icon: 'flag', label: 'Goals & Orchestration' },
-  { id: 'project-mgmt', icon: 'task_alt', label: 'Project Management' },
-  { id: 'settings', icon: 'settings', label: 'Settings' },
+  { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools' },
+  { id: 'graph', icon: 'hub', label: 'Link Graph', section: 'tools' },
+  { id: 'qa', icon: 'fact_check', label: 'QA', section: 'tools' },
+  { id: 'blueprints', icon: 'library_books', label: 'Blueprints', section: 'tools' },
+  { id: 'extensions', icon: 'extension', label: 'Extensions', section: 'tools' },
+  { id: 'settings', icon: 'settings', label: 'Settings', section: 'tools' },
 ];
 
 export const KBD = 'px-1.5 py-0.5 rounded bg-white/10 text-primary-light font-mono text-[11px]';

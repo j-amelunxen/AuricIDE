@@ -112,6 +112,7 @@ export function useIDEState() {
   const setPmSelectedEpicId = useStore((s) => s.setPmSelectedEpicId);
   const setPmSelectedTicketId = useStore((s) => s.setPmSelectedTicketId);
   const loadPmData = useStore((s) => s.loadPmData);
+  const loadGoals = useStore((s) => s.loadGoals);
   const resetPmInMemory = useStore((s) => s.resetPmInMemory);
   const pmDraftEpics = useStore((s) => s.pmDraftEpics);
   const pmDraftTickets = useStore((s) => s.pmDraftTickets);
@@ -270,6 +271,7 @@ export function useIDEState() {
     setProblemsPanelOpen,
     setPmModalOpen,
     loadPmData,
+    loadGoals,
     resetPmInMemory,
     resetBlueprintsInMemory,
     setRequirementsModalOpen,
