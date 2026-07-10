@@ -14,6 +14,7 @@ import {
 import { getPromptTemplate, FALLBACK_PROMPT_TEMPLATE } from '@/lib/tauri/providers';
 import { xtermMounted, xtermUnmounted } from '@/lib/metrics';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
+import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { createRenderKeepAlive } from '@/lib/terminal/renderKeepAlive';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 
@@ -31,6 +32,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
   const fitAddonRef = useRef<FitAddon | null>(null);
   const promptTemplateRef = useRef<string>(FALLBACK_PROMPT_TEMPLATE);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
 
   // Load prompt template from provider on mount
   useEffect(() => {
@@ -117,13 +119,20 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       return true;
     });
 
-    term.onData((data) => {
+    const sendText = (data: string) => {
       if (onInput) {
         onInput(data);
       } else {
         writeToShell(id, data);
       }
-    });
+    };
+
+    term.onData(sendText);
+
+    // Warp-style image handling: pasting an image saves it to the app cache
+    // and inserts its path; dropping files inserts their paths.
+    const detachImagePaste = attachImagePaste(containerRef.current, sendText);
+    const detachFileDrop = attachFileDrop(containerRef.current, sendText, setIsDropTarget);
 
     const setupSession = async () => {
       // Agent mode — replay + live output from the store (single source,
@@ -198,6 +207,8 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     return () => {
       isMounted = false;
       sessionCleanup?.();
+      detachImagePaste();
+      detachFileDrop();
       keepAlive.stop();
       clearTimeout(resizeTimer);
       resizeObserver.disconnect();
@@ -216,6 +227,16 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
         </div>
       )}
       <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      {isDropTarget && (
+        <div
+          data-testid="terminal-drop-overlay"
+          className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center rounded-md border-2 border-primary/60 bg-primary/10"
+        >
+          <span className="rounded-full bg-black/60 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary">
+            Drop to insert path
+          </span>
+        </div>
+      )}
     </div>
   );
 }

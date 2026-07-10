@@ -52,6 +52,22 @@ vi.mock('@/lib/tauri/terminal', () => ({
   resizeShell: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Capture the sendText callbacks wired into the image paste / file drop handlers
+let pasteSendText: ((text: string) => void) | null = null;
+const mockDetachImagePaste = vi.fn();
+const mockDetachFileDrop = vi.fn();
+const mockAttachImagePaste = vi.fn((_c: HTMLElement, sendText: (text: string) => void) => {
+  pasteSendText = sendText;
+  return mockDetachImagePaste;
+});
+const mockAttachFileDrop = vi.fn(() => mockDetachFileDrop);
+
+vi.mock('@/lib/terminal/imageInsert', () => ({
+  attachImagePaste: (container: HTMLElement, sendText: (text: string) => void) =>
+    mockAttachImagePaste(container, sendText),
+  attachFileDrop: () => mockAttachFileDrop(),
+}));
+
 const agent: AgentInfo = {
   id: 'agent-1',
   name: 'Writer',
@@ -223,6 +239,45 @@ describe('AgentTerminalModal', () => {
       });
 
       expect(mockWrite).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('image paste & file drop', () => {
+    beforeEach(() => {
+      pasteSendText = null;
+      mockAttachImagePaste.mockClear();
+      mockAttachFileDrop.mockClear();
+      mockDetachImagePaste.mockClear();
+      mockDetachFileDrop.mockClear();
+    });
+
+    it('attaches paste and drop handlers to the xterm container', async () => {
+      const { container } = render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+
+      await waitFor(() => expect(mockAttachImagePaste).toHaveBeenCalledTimes(1));
+      expect(mockAttachFileDrop).toHaveBeenCalledTimes(1);
+      expect(mockAttachImagePaste.mock.calls[0][0]).toBe(
+        container.querySelector('[data-testid="agent-xterm"]')
+      );
+    });
+
+    it('routes inserted paths to the agent PTY session', async () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(pasteSendText).not.toBeNull());
+
+      pasteSendText!('/cache/screenshot_1.png ');
+
+      const { writeToShell } = await import('@/lib/tauri/terminal');
+      expect(writeToShell).toHaveBeenCalledWith('agent-agent-1', '/cache/screenshot_1.png ');
+    });
+
+    it('detaches both handlers on unmount', async () => {
+      const { unmount } = render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(mockAttachImagePaste).toHaveBeenCalled());
+
+      unmount();
+      expect(mockDetachImagePaste).toHaveBeenCalled();
+      expect(mockDetachFileDrop).toHaveBeenCalled();
     });
   });
 
