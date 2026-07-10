@@ -88,7 +88,7 @@ describe('GenerateDiagramDialog', () => {
         name: 'Diagram (my-app)',
         model: 'auto',
         cwd: '/projects/my-app',
-        permissionMode: 'acceptEdits',
+        permissionMode: 'auto',
         provider: 'crush',
         task: expect.stringContaining('/projects/my-app'),
       })

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useConductorController } from '@/lib/hooks/useConductorController';
 import { GoalTree } from './GoalTree';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import { GoalCreateDialog } from './GoalCreateDialog';
@@ -48,12 +49,7 @@ function GoalsModalContent() {
   const requirements = useStore((s) => s.requirementsDraft);
   const agents = useStore((s) => s.agents);
 
-  const conductorRunning = useStore((s) => s.conductorRunning);
-  const conductorGoalId = useStore((s) => s.conductorGoalId);
-  const conductorMaxConcurrent = useStore((s) => s.conductorMaxConcurrent);
-  const conductorAssignments = useStore((s) => s.conductorAssignments);
-  const conductorPendingApprovals = useStore((s) => s.conductorPendingApprovals);
-  const conductorDecisions = useStore((s) => s.conductorDecisions);
+  const conductor = useConductorController();
 
   const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
@@ -70,18 +66,6 @@ function GoalsModalContent() {
   const loadPmData = useStore((s) => s.loadPmData);
   const loadRequirements = useStore((s) => s.loadRequirements);
   const spawnNewAgent = useStore((s) => s.spawnNewAgent);
-
-  const startConductor = useStore((s) => s.startConductor);
-  const stopConductor = useStore((s) => s.stopConductor);
-  const setConductorMaxConcurrent = useStore((s) => s.setConductorMaxConcurrent);
-  const providers = useStore((s) => s.providers);
-  const conductorProviderId = useStore((s) => s.conductorProviderId);
-  const conductorModel = useStore((s) => s.conductorModel);
-  const setConductorProviderId = useStore((s) => s.setConductorProviderId);
-  const setConductorModel = useStore((s) => s.setConductorModel);
-  const conductorTick = useStore((s) => s.conductorTick);
-  const approveConductorTicket = useStore((s) => s.approveConductorTicket);
-  const dismissConductorApproval = useStore((s) => s.dismissConductorApproval);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
@@ -137,16 +121,6 @@ function GoalsModalContent() {
     return counts;
   }, [agents]);
 
-  const pendingApprovalTickets = useMemo(
-    () => tickets.filter((t) => conductorPendingApprovals.includes(t.id)),
-    [tickets, conductorPendingApprovals]
-  );
-
-  const scopeGoalName = useMemo(() => {
-    if (!conductorGoalId) return null;
-    return goalsDraft.find((g) => g.id === conductorGoalId)?.name ?? null;
-  }, [conductorGoalId, goalsDraft]);
-
   const handleCreate = useCallback(
     async (goal: PmGoal) => {
       addGoal(goal);
@@ -179,7 +153,9 @@ function GoalsModalContent() {
           model: 'sonnet',
           task: buildGoalLaunchPrompt(goal),
           cwd: rootPath ?? undefined,
-          permissionMode: 'acceptEdits',
+          // Real autonomous mode (classifier-guarded), not acceptEdits which
+          // would still prompt on Bash and stall the unattended agent.
+          permissionMode: 'auto',
           spawnedByGoalId: goal.id,
         });
         if (rootPath) await saveGoals(rootPath);
@@ -189,11 +165,6 @@ function GoalsModalContent() {
     },
     [spawnNewAgent, rootPath, saveGoals]
   );
-
-  const handleConductorStart = useCallback(() => {
-    startConductor(selectedGoalId);
-    void conductorTick();
-  }, [startConductor, selectedGoalId, conductorTick]);
 
   return createPortal(
     <div
@@ -297,25 +268,7 @@ function GoalsModalContent() {
         </div>
 
         {/* Conductor */}
-        <ConductorPanel
-          running={conductorRunning}
-          scopeGoalName={scopeGoalName}
-          maxConcurrent={conductorMaxConcurrent}
-          activeAgentCount={Object.keys(conductorAssignments).length}
-          pendingApprovals={pendingApprovalTickets}
-          decisions={conductorDecisions}
-          canStart={rootPath !== null}
-          providers={providers}
-          providerId={conductorProviderId}
-          model={conductorModel}
-          onStart={handleConductorStart}
-          onStop={() => stopConductor()}
-          onSetMaxConcurrent={setConductorMaxConcurrent}
-          onSetProvider={setConductorProviderId}
-          onSetModel={setConductorModel}
-          onApprove={(id) => void approveConductorTicket(id)}
-          onDismiss={dismissConductorApproval}
-        />
+        <ConductorPanel {...conductor} />
       </div>
 
       {createOpen && (
