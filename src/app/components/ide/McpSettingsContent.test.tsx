@@ -11,6 +11,15 @@ vi.mock('@/lib/tauri/mcp', () => ({
   mcpStatus: vi.fn(),
 }));
 
+const mockInitMcpJson = vi.fn();
+vi.mock('@/lib/settings/mcpConfig', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/settings/mcpConfig')>();
+  return {
+    ...actual,
+    initMcpJson: (...args: unknown[]) => mockInitMcpJson(...args),
+  };
+});
+
 import { McpSettingsContent } from './McpSettingsContent';
 
 describe('McpSettingsContent', () => {
@@ -81,5 +90,47 @@ describe('McpSettingsContent', () => {
   it('renders status indicator', () => {
     render(<McpSettingsContent />);
     expect(screen.getByTestId('mcp-status-indicator')).toBeInTheDocument();
+  });
+
+  it('renders the Init .mcp.json button', () => {
+    render(<McpSettingsContent />);
+    expect(screen.getByTestId('mcp-init-button')).toBeInTheDocument();
+  });
+
+  it('writes .mcp.json into the project root on click', async () => {
+    mockInitMcpJson.mockResolvedValue('created');
+    const user = userEvent.setup();
+    render(<McpSettingsContent />);
+
+    await user.click(screen.getByTestId('mcp-init-button'));
+
+    expect(mockInitMcpJson).toHaveBeenCalledWith('/test/project');
+    expect(await screen.findByText(/\.mcp\.json created/i)).toBeInTheDocument();
+  });
+
+  it('reports when an existing .mcp.json was updated', async () => {
+    mockInitMcpJson.mockResolvedValue('updated');
+    const user = userEvent.setup();
+    render(<McpSettingsContent />);
+
+    await user.click(screen.getByTestId('mcp-init-button'));
+
+    expect(await screen.findByText(/\.mcp\.json updated/i)).toBeInTheDocument();
+  });
+
+  it('shows an error message when init fails', async () => {
+    mockInitMcpJson.mockRejectedValue(new Error('.mcp.json exists but contains invalid JSON'));
+    const user = userEvent.setup();
+    render(<McpSettingsContent />);
+
+    await user.click(screen.getByTestId('mcp-init-button'));
+
+    expect(await screen.findByText(/invalid JSON/i)).toBeInTheDocument();
+  });
+
+  it('disables the init button when no project is open', () => {
+    useStore.setState({ rootPath: null });
+    render(<McpSettingsContent />);
+    expect(screen.getByTestId('mcp-init-button')).toBeDisabled();
   });
 });
