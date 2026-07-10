@@ -44,6 +44,27 @@ vi.mock('@/lib/tauri/terminal', () => ({
   onTerminalErr: vi.fn().mockResolvedValue(vi.fn()),
 }));
 
+// Capture the sendText callbacks wired into the image paste / file drop handlers
+let pasteSendText: ((text: string) => void) | null = null;
+let dropSendText: ((text: string) => void) | null = null;
+const mockDetachImagePaste = vi.fn();
+const mockDetachFileDrop = vi.fn();
+const mockAttachImagePaste = vi.fn((_c: HTMLElement, sendText: (text: string) => void) => {
+  pasteSendText = sendText;
+  return mockDetachImagePaste;
+});
+const mockAttachFileDrop = vi.fn((_c: HTMLElement, sendText: (text: string) => void) => {
+  dropSendText = sendText;
+  return mockDetachFileDrop;
+});
+
+vi.mock('@/lib/terminal/imageInsert', () => ({
+  attachImagePaste: (container: HTMLElement, sendText: (text: string) => void) =>
+    mockAttachImagePaste(container, sendText),
+  attachFileDrop: (container: HTMLElement, sendText: (text: string) => void) =>
+    mockAttachFileDrop(container, sendText),
+}));
+
 vi.mock('@/lib/tauri/providers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/tauri/providers')>();
   return {
@@ -78,6 +99,8 @@ describe('XtermTerminal', () => {
     vi.clearAllMocks();
     keyEventHandler = null;
     resizeHandler = null;
+    pasteSendText = null;
+    dropSendText = null;
   });
 
   it('registers a custom key event handler', () => {
@@ -136,5 +159,43 @@ describe('XtermTerminal', () => {
 
     resizeHandler!({ rows: 50, cols: 120 });
     expect(mockResizeShell).toHaveBeenCalledWith('test-session', 50, 120);
+  });
+
+  describe('image paste & file drop', () => {
+    it('attaches paste and drop handlers to the terminal container', () => {
+      render(<XtermTerminal id="test-session" />);
+      expect(mockAttachImagePaste).toHaveBeenCalledTimes(1);
+      expect(mockAttachFileDrop).toHaveBeenCalledTimes(1);
+      expect(mockAttachImagePaste.mock.calls[0][0]).toBeInstanceOf(HTMLElement);
+      expect(mockAttachFileDrop.mock.calls[0][0]).toBeInstanceOf(HTMLElement);
+    });
+
+    it('routes pasted image paths to the shell when no onInput is given', () => {
+      render(<XtermTerminal id="test-session" />);
+      pasteSendText!('/cache/screenshot_1.png ');
+      expect(mockWriteToShell).toHaveBeenCalledWith('test-session', '/cache/screenshot_1.png ');
+    });
+
+    it('routes pasted image paths through onInput (agent mode)', () => {
+      const onInput = vi.fn();
+      render(<XtermTerminal id="test-session" onInput={onInput} />);
+      pasteSendText!('/cache/screenshot_1.png ');
+      expect(onInput).toHaveBeenCalledWith('/cache/screenshot_1.png ');
+      expect(mockWriteToShell).not.toHaveBeenCalled();
+    });
+
+    it('routes dropped file paths through onInput (agent mode)', () => {
+      const onInput = vi.fn();
+      render(<XtermTerminal id="test-session" onInput={onInput} />);
+      dropSendText!('/Users/j/pic.png ');
+      expect(onInput).toHaveBeenCalledWith('/Users/j/pic.png ');
+    });
+
+    it('detaches both handlers on unmount', () => {
+      const { unmount } = render(<XtermTerminal id="test-session" />);
+      unmount();
+      expect(mockDetachImagePaste).toHaveBeenCalledTimes(1);
+      expect(mockDetachFileDrop).toHaveBeenCalledTimes(1);
+    });
   });
 });

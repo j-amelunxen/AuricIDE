@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
+import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { ContextMenu } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
@@ -20,6 +21,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
     y: number;
     selection: string;
   } | null>(null);
+  const [isDropTarget, setIsDropTarget] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -92,9 +94,15 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       const unsubStore = attachAgentStream(term, agentId);
 
       // Forward keyboard input to the agent PTY
-      term.onData((data) => {
+      const sendText = (data: string) => {
         writeToShell(sessionId, data);
-      });
+      };
+      term.onData(sendText);
+
+      // Warp-style image handling: pasting an image saves it to the app
+      // cache and inserts its path; dropping files inserts their paths.
+      const detachImagePaste = attachImagePaste(containerRef.current, sendText);
+      const detachFileDrop = attachFileDrop(containerRef.current, sendText, setIsDropTarget);
 
       // Propagate xterm resize events to PTY backend
       term.onResize(({ rows, cols }) => {
@@ -118,6 +126,8 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       return () => {
         disposed = true;
         unsubStore();
+        detachImagePaste();
+        detachFileDrop();
         clearTimeout(resizeTimer);
         resizeObserver.disconnect();
         containerRef.current?.removeEventListener('contextmenu', handleContextMenu);
@@ -149,7 +159,19 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 
   return (
     <>
-      <div ref={containerRef} data-testid="agent-xterm" className="h-full w-full" />
+      <div className="relative h-full w-full">
+        <div ref={containerRef} data-testid="agent-xterm" className="h-full w-full" />
+        {isDropTarget && (
+          <div
+            data-testid="terminal-drop-overlay"
+            className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center rounded-md border-2 border-primary/60 bg-primary/10"
+          >
+            <span className="rounded-full bg-black/60 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary">
+              Drop to insert path
+            </span>
+          </div>
+        )}
+      </div>
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
