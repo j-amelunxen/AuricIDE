@@ -17,6 +17,7 @@ export interface ActivityBarProps {
   activeId: string;
   onSelect: (id: string) => void;
   onTerminalToggle?: () => void;
+  onAgentsToggle?: () => void;
 }
 
 const iconMap: Record<string, string> = {
@@ -98,7 +99,13 @@ function ActivityButton({
   );
 }
 
-export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: ActivityBarProps) {
+export function ActivityBar({
+  items,
+  activeId,
+  onSelect,
+  onTerminalToggle,
+  onAgentsToggle,
+}: ActivityBarProps) {
   const primary = items.filter((item) => item.section !== 'tools');
   const tools = items.filter((item) => item.section === 'tools');
 
@@ -136,20 +143,37 @@ export function ActivityBar({ items, activeId, onSelect, onTerminalToggle }: Act
         )}
       </div>
 
-      {/* Terminal Toggle at the bottom */}
-      <button
-        onClick={onTerminalToggle}
-        aria-label="Toggle Terminal (⌘J)"
-        className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
-      >
-        <span
-          aria-hidden="true"
-          className="material-symbols-outlined text-xl transition-transform duration-150 group-hover:scale-110"
+      {/* Panel toggles at the bottom */}
+      <div className="flex flex-col items-center gap-2">
+        {onAgentsToggle && (
+          <button
+            onClick={onAgentsToggle}
+            aria-label="Toggle Agents Panel"
+            className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-xl transition-transform duration-150 group-hover:scale-110"
+            >
+              smart_toy
+            </span>
+            <ActivityTooltip id="agents-toggle" label="Toggle Agents Panel" />
+          </button>
+        )}
+        <button
+          onClick={onTerminalToggle}
+          aria-label="Toggle Terminal (⌘J)"
+          className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
         >
-          terminal
-        </span>
-        <ActivityTooltip id="terminal" label="Toggle Terminal (⌘J)" />
-      </button>
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined text-xl transition-transform duration-150 group-hover:scale-110"
+          >
+            terminal
+          </span>
+          <ActivityTooltip id="terminal" label="Toggle Terminal (⌘J)" />
+        </button>
+      </div>
     </nav>
   );
 }

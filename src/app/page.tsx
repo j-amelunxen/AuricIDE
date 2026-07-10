@@ -239,6 +239,8 @@ export default function Home() {
       <IDEShell
         bottomCollapsed={state.bottomCollapsed}
         onBottomToggle={state.setBottomCollapsed}
+        rightCollapsed={state.rightCollapsed}
+        onRightToggle={state.setRightCollapsed}
         header={
           <MemoizedHeader
             breadcrumbs={handlers.breadcrumbs}
@@ -256,6 +258,7 @@ export default function Home() {
             activeId={state.activeActivity}
             onSelect={handlers.handleActivitySelect}
             onTerminalToggle={() => state.setBottomCollapsed(!state.bottomCollapsed)}
+            onAgentsToggle={() => state.setRightCollapsed(!state.rightCollapsed)}
           />
         }
         leftPanel={leftPanelContent}
@@ -428,6 +431,7 @@ export default function Home() {
             onKillRepo={state.killAgentsForRepoPath}
             onSelectAgent={handlers.handleSelectAgent}
             onImageDrop={handlers.handleImageDrop}
+            onCollapse={() => state.setRightCollapsed(true)}
           />
         }
         bottomPanel={

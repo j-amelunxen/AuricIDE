@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IDEShell } from './IDEShell';
 
 describe('IDEShell', () => {
@@ -101,5 +101,67 @@ describe('IDEShell', () => {
 
     const panel = screen.getByTestId('bottom-panel-container');
     expect(panel.style.height).toBe('0px');
+  });
+
+  it('collapses the right panel to zero width when rightCollapsed is set', () => {
+    render(
+      <IDEShell
+        header={<div />}
+        rightPanel={<div data-testid="right-content">Agents</div>}
+        rightCollapsed
+        statusBar={<div />}
+      />
+    );
+
+    const panel = screen.getByTestId('right-panel-container');
+    expect(panel.style.width).toBe('0px');
+  });
+
+  it('shows the right panel at full width when rightCollapsed is false', () => {
+    render(
+      <IDEShell
+        header={<div />}
+        rightPanel={<div data-testid="right-content">Agents</div>}
+        rightCollapsed={false}
+        statusBar={<div />}
+      />
+    );
+
+    const panel = screen.getByTestId('right-panel-container');
+    expect(panel.style.width).not.toBe('0px');
+  });
+
+  it('notifies onRightToggle when the right panel toggle is clicked', async () => {
+    const onRightToggle = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <IDEShell
+        header={<div />}
+        rightPanel={<div data-testid="right-content">Agents</div>}
+        rightCollapsed={false}
+        onRightToggle={onRightToggle}
+        statusBar={<div />}
+      />
+    );
+
+    await user.click(screen.getByTestId('toggle-right-panel'));
+    expect(onRightToggle).toHaveBeenCalledWith(true);
+  });
+
+  it('can toggle right panel visibility without external state', async () => {
+    const user = userEvent.setup();
+    render(
+      <IDEShell
+        header={<div />}
+        rightPanel={<div data-testid="right-content">Agents</div>}
+        statusBar={<div />}
+      />
+    );
+
+    const toggle = screen.getByTestId('toggle-right-panel');
+    await user.click(toggle);
+
+    const panel = screen.getByTestId('right-panel-container');
+    expect(panel.style.width).toBe('0px');
   });
 });

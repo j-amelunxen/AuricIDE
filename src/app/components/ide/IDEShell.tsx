@@ -13,6 +13,8 @@ export interface IDEShellProps {
   statusBar: React.ReactNode;
   bottomCollapsed?: boolean;
   onBottomToggle?: (collapsed: boolean) => void;
+  rightCollapsed?: boolean;
+  onRightToggle?: (collapsed: boolean) => void;
 }
 
 export function IDEShell({
@@ -25,19 +27,32 @@ export function IDEShell({
   statusBar,
   bottomCollapsed: bottomCollapsedProp,
   onBottomToggle,
+  rightCollapsed: rightCollapsedProp,
+  onRightToggle,
 }: IDEShellProps) {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [bottomCollapsedInternal, setBottomCollapsedInternal] = useState(false);
+  const [rightCollapsedInternal, setRightCollapsedInternal] = useState(false);
 
   // Sync with prop if provided
   const isBottomCollapsed =
     bottomCollapsedProp !== undefined ? bottomCollapsedProp : bottomCollapsedInternal;
+  const isRightCollapsed =
+    rightCollapsedProp !== undefined ? rightCollapsedProp : rightCollapsedInternal;
 
   const handleBottomToggle = () => {
     if (onBottomToggle) {
       onBottomToggle(!isBottomCollapsed);
     } else {
       setBottomCollapsedInternal(!bottomCollapsedInternal);
+    }
+  };
+
+  const handleRightToggle = () => {
+    if (onRightToggle) {
+      onRightToggle(!isRightCollapsed);
+    } else {
+      setRightCollapsedInternal(!rightCollapsedInternal);
     }
   };
 
@@ -104,8 +119,15 @@ export function IDEShell({
             minSize={200}
             maxSize={500}
             handlePosition="start"
+            collapsed={isRightCollapsed}
           >
-            {rightPanel}
+            <div
+              data-testid="right-panel-container"
+              className="h-full"
+              style={isRightCollapsed ? { width: '0px' } : undefined}
+            >
+              {rightPanel}
+            </div>
           </ResizablePanel>
         )}
       </div>
@@ -122,6 +144,12 @@ export function IDEShell({
         className="sr-only"
         onClick={handleBottomToggle}
         aria-label="Toggle bottom panel"
+      />
+      <button
+        data-testid="toggle-right-panel"
+        className="sr-only"
+        onClick={handleRightToggle}
+        aria-label="Toggle right panel"
       />
 
       {/* Status Bar */}
