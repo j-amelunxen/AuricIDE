@@ -106,4 +106,6 @@ export const defaultCommands: Omit<Command, 'action'>[] = [
     category: 'markdown',
   },
   { id: 'file.import-spec', label: 'Import Project Spec', category: 'file' },
+  { id: 'excalidraw.browse', label: 'Excalidraw+: Browse Workspace', category: 'view' },
+  { id: 'excalidraw.sync-all', label: 'Excalidraw+: Sync All Specs', category: 'file' },
 ];

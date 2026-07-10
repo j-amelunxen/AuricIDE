@@ -27,6 +27,8 @@ import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
+import { ExcalidrawViewer } from './components/excalidraw/ExcalidrawViewer';
+import { ExcalidrawBrowser } from './components/excalidraw/ExcalidrawBrowser';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianColor, ObsidianNode } from '@/lib/obsidian-canvas/types';
 import { TicketCreateModal } from './components/pm/TicketCreateModal';
@@ -223,6 +225,10 @@ export default function Home() {
         />
       )}
       <RequirementsModal />
+      <ExcalidrawBrowser
+        onImported={() => void handlers.handleRefresh()}
+        onOpenSettings={() => state.setSettingsModalOpen(true)}
+      />
       <GoalsModal />
       <OrchestrationModal />
       <NewProjectModal
@@ -306,6 +312,12 @@ export default function Home() {
                     edges={state.mindmapData.edges}
                     onNodeEdit={handlers.handleMindmapNodeEdit}
                     onNodesChange={handlers.handleMindmapNodesChange}
+                  />
+                ) : handlers.isExcalidrawTab ? (
+                  <ExcalidrawViewer
+                    content={state.editorContent}
+                    filePath={state.activeTabId}
+                    onReload={() => void handlers.handleFileSelect(state.activeTabId!)}
                   />
                 ) : handlers.isHtmlTab ? (
                   <HtmlViewer

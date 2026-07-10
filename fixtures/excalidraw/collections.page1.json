@@ -1,0 +1,9 @@
+{
+  "limit": 2,
+  "offset": 0,
+  "hasNextPage": true,
+  "data": [
+    { "id": "col_a", "name": "Page One A", "updated": "2026-05-01T00:00:00Z" },
+    { "id": "col_b", "name": "Page One B", "updated": "2026-05-02T00:00:00Z" }
+  ]
+}

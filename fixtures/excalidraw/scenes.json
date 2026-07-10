@@ -1,0 +1,61 @@
+{
+  "limit": 100,
+  "offset": 0,
+  "hasNextPage": false,
+  "data": [
+    {
+      "metadata": {
+        "workspace": "ws_1",
+        "name": "Checkout Flow",
+        "created": "2026-03-01T10:00:00.000Z",
+        "updated": "2026-07-05T16:20:00Z",
+        "previewUrl": "https://plus.excalidraw.com/previews/scn_checkout.png",
+        "previewFilename": "abc123",
+        "previewBackground": "#ffffff",
+        "isDeleted": false,
+        "isPrivate": false,
+        "creator": "user_1",
+        "updater": "user_1",
+        "sceneVersion": "3d49c22a",
+        "contentEpoch": 0,
+        "linkSharing": 0,
+        "readComments": false,
+        "writeComments": false,
+        "collection": "col_flows",
+        "updateCount": 26,
+        "revisionCount": 25,
+        "lastRevision": "rev_1",
+        "totalElements": 123,
+        "deletedElements": 13,
+        "pinned": false,
+        "hasNonDeletedFrames": false,
+        "isSlidesSharingEnabled": false,
+        "isWelcomeScene": false,
+        "id": "scn_checkout"
+      },
+      "readOnlyLinks": [],
+      "sharedSlidesLinks": []
+    },
+    {
+      "metadata": {
+        "workspace": "ws_1",
+        "name": "Deploy Pipeline Übersicht",
+        "created": "2026-04-11T10:00:00.000Z",
+        "updated": "2026-06-28T09:00:00Z",
+        "previewUrl": null,
+        "isDeleted": false,
+        "isPrivate": true,
+        "creator": "user_2",
+        "updater": null,
+        "sceneVersion": "7ab99001",
+        "collection": "col_flows",
+        "pinned": true,
+        "isSlidesSharingEnabled": false,
+        "isWelcomeScene": false,
+        "id": "scn_deploy"
+      },
+      "readOnlyLinks": [],
+      "sharedSlidesLinks": []
+    }
+  ]
+}

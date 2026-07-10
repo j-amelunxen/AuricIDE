@@ -1,0 +1,37 @@
+{
+  "limit": 100,
+  "offset": 0,
+  "hasNextPage": false,
+  "data": [
+    {
+      "id": "col_arch",
+      "isDefault": false,
+      "workspace": "ws_1",
+      "creator": "user_1",
+      "updater": "user_1",
+      "teams": [],
+      "created": "2026-01-10T09:00:00Z",
+      "sortOrder": "a0",
+      "name": "Architecture",
+      "updated": "2026-06-01T12:00:00Z",
+      "isDeleted": false,
+      "emoji": { "id": "triangular_ruler", "native": "📐", "unified": "1f4d0" },
+      "deletedAt": null
+    },
+    {
+      "id": "col_flows",
+      "isDefault": true,
+      "workspace": "ws_1",
+      "creator": "user_1",
+      "updater": "user_2",
+      "teams": ["team_1"],
+      "created": "2026-02-01T09:00:00Z",
+      "sortOrder": "a1",
+      "name": "devopsFlow Specs",
+      "updated": "2026-07-01T08:30:00Z",
+      "isDeleted": false,
+      "emoji": null,
+      "deletedAt": null
+    }
+  ]
+}

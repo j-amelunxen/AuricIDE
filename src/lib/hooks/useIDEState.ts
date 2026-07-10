@@ -97,6 +97,8 @@ export function useIDEState() {
   const setRequirementsModalOpen = useStore((s) => s.setRequirementsModalOpen);
   const loadRequirements = useStore((s) => s.loadRequirements);
   const resetRequirementsInMemory = useStore((s) => s.resetRequirementsInMemory);
+  const loadExcalidrawSpecLinks = useStore((s) => s.loadExcalidrawSpecLinks);
+  const resetExcalidrawInMemory = useStore((s) => s.resetExcalidrawInMemory);
   const initProjectDb = useStore((s) => s.initProjectDb);
   const closeProjectDb = useStore((s) => s.closeProjectDb);
   const setAllFiles = useStore((s) => s.setAllFiles);
@@ -276,6 +278,8 @@ export function useIDEState() {
     resetBlueprintsInMemory,
     setRequirementsModalOpen,
     loadRequirements,
+    loadExcalidrawSpecLinks,
+    resetExcalidrawInMemory,
     resetRequirementsInMemory,
     pmDraftTickets,
     providers,

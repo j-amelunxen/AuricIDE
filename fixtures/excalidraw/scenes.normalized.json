@@ -1,0 +1,18 @@
+[
+  {
+    "id": "scn_checkout",
+    "name": "Checkout Flow",
+    "collectionId": "col_flows",
+    "workspaceId": "ws_1",
+    "updatedAt": "2026-07-05T16:20:00Z",
+    "previewUrl": "https://plus.excalidraw.com/previews/scn_checkout.png"
+  },
+  {
+    "id": "scn_deploy",
+    "name": "Deploy Pipeline Übersicht",
+    "collectionId": "col_flows",
+    "workspaceId": "ws_1",
+    "updatedAt": "2026-06-28T09:00:00Z",
+    "previewUrl": null
+  }
+]

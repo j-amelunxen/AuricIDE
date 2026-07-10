@@ -1,0 +1,19 @@
+{
+  "limit": 100,
+  "offset": 0,
+  "hasNextPage": false,
+  "data": [
+    {
+      "metadata": {
+        "id": "scn_broken",
+        "name": 12345,
+        "workspace": "ws_1",
+        "collection": "col_flows",
+        "created": "2026-03-01T10:00:00Z",
+        "updated": "2026-07-05T16:20:00Z"
+      },
+      "readOnlyLinks": [],
+      "sharedSlidesLinks": []
+    }
+  ]
+}

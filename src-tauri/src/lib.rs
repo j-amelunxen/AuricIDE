@@ -1,6 +1,7 @@
 mod agents;
 pub mod crashlog;
 mod database;
+mod excalidraw;
 mod llm;
 mod mcp;
 mod memory_report;
@@ -1409,6 +1410,45 @@ async fn llm_call(
 }
 
 #[tauri::command]
+async fn excalidraw_test_connection(
+    project_path: String,
+    db_state: tauri::State<'_, database::DatabaseState>,
+) -> Result<String, String> {
+    excalidraw::test_connection_impl(&project_path, db_state).await
+}
+
+#[tauri::command]
+async fn excalidraw_list_collections(
+    project_path: String,
+    db_state: tauri::State<'_, database::DatabaseState>,
+) -> Result<Vec<excalidraw::contract::Collection>, String> {
+    excalidraw::list_collections_impl(&project_path, db_state).await
+}
+
+#[tauri::command]
+async fn excalidraw_list_scenes(
+    project_path: String,
+    collection_id: String,
+    db_state: tauri::State<'_, database::DatabaseState>,
+) -> Result<Vec<excalidraw::contract::SceneSummary>, String> {
+    excalidraw::list_scenes_impl(&project_path, &collection_id, db_state).await
+}
+
+#[tauri::command]
+async fn excalidraw_get_scene_content(
+    project_path: String,
+    scene_id: String,
+    db_state: tauri::State<'_, database::DatabaseState>,
+) -> Result<String, String> {
+    excalidraw::get_scene_content_impl(&project_path, &scene_id, db_state).await
+}
+
+#[tauri::command]
+fn excalidraw_scene_url(workspace_id: Option<String>, scene_id: String) -> String {
+    excalidraw::scene_url_impl(workspace_id.as_deref(), &scene_id)
+}
+
+#[tauri::command]
 fn report_frontend_crash(
     error: crashlog::FrontendError,
     app: tauri::AppHandle,
@@ -1484,6 +1524,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Ok(log_dir) = app.path().app_log_dir() {
                 crashlog::set_crash_log_dir(log_dir);
@@ -1567,6 +1608,11 @@ pub fn run() {
             list_crash_logs,
             read_crash_log,
             llm_call,
+            excalidraw_test_connection,
+            excalidraw_list_collections,
+            excalidraw_list_scenes,
+            excalidraw_get_scene_content,
+            excalidraw_scene_url,
             start_mcp,
             stop_mcp,
             mcp_status

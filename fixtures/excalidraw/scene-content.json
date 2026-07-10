@@ -1,0 +1,42 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "sceneVersion": "42",
+  "elements": [
+    {
+      "id": "rect_1",
+      "type": "rectangle",
+      "x": 100,
+      "y": 100,
+      "width": 200,
+      "height": 80,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "#a5d8ff",
+      "seed": 12345,
+      "version": 3,
+      "isDeleted": false
+    },
+    {
+      "id": "text_1",
+      "type": "text",
+      "x": 130,
+      "y": 130,
+      "width": 140,
+      "height": 24,
+      "text": "Checkout",
+      "fontSize": 20,
+      "seed": 6789,
+      "version": 2,
+      "isDeleted": false
+    }
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": null,
+    "collaborators": { "user_1": { "username": "jennifer" } },
+    "lockedMultiSelections": {}
+  },
+  "files": {},
+  "filesFailedToEmbed": []
+}
