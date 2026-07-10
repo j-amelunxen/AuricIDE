@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
+import { buildMcpConfig, initMcpJson } from '@/lib/settings/mcpConfig';
 import { SettingsToggle } from '../ui/settings/SettingsToggle';
+
+type InitFeedback = { kind: 'success' | 'error'; message: string } | null;
 
 export function McpSettingsContent() {
   const rootPath = useStore((s) => s.rootPath);
@@ -13,23 +16,9 @@ export function McpSettingsContent() {
   const startMcpServer = useStore((s) => s.startMcpServer);
   const stopMcpServer = useStore((s) => s.stopMcpServer);
   const [copied, setCopied] = useState(false);
+  const [initFeedback, setInitFeedback] = useState<InitFeedback>(null);
 
-  const configSnippet = JSON.stringify(
-    {
-      mcpServers: {
-        'auric-pm': {
-          command: 'npx',
-          args: [
-            'tsx',
-            `${rootPath || '<project>'}/src/mcp/server.ts`,
-            `${rootPath || '<project>'}/.auric/project.db`,
-          ],
-        },
-      },
-    },
-    null,
-    2
-  );
+  const configSnippet = JSON.stringify(buildMcpConfig(rootPath || '<project>'), null, 2);
 
   const handleToggle = async () => {
     if (!rootPath) return;
@@ -37,6 +26,22 @@ export function McpSettingsContent() {
       await stopMcpServer();
     } else {
       await startMcpServer(rootPath);
+    }
+  };
+
+  const handleInitMcpJson = async () => {
+    if (!rootPath) return;
+    try {
+      const result = await initMcpJson(rootPath);
+      setInitFeedback({
+        kind: 'success',
+        message: result === 'created' ? '.mcp.json created' : '.mcp.json updated',
+      });
+    } catch (err) {
+      setInitFeedback({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -103,9 +108,30 @@ export function McpSettingsContent() {
         </div>
 
         <div className="space-y-2 pl-1">
-          <p className="text-[9px] text-foreground-muted opacity-60">
-            Add this to your Claude Code MCP configuration:
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[9px] text-foreground-muted opacity-60">
+              Write this configuration to <span className="font-mono">.mcp.json</span> in the
+              project root, or copy it manually:
+            </p>
+            <button
+              data-testid="mcp-init-button"
+              onClick={handleInitMcpJson}
+              disabled={!rootPath}
+              className="shrink-0 rounded border border-primary/20 bg-primary/10 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary-light transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Init .mcp.json
+            </button>
+          </div>
+          {initFeedback && (
+            <p
+              data-testid="mcp-init-feedback"
+              className={`text-[10px] ${
+                initFeedback.kind === 'success' ? 'text-green-400' : 'text-red-400'
+              }`}
+            >
+              {initFeedback.message}
+            </p>
+          )}
           <div className="relative">
             <pre
               data-testid="mcp-config-snippet"
