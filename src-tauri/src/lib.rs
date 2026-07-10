@@ -3,6 +3,7 @@ pub mod crashlog;
 mod database;
 mod llm;
 mod mcp;
+mod memory_report;
 mod providers;
 mod utf8_stream;
 
@@ -358,132 +359,35 @@ fn save_temp_image(base64_data: String, app: tauri::AppHandle) -> Result<String,
     Ok(file_path.to_string_lossy().to_string())
 }
 
-#[derive(Debug, Serialize, Clone)]
-pub struct SystemProcessEntry {
-    label: String,
-    pid: u32,
-    rss_bytes: u64,
-}
-
-struct PsEntry {
-    pid: u32,
-    ppid: u32,
-    rss_kb: u64,
-    command: String,
-}
-
-fn parse_ps_output() -> Vec<PsEntry> {
-    let output = match std::process::Command::new("ps")
-        .args(["axo", "pid=,ppid=,rss=,command="])
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return Vec::new(),
+#[tauri::command]
+async fn get_system_memory(
+    agent_state: tauri::State<'_, agents::AgentManagerState>,
+) -> Result<Vec<memory_report::SystemProcessEntry>, String> {
+    // Agent processes are labeled by their real name instead of drowning in
+    // an anonymous child-process bucket.
+    let known: Vec<memory_report::KnownProcess> = {
+        let manager = agent_state.lock().await;
+        manager
+            .agents
+            .values()
+            .filter_map(|agent| {
+                agent
+                    .child
+                    .process_id()
+                    .map(|pid| memory_report::KnownProcess {
+                        pid,
+                        label: format!("Agent: {}", agent.info.name),
+                    })
+            })
+            .collect()
     };
 
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines()
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 4 {
-                return None;
-            }
-            let pid: u32 = parts[0].parse().ok()?;
-            let ppid: u32 = parts[1].parse().ok()?;
-            let rss_kb: u64 = parts[2].parse().ok()?;
-            let command = parts[3..].join(" ");
-            Some(PsEntry {
-                pid,
-                ppid,
-                rss_kb,
-                command,
-            })
-        })
-        .collect()
-}
-
-fn find_descendants(root_pid: u32, entries: &[PsEntry]) -> Vec<&PsEntry> {
-    let mut result = Vec::new();
-    let mut parents = vec![root_pid];
-    let mut visited = std::collections::HashSet::new();
-    visited.insert(root_pid);
-
-    while !parents.is_empty() {
-        let mut next_parents = Vec::new();
-        for entry in entries {
-            if parents.contains(&entry.ppid) && !visited.contains(&entry.pid) {
-                visited.insert(entry.pid);
-                result.push(entry);
-                next_parents.push(entry.pid);
-            }
-        }
-        parents = next_parents;
-    }
-
-    result
-}
-
-#[tauri::command]
-fn get_system_memory() -> Vec<SystemProcessEntry> {
-    let own_pid = std::process::id();
-    let entries = parse_ps_output();
-    let mut result = Vec::new();
-
-    // 1. Own process (Tauri / Rust)
-    if let Some(e) = entries.iter().find(|e| e.pid == own_pid) {
-        result.push(SystemProcessEntry {
-            label: "Tauri (Rust)".to_string(),
-            pid: e.pid,
-            rss_bytes: e.rss_kb * 1024,
-        });
-    }
-
-    // 2. Next.js dev server — look for node processes running next-server
-    let next_entries: Vec<&PsEntry> = entries
-        .iter()
-        .filter(|e| {
-            e.pid != own_pid
-                && (e.command.contains("next-server")
-                    || (e.command.contains("node") && e.command.contains(".next")))
-        })
-        .collect();
-
-    if !next_entries.is_empty() {
-        let total_rss: u64 = next_entries.iter().map(|e| e.rss_kb).sum();
-        result.push(SystemProcessEntry {
-            label: "Next.js".to_string(),
-            pid: next_entries[0].pid,
-            rss_bytes: total_rss * 1024,
-        });
-    }
-
-    // 3. WebView / child processes — walk the process tree from our PID
-    let descendants = find_descendants(own_pid, &entries);
-    let desc_rss: u64 = descendants.iter().map(|e| e.rss_kb).sum();
-
-    if desc_rss > 0 {
-        result.push(SystemProcessEntry {
-            label: "WebView (UI)".to_string(),
-            pid: 0,
-            rss_bytes: desc_rss * 1024,
-        });
-    } else {
-        // Fallback: find WebKit content processes system-wide
-        let wc_total: u64 = entries
-            .iter()
-            .filter(|e| e.pid != own_pid && e.command.contains("WebContent"))
-            .map(|e| e.rss_kb)
-            .sum();
-        if wc_total > 0 {
-            result.push(SystemProcessEntry {
-                label: "WebView (est.)".to_string(),
-                pid: 0,
-                rss_bytes: wc_total * 1024,
-            });
-        }
-    }
-
-    result
+    let entries = memory_report::read_ps_entries();
+    Ok(memory_report::build_memory_report(
+        std::process::id(),
+        &entries,
+        &known,
+    ))
 }
 
 #[tauri::command]

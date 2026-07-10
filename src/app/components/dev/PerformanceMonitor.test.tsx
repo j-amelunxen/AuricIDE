@@ -73,7 +73,7 @@ describe('PerformanceMonitor', () => {
   it('shows amber state for elevated memory (>500MB total)', async () => {
     mockInvoke.mockResolvedValue([
       { label: 'Tauri (Rust)', pid: 1, rss_bytes: 300 * 1024 * 1024 },
-      { label: 'Next.js', pid: 2, rss_bytes: 400 * 1024 * 1024 },
+      { label: 'Next.js Dev Server (dev-only)', pid: 2, rss_bytes: 400 * 1024 * 1024 },
     ]);
     render(<PerformanceMonitor />);
     await act(async () => {
@@ -86,8 +86,8 @@ describe('PerformanceMonitor', () => {
   it('shows red state for critical memory (>1500MB total)', async () => {
     mockInvoke.mockResolvedValue([
       { label: 'Tauri (Rust)', pid: 1, rss_bytes: 500 * 1024 * 1024 },
-      { label: 'Next.js', pid: 2, rss_bytes: 600 * 1024 * 1024 },
-      { label: 'WebView (UI)', pid: 3, rss_bytes: 600 * 1024 * 1024 },
+      { label: 'Next.js Dev Server (dev-only)', pid: 2, rss_bytes: 600 * 1024 * 1024 },
+      { label: 'Agent: Writer', pid: 3, rss_bytes: 600 * 1024 * 1024 },
     ]);
     render(<PerformanceMonitor />);
     await act(async () => {
@@ -107,8 +107,9 @@ describe('PerformanceMonitor', () => {
   it('shows process breakdown in expanded panel (Tauri mode)', async () => {
     mockInvoke.mockResolvedValue([
       { label: 'Tauri (Rust)', pid: 100, rss_bytes: 128 * 1024 * 1024 },
-      { label: 'Next.js', pid: 200, rss_bytes: 892 * 1024 * 1024 },
-      { label: 'WebView (UI)', pid: 300, rss_bytes: 245 * 1024 * 1024 },
+      { label: 'Next.js Dev Server (dev-only)', pid: 200, rss_bytes: 892 * 1024 * 1024 },
+      { label: 'Agent: Writer', pid: 300, rss_bytes: 200 * 1024 * 1024 },
+      { label: 'WebView (est., system-wide)', pid: 0, rss_bytes: 245 * 1024 * 1024 },
     ]);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -121,9 +122,11 @@ describe('PerformanceMonitor', () => {
     const panel = screen.getByTestId('perf-panel');
     expect(panel.textContent).toContain('Tauri (Rust)');
     expect(panel.textContent).toContain('128 MB');
-    expect(panel.textContent).toContain('Next.js');
+    expect(panel.textContent).toContain('Next.js Dev Server (dev-only)');
     expect(panel.textContent).toContain('892 MB');
-    expect(panel.textContent).toContain('WebView (UI)');
+    expect(panel.textContent).toContain('Agent: Writer');
+    expect(panel.textContent).toContain('200 MB');
+    expect(panel.textContent).toContain('WebView (est., system-wide)');
     expect(panel.textContent).toContain('245 MB');
   });
 
@@ -176,7 +179,7 @@ describe('PerformanceMonitor', () => {
 
   it('formats large values as GB', async () => {
     mockInvoke.mockResolvedValue([
-      { label: 'WebView (UI)', pid: 1, rss_bytes: 2048 * 1024 * 1024 },
+      { label: 'Agent: Writer', pid: 1, rss_bytes: 2048 * 1024 * 1024 },
     ]);
     render(<PerformanceMonitor />);
     await act(async () => {
