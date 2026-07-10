@@ -309,6 +309,10 @@ pub async fn spawn_agent_impl(
 
     // Async task for batching and emitting (prevents trapping data in buffers)
     tauri::async_runtime::spawn(async move {
+        // PTY reads split multi-byte UTF-8 across chunks; decoding each chunk
+        // independently corrupts umlauts/box-drawing into U+FFFD and shifts
+        // every following terminal cell.
+        let mut decoder = crate::utf8_stream::Utf8StreamDecoder::new();
         let mut accum = String::new();
         let mut has_produced_output = false;
         let mut last_emit = std::time::Instant::now();
@@ -323,7 +327,7 @@ pub async fn spawn_agent_impl(
                     match data {
                         Some(bytes) => {
                             has_produced_output = true;
-                            accum.push_str(&String::from_utf8_lossy(&bytes));
+                            accum.push_str(&decoder.push(&bytes));
 
                             if accum.len() > 16384 || last_emit.elapsed() >= batch_interval {
                                 let data = std::mem::take(&mut accum);
@@ -345,6 +349,7 @@ pub async fn spawn_agent_impl(
         }
 
         // Final flush of remaining accumulated data
+        accum.push_str(&decoder.finish());
         if !accum.is_empty() {
             emit_agent_output(&app_clone, &id_clone, &rp_clone, accum).await;
         }

@@ -4,6 +4,7 @@ mod database;
 mod llm;
 mod mcp;
 mod providers;
+mod utf8_stream;
 
 use agents::AgentManagerState;
 use database::{
@@ -209,7 +210,7 @@ async fn shell_spawn(
 
     std::thread::spawn(move || {
         let mut buffer = [0u8; 16_384];
-        let mut utf8_buf: Vec<u8> = Vec::new();
+        let mut decoder = utf8_stream::Utf8StreamDecoder::new();
         let mut accumulated = String::new();
         let mut last_emit = std::time::Instant::now();
         let batch_interval = std::time::Duration::from_millis(16);
@@ -221,37 +222,9 @@ async fn shell_spawn(
                 Err(_) => break,
             };
 
-            utf8_buf.extend_from_slice(&buffer[..n]);
-
-            // Decode only complete UTF-8 sequences; keep trailing incomplete bytes for next read
-            loop {
-                match std::str::from_utf8(&utf8_buf) {
-                    Ok(s) => {
-                        accumulated.push_str(s);
-                        utf8_buf.clear();
-                        break;
-                    }
-                    Err(e) => {
-                        let valid_up_to = e.valid_up_to();
-                        if valid_up_to > 0 {
-                            // Safety: valid_up_to is guaranteed valid by from_utf8
-                            accumulated.push_str(unsafe {
-                                std::str::from_utf8_unchecked(&utf8_buf[..valid_up_to])
-                            });
-                            utf8_buf.drain(..valid_up_to);
-                        }
-                        // If nothing is valid yet (e.g. first byte of a multi-byte sequence arrived),
-                        // stop processing and wait for next read to complete the sequence.
-                        if e.error_len().is_none() {
-                            break; // incomplete sequence at end — wait for more bytes
-                        } else {
-                            // Invalid byte (not just incomplete) — replace with U+FFFD and skip
-                            accumulated.push('\u{FFFD}');
-                            utf8_buf.drain(..valid_up_to + 1);
-                        }
-                    }
-                }
-            }
+            // Decode only complete UTF-8 sequences; the decoder keeps trailing
+            // incomplete bytes for the next read.
+            accumulated.push_str(&decoder.push(&buffer[..n]));
 
             // Emit batched output every ~16 ms or when the buffer is large enough
             if last_emit.elapsed() >= batch_interval || accumulated.len() > 32_000 {
@@ -264,6 +237,7 @@ async fn shell_spawn(
         }
 
         // Flush any remaining data
+        accumulated.push_str(&decoder.finish());
         if !accumulated.is_empty() {
             let _ = app_stdout.emit(&format!("terminal-out-{}", id_stdout), accumulated);
         }
