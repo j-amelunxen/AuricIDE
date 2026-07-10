@@ -129,6 +129,16 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       // Agent mode — replay + live output from the store (single source,
       // synchronous attach: no gap or duplication against the backfill)
       if (agentId) {
+        // Custom fonts change char metrics and therefore cols. Attach only
+        // after they settle, or the later re-fit reflows the replayed TUI
+        // screen into duplicated fragments.
+        try {
+          await document.fonts?.ready;
+        } catch {}
+        if (!isMounted) return;
+        try {
+          fitAddon.fit();
+        } catch {}
         const detach = attachAgentStream({ write: writeTerm }, agentId);
         setIsInitialized(true);
         return detach;

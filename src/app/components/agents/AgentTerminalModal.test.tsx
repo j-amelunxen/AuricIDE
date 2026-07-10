@@ -133,7 +133,16 @@ describe('AgentTerminalModal', () => {
     }
 
     async function flushSetup() {
+      // Setup fits once immediately, sleeps ~50ms for layout, fits AGAIN,
+      // then attaches the stream (which replays history). A fixed sleep
+      // flakes under full-suite load — the timer fires late when the event
+      // loop is starved — so poll for the second fit, then flush the
+      // remaining import/attach microtasks with macrotask turns.
+      await waitFor(() => expect(mockFit.mock.calls.length).toBeGreaterThanOrEqual(2), {
+        timeout: 5000,
+      });
       await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
         await new Promise((r) => setTimeout(r, 0));
       });
     }
@@ -145,8 +154,8 @@ describe('AgentTerminalModal', () => {
       render(<AgentTerminalModal agent={streamAgent('stream-replay')} onClose={vi.fn()} />);
       await flushSetup();
 
+      await waitFor(() => expect(mockWrite).toHaveBeenCalledWith('chunk-achunk-b'));
       expect(mockWrite).toHaveBeenCalledTimes(1);
-      expect(mockWrite).toHaveBeenCalledWith('chunk-achunk-b');
     });
 
     it('fits the terminal BEFORE replaying history', async () => {
@@ -155,8 +164,8 @@ describe('AgentTerminalModal', () => {
       render(<AgentTerminalModal agent={streamAgent('stream-fit')} onClose={vi.fn()} />);
       await flushSetup();
 
+      await waitFor(() => expect(mockWrite).toHaveBeenCalled());
       expect(mockFit).toHaveBeenCalled();
-      expect(mockWrite).toHaveBeenCalled();
       expect(mockFit.mock.invocationCallOrder[0]).toBeLessThan(
         mockWrite.mock.invocationCallOrder[0]
       );
@@ -167,6 +176,8 @@ describe('AgentTerminalModal', () => {
 
       render(<AgentTerminalModal agent={streamAgent('stream-live')} onClose={vi.fn()} />);
       await flushSetup();
+      // The seeded history write must land before we start counting.
+      await waitFor(() => expect(mockWrite).toHaveBeenCalled());
       mockWrite.mockClear();
 
       act(() => {

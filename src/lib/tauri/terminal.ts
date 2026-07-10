@@ -1,4 +1,7 @@
 import { invoke } from './invoke';
+import { resizeAgentMirror } from '../terminal/agentMirror';
+
+const AGENT_SESSION_PREFIX = 'agent-';
 
 export async function spawnShell(
   id: string,
@@ -12,6 +15,11 @@ export async function spawnShell(
 }
 
 export async function resizeShell(id: string, rows: number, cols: number): Promise<void> {
+  // Agent PTYs have a headless mirror that must stay in lockstep with the
+  // PTY size, or its screen snapshot would be laid out for the wrong width.
+  if (id.startsWith(AGENT_SESSION_PREFIX)) {
+    resizeAgentMirror(id.slice(AGENT_SESSION_PREFIX.length), rows, cols);
+  }
   await invoke('shell_resize', { id, rows, cols });
 }
 

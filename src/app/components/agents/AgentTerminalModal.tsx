@@ -56,17 +56,18 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
-      // Fit BEFORE replaying history: TUI agents redraw via cursor-relative
-      // escape sequences, so replaying at the default 80-col width and
-      // reflowing afterwards leaves duplicated fragments on screen.
+      // Fit BEFORE attaching, and only attach once the layout has settled
+      // (fit again after a frame): TUI agents redraw via cursor-relative
+      // escape sequences, so writing the screen at one width and reflowing
+      // it afterwards leaves duplicated fragments on screen.
       try {
         fitAddon.fit();
       } catch {}
-      setTimeout(() => {
-        try {
-          fitAddon.fit();
-        } catch {}
-      }, 50);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (disposed || !containerRef.current) return;
+      try {
+        fitAddon.fit();
+      } catch {}
 
       // Right-click context menu for selection spawning
       const handleContextMenu = (e: MouseEvent) => {
@@ -79,14 +80,18 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       };
       containerRef.current.addEventListener('contextmenu', handleContextMenu);
 
+      // Sync PTY + mirror to the settled size BEFORE attaching, so the
+      // screen snapshot is laid out for the width it is displayed at.
+      const { writeToShell, resizeShell } = await import('@/lib/tauri/terminal');
+      const sessionId = `agent-${agentId}`;
+      resizeShell(sessionId, term.rows, term.cols).catch(() => {});
+
       // Single source of truth: the store (see attachAgentStream). A second
       // Tauri event channel had an await gap between backfill and live
       // subscribe, so chunks got lost or shown twice.
       const unsubStore = attachAgentStream(term, agentId);
 
       // Forward keyboard input to the agent PTY
-      const { writeToShell, resizeShell } = await import('@/lib/tauri/terminal');
-      const sessionId = `agent-${agentId}`;
       term.onData((data) => {
         writeToShell(sessionId, data);
       });
@@ -109,9 +114,6 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       if (containerRef.current) {
         resizeObserver.observe(containerRef.current);
       }
-
-      // Send initial resize after fit
-      resizeShell(sessionId, term.rows, term.cols).catch(() => {});
 
       return () => {
         disposed = true;
