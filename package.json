@@ -33,7 +33,8 @@
     "knip": "knip",
     "jscpd": "jscpd src",
     "check:all": "pnpm lint && pnpm format:check && pnpm knip && pnpm jscpd && pnpm test:run && pnpm tauri:test && pnpm tauri:clippy && pnpm tauri:fmt:check && pnpm tauri:machete",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "node scripts/copy-excalidraw-assets.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
@@ -54,6 +55,7 @@
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.14",
     "@dagrejs/dagre": "^2.0.4",
+    "@excalidraw/excalidraw": "^0.18.1",
     "@huggingface/transformers": "^3.8.1",
     "@lezer/highlight": "^1.2.3",
     "@react-three/drei": "^10.7.7",
@@ -62,7 +64,10 @@
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.10.0",
     "better-sqlite3": "^12.6.2",
