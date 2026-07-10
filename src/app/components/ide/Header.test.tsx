@@ -16,14 +16,34 @@ describe('Header', () => {
     expect(screen.getByText('README.md')).toBeInTheDocument();
   });
 
-  it('shows connected status by default', () => {
+  it('stays quiet about the connection while everything is fine', () => {
     render(<Header breadcrumbs={[]} isConnected connectionLabel="Claude 3.5 Connected" />);
-    expect(screen.getByTestId('connection-badge')).toHaveTextContent('Claude 3.5 Connected');
+    expect(screen.queryByTestId('connection-badge')).not.toBeInTheDocument();
   });
 
   it('shows disconnected status', () => {
     render(<Header breadcrumbs={[]} isConnected={false} />);
     expect(screen.getByTestId('connection-badge')).toHaveTextContent('Disconnected');
+  });
+
+  it('stays quiet about the LLM while one is configured', () => {
+    render(<Header breadcrumbs={[]} llmConfigured />);
+    expect(screen.queryByTestId('llm-status-badge')).not.toBeInTheDocument();
+  });
+
+  it('warns when no LLM is configured', () => {
+    render(<Header breadcrumbs={[]} llmConfigured={false} />);
+    expect(screen.getByTestId('llm-status-badge')).toHaveTextContent('LLM not configured');
+  });
+
+  it('does not wear an "AI Native" sticker', () => {
+    render(<Header breadcrumbs={[]} />);
+    expect(screen.queryByText('AI Native')).not.toBeInTheDocument();
+  });
+
+  it('renders the always-visible conductor pulse', () => {
+    render(<Header breadcrumbs={[]} />);
+    expect(screen.getByTestId('conductor-pulse')).toBeInTheDocument();
   });
 
   it('renders command palette trigger', () => {

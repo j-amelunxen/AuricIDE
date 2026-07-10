@@ -12,6 +12,7 @@ import {
 import type { StoreState } from './index';
 import type { PmDependency, PmTicket } from '../tauri/pm';
 import type { PmGoal } from '../tauri/goals';
+import { spawnAgent } from '../tauri/agents';
 
 let agentCounter = 0;
 
@@ -229,6 +230,19 @@ describe('conductorSlice', () => {
     const agent = store.getState().agents[0];
     expect(agent.model).toBe('opus');
     expect(agent.provider).toBe('gemini');
+  });
+
+  it('auto-spawns with the safe auto permission mode (not acceptEdits/bypass)', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+
+    const mockSpawn = vi.mocked(spawnAgent);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(mockSpawn.mock.calls[0][0]).toMatchObject({ permissionMode: 'auto' });
   });
 
   it('does not spawn when conductor is stopped', async () => {

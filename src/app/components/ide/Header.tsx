@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { ConductorPulse } from '../goals/ConductorPulse';
 
 export interface HeadingBreadcrumb {
   title: string;
@@ -23,7 +24,6 @@ export function Header({
   headingBreadcrumbs,
   onHeadingBreadcrumbClick,
   isConnected = false,
-  connectionLabel,
   llmConfigured = false,
   variant = 'editor',
   onCommandPalette,
@@ -52,15 +52,10 @@ export function Header({
                 className="drop-shadow-[0_0_5px_rgba(var(--primary-rgb),0.5)]"
               />
             </div>
-            <div className="flex flex-col leading-none">
-              <span className="font-display font-black text-sm tracking-tight text-white">
-                AURIC
-                <span className="text-primary-light font-light tracking-[0.1em] ml-0.5">IDE</span>
-              </span>
-              <span className="text-[9px] text-foreground-muted uppercase tracking-widest opacity-60">
-                AI Native
-              </span>
-            </div>
+            <span className="font-display font-black text-sm tracking-tight text-white">
+              AURIC
+              <span className="text-primary-light font-light tracking-[0.1em] ml-0.5">IDE</span>
+            </span>
           </div>
 
           <div className="h-6 w-[1px] bg-white/10" />
@@ -143,40 +138,34 @@ export function Header({
           </kbd>
         </button>
 
-        <div
-          data-testid="connection-badge"
-          title={isConnected ? 'Connected to the agent CLI' : 'Start the agent CLI to connect'}
-          className={`flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium backdrop-blur-sm ${
-            isConnected ? 'text-green-400' : 'text-red-400'
-          }`}
-        >
-          <span className="relative flex h-2 w-2">
-            {isConnected && (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-            )}
-            <span
-              className={`relative inline-flex h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
-            ></span>
-          </span>
-          {isConnected ? connectionLabel || 'Connected' : 'Disconnected'}
-        </div>
+        <ConductorPulse />
 
-        <div
-          data-testid="llm-status-badge"
-          title={
-            llmConfigured
-              ? 'An LLM provider is configured'
-              : 'Configure an LLM provider in Settings'
-          }
-          className={`flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium backdrop-blur-sm ${
-            llmConfigured ? 'text-primary-light' : 'text-orange-400'
-          }`}
-        >
-          <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
-            {llmConfigured ? 'psychology' : 'warning'}
-          </span>
-          {llmConfigured ? 'Direct LLM Active' : 'LLM not configured'}
-        </div>
+        {/* Status chips only speak up when something needs attention. */}
+        {!isConnected && (
+          <div
+            data-testid="connection-badge"
+            title="Start the agent CLI to connect"
+            className="flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium text-red-400 backdrop-blur-sm"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+            </span>
+            Disconnected
+          </div>
+        )}
+
+        {!llmConfigured && (
+          <div
+            data-testid="llm-status-badge"
+            title="Configure an LLM provider in Settings"
+            className="flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium text-orange-400 backdrop-blur-sm"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
+              warning
+            </span>
+            LLM not configured
+          </div>
+        )}
       </div>
     </header>
   );

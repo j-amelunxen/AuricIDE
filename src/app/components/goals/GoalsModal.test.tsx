@@ -119,7 +119,7 @@ describe('GoalsModal', () => {
     render(<GoalsModal />);
     await user.click(screen.getByTestId('goal-launch-agent-btn'));
     expect(mocks.spawnNewAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ spawnedByGoalId: 'g1', cwd: '/project' })
+      expect.objectContaining({ spawnedByGoalId: 'g1', cwd: '/project', permissionMode: 'auto' })
     );
     expect(mocks.saveGoals).toHaveBeenCalledWith('/project');
   });
