@@ -10,6 +10,7 @@ import { AppearanceContent } from './settings/AppearanceContent';
 import { SystemContent } from './settings/SystemContent';
 import { McpSettingsContent } from './McpSettingsContent';
 import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
+import { ExcalidrawContent } from './settings/ExcalidrawContent';
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -24,7 +25,8 @@ type SettingsCategory =
   | 'appearance'
   | 'system'
   | 'mcp'
-  | 'blueprints';
+  | 'blueprints'
+  | 'excalidraw';
 
 const CATEGORIES: { id: SettingsCategory; icon: string; label: string }[] = [
   { id: 'agent', icon: 'robot_2', label: 'Agent' },
@@ -35,6 +37,7 @@ const CATEGORIES: { id: SettingsCategory; icon: string; label: string }[] = [
   { id: 'system', icon: 'info', label: 'System' },
   { id: 'mcp', icon: 'hub', label: 'MCP' },
   { id: 'blueprints', icon: 'sync', label: 'Blueprints' },
+  { id: 'excalidraw', icon: 'draw', label: 'Excalidraw+' },
 ];
 
 function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
@@ -67,6 +70,8 @@ function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
         return <McpSettingsContent />;
       case 'blueprints':
         return <BlueprintSyncContent />;
+      case 'excalidraw':
+        return <ExcalidrawContent />;
     }
   };
 

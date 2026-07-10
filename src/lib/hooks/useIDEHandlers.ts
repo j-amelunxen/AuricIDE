@@ -106,6 +106,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.resetPmInMemory();
     state.resetBlueprintsInMemory();
     state.resetRequirementsInMemory();
+    state.resetExcalidrawInMemory();
     state.setProjectFiles([]);
     state.setEditorContent('');
     state.setImageData(null);
@@ -220,6 +221,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       void state.loadPmData(projectPath);
       void state.loadRequirements(projectPath);
       void state.loadGoals(projectPath);
+      void state.loadExcalidrawSpecLinks(projectPath);
     },
     [state]
   );
@@ -233,6 +235,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.resetPmInMemory();
     state.resetBlueprintsInMemory();
     state.resetRequirementsInMemory();
+    state.resetExcalidrawInMemory();
     state.setProjectFiles([]);
     state.setEditorContent('');
     state.setImageData(null);
@@ -823,6 +826,19 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         state.setActiveActivity('cockpit');
       },
       'view.goals': () => useStore.getState().setGoalsModalOpen(true),
+      'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
+      'excalidraw.sync-all': () => {
+        const store = useStore.getState();
+        if (!store.rootPath) return;
+        void store.resyncAllSpecs(store.rootPath).then(({ synced, failed }) => {
+          useStore
+            .getState()
+            .showToast(
+              `Excalidraw+ specs: ${synced} synced${failed > 0 ? `, ${failed} failed` : ''}`,
+              failed > 0 ? 'error' : 'success'
+            );
+        });
+      },
     }),
     [state, handleNewFile, handleOpenFolder, handleSave, handleCommit]
   );
@@ -921,6 +937,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const isWorkflowFile = !!state.activeTabId?.endsWith('.workflow.md');
   const isMindmapTab = !!state.activeTabId?.endsWith('.mindmap.md');
   const isObsidianCanvas = !!state.activeTabId?.endsWith('.canvas');
+  const isExcalidrawTab = !!state.activeTabId?.endsWith('.excalidraw');
   const isHtmlTab = /\.html?$/i.test(state.activeTabId ?? '');
 
   return {
@@ -985,6 +1002,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     isWorkflowFile,
     isMindmapTab,
     isObsidianCanvas,
+    isExcalidrawTab,
     isHtmlTab,
   };
 }

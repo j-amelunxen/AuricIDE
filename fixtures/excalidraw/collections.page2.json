@@ -1,0 +1,6 @@
+{
+  "limit": 2,
+  "offset": 2,
+  "hasNextPage": false,
+  "data": [{ "id": "col_c", "name": "Page Two C", "updated": "2026-05-03T00:00:00Z" }]
+}
