@@ -1285,6 +1285,32 @@ fn pm_load_history(
 }
 
 #[tauri::command]
+fn agent_prompt_history_add(
+    project_path: String,
+    entry: database::AgentPromptHistoryEntry,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<(), String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::agent_prompt_history_add_impl(conn, &entry)
+}
+
+#[tauri::command]
+fn agent_prompt_history_list(
+    project_path: String,
+    limit: Option<usize>,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<Vec<database::AgentPromptHistoryEntry>, String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::agent_prompt_history_list_impl(conn, limit)
+}
+
+#[tauri::command]
 fn pm_clear(project_path: String, state: tauri::State<'_, DatabaseState>) -> Result<(), String> {
     let connections = state.connections.lock().unwrap();
     let conn = connections
@@ -1594,6 +1620,8 @@ pub fn run() {
             pm_load,
             pm_load_history,
             pm_clear,
+            agent_prompt_history_add,
+            agent_prompt_history_list,
             blueprints_save,
             blueprints_load,
             blueprints_clear,

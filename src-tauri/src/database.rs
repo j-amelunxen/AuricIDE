@@ -237,6 +237,23 @@ pub struct GoalsSyncPayload {
     pub deleted_link_ids: Vec<String>,
 }
 
+/// How many spawn prompts the per-project history retains; older rows are pruned.
+pub const AGENT_PROMPT_HISTORY_CAP: usize = 100;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPromptHistoryEntry {
+    pub id: String,
+    pub prompt: String,
+    pub agent_name: String,
+    pub model: String,
+    pub provider: String,
+    pub cwd: Option<String>,
+    pub source: String,
+    #[serde(default)]
+    pub created_at: String,
+}
+
 pub fn ensure_auric_dir(project_path: &str) -> Result<PathBuf, String> {
     let auric_dir = Path::new(project_path).join(".auric");
     fs::create_dir_all(&auric_dir).map_err(|e| format!("Failed to create .auric dir: {}", e))?;
@@ -528,7 +545,102 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         CREATE INDEX idx_goal_req_links_goal ON pm_goal_requirement_links(goal_id);",
     )?;
 
+    apply_migration(
+        conn,
+        14,
+        "create_agent_prompt_history",
+        "CREATE TABLE agent_prompt_history (
+            id         TEXT PRIMARY KEY,
+            prompt     TEXT NOT NULL,
+            agent_name TEXT NOT NULL DEFAULT '',
+            model      TEXT NOT NULL DEFAULT '',
+            provider   TEXT NOT NULL DEFAULT '',
+            cwd        TEXT,
+            source     TEXT NOT NULL DEFAULT 'ui',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_agent_prompt_history_created ON agent_prompt_history(created_at);",
+    )?;
+
     Ok(())
+}
+
+/// Records the start prompt of a freshly spawned agent. Re-running an identical
+/// prompt replaces the previous row (the history is a recency list, not an audit
+/// log), and the table is pruned to `AGENT_PROMPT_HISTORY_CAP` newest rows.
+/// Blank prompts are silently ignored.
+pub fn agent_prompt_history_add_impl(
+    conn: &Connection,
+    entry: &AgentPromptHistoryEntry,
+) -> Result<(), String> {
+    if entry.prompt.trim().is_empty() {
+        return Ok(());
+    }
+
+    conn.execute(
+        "DELETE FROM agent_prompt_history WHERE prompt = ?1",
+        params![entry.prompt],
+    )
+    .map_err(|e| format!("Failed to dedupe agent prompt history: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO agent_prompt_history (id, prompt, agent_name, model, provider, cwd, source, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, COALESCE(NULLIF(?8, ''), datetime('now')))",
+        params![
+            entry.id,
+            entry.prompt,
+            entry.agent_name,
+            entry.model,
+            entry.provider,
+            entry.cwd,
+            entry.source,
+            entry.created_at,
+        ],
+    )
+    .map_err(|e| format!("Failed to insert agent prompt history: {}", e))?;
+
+    conn.execute(
+        "DELETE FROM agent_prompt_history WHERE id NOT IN (
+            SELECT id FROM agent_prompt_history ORDER BY created_at DESC, rowid DESC LIMIT ?1
+        )",
+        params![AGENT_PROMPT_HISTORY_CAP as i64],
+    )
+    .map_err(|e| format!("Failed to prune agent prompt history: {}", e))?;
+
+    Ok(())
+}
+
+pub fn agent_prompt_history_list_impl(
+    conn: &Connection,
+    limit: Option<usize>,
+) -> Result<Vec<AgentPromptHistoryEntry>, String> {
+    let limit = limit.unwrap_or(AGENT_PROMPT_HISTORY_CAP) as i64;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, prompt, agent_name, model, provider, cwd, source, created_at
+             FROM agent_prompt_history
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT ?1",
+        )
+        .map_err(|e| format!("Failed to prepare agent prompt history query: {}", e))?;
+
+    let rows = stmt
+        .query_map(params![limit], |row| {
+            Ok(AgentPromptHistoryEntry {
+                id: row.get(0)?,
+                prompt: row.get(1)?,
+                agent_name: row.get(2)?,
+                model: row.get(3)?,
+                provider: row.get(4)?,
+                cwd: row.get(5)?,
+                source: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query agent prompt history: {}", e))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read agent prompt history rows: {}", e))
 }
 
 pub fn init_db(project_path: &str) -> Result<Connection, String> {
@@ -1377,7 +1489,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 13);
+        assert_eq!(count, 14);
 
         // kv_store table should exist
         let table_exists: bool = conn
@@ -1399,7 +1511,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 13);
+        assert_eq!(count, 14);
     }
 
     #[test]
@@ -1417,7 +1529,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 13);
+        assert_eq!(count, 14);
     }
 
     #[test]
@@ -1542,7 +1654,7 @@ mod tests {
         let migration_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 13);
+        assert_eq!(migration_count, 14);
     }
 
     fn make_test_payload() -> PmSavePayload {
@@ -2353,5 +2465,96 @@ mod tests {
         // Cascade removes the child; "keep" survives
         assert_eq!(state.goals.len(), 1);
         assert_eq!(state.goals[0].id, "keep");
+    }
+
+    fn make_history_entry(id: &str, prompt: &str) -> AgentPromptHistoryEntry {
+        AgentPromptHistoryEntry {
+            id: id.to_string(),
+            prompt: prompt.to_string(),
+            agent_name: "Agent".to_string(),
+            model: "claude-opus-4-6".to_string(),
+            provider: "claude".to_string(),
+            cwd: Some("/repo".to_string()),
+            source: "ui".to_string(),
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_agent_prompt_history_add_and_list() {
+        let conn = setup_in_memory_db();
+
+        agent_prompt_history_add_impl(&conn, &make_history_entry("h1", "Fix the login bug"))
+            .unwrap();
+        agent_prompt_history_add_impl(&conn, &make_history_entry("h2", "Write docs")).unwrap();
+
+        let entries = agent_prompt_history_list_impl(&conn, None).unwrap();
+        assert_eq!(entries.len(), 2);
+        // Newest first
+        assert_eq!(entries[0].id, "h2");
+        assert_eq!(entries[0].prompt, "Write docs");
+        assert_eq!(entries[1].id, "h1");
+        assert_eq!(entries[1].agent_name, "Agent");
+        assert_eq!(entries[1].provider, "claude");
+        assert_eq!(entries[1].cwd.as_deref(), Some("/repo"));
+        assert!(!entries[0].created_at.is_empty());
+    }
+
+    #[test]
+    fn test_agent_prompt_history_respects_limit() {
+        let conn = setup_in_memory_db();
+        for i in 0..5 {
+            agent_prompt_history_add_impl(
+                &conn,
+                &make_history_entry(&format!("h{}", i), &format!("prompt {}", i)),
+            )
+            .unwrap();
+        }
+
+        let entries = agent_prompt_history_list_impl(&conn, Some(2)).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, "h4");
+    }
+
+    #[test]
+    fn test_agent_prompt_history_dedupes_identical_prompt() {
+        let conn = setup_in_memory_db();
+
+        agent_prompt_history_add_impl(&conn, &make_history_entry("h1", "same prompt")).unwrap();
+        agent_prompt_history_add_impl(&conn, &make_history_entry("h2", "other prompt")).unwrap();
+        agent_prompt_history_add_impl(&conn, &make_history_entry("h3", "same prompt")).unwrap();
+
+        let entries = agent_prompt_history_list_impl(&conn, None).unwrap();
+        // Re-running the same prompt replaces the old row and moves it to the top
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, "h3");
+        assert_eq!(entries[0].prompt, "same prompt");
+        assert_eq!(entries[1].id, "h2");
+    }
+
+    #[test]
+    fn test_agent_prompt_history_prunes_to_cap() {
+        let conn = setup_in_memory_db();
+        let total = AGENT_PROMPT_HISTORY_CAP + 20;
+        for i in 0..total {
+            let mut entry = make_history_entry(&format!("h{}", i), &format!("prompt {}", i));
+            // Deterministic ordering even with identical datetime('now') values
+            entry.created_at = format!("2026-07-10 00:{:02}:{:02}", i / 60, i % 60);
+            agent_prompt_history_add_impl(&conn, &entry).unwrap();
+        }
+
+        let entries = agent_prompt_history_list_impl(&conn, None).unwrap();
+        assert_eq!(entries.len(), AGENT_PROMPT_HISTORY_CAP);
+        // Newest survives, oldest were pruned
+        assert_eq!(entries[0].id, format!("h{}", total - 1));
+        assert!(entries.iter().all(|e| e.id != "h0"));
+    }
+
+    #[test]
+    fn test_agent_prompt_history_skips_blank_prompt() {
+        let conn = setup_in_memory_db();
+        agent_prompt_history_add_impl(&conn, &make_history_entry("h1", "   ")).unwrap();
+        let entries = agent_prompt_history_list_impl(&conn, None).unwrap();
+        assert!(entries.is_empty());
     }
 }

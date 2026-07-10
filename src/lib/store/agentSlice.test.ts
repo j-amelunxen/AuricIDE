@@ -20,6 +20,7 @@ vi.mock('../tauri/agents', () => ({
     startedAt: 1000,
   })),
   killAgent: vi.fn(async () => undefined),
+  recordAgentPromptHistory: vi.fn(async () => undefined),
   killAgentsForRepo: vi.fn(async () => 2),
   listAgents: vi.fn(async () => [
     {
@@ -207,6 +208,65 @@ describe('agentSlice', () => {
     expect(store.getState().agentLogMeta['1']).toBeUndefined();
     expect(store.getState().agentLogs['2']).toEqual(['b-log']);
     expect(store.getState().agentLogMeta['2']).toBeDefined();
+  });
+});
+
+describe('agentSlice – spawn prompt history', () => {
+  let store: StoreApi<AgentSlice>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('records the start prompt in the project DB history on spawn', async () => {
+    const { recordAgentPromptHistory } = await import('../tauri/agents');
+    store.setState({ rootPath: '/my/project' } as Partial<AgentSlice>);
+
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+      cwd: '/repo',
+      runSource: 'conductor',
+    });
+
+    expect(recordAgentPromptHistory).toHaveBeenCalledWith('/my/project', {
+      id: expect.any(String),
+      prompt: 'Write docs',
+      agentName: 'Writer',
+      model: 'claude-opus-4-6',
+      provider: 'claude',
+      cwd: '/repo',
+      source: 'conductor',
+    });
+  });
+
+  it('skips history when no project is open', async () => {
+    const { recordAgentPromptHistory } = await import('../tauri/agents');
+
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    expect(recordAgentPromptHistory).not.toHaveBeenCalled();
+  });
+
+  it('spawn succeeds even when recording history fails', async () => {
+    const { recordAgentPromptHistory } = await import('../tauri/agents');
+    vi.mocked(recordAgentPromptHistory).mockRejectedValueOnce(new Error('db closed'));
+    store.setState({ rootPath: '/my/project' } as Partial<AgentSlice>);
+
+    const agent = await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    expect(agent.id).toBe('mock-agent-1');
+    expect(store.getState().agents).toHaveLength(1);
   });
 });
 
