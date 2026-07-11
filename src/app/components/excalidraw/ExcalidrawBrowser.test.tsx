@@ -61,7 +61,7 @@ describe('ExcalidrawBrowser', () => {
       selectExcalidrawCollection,
       excalidrawCollections: [
         { id: 'col_arch', name: 'Architecture', emoji: '📐', updatedAt: null },
-        { id: 'col_flows', name: 'sample-project Specs', emoji: null, updatedAt: null },
+        { id: 'col_flows', name: 'Flow Specs', emoji: null, updatedAt: null },
       ],
     });
     render(<ExcalidrawBrowser />);
