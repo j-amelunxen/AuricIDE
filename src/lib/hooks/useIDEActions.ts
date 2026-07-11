@@ -5,6 +5,8 @@ import { getProjectFilesInfo } from '@/lib/tauri/fs';
 import { listProviders } from '@/lib/tauri/providers';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
+import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
+import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { type useIDEState } from './useIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
 
@@ -14,6 +16,12 @@ export function useIDEActions(
 ) {
   const lastShiftTime = useRef<number>(0);
   const debouncedRefresh = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // The viewer content always follows the active tab (tab click, tab close, …)
+  useActiveTabContentLoader(state.activeTabId, handlers.loadTabContent);
+
+  // Cmd/Ctrl+W closes the active tab, not the window
+  useCloseTabShortcut();
 
   // On mount: load recent projects and custom slash commands from localStorage
   useEffect(() => {

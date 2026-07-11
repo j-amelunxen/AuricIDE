@@ -115,11 +115,12 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.setDiffContent(null);
   }, [state]);
 
-  const handleFileSelect = useCallback(
+  // Loads a tab's file into the viewer states (editor / image / pdf / mindmap /
+  // canvas). Driven by the activeTabId effect in useIDEActions — the single
+  // owner of content loading, so tab clicks and tab closes update the view
+  // exactly like tree clicks do.
+  const loadTabContent = useCallback(
     async (path: string) => {
-      state.selectFile(path);
-      state.openTab({ id: path, path, name: path.split('/').pop() ?? path });
-
       const ext = path.split('.').pop()?.toLowerCase();
       if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext || '')) {
         const data = await readFileBase64(path);
@@ -156,6 +157,16 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         }
       }
       state.setDiffContent(null);
+    },
+    [state]
+  );
+
+  const handleFileSelect = useCallback(
+    async (path: string) => {
+      state.selectFile(path);
+      // Activating the tab is all it takes — the activeTabId effect loads the
+      // content (and skips redundant reloads when the tab is already active).
+      state.openTab({ id: path, path, name: path.split('/').pop() ?? path });
     },
     [state]
   );
@@ -944,6 +955,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     toFileTreeNodes,
     handleRefresh,
     handleCloseProject,
+    loadTabContent,
     handleFileSelect,
     handleToggleDir,
     handleNewFile,
