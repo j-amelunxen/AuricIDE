@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 
@@ -28,9 +29,23 @@ impl McpServerState {
     }
 }
 
-pub fn start_mcp_server(db_path: &str, script_path: &str) -> Result<Child, String> {
-    let mut child = Command::new("npx")
+pub fn start_mcp_server(
+    db_path: &str,
+    script_path: &str,
+    env: &[(String, String)],
+) -> Result<Child, String> {
+    // Resolve `npx` against the login-shell PATH we were handed: the parent
+    // process PATH is minimal when the packaged app is launched from Finder
+    // and typically lacks nvm/homebrew node installs.
+    let npx = env
+        .iter()
+        .find(|(k, _)| k == "PATH")
+        .and_then(|(_, path)| find_in_path("npx", path))
+        .unwrap_or_else(|| PathBuf::from("npx"));
+
+    let mut child = Command::new(npx)
         .args(["tsx", script_path, db_path])
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -40,6 +55,27 @@ pub fn start_mcp_server(db_path: &str, script_path: &str) -> Result<Child, Strin
     drain_pipes(&mut child);
 
     Ok(child)
+}
+
+fn find_in_path(cmd: &str, path_var: &str) -> Option<PathBuf> {
+    path_var
+        .split(':')
+        .filter(|dir| !dir.is_empty())
+        .map(|dir| Path::new(dir).join(cmd))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
 }
 
 /// Continuously drain a child's stdout/stderr into the void. Nothing consumes
@@ -119,6 +155,56 @@ mod tests {
         let status = get_mcp_status(&state);
         assert_eq!(status.status, McpServerStatus::Stopped);
         assert!(status.pid.is_none());
+    }
+
+    #[cfg(unix)]
+    fn write_executable(dir: &std::path::Path, name: &str, contents: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        std::fs::write(&path, contents).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_find_in_path_locates_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = write_executable(dir.path(), "npx", "#!/bin/sh\nexit 0\n");
+        let path_var = format!("/nonexistent:{}", dir.path().display());
+        assert_eq!(find_in_path("npx", &path_var), Some(bin));
+    }
+
+    #[test]
+    fn test_find_in_path_returns_none_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path_var = dir.path().display().to_string();
+        assert_eq!(find_in_path("npx", &path_var), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_find_in_path_skips_non_executable_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("npx"), "not executable").unwrap();
+        let path_var = dir.path().display().to_string();
+        assert_eq!(find_in_path("npx", &path_var), None);
+    }
+
+    /// The MCP server must resolve `npx` against the PATH of the *login-shell*
+    /// env passed in — not the parent process PATH, which is minimal when the
+    /// packaged app is launched from Finder.
+    #[cfg(unix)]
+    #[test]
+    fn test_start_mcp_server_resolves_npx_via_provided_env_path() {
+        let dir = tempfile::tempdir().unwrap();
+        write_executable(dir.path(), "npx", "#!/bin/sh\nsleep 5\n");
+        let env = vec![("PATH".to_string(), dir.path().display().to_string())];
+
+        let mut child =
+            start_mcp_server("/tmp/fake.db", "/tmp/fake-server.ts", &env).expect("should spawn");
+        assert!(child.id() > 0);
+        stop_mcp_server(&mut child).unwrap();
     }
 
     #[test]

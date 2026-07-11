@@ -123,30 +123,63 @@ pub async fn warm_shell_env_cache() {
 
 pub(crate) async fn cached_login_shell_env() -> &'static [(String, String)] {
     SHELL_ENV_CACHE
-        .get_or_init(|| async {
-            tokio::task::spawn_blocking(resolve_login_shell_env)
-                .await
-                .unwrap_or_default()
-        })
+        .get_or_init(resolve_login_shell_env)
         .await
         .as_slice()
 }
 
-fn resolve_login_shell_env() -> Vec<(String, String)> {
-    let (shell, flag) = if cfg!(target_os = "windows") {
-        return Vec::new();
+/// Shell + flags used to harvest the user's shell environment. `.zshrc`
+/// (where user PATH entries like `~/.local/bin` or nvm typically live) is
+/// only sourced by *interactive* shells — a plain login shell (`-lc`) misses
+/// those entries, which made packaged builds fail to find CLIs that dev
+/// runs (inheriting the terminal's PATH) found fine.
+fn login_shell_invocation(interactive: bool) -> Option<(&'static str, &'static str)> {
+    if cfg!(target_os = "windows") {
+        None
     } else if cfg!(target_os = "macos") {
-        ("/bin/zsh", "-lc")
+        Some(("/bin/zsh", if interactive { "-ilc" } else { "-lc" }))
     } else {
-        ("sh", "-lc")
+        // POSIX sh has no interactive rc convention worth sourcing here.
+        Some(("sh", "-lc"))
+    }
+}
+
+async fn resolve_login_shell_env() -> Vec<(String, String)> {
+    if cfg!(target_os = "windows") {
+        return Vec::new();
+    }
+
+    let mut env = harvest_shell_env(true).await;
+    // Interactive rc files can misbehave without a TTY — if the harvest
+    // produced no usable PATH, retry with a non-interactive login shell.
+    if !env.iter().any(|(k, _)| k == "PATH") {
+        env = harvest_shell_env(false).await;
+    }
+    // Never end up with less than the PATH this process inherited: terminal
+    // launches (dev) already carry the full user PATH, and if both harvests
+    // failed this is the only PATH we have.
+    let inherited = std::env::var("PATH").ok();
+    apply_inherited_path(&mut env, inherited.as_deref());
+    env
+}
+
+async fn harvest_shell_env(interactive: bool) -> Vec<(String, String)> {
+    let Some((shell, flag)) = login_shell_invocation(interactive) else {
+        return Vec::new();
     };
 
-    match std::process::Command::new(shell)
-        .arg(flag)
-        .arg("env -0")
-        .output()
-    {
-        Ok(out) if out.status.success() => parse_env_output(&out.stdout),
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        tokio::process::Command::new(shell)
+            .arg(flag)
+            .arg("command env -0")
+            .stdin(std::process::Stdio::null())
+            .output(),
+    )
+    .await;
+
+    match output {
+        Ok(Ok(out)) if out.status.success() => parse_env_output(&out.stdout),
         _ => Vec::new(),
     }
 }
@@ -155,8 +188,47 @@ fn parse_env_output(bytes: &[u8]) -> Vec<(String, String)> {
     String::from_utf8_lossy(bytes)
         .split('\0')
         .filter_map(|entry| entry.split_once('='))
+        .filter(|(k, _)| is_valid_env_key(k))
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
+}
+
+/// Interactive shells may print rc-file noise to stdout before the `env -0`
+/// output; only accept entries whose key is a valid env var name.
+fn is_valid_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Union of both PATH strings, deduplicated, harvested entries first.
+fn merge_path(harvested: Option<&str>, inherited: Option<&str>) -> String {
+    let mut seen = std::collections::HashSet::new();
+    let mut merged: Vec<&str> = Vec::new();
+    for path in [harvested, inherited].into_iter().flatten() {
+        for segment in path.split(':').filter(|s| !s.is_empty()) {
+            if seen.insert(segment) {
+                merged.push(segment);
+            }
+        }
+    }
+    merged.join(":")
+}
+
+fn apply_inherited_path(env: &mut Vec<(String, String)>, inherited: Option<&str>) {
+    let harvested = env
+        .iter()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v.clone());
+    let merged = merge_path(harvested.as_deref(), inherited);
+    if merged.is_empty() {
+        return;
+    }
+    if let Some(entry) = env.iter_mut().find(|(k, _)| k == "PATH") {
+        entry.1 = merged;
+    } else {
+        env.push(("PATH".to_string(), merged));
+    }
 }
 
 // ── list_agents ─────────────────────────────────────────────────────
@@ -584,6 +656,79 @@ mod tests {
         let raw = b"MALFORMED\0FOO=bar\0";
         let parsed = parse_env_output(raw);
         assert_eq!(parsed, vec![("FOO".to_string(), "bar".to_string())]);
+    }
+
+    #[test]
+    fn test_parse_env_output_skips_rc_noise_with_invalid_keys() {
+        // Interactive shells may print rc-file noise (echos, prompt setup)
+        // to stdout before `env -0` output. Anything whose key is not a
+        // valid env var name must be dropped.
+        let raw = b"welcome message\0not a var=oops\09LEADING=x\0FOO=bar\0_UNDER=1\0";
+        let parsed = parse_env_output(raw);
+        assert_eq!(
+            parsed,
+            vec![
+                ("FOO".to_string(), "bar".to_string()),
+                ("_UNDER".to_string(), "1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_merge_path_unions_and_dedupes_preserving_harvested_order() {
+        assert_eq!(merge_path(Some("/a:/b:/c"), Some("/b:/d")), "/a:/b:/c:/d");
+    }
+
+    #[test]
+    fn test_merge_path_falls_back_to_inherited_when_harvest_missing() {
+        assert_eq!(merge_path(None, Some("/x:/y")), "/x:/y");
+    }
+
+    #[test]
+    fn test_merge_path_keeps_harvested_when_inherited_missing() {
+        assert_eq!(merge_path(Some("/a:/b"), None), "/a:/b");
+    }
+
+    #[test]
+    fn test_merge_path_skips_empty_segments() {
+        assert_eq!(merge_path(Some("/a::/b:"), Some(":/c")), "/a:/b:/c");
+    }
+
+    #[test]
+    fn test_apply_inherited_path_extends_harvested_path_entry() {
+        let mut env = vec![
+            ("FOO".to_string(), "bar".to_string()),
+            ("PATH".to_string(), "/harvest/bin".to_string()),
+        ];
+        apply_inherited_path(&mut env, Some("/harvest/bin:/proc/bin"));
+        assert_eq!(
+            env.iter()
+                .find(|(k, _)| k == "PATH")
+                .map(|(_, v)| v.as_str()),
+            Some("/harvest/bin:/proc/bin")
+        );
+    }
+
+    #[test]
+    fn test_apply_inherited_path_inserts_path_when_harvest_lacks_one() {
+        let mut env = vec![("FOO".to_string(), "bar".to_string())];
+        apply_inherited_path(&mut env, Some("/proc/bin"));
+        assert_eq!(
+            env.iter()
+                .find(|(k, _)| k == "PATH")
+                .map(|(_, v)| v.as_str()),
+            Some("/proc/bin")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_login_shell_invocation_uses_interactive_flag_on_macos() {
+        // .zshrc (where user PATH entries like ~/.local/bin typically live)
+        // is only sourced by *interactive* shells, so the harvest must be
+        // able to run one.
+        assert_eq!(login_shell_invocation(true), Some(("/bin/zsh", "-ilc")));
+        assert_eq!(login_shell_invocation(false), Some(("/bin/zsh", "-lc")));
     }
 
     /// Regression test: dropping an `AgentProcess` (e.g. after removing it
