@@ -186,6 +186,11 @@ async fn shell_spawn(
     if let Some(ref c) = cwd {
         cmd.cwd(c);
     }
+    // GUI apps on macOS launch with a minimal PATH — give terminal sessions
+    // the same login-shell environment agents get (see agents.rs).
+    for (key, value) in agents::cached_login_shell_env().await {
+        cmd.env(key, value);
+    }
     // Ensure child processes see a proper terminal type.
     // GUI apps on macOS do not inherit TERM from the user's shell.
     cmd.env("TERM", "xterm-256color");
@@ -1501,10 +1506,14 @@ fn read_crash_log(filename: String, app: tauri::AppHandle) -> Result<String, Str
 }
 
 #[tauri::command]
-fn start_mcp(
+async fn start_mcp(
     project_path: String,
     state: tauri::State<'_, mcp::McpServerState>,
 ) -> Result<mcp::McpStatusInfo, String> {
+    // Resolve before taking the lock — the std MutexGuard must not live
+    // across an await point.
+    let shell_env = agents::cached_login_shell_env().await;
+
     let mut guard = state.process.lock().unwrap();
     if guard.is_some() {
         return Err("MCP server is already running".to_string());
@@ -1521,7 +1530,7 @@ fn start_mcp(
         .join("server.ts");
     let script_path_str = script_path.to_string_lossy().to_string();
 
-    let child = mcp::start_mcp_server(&db_path_str, &script_path_str)?;
+    let child = mcp::start_mcp_server(&db_path_str, &script_path_str, shell_env)?;
     let pid = child.id();
     *guard = Some(child);
 
