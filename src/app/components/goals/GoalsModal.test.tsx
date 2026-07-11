@@ -119,7 +119,11 @@ describe('GoalsModal', () => {
     render(<GoalsModal />);
     await user.click(screen.getByTestId('goal-launch-agent-btn'));
     expect(mocks.spawnNewAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ spawnedByGoalId: 'g1', cwd: '/project', permissionMode: 'auto' })
+      expect.objectContaining({ spawnedByGoalId: 'g1', cwd: '/project' })
+    );
+    // No hardcoded mode: the provider-configured defaultPermissionMode decides.
+    expect(mocks.spawnNewAgent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ permissionMode: expect.anything() })
     );
     expect(mocks.saveGoals).toHaveBeenCalledWith('/project');
   });

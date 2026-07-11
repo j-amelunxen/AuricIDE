@@ -75,7 +75,9 @@ describe('ImportSpecDialog', () => {
       expect.objectContaining({
         name: 'Spec Import',
         headless: true,
-        permissionMode: 'yolo',
+        // Preselected from the provider's defaultPermissionMode, not the
+        // first entry of its permissionModes list.
+        permissionMode: 'default',
         cwd: '/my/project',
       })
     );
@@ -164,11 +166,11 @@ describe('ImportSpecDialog', () => {
     );
 
     await user.type(screen.getByPlaceholderText(/paste.*spec/i), 'spec');
-    // Change from default "yolo" to "default" (Interactive)
-    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'default');
+    // Change from the preselected default ("default") to "yolo"
+    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
     await user.click(screen.getByRole('button', { name: /import/i }));
 
-    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'default' }));
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'yolo' }));
   });
 
   it('does not call onClose when onSpawn fails', async () => {

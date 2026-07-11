@@ -369,10 +369,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             provider: providerOverride,
             task: prompt,
             cwd: ticket.workingDirectory ?? full.rootPath ?? undefined,
-            // Real autonomous mode: runs without routine prompts but a
-            // classifier vets each action. acceptEdits would still prompt on
-            // Bash and hang the unattended PTY; bypass has no guardrails.
-            permissionMode: 'auto',
+            // No permissionMode: the provider's configured defaultPermissionMode
+            // (dynamic-providers/*.json) decides.
             spawnedByTicketId: ticket.id,
             spawnedByGoalId: effectiveGoalId,
             runSource: 'conductor',
