@@ -21,6 +21,8 @@ interface GoalTreeProps {
   onSelect: (id: string) => void;
   /** Agent count per goal id (running agents working toward the goal). */
   activeAgentsByGoal?: Record<string, number>;
+  /** Opens the goal creation dialog; enables the empty-state call to action. */
+  onCreate?: () => void;
 }
 
 interface GoalNodeProps extends GoalTreeProps {
@@ -156,6 +158,7 @@ export function GoalTree({
   selectedId,
   onSelect,
   activeAgentsByGoal,
+  onCreate,
 }: GoalTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const roots = useMemo(() => getRootGoals(goals), [goals]);
@@ -175,11 +178,20 @@ export function GoalTree({
         className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
       >
         <span className="material-symbols-outlined text-3xl text-foreground-muted/40">flag</span>
-        <p className="text-xs text-foreground-muted">No goals yet.</p>
-        <p className="max-w-[260px] text-[10px] leading-relaxed text-foreground-muted/70">
-          A goal is a desired world state with machine-checkable success criteria. Create one, break
-          it into sub-goals and tickets, then let the conductor work toward it.
+        <p className="text-xs font-medium text-foreground">No goals yet</p>
+        <p className="max-w-[260px] text-[10px] leading-relaxed text-foreground-muted">
+          A goal describes a target state the conductor can verify: tickets done, requirements
+          verified, sub-goals achieved.
         </p>
+        {onCreate && (
+          <button
+            data-testid="goal-tree-empty-create"
+            onClick={onCreate}
+            className="mt-2 rounded-lg bg-primary/15 border border-primary/20 px-3 py-1.5 text-xs font-medium text-primary-light hover:bg-primary/25 transition-colors"
+          >
+            Create your first goal
+          </button>
+        )}
       </div>
     );
   }

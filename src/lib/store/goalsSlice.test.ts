@@ -9,6 +9,7 @@ import {
   getGoalProgress,
   getGoalSatisfaction,
   getRunsForGoal,
+  getGoalWorkflowStage,
 } from './goalsSlice';
 import type { GoalsState, PmGoal, PmGoalRun } from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
@@ -373,5 +374,64 @@ describe('goalsSlice persistence', () => {
     expect(mockGoalsClear).toHaveBeenCalledTimes(1);
     expect(store.getState().goalsDraft).toEqual([]);
     expect(store.getState().goals).toEqual([]);
+  });
+});
+
+describe('getGoalWorkflowStage', () => {
+  const noReqs: PmRequirement[] = [];
+
+  it('is "define" while the goal has no success criteria', () => {
+    const goal = makeGoal({ successCriteria: '' });
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], goal.id);
+    expect(step.stage).toBe('define');
+    expect(step.index).toBe(1);
+  });
+
+  it('is "attach" when criteria exist but nothing is attached', () => {
+    const goal = makeGoal();
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], goal.id);
+    expect(step.stage).toBe('attach');
+    expect(step.index).toBe(2);
+  });
+
+  it('is "execute" while attached tickets are not all done', () => {
+    const goal = makeGoal();
+    const tickets = [makeTicket({ goalId: goal.id, status: 'open' })];
+    const step = getGoalWorkflowStage([goal], tickets, noReqs, [], goal.id);
+    expect(step.stage).toBe('execute');
+    expect(step.index).toBe(3);
+  });
+
+  it('counts tickets on descendant goals as attached work', () => {
+    const parent = makeGoal({ id: 'p' });
+    const child = makeGoal({ id: 'c', parentId: 'p' });
+    const tickets = [makeTicket({ goalId: 'c', status: 'open' })];
+    const step = getGoalWorkflowStage([parent, child], tickets, noReqs, [], 'p');
+    expect(step.stage).toBe('execute');
+  });
+
+  it('is "done" once the satisfaction check passes', () => {
+    const goal = makeGoal();
+    const tickets = [makeTicket({ goalId: goal.id, status: 'done' })];
+    const step = getGoalWorkflowStage([goal], tickets, noReqs, [], goal.id);
+    expect(step.stage).toBe('done');
+    expect(step.index).toBe(4);
+  });
+
+  it('is "done" for an achieved goal regardless of attachments', () => {
+    const goal = makeGoal({ status: 'achieved', successCriteria: '' });
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], goal.id);
+    expect(step.stage).toBe('done');
+  });
+
+  it('stays "execute" when tickets are done but a linked requirement is unverified', () => {
+    const goal = makeGoal();
+    const req = makeRequirement({ status: 'active' });
+    const tickets = [makeTicket({ goalId: goal.id, status: 'done' })];
+    const links = [
+      { id: 'l1', goalId: goal.id, requirementId: req.id, createdAt: '2026-01-01 00:00:00' },
+    ];
+    const step = getGoalWorkflowStage([goal], tickets, [req], links, goal.id);
+    expect(step.stage).toBe('execute');
   });
 });

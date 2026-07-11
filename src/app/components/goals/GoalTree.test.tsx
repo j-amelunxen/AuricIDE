@@ -45,6 +45,15 @@ describe('GoalTree', () => {
     expect(screen.getByTestId('goal-tree-empty')).toBeTruthy();
   });
 
+  it('empty state offers creating the first goal', () => {
+    const onCreate = vi.fn();
+    render(
+      <GoalTree goals={[]} tickets={[]} selectedId={null} onSelect={() => {}} onCreate={onCreate} />
+    );
+    fireEvent.click(screen.getByTestId('goal-tree-empty-create'));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
   it('renders the hierarchy with children', () => {
     const goals = [
       makeGoal({ id: 'root', name: 'Root' }),

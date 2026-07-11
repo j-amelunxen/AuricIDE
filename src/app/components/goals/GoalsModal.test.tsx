@@ -83,12 +83,44 @@ describe('buildGoalLaunchPrompt', () => {
     expect(prompt).toContain('conductor completes a goal');
     expect(prompt).toContain('evaluate_goal');
   });
+
+  it('tells the planning agent to attach tickets via goalId', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal());
+    expect(prompt).toContain('goalId');
+  });
 });
 
 describe('GoalsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storeState.selectedGoalId = null;
+    localStorage.clear();
+  });
+
+  it('teaches the goal workflow on first run and dismisses persistently', async () => {
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+    const strip = screen.getByTestId('goals-workflow-strip');
+    expect(strip.textContent).toContain('Define');
+    expect(strip.textContent).toContain('conductor');
+    await user.click(screen.getByTestId('goals-workflow-dismiss'));
+    expect(screen.queryByTestId('goals-workflow-strip')).toBeNull();
+    expect(localStorage.getItem('auric.goals.workflow-strip-dismissed')).toBe('1');
+  });
+
+  it('does not show the workflow strip once dismissed', () => {
+    localStorage.setItem('auric.goals.workflow-strip-dismissed', '1');
+    render(<GoalsModal />);
+    expect(screen.queryByTestId('goals-workflow-strip')).toBeNull();
+  });
+
+  it('replays the workflow strip via the help button', async () => {
+    localStorage.setItem('auric.goals.workflow-strip-dismissed', '1');
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+    await user.click(screen.getByTestId('goals-help-btn'));
+    expect(screen.getByTestId('goals-workflow-strip')).toBeTruthy();
+    expect(localStorage.getItem('auric.goals.workflow-strip-dismissed')).toBeNull();
   });
 
   it('renders tree, conductor bar, and loads data on open', () => {

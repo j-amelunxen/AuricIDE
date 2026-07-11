@@ -9,6 +9,7 @@ import { GoalTree } from './GoalTree';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import { GoalCreateDialog } from './GoalCreateDialog';
 import { ConductorPanel } from './ConductorPanel';
+import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflowStrip';
 import type { PmGoal } from '@/lib/tauri/goals';
 
 /** Builds the launch prompt for a goal: explicit goalPrompt wins, else generated. */
@@ -22,9 +23,10 @@ export function buildGoalLaunchPrompt(goal: PmGoal): string {
   parts.push(
     '## Working agreement\n' +
       'Work autonomously toward this goal. If the auric-pm MCP tools are available, ' +
-      'use decompose_goal / create_ticket to plan, evaluate_goal to check progress, ' +
-      'and record findings as context items or via write_finding. Do NOT call ' +
-      'record_goal_run — this run is already recorded. Exit when the success ' +
+      'use decompose_goal to plan sub-goals and create_ticket (pass goalId so each ' +
+      'ticket attaches to this goal) to add work items, evaluate_goal to check ' +
+      'progress, and record findings as context items or via write_finding. Do NOT ' +
+      'call record_goal_run — this run is already recorded. Exit when the success ' +
       'criteria are met or you are blocked.'
   );
   return parts.join('\n\n');
@@ -70,6 +72,24 @@ function GoalsModalContent() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [launchingAgent, setLaunchingAgent] = useState(false);
+  const [workflowStripVisible, setWorkflowStripVisible] = useState(
+    () =>
+      typeof window === 'undefined' || localStorage.getItem(WORKFLOW_STRIP_DISMISSED_KEY) !== '1'
+  );
+
+  const dismissWorkflowStrip = useCallback(() => {
+    localStorage.setItem(WORKFLOW_STRIP_DISMISSED_KEY, '1');
+    setWorkflowStripVisible(false);
+  }, []);
+
+  const toggleWorkflowStrip = useCallback(() => {
+    if (workflowStripVisible) {
+      dismissWorkflowStrip();
+    } else {
+      localStorage.removeItem(WORKFLOW_STRIP_DISMISSED_KEY);
+      setWorkflowStripVisible(true);
+    }
+  }, [workflowStripVisible, dismissWorkflowStrip]);
 
   useEffect(() => {
     if (goalsModalOpen && rootPath) {
@@ -197,6 +217,15 @@ function GoalsModalContent() {
 
           <div className="flex items-center gap-2">
             <button
+              data-testid="goals-help-btn"
+              onClick={toggleWorkflowStrip}
+              title="How goals work"
+              aria-label="How goals work"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
+            >
+              <span className="material-symbols-outlined text-base">help</span>
+            </button>
+            <button
               data-testid="goals-orchestration-btn"
               onClick={() => setOrchestrationOpen(true)}
               title="Live orchestration canvas"
@@ -234,6 +263,8 @@ function GoalsModalContent() {
           </div>
         </div>
 
+        {workflowStripVisible && <GoalsWorkflowStrip onDismiss={dismissWorkflowStrip} />}
+
         {/* Body */}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex w-[420px] flex-col border-r border-white/5">
@@ -243,6 +274,10 @@ function GoalsModalContent() {
               selectedId={selectedGoalId}
               onSelect={setSelectedGoalId}
               activeAgentsByGoal={activeAgentsByGoal}
+              onCreate={() => {
+                setCreateParentId(null);
+                setCreateOpen(true);
+              }}
             />
           </div>
 

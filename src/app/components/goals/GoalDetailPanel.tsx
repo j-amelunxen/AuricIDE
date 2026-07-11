@@ -4,8 +4,10 @@ import { useMemo, useState } from 'react';
 import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
-import { getGoalSatisfaction, getRunsForGoal } from '@/lib/store/goalsSlice';
+import { getGoalSatisfaction, getGoalWorkflowStage, getRunsForGoal } from '@/lib/store/goalsSlice';
 import { GOAL_STATUS_STYLES } from './GoalTree';
+
+const WORKFLOW_STEP_LABELS = ['Define', 'Attach', 'Conduct', 'Achieved'] as const;
 
 const RUN_OUTCOME_STYLES: Record<string, string> = {
   running: 'bg-amber-500/20 text-amber-300',
@@ -56,6 +58,12 @@ export function GoalDetailPanel({
   const satisfaction = useMemo(
     () =>
       goal ? getGoalSatisfaction(goals, tickets, requirements, requirementLinks, goal.id) : null,
+    [goal, goals, tickets, requirements, requirementLinks]
+  );
+
+  const workflowStep = useMemo(
+    () =>
+      goal ? getGoalWorkflowStage(goals, tickets, requirements, requirementLinks, goal.id) : null,
     [goal, goals, tickets, requirements, requirementLinks]
   );
 
@@ -130,6 +138,68 @@ export function GoalDetailPanel({
           </span>
         </div>
       </div>
+
+      {/* Workflow stepper: where this goal stands in the loop, and the one next action */}
+      {workflowStep && (
+        <div
+          data-testid="goal-workflow-stepper"
+          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5"
+        >
+          <ol className="flex items-center">
+            {WORKFLOW_STEP_LABELS.map((label, i) => {
+              const pos = i + 1;
+              const isCurrent = pos === workflowStep.index;
+              const isDone = pos < workflowStep.index || workflowStep.stage === 'done';
+              return (
+                <li
+                  key={label}
+                  data-testid={`goal-workflow-step-${pos}`}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  className={`flex items-center ${i < WORKFLOW_STEP_LABELS.length - 1 ? 'flex-1' : ''}`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold transition-colors ${
+                        isDone && !isCurrent
+                          ? 'bg-green-500/20 text-green-300'
+                          : isCurrent
+                            ? 'bg-primary/25 text-primary-light ring-1 ring-primary/40'
+                            : 'bg-white/5 text-foreground-muted'
+                      }`}
+                    >
+                      {isDone && !isCurrent ? (
+                        <span className="material-symbols-outlined text-[11px]">check</span>
+                      ) : (
+                        pos
+                      )}
+                    </span>
+                    <span
+                      className={`text-[10px] ${
+                        isCurrent
+                          ? 'font-bold text-foreground'
+                          : isDone
+                            ? 'text-foreground/70'
+                            : 'text-foreground-muted'
+                      }`}
+                    >
+                      {label}
+                    </span>
+                  </span>
+                  {i < WORKFLOW_STEP_LABELS.length - 1 && (
+                    <span aria-hidden className="mx-2 h-px flex-1 bg-white/10" />
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <p
+            data-testid="goal-workflow-hint"
+            className="mt-2 text-[10px] leading-relaxed text-foreground-muted"
+          >
+            {workflowStep.hint}
+          </p>
+        </div>
+      )}
 
       {/* Satisfaction check */}
       {satisfaction && (
