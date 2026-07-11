@@ -16,6 +16,7 @@ export function useConductorController() {
   const assignments = useStore((s) => s.conductorAssignments);
   const pendingApprovalIds = useStore((s) => s.conductorPendingApprovals);
   const decisions = useStore((s) => s.conductorDecisions);
+  const lastRun = useStore((s) => s.conductorLastRun);
   const providerId = useStore((s) => s.conductorProviderId);
   const model = useStore((s) => s.conductorModel);
   const providers = useStore((s) => s.providers);
@@ -62,6 +63,7 @@ export function useConductorController() {
     activeAgentCount: Object.keys(assignments).length,
     pendingApprovals,
     decisions,
+    lastRun,
     canStart: rootPath !== null,
     providers,
     providerId,
