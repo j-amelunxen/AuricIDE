@@ -216,7 +216,7 @@ mod tests {
         let collections = mock_collections().unwrap();
         assert_eq!(collections.len(), 2);
         assert_eq!(collections[0].id, "col_arch");
-        assert_eq!(collections[1].name, "devopsFlow Specs");
+        assert_eq!(collections[1].name, "Flow Specs");
     }
 
     #[test]

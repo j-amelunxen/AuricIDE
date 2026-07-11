@@ -300,7 +300,7 @@ mod tests {
         assert!(!paged.has_next_page);
         assert_eq!(paged.data.len(), 2);
         assert_eq!(paged.data[0].id, "col_arch");
-        assert_eq!(paged.data[1].name, "devopsFlow Specs");
+        assert_eq!(paged.data[1].name, "Flow Specs");
     }
 
     #[test]
