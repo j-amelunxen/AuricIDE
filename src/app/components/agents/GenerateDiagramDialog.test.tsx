@@ -88,11 +88,12 @@ describe('GenerateDiagramDialog', () => {
         name: 'Diagram (my-app)',
         model: 'auto',
         cwd: '/projects/my-app',
-        permissionMode: 'auto',
         provider: 'crush',
         task: expect.stringContaining('/projects/my-app'),
       })
     );
+    // No hardcoded mode: the provider-configured defaultPermissionMode decides.
+    expect(onGenerate.mock.calls[0][0].permissionMode).toBeUndefined();
     // Verify the task includes diagram type and detail level
     const call = onGenerate.mock.calls[0][0];
     expect(call.task).toContain('flowchart');

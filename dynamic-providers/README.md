@@ -79,3 +79,16 @@ Here is an example structure of a provider definition:
 - **`headless`**: Used if AuricIDE runs the agent unattended (background task without an interactive terminal).
 - **`task`**: Injects the markdown task instruction provided by the user. `quote: true` ensures the task is properly enclosed in quotes.
 - **`permission`**: Maps AuricIDE's permission modes (`bypassPermissions`, `acceptEdits`, `plan`, `default`) into the chosen CLI flags for that mode.
+
+### Default Permission Mode
+
+`info.defaultPermissionMode` is the single source of truth for the provider's
+permission level whenever no explicit mode is chosen:
+
+- The "Deploy New Agent" and "Import Project Spec" dialogs preselect it.
+- Automated spawn paths (goal launches, the conductor, diagram generation)
+  pass no mode at all — the backend resolves it from this field.
+
+Pick a value that can run unattended (e.g. Claude Code's classifier-guarded
+`auto`); a prompting mode like `default` will stall agents that nobody is
+watching.

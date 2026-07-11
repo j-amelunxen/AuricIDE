@@ -42,7 +42,7 @@ function ImportSpecDialogPanel({
   const [selectedProviderId, setSelectedProviderId] = useState(FALLBACK_CRUSH_PROVIDER.id);
   const [model, setModel] = useState(FALLBACK_CRUSH_PROVIDER.defaultModel);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
-    (FALLBACK_CRUSH_PROVIDER.permissionModes[0]?.value ?? 'bypassPermissions') as PermissionMode
+    FALLBACK_CRUSH_PROVIDER.defaultPermissionMode as PermissionMode
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,9 +57,7 @@ function ImportSpecDialogPanel({
           const defaultProvider = fetched[0];
           setSelectedProviderId(defaultProvider.id);
           setModel(defaultProvider.defaultModel);
-          setPermissionMode(
-            (defaultProvider.permissionModes[0]?.value ?? 'bypassPermissions') as PermissionMode
-          );
+          setPermissionMode(defaultProvider.defaultPermissionMode as PermissionMode);
         }
       })
       .catch(() => {
@@ -69,9 +67,7 @@ function ImportSpecDialogPanel({
 
   useEffect(() => {
     setModel(currentProvider.defaultModel);
-    setPermissionMode(
-      (currentProvider.permissionModes[0]?.value ?? 'bypassPermissions') as PermissionMode
-    );
+    setPermissionMode(currentProvider.defaultPermissionMode as PermissionMode);
   }, [currentProvider]);
 
   useEffect(() => {

@@ -125,9 +125,8 @@ function GenerateDiagramDialogPanel({
       model: selectedProvider.defaultModel,
       task,
       cwd: folderPath,
-      // Autonomous one-shot: explores the folder and emits a diagram without a
-      // human to answer prompts, so use the classifier-guarded auto mode.
-      permissionMode: 'auto',
+      // No permissionMode: the provider's configured defaultPermissionMode
+      // (dynamic-providers/*.json) decides.
       provider: selectedProvider.id,
     });
     onClose();

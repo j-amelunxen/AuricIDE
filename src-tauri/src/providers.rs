@@ -209,15 +209,15 @@ impl AgentProvider for DynamicProvider {
                 ArgumentConfig::Permission { map, fallback } => {
                     let mode_key = if let Some(m) = permission_mode {
                         m.to_string()
-                    } else {
+                    } else if dangerously_ignore_permissions {
                         // Legacy mapping
-                        if dangerously_ignore_permissions {
-                            "bypassPermissions".to_string()
-                        } else if auto_accept_edits {
-                            "acceptEdits".to_string()
-                        } else {
-                            "default".to_string()
-                        }
+                        "bypassPermissions".to_string()
+                    } else if auto_accept_edits {
+                        "acceptEdits".to_string()
+                    } else {
+                        // No explicit mode requested: the provider's configured
+                        // defaultPermissionMode (dynamic-providers/*.json) decides.
+                        self.config.info.default_permission_mode.clone()
                     };
 
                     let flag_val = map
@@ -534,8 +534,9 @@ mod tests {
     #[test]
     fn test_dynamic_claude_interactive_auto() {
         let provider = DynamicProvider::new(get_claude_config());
-        // claude "task"
-        let cmd = provider.build_spawn_command("auto", "task", None, false, false, false);
+        // claude "task" (explicit interactive mode maps to no flag)
+        let cmd =
+            provider.build_spawn_command("auto", "task", Some("default"), false, false, false);
         assert_eq!(cmd.command, "claude \"task\"");
     }
 
@@ -543,7 +544,7 @@ mod tests {
     fn test_dynamic_claude_headless_model() {
         let provider = DynamicProvider::new(get_claude_config());
         // claude --model opus -p "task"
-        let cmd = provider.build_spawn_command("opus", "task", None, false, false, true);
+        let cmd = provider.build_spawn_command("opus", "task", Some("default"), false, false, true);
         assert_eq!(cmd.command, "claude --model opus -p \"task\"");
     }
 
@@ -616,6 +617,40 @@ mod tests {
             "claude --model sonnet \"task\" --permission-mode auto"
         );
         assert!(!cmd.command.contains("bypassPermissions"));
+    }
+
+    #[test]
+    fn test_dynamic_none_permission_falls_back_to_configured_default() {
+        // No explicit mode and no legacy flags → the provider's configured
+        // defaultPermissionMode from the dynamic config decides.
+        let provider = DynamicProvider::new(get_claude_config());
+        let cmd = provider.build_spawn_command("sonnet", "task", None, false, false, false);
+        assert_eq!(
+            cmd.command,
+            "claude --model sonnet \"task\" --permission-mode acceptEdits"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_legacy_flags_win_over_configured_default() {
+        let provider = DynamicProvider::new(get_claude_config());
+        let cmd = provider.build_spawn_command("sonnet", "task", None, true, false, false);
+        assert!(
+            cmd.command.contains("--permission-mode bypassPermissions"),
+            "legacy dangerously_ignore_permissions must still map to bypass: {}",
+            cmd.command
+        );
+    }
+
+    #[test]
+    fn test_dynamic_explicit_mode_wins_over_configured_default() {
+        let provider = DynamicProvider::new(get_claude_config());
+        let cmd = provider.build_spawn_command("sonnet", "task", Some("plan"), false, false, false);
+        assert!(
+            cmd.command.contains("--permission-mode plan"),
+            "explicit mode must win: {}",
+            cmd.command
+        );
     }
 
     // ── Dynamic Provider Tests (Gemini Emulation) ─────────────────────
@@ -703,7 +738,7 @@ mod tests {
     fn test_shell_escape_backticks_and_parens() {
         let provider = DynamicProvider::new(get_claude_config());
         let task = "Call `list_epics()` then `create_epic({ name })` ok";
-        let cmd = provider.build_spawn_command("sonnet", task, None, false, false, true);
+        let cmd = provider.build_spawn_command("sonnet", task, Some("default"), false, false, true);
         assert_eq!(
             cmd.command,
             "claude --model sonnet -p \"Call \\`list_epics()\\` then \\`create_epic({ name })\\` ok\""
@@ -714,7 +749,7 @@ mod tests {
     fn test_shell_escape_backslash_and_dollar() {
         let provider = DynamicProvider::new(get_claude_config());
         let task = r#"path C:\Users and $HOME with "quotes""#;
-        let cmd = provider.build_spawn_command("auto", task, None, false, false, true);
+        let cmd = provider.build_spawn_command("auto", task, Some("default"), false, false, true);
         assert_eq!(
             cmd.command,
             r#"claude -p "path C:\\Users and \$HOME with \"quotes\"""#

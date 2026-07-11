@@ -153,9 +153,8 @@ function GoalsModalContent() {
           model: 'sonnet',
           task: buildGoalLaunchPrompt(goal),
           cwd: rootPath ?? undefined,
-          // Real autonomous mode (classifier-guarded), not acceptEdits which
-          // would still prompt on Bash and stall the unattended agent.
-          permissionMode: 'auto',
+          // No permissionMode: the provider's configured defaultPermissionMode
+          // (dynamic-providers/*.json) decides.
           spawnedByGoalId: goal.id,
         });
         if (rootPath) await saveGoals(rootPath);

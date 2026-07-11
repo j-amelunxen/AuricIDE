@@ -232,7 +232,7 @@ describe('conductorSlice', () => {
     expect(agent.provider).toBe('gemini');
   });
 
-  it('auto-spawns with the safe auto permission mode (not acceptEdits/bypass)', async () => {
+  it('omits permissionMode so the provider-configured default decides', async () => {
     store.setState({
       pmDraftTickets: [makeTicket({ id: 't1' })],
       conductorMaxConcurrent: 1,
@@ -242,7 +242,9 @@ describe('conductorSlice', () => {
 
     const mockSpawn = vi.mocked(spawnAgent);
     expect(mockSpawn).toHaveBeenCalledTimes(1);
-    expect(mockSpawn.mock.calls[0][0]).toMatchObject({ permissionMode: 'auto' });
+    // No hardcoded mode: the backend resolves the defaultPermissionMode
+    // from the provider's dynamic config (dynamic-providers/*.json).
+    expect(mockSpawn.mock.calls[0][0].permissionMode).toBeUndefined();
   });
 
   it('does not spawn when conductor is stopped', async () => {
