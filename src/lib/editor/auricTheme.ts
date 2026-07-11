@@ -192,12 +192,12 @@ export const auricHighlightStyle = syntaxHighlighting(
     { tag: tags.macroName, color: '#ff7eb6' },
     { tag: tags.constant(tags.variableName), color: '#fbbf24', fontWeight: 'bold' },
 
-    // Markdown specific
+    // Markdown specific — structure gets colour, prose stays prose. No glows:
+    // emphasis comes from weight and size, not from light bleeding off text.
     {
       tag: tags.heading,
       color: 'var(--primary)',
       fontWeight: 'bold',
-      textShadow: '0 0 10px rgba(var(--primary-rgb), 0.3)',
     },
     {
       tag: tags.heading1,
@@ -206,27 +206,24 @@ export const auricHighlightStyle = syntaxHighlighting(
     },
     { tag: tags.heading2, fontSize: '1.4em', color: 'var(--primary-light)' },
     { tag: tags.heading3, fontSize: '1.2em', color: '#e086ff' },
-    { tag: tags.emphasis, fontStyle: 'italic', color: '#93c5fd' },
-    {
-      tag: tags.strong,
-      fontWeight: 'bold',
-      color: '#ffffff',
-      textShadow: '0 0 5px rgba(255, 255, 255, 0.2)',
-    },
+    { tag: tags.emphasis, fontStyle: 'italic' },
+    { tag: tags.strong, fontWeight: 'bold', color: '#ffffff' },
     { tag: tags.link, color: '#137fec', textDecoration: 'underline' },
     { tag: tags.url, color: '#137fec', opacity: 0.7 },
     { tag: tags.strikethrough, textDecoration: 'line-through', opacity: 0.5 },
 
     // Markdown structure
-    { tag: tags.list, color: 'var(--primary)', fontWeight: 'bold' },
+    // NOTE: no rule for tags.list — lezer applies it to the ENTIRE list item
+    // ("BulletList/..."), so any colour here paints every bullet line of a
+    // README. List text must read as prose; the "- " marker itself is a
+    // ListMark (tags.processingInstruction) and keeps its quiet accent.
     { tag: tags.quote, color: '#94a3b8', fontStyle: 'italic' },
     {
       tag: tags.monospace,
-      color: '#00f0ff',
-      backgroundColor: 'rgba(0, 240, 255, 0.1)',
+      color: '#9ee8dc',
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
       padding: '1px 4px',
       borderRadius: '3px',
-      border: '1px solid rgba(0, 240, 255, 0.2)',
     },
     { tag: tags.meta, color: '#6a7c8f' },
     { tag: tags.contentSeparator, color: 'var(--primary)', fontWeight: 'bold' },

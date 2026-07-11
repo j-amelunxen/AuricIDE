@@ -2,34 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { analyzeText } from './highlighter';
 
 describe('analyzeText', () => {
-  describe('entity detection (PascalCase via wink-nlp)', () => {
-    it('detects a PascalCase entity like "CustomerSupportBot"', () => {
+  describe('PascalCase words are not highlighted', () => {
+    // In technical markdown almost every noun is PascalCase — colouring the
+    // word class painted entire READMEs. Removed; prose reads as prose.
+    it('"The CustomerSupportBot is running" → no variable-hash spans', () => {
       const result = analyzeText('The CustomerSupportBot is running');
-      const entities = result.filter((s) => s.type === 'variable-hash');
-      expect(entities).toHaveLength(1);
-      expect(entities[0].from).toBe(4);
-      expect(entities[0].to).toBe(22);
+      expect(result.filter((s) => (s.type as string) === 'variable-hash')).toHaveLength(0);
     });
 
-    it('detects multiple entities in one text', () => {
-      const result = analyzeText('IntentClassifier calls DataPipeline');
-      const entities = result.filter((s) => s.type === 'variable-hash');
-      expect(entities).toHaveLength(2);
-    });
-
-    it('returns correct from and to positions', () => {
-      const text = 'Hello WorldBuilder!';
-      const result = analyzeText(text);
-      const entities = result.filter((s) => s.type === 'variable-hash');
-      expect(entities).toHaveLength(1);
-      expect(text.substring(entities[0].from, entities[0].to)).toBe('WorldBuilder');
-    });
-
-    it('detects two-part PascalCase like "DataStore"', () => {
-      const result = analyzeText('Use DataStore for persistence');
-      const matched = result.filter((s) => s.type === 'variable-hash' && s.from === 4);
-      expect(matched).toHaveLength(1);
-      expect(matched[0].to).toBe(13);
+    it('"IntentClassifier calls DataPipeline" → no spans at all', () => {
+      expect(analyzeText('IntentClassifier calls DataPipeline')).toHaveLength(0);
     });
   });
 

@@ -22,12 +22,9 @@ describe('nlpHighlightExtension', () => {
   });
 
   describe('highlighter integration', () => {
-    it('analyzeText returns variable-hash spans for PascalCase words', () => {
+    it('analyzeText leaves PascalCase prose alone (no variable-hash spans)', () => {
       const spans = analyzeText('Using DataPipeline for processing');
-      const entities = spans.filter((s) => s.type === 'variable-hash');
-      expect(entities).toHaveLength(1);
-      expect(entities[0].from).toBe(6);
-      expect(entities[0].to).toBe(18);
+      expect(spans.filter((s) => (s.type as string) === 'variable-hash')).toHaveLength(0);
     });
 
     it('analyzeText no longer emits action spans for plain verbs', () => {
@@ -36,11 +33,11 @@ describe('nlpHighlightExtension', () => {
       expect(actions).toHaveLength(0);
     });
 
-    it('analyzeText handles mixed content correctly', () => {
-      const spans = analyzeText('the CustomerSupportBot handles classification');
-      expect(spans.length).toBeGreaterThanOrEqual(1);
+    it('analyzeText still marks actionable keywords in mixed content', () => {
+      const spans = analyzeText('TODO: let the CustomerSupportBot handle classification');
       const types = spans.map((s) => s.type);
-      expect(types).toContain('variable-hash');
+      expect(types).toContain('keyword');
+      expect(types).not.toContain('variable-hash');
     });
   });
 });
