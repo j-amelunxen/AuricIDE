@@ -119,6 +119,72 @@ export function getGoalSatisfaction(
   return { satisfied: blockers.length === 0, blockers };
 }
 
+export type GoalWorkflowStage = 'define' | 'attach' | 'execute' | 'done';
+
+export interface GoalWorkflowStep {
+  stage: GoalWorkflowStage;
+  /** 1-based position in the define → attach → execute → done loop. */
+  index: 1 | 2 | 3 | 4;
+  /** The one concrete next action that moves the goal forward. */
+  hint: string;
+}
+
+/**
+ * Where a goal stands in the workflow loop. Drives the onboarding stepper:
+ * each stage names exactly one next action instead of explaining everything.
+ */
+export function getGoalWorkflowStage(
+  goals: PmGoal[],
+  tickets: PmTicket[],
+  requirements: PmRequirement[],
+  links: PmGoalRequirementLink[],
+  goalId: string
+): GoalWorkflowStep {
+  const goal = goals.find((g) => g.id === goalId);
+  const satisfaction = getGoalSatisfaction(goals, tickets, requirements, links, goalId);
+
+  if (goal?.status === 'achieved' || satisfaction.satisfied) {
+    return {
+      stage: 'done',
+      index: 4,
+      hint:
+        goal?.status === 'achieved'
+          ? 'Goal achieved.'
+          : 'All checks green: mark achieved, or let the conductor do it.',
+    };
+  }
+
+  if (!goal?.successCriteria.trim()) {
+    return {
+      stage: 'define',
+      index: 1,
+      hint: 'Write success criteria so this goal becomes machine-checkable.',
+    };
+  }
+
+  const subtreeIds = new Set<string>([
+    goalId,
+    ...getGoalDescendants(goals, goalId).map((g) => g.id),
+  ]);
+  const hasTickets = tickets.some((t) => !!t.goalId && subtreeIds.has(t.goalId));
+  const hasLinks = links.some((l) => l.goalId === goalId);
+  const hasChildren = getGoalChildren(goals, goalId).length > 0;
+
+  if (!hasTickets && !hasLinks && !hasChildren) {
+    return {
+      stage: 'attach',
+      index: 2,
+      hint: 'Attach work: link tickets, or launch a planning agent to decompose this goal.',
+    };
+  }
+
+  return {
+    stage: 'execute',
+    index: 3,
+    hint: 'Start the conductor: it works the open tickets and verifies the goal.',
+  };
+}
+
 export function getRunsForGoal(runs: PmGoalRun[], goalId: string): PmGoalRun[] {
   return runs
     .filter((r) => r.goalId === goalId)

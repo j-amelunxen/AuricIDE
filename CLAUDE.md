@@ -94,6 +94,17 @@ Key slices and what they own:
 
 **PM draft pattern:** `pmDraftEpics` holds in-progress edits; `pmEpics` is the last-persisted snapshot. `savePmData()` flushes drafts to SQLite via IPC.
 
+## Goals, Tickets, and the Conductor Loop
+
+Goals lead; epics are storage. The primary workflow of the app is one loop:
+
+1. **Define a goal** — a desired world state with machine-checkable `successCriteria` (`pm_goals`, tree via `parentId`).
+2. **Attach work** — link tickets to the goal (`ticket.goalId`, set atomically via `create_ticket`'s `goalId` param or `link_ticket_to_goal`), link requirements as acceptance gates, or launch a planning agent that calls `decompose_goal` / `create_ticket` itself.
+3. **Run the conductor** (`conductorSlice`) — it spawns agents for unblocked open tickets in the goal's subtree (priority order, dependency-aware, `needsHumanSupervision` approval gate, 2 attempts per ticket).
+4. **Verified done** — when no work is left, `getGoalSatisfaction` checks: all subtree tickets `done` + all linked requirements `verified` + all child goals `achieved`. If green, the goal auto-achieves; otherwise the blockers are listed. A goal with nothing attached never auto-satisfies.
+
+Tickets still belong to an epic (`epicId`, required) — that is the organizational/backlog view. The goal link (`goalId`, optional) is the outcome view and drives satisfaction. `getGoalWorkflowStage` (goalsSlice) derives which loop stage a goal is in and powers the onboarding stepper in `GoalDetailPanel` plus the workflow strip in `GoalsModal`.
+
 ## Requirements vs. Tickets
 
 Requirements and Tickets serve fundamentally different purposes:

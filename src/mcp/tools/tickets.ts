@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { insertStatusHistory } from './history';
-import { resolveEpicId, resolveTicketId } from './resolve';
+import { resolveEpicId, resolveGoalId, resolveTicketId } from './resolve';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,6 +21,7 @@ export interface Ticket {
   priority: string;
   model_power: string | null;
   needs_human_supervision: number;
+  goal_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +36,8 @@ export interface CreateTicketParams {
   name: string;
   description?: string;
   priority?: string;
+  /** Goal this ticket serves; the ticket counts toward that goal's satisfaction. */
+  goalId?: string;
 }
 
 export interface UpdateTicketParams {
@@ -82,9 +85,18 @@ export function createTicket(db: Database.Database, params: CreateTicketParams):
   const sortOrder = maxRow.max_sort + 1;
 
   db.prepare(
-    `INSERT INTO pm_tickets (id, epic_id, name, description, status, sort_order, priority)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, params.epicId, params.name, description, status, sortOrder, priority);
+    `INSERT INTO pm_tickets (id, epic_id, name, description, status, sort_order, priority, goal_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    params.epicId,
+    params.name,
+    description,
+    status,
+    sortOrder,
+    priority,
+    params.goalId ?? null
+  );
 
   insertStatusHistory(db, id, null, 'open', 'mcp');
 
@@ -249,7 +261,9 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
 
   server.addTool({
     name: 'create_ticket',
-    description: 'Create a new ticket in an epic',
+    description:
+      'Create a new ticket in an epic. Pass goalId to attach it to a goal in the same call — ' +
+      'the ticket then counts toward that goal’s satisfaction check.',
     parameters: z.object({
       epicId: z
         .string()
@@ -257,10 +271,15 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
       name: z.string().describe('Ticket name'),
       description: z.string().optional().describe('Ticket description'),
       priority: z.string().optional().describe('Ticket priority (default: normal)'),
+      goalId: z
+        .string()
+        .optional()
+        .describe('Goal this ticket serves (full UUID or unique prefix)'),
     }),
     execute: async (params) => {
       const epicId = resolveEpicId(db, params.epicId);
-      const ticket = createTicket(db, { ...params, epicId });
+      const goalId = params.goalId ? resolveGoalId(db, params.goalId) : undefined;
+      const ticket = createTicket(db, { ...params, epicId, goalId });
       return JSON.stringify(ticket, null, 2);
     },
   });
