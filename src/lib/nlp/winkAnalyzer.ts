@@ -14,8 +14,8 @@ const its = nlp.its;
 // question. Also absent: verbs, negation, proper nouns and PascalCase — in
 // technical markdown every third word is a proper noun (Rust, CodeMirror,
 // Tauri …); colouring a word class is recognising, not helping, and it
-// painted entire READMEs. Prose reads as prose (Apple: simplicity is
-// deciding what NOT to build).
+// painted entire READMEs. Prose reads as prose (simplicity is deciding
+// what NOT to build).
 const VALID_ENTITY_TYPES = new Set(['DATE', 'TIME', 'MONEY', 'PERCENT', 'URL', 'EMAIL']);
 
 /**

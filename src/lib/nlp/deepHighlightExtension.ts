@@ -21,7 +21,7 @@ const INTENT_CLASS_MAP: Record<string, string> = {
 };
 
 // Thresholds raised: an unreliable model must not guess *loudly*. Fewer, more
-// confident hints beat a wall of maybes (Apple Responsibility §3).
+// confident hints beat a wall of maybes.
 const MIN_NER_CONFIDENCE = 0.7;
 const MIN_INTENT_CONFIDENCE = 0.6;
 const DEBOUNCE_MS = 300;
