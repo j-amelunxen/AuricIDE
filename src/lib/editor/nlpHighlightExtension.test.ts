@@ -30,10 +30,10 @@ describe('nlpHighlightExtension', () => {
       expect(entities[0].to).toBe(18);
     });
 
-    it('analyzeText returns action spans for action verbs', () => {
+    it('analyzeText no longer emits action spans for plain verbs', () => {
       const spans = analyzeText('create and deploy the app');
-      const actions = spans.filter((s) => s.type === 'action');
-      expect(actions.length).toBeGreaterThanOrEqual(2);
+      const actions = spans.filter((s) => (s.type as string) === 'action');
+      expect(actions).toHaveLength(0);
     });
 
     it('analyzeText handles mixed content correctly', () => {

@@ -5,9 +5,7 @@ import { analyzeText } from '@/lib/nlp/highlighter';
 // Static decorations for fixed categories
 const semanticDecorations = {
   entity: Decoration.mark({ class: 'cm-semantic-entity' }),
-  action: Decoration.mark({ class: 'cm-semantic-action' }),
   keyword: Decoration.mark({ class: 'cm-semantic-keyword' }),
-  negated: Decoration.mark({ class: 'cm-semantic-negated' }),
 
   // Prompt Framework
   'prompt-directive': Decoration.mark({ class: 'cm-semantic-prompt-directive' }),
@@ -26,11 +24,13 @@ function buildDecorations(view: EditorView): DecorationSet {
 
     for (const span of spans) {
       if (span.type === 'variable-hash' && span.hashColor) {
-        // Dynamic decoration for hashed variables
+        // Dynamic decoration for hashed variables. Colour only — no bold, no
+        // glow. The recurring hue alone is the affordance; weight + text-shadow
+        // on top turned every proper noun into a neon beacon (Apple: quiet).
         builder.push(
           Decoration.mark({
             attributes: {
-              style: `color: ${span.hashColor}; font-weight: bold; text-shadow: 0 0 5px ${span.hashColor}40;`,
+              style: `color: ${span.hashColor};`,
             },
           }).range(from + span.from, from + span.to)
         );

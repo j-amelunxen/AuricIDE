@@ -7,27 +7,25 @@ import { SpanCollector, type HighlightSpan } from '@/lib/nlp/spanCollector';
 const nlp = winkNLP(model);
 const its = nlp.its;
 
-// ── HSL to Hex helper for variable hashing ──
-function hslToHex(h: number, s: number, l: number): string {
-  l /= 100;
-  const a = (s * Math.min(l, 1 - l)) / 100;
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12;
-    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color)
-      .toString(16)
-      .padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
-}
+// ── Curated palette for recurring entity/variable colors ──
+// Same word → same color (stable hash), but drawn from a tight, desaturated
+// tonal set that harmonises with the dark theme — instead of sampling the full
+// 360° neon colour wheel at 80% saturation. "Nothing is random." (Apple Craft.)
+const VARIABLE_PALETTE = [
+  '#b3a4e0', // lavender  (brand-adjacent)
+  '#7fc9c2', // teal
+  '#9dc8a0', // sage
+  '#d8c08a', // sand
+  '#d8a0b4', // rose
+  '#93b4d8', // slate-blue
+];
 
 function getHashColor(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const h = Math.abs(hash % 360);
-  return hslToHex(h, 80, 65);
+  return VARIABLE_PALETTE[Math.abs(hash) % VARIABLE_PALETTE.length];
 }
 
 // Entity types that make sense for highlighting (hoisted for perf)
@@ -45,8 +43,10 @@ const VALID_ENTITY_TYPES = new Set([
 ]);
 
 /**
- * Analyze text using wink-nlp's full pipeline (POS-tagging, NER, negation).
- * Returns HighlightSpan-compatible spans with character offsets.
+ * Analyze text using wink-nlp's pipeline (NER + POS-tagging).
+ * Emits entity spans (DATE, MONEY, URL, …) and variable-hash spans for
+ * proper nouns / PascalCase identifiers. Returns HighlightSpan-compatible
+ * spans with character offsets.
  */
 export function analyzeWithWink(text: string): HighlightSpan[] {
   if (!text || !text.trim()) return [];
@@ -70,13 +70,20 @@ export function analyzeWithWink(text: string): HighlightSpan[] {
     }
   });
 
-  // ── 2. Token-level analysis: POS, negation ──
+  // ── 2. Token-level analysis: proper-noun / PascalCase → variable-hash ──
+  //
+  // NOTE: plain verbs and *negation* are intentionally NOT highlighted.
+  //   - Colouring every verb in prose is ink over the whole page (noise).
+  //   - wink's negation flag marks the whole grammatical *scope*, not just the
+  //     negated word, so a single "not" in a dense sentence struck through half
+  //     a paragraph — including words that aren't negated in meaning (covered,
+  //     legal, individual, other …). A hint that is both loud (strike-through
+  //     reads as "deleted") and wrong is worse than no hint (Apple: cut it).
   let cursor = 0;
 
   doc.tokens().each((token: ItemToken) => {
     const tokenValue = token.out();
     const pos = token.out(its.pos);
-    const negationFlag = token.out(its.negationFlag);
     const precedingSpaces = token.out(its.precedingSpaces);
 
     cursor += precedingSpaces.length;
@@ -87,18 +94,6 @@ export function analyzeWithWink(text: string): HighlightSpan[] {
     if (pos === 'PUNCT' || pos === 'DET' || pos === 'SPACE') {
       cursor = tokenTo;
       return;
-    }
-
-    // Negated verbs/adjectives get 'negated' type (highest priority among token-level)
-    if (negationFlag && (pos === 'VERB' || pos === 'ADJ' || pos === 'AUX')) {
-      collector.add(tokenFrom, tokenTo, 'negated');
-      cursor = tokenTo;
-      return;
-    }
-
-    // VERB → action
-    if (pos === 'VERB') {
-      collector.add(tokenFrom, tokenTo, 'action');
     }
 
     // PROPN or PascalCase → variable-hash with color

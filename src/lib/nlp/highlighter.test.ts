@@ -33,41 +33,21 @@ describe('analyzeText', () => {
     });
   });
 
-  describe('action detection (wink-nlp POS)', () => {
-    it('detects action verbs contextually', () => {
+  describe('plain verbs are not highlighted', () => {
+    // Verb/action highlighting was removed: colouring every verb in prose is
+    // noise. (Negation highlighting was removed too, see below.)
+    it('"create a new file and deploy it" → produces no action-typed spans', () => {
       const result = analyzeText('create a new file and deploy it');
-      const actions = result.filter((s) => s.type === 'action');
-      expect(actions.length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('"run the tests" → "run" is action', () => {
-      const result = analyzeText('run the tests');
-      const actions = result.filter((s) => s.type === 'action');
-      const runAction = actions.find(
-        (s) => 'run the tests'.substring(s.from, s.to).toLowerCase() === 'run'
-      );
-      expect(runAction).toBeDefined();
-    });
-
-    it('"the first run" → "run" is NOT action (noun usage)', () => {
-      const result = analyzeText('the first run');
-      const actions = result.filter((s) => s.type === 'action');
-      const runAction = actions.find(
-        (s) => 'the first run'.substring(s.from, s.to).toLowerCase() === 'run'
-      );
-      expect(runAction).toBeUndefined();
+      const actions = result.filter((s) => (s.type as string) === 'action');
+      expect(actions).toHaveLength(0);
     });
   });
 
-  describe('negation detection (wink-nlp)', () => {
-    it('"Do NOT deploy" → "deploy" is negated', () => {
+  describe('negation is not highlighted', () => {
+    it('"Do NOT deploy" → produces no negated span', () => {
       const result = analyzeText('Do NOT deploy');
-      const negated = result.filter((s) => s.type === 'negated');
-      expect(negated.length).toBeGreaterThanOrEqual(1);
-      const deploy = negated.find(
-        (s) => 'Do NOT deploy'.substring(s.from, s.to).toLowerCase() === 'deploy'
-      );
-      expect(deploy).toBeDefined();
+      const negated = result.filter((s) => (s.type as string) === 'negated');
+      expect(negated).toHaveLength(0);
     });
   });
 

@@ -228,7 +228,6 @@ textarea:focus-visible,
 
   /* Kill the perpetual glow oscillation and soft pulses outright. */
   .animate-pulse-soft,
-  .cm-semantic-action,
   .cm-mermaid-loading,
   .react-flow__edge.animated path {
     animation: none !important;
@@ -266,87 +265,82 @@ textarea:focus-visible,
   }
 }
 
-/* Semantic Highlighting (Pattern + NLP Engine) */
+/* ─────────────────────────────────────────────────────────────
+   Semantic Highlighting (Pattern + NLP Engine)
+
+   Apple-logic redesign: semantic hints are WHISPERS, not a neon HUD.
+   Emphasis comes from weight + a calm, desaturated colour — never from
+   glow, background chips, uppercase, or borders that break the text
+   baseline. In prose the reading experience is sacred: you notice a hint
+   when you look for it, and it disappears when you read.
+   ───────────────────────────────────────────────────────────── */
+
+/* Named entities from wink (DATE, MONEY, URL, …). Brand-adjacent muted mauve,
+   weight only. (Most PROPN/PascalCase go through variable-hash instead.) */
 .cm-semantic-entity {
-  /* This is now mostly handled by variable-hash, but kept as fallback for generic entities */
-  color: var(--primary-light) !important;
-  font-weight: 700;
-  border-bottom: 1px solid rgba(var(--primary-light-rgb), 0.3);
-  text-shadow: 0 0 10px rgba(var(--primary-light-rgb), 0.2);
-}
-
-.cm-semantic-action {
-  color: #22d3ee !important;
+  color: #b9a3d6 !important;
   font-weight: 500;
-  font-style: italic;
-  /* Static accent glow — a perpetual pulse on every action token competes
-     for attention and reads as noise (Apple HIG §14). */
-  text-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
 }
 
+/* Structural signals (TODO / FIXME / IMPORTANT …) — these are *meant* to catch
+   the eye, so they keep the most presence of the heuristic layer: a calm warm
+   accent + weight. No chip, no glow, no uppercase transform, no border. */
 .cm-semantic-keyword {
-  background-color: rgba(248, 113, 113, 0.15);
-  color: #f87171 !important;
-  padding: 1px 4px;
-  border-radius: 4px;
-  border: 1px solid rgba(248, 113, 113, 0.3);
-  font-weight: 800;
-  text-transform: uppercase;
-  font-size: 0.75em;
-  letter-spacing: 0.05em;
-  box-shadow: 0 0 15px rgba(248, 113, 113, 0.2);
-}
-
-.cm-semantic-negated {
-  text-decoration: line-through;
-  text-decoration-color: #f87171;
-  opacity: 0.7;
-}
-
-/* Deep NER Entity Types (Transformers.js) */
-.cm-semantic-deep-entity-per {
-  color: #a78bfa;
+  color: #d8b06a !important;
   font-weight: 600;
 }
 
-.cm-semantic-deep-entity-org {
-  color: #34d399;
-  font-weight: 600;
+/* Deep NER entities (Transformers.js) — the model layer whispers even quieter
+   than the heuristic layer: ONE calm treatment for PER/ORG/LOC/MISC, a hairline
+   dotted underline rather than a colour flood. Fades in when the async result
+   lands so the late layer materialises instead of popping. */
+.cm-semantic-deep-entity {
+  color: #a8c0d0;
+  text-decoration: underline dotted;
+  text-decoration-color: rgba(168, 192, 208, 0.4);
+  text-underline-offset: 3px;
+  animation: deep-nlp-fade-in 160ms ease-out;
 }
 
-.cm-semantic-deep-entity-loc {
-  color: #38bdf8;
-  font-style: italic;
+/* Paragraph intent (line decoration). The old 2px left border is exactly the
+   side-stripe accent idiom the design direction forbids. Replaced with a soft,
+   left-anchored material wash that fades out across the line — presence without
+   a hard rule — and only shows for high-confidence classifications. */
+.cm-intent-instruction,
+.cm-intent-explanation,
+.cm-intent-warning,
+.cm-intent-question,
+.cm-intent-context {
+  animation: deep-nlp-fade-in 160ms ease-out;
 }
 
-.cm-semantic-deep-entity-misc {
-  color: #fbbf24;
-}
-
-/* Paragraph Intent Markers (line decorations, change-bar idiom) */
 .cm-intent-instruction {
-  border-left: 2px solid rgba(74, 222, 128, 0.55);
-  padding-left: 8px;
+  background: linear-gradient(90deg, rgba(125, 201, 194, 0.08), transparent 55%);
 }
 
 .cm-intent-explanation {
-  border-left: 2px solid rgba(96, 165, 250, 0.55);
-  padding-left: 8px;
+  background: linear-gradient(90deg, rgba(147, 180, 216, 0.08), transparent 55%);
 }
 
 .cm-intent-warning {
-  border-left: 2px solid rgba(248, 113, 113, 0.55);
-  padding-left: 8px;
+  background: linear-gradient(90deg, rgba(216, 176, 106, 0.09), transparent 55%);
 }
 
 .cm-intent-question {
-  border-left: 2px solid rgba(251, 191, 36, 0.55);
-  padding-left: 8px;
+  background: linear-gradient(90deg, rgba(179, 164, 224, 0.08), transparent 55%);
 }
 
 .cm-intent-context {
-  border-left: 2px solid rgba(107, 114, 128, 0.55);
-  padding-left: 8px;
+  background: linear-gradient(90deg, rgba(128, 128, 144, 0.07), transparent 55%);
+}
+
+@keyframes deep-nlp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ─── Wiki-Link Highlighting ─── */
@@ -527,28 +521,23 @@ textarea:focus-visible,
   margin: 8px !important;
 }
 
-/* Prompt Framework Styles */
+/* Prompt Framework label styles (Task: / Context: / Constraint: …).
+   These mark the *label*, not the whole line. Three quiet roles, distinguished
+   by a calm hue from the semantic palette + a single weight bump — no neon, no
+   chip, no uppercase, no 2px underline. */
 .cm-semantic-prompt-directive {
-  color: #4ade80 !important; /* Neon Green */
-  font-weight: 800;
-  text-transform: uppercase;
-  border-bottom: 2px solid #4ade80;
-  text-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
+  color: #8fcabf !important; /* muted teal — "do this" */
+  font-weight: 600;
 }
 
 .cm-semantic-prompt-context {
-  color: #60a5fa !important; /* Soft Blue */
-  font-weight: 700;
-  background: rgba(96, 165, 250, 0.12);
-  border-radius: 3px;
-  padding: 0 3px;
+  color: #93b4d8 !important; /* muted slate-blue — "here's the setting" */
+  font-weight: 600;
 }
 
 .cm-semantic-prompt-constraint {
-  color: #f472b6 !important; /* Pink/Red */
-  text-decoration: underline;
-  text-decoration-color: #f472b6;
-  text-decoration-thickness: 2px;
+  color: #d8a0b4 !important; /* muted rose — "stay within this" */
+  font-weight: 600;
 }
 
 /* Inline Mermaid Widget (CodeMirror) */
