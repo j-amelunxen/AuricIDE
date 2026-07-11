@@ -11,7 +11,6 @@ const semanticDecorations = {
   'prompt-directive': Decoration.mark({ class: 'cm-semantic-prompt-directive' }),
   'prompt-context': Decoration.mark({ class: 'cm-semantic-prompt-context' }),
   'prompt-constraint': Decoration.mark({ class: 'cm-semantic-prompt-constraint' }),
-  'variable-hash': null, // Dynamic, handled separately
 };
 
 function buildDecorations(view: EditorView): DecorationSet {
@@ -23,22 +22,9 @@ function buildDecorations(view: EditorView): DecorationSet {
     const spans = analyzeText(text);
 
     for (const span of spans) {
-      if (span.type === 'variable-hash' && span.hashColor) {
-        // Dynamic decoration for hashed variables. Colour only — no bold, no
-        // glow. The recurring hue alone is the affordance; weight + text-shadow
-        // on top turned every proper noun into a neon beacon (Apple: quiet).
-        builder.push(
-          Decoration.mark({
-            attributes: {
-              style: `color: ${span.hashColor};`,
-            },
-          }).range(from + span.from, from + span.to)
-        );
-      } else {
-        const decoration = semanticDecorations[span.type];
-        if (decoration) {
-          builder.push(decoration.range(from + span.from, from + span.to));
-        }
+      const decoration = semanticDecorations[span.type];
+      if (decoration) {
+        builder.push(decoration.range(from + span.from, from + span.to));
       }
     }
   }

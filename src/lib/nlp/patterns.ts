@@ -17,7 +17,3 @@ export const PROMPT_CONSTRAINT_REGEX =
 // 3. Architectural Entities (PascalCase / UPPER_CASE)
 // Kept for find-references and entity-index (external consumers).
 export const ENTITY_REGEX = /\b(?:[A-Z][a-z]+(?:[A-Z][a-z]+)+|[A-Z]{2,}(?:_[A-Z0-9]+)*)\b/g;
-
-// 4. PascalCase detector (at least two uppercase-led segments)
-// Used by winkAnalyzer as fallback for tokens not tagged PROPN.
-export const PASCAL_CASE_REGEX = /^[A-Z][a-z]+(?:[A-Z][a-z]+)+$/;

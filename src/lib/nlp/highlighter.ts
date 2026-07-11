@@ -38,11 +38,11 @@ export function analyzeText(text: string): HighlightSpan[] {
     }
   }
 
-  // ── Layer 2: wink-nlp Analysis (POS, NER, Negation) ──
+  // ── Layer 2: wink-nlp NER (dates, money, URLs, …) ──
   const winkSpans = analyzeWithWink(text);
 
   for (const ws of winkSpans) {
-    collector.add(ws.from, ws.to, ws.type, ws.hashColor ? { hashColor: ws.hashColor } : undefined);
+    collector.add(ws.from, ws.to, ws.type);
   }
 
   return collector.sorted();

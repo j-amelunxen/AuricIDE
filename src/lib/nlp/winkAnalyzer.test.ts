@@ -29,36 +29,52 @@ describe('analyzeWithWink', () => {
     });
   });
 
-  describe('entity detection (wink NER)', () => {
+  describe('entity detection (wink NER) — facts you scan for', () => {
     it('"July 20, 2024" → entity (DATE)', () => {
       const spans = analyzeWithWink('Meet on July 20, 2024 for the review');
       const entities = spansOfType(spans, 'entity');
       expect(entities.length).toBeGreaterThanOrEqual(1);
     });
+
+    it('"50000 USD" → entity (MONEY)', () => {
+      const spans = analyzeWithWink('approved for 50000 USD last month');
+      const entities = spansOfType(spans, 'entity');
+      const money = entities.find((s) =>
+        'approved for 50000 USD last month'.substring(s.from, s.to).includes('USD')
+      );
+      expect(money).toBeDefined();
+    });
   });
 
-  describe('proper noun detection (POS=PROPN)', () => {
-    it('PascalCase "UserService" → variable-hash with stable color', () => {
-      const spans = analyzeWithWink('The UserService handles requests');
-      const hashed = spansOfType(spans, 'variable-hash');
-      const userService = hashed.find(
-        (s) => 'The UserService handles requests'.substring(s.from, s.to) === 'UserService'
-      );
-      expect(userService).toBeDefined();
-      expect(userService!.hashColor).toBeDefined();
-      expect(userService!.hashColor).toMatch(/^#[0-9a-f]{6}$/);
+  describe('noise entity types are not highlighted', () => {
+    // ORDINAL/CARDINAL/DURATION marked words like "first" in "Markdown-first
+    // editor" — a hint that answers no question is noise (Apple: cut it).
+    it('"the first run" → "first" (ORDINAL) is not marked', () => {
+      const spans = analyzeWithWink('the first run of the Markdown-first editor');
+      expect(spansOfType(spans, 'entity')).toHaveLength(0);
     });
 
-    it('hash color is stable across calls', () => {
-      const spans1 = analyzeWithWink('UserService is running');
-      const spans2 = analyzeWithWink('UserService is great');
-      const hash1 = spansOfType(spans1, 'variable-hash').find(
-        (s) => 'UserService is running'.substring(s.from, s.to) === 'UserService'
+    it('"three weeks" (DURATION) and bare numbers (CARDINAL) are not marked', () => {
+      const spans = analyzeWithWink('it took three weeks and 500 attempts');
+      expect(spansOfType(spans, 'entity')).toHaveLength(0);
+    });
+  });
+
+  describe('proper nouns and PascalCase are not highlighted', () => {
+    // In technical markdown every third word is PascalCase or a proper noun
+    // (Rust, CodeMirror, Tauri, …). Colouring the lot painted whole READMEs —
+    // recognising a word class adds no information for the reader. Removed.
+    it('"The UserService handles requests" → no span for "UserService"', () => {
+      const spans = analyzeWithWink('The UserService handles requests');
+      const userService = spans.find(
+        (s) => 'The UserService handles requests'.substring(s.from, s.to) === 'UserService'
       );
-      const hash2 = spansOfType(spans2, 'variable-hash').find(
-        (s) => 'UserService is great'.substring(s.from, s.to) === 'UserService'
-      );
-      expect(hash1?.hashColor).toBe(hash2?.hashColor);
+      expect(userService).toBeUndefined();
+    });
+
+    it('never emits variable-hash spans', () => {
+      const spans = analyzeWithWink('CodeMirror renders Markdown while Tauri talks to Rust');
+      expect(spans.filter((s) => (s.type as string) === 'variable-hash')).toHaveLength(0);
     });
   });
 

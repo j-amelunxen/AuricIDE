@@ -6,32 +6,20 @@
 export interface HighlightSpan {
   from: number;
   to: number;
-  type:
-    | 'entity'
-    | 'keyword'
-    | 'prompt-directive'
-    | 'prompt-context'
-    | 'prompt-constraint'
-    | 'variable-hash';
-  hashColor?: string;
+  type: 'entity' | 'keyword' | 'prompt-directive' | 'prompt-context' | 'prompt-constraint';
 }
 
 export class SpanCollector {
   private occupied = new Set<number>();
   readonly spans: HighlightSpan[] = [];
 
-  add(
-    from: number,
-    to: number,
-    type: HighlightSpan['type'],
-    extra?: { hashColor?: string }
-  ): boolean {
+  add(from: number, to: number, type: HighlightSpan['type']): boolean {
     if (from < 0 || from >= to) return false;
     for (let i = from; i < to; i++) {
       if (this.occupied.has(i)) return false;
     }
     for (let i = from; i < to; i++) this.occupied.add(i);
-    this.spans.push({ from, to, type, ...extra });
+    this.spans.push({ from, to, type });
     return true;
   }
 
