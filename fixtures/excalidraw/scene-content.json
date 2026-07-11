@@ -34,7 +34,7 @@
   "appState": {
     "viewBackgroundColor": "#ffffff",
     "gridSize": null,
-    "collaborators": { "user_1": { "username": "jennifer" } },
+    "collaborators": { "user_1": { "username": "alice" } },
     "lockedMultiSelections": {}
   },
   "files": {},
