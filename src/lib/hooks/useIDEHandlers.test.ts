@@ -8,6 +8,7 @@ const mockOpenFolderDialog = vi.fn();
 const mockReadFile = vi.fn();
 const mockWriteFile = vi.fn();
 const mockCreateDirectory = vi.fn();
+const mockListAllFiles = vi.fn();
 
 vi.mock('@/lib/tauri/fs', () => ({
   readDirectory: (...args: unknown[]) => mockReadDirectory(...args),
@@ -15,6 +16,7 @@ vi.mock('@/lib/tauri/fs', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
   createDirectory: (...args: unknown[]) => mockCreateDirectory(...args),
+  listAllFiles: (...args: unknown[]) => mockListAllFiles(...args),
 }));
 
 // Mock Store
@@ -54,6 +56,7 @@ describe('useIDEHandlers', () => {
     loadExcalidrawSpecLinks: vi.fn(),
     resetExcalidrawInMemory: vi.fn(),
     setProjectFiles: vi.fn(),
+    setAllFiles: vi.fn(),
     selectFile: vi.fn(),
     openTab: vi.fn(),
     setEditorContent: vi.fn(),
@@ -72,6 +75,7 @@ describe('useIDEHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRefreshGitStatus.mockResolvedValue([]);
+    mockListAllFiles.mockResolvedValue([]);
     mockState.rootPath = null;
     mockFileTree = [];
     mockActiveTabId = null;
@@ -181,6 +185,34 @@ describe('useIDEHandlers', () => {
     expect(src.expanded).toBe(true);
     expect(docs.expanded).toBe(false);
     expect(readme.expanded).toBe(false);
+  });
+
+  it('keeps the flat file list in sync on root refresh so spec counts stay live', async () => {
+    const projectPath = '/path/to/project';
+    mockState.rootPath = projectPath;
+    mockReadDirectory.mockResolvedValue([]);
+    const files = [`${projectPath}/specs/spec-a.md`, `${projectPath}/README.md`];
+    mockListAllFiles.mockResolvedValue(files);
+
+    const { result } = renderHook(() => useIDEHandlers(mockState));
+
+    await result.current.handleRefresh();
+
+    expect(mockListAllFiles).toHaveBeenCalledWith(projectPath);
+    expect(mockState.setAllFiles).toHaveBeenCalledWith(files);
+  });
+
+  it('does not re-list all files when only refreshing a subdirectory', async () => {
+    const projectPath = '/path/to/project';
+    mockState.rootPath = projectPath;
+    mockReadDirectory.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useIDEHandlers(mockState));
+
+    await result.current.handleRefresh(`${projectPath}/src`);
+
+    expect(mockListAllFiles).not.toHaveBeenCalled();
+    expect(mockState.setAllFiles).not.toHaveBeenCalled();
   });
 
   describe('tab content loading', () => {
