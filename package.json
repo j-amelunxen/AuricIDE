@@ -12,9 +12,9 @@
     "url": "https://github.com/PlasmaLampe/AuricIDE/issues"
   },
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev --turbopack --port 41873",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port 41873",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
