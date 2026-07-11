@@ -320,7 +320,7 @@ export default function Home() {
                   <ExcalidrawViewer
                     content={state.editorContent}
                     filePath={state.activeTabId}
-                    onReload={() => void handlers.handleFileSelect(state.activeTabId!)}
+                    onReload={() => void handlers.loadTabContent(state.activeTabId!)}
                   />
                 ) : handlers.isHtmlTab ? (
                   <HtmlViewer

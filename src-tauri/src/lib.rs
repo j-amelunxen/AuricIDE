@@ -1556,7 +1556,7 @@ fn mcp_status(state: tauri::State<'_, mcp::McpServerState>) -> mcp::McpStatusInf
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -1659,7 +1659,81 @@ pub fn run() {
                 let app = window.app_handle().clone();
                 tauri::async_runtime::spawn(agents::cleanup_all_agents(app));
             }
+        });
+
+    // macOS gets Tauri's default menu, whose File and Window submenus both
+    // bind "Close Window" to ⌘W — so ⌘W killed the whole window instead of a
+    // tab. Rebind like Safari/Xcode: ⌘W becomes "Close Tab" (delegated to the
+    // frontend tab bar via the menu:close-tab event), "Close Window" moves to
+    // ⇧⌘W. The menu accelerator consumes the key before the webview sees it,
+    // so this cannot be fixed in JavaScript alone.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(|handle| {
+            use tauri::menu::{Menu, MenuItem, MenuItemKind};
+
+            let menu = Menu::default(handle)?;
+            for item in menu.items()? {
+                let MenuItemKind::Submenu(submenu) = item else {
+                    continue;
+                };
+                let is_file_menu = submenu.text().map(|t| t == "File").unwrap_or(false);
+                for (position, sub_item) in submenu.items()?.iter().enumerate() {
+                    let is_close_window = match sub_item {
+                        MenuItemKind::Predefined(predefined) => predefined
+                            .text()
+                            .map(|t| t == "Close Window")
+                            .unwrap_or(false),
+                        _ => false,
+                    };
+                    if !is_close_window {
+                        continue;
+                    }
+                    submenu.remove_at(position)?;
+                    if is_file_menu {
+                        submenu.insert(
+                            &MenuItem::with_id(
+                                handle,
+                                "close_tab",
+                                "Close Tab",
+                                true,
+                                Some("CmdOrCtrl+W"),
+                            )?,
+                            position,
+                        )?;
+                        submenu.insert(
+                            &MenuItem::with_id(
+                                handle,
+                                "close_window",
+                                "Close Window",
+                                true,
+                                Some("Shift+CmdOrCtrl+W"),
+                            )?,
+                            position + 1,
+                        )?;
+                    }
+                    break;
+                }
+            }
+            Ok(menu)
         })
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "close_tab" => {
+                let _ = app.emit("menu:close-tab", ());
+            }
+            "close_window" => {
+                let focused = app
+                    .webview_windows()
+                    .into_values()
+                    .find(|w| w.is_focused().unwrap_or(false));
+                if let Some(window) = focused {
+                    let _ = window.close();
+                }
+            }
+            _ => {}
+        });
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

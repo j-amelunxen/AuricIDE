@@ -20,12 +20,13 @@ vi.mock('@/lib/tauri/fs', () => ({
 // Mock Store
 const mockRefreshGitStatus = vi.fn();
 let mockFileTree: unknown[] = [];
+let mockActiveTabId: string | null = null;
 vi.mock('@/lib/store', () => ({
   useStore: {
     getState: () => ({
       refreshGitStatus: mockRefreshGitStatus,
       fileStatuses: [],
-      activeTabId: null,
+      activeTabId: mockActiveTabId,
       fileTree: mockFileTree,
     }),
   },
@@ -73,6 +74,7 @@ describe('useIDEHandlers', () => {
     mockRefreshGitStatus.mockResolvedValue([]);
     mockState.rootPath = null;
     mockFileTree = [];
+    mockActiveTabId = null;
   });
 
   it('lands in the cockpit instead of auto-opening README when opening a folder', async () => {
@@ -179,5 +181,45 @@ describe('useIDEHandlers', () => {
     expect(src.expanded).toBe(true);
     expect(docs.expanded).toBe(false);
     expect(readme.expanded).toBe(false);
+  });
+
+  describe('tab content loading', () => {
+    it('handleFileSelect opens the tab without reading the file itself', async () => {
+      // Content loading is owned by the activeTabId effect (single loader) —
+      // handleFileSelect only selects and opens; otherwise every tree click
+      // would read the file twice.
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleFileSelect('/project/notes.md');
+
+      expect(mockState.selectFile).toHaveBeenCalledWith('/project/notes.md');
+      expect(mockState.openTab).toHaveBeenCalledWith({
+        id: '/project/notes.md',
+        path: '/project/notes.md',
+        name: 'notes.md',
+      });
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it('loadTabContent reads a text file and shows it in the editor', async () => {
+      mockActiveTabId = '/project/notes.md';
+      mockReadFile.mockResolvedValue('# Notes');
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.loadTabContent('/project/notes.md');
+
+      expect(mockReadFile).toHaveBeenCalledWith('/project/notes.md');
+      expect(mockState.setEditorContent).toHaveBeenCalledWith('# Notes');
+    });
+
+    it('loadTabContent drops the result when the user already switched on', async () => {
+      mockActiveTabId = '/project/other.md';
+      mockReadFile.mockResolvedValue('# Stale');
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.loadTabContent('/project/notes.md');
+
+      expect(mockState.setEditorContent).not.toHaveBeenCalled();
+    });
   });
 });
