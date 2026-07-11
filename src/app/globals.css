@@ -210,9 +210,9 @@ textarea:focus-visible,
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Accessibility preferences — reduced motion / transparency / contrast
-   (Apple HIG §14). Decorative, continuously-oscillating motion and
-   heavy translucency are the two things we roll back first.
+   Accessibility preferences — reduced motion / transparency / contrast.
+   Decorative, continuously-oscillating motion and heavy translucency
+   are the two things we roll back first.
    ───────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   /* Neutralize decorative transitions/animations app-wide, but keep
@@ -268,7 +268,7 @@ textarea:focus-visible,
 /* ─────────────────────────────────────────────────────────────
    Semantic Highlighting (Pattern + NLP Engine)
 
-   Apple-logic redesign: semantic hints are WHISPERS, not a neon HUD.
+   Design principle: semantic hints are WHISPERS, not a neon HUD.
    Emphasis comes from weight + a calm, desaturated colour — never from
    glow, background chips, uppercase, or borders that break the text
    baseline. In prose the reading experience is sacred: you notice a hint

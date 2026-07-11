@@ -32,7 +32,7 @@ const iconMap: Record<string, string> = {
 /**
  * Fast, on-brand hover label. Replaces the native `title` tooltip (≈1s OS
  * delay, unstyled) so an icon-only rail stays discoverable and consistent
- * with the rest of the polish (Apple HIG §16 wayfinding). Purely visual —
+ * with the rest of the polish (wayfinding). Purely visual —
  * assistive tech reads the button's `aria-label`, so this is aria-hidden.
  */
 function ActivityTooltip({ id, label }: { id: string; label: string }) {

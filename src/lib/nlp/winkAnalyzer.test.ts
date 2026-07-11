@@ -48,7 +48,7 @@ describe('analyzeWithWink', () => {
 
   describe('noise entity types are not highlighted', () => {
     // ORDINAL/CARDINAL/DURATION marked words like "first" in "Markdown-first
-    // editor" — a hint that answers no question is noise (Apple: cut it).
+    // editor" — a hint that answers no question is noise.
     it('"the first run" → "first" (ORDINAL) is not marked', () => {
       const spans = analyzeWithWink('the first run of the Markdown-first editor');
       expect(spansOfType(spans, 'entity')).toHaveLength(0);
