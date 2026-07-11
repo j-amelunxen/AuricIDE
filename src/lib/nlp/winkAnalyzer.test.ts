@@ -7,44 +7,25 @@ function spansOfType(spans: HighlightSpan[], type: HighlightSpan['type']): Highl
 }
 
 describe('analyzeWithWink', () => {
-  describe('action detection (POS=VERB)', () => {
-    it('"run the tests" → "run" is action (VERB)', () => {
+  describe('plain verbs are not highlighted', () => {
+    // Colouring every verb in prose is noise, not signal — the feature was
+    // intentionally removed (as was negation highlighting, see below).
+    it('"run the tests" → produces no verb/action span for "run"', () => {
       const spans = analyzeWithWink('run the tests');
-      const actions = spansOfType(spans, 'action');
-      expect(actions.length).toBeGreaterThanOrEqual(1);
-      const runAction = actions.find(
+      const runSpan = spans.find(
         (s) => 'run the tests'.substring(s.from, s.to).toLowerCase() === 'run'
       );
-      expect(runAction).toBeDefined();
-    });
-
-    it('"create a new file and deploy it" → detects action verbs', () => {
-      const spans = analyzeWithWink('create a new file and deploy it');
-      const actions = spansOfType(spans, 'action');
-      expect(actions.length).toBeGreaterThanOrEqual(2);
+      expect(runSpan).toBeUndefined();
     });
   });
 
-  describe('context-aware classification', () => {
-    it('"the first run" → "run" is NOT action (NOUN usage)', () => {
-      const spans = analyzeWithWink('the first run');
-      const actions = spansOfType(spans, 'action');
-      const runAction = actions.find(
-        (s) => 'the first run'.substring(s.from, s.to).toLowerCase() === 'run'
-      );
-      expect(runAction).toBeUndefined();
-    });
-  });
-
-  describe('negation detection', () => {
-    it('"Do NOT deploy" → "deploy" is negated', () => {
+  describe('negation is not highlighted', () => {
+    // wink's negation flag marks the whole grammatical scope, which struck
+    // through half a paragraph of un-negated words in real prose. Removed.
+    it('"Do NOT deploy" → produces no negated span', () => {
       const spans = analyzeWithWink('Do NOT deploy');
-      const negated = spansOfType(spans, 'negated');
-      expect(negated.length).toBeGreaterThanOrEqual(1);
-      const deploy = negated.find(
-        (s) => 'Do NOT deploy'.substring(s.from, s.to).toLowerCase() === 'deploy'
-      );
-      expect(deploy).toBeDefined();
+      const negated = spans.filter((s) => (s.type as string) === 'negated');
+      expect(negated).toHaveLength(0);
     });
   });
 

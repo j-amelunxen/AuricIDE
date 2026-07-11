@@ -8,13 +8,11 @@ export interface HighlightSpan {
   to: number;
   type:
     | 'entity'
-    | 'action'
     | 'keyword'
     | 'prompt-directive'
     | 'prompt-context'
     | 'prompt-constraint'
-    | 'variable-hash'
-    | 'negated';
+    | 'variable-hash';
   hashColor?: string;
 }
 

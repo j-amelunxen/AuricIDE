@@ -2,7 +2,7 @@
  * Web Worker for deep NLP analysis using Transformers.js.
  *
  * Pipelines:
- *   - NER: onnx-community/distilbert-NER-ONNX (q8) → PER, ORG, LOC, MISC
+ *   - NER: Xenova/bert-base-NER (q8) → PER, ORG, LOC, MISC
  *   - Classification: Xenova/mobilebert-uncased-mnli (q8) → Zero-shot Intent
  *
  * Message protocol:
@@ -16,6 +16,7 @@ import {
   type TokenClassificationPipeline,
   type ZeroShotClassificationPipeline,
 } from '@huggingface/transformers';
+import { aggregateNerTokens, type RawNerToken } from './nerAggregation';
 
 // Disable local model loading — always download from HF Hub / cache
 env.allowLocalModels = false;
@@ -103,14 +104,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const ner = await getNerPipeline();
         const rawOutput = await ner(text);
 
-        // Normalize output to our NerEntity interface
-        const output: NerEntity[] = (rawOutput as Record<string, unknown>[]).map((item) => ({
-          entity_group: String(item.entity_group ?? item.entity ?? ''),
-          score: Number(item.score ?? 0),
-          word: String(item.word ?? ''),
-          start: Number(item.start ?? 0),
-          end: Number(item.end ?? 0),
-        }));
+        // transformers.js emits per-token BIO tags ("B-PER", "I-LOC", …)
+        // without entity groups or character offsets — aggregate them into
+        // NerEntity groups and reconstruct the offsets ourselves.
+        const output: NerEntity[] = aggregateNerTokens(rawOutput as unknown as RawNerToken[], text);
 
         self.postMessage({ status: 'complete', task: 'ner', id, output } satisfies WorkerResponse);
         break;
