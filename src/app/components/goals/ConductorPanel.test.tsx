@@ -1,7 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ConductorPanel } from './ConductorPanel';
+import { ConductorPanel, formatRunDuration } from './ConductorPanel';
 import type { PmTicket } from '@/lib/tauri/pm';
+import type { ConductorRunSummary } from '@/lib/store/conductorSlice';
+
+function makeLastRun(overrides: Partial<ConductorRunSummary> = {}): ConductorRunSummary {
+  return {
+    outcome: 'finished',
+    goalName: null,
+    completed: 3,
+    failed: 0,
+    blockers: [],
+    startedAt: '2026-01-01T10:00:00.000Z',
+    endedAt: '2026-01-01T10:12:00.000Z',
+    ...overrides,
+  };
+}
 
 function makeTicket(overrides: Partial<PmTicket> = {}): PmTicket {
   return {
@@ -27,6 +41,7 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     activeAgentCount: 0,
     pendingApprovals: [] as PmTicket[],
     decisions: [],
+    lastRun: null as ConductorRunSummary | null,
     canStart: true,
     providers: [],
     providerId: null,
@@ -105,6 +120,78 @@ describe('ConductorPanel', () => {
     const props = renderPanel();
     fireEvent.change(screen.getByTestId('conductor-max-concurrent'), { target: { value: '4' } });
     expect(props.onSetMaxConcurrent).toHaveBeenCalledWith(4);
+  });
+
+  describe('last run summary', () => {
+    it('shows plain "stopped" when nothing has run yet', () => {
+      renderPanel();
+      expect(screen.queryByTestId('conductor-last-run')).not.toBeInTheDocument();
+      expect(screen.getByTestId('conductor-panel').textContent).toContain('stopped');
+    });
+
+    it('summarizes a finished run with counts and duration', () => {
+      renderPanel({ lastRun: makeLastRun() });
+      const summary = screen.getByTestId('conductor-last-run');
+      expect(summary.textContent).toContain('finished');
+      expect(summary.textContent).toContain('3 done');
+      expect(summary.textContent).toContain('12m');
+      expect(summary.textContent).not.toContain('failed');
+    });
+
+    it('celebrates an achieved goal by name, calmly', () => {
+      renderPanel({
+        lastRun: makeLastRun({ outcome: 'goal_achieved', goalName: 'Ship v1', completed: 4 }),
+      });
+      const summary = screen.getByTestId('conductor-last-run');
+      expect(summary.textContent).toContain('achieved "Ship v1"');
+      expect(summary.textContent).toContain('4 done');
+    });
+
+    it('spells out a blocked run and exposes the blockers', () => {
+      renderPanel({
+        lastRun: makeLastRun({
+          outcome: 'goal_blocked',
+          goalName: 'Ship v1',
+          blockers: ['Sub-goal "Docs" not achieved', 'Requirement REQ-01 not verified'],
+          failed: 1,
+        }),
+      });
+      const summary = screen.getByTestId('conductor-last-run');
+      expect(summary.textContent).toContain('blocked');
+      expect(summary.textContent).toContain('2 blockers');
+      expect(summary.textContent).toContain('1 failed');
+      expect(summary.getAttribute('title')).toContain('Sub-goal "Docs" not achieved');
+    });
+
+    it('marks a user-initiated stop as such', () => {
+      renderPanel({ lastRun: makeLastRun({ outcome: 'user_stopped', completed: 1 }) });
+      expect(screen.getByTestId('conductor-last-run').textContent).toContain('stopped by you');
+    });
+
+    it('hides the summary while a new run is working', () => {
+      renderPanel({ running: true, lastRun: makeLastRun() });
+      expect(screen.queryByTestId('conductor-last-run')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('formatRunDuration', () => {
+    it('formats seconds below a minute', () => {
+      expect(formatRunDuration('2026-01-01T10:00:00.000Z', '2026-01-01T10:00:42.000Z')).toBe('42s');
+    });
+
+    it('formats minutes below an hour', () => {
+      expect(formatRunDuration('2026-01-01T10:00:00.000Z', '2026-01-01T10:12:30.000Z')).toBe('13m');
+    });
+
+    it('formats hours with remaining minutes', () => {
+      expect(formatRunDuration('2026-01-01T10:00:00.000Z', '2026-01-01T11:04:00.000Z')).toBe(
+        '1h 4m'
+      );
+    });
+
+    it('never goes negative on clock skew', () => {
+      expect(formatRunDuration('2026-01-01T10:00:10.000Z', '2026-01-01T10:00:00.000Z')).toBe('0s');
+    });
   });
 
   it('toggles the decision log', () => {

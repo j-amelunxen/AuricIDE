@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { PmTicket } from '@/lib/tauri/pm';
-import type { ConductorDecision } from '@/lib/store/conductorSlice';
+import type { ConductorDecision, ConductorRunSummary } from '@/lib/store/conductorSlice';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 
 interface ConductorPanelProps {
@@ -12,6 +12,7 @@ interface ConductorPanelProps {
   activeAgentCount: number;
   pendingApprovals: PmTicket[];
   decisions: ConductorDecision[];
+  lastRun: ConductorRunSummary | null;
   canStart: boolean;
   providers: ProviderInfo[];
   providerId: string | null;
@@ -23,6 +24,38 @@ interface ConductorPanelProps {
   onSetModel: (model: string | null) => void;
   onApprove: (ticketId: string) => void;
   onDismiss: (ticketId: string) => void;
+}
+
+/** Compact human-readable run duration: 42s, 13m, 1h 4m. */
+export function formatRunDuration(startedAt: string, endedAt: string): string {
+  const ms = Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime());
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const totalMin = Math.round(totalSec / 60);
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+const LAST_RUN_META: Record<ConductorRunSummary['outcome'], { cls: string; dot: string }> = {
+  goal_achieved: { cls: 'text-green-300', dot: 'bg-green-400' },
+  goal_blocked: { cls: 'text-amber-300', dot: 'bg-amber-400' },
+  finished: { cls: 'text-foreground-muted', dot: 'bg-gray-500' },
+  user_stopped: { cls: 'text-foreground-muted', dot: 'bg-gray-500' },
+};
+
+function lastRunLabel(run: ConductorRunSummary): string {
+  switch (run.outcome) {
+    case 'goal_achieved':
+      return run.goalName ? `achieved "${run.goalName}"` : 'goal achieved';
+    case 'goal_blocked':
+      return `blocked — ${run.blockers.length} blocker${run.blockers.length === 1 ? '' : 's'}`;
+    case 'finished':
+      return 'finished';
+    case 'user_stopped':
+      return 'stopped by you';
+  }
 }
 
 const DECISION_ICONS: Record<ConductorDecision['action'], { icon: string; cls: string }> = {
@@ -43,6 +76,7 @@ export function ConductorPanel({
   activeAgentCount,
   pendingApprovals,
   decisions,
+  lastRun,
   canStart,
   providers,
   providerId,
@@ -68,14 +102,33 @@ export function ConductorPanel({
         <div className="flex items-center gap-2">
           <span
             data-testid="conductor-status-dot"
-            className={`h-2 w-2 rounded-full ${running ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}
+            className={`h-2 w-2 rounded-full ${
+              running
+                ? 'bg-green-400 animate-pulse'
+                : lastRun
+                  ? LAST_RUN_META[lastRun.outcome].dot
+                  : 'bg-gray-500'
+            }`}
           />
           <span className="text-[11px] font-bold text-foreground">Conductor</span>
-          <span className="text-[10px] text-foreground-muted">
-            {running
-              ? `working${scopeGoalName ? ` on "${scopeGoalName}"` : ' (all tickets)'} · ${activeAgentCount} agent(s)`
-              : 'stopped'}
-          </span>
+          {running ? (
+            <span className="text-[10px] text-foreground-muted">
+              {`working${scopeGoalName ? ` on "${scopeGoalName}"` : ' (all tickets)'} · ${activeAgentCount} agent(s)`}
+            </span>
+          ) : lastRun ? (
+            <span
+              data-testid="conductor-last-run"
+              className={`text-[10px] ${LAST_RUN_META[lastRun.outcome].cls}`}
+              title={lastRun.blockers.length > 0 ? lastRun.blockers.join('; ') : undefined}
+            >
+              {lastRunLabel(lastRun)}
+              {` · ${lastRun.completed} done`}
+              {lastRun.failed > 0 ? `, ${lastRun.failed} failed` : ''}
+              {` · ${formatRunDuration(lastRun.startedAt, lastRun.endedAt)}`}
+            </span>
+          ) : (
+            <span className="text-[10px] text-foreground-muted">stopped</span>
+          )}
         </div>
 
         {/* Concurrency */}

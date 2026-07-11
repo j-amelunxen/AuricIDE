@@ -39,6 +39,21 @@ describe('useConductorController', () => {
     });
   });
 
+  it('passes the last run summary through to the panel', () => {
+    const lastRun = {
+      outcome: 'finished' as const,
+      goalName: null,
+      completed: 2,
+      failed: 0,
+      blockers: [],
+      startedAt: '2026-01-01T10:00:00.000Z',
+      endedAt: '2026-01-01T10:05:00.000Z',
+    };
+    useStore.setState({ conductorLastRun: lastRun });
+    const { result } = renderHook(() => useConductorController());
+    expect(result.current.lastRun).toEqual(lastRun);
+  });
+
   it('derives the active agent count from conductor assignments', () => {
     useStore.setState({ conductorAssignments: { t1: 'a1', t2: 'a2' } });
     const { result } = renderHook(() => useConductorController());

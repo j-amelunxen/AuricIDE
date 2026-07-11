@@ -31,6 +31,22 @@ export interface ConductorDecision {
 }
 
 /**
+ * The outcome of the most recent conductor run — what the user reads first
+ * when they come back to the app. Everything here is derived from actual run
+ * state (tickets completed, attempts exhausted, satisfaction blockers), never
+ * asserted decoratively.
+ */
+export interface ConductorRunSummary {
+  outcome: 'goal_achieved' | 'goal_blocked' | 'finished' | 'user_stopped';
+  goalName: string | null;
+  completed: number;
+  failed: number;
+  blockers: string[];
+  startedAt: string;
+  endedAt: string;
+}
+
+/**
  * Mirrors the MCP `fetch_next_unblocked_task` semantics: a ticket is blocked
  * while any dependency target ticket is not done/archived. Sorted by priority
  * (critical > high > normal > low), then sortOrder.
@@ -151,6 +167,12 @@ export interface ConductorSlice {
   conductorFailedTickets: Record<string, number>;
   /** Decision log, newest first, bounded. */
   conductorDecisions: ConductorDecision[];
+  /** Outcome of the most recent run; null until a run has ended. */
+  conductorLastRun: ConductorRunSummary | null;
+  /** ISO start time of the current run; reset on start. */
+  conductorRunStartedAt: string | null;
+  /** Tickets marked done by the current run; reset on start. */
+  conductorRunCompleted: number;
   startConductor: (goalId: string | null) => void;
   stopConductor: (reason?: string) => void;
   setConductorMaxConcurrent: (n: number) => void;
@@ -202,6 +224,32 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
   const cross = (): Partial<CrossSlices> & Partial<AgentSlice> & Partial<GoalsSlice> =>
     get() as unknown as Partial<CrossSlices> & Partial<AgentSlice> & Partial<GoalsSlice>;
 
+  // Seals the run's outcome into conductorLastRun. `failed` is derived from
+  // the attempt ledger (tickets that exhausted MAX_TICKET_ATTEMPTS), not from
+  // a separately maintained counter, so it can't drift from reality.
+  const finishRun = (
+    outcome: ConductorRunSummary['outcome'],
+    goalName: string | null,
+    blockers: string[]
+  ): void => {
+    const s = get();
+    const failed = Object.values(s.conductorFailedTickets).filter(
+      (n) => n >= MAX_TICKET_ATTEMPTS
+    ).length;
+    const now = new Date().toISOString();
+    set({
+      conductorLastRun: {
+        outcome,
+        goalName,
+        completed: s.conductorRunCompleted,
+        failed,
+        blockers,
+        startedAt: s.conductorRunStartedAt ?? now,
+        endedAt: now,
+      },
+    });
+  };
+
   const persist = async (): Promise<void> => {
     const full = cross();
     const projectPath = full.rootPath;
@@ -225,6 +273,9 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorApprovedTickets: [],
     conductorFailedTickets: {},
     conductorDecisions: [],
+    conductorLastRun: null,
+    conductorRunStartedAt: null,
+    conductorRunCompleted: 0,
 
     startConductor: (goalId) => {
       set({
@@ -233,6 +284,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         conductorFailedTickets: {},
         conductorPendingApprovals: [],
         conductorApprovedTickets: [],
+        conductorRunStartedAt: new Date().toISOString(),
+        conductorRunCompleted: 0,
       });
       addDecision({
         action: 'start',
@@ -249,10 +302,18 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     },
 
     stopConductor: (reason) => {
+      const wasRunning = get().conductorRunning;
       halt();
       // Stopping must actually stop: kill every agent this run launched,
       // otherwise the conductor "stops" but its agents keep running.
       const full = cross();
+      if (wasRunning) {
+        const goalId = get().conductorGoalId;
+        const goalName = goalId
+          ? ((full.goalsDraft ?? []).find((g) => g.id === goalId)?.name ?? null)
+          : null;
+        finishRun('user_stopped', goalName, []);
+      }
       const runningAgentIds = Object.values(get().conductorAssignments).filter(
         (a) => a !== PENDING_SPAWN
       );
@@ -301,6 +362,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             full.goalRequirementLinksDraft ?? [],
             goalId
           );
+          const goalName = goals.find((g) => g.id === goalId)?.name ?? null;
           if (satisfaction.satisfied) {
             full.achieveGoal?.(goalId);
             addDecision({
@@ -308,21 +370,21 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
               detail: `Goal ${goalId} achieved — all checks green`,
             });
             halt();
-            void notifyConductor(
-              'goal_achieved',
-              goals.find((g) => g.id === goalId)?.name ?? goalId
-            );
+            finishRun('goal_achieved', goalName, []);
+            void notifyConductor('goal_achieved', goalName ?? goalId);
           } else {
             halt();
             addDecision({
               action: 'stop',
               detail: `No work left but goal not satisfied: ${satisfaction.blockers.join('; ')}`,
             });
+            finishRun('goal_blocked', goalName, satisfaction.blockers);
             void notifyConductor('goal_blocked', satisfaction.blockers.join('; '));
           }
         } else {
           halt();
           addDecision({ action: 'stop', detail: 'All unblocked tickets processed' });
+          finishRun('finished', null, []);
           void notifyConductor('run_finished', '');
         }
         await persist();
@@ -453,7 +515,10 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
       if (status === 'idle') {
         full.updateTicket?.(ticketId, { status: 'done' });
-        set({ conductorAssignments: remaining });
+        set((s: ConductorSlice) => ({
+          conductorAssignments: remaining,
+          conductorRunCompleted: s.conductorRunCompleted + 1,
+        }));
         addDecision({
           action: 'complete',
           detail: 'Agent finished — ticket marked done',

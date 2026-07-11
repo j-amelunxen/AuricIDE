@@ -535,4 +535,134 @@ describe('conductorSlice', () => {
       expect(mockNotifyConductor).not.toHaveBeenCalled();
     });
   });
+
+  describe('last run summary — what happened while you were away', () => {
+    it('starts with no last run', () => {
+      expect(store.getState().conductorLastRun).toBeNull();
+    });
+
+    it('records a finished summary with the completed count for an all-tickets run', async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1' })],
+        conductorMaxConcurrent: 1,
+      });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'idle');
+      await vi.waitFor(() => {
+        expect(store.getState().conductorRunning).toBe(false);
+      });
+
+      const lastRun = store.getState().conductorLastRun;
+      expect(lastRun?.outcome).toBe('finished');
+      expect(lastRun?.completed).toBe(1);
+      expect(lastRun?.failed).toBe(0);
+      expect(lastRun?.goalName).toBeNull();
+      expect(lastRun?.startedAt).toBeTruthy();
+      expect(lastRun?.endedAt).toBeTruthy();
+    });
+
+    it('records a goal_achieved summary with the goal name', async () => {
+      store.setState({
+        goalsDraft: [makeGoal({ id: 'g1', name: 'Ship v1', status: 'in_progress' })],
+        pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })],
+      });
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+
+      const lastRun = store.getState().conductorLastRun;
+      expect(lastRun?.outcome).toBe('goal_achieved');
+      expect(lastRun?.goalName).toBe('Ship v1');
+    });
+
+    it('records a goal_blocked summary with the blockers spelled out', async () => {
+      store.setState({
+        goalsDraft: [
+          makeGoal({ id: 'g1', name: 'Ship v1', status: 'in_progress' }),
+          makeGoal({ id: 'g2', parentId: 'g1', status: 'active' }),
+        ],
+        pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })],
+      });
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+
+      const lastRun = store.getState().conductorLastRun;
+      expect(lastRun?.outcome).toBe('goal_blocked');
+      expect(lastRun?.goalName).toBe('Ship v1');
+      expect(lastRun?.blockers.join(' ')).toContain('Sub-goal');
+    });
+
+    it('records a user_stopped summary when the user stops the run', async () => {
+      store.setState({ pmDraftTickets: [makeTicket({ id: 't1' })] });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+
+      store.getState().stopConductor();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(store.getState().conductorLastRun?.outcome).toBe('user_stopped');
+    });
+
+    it('does not overwrite the summary when stop is called while already stopped', async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1', status: 'done' })],
+      });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      expect(store.getState().conductorLastRun?.outcome).toBe('finished');
+
+      store.getState().stopConductor();
+      expect(store.getState().conductorLastRun?.outcome).toBe('finished');
+    });
+
+    it('counts tickets that exhausted their attempts as failed', async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1' })],
+        conductorMaxConcurrent: 1,
+      });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+
+      // Two errors → attempts exhausted → run ends with the ticket given up
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'error');
+      await vi.waitFor(() => {
+        expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t1']);
+      });
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'error');
+      await vi.waitFor(() => {
+        expect(store.getState().conductorRunning).toBe(false);
+      });
+
+      const lastRun = store.getState().conductorLastRun;
+      expect(lastRun?.failed).toBe(1);
+      expect(lastRun?.completed).toBe(0);
+    });
+
+    it('resets the counters for a new run', async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1' })],
+        conductorMaxConcurrent: 1,
+      });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'idle');
+      await vi.waitFor(() => {
+        expect(store.getState().conductorLastRun?.completed).toBe(1);
+      });
+
+      // Second run over an already-done board finishes immediately
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      expect(store.getState().conductorLastRun?.completed).toBe(0);
+    });
+  });
 });
