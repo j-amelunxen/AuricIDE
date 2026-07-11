@@ -49,6 +49,12 @@ vi.mock('../tauri/db', () => ({
   initProjectDb: vi.fn(async () => undefined),
 }));
 
+const mockNotifyConductor = vi.fn();
+
+vi.mock('../ide/conductorNotifications', () => ({
+  notifyConductor: (...args: unknown[]) => mockNotifyConductor(...args),
+}));
+
 function makeTicket(overrides: Partial<PmTicket> = {}): PmTicket {
   return {
     id: 't1',
@@ -456,5 +462,77 @@ describe('conductorSlice', () => {
       .getState()
       .conductorDecisions.find((d) => d.detail.includes('killed by user'));
     expect(killDecision).toBeTruthy();
+  });
+
+  describe('OS notifications for away moments', () => {
+    it('notifies when a ticket parks on human approval', async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1', name: 'Deploy', needsHumanSupervision: true })],
+      });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+
+      expect(mockNotifyConductor).toHaveBeenCalledWith('approval_needed', 'Deploy');
+    });
+
+    it('does not re-notify for a ticket already waiting for approval', async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1', name: 'Deploy', needsHumanSupervision: true })],
+      });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      await store.getState().conductorTick();
+
+      expect(mockNotifyConductor).toHaveBeenCalledTimes(1);
+    });
+
+    it('notifies with the goal name when the goal is achieved', async () => {
+      store.setState({
+        goalsDraft: [makeGoal({ id: 'g1', name: 'Ship v1', status: 'in_progress' })],
+        pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })],
+      });
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+
+      expect(mockNotifyConductor).toHaveBeenCalledWith('goal_achieved', 'Ship v1');
+    });
+
+    it('notifies with the blockers when the run ends unsatisfied', async () => {
+      store.setState({
+        goalsDraft: [
+          makeGoal({ id: 'g1', status: 'in_progress' }),
+          makeGoal({ id: 'g2', parentId: 'g1', status: 'active' }),
+        ],
+        pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })],
+      });
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+
+      expect(mockNotifyConductor).toHaveBeenCalledWith(
+        'goal_blocked',
+        expect.stringContaining('Sub-goal')
+      );
+    });
+
+    it('notifies when an all-tickets run finishes', async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1', status: 'done' })],
+      });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+
+      expect(mockNotifyConductor).toHaveBeenCalledWith('run_finished', '');
+    });
+
+    it('stays silent on a user-initiated stop — the user is at the keyboard', async () => {
+      store.setState({ pmDraftTickets: [makeTicket({ id: 't1' })] });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+
+      store.getState().stopConductor();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(mockNotifyConductor).not.toHaveBeenCalled();
+    });
   });
 });

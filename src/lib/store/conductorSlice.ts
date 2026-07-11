@@ -6,6 +6,7 @@ import type { AgentSlice } from './agentSlice';
 import type { GoalsSlice } from './goalsSlice';
 import { getGoalDescendants, getGoalSatisfaction } from './goalsSlice';
 import type { PmRequirement } from '../tauri/requirements';
+import { notifyConductor } from '../ide/conductorNotifications';
 
 export const MAX_TICKET_ATTEMPTS = 2;
 export const MAX_CONDUCTOR_DECISIONS = 200;
@@ -307,16 +308,22 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
               detail: `Goal ${goalId} achieved — all checks green`,
             });
             halt();
+            void notifyConductor(
+              'goal_achieved',
+              goals.find((g) => g.id === goalId)?.name ?? goalId
+            );
           } else {
             halt();
             addDecision({
               action: 'stop',
               detail: `No work left but goal not satisfied: ${satisfaction.blockers.join('; ')}`,
             });
+            void notifyConductor('goal_blocked', satisfaction.blockers.join('; '));
           }
         } else {
           halt();
           addDecision({ action: 'stop', detail: 'All unblocked tickets processed' });
+          void notifyConductor('run_finished', '');
         }
         await persist();
         return;
@@ -342,6 +349,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
               detail: `Ticket "${ticket.name}" needs human approval before launch`,
               ticketId: ticket.id,
             });
+            void notifyConductor('approval_needed', ticket.name);
           }
           continue;
         }

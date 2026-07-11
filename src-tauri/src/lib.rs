@@ -1560,6 +1560,7 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if let Ok(log_dir) = app.path().app_log_dir() {
                 crashlog::set_crash_log_dir(log_dir);
