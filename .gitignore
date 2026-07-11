@@ -46,6 +46,7 @@ package-lock.json
 Thumbs.db
 *.pem
 *.log
+PRODUCT.md
 
 # debug
 npm-debug.log*

@@ -17,6 +17,7 @@ import {
   openFolderDialog,
   readDirectory,
   createDirectory,
+  listAllFiles,
   movePath,
   type FileEntry,
 } from '@/lib/tauri/fs';
@@ -47,15 +48,19 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       if (!path) return;
 
       if (!dir || isRoot || dir === state.rootPath) {
-        // Building the root tree — fetch entries and git status in parallel
-        const [entries, statuses] = await Promise.all([
+        // Building the root tree — fetch entries, git status and the flat file
+        // list in parallel. The flat list feeds Mission Control's spec count
+        // and wiki-link resolution, so it must follow filesystem changes too.
+        const [entries, statuses, allFiles] = await Promise.all([
           readDirectory(path),
           useStore
             .getState()
             .refreshGitStatus(path)
             .then(() => useStore.getState().fileStatuses)
             .catch(() => []),
+          listAllFiles(path).catch(() => null),
         ]);
+        if (allFiles) state.setAllFiles(allFiles);
         const currentTree = useStore.getState().fileTree ?? [];
         const existingByPath = new Map<string, FileNode>(currentTree.map((n) => [n.path, n]));
         const tree: FileNode[] = entries.map((e) => {

@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
+import { useStore } from '@/lib/store';
 import { getProjectFilesInfo } from '@/lib/tauri/fs';
 import { listProviders } from '@/lib/tauri/providers';
+import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
@@ -15,7 +17,8 @@ export function useIDEActions(
   handlers: ReturnType<typeof useIDEHandlers>
 ) {
   const lastShiftTime = useRef<number>(0);
-  const debouncedRefresh = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const fsRouterRef = useRef<FsEventRouter | null>(null);
+  const handleRefreshRef = useRef(handlers.handleRefresh);
 
   // The viewer content always follows the active tab (tab click, tab close, …)
   useActiveTabContentLoader(state.activeTabId, handlers.loadTabContent);
@@ -54,19 +57,37 @@ export function useIDEActions(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cleanup debounce timer on unmount and on rootPath change (prevents stale refresh from prior project)
+  // The router callbacks must always see the latest handleRefresh without
+  // recreating the router (a recreate would drop pending debounce timers).
   useEffect(() => {
-    return () => clearTimeout(debouncedRefresh.current);
+    handleRefreshRef.current = handlers.handleRefresh;
+  }, [handlers.handleRefresh]);
+
+  // File watcher — events split into two debounce lanes: regular file changes
+  // refresh the tree; project DB writes (MCP server, external agents) reload
+  // the PM/requirements/goals data behind Mission Control's counts.
+  if (!fsRouterRef.current) {
+    fsRouterRef.current = createFsEventRouter({
+      onTreeChange: () => void handleRefreshRef.current(),
+      onProjectDataChange: () => {
+        const s = useStore.getState();
+        const root = s.rootPath;
+        if (!root) return;
+        void s.refreshPmData(root);
+        void s.loadRequirements(root);
+        void s.loadGoals(root);
+      },
+    });
+  }
+
+  // Cancel pending refreshes on unmount and on rootPath change (prevents stale refresh from prior project)
+  useEffect(() => {
+    return () => fsRouterRef.current?.dispose();
   }, [state.rootPath]);
 
-  // File watcher — debounced refresh on filesystem changes
-  const { handleRefresh } = handlers;
   useFileWatcher(
     state.rootPath,
-    useCallback(() => {
-      clearTimeout(debouncedRefresh.current);
-      debouncedRefresh.current = setTimeout(() => handleRefresh(), 300);
-    }, [handleRefresh])
+    useCallback((event) => fsRouterRef.current?.handle(event), [])
   );
 
   // Agent event subscriptions
