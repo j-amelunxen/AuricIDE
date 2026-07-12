@@ -70,6 +70,9 @@ describe('useIDEHandlers', () => {
     diagnostics: new Map(),
     getDiagnosticCounts: () => ({ errors: 0, warnings: 0 }),
     agents: [],
+    contextMenu: null,
+    newItemModal: null,
+    setNewItemModal: vi.fn(),
   } as unknown as Parameters<typeof useIDEHandlers>[0];
 
   beforeEach(() => {
@@ -77,6 +80,8 @@ describe('useIDEHandlers', () => {
     mockRefreshGitStatus.mockResolvedValue([]);
     mockListAllFiles.mockResolvedValue([]);
     mockState.rootPath = null;
+    mockState.contextMenu = null;
+    mockState.newItemModal = null;
     mockFileTree = [];
     mockActiveTabId = null;
   });
@@ -213,6 +218,118 @@ describe('useIDEHandlers', () => {
 
     expect(mockListAllFiles).not.toHaveBeenCalled();
     expect(mockState.setAllFiles).not.toHaveBeenCalled();
+  });
+
+  describe('new diagram (excalidraw)', () => {
+    it('creates a valid empty scene at the project root and opens it', async () => {
+      mockState.rootPath = '/path/to/project';
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewDiagram();
+
+      const [writtenPath, content] = mockWriteFile.mock.calls[0] as [string, string];
+      expect(writtenPath).toMatch(/^\/path\/to\/project\/untitled-diagram-.+\.excalidraw$/);
+      // The bytes on disk must always parse as a scene — never a zero-byte file.
+      const scene = JSON.parse(content);
+      expect(scene.elements).toEqual([]);
+      expect(mockState.selectFile).toHaveBeenCalledWith(writtenPath);
+      expect(mockState.openTab).toHaveBeenCalledWith(
+        expect.objectContaining({ path: writtenPath })
+      );
+    });
+
+    it('creates inside the given parent directory', async () => {
+      mockState.rootPath = '/path/to/project';
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewDiagram('/path/to/project/docs');
+
+      const [writtenPath] = mockWriteFile.mock.calls[0] as [string, string];
+      expect(writtenPath).toMatch(/^\/path\/to\/project\/docs\/untitled-diagram-.+\.excalidraw$/);
+    });
+
+    it('does nothing without an open project', async () => {
+      mockState.rootPath = null;
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewDiagram();
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it('offers "New Diagram" in the context menu, scoped to the folder itself', async () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'docs', path: '/p/docs', isDirectory: true },
+      };
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const option = result.current.contextMenuOptions.find(
+        (o) => 'label' in o && o.label === 'New Diagram'
+      );
+      expect(option).toBeDefined();
+      if (option && 'action' in option) option.action!();
+      expect(mockWriteFile.mock.calls[0][0]).toMatch(/^\/p\/docs\/untitled-diagram-/);
+    });
+
+    it('offers "New Diagram" on a file node, scoped to its parent directory', async () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'notes.md', path: '/p/docs/notes.md', isDirectory: false },
+      };
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const option = result.current.contextMenuOptions.find(
+        (o) => 'label' in o && o.label === 'New Diagram'
+      );
+      expect(option).toBeDefined();
+      if (option && 'action' in option) option.action!();
+      expect(mockWriteFile.mock.calls[0][0]).toMatch(/^\/p\/docs\/untitled-diagram-/);
+    });
+
+    it('wires the excalidraw.new command to diagram creation at the root', async () => {
+      mockState.rootPath = '/p';
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const cmd = result.current.commands.find((c) => c.id === 'excalidraw.new');
+      expect(cmd).toBeDefined();
+      cmd!.action();
+      expect(mockWriteFile.mock.calls[0][0]).toMatch(/^\/p\/untitled-diagram-.+\.excalidraw$/);
+    });
+
+    it('seeds .excalidraw files from the generic New File dialog with a valid scene', async () => {
+      mockState.newItemModal = { type: 'file', parentDir: '/p/docs' };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCreateNewItem('sketch.excalidraw');
+
+      const [writtenPath, content] = mockWriteFile.mock.calls[0] as [string, string];
+      expect(writtenPath).toBe('/p/docs/sketch.excalidraw');
+      expect(JSON.parse(content).elements).toEqual([]);
+    });
+
+    it('keeps seeding non-excalidraw files from the New File dialog empty', async () => {
+      mockState.newItemModal = { type: 'file', parentDir: '/p/docs' };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCreateNewItem('notes.md');
+
+      expect(mockWriteFile).toHaveBeenCalledWith('/p/docs/notes.md', '');
+    });
   });
 
   describe('tab content loading', () => {

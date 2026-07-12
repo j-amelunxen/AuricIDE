@@ -28,6 +28,7 @@ import {
 } from '@/lib/project/newProject';
 import { type AgentConfig } from '@/lib/tauri/agents';
 import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
+import { emptyExcalidrawSceneJson } from '@/lib/excalidraw/serialize';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { defaultCommands } from '@/lib/commands/registry';
 import { type useIDEState } from './useIDEState';
@@ -205,6 +206,18 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     await handleRefresh();
     handleFileSelect(newPath);
   }, [state, handleRefresh, handleFileSelect]);
+
+  const handleNewDiagram = useCallback(
+    async (parentDir?: string) => {
+      if (!state.rootPath) return;
+      const dir = parentDir ?? state.rootPath;
+      const newPath = `${dir}/untitled-diagram-${Date.now()}.excalidraw`;
+      await writeFile(newPath, emptyExcalidrawSceneJson());
+      await handleRefresh(parentDir);
+      handleFileSelect(newPath);
+    },
+    [state, handleRefresh, handleFileSelect]
+  );
 
   const handleMoveNode = useCallback(
     async (sourcePath: string, destDir: string) => {
@@ -675,7 +688,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         const { createDirectory } = await import('@/lib/tauri/fs');
         await createDirectory(fullPath);
       } else {
-        await writeFile(fullPath, '');
+        // .excalidraw files must be born as a parseable empty scene — a
+        // zero-byte file only ever renders the "not a valid scene" panel.
+        const seed = name.endsWith('.excalidraw') ? emptyExcalidrawSceneJson() : '';
+        await writeFile(fullPath, seed);
       }
       handleRefresh(state.newItemModal.parentDir);
       state.setNewItemModal(null);
@@ -759,6 +775,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         action: () => state.setNewItemModal({ type: 'file', parentDir }),
       },
       {
+        label: 'New Diagram',
+        icon: 'draw',
+        action: () => handleNewDiagram(parentDir),
+      },
+      {
         label: 'Copy',
         icon: 'content_copy',
         action: () => setClipboard({ path: node.path, isDirectory: node.isDirectory }),
@@ -812,7 +833,15 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     });
 
     return options;
-  }, [state, clipboard, handleCopyPath, handleDelete, handlePaste, handleOpenTerminalHere]);
+  }, [
+    state,
+    clipboard,
+    handleCopyPath,
+    handleDelete,
+    handlePaste,
+    handleOpenTerminalHere,
+    handleNewDiagram,
+  ]);
 
   // Command palette
   const commandActions = useMemo<Record<string, () => void>>(
@@ -842,6 +871,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         state.setActiveActivity('cockpit');
       },
       'view.goals': () => useStore.getState().setGoalsModalOpen(true),
+      'excalidraw.new': () => void handleNewDiagram(),
       'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
       'excalidraw.sync-all': () => {
         const store = useStore.getState();
@@ -856,7 +886,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         });
       },
     }),
-    [state, handleNewFile, handleOpenFolder, handleSave, handleCommit]
+    [state, handleNewFile, handleNewDiagram, handleOpenFolder, handleSave, handleCommit]
   );
 
   const commands = useMemo(
@@ -965,6 +995,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleToggleDir,
     handleNewFile,
     handleNewSpec,
+    handleNewDiagram,
     handleMoveNode,
     handleOpenFolder,
     handleOpenRecent,

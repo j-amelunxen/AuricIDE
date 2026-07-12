@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildExcalidrawFileJson } from './serialize';
+import { buildExcalidrawFileJson, emptyExcalidrawSceneJson } from './serialize';
 
 describe('buildExcalidrawFileJson', () => {
   const elements = [{ id: 'r1', type: 'rectangle', x: 0, y: 0 }];
@@ -40,5 +40,15 @@ describe('buildExcalidrawFileJson', () => {
     const a = buildExcalidrawFileJson(elements, { viewBackgroundColor: '#fff', scrollX: 1 }, {});
     const b = buildExcalidrawFileJson(elements, { viewBackgroundColor: '#fff', scrollX: 99 }, {});
     expect(a).toBe(b);
+  });
+});
+
+describe('emptyExcalidrawSceneJson', () => {
+  it('yields a scene the viewer accepts — never an unparseable file', () => {
+    // Mirrors ExcalidrawViewer's parseScene contract: JSON with an elements array.
+    const scene = JSON.parse(emptyExcalidrawSceneJson());
+    expect(scene.type).toBe('excalidraw');
+    expect(scene.elements).toEqual([]);
+    expect(scene.files).toEqual({});
   });
 });
