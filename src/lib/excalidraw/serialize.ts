@@ -36,3 +36,12 @@ export function buildExcalidrawFileJson(
     2
   );
 }
+
+/**
+ * Canonical empty scene for freshly created `.excalidraw` files. The viewer
+ * rejects anything whose `elements` isn't an array, so app-side creation must
+ * seed this instead of an empty file.
+ */
+export function emptyExcalidrawSceneJson(): string {
+  return buildExcalidrawFileJson([], {}, {});
+}
