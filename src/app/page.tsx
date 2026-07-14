@@ -27,6 +27,7 @@ import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
+import { QuickAccess } from './components/cockpit/QuickAccess';
 import { ExcalidrawViewer } from './components/excalidraw/ExcalidrawViewer';
 import { ExcalidrawBrowser } from './components/excalidraw/ExcalidrawBrowser';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
@@ -388,6 +389,12 @@ export default function Home() {
                       <span className="material-symbols-outlined text-[18px]">add</span>
                       New
                     </button>
+                  </div>
+                  <div className="mt-8">
+                    <QuickAccess
+                      currentPath={null}
+                      onSwitchProject={(path) => handlers.handleOpenRecent(path)}
+                    />
                   </div>
                   {state.recentProjects.length > 0 && (
                     <div className="mt-8 w-80 mx-auto text-left" data-testid="recent-projects">
