@@ -19,6 +19,11 @@ vi.mock('@/lib/tauri/fs', () => ({
   listAllFiles: (...args: unknown[]) => mockListAllFiles(...args),
 }));
 
+const mockRevealInFileManager = vi.fn();
+vi.mock('@/lib/tauri/opener', () => ({
+  revealInFileManager: (...args: unknown[]) => mockRevealInFileManager(...args),
+}));
+
 // Mock Store
 const mockRefreshGitStatus = vi.fn();
 let mockFileTree: unknown[] = [];
@@ -73,6 +78,7 @@ describe('useIDEHandlers', () => {
     contextMenu: null,
     newItemModal: null,
     setNewItemModal: vi.fn(),
+    setFileTicketCreate: vi.fn(),
   } as unknown as Parameters<typeof useIDEHandlers>[0];
 
   beforeEach(() => {
@@ -329,6 +335,134 @@ describe('useIDEHandlers', () => {
       await result.current.handleCreateNewItem('notes.md');
 
       expect(mockWriteFile).toHaveBeenCalledWith('/p/docs/notes.md', '');
+    });
+  });
+
+  describe('reveal in file manager (context menu)', () => {
+    it('offers a reveal option for files that opens the OS file manager', async () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'notes.md', path: '/p/docs/notes.md', isDirectory: false },
+      };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const option = result.current.contextMenuOptions.find(
+        (o) => 'label' in o && /reveal|explorer|finder|file manager/i.test(o.label)
+      );
+      expect(option).toBeDefined();
+      if (option && 'action' in option) option.action!();
+      expect(mockRevealInFileManager).toHaveBeenCalledWith('/p/docs/notes.md');
+    });
+
+    it('offers a reveal option for directories too', async () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'docs', path: '/p/docs', isDirectory: true },
+      };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const option = result.current.contextMenuOptions.find(
+        (o) => 'label' in o && /reveal|explorer|finder|file manager/i.test(o.label)
+      );
+      expect(option).toBeDefined();
+      if (option && 'action' in option) option.action!();
+      expect(mockRevealInFileManager).toHaveBeenCalledWith('/p/docs');
+    });
+  });
+
+  describe('create ticket from markdown (context menu)', () => {
+    it('offers the option only for markdown files, not directories or other files', () => {
+      mockState.rootPath = '/p';
+
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'notes.md', path: '/p/notes.md', isDirectory: false },
+      };
+      let { result } = renderHook(() => useIDEHandlers(mockState));
+      expect(
+        result.current.contextMenuOptions.some(
+          (o) => 'label' in o && o.label === 'Create Ticket from Markdown'
+        )
+      ).toBe(true);
+
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'notes.txt', path: '/p/notes.txt', isDirectory: false },
+      };
+      ({ result } = renderHook(() => useIDEHandlers(mockState)));
+      expect(
+        result.current.contextMenuOptions.some(
+          (o) => 'label' in o && o.label === 'Create Ticket from Markdown'
+        )
+      ).toBe(false);
+
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'docs', path: '/p/docs', isDirectory: true },
+      };
+      ({ result } = renderHook(() => useIDEHandlers(mockState)));
+      expect(
+        result.current.contextMenuOptions.some(
+          (o) => 'label' in o && o.label === 'Create Ticket from Markdown'
+        )
+      ).toBe(false);
+    });
+
+    it('packs the full markdown content into the ticket wizard, titled from the first heading', async () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'spec.md', path: '/p/docs/spec.md', isDirectory: false },
+      };
+      mockReadFile.mockResolvedValue('# Ship the thing\n\nSome details here.\n');
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      const option = result.current.contextMenuOptions.find(
+        (o) => 'label' in o && o.label === 'Create Ticket from Markdown'
+      );
+      expect(option).toBeDefined();
+      if (option && 'action' in option) await option.action!();
+
+      expect(mockReadFile).toHaveBeenCalledWith('/p/docs/spec.md');
+      expect(mockState.setFileTicketCreate).toHaveBeenCalledWith({
+        initialValues: {
+          name: 'Ship the thing',
+          description: '# Ship the thing\n\nSome details here.\n',
+          context: [{ id: expect.any(String), type: 'file', value: '/p/docs/spec.md' }],
+        },
+      });
+    });
+
+    it('falls back to the filename when the markdown has no heading', async () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'unnamed.md', path: '/p/unnamed.md', isDirectory: false },
+      };
+      mockReadFile.mockResolvedValue('Just prose, no heading.');
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      const option = result.current.contextMenuOptions.find(
+        (o) => 'label' in o && o.label === 'Create Ticket from Markdown'
+      );
+      if (option && 'action' in option) await option.action!();
+
+      expect(mockState.setFileTicketCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          initialValues: expect.objectContaining({ name: 'unnamed' }),
+        })
+      );
     });
   });
 
