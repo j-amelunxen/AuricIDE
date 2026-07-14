@@ -166,6 +166,26 @@ describe('conductor pure helpers', () => {
     expect(prompt).toContain('login works');
     expect(prompt).toContain('const x = 1;');
   });
+
+  it('buildConductorPrompt includes the goal id so MCP calls (evaluate_goal, get_goal) can target it', () => {
+    const ticket = makeTicket({ name: 'Implement login' });
+    const goal = makeGoal({ id: 'g-42', name: 'Ship auth' });
+    const prompt = buildConductorPrompt(ticket, goal, []);
+    expect(prompt).toContain('g-42');
+  });
+
+  it('starts the prompt with /goal when the ticket serves a goal', () => {
+    const ticket = makeTicket({ name: 'Implement login' });
+    const goal = makeGoal({ id: 'g-42', name: 'Ship auth' });
+    const prompt = buildConductorPrompt(ticket, goal, []);
+    expect(prompt.startsWith('/goal\n\n')).toBe(true);
+  });
+
+  it('does not prepend /goal for tickets without a goal', () => {
+    const ticket = makeTicket({ name: 'Implement login' });
+    const prompt = buildConductorPrompt(ticket, undefined, []);
+    expect(prompt.startsWith('/goal')).toBe(false);
+  });
 });
 
 describe('conductorSlice', () => {

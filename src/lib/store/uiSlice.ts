@@ -22,6 +22,7 @@ export interface UISlice {
   fileSelectorOpen: boolean;
   spawnDialogOpen: boolean;
   spawnAgentTicketId: string | null;
+  spawnAgentGoalId: string | null;
   initialAgentTask: string;
   cliConnected: boolean;
   llmConfigured: boolean;
@@ -42,6 +43,7 @@ export interface UISlice {
   setFileSelectorOpen: (open: boolean) => void;
   setSpawnDialogOpen: (open: boolean) => void;
   setSpawnAgentTicketId: (id: string | null) => void;
+  setSpawnAgentGoalId: (id: string | null) => void;
   setInitialAgentTask: (task: string) => void;
   setCliConnected: (connected: boolean) => void;
   setLlmConfigured: (configured: boolean) => void;
@@ -59,6 +61,7 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   fileSelectorOpen: false,
   spawnDialogOpen: false,
   spawnAgentTicketId: null,
+  spawnAgentGoalId: null,
   initialAgentTask: '',
   cliConnected: false,
   llmConfigured: false,
@@ -102,6 +105,8 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   setSpawnDialogOpen: (open) => set({ spawnDialogOpen: open }),
 
   setSpawnAgentTicketId: (id) => set({ spawnAgentTicketId: id }),
+
+  setSpawnAgentGoalId: (id) => set({ spawnAgentGoalId: id }),
 
   setInitialAgentTask: (task) => set({ initialAgentTask: task }),
 

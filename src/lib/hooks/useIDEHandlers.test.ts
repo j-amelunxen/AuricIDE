@@ -26,6 +26,7 @@ vi.mock('@/lib/tauri/opener', () => ({
 
 // Mock Store
 const mockRefreshGitStatus = vi.fn();
+const mockSaveGoals = vi.fn();
 let mockFileTree: unknown[] = [];
 let mockActiveTabId: string | null = null;
 vi.mock('@/lib/store', () => ({
@@ -35,6 +36,7 @@ vi.mock('@/lib/store', () => ({
       fileStatuses: [],
       activeTabId: mockActiveTabId,
       fileTree: mockFileTree,
+      saveGoals: mockSaveGoals,
     }),
   },
 }));
@@ -79,11 +81,15 @@ describe('useIDEHandlers', () => {
     newItemModal: null,
     setNewItemModal: vi.fn(),
     setFileTicketCreate: vi.fn(),
+    spawnNewAgent: vi.fn(async () => ({ id: 'a1', provider: 'claude' })),
+    setSpawnDialogOpen: vi.fn(),
+    setBottomCollapsed: vi.fn(),
   } as unknown as Parameters<typeof useIDEHandlers>[0];
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockRefreshGitStatus.mockResolvedValue([]);
+    mockSaveGoals.mockResolvedValue(undefined);
     mockListAllFiles.mockResolvedValue([]);
     mockState.rootPath = null;
     mockState.contextMenu = null;
@@ -463,6 +469,38 @@ describe('useIDEHandlers', () => {
           initialValues: expect.objectContaining({ name: 'unnamed' }),
         })
       );
+    });
+  });
+
+  describe('handleSpawnNewAgent', () => {
+    it('persists the goal run when the agent is spawned for a goal', async () => {
+      mockState.rootPath = '/p';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleSpawnNewAgent({
+        name: 'goal:Ship it',
+        model: 'sonnet',
+        task: 'Do the thing',
+        provider: 'claude',
+        spawnedByGoalId: 'g1',
+      });
+
+      expect(mockState.spawnNewAgent).toHaveBeenCalled();
+      expect(mockSaveGoals).toHaveBeenCalledWith('/p');
+    });
+
+    it('does not touch goal persistence for agents spawned without a goal', async () => {
+      mockState.rootPath = '/p';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleSpawnNewAgent({
+        name: 'Agent',
+        model: 'sonnet',
+        task: 'Do the thing',
+        provider: 'claude',
+      });
+
+      expect(mockSaveGoals).not.toHaveBeenCalled();
     });
   });
 

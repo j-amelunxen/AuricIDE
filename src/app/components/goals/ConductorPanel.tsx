@@ -145,11 +145,11 @@ export function ConductorPanel({
           />
         </label>
 
-        {/* Agent + model selection (before a run starts) */}
+        {/* Provider + model selection (before a run starts) */}
         {!running && providerList.length > 0 && (
           <>
-            <label className="flex items-center gap-1.5 text-[10px] text-foreground-muted">
-              agent
+            <label className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+              Provider
               <select
                 data-testid="conductor-provider-select"
                 value={providerId ?? ''}
@@ -164,8 +164,8 @@ export function ConductorPanel({
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-1.5 text-[10px] text-foreground-muted">
-              model
+            <label className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+              Model
               <select
                 data-testid="conductor-model-select"
                 value={model ?? ''}
