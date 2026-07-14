@@ -29,6 +29,7 @@ export function useIDEActions(
   // On mount: load recent projects and custom slash commands from localStorage
   useEffect(() => {
     state.loadRecentProjects();
+    state.loadStarredProjects();
     state.loadCustomSlashCommands();
     state.loadBlueprintServerUrl();
     // eslint-disable-next-line react-hooks/exhaustive-deps

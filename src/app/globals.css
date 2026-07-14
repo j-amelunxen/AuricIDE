@@ -209,6 +209,40 @@ textarea:focus-visible,
   animation: pulse-soft 3s ease-in-out infinite;
 }
 
+/* Quick Access tiles: a newly-starred tile materializes with a little
+   overshoot (it's the direct result of a committed action — a tap "star"
+   earns a satisfying pop); a confirmed unstar shrinks back out instead of
+   vanishing mid-frame. */
+@keyframes quick-access-tile-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes quick-access-tile-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+
+.quick-access-tile-enter {
+  animation: quick-access-tile-in 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.quick-access-tile-exit {
+  animation: quick-access-tile-out 180ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Accessibility preferences — reduced motion / transparency / contrast.
    Decorative, continuously-oscillating motion and heavy translucency

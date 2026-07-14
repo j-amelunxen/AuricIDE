@@ -342,7 +342,10 @@ export default function Home() {
               </div>
             ) : state.rootPath ? (
               <div className="flex-1 overflow-hidden">
-                <MissionControl onCreateSpec={() => void handlers.handleNewSpec()} />
+                <MissionControl
+                  onCreateSpec={() => void handlers.handleNewSpec()}
+                  onSwitchProject={(path) => handlers.handleOpenRecent(path)}
+                />
               </div>
             ) : (
               <div className="flex flex-1 items-center justify-center text-center">
@@ -376,32 +379,63 @@ export default function Home() {
                         Recent Projects
                       </h2>
                       <ul className="space-y-1">
-                        {state.recentProjects.map((project) => (
-                          <li key={project.path} className="group flex items-center">
-                            <button
-                              onClick={() => handlers.handleOpenRecent(project.path)}
-                              className="flex-1 flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/5"
-                            >
-                              <span className="material-symbols-outlined text-primary-light text-base">
-                                folder
-                              </span>
-                              <span className="text-sm font-medium text-foreground truncate">
-                                {project.name}
-                              </span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                state.removeRecentProject(project.path);
-                              }}
-                              title="Remove from recent projects"
-                              data-testid={`remove-recent-${project.path}`}
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-foreground-muted hover:text-foreground transition-all mr-1"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">close</span>
-                            </button>
-                          </li>
-                        ))}
+                        {state.recentProjects.map((project) => {
+                          const isStarred = state.starredProjects.some(
+                            (s) => s.path === project.path
+                          );
+                          return (
+                            <li key={project.path} className="group flex items-center">
+                              <button
+                                onClick={() => handlers.handleOpenRecent(project.path)}
+                                className="flex-1 flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/5"
+                              >
+                                <span className="material-symbols-outlined text-primary-light text-base">
+                                  folder
+                                </span>
+                                <span className="text-sm font-medium text-foreground truncate">
+                                  {project.name}
+                                </span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  state.toggleStarredProject(project.path);
+                                }}
+                                title={
+                                  isStarred
+                                    ? 'Unstar — remove from Quick Access'
+                                    : 'Star for Quick Access'
+                                }
+                                data-testid={`star-recent-${project.path}`}
+                                className={`p-1 rounded transition-all mr-0.5 ${
+                                  isStarred
+                                    ? 'text-primary-light opacity-100'
+                                    : 'opacity-0 group-hover:opacity-100 text-foreground-muted hover:text-foreground hover:bg-white/10'
+                                }`}
+                              >
+                                <span
+                                  className="material-symbols-outlined text-[14px]"
+                                  style={
+                                    isStarred ? { fontVariationSettings: "'FILL' 1" } : undefined
+                                  }
+                                >
+                                  star
+                                </span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  state.removeRecentProject(project.path);
+                                }}
+                                title="Remove from recent projects"
+                                data-testid={`remove-recent-${project.path}`}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-foreground-muted hover:text-foreground transition-all mr-1"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">close</span>
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}
