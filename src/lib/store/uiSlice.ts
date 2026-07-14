@@ -23,6 +23,7 @@ export interface UISlice {
   spawnDialogOpen: boolean;
   spawnAgentTicketId: string | null;
   spawnAgentGoalId: string | null;
+  spawnAgentRepoPath: string | null;
   initialAgentTask: string;
   cliConnected: boolean;
   llmConfigured: boolean;
@@ -44,6 +45,7 @@ export interface UISlice {
   setSpawnDialogOpen: (open: boolean) => void;
   setSpawnAgentTicketId: (id: string | null) => void;
   setSpawnAgentGoalId: (id: string | null) => void;
+  setSpawnAgentRepoPath: (path: string | null) => void;
   setInitialAgentTask: (task: string) => void;
   setCliConnected: (connected: boolean) => void;
   setLlmConfigured: (configured: boolean) => void;
@@ -62,6 +64,7 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   spawnDialogOpen: false,
   spawnAgentTicketId: null,
   spawnAgentGoalId: null,
+  spawnAgentRepoPath: null,
   initialAgentTask: '',
   cliConnected: false,
   llmConfigured: false,
@@ -107,6 +110,8 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   setSpawnAgentTicketId: (id) => set({ spawnAgentTicketId: id }),
 
   setSpawnAgentGoalId: (id) => set({ spawnAgentGoalId: id }),
+
+  setSpawnAgentRepoPath: (path) => set({ spawnAgentRepoPath: path }),
 
   setInitialAgentTask: (task) => set({ initialAgentTask: task }),
 

@@ -203,6 +203,29 @@ describe('uiSlice – importSpecDialogOpen', () => {
   });
 });
 
+describe('uiSlice – spawnAgentRepoPath', () => {
+  let store: ReturnType<typeof createTestStore>;
+
+  beforeEach(() => {
+    store = createTestStore();
+  });
+
+  it('defaults spawnAgentRepoPath to null', () => {
+    expect(store.current.spawnAgentRepoPath).toBeNull();
+  });
+
+  it('can set spawnAgentRepoPath', () => {
+    store.setSpawnAgentRepoPath('/a/website');
+    expect(store.current.spawnAgentRepoPath).toBe('/a/website');
+  });
+
+  it('can clear spawnAgentRepoPath back to null', () => {
+    store.setSpawnAgentRepoPath('/a/website');
+    store.setSpawnAgentRepoPath(null);
+    expect(store.current.spawnAgentRepoPath).toBeNull();
+  });
+});
+
 describe('uiSlice – terminalLogs buffer cap', () => {
   let store: ReturnType<typeof createTestStore>;
 

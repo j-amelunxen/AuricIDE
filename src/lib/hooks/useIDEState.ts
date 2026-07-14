@@ -131,6 +131,8 @@ export function useIDEState() {
   const spawnAgentTicketId = useStore((s) => s.spawnAgentTicketId);
   const setSpawnAgentGoalId = useStore((s) => s.setSpawnAgentGoalId);
   const spawnAgentGoalId = useStore((s) => s.spawnAgentGoalId);
+  const setSpawnAgentRepoPath = useStore((s) => s.setSpawnAgentRepoPath);
+  const spawnAgentRepoPath = useStore((s) => s.spawnAgentRepoPath);
   const refreshGitStatus = useStore((s) => s.refreshGitStatus);
 
   // Obsidian Canvas
@@ -301,6 +303,8 @@ export function useIDEState() {
     spawnAgentTicketId,
     setSpawnAgentGoalId,
     spawnAgentGoalId,
+    setSpawnAgentRepoPath,
+    spawnAgentRepoPath,
     refreshGitStatus,
     defaultProvider,
     setDefaultProvider,

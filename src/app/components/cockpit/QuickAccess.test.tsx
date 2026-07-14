@@ -154,6 +154,87 @@ describe('QuickAccess', () => {
     expect(screen.queryByTestId('quick-access-add-current')).not.toBeInTheDocument();
   });
 
+  describe('context menu — Start Agent', () => {
+    beforeEach(() => {
+      useStore.setState({
+        spawnDialogOpen: false,
+        spawnAgentRepoPath: null,
+        spawnAgentTicketId: null,
+        spawnAgentGoalId: null,
+        initialAgentTask: '',
+      });
+    });
+
+    it('opens a context menu with a Start Agent item on right-click', () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      expect(screen.getByRole('menuitem', { name: /start agent/i })).toBeInTheDocument();
+    });
+
+    it("seeds the Spawn Agent dialog with the right-clicked project's path and opens it", () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /start agent/i }));
+      expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
+      expect(useStore.getState().spawnDialogOpen).toBe(true);
+    });
+
+    it('clears stale ticket/goal context when starting an agent from Quick Access', () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+        spawnAgentTicketId: 'tk-1',
+        spawnAgentGoalId: 'goal-1',
+        initialAgentTask: 'old task',
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /start agent/i }));
+      expect(useStore.getState().spawnAgentTicketId).toBeNull();
+      expect(useStore.getState().spawnAgentGoalId).toBeNull();
+      expect(useStore.getState().initialAgentTask).toBe('');
+      expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
+    });
+
+    it("right-clicking one tile while another tile's menu is open replaces it, not stacks it", () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1 },
+          { path: '/a/website', name: 'website', starredAt: 2 },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/apps'));
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      expect(screen.getAllByRole('menu')).toHaveLength(1);
+      fireEvent.click(screen.getByRole('menuitem', { name: /start agent/i }));
+      expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
+    });
+
+    it('does not start the unstar hold-to-confirm gesture when right-clicking the tile', () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      expect(screen.getByTestId('quick-access-unstar-/a/website')).toHaveAttribute(
+        'data-holding',
+        'false'
+      );
+    });
+
+    it('does not attach a context menu to the star-current-project affordance', () => {
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-add-current'));
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+  });
+
   it('marks the active project tile', () => {
     useStore.setState({
       starredProjects: [
