@@ -28,6 +28,7 @@ import {
 } from '@/lib/project/newProject';
 import { type AgentConfig } from '@/lib/tauri/agents';
 import { revealInFileManager } from '@/lib/tauri/opener';
+import { extractTicket } from '@/lib/git/branchTicket';
 import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
 import { emptyExcalidrawSceneJson } from '@/lib/excalidraw/serialize';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -668,6 +669,28 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleCommit = useCallback(async () => {
     if (!state.rootPath) return;
+
+    if (state.agentSettings.agenticCommit) {
+      const providerId = state.agentSettings.commitProviderId || state.defaultProvider.id;
+      const provider =
+        state.providers.find((p) => p.id === providerId) ??
+        state.providers[0] ??
+        state.defaultProvider;
+      const ticketPrefix =
+        extractTicket(state.branchInfo?.name ?? '', state.agentSettings.branchTicketPattern) ?? '';
+      const task = state.agentSettings.agenticCommitPrompt.replaceAll('{ticket}', ticketPrefix);
+
+      await state.spawnNewAgent({
+        name: `commit:${state.rootPath.split('/').pop() ?? 'repo'}`,
+        model: provider.defaultModel,
+        provider: provider.id,
+        task,
+        cwd: state.rootPath,
+      });
+      state.setCommitMessage('');
+      return;
+    }
+
     await state.commitChanges(state.rootPath);
     state.setCommitMessage('');
     handleRefresh();

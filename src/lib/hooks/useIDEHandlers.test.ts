@@ -84,6 +84,22 @@ describe('useIDEHandlers', () => {
     spawnNewAgent: vi.fn(async () => ({ id: 'a1', provider: 'claude' })),
     setSpawnDialogOpen: vi.fn(),
     setBottomCollapsed: vi.fn(),
+    commitChanges: vi.fn(async () => 'abc123'),
+    setCommitMessage: vi.fn(),
+    branchInfo: null as { name: string; ahead: number; behind: number } | null,
+    providers: [
+      { id: 'claude', name: 'Claude', defaultModel: 'sonnet' },
+      { id: 'gemini', name: 'Gemini', defaultModel: 'flash' },
+    ],
+    defaultProvider: { id: 'claude', name: 'Claude', defaultModel: 'sonnet' },
+    agentSettings: {
+      dangerouslyIgnorePermissions: false,
+      autoAcceptEdits: false,
+      agenticCommit: false,
+      agenticCommitPrompt: 'commit and push. Prefix: {ticket}:',
+      branchTicketPattern: '([A-Z]+-\\d+)',
+      commitProviderId: undefined as string | undefined,
+    },
   } as unknown as Parameters<typeof useIDEHandlers>[0];
 
   beforeEach(() => {
@@ -96,6 +112,15 @@ describe('useIDEHandlers', () => {
     mockState.newItemModal = null;
     mockFileTree = [];
     mockActiveTabId = null;
+    mockState.branchInfo = null;
+    mockState.agentSettings = {
+      dangerouslyIgnorePermissions: false,
+      autoAcceptEdits: false,
+      agenticCommit: false,
+      agenticCommitPrompt: 'commit and push. Prefix: {ticket}:',
+      branchTicketPattern: '([A-Z]+-\\d+)',
+      commitProviderId: undefined,
+    };
   });
 
   it('lands in the cockpit instead of auto-opening README when opening a folder', async () => {
@@ -469,6 +494,42 @@ describe('useIDEHandlers', () => {
           initialValues: expect.objectContaining({ name: 'unnamed' }),
         })
       );
+    });
+  });
+
+  describe('handleCommit', () => {
+    it('spawns an agent with the templated prompt when agentic commit is on, instead of committing directly', async () => {
+      mockState.rootPath = '/p';
+      mockState.branchInfo = { name: 'feature/AUR-42-thing', ahead: 0, behind: 0 };
+      mockState.agentSettings = {
+        ...mockState.agentSettings,
+        agenticCommit: true,
+        commitProviderId: 'gemini',
+      };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCommit();
+
+      expect(mockState.spawnNewAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'gemini',
+          model: 'flash',
+          cwd: '/p',
+          task: 'commit and push. Prefix: AUR-42:',
+        })
+      );
+      expect(mockState.commitChanges).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a plain manual commit when agentic commit is off', async () => {
+      mockState.rootPath = '/p';
+      mockState.agentSettings = { ...mockState.agentSettings, agenticCommit: false };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCommit();
+
+      expect(mockState.commitChanges).toHaveBeenCalledWith('/p');
+      expect(mockState.spawnNewAgent).not.toHaveBeenCalled();
     });
   });
 
