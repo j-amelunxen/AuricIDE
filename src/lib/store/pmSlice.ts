@@ -1,5 +1,12 @@
 import type { StateCreator } from 'zustand';
-import type { PmEpic, PmTicket, PmTestCase, PmDependency, PmStatusHistoryEntry } from '../tauri/pm';
+import type {
+  PmEpic,
+  PmTicket,
+  PmTestCase,
+  PmDependency,
+  PmStatusHistoryEntry,
+  PmContextItem,
+} from '../tauri/pm';
 import {
   pmLoad as ipcPmLoad,
   pmSave as ipcPmSave,
@@ -24,6 +31,7 @@ export interface PmSlice {
   pmModalOpen: boolean;
   pmSelectedEpicId: string | null;
   pmSelectedTicketId: string | null;
+  fileTicketCreate: FileTicketCreate | null;
   // Status history
   pmStatusHistory: PmStatusHistoryEntry[];
   pmHistoryLoading: boolean;
@@ -51,6 +59,11 @@ export interface PmSlice {
   setPmSelectedEpicId: (id: string | null) => void;
   setPmSelectedTicketId: (id: string | null) => void;
   archiveDoneTickets: () => void;
+  setFileTicketCreate: (data: FileTicketCreate | null) => void;
+}
+
+export interface FileTicketCreate {
+  initialValues: { name: string; description: string; context: PmContextItem[] };
 }
 
 interface Identifiable {
@@ -140,6 +153,7 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
   pmModalOpen: false,
   pmSelectedEpicId: null,
   pmSelectedTicketId: null,
+  fileTicketCreate: null,
 
   loadPmHistory: async (projectPath) => {
     set({ pmHistoryLoading: true });
@@ -366,6 +380,7 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
 
   setPmSelectedEpicId: (id) => set({ pmSelectedEpicId: id }),
   setPmSelectedTicketId: (id) => set({ pmSelectedTicketId: id }),
+  setFileTicketCreate: (data) => set({ fileTicketCreate: data }),
 
   archiveDoneTickets: () =>
     set((s) => {

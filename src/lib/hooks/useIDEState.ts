@@ -160,6 +160,8 @@ export function useIDEState() {
   const [diagramDialogFolder, setDiagramDialogFolder] = useState<string | null>(null);
   const canvasTicketCreate = useStore((s) => s.canvasTicketCreate);
   const setCanvasTicketCreate = useStore((s) => s.setCanvasTicketCreate);
+  const fileTicketCreate = useStore((s) => s.fileTicketCreate);
+  const setFileTicketCreate = useStore((s) => s.setFileTicketCreate);
 
   const ticketCwd = useMemo(
     () =>
@@ -329,5 +331,7 @@ export function useIDEState() {
     savePmData,
     canvasTicketCreate,
     setCanvasTicketCreate,
+    fileTicketCreate,
+    setFileTicketCreate,
   };
 }

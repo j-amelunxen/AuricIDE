@@ -12,3 +12,9 @@ export async function openExternalUrl(url: string): Promise<void> {
     throw new Error('Could not open the browser — link copied to clipboard instead');
   }
 }
+
+/** Reveals `path` in the OS file manager (Finder / Explorer / file manager) via tauri-plugin-opener. */
+export async function revealInFileManager(path: string): Promise<void> {
+  const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+  await revealItemInDir(path);
+}

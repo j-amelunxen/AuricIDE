@@ -27,11 +27,21 @@ import {
   type NewProjectOptions,
 } from '@/lib/project/newProject';
 import { type AgentConfig } from '@/lib/tauri/agents';
+import { revealInFileManager } from '@/lib/tauri/opener';
 import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
 import { emptyExcalidrawSceneJson } from '@/lib/excalidraw/serialize';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { defaultCommands } from '@/lib/commands/registry';
 import { type useIDEState } from './useIDEState';
+
+/** Label matches each OS's own file manager, following VS Code's convention. */
+function revealInFileManagerLabel(): string {
+  if (typeof window === 'undefined') return 'Reveal in File Manager';
+  const platform = window.navigator.platform;
+  if (platform.includes('Mac')) return 'Reveal in Finder';
+  if (platform.includes('Win')) return 'Reveal in File Explorer';
+  return 'Show in File Manager';
+}
 
 export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const [clipboard, setClipboard] = useState<{ path: string; isDirectory: boolean } | null>(null);
@@ -568,7 +578,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     });
   }, []);
 
-  const handleCanvasTicketSave = useCallback(
+  const persistNewTicket = useCallback(
     (
       ticketData: Omit<PmTicket, 'createdAt' | 'updatedAt' | 'statusUpdatedAt' | 'sortOrder'>,
       dependencies: PmDependency[]
@@ -585,7 +595,20 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       });
       dependencies.forEach((dep) => store.addDependency(dep));
 
-      const { canvasTicketCreate, activeTabId, rootPath } = store;
+      if (store.rootPath) store.savePmData(store.rootPath);
+    },
+    []
+  );
+
+  const handleCanvasTicketSave = useCallback(
+    (
+      ticketData: Omit<PmTicket, 'createdAt' | 'updatedAt' | 'statusUpdatedAt' | 'sortOrder'>,
+      dependencies: PmDependency[]
+    ) => {
+      persistNewTicket(ticketData, dependencies);
+
+      const store = useStore.getState();
+      const { canvasTicketCreate, activeTabId } = store;
       if (canvasTicketCreate?.nodeId) {
         const updatedNodes = store.ocNodes.map((n) =>
           n.id === canvasTicketCreate.nodeId ? { ...n, auricTicketId: ticketData.id } : n
@@ -598,10 +621,34 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           );
         }
       }
-
-      if (rootPath) store.savePmData(rootPath);
     },
-    []
+    [persistNewTicket]
+  );
+
+  const handleFileTicketSave = useCallback(
+    (
+      ticketData: Omit<PmTicket, 'createdAt' | 'updatedAt' | 'statusUpdatedAt' | 'sortOrder'>,
+      dependencies: PmDependency[]
+    ) => {
+      persistNewTicket(ticketData, dependencies);
+    },
+    [persistNewTicket]
+  );
+
+  const handleCreateTicketFromMarkdown = useCallback(
+    async (node: FileTreeNode) => {
+      const content = await readFile(node.path);
+      const firstHeading = content.match(/^#+\s*(.+)$/m)?.[1]?.trim();
+      const fallbackName = node.name.replace(/\.(md|markdown)$/i, '');
+      state.setFileTicketCreate({
+        initialValues: {
+          name: firstHeading || fallbackName,
+          description: content,
+          context: [{ id: crypto.randomUUID(), type: 'file', value: node.path }],
+        },
+      });
+    },
+    [state]
   );
 
   const handleTicketBadgeClick = useCallback((ticketId: string) => {
@@ -655,6 +702,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleCopyPath = useCallback((path: string) => {
     navigator.clipboard.writeText(path);
+  }, []);
+
+  const handleRevealInFileManager = useCallback((path: string) => {
+    revealInFileManager(path);
   }, []);
 
   const handleDelete = useCallback(
@@ -786,6 +837,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       },
       { label: 'Copy Absolute Path', icon: 'link', action: () => handleCopyPath(node.path) },
       {
+        label: revealInFileManagerLabel(),
+        icon: 'folder_open',
+        action: () => handleRevealInFileManager(node.path),
+      },
+      {
         label: node.isDirectory ? 'Start Agent with Folder' : 'Start Agent with File',
         icon: 'bolt',
         action: () => {
@@ -809,6 +865,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           const tabId = `mindmap::${node.path}`;
           state.openTab({ id: tabId, path: node.path, name: `${node.name} — Mindmap` });
         },
+      });
+      options.push({
+        label: 'Create Ticket from Markdown',
+        icon: 'assignment_add',
+        action: () => handleCreateTicketFromMarkdown(node),
       });
     }
 
@@ -837,10 +898,12 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state,
     clipboard,
     handleCopyPath,
+    handleRevealInFileManager,
     handleDelete,
     handlePaste,
     handleOpenTerminalHere,
     handleNewDiagram,
+    handleCreateTicketFromMarkdown,
   ]);
 
   // Command palette
@@ -1044,6 +1107,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleOcNodeColorChange,
     handleCreateTicketFromNode,
     handleCanvasTicketSave,
+    handleFileTicketSave,
+    handleCreateTicketFromMarkdown,
     handleTicketBadgeClick,
     isDiffTab,
     diffFilePath,

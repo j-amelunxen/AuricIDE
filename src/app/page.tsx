@@ -224,6 +224,22 @@ export default function Home() {
           onClose={() => state.setCanvasTicketCreate(null)}
         />
       )}
+      {state.fileTicketCreate && (
+        <TicketCreateModal
+          isOpen
+          epics={state.pmDraftEpics}
+          allTickets={state.pmDraftTickets}
+          availableItems={[]}
+          defaultEpicId={null}
+          initialValues={state.fileTicketCreate.initialValues}
+          onSave={handlers.handleFileTicketSave}
+          onSaveAndClose={(data, deps) => {
+            handlers.handleFileTicketSave(data, deps);
+            state.setFileTicketCreate(null);
+          }}
+          onClose={() => state.setFileTicketCreate(null)}
+        />
+      )}
       <RequirementsModal />
       <ExcalidrawBrowser
         onImported={() => void handlers.handleRefresh()}
