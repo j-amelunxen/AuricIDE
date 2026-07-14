@@ -4,6 +4,7 @@ import { createCanvasSlice, type CanvasSlice } from './canvasSlice';
 import { createFileTreeSlice, type FileTreeSlice } from './fileTreeSlice';
 import { createGitSlice, type GitSlice } from './gitSlice';
 import { createRecentProjectsSlice, type RecentProjectsSlice } from './recentProjectsSlice';
+import { createStarredProjectsSlice, type StarredProjectsSlice } from './starredProjectsSlice';
 import { createTabsSlice, type TabsSlice } from './tabsSlice';
 import { createUISlice, type UISlice } from './uiSlice';
 import { createWikiLinkSlice, type WikiLinkSlice } from './wikiLinkSlice';
@@ -30,6 +31,7 @@ export type StoreState = FileTreeSlice &
   CanvasSlice &
   UISlice &
   RecentProjectsSlice &
+  StarredProjectsSlice &
   WikiLinkSlice &
   SlashCommandSlice &
   HeadingIndexSlice &
@@ -55,6 +57,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createCanvasSlice(...a),
   ...createUISlice(...a),
   ...createRecentProjectsSlice(...a),
+  ...createStarredProjectsSlice(...a),
   ...createWikiLinkSlice(...a),
   ...createSlashCommandSlice(...a),
   ...createHeadingIndexSlice(...a),

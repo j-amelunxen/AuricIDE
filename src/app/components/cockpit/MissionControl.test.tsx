@@ -64,6 +64,7 @@ describe('MissionControl', () => {
       loadPmData: vi.fn(async () => {}),
       loadRequirements: vi.fn(async () => {}),
       loadGoals: vi.fn(async () => {}),
+      starredProjects: [],
     });
   });
 
@@ -195,6 +196,23 @@ describe('MissionControl', () => {
     render(<MissionControl />);
     fireEvent.click(screen.getByTestId('mc-excalidraw-browse'));
     expect(useStore.getState().excalidrawBrowserOpen).toBe(true);
+  });
+
+  it('renders Quick Access below the conductor and switches to a starred project', () => {
+    const onSwitchProject = vi.fn();
+    useStore.setState({
+      starredProjects: [{ path: '/tmp/other-project', name: 'other-project', starredAt: 1 }],
+    });
+    render(<MissionControl onSwitchProject={onSwitchProject} />);
+    expect(screen.getByTestId('quick-access')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('quick-access-tile-/tmp/other-project'));
+    expect(onSwitchProject).toHaveBeenCalledWith('/tmp/other-project');
+  });
+
+  it('lets the supervisor star the current project from Quick Access', () => {
+    render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('quick-access-add-current'));
+    expect(useStore.getState().isProjectStarred('/tmp/demo-project')).toBe(true);
   });
 
   it('flags decaying truths with a review shortcut', () => {

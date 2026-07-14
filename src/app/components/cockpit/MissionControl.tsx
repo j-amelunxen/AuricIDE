@@ -4,6 +4,7 @@ import { useStore } from '@/lib/store';
 import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/requirementsSlice';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { ConductorPanel } from '../goals/ConductorPanel';
+import { QuickAccess } from './QuickAccess';
 
 const STALE_DAYS = 30;
 
@@ -56,9 +57,11 @@ function StationArrow() {
 export interface MissionControlProps {
   /** Creates a new spec document under specs/ and opens it in the editor. */
   onCreateSpec?: () => void;
+  /** Switches to another (starred) project by path. */
+  onSwitchProject?: (path: string) => void;
 }
 
-export function MissionControl({ onCreateSpec }: MissionControlProps) {
+export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControlProps) {
   const rootPath = useStore((s) => s.rootPath);
   const allFilePaths = useStore((s) => s.allFilePaths);
   const tickets = useStore((s) => s.pmDraftTickets);
@@ -213,6 +216,9 @@ export function MissionControl({ onCreateSpec }: MissionControlProps) {
       <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/5">
         <ConductorPanel {...conductor} />
       </div>
+
+      {/* Quick Access — jump between starred workspaces */}
+      <QuickAccess currentPath={rootPath} onSwitchProject={onSwitchProject} />
     </div>
   );
 }
