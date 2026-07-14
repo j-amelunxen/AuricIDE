@@ -361,6 +361,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       await state.spawnNewAgent(config);
       state.setSpawnDialogOpen(false);
       state.setBottomCollapsed(false);
+      // Spawning against a goal recorded a goal run — persist it immediately
+      // so it isn't lost if the user closes the Goals modal without saving.
+      if (config.spawnedByGoalId && state.rootPath) {
+        await useStore.getState().saveGoals(state.rootPath);
+      }
     },
     [state]
   );

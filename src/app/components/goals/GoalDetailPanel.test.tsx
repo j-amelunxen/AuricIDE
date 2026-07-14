@@ -1,5 +1,7 @@
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import type { PmGoal } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
@@ -39,7 +41,11 @@ function makeTicket(overrides: Partial<PmTicket> = {}): PmTicket {
   };
 }
 
-function renderPanel(goal: PmGoal, tickets: PmTicket[] = []) {
+function renderPanel(
+  goal: PmGoal,
+  tickets: PmTicket[] = [],
+  overrides: Partial<ComponentProps<typeof GoalDetailPanel>> = {}
+) {
   return render(
     <GoalDetailPanel
       goal={goal}
@@ -48,7 +54,6 @@ function renderPanel(goal: PmGoal, tickets: PmTicket[] = []) {
       requirements={[]}
       requirementLinks={[]}
       runs={[]}
-      launchingAgent={false}
       onUpdate={vi.fn()}
       onDelete={vi.fn()}
       onAchieve={vi.fn()}
@@ -56,6 +61,9 @@ function renderPanel(goal: PmGoal, tickets: PmTicket[] = []) {
       onLaunchAgent={vi.fn()}
       onLinkRequirement={vi.fn()}
       onUnlinkRequirement={vi.fn()}
+      onLinkTicket={vi.fn()}
+      onUnlinkTicket={vi.fn()}
+      {...overrides}
     />
   );
 }
@@ -83,5 +91,83 @@ describe('GoalDetailPanel workflow stepper', () => {
   it('marks the loop complete when every check is green', () => {
     renderPanel(makeGoal(), [makeTicket({ goalId: 'g1', status: 'done' })]);
     expect(screen.getByTestId('goal-workflow-step-4').getAttribute('aria-current')).toBe('step');
+  });
+});
+
+describe('GoalDetailPanel ticket browser', () => {
+  it('opens a browsable picker of unlinked tickets on demand', async () => {
+    const user = userEvent.setup();
+    renderPanel(makeGoal(), [
+      makeTicket({ id: 't1', name: 'Fix login bug' }),
+      makeTicket({ id: 't2', name: 'Write onboarding copy' }),
+    ]);
+
+    expect(screen.queryByTestId('goal-ticket-picker-search')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('goal-ticket-add-btn'));
+
+    expect(screen.getByTestId('goal-ticket-picker-search')).toBeInTheDocument();
+    expect(screen.getByTestId('goal-ticket-option-t1')).toHaveTextContent('Fix login bug');
+    expect(screen.getByTestId('goal-ticket-option-t2')).toHaveTextContent('Write onboarding copy');
+  });
+
+  it('filters the picker list as the user types', async () => {
+    const user = userEvent.setup();
+    renderPanel(makeGoal(), [
+      makeTicket({ id: 't1', name: 'Fix login bug' }),
+      makeTicket({ id: 't2', name: 'Write onboarding copy' }),
+    ]);
+
+    await user.click(screen.getByTestId('goal-ticket-add-btn'));
+    await user.type(screen.getByTestId('goal-ticket-picker-search'), 'login');
+
+    expect(screen.getByTestId('goal-ticket-option-t1')).toBeInTheDocument();
+    expect(screen.queryByTestId('goal-ticket-option-t2')).not.toBeInTheDocument();
+  });
+
+  it('excludes tickets already linked to this goal from the picker', async () => {
+    const user = userEvent.setup();
+    renderPanel(makeGoal(), [
+      makeTicket({ id: 't1', name: 'Already linked', goalId: 'g1' }),
+      makeTicket({ id: 't2', name: 'Not linked yet' }),
+    ]);
+
+    await user.click(screen.getByTestId('goal-ticket-add-btn'));
+
+    expect(screen.queryByTestId('goal-ticket-option-t1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('goal-ticket-option-t2')).toBeInTheDocument();
+  });
+
+  it('links a ticket to the goal when picked, without closing the picker', async () => {
+    const user = userEvent.setup();
+    const onLinkTicket = vi.fn();
+    renderPanel(makeGoal(), [makeTicket({ id: 't1', name: 'Fix login bug' })], { onLinkTicket });
+
+    await user.click(screen.getByTestId('goal-ticket-add-btn'));
+    await user.click(screen.getByTestId('goal-ticket-link-t1'));
+
+    expect(onLinkTicket).toHaveBeenCalledWith('g1', 't1');
+    expect(screen.getByTestId('goal-ticket-picker-search')).toBeInTheDocument();
+  });
+
+  it('shows a hint when a matching ticket already belongs to another goal', async () => {
+    const user = userEvent.setup();
+    renderPanel(makeGoal(), [makeTicket({ id: 't1', name: 'Borrowed ticket', goalId: 'g-other' })]);
+
+    await user.click(screen.getByTestId('goal-ticket-add-btn'));
+
+    expect(screen.getByTestId('goal-ticket-option-t1')).toHaveTextContent(/another goal/i);
+  });
+
+  it('unlinks an attached ticket via its remove button', async () => {
+    const user = userEvent.setup();
+    const onUnlinkTicket = vi.fn();
+    renderPanel(makeGoal(), [makeTicket({ id: 't1', name: 'Attached', goalId: 'g1' })], {
+      onUnlinkTicket,
+    });
+
+    await user.click(screen.getByTestId('goal-ticket-unlink-t1'));
+
+    expect(onUnlinkTicket).toHaveBeenCalledWith('t1');
   });
 });

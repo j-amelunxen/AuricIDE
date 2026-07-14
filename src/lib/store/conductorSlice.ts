@@ -106,7 +106,11 @@ export function buildConductorPrompt(
   if (ticket.description) sections.push(ticket.description);
 
   if (goal) {
-    sections.push(`## Goal context\nThis task serves the goal "${goal.name}".`);
+    sections.push(
+      `## Goal context\nThis task serves the goal "${goal.name}" (goalId: ${goal.id}). ` +
+        'Use this exact goalId with the auric-pm MCP tools (e.g. get_goal, evaluate_goal) — ' +
+        'do not look it up by name.'
+    );
     if (goal.description) sections.push(goal.description);
     if (goal.successCriteria) {
       sections.push(`The goal counts as achieved when:\n${goal.successCriteria}`);
@@ -137,7 +141,9 @@ export function buildConductorPrompt(
       'Exit with a non-zero code if you could not complete the task.'
   );
 
-  return sections.join('\n\n');
+  const prompt = sections.join('\n\n');
+  // Ticket work that serves a goal invokes the /goal command first.
+  return goal ? `/goal\n\n${prompt}` : prompt;
 }
 
 interface CrossSlices {

@@ -28,6 +28,8 @@ interface IDEOverlaysProps {
   setInitialAgentTask: (task: string) => void;
   spawnAgentTicketId: string | null;
   setSpawnAgentTicketId: (id: string | null) => void;
+  spawnAgentGoalId: string | null;
+  setSpawnAgentGoalId: (id: string | null) => void;
   handleSpawnNewAgent: (config: AgentConfig) => Promise<void>;
   rootPath: string | null;
   recentProjects: { name: string; path: string }[];
@@ -80,6 +82,8 @@ export function IDEOverlays({
   setInitialAgentTask,
   spawnAgentTicketId,
   setSpawnAgentTicketId,
+  spawnAgentGoalId,
+  setSpawnAgentGoalId,
   handleSpawnNewAgent,
   rootPath,
   recentProjects,
@@ -122,6 +126,7 @@ export function IDEOverlays({
           setSpawnDialogOpen(false);
           setInitialAgentTask('');
           setSpawnAgentTicketId(null);
+          setSpawnAgentGoalId(null);
         }}
         onSpawn={handleSpawnNewAgent}
         initialTask={initialAgentTask}
@@ -129,6 +134,7 @@ export function IDEOverlays({
         initialRepoPath={ticketCwd || rootPath || ''}
         recentPaths={recentProjects.map((p) => p.path)}
         goals={goalsDraft}
+        initialGoalId={spawnAgentGoalId}
       />
       <ImportSpecDialog
         isOpen={importSpecDialogOpen}

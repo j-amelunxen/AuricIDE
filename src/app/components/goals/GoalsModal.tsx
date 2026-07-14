@@ -15,21 +15,23 @@ import type { PmGoal } from '@/lib/tauri/goals';
 /** Builds the launch prompt for a goal: explicit goalPrompt wins, else generated. */
 export function buildGoalLaunchPrompt(goal: PmGoal): string {
   if (goal.goalPrompt.trim()) return goal.goalPrompt;
-  const parts = [`# Goal: ${goal.name}`];
+  const parts = [`# Goal: ${goal.name} (goalId: ${goal.id})`];
   if (goal.description) parts.push(goal.description);
   if (goal.successCriteria) {
     parts.push(`## Success criteria\n${goal.successCriteria}`);
   }
   parts.push(
     '## Working agreement\n' +
-      'Work autonomously toward this goal. If the auric-pm MCP tools are available, ' +
-      'use decompose_goal to plan sub-goals and create_ticket (pass goalId so each ' +
-      'ticket attaches to this goal) to add work items, evaluate_goal to check ' +
-      'progress, and record findings as context items or via write_finding. Do NOT ' +
+      `Work autonomously toward this goal. Its goalId is "${goal.id}" — use this exact ` +
+      'value with the auric-pm MCP tools, do not look it up by name. If those tools are ' +
+      `available, use decompose_goal (parentId: "${goal.id}") to plan sub-goals and ` +
+      `create_ticket (goalId: "${goal.id}") to add work items, evaluate_goal (id: "${goal.id}") ` +
+      'to check progress, and record findings as context items or via write_finding. Do NOT ' +
       'call record_goal_run — this run is already recorded. Exit when the success ' +
       'criteria are met or you are blocked.'
   );
-  return parts.join('\n\n');
+  // Launching an agent for a goal invokes the /goal command first.
+  return `/goal\n\n${parts.join('\n\n')}`;
 }
 
 export function GoalsModal() {
@@ -67,11 +69,14 @@ function GoalsModalContent() {
   const unlinkRequirementFromGoal = useStore((s) => s.unlinkRequirementFromGoal);
   const loadPmData = useStore((s) => s.loadPmData);
   const loadRequirements = useStore((s) => s.loadRequirements);
-  const spawnNewAgent = useStore((s) => s.spawnNewAgent);
+  const updateTicket = useStore((s) => s.updateTicket);
+  const savePmData = useStore((s) => s.savePmData);
+  const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
+  const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
+  const setSpawnAgentGoalId = useStore((s) => s.setSpawnAgentGoalId);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
-  const [launchingAgent, setLaunchingAgent] = useState(false);
   const [workflowStripVisible, setWorkflowStripVisible] = useState(
     () =>
       typeof window === 'undefined' || localStorage.getItem(WORKFLOW_STRIP_DISMISSED_KEY) !== '1'
@@ -164,25 +169,31 @@ function GoalsModalContent() {
     setCreateOpen(true);
   }, []);
 
-  const handleLaunchAgent = useCallback(
-    async (goal: PmGoal) => {
-      setLaunchingAgent(true);
-      try {
-        await spawnNewAgent({
-          name: `goal:${goal.name.slice(0, 40)}`,
-          model: 'sonnet',
-          task: buildGoalLaunchPrompt(goal),
-          cwd: rootPath ?? undefined,
-          // No permissionMode: the provider's configured defaultPermissionMode
-          // (dynamic-providers/*.json) decides.
-          spawnedByGoalId: goal.id,
-        });
-        if (rootPath) await saveGoals(rootPath);
-      } finally {
-        setLaunchingAgent(false);
-      }
+  const handleLinkTicket = useCallback(
+    (goalId: string, ticketId: string) => {
+      updateTicket(ticketId, { goalId });
+      if (rootPath) savePmData(rootPath);
     },
-    [spawnNewAgent, rootPath, saveGoals]
+    [updateTicket, savePmData, rootPath]
+  );
+
+  const handleUnlinkTicket = useCallback(
+    (ticketId: string) => {
+      updateTicket(ticketId, { goalId: null });
+      if (rootPath) savePmData(rootPath);
+    },
+    [updateTicket, savePmData, rootPath]
+  );
+
+  // Opens the shared spawn dialog prefilled for this goal, so the user picks
+  // provider/model (and repo/permission mode) before the agent actually starts.
+  const handleLaunchAgent = useCallback(
+    (goal: PmGoal) => {
+      setInitialAgentTask(buildGoalLaunchPrompt(goal));
+      setSpawnAgentGoalId(goal.id);
+      setSpawnDialogOpen(true);
+    },
+    [setInitialAgentTask, setSpawnAgentGoalId, setSpawnDialogOpen]
   );
 
   return createPortal(
@@ -289,7 +300,6 @@ function GoalsModalContent() {
               requirements={requirements}
               requirementLinks={goalRequirementLinksDraft}
               runs={goalRunsDraft}
-              launchingAgent={launchingAgent}
               onUpdate={updateGoal}
               onDelete={handleDelete}
               onAchieve={achieveGoal}
@@ -297,6 +307,8 @@ function GoalsModalContent() {
               onLaunchAgent={handleLaunchAgent}
               onLinkRequirement={linkRequirementToGoal}
               onUnlinkRequirement={unlinkRequirementFromGoal}
+              onLinkTicket={handleLinkTicket}
+              onUnlinkTicket={handleUnlinkTicket}
             />
           </div>
         </div>

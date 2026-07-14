@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalsModal, buildGoalLaunchPrompt } from './GoalsModal';
 import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmTicket } from '@/lib/tauri/pm';
 
 const mocks = {
   setGoalsModalOpen: vi.fn(),
@@ -19,7 +20,11 @@ const mocks = {
   unlinkRequirementFromGoal: vi.fn(),
   loadPmData: vi.fn(),
   loadRequirements: vi.fn(),
-  spawnNewAgent: vi.fn(async () => ({ id: 'a1', provider: 'claude' })),
+  updateTicket: vi.fn(),
+  savePmData: vi.fn(),
+  setSpawnDialogOpen: vi.fn(),
+  setInitialAgentTask: vi.fn(),
+  setSpawnAgentGoalId: vi.fn(),
   startConductor: vi.fn(),
   stopConductor: vi.fn(),
   setConductorMaxConcurrent: vi.fn(),
@@ -47,6 +52,22 @@ function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
   };
 }
 
+function makeTicket(overrides: Partial<PmTicket> = {}): PmTicket {
+  return {
+    id: 't1',
+    epicId: 'e1',
+    name: 'Ticket',
+    description: '',
+    status: 'open',
+    statusUpdatedAt: '',
+    sortOrder: 0,
+    priority: 'normal',
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
 const storeState = {
   goalsModalOpen: true,
   goalsDraft: [makeGoal()],
@@ -55,7 +76,7 @@ const storeState = {
   goalsDirty: false,
   selectedGoalId: null as string | null,
   rootPath: '/project',
-  pmDraftTickets: [],
+  pmDraftTickets: [] as PmTicket[],
   requirementsDraft: [],
   agents: [],
   conductorRunning: false,
@@ -88,12 +109,28 @@ describe('buildGoalLaunchPrompt', () => {
     const prompt = buildGoalLaunchPrompt(makeGoal());
     expect(prompt).toContain('goalId');
   });
+
+  it('includes the actual goal id so MCP calls (evaluate_goal, decompose_goal) can target it', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal({ id: 'g-99' }));
+    expect(prompt).toContain('g-99');
+  });
+
+  it('starts the generated prompt with the /goal command', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal());
+    expect(prompt.startsWith('/goal\n\n')).toBe(true);
+  });
+
+  it('does not inject /goal into an explicit goal prompt', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal({ goalPrompt: 'Custom prompt' }));
+    expect(prompt).toBe('Custom prompt');
+  });
 });
 
 describe('GoalsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storeState.selectedGoalId = null;
+    storeState.pmDraftTickets = [];
     localStorage.clear();
   });
 
@@ -145,19 +182,43 @@ describe('GoalsModal', () => {
     expect(screen.getByTestId('goal-create-dialog')).toBeTruthy();
   });
 
-  it('shows detail panel and launches an agent for the selected goal', async () => {
+  it('shows detail panel and opens the spawn dialog, prefilled for the selected goal', async () => {
     storeState.selectedGoalId = 'g1';
     const user = userEvent.setup();
     render(<GoalsModal />);
     await user.click(screen.getByTestId('goal-launch-agent-btn'));
-    expect(mocks.spawnNewAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ spawnedByGoalId: 'g1', cwd: '/project' })
+
+    // Provider/model are chosen in the shared spawn dialog, not hardcoded here.
+    expect(mocks.setSpawnAgentGoalId).toHaveBeenCalledWith('g1');
+    expect(mocks.setInitialAgentTask).toHaveBeenCalledWith(
+      expect.stringContaining('Ship orchestration')
     );
-    // No hardcoded mode: the provider-configured defaultPermissionMode decides.
-    expect(mocks.spawnNewAgent).not.toHaveBeenCalledWith(
-      expect.objectContaining({ permissionMode: expect.anything() })
-    );
-    expect(mocks.saveGoals).toHaveBeenCalledWith('/project');
+    expect(mocks.setSpawnDialogOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('links a ticket picked from the browser and persists it immediately', async () => {
+    storeState.selectedGoalId = 'g1';
+    storeState.pmDraftTickets = [makeTicket({ id: 't1', name: 'Fix login bug' })];
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+
+    await user.click(screen.getByTestId('goal-ticket-add-btn'));
+    await user.click(screen.getByTestId('goal-ticket-link-t1'));
+
+    expect(mocks.updateTicket).toHaveBeenCalledWith('t1', { goalId: 'g1' });
+    expect(mocks.savePmData).toHaveBeenCalledWith('/project');
+  });
+
+  it('unlinks an attached ticket and persists it immediately', async () => {
+    storeState.selectedGoalId = 'g1';
+    storeState.pmDraftTickets = [makeTicket({ id: 't1', name: 'Attached', goalId: 'g1' })];
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+
+    await user.click(screen.getByTestId('goal-ticket-unlink-t1'));
+
+    expect(mocks.updateTicket).toHaveBeenCalledWith('t1', { goalId: null });
+    expect(mocks.savePmData).toHaveBeenCalledWith('/project');
   });
 
   it('starts the conductor scoped to the selected goal', async () => {
