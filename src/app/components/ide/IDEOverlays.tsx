@@ -30,6 +30,8 @@ interface IDEOverlaysProps {
   setSpawnAgentTicketId: (id: string | null) => void;
   spawnAgentGoalId: string | null;
   setSpawnAgentGoalId: (id: string | null) => void;
+  spawnAgentRepoPath: string | null;
+  setSpawnAgentRepoPath: (path: string | null) => void;
   handleSpawnNewAgent: (config: AgentConfig) => Promise<void>;
   rootPath: string | null;
   recentProjects: { name: string; path: string }[];
@@ -84,6 +86,8 @@ export function IDEOverlays({
   setSpawnAgentTicketId,
   spawnAgentGoalId,
   setSpawnAgentGoalId,
+  spawnAgentRepoPath,
+  setSpawnAgentRepoPath,
   handleSpawnNewAgent,
   rootPath,
   recentProjects,
@@ -127,11 +131,12 @@ export function IDEOverlays({
           setInitialAgentTask('');
           setSpawnAgentTicketId(null);
           setSpawnAgentGoalId(null);
+          setSpawnAgentRepoPath(null);
         }}
         onSpawn={handleSpawnNewAgent}
         initialTask={initialAgentTask}
         spawnedByTicketId={spawnAgentTicketId}
-        initialRepoPath={ticketCwd || rootPath || ''}
+        initialRepoPath={spawnAgentRepoPath || ticketCwd || rootPath || ''}
         recentPaths={recentProjects.map((p) => p.path)}
         goals={goalsDraft}
         initialGoalId={spawnAgentGoalId}

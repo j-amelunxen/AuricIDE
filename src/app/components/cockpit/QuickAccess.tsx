@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { generateProjectIcon } from '@/lib/projectIcon';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 
 /** Hold-to-confirm threshold for unstarring — long enough to rule out an
  * accidental tap, short enough to still feel immediate once committed to. */
@@ -19,9 +20,10 @@ interface ProjectTileProps {
   active: boolean;
   onSwitch: () => void;
   onUnstar: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function ProjectTile({ project, active, onSwitch, onUnstar }: ProjectTileProps) {
+function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: ProjectTileProps) {
   const icon = generateProjectIcon(project.path);
   const [holding, setHolding] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -60,6 +62,7 @@ function ProjectTile({ project, active, onSwitch, onUnstar }: ProjectTileProps) 
         data-testid={`quick-access-tile-${project.path}`}
         data-active={active}
         onClick={onSwitch}
+        onContextMenu={onContextMenu}
         title={active ? `${project.name} (current)` : `Switch to ${project.name}`}
         className={`relative flex h-10 w-10 items-center justify-center rounded-xl text-[13px] font-black text-white/95 shadow-sm transition-[transform,box-shadow] duration-150 active:scale-[0.94] ${
           active
@@ -150,6 +153,31 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const starredProjects = useStore((s) => s.starredProjects);
   const removeStarredProject = useStore((s) => s.removeStarredProject);
   const addStarredProject = useStore((s) => s.addStarredProject);
+  const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
+  const setSpawnAgentRepoPath = useStore((s) => s.setSpawnAgentRepoPath);
+  const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
+  const setSpawnAgentGoalId = useStore((s) => s.setSpawnAgentGoalId);
+  const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(
+    null
+  );
+
+  const menuOptions: ContextMenuOption[] = contextMenu
+    ? [
+        {
+          label: 'Start Agent',
+          icon: 'bolt',
+          action: () => {
+            setSpawnAgentTicketId(null);
+            setSpawnAgentGoalId(null);
+            setInitialAgentTask('');
+            setSpawnAgentRepoPath(contextMenu.path);
+            setSpawnDialogOpen(true);
+          },
+        },
+      ]
+    : [];
 
   const currentStarred =
     currentPath !== null && starredProjects.some((p) => p.path === currentPath);
@@ -183,6 +211,10 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
               if (project.path !== currentPath) onSwitchProject?.(project.path);
             }}
             onUnstar={() => removeStarredProject(project.path)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, path: project.path });
+            }}
           />
         ))}
         {canStarCurrent && (
@@ -207,6 +239,14 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           </div>
         )}
       </div>
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          options={menuOptions}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
