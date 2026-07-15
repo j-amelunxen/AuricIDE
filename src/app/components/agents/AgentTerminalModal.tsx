@@ -193,28 +193,84 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
   );
 }
 
+// ── Agent tab state ────────────────────────────────────────────────
+
+export type AgentTabState = 'working' | 'waiting' | 'done' | 'error' | 'queued';
+
+// appendAgentLog throttles lastActivityAt bumps to one per 2s, so a 2s window
+// would flicker for a continuously streaming agent — use a wider one.
+const WORKING_WINDOW_MS = 5_000;
+
+export function agentTabState(agent: AgentInfo, now: number): AgentTabState {
+  switch (agent.status) {
+    case 'running':
+      return agent.lastActivityAt && now - agent.lastActivityAt < WORKING_WINDOW_MS
+        ? 'working'
+        : 'waiting';
+    case 'idle':
+      return 'done';
+    case 'queued':
+      return 'queued';
+    default:
+      return 'error';
+  }
+}
+
+const TAB_STATE_STYLES: Record<AgentTabState, { dot: string; label: string }> = {
+  working: { dot: 'bg-primary animate-pulse', label: 'text-primary' },
+  waiting: { dot: 'bg-amber-400', label: 'text-amber-400' },
+  done: { dot: 'bg-emerald-400', label: 'text-emerald-400' },
+  error: { dot: 'bg-red-400', label: 'text-red-400' },
+  queued: { dot: 'bg-foreground-muted', label: 'text-foreground-muted' },
+};
+
 // ── Modal ──────────────────────────────────────────────────────────
 
 interface AgentTerminalModalProps {
   agent: AgentInfo | null;
+  /** All active agents — when provided, the modal shows a tab per agent for fast switching. */
+  agents?: AgentInfo[];
+  onSwitchAgent?: (agent: AgentInfo) => void;
   onClose: () => void;
   onSelectionSpawn?: (selection: string) => void;
 }
 
-export function AgentTerminalModal({ agent, onClose, onSelectionSpawn }: AgentTerminalModalProps) {
+export function AgentTerminalModal({
+  agent,
+  agents,
+  onSwitchAgent,
+  onClose,
+  onSelectionSpawn,
+}: AgentTerminalModalProps) {
   if (!agent) return null;
+  // The opened agent is a snapshot; the agents list carries live status updates.
+  const liveAgent = agents?.find((a) => a.id === agent.id) ?? agent;
   return (
-    <AgentTerminalDialog agent={agent} onClose={onClose} onSelectionSpawn={onSelectionSpawn} />
+    <AgentTerminalDialog
+      agent={liveAgent}
+      agents={agents}
+      onSwitchAgent={onSwitchAgent}
+      onClose={onClose}
+      onSelectionSpawn={onSelectionSpawn}
+    />
   );
 }
 
 interface AgentTerminalDialogProps {
   agent: AgentInfo;
+  agents?: AgentInfo[];
+  onSwitchAgent?: (agent: AgentInfo) => void;
   onClose: () => void;
   onSelectionSpawn?: (selection: string) => void;
 }
 
-function AgentTerminalDialog({ agent, onClose, onSelectionSpawn }: AgentTerminalDialogProps) {
+function AgentTerminalDialog({
+  agent,
+  agents,
+  onSwitchAgent,
+  onClose,
+  onSelectionSpawn,
+}: AgentTerminalDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
   // Close on Escape
@@ -300,6 +356,47 @@ function AgentTerminalDialog({ agent, onClose, onSelectionSpawn }: AgentTerminal
             </button>
           </div>
         </div>
+
+        {/* Agent tabs — fast switching between active agents with state preview */}
+        {agents && agents.length > 0 && (
+          <div
+            role="tablist"
+            aria-label="Active agents"
+            className="flex items-center gap-1 px-3 py-1.5 border-b border-white/10 bg-black/40 overflow-x-auto no-scrollbar flex-shrink-0"
+          >
+            {agents.map((a) => {
+              const isActive = a.id === agent.id;
+              const state = agentTabState(a, now);
+              const style = TAB_STATE_STYLES[state];
+              return (
+                <button
+                  key={a.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  data-testid={`agent-tab-${a.id}`}
+                  data-state={state}
+                  onClick={() => {
+                    if (!isActive) onSwitchAgent?.(a);
+                  }}
+                  className={`group flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all ${
+                    isActive
+                      ? 'border-primary/40 bg-primary/15 text-white'
+                      : 'border-white/5 bg-white/[0.02] text-foreground-muted hover:bg-white/5 hover:text-foreground'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
+                  />
+                  <span className="max-w-[140px] truncate">{a.name}</span>
+                  <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
+                    {state}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* xterm.js Terminal */}
         <div className="flex-1 min-h-0 p-2">

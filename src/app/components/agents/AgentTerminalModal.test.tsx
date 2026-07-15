@@ -242,6 +242,77 @@ describe('AgentTerminalModal', () => {
     });
   });
 
+  describe('agent tabs', () => {
+    function makeAgent(overrides: Partial<AgentInfo>): AgentInfo {
+      return { ...agent, ...overrides };
+    }
+
+    const working = makeAgent({ id: 'agent-1', name: 'Writer', lastActivityAt: Date.now() });
+    const waiting = makeAgent({
+      id: 'agent-2',
+      name: 'Reviewer',
+      status: 'running',
+      lastActivityAt: Date.now() - 60_000,
+    });
+    const done = makeAgent({ id: 'agent-3', name: 'Fixer', status: 'idle' });
+    const failed = makeAgent({ id: 'agent-4', name: 'Deployer', status: 'error' });
+    const all = [working, waiting, done, failed];
+
+    it('renders no tablist when agents are not provided', () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    });
+
+    it('renders one tab per active agent', () => {
+      render(<AgentTerminalModal agent={working} agents={all} onClose={vi.fn()} />);
+      expect(screen.getAllByRole('tab')).toHaveLength(4);
+      expect(screen.getByTestId('agent-tab-agent-2')).toHaveTextContent('Reviewer');
+    });
+
+    it('marks the displayed agent tab as selected', () => {
+      render(<AgentTerminalModal agent={waiting} agents={all} onClose={vi.fn()} />);
+      expect(screen.getByTestId('agent-tab-agent-2')).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByTestId('agent-tab-agent-1')).toHaveAttribute('aria-selected', 'false');
+    });
+
+    it('previews the agent state on each tab', () => {
+      render(<AgentTerminalModal agent={working} agents={all} onClose={vi.fn()} />);
+      expect(screen.getByTestId('agent-tab-agent-1')).toHaveAttribute('data-state', 'working');
+      expect(screen.getByTestId('agent-tab-agent-2')).toHaveAttribute('data-state', 'waiting');
+      expect(screen.getByTestId('agent-tab-agent-3')).toHaveAttribute('data-state', 'done');
+      expect(screen.getByTestId('agent-tab-agent-4')).toHaveAttribute('data-state', 'error');
+    });
+
+    it('shows the state label on the tab', () => {
+      render(<AgentTerminalModal agent={working} agents={all} onClose={vi.fn()} />);
+      expect(screen.getByTestId('agent-tab-agent-1')).toHaveTextContent(/working/i);
+      expect(screen.getByTestId('agent-tab-agent-2')).toHaveTextContent(/waiting/i);
+    });
+
+    it('calls onSwitchAgent with the clicked agent', async () => {
+      const user = userEvent.setup();
+      const onSwitchAgent = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onSwitchAgent={onSwitchAgent}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByTestId('agent-tab-agent-3'));
+      expect(onSwitchAgent).toHaveBeenCalledWith(done);
+    });
+
+    it('renders header status from the live agents list, not the stale snapshot', () => {
+      const stale = makeAgent({ id: 'agent-2', name: 'Reviewer', status: 'running' });
+      const live = [makeAgent({ id: 'agent-2', name: 'Reviewer', status: 'idle' })];
+      render(<AgentTerminalModal agent={stale} agents={live} onClose={vi.fn()} />);
+      expect(screen.getByText('idle')).toBeInTheDocument();
+    });
+  });
+
   describe('image paste & file drop', () => {
     beforeEach(() => {
       pasteSendText = null;

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentInfo } from '@/lib/tauri/agents';
+import type { AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
 import { AgentsPanel } from './AgentsPanel';
 
 const agents: AgentInfo[] = [
@@ -125,5 +125,89 @@ describe('AgentsPanel', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Hide agents panel' }));
     expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  describe('interrupted agents (restart persistence)', () => {
+    const interrupted: InterruptedAgent[] = [
+      {
+        id: 'agent-9',
+        name: 'Interrupted Writer',
+        model: 'sonnet',
+        provider: 'claude',
+        task: 'refactor the parser module',
+        cwd: '/repo',
+        permissionMode: 'auto',
+        dangerouslyIgnorePermissions: false,
+        autoAcceptEdits: false,
+        headless: false,
+        startedAt: 3000,
+      },
+    ];
+
+    it('renders no interrupted section when the list is empty', () => {
+      render(
+        <AgentsPanel agents={agents} interruptedAgents={[]} onSpawn={vi.fn()} onKill={vi.fn()} />
+      );
+      expect(screen.queryByText('INTERRUPTED')).not.toBeInTheDocument();
+    });
+
+    it('renders interrupted agents with name and task', () => {
+      render(
+        <AgentsPanel
+          agents={[]}
+          interruptedAgents={interrupted}
+          onSpawn={vi.fn()}
+          onKill={vi.fn()}
+        />
+      );
+      expect(screen.getByText('INTERRUPTED')).toBeInTheDocument();
+      expect(screen.getByText('Interrupted Writer')).toBeInTheDocument();
+      expect(screen.getByText('refactor the parser module')).toBeInTheDocument();
+    });
+
+    it('still shows interrupted agents alongside the empty running state', () => {
+      render(
+        <AgentsPanel
+          agents={[]}
+          interruptedAgents={interrupted}
+          onSpawn={vi.fn()}
+          onKill={vi.fn()}
+        />
+      );
+      expect(screen.getByText('No agents running')).toBeInTheDocument();
+      expect(screen.getByText('Interrupted Writer')).toBeInTheDocument();
+    });
+
+    it('resume button calls onResumeInterrupted with the agent id', async () => {
+      const user = userEvent.setup();
+      const onResumeInterrupted = vi.fn();
+      render(
+        <AgentsPanel
+          agents={[]}
+          interruptedAgents={interrupted}
+          onResumeInterrupted={onResumeInterrupted}
+          onSpawn={vi.fn()}
+          onKill={vi.fn()}
+        />
+      );
+      await user.click(screen.getByRole('button', { name: /resume/i }));
+      expect(onResumeInterrupted).toHaveBeenCalledWith('agent-9');
+    });
+
+    it('dismiss button calls onDiscardInterrupted with the agent id', async () => {
+      const user = userEvent.setup();
+      const onDiscardInterrupted = vi.fn();
+      render(
+        <AgentsPanel
+          agents={[]}
+          interruptedAgents={interrupted}
+          onDiscardInterrupted={onDiscardInterrupted}
+          onSpawn={vi.fn()}
+          onKill={vi.fn()}
+        />
+      );
+      await user.click(screen.getByRole('button', { name: /dismiss/i }));
+      expect(onDiscardInterrupted).toHaveBeenCalledWith('agent-9');
+    });
   });
 });

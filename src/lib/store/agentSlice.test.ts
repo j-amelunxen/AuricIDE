@@ -32,6 +32,32 @@ vi.mock('../tauri/agents', () => ({
       startedAt: 2000,
     },
   ]),
+  listInterruptedAgents: vi.fn(async () => [
+    {
+      id: 'agent-9',
+      name: 'Interrupted Agent',
+      model: 'sonnet',
+      provider: 'claude',
+      task: 'refactor the parser',
+      cwd: '/repo',
+      permissionMode: 'auto',
+      dangerouslyIgnorePermissions: false,
+      autoAcceptEdits: false,
+      headless: false,
+      startedAt: 3000,
+    },
+  ]),
+  resumeInterruptedAgent: vi.fn(async (agentId: string) => ({
+    id: 'agent-10',
+    name: 'Interrupted Agent',
+    model: 'sonnet',
+    provider: 'claude',
+    status: 'running' as const,
+    currentTask: `resumed:${agentId}`,
+    startedAt: 4000,
+    repoPath: '/repo',
+  })),
+  discardInterruptedAgent: vi.fn(async () => undefined),
 }));
 
 describe('agentSlice', () => {
@@ -208,6 +234,88 @@ describe('agentSlice', () => {
     expect(store.getState().agentLogMeta['1']).toBeUndefined();
     expect(store.getState().agentLogs['2']).toEqual(['b-log']);
     expect(store.getState().agentLogMeta['2']).toBeDefined();
+  });
+});
+
+describe('agentSlice – interrupted agents (restart persistence)', () => {
+  let store: StoreApi<AgentSlice>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('initializes interruptedAgents as empty array', () => {
+    expect(store.getState().interruptedAgents).toEqual([]);
+  });
+
+  it('loadInterruptedAgents fetches interrupted agents from IPC', async () => {
+    await store.getState().loadInterruptedAgents();
+
+    const state = store.getState();
+    expect(state.interruptedAgents).toHaveLength(1);
+    expect(state.interruptedAgents[0].id).toBe('agent-9');
+    expect(state.interruptedAgents[0].task).toBe('refactor the parser');
+  });
+
+  it('loadInterruptedAgents swallows IPC errors (browser mode)', async () => {
+    const { listInterruptedAgents } = await import('../tauri/agents');
+    vi.mocked(listInterruptedAgents).mockRejectedValueOnce(new Error('no tauri'));
+
+    await store.getState().loadInterruptedAgents();
+    expect(store.getState().interruptedAgents).toEqual([]);
+  });
+
+  it('resumeInterruptedAgent moves the agent from interrupted to active and selects it', async () => {
+    await store.getState().loadInterruptedAgents();
+
+    await store.getState().resumeInterruptedAgent('agent-9');
+
+    const state = store.getState();
+    expect(state.interruptedAgents).toEqual([]);
+    expect(state.agents).toHaveLength(1);
+    expect(state.agents[0].id).toBe('agent-10');
+    expect(state.agents[0].status).toBe('running');
+    expect(state.selectedAgentId).toBe('agent-10');
+  });
+
+  it('resumeInterruptedAgent calls the IPC with the agent id', async () => {
+    const { resumeInterruptedAgent } = await import('../tauri/agents');
+    await store.getState().loadInterruptedAgents();
+
+    await store.getState().resumeInterruptedAgent('agent-9');
+    expect(resumeInterruptedAgent).toHaveBeenCalledWith('agent-9');
+  });
+
+  it('resumeInterruptedAgent keeps the interrupted entry when the IPC fails', async () => {
+    const { resumeInterruptedAgent } = await import('../tauri/agents');
+    vi.mocked(resumeInterruptedAgent).mockRejectedValueOnce(new Error('spawn failed'));
+    await store.getState().loadInterruptedAgents();
+
+    await expect(store.getState().resumeInterruptedAgent('agent-9')).rejects.toThrow(
+      'spawn failed'
+    );
+    expect(store.getState().interruptedAgents).toHaveLength(1);
+    expect(store.getState().agents).toHaveLength(0);
+  });
+
+  it('discardInterruptedAgent removes the agent and calls the IPC', async () => {
+    const { discardInterruptedAgent } = await import('../tauri/agents');
+    await store.getState().loadInterruptedAgents();
+
+    await store.getState().discardInterruptedAgent('agent-9');
+
+    expect(store.getState().interruptedAgents).toEqual([]);
+    expect(discardInterruptedAgent).toHaveBeenCalledWith('agent-9');
+  });
+
+  it('discardInterruptedAgent removes locally even when the IPC fails', async () => {
+    const { discardInterruptedAgent } = await import('../tauri/agents');
+    vi.mocked(discardInterruptedAgent).mockRejectedValueOnce(new Error('not found'));
+    await store.getState().loadInterruptedAgents();
+
+    await store.getState().discardInterruptedAgent('agent-9');
+    expect(store.getState().interruptedAgents).toEqual([]);
   });
 });
 

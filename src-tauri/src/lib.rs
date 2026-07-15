@@ -1,3 +1,4 @@
+mod agent_persistence;
 mod agents;
 pub mod crashlog;
 mod database;
@@ -997,14 +998,26 @@ async fn spawn_agent(
     provider_state: tauri::State<'_, ProviderRegistryState>,
     app: tauri::AppHandle,
 ) -> Result<agents::AgentInfo, String> {
+    spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await
+}
+
+/// Shared spawn path for `spawn_agent` and `resume_interrupted_agent`:
+/// spawns the PTY process and registers its terminal session.
+async fn spawn_agent_with_session(
+    config: agents::AgentConfig,
+    state: &AgentManagerState,
+    terminal_state: &TerminalState,
+    provider_state: &ProviderRegistryState,
+    app: tauri::AppHandle,
+) -> Result<agents::AgentInfo, String> {
     // On natural termination the reaper drops the terminal session — without
     // this, every finished agent leaked its PTY master, writer, and FDs.
     let app_for_cleanup = app.clone();
     let (info, writer, master) = agents::spawn_agent_impl(
         config,
-        &state,
+        state,
         &app,
-        &provider_state,
+        provider_state,
         move |agent_id: String| {
             let ts = app_for_cleanup.state::<TerminalState>();
             let mut sessions = ts.sessions.lock().unwrap();
@@ -1052,6 +1065,61 @@ async fn kill_agent(
 
     // 2. Kill the agent in the manager (handles removal and status emission)
     agents::kill_agent_impl(&agent_id, &state, &app).await
+}
+
+// ── Interrupted agents (restart persistence) ────────────────────────
+
+#[tauri::command]
+async fn list_interrupted_agents(
+    persistence: tauri::State<'_, agent_persistence::AgentPersistenceState>,
+) -> Result<Vec<agent_persistence::PersistedAgent>, String> {
+    let p = persistence.lock().map_err(|e| e.to_string())?;
+    Ok(p.interrupted())
+}
+
+#[tauri::command]
+async fn discard_interrupted_agent(
+    agent_id: String,
+    persistence: tauri::State<'_, agent_persistence::AgentPersistenceState>,
+) -> Result<(), String> {
+    let mut p = persistence.lock().map_err(|e| e.to_string())?;
+    if p.discard_interrupted(&agent_id) {
+        Ok(())
+    } else {
+        Err(format!("Interrupted agent not found: {}", agent_id))
+    }
+}
+
+#[tauri::command]
+async fn resume_interrupted_agent(
+    agent_id: String,
+    persistence: tauri::State<'_, agent_persistence::AgentPersistenceState>,
+    state: tauri::State<'_, AgentManagerState>,
+    terminal_state: tauri::State<'_, TerminalState>,
+    provider_state: tauri::State<'_, ProviderRegistryState>,
+    app: tauri::AppHandle,
+) -> Result<agents::AgentInfo, String> {
+    let persisted = {
+        let mut p = persistence.lock().map_err(|e| e.to_string())?;
+        p.take_interrupted(&agent_id)
+            .ok_or_else(|| format!("Interrupted agent not found: {}", agent_id))?
+    };
+
+    let config = agents::AgentConfig {
+        name: persisted.name,
+        model: persisted.model,
+        task: agents::resume_task_prompt(&persisted.task),
+        cwd: persisted.cwd,
+        permission_mode: persisted.permission_mode,
+        dangerously_ignore_permissions: Some(persisted.dangerously_ignore_permissions),
+        auto_accept_edits: Some(persisted.auto_accept_edits),
+        provider: Some(persisted.provider),
+        headless: Some(persisted.headless),
+        spawned_by_ticket_id: persisted.spawned_by_ticket_id,
+        spawned_by_goal_id: persisted.spawned_by_goal_id,
+    };
+
+    spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await
 }
 
 #[tauri::command]
@@ -1566,6 +1634,30 @@ pub fn run() {
                 crashlog::set_crash_log_dir(log_dir);
             }
             app.manage(providers::new_provider_registry(Some(app.handle())));
+
+            // Restart persistence: agents running when the app last quit are
+            // loaded as "interrupted" and offered for resume in the frontend.
+            let persistence_path = app
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|d| d.join("active-agents.json"));
+            let persistence = agent_persistence::new_agent_persistence_state(persistence_path);
+            // Seed the agent id counter past restored ids so a new spawn never
+            // reuses the id of an interrupted agent still shown in the UI.
+            let max_restored = persistence
+                .lock()
+                .map(|p| p.max_agent_number())
+                .unwrap_or(0);
+            app.manage(persistence);
+            if max_restored > 0 {
+                let manager_state = app.state::<AgentManagerState>().inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    let mut manager = manager_state.lock().await;
+                    manager.counter = manager.counter.max(max_restored);
+                });
+            }
+
             // Pre-resolve the login-shell environment in the background so the
             // first agent spawn doesn't pay for it (see agents::warm_shell_env_cache).
             tauri::async_runtime::spawn(agents::warm_shell_env_cache());
@@ -1614,6 +1706,9 @@ pub fn run() {
             spawn_agent,
             kill_agent,
             kill_agents_for_repo,
+            list_interrupted_agents,
+            resume_interrupted_agent,
+            discard_interrupted_agent,
             list_providers,
             import_provider,
             get_prompt_template,

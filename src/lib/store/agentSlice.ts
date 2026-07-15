@@ -1,10 +1,13 @@
 import type { StateCreator } from 'zustand';
-import type { AgentConfig, AgentInfo } from '../tauri/agents';
+import type { AgentConfig, AgentInfo, InterruptedAgent } from '../tauri/agents';
 import {
+  discardInterruptedAgent,
   killAgent,
   killAgentsForRepo,
   listAgents,
+  listInterruptedAgents,
   recordAgentPromptHistory,
+  resumeInterruptedAgent,
   spawnAgent,
 } from '../tauri/agents';
 import type { GoalsSlice } from './goalsSlice';
@@ -33,6 +36,8 @@ export interface AgentSlice {
   agentLogs: Record<string, string[]>;
   agentLogMeta: Record<string, AgentLogMeta>;
   selectedAgentId: string | null;
+  /** Agents from a previous app run that died with the app (restart persistence). */
+  interruptedAgents: InterruptedAgent[];
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   killRunningAgent: (agentId: string) => Promise<void>;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
@@ -40,6 +45,9 @@ export interface AgentSlice {
   refreshAgents: () => Promise<void>;
   selectAgent: (agentId: string | null) => void;
   killAgentsForRepoPath: (repoPath: string) => Promise<void>;
+  loadInterruptedAgents: () => Promise<void>;
+  resumeInterruptedAgent: (agentId: string) => Promise<AgentInfo>;
+  discardInterruptedAgent: (agentId: string) => Promise<void>;
 }
 
 /** Close the still-running goal run of an agent, if any (cross-slice, optional). */
@@ -71,6 +79,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   agentLogs: {},
   agentLogMeta: {},
   selectedAgentId: null,
+  interruptedAgents: [],
 
   spawnNewAgent: async (config) => {
     const agent = await spawnAgent(config);
@@ -241,6 +250,36 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   },
 
   selectAgent: (agentId) => set({ selectedAgentId: agentId }),
+
+  loadInterruptedAgents: async () => {
+    try {
+      const interrupted = await listInterruptedAgents();
+      set({ interruptedAgents: interrupted });
+    } catch {
+      // Browser/test mode — no Tauri backend, nothing to restore
+    }
+  },
+
+  resumeInterruptedAgent: async (agentId) => {
+    // The backend consumes the persisted entry and re-spawns; only drop the
+    // local entry once that succeeded, so a failed resume stays retryable.
+    const agent = await resumeInterruptedAgent(agentId);
+    set({
+      interruptedAgents: get().interruptedAgents.filter((a) => a.id !== agentId),
+      agents: [...get().agents, agent],
+      selectedAgentId: agent.id,
+    });
+    return agent;
+  },
+
+  discardInterruptedAgent: async (agentId) => {
+    try {
+      await discardInterruptedAgent(agentId);
+    } catch {
+      // Already gone on the backend — removing it locally is still correct
+    }
+    set({ interruptedAgents: get().interruptedAgents.filter((a) => a.id !== agentId) });
+  },
 
   killAgentsForRepoPath: async (repoPath) => {
     await killAgentsForRepo(repoPath);

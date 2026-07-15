@@ -8,18 +8,37 @@ describe('QuickAccess', () => {
     useStore.setState({ starredProjects: [] });
   });
 
-  it('renders a tile for each starred project in stable insertion order', () => {
+  it('renders a tile for each starred project, sorted alphabetically by name', () => {
     useStore.setState({
       starredProjects: [
-        { path: '/a/apps', name: 'apps', starredAt: 1 },
-        { path: '/a/website', name: 'website', starredAt: 2 },
+        { path: '/a/website', name: 'website', starredAt: 1 },
+        { path: '/a/apps', name: 'apps', starredAt: 2 },
+        { path: '/a/Backend', name: 'Backend', starredAt: 3 },
       ],
     });
     render(<QuickAccess currentPath="/a/apps" />);
     const tiles = screen.getAllByTestId(/^quick-access-tile-/);
-    expect(tiles).toHaveLength(2);
+    expect(tiles).toHaveLength(3);
     expect(tiles[0]).toHaveAttribute('data-testid', 'quick-access-tile-/a/apps');
-    expect(tiles[1]).toHaveAttribute('data-testid', 'quick-access-tile-/a/website');
+    expect(tiles[1]).toHaveAttribute('data-testid', 'quick-access-tile-/a/Backend');
+    expect(tiles[2]).toHaveAttribute('data-testid', 'quick-access-tile-/a/website');
+  });
+
+  it('keeps the alphabetical order regardless of when projects were starred', () => {
+    useStore.setState({
+      starredProjects: [
+        { path: '/w/charlie-full', name: 'charlie-full', starredAt: 5 },
+        { path: '/w/alpha-pipeline', name: 'alpha-pipeline', starredAt: 1 },
+        { path: '/w/bravoFlow', name: 'bravoFlow', starredAt: 9 },
+      ],
+    });
+    render(<QuickAccess currentPath={null} />);
+    const tiles = screen.getAllByTestId(/^quick-access-tile-/);
+    expect(tiles.map((t) => t.getAttribute('data-testid'))).toEqual([
+      'quick-access-tile-/w/alpha-pipeline',
+      'quick-access-tile-/w/bravoFlow',
+      'quick-access-tile-/w/charlie-full',
+    ]);
   });
 
   it('switches to a project when its tile is clicked', () => {

@@ -1,3 +1,4 @@
+use crate::agent_persistence::{AgentPersistenceState, PersistedAgent};
 use crate::providers::ProviderRegistryState;
 use portable_pty::{native_pty_system, Child as PtyChild, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
@@ -231,6 +232,61 @@ fn apply_inherited_path(env: &mut Vec<(String, String)>, inherited: Option<&str>
     }
 }
 
+// ── Restart persistence ─────────────────────────────────────────────
+
+/// Snapshot of a spawn config for the restart-persistence file.
+fn persisted_from_config(
+    config: &AgentConfig,
+    id: &str,
+    provider_id: &str,
+    started_at: u64,
+) -> PersistedAgent {
+    PersistedAgent {
+        id: id.to_string(),
+        name: config.name.clone(),
+        model: config.model.clone(),
+        provider: provider_id.to_string(),
+        task: config.task.clone(),
+        cwd: config.cwd.clone(),
+        permission_mode: config.permission_mode.clone(),
+        dangerously_ignore_permissions: config.dangerously_ignore_permissions.unwrap_or(false),
+        auto_accept_edits: config.auto_accept_edits.unwrap_or(false),
+        headless: config.headless.unwrap_or(false),
+        started_at,
+        spawned_by_ticket_id: config.spawned_by_ticket_id.clone(),
+        spawned_by_goal_id: config.spawned_by_goal_id.clone(),
+    }
+}
+
+fn persistence_record_spawn(app: &AppHandle, agent: PersistedAgent) {
+    if let Some(state) = app.try_state::<AgentPersistenceState>() {
+        if let Ok(mut p) = state.lock() {
+            p.record_spawn(agent);
+        }
+    }
+}
+
+fn persistence_record_exit(app: &AppHandle, agent_id: &str) {
+    if let Some(state) = app.try_state::<AgentPersistenceState>() {
+        if let Ok(mut p) = state.lock() {
+            p.record_exit(agent_id);
+        }
+    }
+}
+
+/// Wraps an interrupted agent's original task in a continuation preamble.
+/// Provider-agnostic: the resumed process starts a fresh session, so it must
+/// be told that earlier progress may already exist in the working tree.
+pub fn resume_task_prompt(original_task: &str) -> String {
+    format!(
+        "You are resuming work that was interrupted by an IDE restart. \
+         The original task was:\n\n{}\n\nFirst inspect the repository's current \
+         state — part of the work may already be done. Then continue from where \
+         the previous run left off instead of starting over.",
+        original_task
+    )
+}
+
 // ── list_agents ─────────────────────────────────────────────────────
 
 pub async fn list_agents_impl(state: &AgentManagerState) -> Result<Vec<AgentInfo>, String> {
@@ -334,6 +390,10 @@ pub async fn spawn_agent_impl(
 
     let mut manager = state.lock().await;
     let id = manager.next_id();
+
+    // Persist the spawn config BEFORE its fields move into `info`, so the
+    // agent can be restored (as interrupted) after an app restart.
+    persistence_record_spawn(app, persisted_from_config(&config, &id, provider_id, now));
 
     let info = AgentInfo {
         id: id.clone(),
@@ -484,6 +544,9 @@ pub async fn spawn_agent_impl(
             },
         );
 
+        // The agent ended on its own — it must not reappear after a restart.
+        persistence_record_exit(&app_clone, &id_clone);
+
         // Release the caller-held terminal session (PTY master + writer).
         on_exit(id_clone);
     });
@@ -531,6 +594,9 @@ pub async fn kill_agent_impl(
     // Removing the AgentProcess only drops our handle to the child — the
     // PTY child process itself keeps running unless explicitly killed.
     let _ = process.child.kill();
+
+    // Explicitly killed agents must not reappear after a restart.
+    persistence_record_exit(app, agent_id);
 
     let _ = app.emit(
         "agent-status",
@@ -625,6 +691,45 @@ mod tests {
         assert!(config.auto_accept_edits.is_none());
         assert!(config.provider.is_none());
         assert!(config.headless.is_none());
+    }
+
+    #[test]
+    fn test_persisted_from_config_captures_all_spawn_fields() {
+        let config = AgentConfig {
+            name: "Agent (alpha)".to_string(),
+            model: "opus".to_string(),
+            task: "fix the login flow".to_string(),
+            cwd: Some("/repo".to_string()),
+            permission_mode: Some("acceptEdits".to_string()),
+            dangerously_ignore_permissions: None,
+            auto_accept_edits: Some(true),
+            provider: Some("claude".to_string()),
+            headless: Some(false),
+            spawned_by_ticket_id: Some("ticket-7".to_string()),
+            spawned_by_goal_id: None,
+        };
+        let persisted = persisted_from_config(&config, "agent-4", "claude", 123);
+        assert_eq!(persisted.id, "agent-4");
+        assert_eq!(persisted.name, "Agent (alpha)");
+        assert_eq!(persisted.model, "opus");
+        assert_eq!(persisted.provider, "claude");
+        assert_eq!(persisted.task, "fix the login flow");
+        assert_eq!(persisted.cwd.as_deref(), Some("/repo"));
+        assert_eq!(persisted.permission_mode.as_deref(), Some("acceptEdits"));
+        assert!(!persisted.dangerously_ignore_permissions);
+        assert!(persisted.auto_accept_edits);
+        assert!(!persisted.headless);
+        assert_eq!(persisted.started_at, 123);
+        assert_eq!(persisted.spawned_by_ticket_id.as_deref(), Some("ticket-7"));
+        assert!(persisted.spawned_by_goal_id.is_none());
+    }
+
+    #[test]
+    fn test_resume_task_prompt_embeds_original_task_and_continuation_hint() {
+        let prompt = resume_task_prompt("build the parser");
+        assert!(prompt.contains("build the parser"));
+        assert!(prompt.contains("interrupted by an IDE restart"));
+        assert!(prompt.contains("continue from where the previous run left off"));
     }
 
     #[test]
