@@ -60,6 +60,10 @@ export function useIDEState() {
   const selectedAgentId = useStore((s) => s.selectedAgentId);
   const selectAgent = useStore((s) => s.selectAgent);
   const killAgentsForRepoPath = useStore((s) => s.killAgentsForRepoPath);
+  const interruptedAgents = useStore((s) => s.interruptedAgents);
+  const loadInterruptedAgents = useStore((s) => s.loadInterruptedAgents);
+  const resumeInterruptedAgent = useStore((s) => s.resumeInterruptedAgent);
+  const discardInterruptedAgent = useStore((s) => s.discardInterruptedAgent);
   const canvasNodes = useStore((s) => s.canvasNodes);
   const canvasEdges = useStore((s) => s.canvasEdges);
   const setCanvasData = useStore((s) => s.setCanvasData);
@@ -238,6 +242,10 @@ export function useIDEState() {
     selectedAgentId,
     selectAgent,
     killAgentsForRepoPath,
+    interruptedAgents,
+    loadInterruptedAgents,
+    resumeInterruptedAgent,
+    discardInterruptedAgent,
     canvasNodes,
     canvasEdges,
     setCanvasData,

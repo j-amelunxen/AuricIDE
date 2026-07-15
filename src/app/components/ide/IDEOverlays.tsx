@@ -122,6 +122,7 @@ export function IDEOverlays({
   ticketCwd,
 }: IDEOverlaysProps) {
   const goalsDraft = useStore((s) => s.goalsDraft);
+  const activeAgents = useStore((s) => s.agents);
   return (
     <>
       <SpawnAgentDialog
@@ -155,6 +156,8 @@ export function IDEOverlays({
       />
       <AgentTerminalModal
         agent={fullscreenAgent}
+        agents={activeAgents}
+        onSwitchAgent={setFullscreenAgent}
         onClose={() => setFullscreenAgent(null)}
         onSelectionSpawn={handleSelectionSpawn}
       />

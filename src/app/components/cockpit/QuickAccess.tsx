@@ -53,7 +53,7 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
   return (
     <div
       data-testid={`quick-access-item-${project.path}`}
-      className={`group/tile relative flex w-16 flex-col items-center gap-1.5 quick-access-tile-enter ${
+      className={`group/tile relative flex w-20 flex-col items-center gap-1.5 quick-access-tile-enter ${
         removing ? 'quick-access-tile-exit' : ''
       }`}
     >
@@ -75,7 +75,10 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
       >
         {icon.initials}
       </button>
-      <span className="max-w-full truncate text-[10px] font-medium text-foreground-muted">
+      <span
+        title={project.name}
+        className="max-w-full truncate text-[10px] font-medium text-foreground-muted"
+      >
         {project.name}
       </span>
       <button
@@ -144,10 +147,11 @@ export interface QuickAccessProps {
 
 /**
  * Quick Access — a stable grid of starred projects ("apps") in Mission Control,
- * for one-click switching between workspaces. Order is fixed at star-time
- * (insertion order) and never reflows by recency, so a project's tile stays put:
- * muscle memory and spatial locality hold across sessions. Unstarring requires
- * a deliberate hold (not a single tap) so a stray click can't silently drop a tile.
+ * for one-click switching between workspaces. Tiles are sorted alphabetically
+ * by name — a predictable order that stays put across sessions (names change
+ * far less often than recency), so muscle memory and spatial locality hold
+ * without the row reshuffling. Unstarring requires a deliberate hold (not a
+ * single tap) so a stray click can't silently drop a tile.
  */
 export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) {
   const starredProjects = useStore((s) => s.starredProjects);
@@ -179,6 +183,10 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
       ]
     : [];
 
+  const sortedProjects = [...starredProjects].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+  );
+
   const currentStarred =
     currentPath !== null && starredProjects.some((p) => p.path === currentPath);
   const canStarCurrent = currentPath !== null && !currentStarred;
@@ -201,8 +209,8 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           </span>
         )}
       </div>
-      <div className="flex flex-wrap items-start justify-center gap-3">
-        {starredProjects.map((project) => (
+      <div className="flex flex-wrap items-start justify-center gap-x-2 gap-y-4">
+        {sortedProjects.map((project) => (
           <ProjectTile
             key={project.path}
             project={project}
@@ -218,7 +226,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           />
         ))}
         {canStarCurrent && (
-          <div className="flex w-16 flex-col items-center gap-1.5 quick-access-tile-enter">
+          <div className="flex w-20 flex-col items-center gap-1.5 quick-access-tile-enter">
             <button
               type="button"
               data-testid="quick-access-add-current"

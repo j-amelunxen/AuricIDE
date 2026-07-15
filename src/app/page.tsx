@@ -483,12 +483,15 @@ export default function Home() {
         rightPanel={
           <MemoizedAgentsPanel
             agents={state.agents}
+            interruptedAgents={state.interruptedAgents}
             onSpawn={() => state.setSpawnDialogOpen(true)}
             onKill={handlers.handleKillAgent}
             onKillRepo={state.killAgentsForRepoPath}
             onSelectAgent={handlers.handleSelectAgent}
             onImageDrop={handlers.handleImageDrop}
             onCollapse={() => state.setRightCollapsed(true)}
+            onResumeInterrupted={handlers.handleResumeInterrupted}
+            onDiscardInterrupted={state.discardInterruptedAgent}
           />
         }
         bottomPanel={

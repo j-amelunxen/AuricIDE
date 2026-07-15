@@ -393,6 +393,18 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     // Basic implementation placeholder
   }, []);
 
+  const handleResumeInterrupted = useCallback(
+    async (id: string) => {
+      try {
+        const agent = await state.resumeInterruptedAgent(id);
+        state.setFullscreenAgent(agent);
+      } catch (err) {
+        console.error('Failed to resume interrupted agent', err);
+      }
+    },
+    [state]
+  );
+
   const handleOpenTerminalHere = useCallback(
     (folderPath: string) => {
       const id = `term-${Date.now()}`;
@@ -1097,6 +1109,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleSpawnNewAgent,
     handleKillAgent,
     handleSelectAgent,
+    handleResumeInterrupted,
     handleImageDrop,
     handleOpenTerminalHere,
     handleCloseTerminal,

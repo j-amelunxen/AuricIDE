@@ -43,6 +43,12 @@ export function useIDEActions(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // On mount: restore agents that were running when the app last quit
+  // (shown as "interrupted" in the agents panel, resumable per click)
+  useEffect(() => {
+    void useStore.getState().loadInterruptedAgents();
+  }, []);
+
   // On mount: load provider info for default model resolution
   useEffect(() => {
     listProviders()

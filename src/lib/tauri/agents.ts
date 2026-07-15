@@ -81,6 +81,37 @@ export async function killAgentsForRepo(repoPath: string): Promise<number> {
   return await invoke<number>('kill_agents_for_repo', { repoPath });
 }
 
+/** An agent that was running when the app last quit — its process died with
+ * the app, but its spawn config survived and it can be resumed or discarded. */
+export interface InterruptedAgent {
+  id: string;
+  name: string;
+  model: string;
+  provider: string;
+  task: string;
+  cwd?: string | null;
+  permissionMode?: string | null;
+  dangerouslyIgnorePermissions: boolean;
+  autoAcceptEdits: boolean;
+  headless: boolean;
+  startedAt: number;
+  spawnedByTicketId?: string | null;
+  spawnedByGoalId?: string | null;
+}
+
+export async function listInterruptedAgents(): Promise<InterruptedAgent[]> {
+  return await invoke<InterruptedAgent[]>('list_interrupted_agents');
+}
+
+/** Re-spawns an interrupted agent with a continuation task and returns the new agent. */
+export async function resumeInterruptedAgent(agentId: string): Promise<AgentInfo> {
+  return await invoke<AgentInfo>('resume_interrupted_agent', { agentId });
+}
+
+export async function discardInterruptedAgent(agentId: string): Promise<void> {
+  await invoke('discard_interrupted_agent', { agentId });
+}
+
 export async function sendToAgent(agentId: string, message: string): Promise<void> {
   // Wir nutzen hier denselben Mechanismus wie beim Terminal,
   // um Daten an den Stdin des Agenten-Prozesses zu senden.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateProjectIcon } from './projectIcon';
+import { generateProjectIcon, PALETTE_HUES } from './projectIcon';
 
 describe('generateProjectIcon', () => {
   it('is deterministic — same identity always yields the same icon', () => {
@@ -8,16 +8,30 @@ describe('generateProjectIcon', () => {
     expect(a).toEqual(b);
   });
 
-  it('gives different projects different hues', () => {
-    const apps = generateProjectIcon('/Users/jen/projects/apps');
-    const web = generateProjectIcon('/Users/jen/projects/website');
-    expect(apps.hue).not.toBe(web.hue);
+  it('assigns hues only from the curated palette', () => {
+    for (const p of ['/a/apps', '/b/website', '/c/deep/thing', '/x/my-cool-app', '']) {
+      expect(PALETTE_HUES).toContain(generateProjectIcon(p).hue);
+    }
   });
 
-  it('distinguishes same name under different paths', () => {
+  it('spreads a realistic project set across several palette slots', () => {
+    const paths = [
+      '/w/alpha-pipeline',
+      '/w/bravoFlow',
+      '/w/charlie-full',
+      '/w/deltas',
+      '/w/echoAgent',
+    ];
+    const hues = new Set(paths.map((p) => generateProjectIcon(p).hue));
+    expect(hues.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('uses uniform saturation and lightness so tiles read as one family', () => {
     const one = generateProjectIcon('/a/apps');
-    const two = generateProjectIcon('/b/apps');
-    expect(one.hue).not.toBe(two.hue);
+    const two = generateProjectIcon('/b/website');
+    const strip = (s: string) => s.replace(/hsl\(\d+,/, 'hsl(H,');
+    expect(strip(one.gradientFrom)).toBe(strip(two.gradientFrom));
+    expect(strip(one.gradientTo)).toBe(strip(two.gradientTo));
   });
 
   it('derives up to two initials from the last path segment', () => {
@@ -44,6 +58,14 @@ describe('generateProjectIcon', () => {
       expect(icon.hue).toBeGreaterThanOrEqual(0);
       expect(icon.hue).toBeLessThan(360);
     }
+  });
+
+  it('keeps the gradient inside the tile hue family', () => {
+    const icon = generateProjectIcon('/x/apps');
+    const from = Number(/hsl\((\d+)/.exec(icon.gradientFrom)?.[1]);
+    const to = Number(/hsl\((\d+)/.exec(icon.gradientTo)?.[1]);
+    expect(from).toBe(icon.hue);
+    expect((to - from + 360) % 360).toBeLessThanOrEqual(20);
   });
 
   it('emits gradient stops as hsl() strings', () => {
