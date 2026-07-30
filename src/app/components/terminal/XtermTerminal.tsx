@@ -14,6 +14,7 @@ import {
 import { getPromptTemplate, FALLBACK_PROMPT_TEMPLATE } from '@/lib/tauri/providers';
 import { xtermMounted, xtermUnmounted } from '@/lib/metrics';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
+import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { createRenderKeepAlive } from '@/lib/terminal/renderKeepAlive';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
@@ -88,13 +89,12 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       keepAlive.nudge();
     };
 
-    // Propagate xterm resize events to PTY backend (skip for agent tabs —
-    // the fullscreen modal owns the agent PTY size)
-    if (!agentId) {
-      term.onResize(({ rows, cols }) => {
-        resizeShell(id, rows, cols).catch(() => {});
-      });
-    }
+    // Propagate xterm resize events to PTY backend. For agent sessions this
+    // also keeps the headless mirror in lockstep (resizeShell handles that),
+    // so whichever view fits last owns the PTY geometry — tmux model.
+    term.onResize(({ rows, cols }) => {
+      resizeShell(id, rows, cols).catch(() => {});
+    });
 
     // ResizeObserver triggers fitAddon.fit() on container size changes
     let resizeTimer: ReturnType<typeof setTimeout>;
@@ -148,9 +148,26 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
         try {
           fitAddon.fit();
         } catch {}
-        const detach = attachAgentStream({ write: writeTerm }, agentId);
+        // Sync PTY + mirror to this view's geometry BEFORE attaching, so the
+        // replayed screen is laid out for the width it is displayed at. The
+        // TUI agent repaints itself for the new size via SIGWINCH.
+        resizeShell(id, term.rows, term.cols).catch(() => {});
+        let detach = attachAgentStream({ write: writeTerm }, agentId);
+        // Another view (the fullscreen modal) may take the PTY geometry over.
+        // Adopt it and redraw from a fresh mirror snapshot — keeping a screen
+        // laid out for the old width produces scrambled fragments.
+        const unsubResize = onAgentPtyResize(agentId, ({ rows, cols }) => {
+          if (term.rows === rows && term.cols === cols) return;
+          detach();
+          term.resize(cols, rows);
+          term.reset();
+          detach = attachAgentStream({ write: writeTerm }, agentId);
+        });
         setIsInitialized(true);
-        return detach;
+        return () => {
+          unsubResize();
+          detach();
+        };
       }
 
       if (id === 'main-terminal' && !cwd) {

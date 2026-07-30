@@ -13,6 +13,11 @@ const mockTerminal = {
   dispose: vi.fn(),
   rows: 24,
   cols: 80,
+  resize: vi.fn((cols: number, rows: number) => {
+    mockTerminal.cols = cols;
+    mockTerminal.rows = rows;
+  }),
+  reset: vi.fn(),
   attachCustomKeyEventHandler: vi.fn((handler: (event: KeyboardEvent) => boolean) => {
     keyEventHandler = handler;
   }),
@@ -65,6 +70,26 @@ vi.mock('@/lib/terminal/imageInsert', () => ({
     mockAttachFileDrop(container, sendText),
 }));
 
+// Agent-mode collaborators: stream attach + PTY resize notifications
+const mockDetachAgentStream = vi.fn();
+const mockAttachAgentStream = vi.fn((..._args: unknown[]) => mockDetachAgentStream);
+vi.mock('@/lib/terminal/agentStream', () => ({
+  attachAgentStream: (...args: unknown[]) => mockAttachAgentStream(...args),
+}));
+
+let ptyResizeCb: ((size: { rows: number; cols: number }) => void) | null = null;
+const mockUnsubPtyResize = vi.fn();
+const mockOnAgentPtyResize = vi.fn(
+  (_agentId: string, cb: (size: { rows: number; cols: number }) => void) => {
+    ptyResizeCb = cb;
+    return mockUnsubPtyResize;
+  }
+);
+vi.mock('@/lib/terminal/agentMirror', () => ({
+  onAgentPtyResize: (agentId: string, cb: (size: { rows: number; cols: number }) => void) =>
+    mockOnAgentPtyResize(agentId, cb),
+}));
+
 vi.mock('@/lib/tauri/providers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/tauri/providers')>();
   return {
@@ -101,6 +126,9 @@ describe('XtermTerminal', () => {
     resizeHandler = null;
     pasteSendText = null;
     dropSendText = null;
+    ptyResizeCb = null;
+    mockTerminal.cols = 80;
+    mockTerminal.rows = 24;
   });
 
   it('registers a custom key event handler', () => {
@@ -159,6 +187,59 @@ describe('XtermTerminal', () => {
 
     resizeHandler!({ rows: 50, cols: 120 });
     expect(mockResizeShell).toHaveBeenCalledWith('test-session', 50, 120);
+  });
+
+  describe('agent mode (bottom panel preview)', () => {
+    const renderAgent = async () => {
+      const utils = render(<XtermTerminal id="agent-a1" agentId="a1" onInput={vi.fn()} />);
+      await vi.waitFor(() => expect(mockAttachAgentStream).toHaveBeenCalledTimes(1));
+      return utils;
+    };
+
+    it('syncs the agent PTY to the fitted size before attaching the stream', async () => {
+      await renderAgent();
+      expect(mockResizeShell).toHaveBeenCalledWith('agent-a1', 24, 80);
+      // Sync must precede the attach so the mirror snapshot is laid out for
+      // the geometry this view displays at.
+      expect(mockResizeShell.mock.invocationCallOrder[0]).toBeLessThan(
+        mockAttachAgentStream.mock.invocationCallOrder[0]
+      );
+    });
+
+    it('propagates xterm resizes to the agent PTY', async () => {
+      await renderAgent();
+      expect(resizeHandler).not.toBeNull();
+      resizeHandler!({ rows: 8, cols: 220 });
+      expect(mockResizeShell).toHaveBeenCalledWith('agent-a1', 8, 220);
+    });
+
+    it('adopts an external PTY resize by re-attaching at the new geometry', async () => {
+      await renderAgent();
+      expect(ptyResizeCb).not.toBeNull();
+
+      ptyResizeCb!({ rows: 40, cols: 160 });
+
+      expect(mockDetachAgentStream).toHaveBeenCalledTimes(1);
+      expect(mockTerminal.resize).toHaveBeenCalledWith(160, 40);
+      expect(mockTerminal.reset).toHaveBeenCalledTimes(1);
+      expect(mockAttachAgentStream).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores external resize notifications that match the current size', async () => {
+      await renderAgent();
+
+      ptyResizeCb!({ rows: 24, cols: 80 });
+
+      expect(mockTerminal.reset).not.toHaveBeenCalled();
+      expect(mockAttachAgentStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes from PTY resize events and detaches on unmount', async () => {
+      const { unmount } = await renderAgent();
+      unmount();
+      expect(mockUnsubPtyResize).toHaveBeenCalledTimes(1);
+      expect(mockDetachAgentStream).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('image paste & file drop', () => {

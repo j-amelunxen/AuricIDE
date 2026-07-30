@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
+import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { ContextMenu } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
@@ -91,7 +92,18 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       // Single source of truth: the store (see attachAgentStream). A second
       // Tauri event channel had an await gap between backfill and live
       // subscribe, so chunks got lost or shown twice.
-      const unsubStore = attachAgentStream(term, agentId);
+      let detachStream = attachAgentStream(term, agentId);
+
+      // Another view (the bottom terminal preview) may take the PTY geometry
+      // over. Adopt it and redraw from a fresh mirror snapshot — keeping a
+      // screen laid out for the old width produces scrambled fragments.
+      const unsubPtyResize = onAgentPtyResize(agentId, ({ rows, cols }) => {
+        if (term.rows === rows && term.cols === cols) return;
+        detachStream();
+        term.resize(cols, rows);
+        term.reset();
+        detachStream = attachAgentStream(term, agentId);
+      });
 
       // Forward keyboard input to the agent PTY
       const sendText = (data: string) => {
@@ -125,7 +137,8 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 
       return () => {
         disposed = true;
-        unsubStore();
+        unsubPtyResize();
+        detachStream();
         detachImagePaste();
         detachFileDrop();
         clearTimeout(resizeTimer);

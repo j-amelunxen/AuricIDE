@@ -9,6 +9,8 @@ import { useStore } from '@/lib/store';
 const mockGetSelection = vi.fn().mockReturnValue('');
 const mockWrite = vi.fn();
 const mockFit = vi.fn();
+const mockResize = vi.fn();
+const mockReset = vi.fn();
 
 // Mock xterm.js — AgentXterm dynamically imports these
 vi.mock('@xterm/xterm', () => ({
@@ -22,6 +24,14 @@ vi.mock('@xterm/xterm', () => ({
     }
     onData() {}
     onResize() {}
+    resize(cols: number, rows: number) {
+      this.cols = cols;
+      this.rows = rows;
+      mockResize(cols, rows);
+    }
+    reset() {
+      mockReset();
+    }
     getSelection() {
       return mockGetSelection();
     }
@@ -224,6 +234,35 @@ describe('AgentTerminalModal', () => {
       });
 
       expect(mockWrite).not.toHaveBeenCalled();
+    });
+
+    it('adopts an external PTY resize by re-attaching at the new geometry', async () => {
+      const { resizeAgentMirror, disposeAllAgentMirrors } =
+        await import('@/lib/terminal/agentMirror');
+      disposeAllAgentMirrors();
+      mockResize.mockClear();
+      mockReset.mockClear();
+
+      render(<AgentTerminalModal agent={streamAgent('stream-resize')} onClose={vi.fn()} />);
+      await flushSetup();
+      mockWrite.mockClear();
+
+      // Another view (e.g. the bottom terminal preview) takes over the PTY size.
+      act(() => {
+        resizeAgentMirror('stream-resize', 40, 160);
+      });
+
+      expect(mockResize).toHaveBeenCalledWith(160, 40);
+      expect(mockReset).toHaveBeenCalled();
+
+      // The re-attached stream still receives live chunks exactly once.
+      act(() => {
+        useStore.getState().appendAgentLog('stream-resize', 'after-resize');
+      });
+      const written = mockWrite.mock.calls.map((c) => c[0]).join('');
+      expect(written).toContain('after-resize');
+
+      disposeAllAgentMirrors();
     });
 
     it('stops writing after unmount', async () => {

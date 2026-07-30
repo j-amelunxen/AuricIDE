@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { snapshotAgentScreen } from './agentMirror';
+import { agentMirrorResized, snapshotAgentScreen } from './agentMirror';
 
 export interface TerminalLike {
   write: (data: string) => void;
@@ -14,12 +14,15 @@ export interface TerminalLike {
  * second event channel (terminal-out) alongside a history backfill leaves
  * an await gap in which chunks are lost or written twice.
  *
- * When trimming has already dropped chunks, raw replay starts mid-frame and
- * corrupts the screen (TUI redraws assume rows the tail never painted). In
- * that case the retained history is NOT replayed; instead a serialized
- * screen snapshot from the agent's mirror terminal is written, and live
- * chunks that arrive while the snapshot settles are buffered and deduped
- * against the snapshot's seq.
+ * Raw replay is only faithful while every retained chunk was produced at
+ * one PTY geometry AND nothing was trimmed. When trimming has dropped
+ * chunks, replay starts mid-frame and corrupts the screen (TUI redraws
+ * assume rows the tail never painted); when the PTY was resized mid-run,
+ * early frames were laid out for a width that no longer exists. In either
+ * case the retained history is NOT replayed; instead a serialized screen
+ * snapshot from the agent's mirror terminal is written, and live chunks
+ * that arrive while the snapshot settles are buffered and deduped against
+ * the snapshot's seq.
  *
  * Returns a detach function.
  */
@@ -35,7 +38,7 @@ export function attachAgentStream(term: TerminalLike, agentId: string): () => vo
   // they can be replayed after it — minus those the snapshot already covers.
   let buffered: { seq: number; data: string }[] | null = null;
 
-  const snapshot = trimmed ? snapshotAgentScreen(agentId) : null;
+  const snapshot = trimmed || agentMirrorResized(agentId) ? snapshotAgentScreen(agentId) : null;
   if (snapshot) {
     buffered = [];
     snapshot.then(({ data, seq }) => {
