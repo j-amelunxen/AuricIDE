@@ -15,7 +15,7 @@ import { Terminal } from '@xterm/headless';
 import { useStore } from '../store';
 import { MAX_AGENT_LOG_BYTES } from '../store/agentSlice';
 import { attachAgentStream } from './agentStream';
-import { disposeAllAgentMirrors } from './agentMirror';
+import { disposeAllAgentMirrors, resizeAgentMirror, snapshotAgentScreen } from './agentMirror';
 
 const COLS = 80;
 const ROWS = 24;
@@ -124,6 +124,50 @@ describe('agent terminal screen consistency', () => {
     expect(screenText(lateTerm)).toEqual(screenText(liveTerm));
     expect(screenText(lateTerm).join('\n')).toContain('fertig ✔');
     expect(screenText(lateTerm).join('\n')).toContain('vitest + RTL aufsetzen');
+
+    detachLive();
+    detachLate();
+  });
+
+  it('late attach after a PTY resize shows the reflowed screen, not a raw-history replay', async () => {
+    const agentId = 'resized';
+    // Always-attached reference terminal at the initial 80-col geometry.
+    const liveTerm = makeTerm();
+    const detachLive = attachAgentStream(liveTerm, agentId);
+
+    // Lines longer than 80 cols wrap into two rows each, then a status row is
+    // painted via absolute positioning — its effective position depends on
+    // that wrapping.
+    const longLines = Array.from(
+      { length: 6 },
+      (_, i) => `line ${i} ` + 'x'.repeat(95) + '\r\n'
+    ).join('');
+    await appendAndSettle(agentId, ['\x1b[2J\x1b[H' + longLines, '\x1b[20;1H\x1b[2Kstatus: alpha']);
+    await flush(liveTerm);
+    await snapshotAgentScreen(agentId); // drain the mirror's write queue
+
+    // The PTY gets resized to 120 cols (e.g. by the bottom terminal preview);
+    // mirror and live view stay in lockstep, wrapped lines reflow.
+    resizeAgentMirror(agentId, ROWS, 120);
+    liveTerm.resize(120, ROWS);
+    await appendAndSettle(agentId, ['\x1b[21;1H\x1b[2Kstatus: beta']);
+
+    // A view attaching now must see the reflowed screen. Raw-history replay
+    // would re-run the 80-col frames at 120 cols and place rows differently.
+    const lateTerm = new Terminal({
+      cols: 120,
+      rows: ROWS,
+      scrollback: 1000,
+      allowProposedApi: true,
+    });
+    const detachLate = attachAgentStream(lateTerm, agentId);
+
+    await new Promise((r) => setTimeout(r, 0));
+    await flush(liveTerm);
+    await flush(lateTerm);
+
+    expect(screenText(lateTerm)).toEqual(screenText(liveTerm));
+    expect(screenText(lateTerm).join('\n')).toContain('status: beta');
 
     detachLive();
     detachLate();

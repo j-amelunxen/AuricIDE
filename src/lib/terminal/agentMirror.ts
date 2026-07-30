@@ -27,6 +27,12 @@ interface AgentMirror {
   serialize: SerializeAddon;
   /** Seq of the last chunk queued into the mirror. */
   seq: number;
+  /**
+   * True once the mirror was resized while it already held output. Raw
+   * history then spans multiple geometries, so only a serialized snapshot
+   * reproduces the current screen faithfully.
+   */
+  resized: boolean;
 }
 
 export interface AgentScreenSnapshot {
@@ -43,6 +49,10 @@ const mirrors = new Map<string, AgentMirror>();
 /** PTY sizes reported before the first chunk arrived for an agent. */
 const pendingSizes = new Map<string, { rows: number; cols: number }>();
 
+type PtySizeListener = (size: { rows: number; cols: number }) => void;
+/** Attached views listening for PTY geometry changes (tmux reattach model). */
+const resizeListeners = new Map<string, Set<PtySizeListener>>();
+
 function createMirror(agentId: string): AgentMirror {
   const size = pendingSizes.get(agentId);
   const term = new Terminal({
@@ -53,7 +63,7 @@ function createMirror(agentId: string): AgentMirror {
   });
   const serialize = new SerializeAddon();
   term.loadAddon(serialize);
-  const mirror: AgentMirror = { term, serialize, seq: 0 };
+  const mirror: AgentMirror = { term, serialize, seq: 0, resized: false };
   mirrors.set(agentId, mirror);
   return mirror;
 }
@@ -115,11 +125,44 @@ export function snapshotAgentScreen(agentId: string): Promise<AgentScreenSnapsho
 
 /** Keep the mirror's dimensions in lockstep with the agent PTY. */
 export function resizeAgentMirror(agentId: string, rows: number, cols: number): void {
+  const prev = pendingSizes.get(agentId);
   pendingSizes.set(agentId, { rows, cols });
   const mirror = mirrors.get(agentId);
   if (mirror && (mirror.term.rows !== rows || mirror.term.cols !== cols)) {
     mirror.term.resize(cols, rows);
+    mirror.resized = true;
   }
+  if (!prev || prev.rows !== rows || prev.cols !== cols) {
+    for (const listener of Array.from(resizeListeners.get(agentId) ?? [])) {
+      listener({ rows, cols });
+    }
+  }
+}
+
+/**
+ * Subscribe to PTY geometry changes for an agent. Attached views use this to
+ * adopt a size another view forced onto the PTY (tmux "last attach wins"):
+ * resize to it and redraw from a fresh snapshot instead of keeping a screen
+ * laid out for the old width.
+ */
+export function onAgentPtyResize(agentId: string, listener: PtySizeListener): () => void {
+  let set = resizeListeners.get(agentId);
+  if (!set) {
+    set = new Set();
+    resizeListeners.set(agentId, set);
+  }
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    if (set.size === 0 && resizeListeners.get(agentId) === set) {
+      resizeListeners.delete(agentId);
+    }
+  };
+}
+
+/** True when the agent's raw log history spans more than one PTY geometry. */
+export function agentMirrorResized(agentId: string): boolean {
+  return mirrors.get(agentId)?.resized ?? false;
 }
 
 export function disposeAgentMirror(agentId: string): void {
@@ -136,4 +179,5 @@ export function disposeAllAgentMirrors(): void {
     disposeAgentMirror(agentId);
   }
   pendingSizes.clear();
+  resizeListeners.clear();
 }
