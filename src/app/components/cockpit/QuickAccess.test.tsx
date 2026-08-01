@@ -252,6 +252,18 @@ describe('QuickAccess', () => {
       fireEvent.contextMenu(screen.getByTestId('quick-access-add-current'));
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
+
+    it('copies the working directory path to the clipboard via "Copy Working Directory"', () => {
+      const writeText = vi.fn();
+      Object.assign(navigator, { clipboard: { writeText } });
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /copy working directory/i }));
+      expect(writeText).toHaveBeenCalledWith('/a/website');
+    });
   });
 
   it('marks the active project tile', () => {

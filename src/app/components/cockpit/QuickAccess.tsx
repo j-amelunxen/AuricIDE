@@ -180,6 +180,13 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
             setSpawnDialogOpen(true);
           },
         },
+        {
+          label: 'Copy Working Directory',
+          icon: 'content_copy',
+          action: () => {
+            navigator.clipboard.writeText(contextMenu.path);
+          },
+        },
       ]
     : [];
 
