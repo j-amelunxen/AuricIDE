@@ -3,6 +3,7 @@
 import { CommandPalette } from '@/app/components/ide/CommandPalette';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { NewItemModal } from '@/app/components/explorer/NewItemModal';
+import { RenameItemModal } from '@/app/components/explorer/RenameItemModal';
 import { FileSearch } from '@/app/components/ide/FileSearch';
 import { FileSelector } from '@/app/components/ide/FileSelector';
 import { SettingsModal } from '@/app/components/ide/SettingsModal';
@@ -66,6 +67,10 @@ interface IDEOverlaysProps {
   setNewItemModal: (modal: { type: 'file' | 'folder'; parentDir: string } | null) => void;
   handleCreateNewItem: (name: string) => void;
 
+  renameDialog: { path: string; oldName: string; isDirectory: boolean } | null;
+  setRenameDialog: (dialog: { path: string; oldName: string; isDirectory: boolean } | null) => void;
+  handleRenameConfirm: (name: string) => void;
+
   projectFiles: string[];
   fileSearchOpen: boolean;
   setFileSearchOpen: (open: boolean) => void;
@@ -113,6 +118,9 @@ export function IDEOverlays({
   newItemModal,
   setNewItemModal,
   handleCreateNewItem,
+  renameDialog,
+  setRenameDialog,
+  handleRenameConfirm,
   projectFiles,
   fileSearchOpen,
   setFileSearchOpen,
@@ -190,6 +198,14 @@ export function IDEOverlays({
           type={newItemModal.type}
           onConfirm={handleCreateNewItem}
           onCancel={() => setNewItemModal(null)}
+        />
+      )}
+      {renameDialog && (
+        <RenameItemModal
+          oldName={renameDialog.oldName}
+          isDirectory={renameDialog.isDirectory}
+          onConfirm={handleRenameConfirm}
+          onCancel={() => setRenameDialog(null)}
         />
       )}
       <FileSearch
