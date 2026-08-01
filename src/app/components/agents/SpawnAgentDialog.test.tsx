@@ -63,9 +63,9 @@ describe('SpawnAgentDialog', () => {
     expect(chevron).toHaveTextContent('expand_more');
   });
 
-  it('deploy button is disabled when task is empty', () => {
+  it('deploy button is enabled even when task is empty', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeEnabled();
   });
 
   it('deploy button is enabled when task has content', async () => {
@@ -73,6 +73,23 @@ describe('SpawnAgentDialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
     expect(screen.getByRole('button', { name: /start agent/i })).toBeEnabled();
+  });
+
+  it('deploys with a "wait" task when the instruction is left empty', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ task: 'wait' }));
+  });
+
+  it('deploys with a "wait" task when the instruction is only whitespace', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+    await user.type(screen.getByLabelText(/instruction/i), '   ');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ task: 'wait' }));
   });
 
   it('calls onSpawn with correct config on deploy', async () => {
