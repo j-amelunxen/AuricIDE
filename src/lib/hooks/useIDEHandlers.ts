@@ -748,6 +748,33 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     revealInFileManager(path);
   }, []);
 
+  const handleRenameConfirm = useCallback(
+    async (newName: string) => {
+      const dialog = state.renameDialog;
+      if (!dialog) return;
+      const parentDir = dialog.path.split('/').slice(0, -1).join('/');
+      const destination = `${parentDir}/${newName}`;
+      if (destination === dialog.path) {
+        state.setRenameDialog(null);
+        return;
+      }
+      try {
+        await movePath(dialog.path, destination);
+      } catch (err) {
+        const message = typeof err === 'string' ? err : `Could not rename "${dialog.oldName}"`;
+        state.showToast(message, 'error');
+        return;
+      }
+      state.renamePath(dialog.path, destination);
+      if (state.selectedPath === dialog.path || state.selectedPath?.startsWith(dialog.path + '/')) {
+        state.selectFile(state.selectedPath.replace(dialog.path, destination));
+      }
+      state.setRenameDialog(null);
+      await handleRefresh(parentDir);
+    },
+    [state, handleRefresh]
+  );
+
   const handleDelete = useCallback(
     async (node: FileTreeNode) => {
       if (confirm(`Are you sure you want to delete ${node.name}?`)) {
@@ -925,6 +952,17 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         action: () => handleOpenTerminalHere(node.path),
       });
     }
+
+    options.push({
+      label: 'Rename',
+      icon: 'edit',
+      action: () =>
+        state.setRenameDialog({
+          path: node.path,
+          oldName: node.name,
+          isDirectory: node.isDirectory,
+        }),
+    });
 
     options.push({
       label: 'Delete',
@@ -1121,6 +1159,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleDiffFileClick,
     handleContextMenu,
     handleCopyPath,
+    handleRenameConfirm,
     handleDelete,
     handlePaste,
     handleCreateNewItem,

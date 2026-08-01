@@ -9,6 +9,7 @@ const mockReadFile = vi.fn();
 const mockWriteFile = vi.fn();
 const mockCreateDirectory = vi.fn();
 const mockListAllFiles = vi.fn();
+const mockMovePath = vi.fn();
 
 vi.mock('@/lib/tauri/fs', () => ({
   readDirectory: (...args: unknown[]) => mockReadDirectory(...args),
@@ -17,6 +18,7 @@ vi.mock('@/lib/tauri/fs', () => ({
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
   createDirectory: (...args: unknown[]) => mockCreateDirectory(...args),
   listAllFiles: (...args: unknown[]) => mockListAllFiles(...args),
+  movePath: (...args: unknown[]) => mockMovePath(...args),
 }));
 
 const mockRevealInFileManager = vi.fn();
@@ -80,6 +82,11 @@ describe('useIDEHandlers', () => {
     contextMenu: null,
     newItemModal: null,
     setNewItemModal: vi.fn(),
+    renameDialog: null as { path: string; oldName: string; isDirectory: boolean } | null,
+    setRenameDialog: vi.fn(),
+    renamePath: vi.fn(),
+    showToast: vi.fn(),
+    selectedPath: null as string | null,
     setFileTicketCreate: vi.fn(),
     spawnNewAgent: vi.fn(async () => ({ id: 'a1', provider: 'claude' })),
     setSpawnDialogOpen: vi.fn(),
@@ -110,6 +117,8 @@ describe('useIDEHandlers', () => {
     mockState.rootPath = null;
     mockState.contextMenu = null;
     mockState.newItemModal = null;
+    mockState.renameDialog = null;
+    mockState.selectedPath = null;
     mockFileTree = [];
     mockActiveTabId = null;
     mockState.branchInfo = null;
@@ -404,6 +413,84 @@ describe('useIDEHandlers', () => {
       expect(option).toBeDefined();
       if (option && 'action' in option) option.action!();
       expect(mockRevealInFileManager).toHaveBeenCalledWith('/p/docs');
+    });
+  });
+
+  describe('rename (context menu)', () => {
+    it('offers a Rename option that opens the rename dialog pre-filled with the node', () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'notes.md', path: '/p/notes.md', isDirectory: false },
+      };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const option = result.current.contextMenuOptions.find(
+        (o) => 'label' in o && o.label === 'Rename'
+      );
+      expect(option).toBeDefined();
+      if (option && 'action' in option) option.action!();
+
+      expect(mockState.setRenameDialog).toHaveBeenCalledWith({
+        path: '/p/notes.md',
+        oldName: 'notes.md',
+        isDirectory: false,
+      });
+    });
+
+    it('moves the file to its new name, updates open tabs and refreshes the tree', async () => {
+      mockState.rootPath = '/p';
+      mockState.renameDialog = { path: '/p/notes.md', oldName: 'notes.md', isDirectory: false };
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameConfirm('renamed.md');
+
+      expect(mockMovePath).toHaveBeenCalledWith('/p/notes.md', '/p/renamed.md');
+      expect(mockState.renamePath).toHaveBeenCalledWith('/p/notes.md', '/p/renamed.md');
+      expect(mockState.setRenameDialog).toHaveBeenCalledWith(null);
+    });
+
+    it('re-points the selection when renaming the selected file', async () => {
+      mockState.rootPath = '/p';
+      mockState.renameDialog = { path: '/p/notes.md', oldName: 'notes.md', isDirectory: false };
+      mockState.selectedPath = '/p/notes.md';
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameConfirm('renamed.md');
+
+      expect(mockState.selectFile).toHaveBeenCalledWith('/p/renamed.md');
+    });
+
+    it('surfaces a toast and keeps the dialog open on a naming collision', async () => {
+      mockState.rootPath = '/p';
+      mockState.renameDialog = { path: '/p/notes.md', oldName: 'notes.md', isDirectory: false };
+      mockMovePath.mockRejectedValueOnce('An item named "renamed.md" already exists here');
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameConfirm('renamed.md');
+
+      expect(mockState.showToast).toHaveBeenCalledWith(
+        'An item named "renamed.md" already exists here',
+        'error'
+      );
+      expect(mockState.renamePath).not.toHaveBeenCalled();
+      expect(mockState.setRenameDialog).not.toHaveBeenCalledWith(null);
+    });
+
+    it('does nothing without a pending rename dialog', async () => {
+      mockState.renameDialog = null;
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameConfirm('renamed.md');
+
+      expect(mockMovePath).not.toHaveBeenCalled();
     });
   });
 

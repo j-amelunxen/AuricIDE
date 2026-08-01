@@ -164,6 +164,11 @@ export function useIDEState() {
     type: 'file' | 'folder';
     parentDir: string;
   } | null>(null);
+  const [renameDialog, setRenameDialog] = useState<{
+    path: string;
+    oldName: string;
+    isDirectory: boolean;
+  } | null>(null);
   const [extraTerminals, setExtraTerminals] = useState<ExtraTerminal[]>([]);
   const [diagramDialogFolder, setDiagramDialogFolder] = useState<string | null>(null);
   const canvasTicketCreate = useStore((s) => s.canvasTicketCreate);
@@ -324,6 +329,8 @@ export function useIDEState() {
     setContextMenu,
     newItemModal,
     setNewItemModal,
+    renameDialog,
+    setRenameDialog,
     extraTerminals,
     setExtraTerminals,
     diagramDialogFolder,
