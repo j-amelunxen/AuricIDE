@@ -10,6 +10,7 @@ const mockWriteFile = vi.fn();
 const mockCreateDirectory = vi.fn();
 const mockListAllFiles = vi.fn();
 const mockMovePath = vi.fn();
+const mockExists = vi.fn();
 
 vi.mock('@/lib/tauri/fs', () => ({
   readDirectory: (...args: unknown[]) => mockReadDirectory(...args),
@@ -19,6 +20,7 @@ vi.mock('@/lib/tauri/fs', () => ({
   createDirectory: (...args: unknown[]) => mockCreateDirectory(...args),
   listAllFiles: (...args: unknown[]) => mockListAllFiles(...args),
   movePath: (...args: unknown[]) => mockMovePath(...args),
+  exists: (...args: unknown[]) => mockExists(...args),
 }));
 
 const mockRevealInFileManager = vi.fn();
@@ -51,6 +53,7 @@ describe('useIDEHandlers', () => {
     initProjectDb: vi.fn(),
     setFileTree: vi.fn(),
     setDirectoryChildren: vi.fn(),
+    toggleExpand: vi.fn(),
     closeAllTabs: vi.fn(),
     clearLinkIndex: vi.fn(),
     clearHeadingIndex: vi.fn(),
@@ -378,6 +381,101 @@ describe('useIDEHandlers', () => {
     });
   });
 
+  describe('new file', () => {
+    it('asks for the name up front instead of creating an untitled file', async () => {
+      mockState.rootPath = '/p';
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewFile();
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockState.setNewItemModal).toHaveBeenCalledWith({ type: 'file', parentDir: '/p' });
+    });
+
+    it('marks a clicked folder as selected so it becomes the target', async () => {
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleToggleDir('/p/docs');
+
+      expect(mockState.selectFile).toHaveBeenCalledWith('/p/docs');
+    });
+
+    it('targets the selected folder itself', async () => {
+      mockState.rootPath = '/p';
+      mockState.selectedPath = '/p/docs';
+      mockFileTree = [{ path: '/p/docs', name: 'docs', isDirectory: true, children: [] }];
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewFile();
+
+      expect(mockState.setNewItemModal).toHaveBeenCalledWith({
+        type: 'file',
+        parentDir: '/p/docs',
+      });
+    });
+
+    it('targets the folder of the selected file instead of the project root', async () => {
+      mockState.rootPath = '/p';
+      mockState.selectedPath = '/p/docs/notes.md';
+      mockFileTree = [
+        {
+          path: '/p/docs',
+          name: 'docs',
+          isDirectory: true,
+          children: [{ path: '/p/docs/notes.md', name: 'notes.md', isDirectory: false }],
+        },
+      ];
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewFile();
+
+      expect(mockState.setNewItemModal).toHaveBeenCalledWith({
+        type: 'file',
+        parentDir: '/p/docs',
+      });
+    });
+
+    it('does nothing without an open project', async () => {
+      mockState.rootPath = null;
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewFile();
+
+      expect(mockState.setNewItemModal).not.toHaveBeenCalled();
+    });
+
+    it('opens the newly named file in the editor', async () => {
+      mockState.newItemModal = { type: 'file', parentDir: '/p/docs' };
+      mockReadFile.mockResolvedValue('');
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCreateNewItem('notes.md');
+
+      expect(mockState.selectFile).toHaveBeenCalledWith('/p/docs/notes.md');
+      expect(mockState.openTab).toHaveBeenCalledWith(
+        expect.objectContaining({ path: '/p/docs/notes.md' })
+      );
+    });
+
+    it('does not open a tab for a newly created folder', async () => {
+      mockState.newItemModal = { type: 'folder', parentDir: '/p/docs' };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCreateNewItem('assets');
+
+      expect(mockCreateDirectory).toHaveBeenCalledWith('/p/docs/assets');
+      expect(mockState.openTab).not.toHaveBeenCalled();
+    });
+  });
+
   describe('reveal in file manager (context menu)', () => {
     it('offers a reveal option for files that opens the OS file manager', async () => {
       mockState.rootPath = '/p';
@@ -491,6 +589,156 @@ describe('useIDEHandlers', () => {
       await result.current.handleRenameConfirm('renamed.md');
 
       expect(mockMovePath).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('add to .gitignore (context menu)', () => {
+    it('appends the file, anchored at the root, to an existing .gitignore', async () => {
+      mockState.rootPath = '/p';
+      mockExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue('node_modules\n');
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleAddToGitignore({
+        name: 'secret.env',
+        path: '/p/config/secret.env',
+        isDirectory: false,
+      });
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/p/.gitignore',
+        'node_modules\n/config/secret.env\n'
+      );
+    });
+
+    it('marks directories with a trailing slash', async () => {
+      mockState.rootPath = '/p';
+      mockExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue('');
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleAddToGitignore({
+        name: 'build',
+        path: '/p/build',
+        isDirectory: true,
+      });
+
+      expect(mockWriteFile).toHaveBeenCalledWith('/p/.gitignore', '/build/\n');
+    });
+
+    it('creates the .gitignore when the project has none yet', async () => {
+      mockState.rootPath = '/p';
+      mockExists.mockResolvedValue(false);
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleAddToGitignore({
+        name: 'build',
+        path: '/p/build',
+        isDirectory: true,
+      });
+
+      expect(mockReadFile).not.toHaveBeenCalled();
+      expect(mockWriteFile).toHaveBeenCalledWith('/p/.gitignore', '/build/\n');
+    });
+
+    it('does not write a duplicate when the rule is already there', async () => {
+      mockState.rootPath = '/p';
+      mockExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue('/build/\n');
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleAddToGitignore({
+        name: 'build',
+        path: '/p/build',
+        isDirectory: true,
+      });
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockState.showToast).toHaveBeenCalledWith(
+        expect.stringContaining('already'),
+        expect.anything()
+      );
+    });
+
+    it('surfaces a toast instead of writing when the .gitignore cannot be saved', async () => {
+      mockState.rootPath = '/p';
+      mockExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue('');
+      mockWriteFile.mockRejectedValueOnce('Permission denied');
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleAddToGitignore({
+        name: 'build',
+        path: '/p/build',
+        isDirectory: true,
+      });
+
+      expect(mockState.showToast).toHaveBeenCalledWith('Permission denied', 'error');
+    });
+
+    it('does nothing without an open project', async () => {
+      mockState.rootPath = null;
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleAddToGitignore({
+        name: 'build',
+        path: '/p/build',
+        isDirectory: true,
+      });
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it('offers the option in the context menu for files and folders alike', () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'build', path: '/p/build', isDirectory: true },
+      };
+
+      const { result: folderResult } = renderHook(() => useIDEHandlers(mockState));
+      expect(
+        folderResult.current.contextMenuOptions.some(
+          (o) => 'label' in o && /gitignore/i.test(o.label)
+        )
+      ).toBe(true);
+
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'notes.md', path: '/p/docs/notes.md', isDirectory: false },
+      };
+      const { result: fileResult } = renderHook(() => useIDEHandlers(mockState));
+      expect(
+        fileResult.current.contextMenuOptions.some(
+          (o) => 'label' in o && /gitignore/i.test(o.label)
+        )
+      ).toBe(true);
+    });
+
+    it('hides the option for the .gitignore file itself', () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: '.gitignore', path: '/p/.gitignore', isDirectory: false },
+      };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      expect(
+        result.current.contextMenuOptions.some((o) => 'label' in o && /gitignore/i.test(o.label))
+      ).toBe(false);
     });
   });
 
