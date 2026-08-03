@@ -11,6 +11,7 @@ import { serializeObsidianCanvas } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianNode, ObsidianEdge, ObsidianColor } from '@/lib/obsidian-canvas/types';
 import type { PmTicket, PmDependency } from '@/lib/tauri/pm';
 import {
+  exists,
   readFile,
   readFileBase64,
   writeFile,
@@ -21,6 +22,8 @@ import {
   movePath,
   type FileEntry,
 } from '@/lib/tauri/fs';
+import { appendGitignoreEntry, toGitignoreEntry } from '@/lib/git/gitignore';
+import { newItemParentDir } from '@/lib/explorer/newItemTarget';
 import {
   joinProjectPath,
   scaffoldProjectFiles,
@@ -190,6 +193,9 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleToggleDir = useCallback(
     async (path: string) => {
+      // Selecting the folder (not just expanding it) is what makes it the
+      // target for "New File"/"New Folder" from the toolbar.
+      state.selectFile(path);
       state.toggleExpand(path);
       const children = await readDirectory(path);
       state.setDirectoryChildren(path, children);
@@ -197,13 +203,20 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state]
   );
 
+  /**
+   * Ask for the file name up front rather than creating an `untitled-*` file
+   * the user then has to rename — one dialog instead of two round trips. The
+   * file lands next to whatever is selected, falling back to the project root.
+   */
   const handleNewFile = useCallback(async () => {
     if (!state.rootPath) return;
-    const newPath = `${state.rootPath}/untitled-${Date.now()}.md`;
-    await writeFile(newPath, '');
-    await handleRefresh();
-    handleFileSelect(newPath);
-  }, [state, handleRefresh, handleFileSelect]);
+    const parentDir = newItemParentDir(
+      state.rootPath,
+      state.selectedPath,
+      useStore.getState().fileTree ?? []
+    );
+    state.setNewItemModal({ type: 'file', parentDir });
+  }, [state]);
 
   const handleNewSpec = useCallback(async () => {
     if (!state.rootPath) return;
@@ -775,6 +788,36 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state, handleRefresh]
   );
 
+  /**
+   * Append the node to the project root's `.gitignore`, creating the file when
+   * the project doesn't have one yet.
+   */
+  const handleAddToGitignore = useCallback(
+    async (node: FileTreeNode) => {
+      const entry = toGitignoreEntry(state.rootPath, node.path, node.isDirectory);
+      if (!entry || !state.rootPath) return;
+      const root = state.rootPath.endsWith('/') ? state.rootPath.slice(0, -1) : state.rootPath;
+      const gitignorePath = `${root}/.gitignore`;
+      try {
+        const current = (await exists(gitignorePath)) ? await readFile(gitignorePath) : '';
+        const next = appendGitignoreEntry(current, entry);
+        if (next === null) {
+          state.showToast(`"${entry}" is already in .gitignore`, 'info');
+          return;
+        }
+        await writeFile(gitignorePath, next);
+      } catch (err) {
+        const message = typeof err === 'string' ? err : 'Could not update .gitignore';
+        state.showToast(message, 'error');
+        return;
+      }
+      state.showToast(`Added "${entry}" to .gitignore`, 'success');
+      // Re-read git status so the newly ignored item greys out immediately.
+      await handleRefresh();
+    },
+    [state, handleRefresh]
+  );
+
   const handleDelete = useCallback(
     async (node: FileTreeNode) => {
       if (confirm(`Are you sure you want to delete ${node.name}?`)) {
@@ -802,7 +845,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     async (name: string) => {
       if (!state.newItemModal) return;
       const fullPath = `${state.newItemModal.parentDir}/${name}`;
-      if (state.newItemModal.type === 'folder') {
+      const isFolder = state.newItemModal.type === 'folder';
+      if (isFolder) {
         const { createDirectory } = await import('@/lib/tauri/fs');
         await createDirectory(fullPath);
       } else {
@@ -811,10 +855,12 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         const seed = name.endsWith('.excalidraw') ? emptyExcalidrawSceneJson() : '';
         await writeFile(fullPath, seed);
       }
-      handleRefresh(state.newItemModal.parentDir);
+      await handleRefresh(state.newItemModal.parentDir);
       state.setNewItemModal(null);
+      // Drop the user straight into the new file; folders just appear in the tree.
+      if (!isFolder) handleFileSelect(fullPath);
     },
-    [state, handleRefresh]
+    [state, handleRefresh, handleFileSelect]
   );
 
   const handleActivitySelect = useCallback(
@@ -953,6 +999,19 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       });
     }
 
+    // Only offer it for objects inside the project — and never for the
+    // .gitignore itself, which would ignore the rules file.
+    if (
+      toGitignoreEntry(state.rootPath, node.path, node.isDirectory) &&
+      node.name !== '.gitignore'
+    ) {
+      options.push({
+        label: 'Add to .gitignore',
+        icon: 'block',
+        action: () => handleAddToGitignore(node),
+      });
+    }
+
     options.push({
       label: 'Rename',
       icon: 'edit',
@@ -982,6 +1041,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleOpenTerminalHere,
     handleNewDiagram,
     handleCreateTicketFromMarkdown,
+    handleAddToGitignore,
   ]);
 
   // Command palette
@@ -1160,6 +1220,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleContextMenu,
     handleCopyPath,
     handleRenameConfirm,
+    handleAddToGitignore,
     handleDelete,
     handlePaste,
     handleCreateNewItem,
