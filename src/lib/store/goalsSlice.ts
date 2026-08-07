@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { withPersistFeedback } from './persistFeedback';
 import type {
   GoalsState,
   GoalRunOutcome,
@@ -339,7 +340,10 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       });
     };
 
-    const next = goalsSaveChain.then(doSave, doSave);
+    const next = goalsSaveChain.then(
+      () => withPersistFeedback(get(), 'goals', doSave),
+      () => withPersistFeedback(get(), 'goals', doSave)
+    );
     goalsSaveChain = next.catch(() => {
       // A failed save must not poison the queue for subsequent saves
     });

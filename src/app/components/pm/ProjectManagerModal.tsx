@@ -79,14 +79,21 @@ function ProjectManagerDialog() {
     setPmModalOpen(false);
   }, [pmDirty, discardPmChanges, setPmModalOpen]);
 
-  const handleSave = useCallback(async () => {
-    if (!rootPath) return;
-    await savePmData(rootPath);
+  /** Resolves true when the work is persisted. The store already toasts on
+   *  failure, so callers only need the verdict. */
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!rootPath) return false;
+    try {
+      await savePmData(rootPath);
+      return true;
+    } catch {
+      return false;
+    }
   }, [rootPath, savePmData]);
 
   const handleSaveAndClose = useCallback(async () => {
-    await handleSave();
-    setPmModalOpen(false);
+    // Closing on a failed save is how unsaved work disappears.
+    if (await handleSave()) setPmModalOpen(false);
   }, [handleSave, setPmModalOpen]);
 
   useEffect(() => {
@@ -96,7 +103,7 @@ function ProjectManagerDialog() {
         handleClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        if (pmDirty) handleSave();
+        if (pmDirty) void handleSave();
       }
     };
     window.addEventListener('keydown', handler);

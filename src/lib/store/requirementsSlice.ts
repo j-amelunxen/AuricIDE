@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { withPersistFeedback } from './persistFeedback';
 import type {
   PmRequirement,
   PmRequirementTestLink,
@@ -122,24 +123,25 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
     }
   },
 
-  saveRequirements: async (projectPath) => {
-    await initProjectDb(projectPath);
-    const { requirementsDraft, requirementTestLinksDraft } = get();
-    // Rust expects applies_to as a JSON string
-    const serialized = requirementsDraft.map((r) => ({
-      ...r,
-      appliesTo: Array.isArray(r.appliesTo) ? JSON.stringify(r.appliesTo) : (r.appliesTo ?? '[]'),
-    }));
-    await ipcRequirementsSave(projectPath, {
-      requirements: serialized as unknown as PmRequirement[],
-      testLinks: requirementTestLinksDraft,
-    });
-    set({
-      requirements: requirementsDraft,
-      requirementTestLinks: requirementTestLinksDraft,
-      requirementsDirty: false,
-    });
-  },
+  saveRequirements: (projectPath) =>
+    withPersistFeedback(get(), 'requirements', async () => {
+      await initProjectDb(projectPath);
+      const { requirementsDraft, requirementTestLinksDraft } = get();
+      // Rust expects applies_to as a JSON string
+      const serialized = requirementsDraft.map((r) => ({
+        ...r,
+        appliesTo: Array.isArray(r.appliesTo) ? JSON.stringify(r.appliesTo) : (r.appliesTo ?? '[]'),
+      }));
+      await ipcRequirementsSave(projectPath, {
+        requirements: serialized as unknown as PmRequirement[],
+        testLinks: requirementTestLinksDraft,
+      });
+      set({
+        requirements: requirementsDraft,
+        requirementTestLinks: requirementTestLinksDraft,
+        requirementsDirty: false,
+      });
+    }),
 
   clearRequirements: async (projectPath) => {
     await initProjectDb(projectPath);

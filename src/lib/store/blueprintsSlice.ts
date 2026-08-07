@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { withPersistFeedback } from './persistFeedback';
 import type { Blueprint, BlueprintState } from '../tauri/blueprints';
 import {
   blueprintsLoad as ipcBlueprintsLoad,
@@ -84,15 +85,16 @@ export const createBlueprintsSlice: StateCreator<BlueprintsSlice> = (set, get) =
     }
   },
 
-  saveBlueprints: async (projectPath) => {
-    await initProjectDb(projectPath);
-    const { blueprintsDraft } = get();
-    await ipcBlueprintsSave(projectPath, { blueprints: blueprintsDraft });
-    set({
-      blueprints: blueprintsDraft,
-      blueprintsDirty: false,
-    });
-  },
+  saveBlueprints: (projectPath) =>
+    withPersistFeedback(get(), 'blueprints', async () => {
+      await initProjectDb(projectPath);
+      const { blueprintsDraft } = get();
+      await ipcBlueprintsSave(projectPath, { blueprints: blueprintsDraft });
+      set({
+        blueprints: blueprintsDraft,
+        blueprintsDirty: false,
+      });
+    }),
 
   clearBlueprints: async (projectPath) => {
     await initProjectDb(projectPath);

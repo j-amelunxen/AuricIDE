@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { create } from 'zustand';
 import { createPmSlice, type PmSlice } from './pmSlice';
+import { createToastSlice, type ToastSlice } from './toastSlice';
 import type { PmEpic, PmTicket, PmTestCase, PmDependency, PmStatusHistoryEntry } from '../tauri/pm';
 
 const mockPmLoad = vi.fn<
@@ -31,6 +32,14 @@ vi.mock('../tauri/db', () => ({
 
 function createTestStore() {
   return create<PmSlice>()((...a) => ({ ...createPmSlice(...a) }));
+}
+
+/** Persistence feedback needs the toast channel the real app store provides. */
+function createStoreWithToasts() {
+  return create<PmSlice & ToastSlice>()((...a) => ({
+    ...createPmSlice(...a),
+    ...createToastSlice(...a),
+  }));
 }
 
 function makeEpic(overrides: Partial<PmEpic> = {}): PmEpic {
@@ -766,5 +775,43 @@ describe('pmSlice', () => {
       expect(deps.find((d) => d.id === 'd-agent')).toBeDefined();
       expect(deps.find((d) => d.id === 'd-user')).toBeDefined();
     });
+  });
+});
+
+describe('savePmData failure feedback', () => {
+  beforeEach(() => {
+    mockPmSave.mockReset().mockResolvedValue(undefined);
+    mockInitProjectDb.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('tells the user when the save fails', async () => {
+    const store = createStoreWithToasts();
+    mockPmSave.mockRejectedValueOnce(new Error('database is locked'));
+
+    await expect(store.getState().savePmData('/repo')).rejects.toThrow('database is locked');
+
+    const toast = store.getState().toasts.at(-1);
+    expect(toast?.variant).toBe('error');
+    expect(toast?.message).toContain('database is locked');
+  });
+
+  it('keeps the work marked unsaved when the save fails', async () => {
+    const store = createStoreWithToasts();
+    store.getState().addEpic(makeEpic());
+    expect(store.getState().pmDirty).toBe(true);
+
+    mockPmSave.mockRejectedValueOnce(new Error('nope'));
+    await store
+      .getState()
+      .savePmData('/repo')
+      .catch(() => {});
+
+    expect(store.getState().pmDirty).toBe(true);
+  });
+
+  it('stays quiet on a successful save', async () => {
+    const store = createStoreWithToasts();
+    await store.getState().savePmData('/repo');
+    expect(store.getState().toasts).toEqual([]);
   });
 });

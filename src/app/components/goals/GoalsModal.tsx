@@ -112,9 +112,11 @@ function GoalsModalContent() {
     setGoalsModalOpen(false);
   }, [goalsDirty, discardGoalChanges, setGoalsModalOpen]);
 
+  // The store toasts on failure; swallow here so a failed save cannot surface
+  // as an unhandled rejection instead of a message.
   const handleSave = useCallback(async () => {
     if (!rootPath) return;
-    await saveGoals(rootPath);
+    await saveGoals(rootPath).catch(() => {});
   }, [rootPath, saveGoals]);
 
   useEffect(() => {
@@ -124,7 +126,7 @@ function GoalsModalContent() {
         handleClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        if (goalsDirty) handleSave();
+        if (goalsDirty) void handleSave();
       }
     };
     window.addEventListener('keydown', handler);
@@ -150,7 +152,7 @@ function GoalsModalContent() {
     async (goal: PmGoal) => {
       addGoal(goal);
       setSelectedGoalId(goal.id);
-      if (rootPath) await saveGoals(rootPath);
+      if (rootPath) await saveGoals(rootPath).catch(() => {});
     },
     [addGoal, setSelectedGoalId, rootPath, saveGoals]
   );
@@ -172,7 +174,7 @@ function GoalsModalContent() {
   const handleLinkTicket = useCallback(
     (goalId: string, ticketId: string) => {
       updateTicket(ticketId, { goalId });
-      if (rootPath) savePmData(rootPath);
+      if (rootPath) void savePmData(rootPath).catch(() => {});
     },
     [updateTicket, savePmData, rootPath]
   );
@@ -180,7 +182,7 @@ function GoalsModalContent() {
   const handleUnlinkTicket = useCallback(
     (ticketId: string) => {
       updateTicket(ticketId, { goalId: null });
-      if (rootPath) savePmData(rootPath);
+      if (rootPath) void savePmData(rootPath).catch(() => {});
     },
     [updateTicket, savePmData, rootPath]
   );

@@ -51,7 +51,7 @@ export function BlueprintsPanel() {
       updatedAt: now,
       ...data,
     });
-    if (rootPath) await saveBlueprints(rootPath);
+    if (rootPath) await saveBlueprints(rootPath).catch(() => {});
     setBlueprintsModalOpen(false);
   };
 
@@ -158,7 +158,7 @@ export function BlueprintsPanel() {
                 onClick={async () => {
                   deleteBlueprint(selectedBlueprintId);
                   setSelectedBlueprintId(null);
-                  if (rootPath) await saveBlueprints(rootPath);
+                  if (rootPath) await saveBlueprints(rootPath).catch(() => {});
                 }}
                 className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-[10px] font-medium text-rose-300 hover:bg-rose-500/20 transition-colors"
               >
@@ -175,7 +175,7 @@ export function BlueprintsPanel() {
                   Discard
                 </button>
                 <button
-                  onClick={() => rootPath && saveBlueprints(rootPath)}
+                  onClick={() => rootPath && void saveBlueprints(rootPath).catch(() => {})}
                   className="rounded-lg bg-primary px-4 py-1.5 text-[10px] font-bold text-white hover:bg-primary/80 transition-colors shadow-lg shadow-primary/20"
                 >
                   Save

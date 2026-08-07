@@ -55,9 +55,11 @@ function RequirementsDialog() {
     setRequirementsModalOpen(false);
   }, [requirementsDirty, discardRequirementChanges, setRequirementsModalOpen]);
 
+  // The store toasts on failure; swallow here so a failed save cannot surface
+  // as an unhandled rejection instead of a message.
   const handleSave = useCallback(async () => {
     if (!rootPath) return;
-    await saveRequirements(rootPath);
+    await saveRequirements(rootPath).catch(() => {});
   }, [rootPath, saveRequirements]);
 
   useEffect(() => {
@@ -67,7 +69,7 @@ function RequirementsDialog() {
         handleClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        if (requirementsDirty) handleSave();
+        if (requirementsDirty) void handleSave();
       }
     };
     window.addEventListener('keydown', handler);
@@ -130,7 +132,7 @@ function RequirementsDialog() {
   const handleCreate = useCallback(
     async (req: PmRequirement) => {
       addRequirement(req);
-      if (rootPath) await saveRequirements(rootPath);
+      if (rootPath) await saveRequirements(rootPath).catch(() => {});
     },
     [addRequirement, saveRequirements, rootPath]
   );
