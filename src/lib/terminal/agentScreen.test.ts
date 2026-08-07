@@ -90,7 +90,7 @@ describe('agent terminal screen consistency', () => {
   it('late attach after byte-cap trimming shows the same screen as an always-attached terminal', async () => {
     const agentId = 'glitchy';
     const liveTerm = makeTerm();
-    const detachLive = attachAgentStream(liveTerm, agentId);
+    const { detach: detachLive } = attachAgentStream(liveTerm, agentId);
 
     // Static UI painted once, then enough in-place status updates to blow
     // past MAX_AGENT_LOG_BYTES so the store trims the static UI away. Chunk
@@ -111,13 +111,16 @@ describe('agent terminal screen consistency', () => {
     expect(meta.seq).toBeGreaterThan(logs.length);
 
     const lateTerm = makeTerm();
-    const detachLate = attachAgentStream(lateTerm, agentId);
+    const late = attachAgentStream(lateTerm, agentId);
+    const detachLate = late.detach;
     // Chunks that stream in while the snapshot settles must be neither lost
     // nor duplicated on the late terminal.
     useStore.getState().appendAgentLog(agentId, tuiStatusUpdate(999_999));
     useStore.getState().appendAgentLog(agentId, '\x1b[22;1H\x1b[2Kfertig ✔\r\n');
 
-    await new Promise((r) => setTimeout(r, 0));
+    // Restoring parses the mirror's whole queue — megabytes here — so waiting a
+    // fixed tick would compare a half-painted screen on a loaded machine.
+    await late.restored;
     await flush(liveTerm);
     await flush(lateTerm);
 
@@ -133,7 +136,7 @@ describe('agent terminal screen consistency', () => {
     const agentId = 'resized';
     // Always-attached reference terminal at the initial 80-col geometry.
     const liveTerm = makeTerm();
-    const detachLive = attachAgentStream(liveTerm, agentId);
+    const { detach: detachLive } = attachAgentStream(liveTerm, agentId);
 
     // Lines longer than 80 cols wrap into two rows each, then a status row is
     // painted via absolute positioning — its effective position depends on
@@ -160,9 +163,10 @@ describe('agent terminal screen consistency', () => {
       scrollback: 1000,
       allowProposedApi: true,
     });
-    const detachLate = attachAgentStream(lateTerm, agentId);
+    const late = attachAgentStream(lateTerm, agentId);
+    const detachLate = late.detach;
 
-    await new Promise((r) => setTimeout(r, 0));
+    await late.restored;
     await flush(liveTerm);
     await flush(lateTerm);
 
@@ -183,7 +187,7 @@ describe('agent terminal screen consistency', () => {
     await flush(reference);
 
     const viaStore = makeTerm();
-    const detach = attachAgentStream(viaStore, agentId);
+    const { detach } = attachAgentStream(viaStore, agentId);
     await appendAndSettle(agentId, chunked(data, 3));
     await flush(viaStore);
 
@@ -194,17 +198,18 @@ describe('agent terminal screen consistency', () => {
   it('chunks appended while a late attach is settling are neither lost nor duplicated', async () => {
     const agentId = 'race';
     const liveTerm = makeTerm();
-    const detachLive = attachAgentStream(liveTerm, agentId);
+    const { detach: detachLive } = attachAgentStream(liveTerm, agentId);
 
     await appendAndSettle(agentId, chunked(tuiStaticScreen() + tuiStatusUpdate(1), 100));
 
     const lateTerm = makeTerm();
-    const detachLate = attachAgentStream(lateTerm, agentId);
+    const late = attachAgentStream(lateTerm, agentId);
+    const detachLate = late.detach;
     // Append MORE chunks synchronously, before the snapshot settles.
     useStore.getState().appendAgentLog(agentId, 'tail after attach\r\n');
     useStore.getState().appendAgentLog(agentId, 'and one more\r\n');
 
-    await new Promise((r) => setTimeout(r, 0));
+    await late.restored;
     await flush(liveTerm);
     await flush(lateTerm);
 
