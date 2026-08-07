@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { withPersistFeedback } from './persistFeedback';
 import type {
   PmEpic,
   PmTicket,
@@ -242,23 +243,24 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
     }
   },
 
-  savePmData: async (projectPath) => {
-    await initProjectDb(projectPath);
-    const { pmDraftEpics, pmDraftTickets, pmDraftTestCases, pmDraftDependencies } = get();
-    await ipcPmSave(projectPath, {
-      epics: pmDraftEpics,
-      tickets: pmDraftTickets,
-      testCases: pmDraftTestCases,
-      dependencies: pmDraftDependencies,
-    });
-    set({
-      pmEpics: pmDraftEpics,
-      pmTickets: pmDraftTickets,
-      pmTestCases: pmDraftTestCases,
-      pmDependencies: pmDraftDependencies,
-      pmDirty: false,
-    });
-  },
+  savePmData: (projectPath) =>
+    withPersistFeedback(get(), 'project data', async () => {
+      await initProjectDb(projectPath);
+      const { pmDraftEpics, pmDraftTickets, pmDraftTestCases, pmDraftDependencies } = get();
+      await ipcPmSave(projectPath, {
+        epics: pmDraftEpics,
+        tickets: pmDraftTickets,
+        testCases: pmDraftTestCases,
+        dependencies: pmDraftDependencies,
+      });
+      set({
+        pmEpics: pmDraftEpics,
+        pmTickets: pmDraftTickets,
+        pmTestCases: pmDraftTestCases,
+        pmDependencies: pmDraftDependencies,
+        pmDirty: false,
+      });
+    }),
 
   clearPmData: async (projectPath) => {
     await initProjectDb(projectPath);

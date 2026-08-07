@@ -108,6 +108,19 @@ describe('ProjectManagerModal', () => {
     expect(mockStore.setPmModalOpen).toHaveBeenCalledWith(false);
   });
 
+  it('keeps the modal open when the save fails', async () => {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDirty = true;
+    mockStore.rootPath = '/test/project';
+    mockStore.savePmData = vi.fn().mockRejectedValue(new Error('database is locked'));
+    render(<ProjectManagerModal />);
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Save and Close'));
+    expect(mockStore.savePmData).toHaveBeenCalledWith('/test/project');
+    // Closing here is how unsaved work disappears — the store already toasted.
+    expect(mockStore.setPmModalOpen).not.toHaveBeenCalledWith(false);
+  });
+
   it('Save button disabled when not dirty', () => {
     mockStore.pmModalOpen = true;
     mockStore.pmDirty = false;

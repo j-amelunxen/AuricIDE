@@ -378,7 +378,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       // Spawning against a goal recorded a goal run — persist it immediately
       // so it isn't lost if the user closes the Goals modal without saving.
       if (config.spawnedByGoalId && state.rootPath) {
-        await useStore.getState().saveGoals(state.rootPath);
+        await useStore
+          .getState()
+          .saveGoals(state.rootPath)
+          .catch(() => {});
       }
     },
     [state]
@@ -626,7 +629,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       });
       dependencies.forEach((dep) => store.addDependency(dep));
 
-      if (store.rootPath) store.savePmData(store.rootPath);
+      if (store.rootPath) void store.savePmData(store.rootPath).catch(() => {});
     },
     []
   );

@@ -82,7 +82,7 @@ function BlueprintsGalleryContent() {
         const now = new Date().toISOString();
         addBlueprint({ id: crypto.randomUUID(), createdAt: now, updatedAt: now, ...data });
       }
-      if (rootPath) await saveBlueprints(rootPath);
+      if (rootPath) await saveBlueprints(rootPath).catch(() => {});
       setBlueprintsModalOpen(false);
       setEditTarget(null);
     },
@@ -101,7 +101,7 @@ function BlueprintsGalleryContent() {
     async (id: string) => {
       deleteBlueprint(id);
       if (selectedBlueprintId === id) setSelectedBlueprintId(null);
-      if (rootPath) await saveBlueprints(rootPath);
+      if (rootPath) await saveBlueprints(rootPath).catch(() => {});
     },
     [deleteBlueprint, selectedBlueprintId, setSelectedBlueprintId, saveBlueprints, rootPath]
   );
@@ -335,7 +335,7 @@ function BlueprintsGalleryContent() {
                   Discard
                 </button>
                 <button
-                  onClick={() => rootPath && saveBlueprints(rootPath)}
+                  onClick={() => rootPath && void saveBlueprints(rootPath).catch(() => {})}
                   className="flex-1 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary/80 transition-colors shadow-lg shadow-primary/20"
                 >
                   Save
