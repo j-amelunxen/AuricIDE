@@ -307,3 +307,117 @@ describe('SpawnAgentDialog', () => {
     expect(screen.getByText('Gemini CLI')).toBeInTheDocument();
   });
 });
+
+describe('SpawnAgentDialog keyboard and prompt recall', () => {
+  function open(overrides: Record<string, unknown> = {}) {
+    const onSpawn = vi.fn();
+    const onClose = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={onSpawn} {...overrides} />);
+    return { onSpawn, onClose, task: screen.getByLabelText(/instruction/i) };
+  }
+
+  it('puts the cursor in the instruction field on open', () => {
+    const { task } = open();
+    expect(task).toHaveFocus();
+  });
+
+  it('places the caret after prefilled text so it can be extended', () => {
+    const { task } = open({ initialTask: 'Fix the parser' });
+    expect((task as HTMLTextAreaElement).selectionStart).toBe('Fix the parser'.length);
+  });
+
+  it('starts the agent on Cmd+Enter', async () => {
+    const user = userEvent.setup();
+    const { onSpawn, task } = open();
+    await user.type(task, 'ship it');
+    await user.keyboard('{Meta>}{Enter}{/Meta}');
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ task: 'ship it' }));
+  });
+
+  it('starts the agent on Ctrl+Enter', async () => {
+    const user = userEvent.setup();
+    const { onSpawn, task } = open();
+    await user.type(task, 'ship it');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ task: 'ship it' }));
+  });
+
+  it('leaves a plain Enter to insert a newline', async () => {
+    const user = userEvent.setup();
+    const { onSpawn, task } = open();
+    await user.type(task, 'line one{Enter}line two');
+    expect(onSpawn).not.toHaveBeenCalled();
+    expect(task).toHaveValue('line one\nline two');
+  });
+
+  it('hints at prompt recall only when history exists', () => {
+    const { unmount } = render(
+      <SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />
+    );
+    expect(screen.queryByTestId('prompt-history-hint')).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        promptHistory={['previous prompt']}
+      />
+    );
+    expect(screen.getByTestId('prompt-history-hint')).toBeInTheDocument();
+  });
+
+  it('recalls the previous prompt with ArrowUp in an empty field', async () => {
+    const user = userEvent.setup();
+    const { task } = open({ promptHistory: ['newest prompt', 'older prompt'] });
+    await user.type(task, '{ArrowUp}');
+    expect(task).toHaveValue('newest prompt');
+  });
+
+  it('walks further back through history with repeated ArrowUp', async () => {
+    const user = userEvent.setup();
+    const { task } = open({ promptHistory: ['newest prompt', 'older prompt'] });
+    await user.type(task, '{ArrowUp}{ArrowUp}');
+    expect(task).toHaveValue('older prompt');
+  });
+
+  it('stops at the oldest prompt', async () => {
+    const user = userEvent.setup();
+    const { task } = open({ promptHistory: ['newest prompt', 'older prompt'] });
+    await user.type(task, '{ArrowUp}{ArrowUp}{ArrowUp}{ArrowUp}');
+    expect(task).toHaveValue('older prompt');
+  });
+
+  it('walks forward again with ArrowDown and back to an empty field', async () => {
+    const user = userEvent.setup();
+    const { task } = open({ promptHistory: ['newest prompt', 'older prompt'] });
+    await user.type(task, '{ArrowUp}{ArrowUp}{ArrowDown}');
+    expect(task).toHaveValue('newest prompt');
+    await user.type(task, '{ArrowDown}');
+    expect(task).toHaveValue('');
+  });
+
+  it('does not hijack ArrowUp while text is being edited', async () => {
+    const user = userEvent.setup();
+    const { task } = open({ promptHistory: ['newest prompt'] });
+    await user.type(task, 'my own text{ArrowUp}');
+    expect(task).toHaveValue('my own text');
+  });
+
+  it('leaves history navigation once the recalled prompt is edited', async () => {
+    const user = userEvent.setup();
+    const { task } = open({ promptHistory: ['newest prompt', 'older prompt'] });
+    await user.type(task, '{ArrowUp}');
+    await user.type(task, '!');
+    await user.type(task, '{ArrowUp}');
+    expect(task).toHaveValue('newest prompt!');
+  });
+
+  it('does nothing on ArrowUp without any history', async () => {
+    const user = userEvent.setup();
+    const { task } = open();
+    await user.type(task, '{ArrowUp}');
+    expect(task).toHaveValue('');
+  });
+});

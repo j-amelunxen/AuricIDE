@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
@@ -19,6 +19,8 @@ interface SpawnAgentDialogProps {
   /** Goals available for binding the agent's work to a goal. */
   goals?: PmGoal[];
   initialGoalId?: string | null;
+  /** Previously used start prompts, newest first — recalled with ArrowUp. */
+  promptHistory?: string[];
 }
 
 export function SpawnAgentDialog(props: SpawnAgentDialogProps) {
@@ -48,10 +50,14 @@ function SpawnAgentDialogPanel({
   recentPaths = [],
   goals = [],
   initialGoalId = null,
+  promptHistory = [],
 }: SpawnAgentDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  const taskRef = useRef<HTMLTextAreaElement>(null);
   const [repoPath, setRepoPath] = useState(initialRepoPath);
   const [task, setTask] = useState(initialTask);
+  /** -1 = composing a fresh prompt; >= 0 = showing promptHistory[historyIndex]. */
+  const [historyIndex, setHistoryIndex] = useState(-1);
   const [goalId, setGoalId] = useState<string>(initialGoalId ?? '');
   const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
   const [selectedProviderId, setSelectedProviderId] = useState(FALLBACK_CRUSH_PROVIDER.id);
@@ -84,8 +90,18 @@ function SpawnAgentDialogPanel({
       setTask(initialTask);
       setRepoPath(initialRepoPath);
       setGoalId(initialGoalId ?? '');
+      setHistoryIndex(-1);
     }
   }, [isOpen, initialTask, initialRepoPath, initialGoalId]);
+
+  // The instruction is what the user came here to write — start there, with the
+  // caret behind any prefilled text so a handed-over prompt can just be extended.
+  useEffect(() => {
+    const textarea = taskRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }, []);
 
   // Sync model/permission defaults when provider changes
   useEffect(() => {
@@ -114,6 +130,30 @@ function SpawnAgentDialogPanel({
     onClose();
   };
 
+  /**
+   * Shell-style recall: ArrowUp walks back through previous prompts, ArrowDown
+   * walks forward again. Only active while the field holds a recalled prompt or
+   * nothing at all, so it never hijacks the arrow keys during real editing.
+   */
+  const handleTaskKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (promptHistory.length === 0) return;
+
+    if (e.key === 'ArrowUp' && (historyIndex >= 0 || task === '')) {
+      e.preventDefault();
+      const next = Math.min(historyIndex + 1, promptHistory.length - 1);
+      setHistoryIndex(next);
+      setTask(promptHistory[next]);
+      return;
+    }
+
+    if (e.key === 'ArrowDown' && historyIndex >= 0) {
+      e.preventDefault();
+      const next = historyIndex - 1;
+      setHistoryIndex(next);
+      setTask(next < 0 ? '' : promptHistory[next]);
+    }
+  };
+
   const handleBrowse = async () => {
     try {
       const mod = await import('@tauri-apps/plugin-dialog');
@@ -130,6 +170,12 @@ function SpawnAgentDialogPanel({
       onClick={onClose}
       onKeyDown={(e) => {
         if (e.key === 'Escape') onClose();
+        // Cmd/Ctrl+Enter deploys from anywhere in the dialog — a plain Enter
+        // stays available for writing a multi-line instruction.
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          handleDeploy();
+        }
       }}
     >
       <div
@@ -208,11 +254,22 @@ function SpawnAgentDialogPanel({
             </label>
             <textarea
               id="task-desc"
+              ref={taskRef}
               value={task}
-              onChange={(e) => setTask(e.target.value)}
+              onChange={(e) => {
+                setTask(e.target.value);
+                // Typing means the user owns this text now, not the history.
+                setHistoryIndex(-1);
+              }}
+              onKeyDown={handleTaskKeyDown}
               className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors resize-none min-h-[100px]"
               placeholder="What should the agent achieve?"
             />
+            {promptHistory.length > 0 && (
+              <p data-testid="prompt-history-hint" className="text-[10px] text-foreground-muted">
+                ↑ recalls an earlier prompt
+              </p>
+            )}
           </div>
 
           {goals.length > 0 && (
@@ -353,9 +410,12 @@ function SpawnAgentDialogPanel({
             <button
               type="button"
               onClick={handleDeploy}
-              className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
+              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
             >
               Start Agent
+              <span aria-hidden="true" className="text-[10px] font-medium opacity-70">
+                ⌘↵
+              </span>
             </button>
           </div>
         </div>

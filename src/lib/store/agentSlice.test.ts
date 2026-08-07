@@ -58,6 +58,10 @@ vi.mock('../tauri/agents', () => ({
     repoPath: '/repo',
   })),
   discardInterruptedAgent: vi.fn(async () => undefined),
+  listAgentPromptHistory: vi.fn(async () => [
+    { id: 'h1', prompt: 'newest', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
+    { id: 'h2', prompt: 'older', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
+  ]),
 }));
 
 describe('agentSlice', () => {
@@ -66,6 +70,41 @@ describe('agentSlice', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('starts with an empty prompt history', () => {
+    expect(store.getState().promptHistory).toEqual([]);
+  });
+
+  it('loadPromptHistory fills the history newest-first', async () => {
+    await store.getState().loadPromptHistory('/repo');
+    expect(store.getState().promptHistory).toEqual(['newest', 'older']);
+  });
+
+  it('loadPromptHistory drops blank prompts and duplicates', async () => {
+    const agents = await import('../tauri/agents');
+    vi.mocked(agents.listAgentPromptHistory).mockResolvedValueOnce([
+      { id: 'h1', prompt: 'same', agentName: 'A', model: 'm', provider: 'c', source: 'ui' },
+      { id: 'h2', prompt: '   ', agentName: 'A', model: 'm', provider: 'c', source: 'ui' },
+      { id: 'h3', prompt: 'same', agentName: 'A', model: 'm', provider: 'c', source: 'ui' },
+      { id: 'h4', prompt: 'other', agentName: 'A', model: 'm', provider: 'c', source: 'ui' },
+    ]);
+    await store.getState().loadPromptHistory('/repo');
+    expect(store.getState().promptHistory).toEqual(['same', 'other']);
+  });
+
+  it('loadPromptHistory keeps the previous history when the backend fails', async () => {
+    const agents = await import('../tauri/agents');
+    await store.getState().loadPromptHistory('/repo');
+    vi.mocked(agents.listAgentPromptHistory).mockRejectedValueOnce(new Error('no db'));
+    await expect(store.getState().loadPromptHistory('/repo')).resolves.toBeUndefined();
+    expect(store.getState().promptHistory).toEqual(['newest', 'older']);
+  });
+
+  it('loadPromptHistory clears the history without a project path', async () => {
+    await store.getState().loadPromptHistory('/repo');
+    await store.getState().loadPromptHistory('');
+    expect(store.getState().promptHistory).toEqual([]);
   });
 
   it('initializes with empty agents array and empty logs', () => {

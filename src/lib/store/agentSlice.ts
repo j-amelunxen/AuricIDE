@@ -4,6 +4,7 @@ import {
   discardInterruptedAgent,
   killAgent,
   killAgentsForRepo,
+  listAgentPromptHistory,
   listAgents,
   listInterruptedAgents,
   recordAgentPromptHistory,
@@ -22,6 +23,9 @@ export const MAX_AGENT_LOG_BYTES = 2_000_000;
 // but without a bound they and their logs accumulate for the app's whole
 // lifetime. Cap how many finished agents are retained, evicting the oldest.
 export const MAX_FINISHED_AGENTS = 20;
+// The project DB keeps 100 start prompts; the dialog only ever recalls the
+// freshest slice of them, so loading the whole tail is wasted work.
+export const MAX_RECALLED_PROMPTS = 25;
 
 export interface AgentLogMeta {
   /** Total chunks ever appended for this agent — survives trimming, so
@@ -38,6 +42,9 @@ export interface AgentSlice {
   selectedAgentId: string | null;
   /** Agents from a previous app run that died with the app (restart persistence). */
   interruptedAgents: InterruptedAgent[];
+  /** Previously used start prompts for the open project, newest first. */
+  promptHistory: string[];
+  loadPromptHistory: (projectPath: string) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   killRunningAgent: (agentId: string) => Promise<void>;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
@@ -80,6 +87,28 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   agentLogMeta: {},
   selectedAgentId: null,
   interruptedAgents: [],
+  promptHistory: [],
+
+  loadPromptHistory: async (projectPath) => {
+    if (!projectPath) {
+      set({ promptHistory: [] });
+      return;
+    }
+    try {
+      const entries = await listAgentPromptHistory(projectPath, MAX_RECALLED_PROMPTS);
+      const seen = new Set<string>();
+      const prompts: string[] = [];
+      for (const entry of entries) {
+        const prompt = entry.prompt?.trim();
+        if (!prompt || seen.has(prompt)) continue;
+        seen.add(prompt);
+        prompts.push(entry.prompt);
+      }
+      set({ promptHistory: prompts });
+    } catch {
+      // Browser mode or a project without a DB — recall is a convenience only.
+    }
+  },
 
   spawnNewAgent: async (config) => {
     const agent = await spawnAgent(config);

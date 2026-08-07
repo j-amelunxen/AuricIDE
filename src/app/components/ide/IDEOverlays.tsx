@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { CommandPalette } from '@/app/components/ide/CommandPalette';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { NewItemModal } from '@/app/components/explorer/NewItemModal';
@@ -132,6 +133,15 @@ export function IDEOverlays({
   const goalsDraft = useStore((s) => s.goalsDraft);
   const activeAgents = useStore((s) => s.agents);
   const recentCommandIds = useStore((s) => s.recentCommandIds);
+  const promptHistory = useStore((s) => s.promptHistory);
+  const loadPromptHistory = useStore((s) => s.loadPromptHistory);
+
+  // Refresh on every open: the dialog is reachable from many entry points and
+  // an agent may have been started from any of them since the last look.
+  useEffect(() => {
+    if (spawnDialogOpen && rootPath) void loadPromptHistory(rootPath);
+  }, [spawnDialogOpen, rootPath, loadPromptHistory]);
+
   return (
     <>
       <SpawnAgentDialog
@@ -150,6 +160,7 @@ export function IDEOverlays({
         recentPaths={recentProjects.map((p) => p.path)}
         goals={goalsDraft}
         initialGoalId={spawnAgentGoalId}
+        promptHistory={promptHistory}
       />
       <ImportSpecDialog
         isOpen={importSpecDialogOpen}
