@@ -97,6 +97,7 @@ export function useIDEState() {
   const starredProjects = useStore((s) => s.starredProjects);
   const toggleStarredProject = useStore((s) => s.toggleStarredProject);
   const loadStarredProjects = useStore((s) => s.loadStarredProjects);
+  const loadRecentCommands = useStore((s) => s.loadRecentCommands);
   const loadCustomSlashCommands = useStore((s) => s.loadCustomSlashCommands);
   const loadBlueprintServerUrl = useStore((s) => s.loadBlueprintServerUrl);
   const setBlueprintsGalleryOpen = useStore((s) => s.setBlueprintsGalleryOpen);
@@ -284,6 +285,7 @@ export function useIDEState() {
     starredProjects,
     toggleStarredProject,
     loadStarredProjects,
+    loadRecentCommands,
     loadCustomSlashCommands,
     loadBlueprintServerUrl,
     setBlueprintsGalleryOpen,

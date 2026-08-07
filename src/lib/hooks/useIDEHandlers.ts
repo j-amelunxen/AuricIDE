@@ -1098,6 +1098,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const handleCommandExecute = useCallback(
     (commandId: string) => {
       commands.find((c) => c.id === commandId)?.action();
+      useStore.getState().recordCommandUse(commandId);
       state.setCommandPaletteOpen(false);
     },
     [commands, state]

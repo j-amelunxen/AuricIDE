@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Command } from '@/lib/commands/registry';
+import { rankCommands } from '@/lib/commands/fuzzy';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
 export interface CommandPaletteProps {
@@ -9,36 +10,61 @@ export interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   onExecute: (commandId: string) => void;
+  /** Most-recently-used command ids, newest first. */
+  recentIds?: readonly string[];
 }
 
-function filterCommands(commands: Command[], query: string): Command[] {
-  if (query === '') return commands;
+/** Splits a label into runs so matched characters can be emphasised in place. */
+function splitOnMatches(label: string, indices: number[]): { text: string; match: boolean }[] {
+  if (indices.length === 0) return [{ text: label, match: false }];
 
-  const lowerQuery = query.toLowerCase();
-  const prefixMatches: Command[] = [];
-  const substringMatches: Command[] = [];
+  const matched = new Set(indices);
+  const parts: { text: string; match: boolean }[] = [];
+  let current = '';
+  let currentMatch = matched.has(0);
 
-  for (const cmd of commands) {
-    const lowerLabel = cmd.label.toLowerCase();
-    const lowerCategory = cmd.category.toLowerCase();
-
-    if (lowerLabel.startsWith(lowerQuery) || lowerCategory.startsWith(lowerQuery)) {
-      prefixMatches.push(cmd);
-    } else if (lowerLabel.includes(lowerQuery) || lowerCategory.includes(lowerQuery)) {
-      substringMatches.push(cmd);
+  for (let i = 0; i < label.length; i++) {
+    const isMatch = matched.has(i);
+    if (isMatch !== currentMatch) {
+      if (current !== '') parts.push({ text: current, match: currentMatch });
+      current = '';
+      currentMatch = isMatch;
     }
+    current += label[i];
   }
+  if (current !== '') parts.push({ text: current, match: currentMatch });
 
-  return [...prefixMatches, ...substringMatches];
+  return parts;
 }
 
-export function CommandPalette({ commands, isOpen, onClose, onExecute }: CommandPaletteProps) {
+export function CommandPalette({
+  commands,
+  isOpen,
+  onClose,
+  onExecute,
+  recentIds = [],
+}: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
-  const filtered = filterCommands(commands, query);
+  const filtered = useMemo(
+    () => rankCommands(commands, query, recentIds),
+    [commands, query, recentIds]
+  );
+
+  // Without a query the list IS the recency list, so the badge would be noise
+  // on every row; it only carries information while results are score-ordered.
+  const showRecentBadges = query === '';
+  const recentSet = useMemo(() => new Set(recentIds), [recentIds]);
+
+  useEffect(() => {
+    listRef.current
+      ?.querySelector('[data-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [selectedIndex, query]);
 
   const handleQueryChange = useCallback((newQuery: string) => {
     setQuery(newQuery);
@@ -50,18 +76,20 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
       switch (e.key) {
         case 'ArrowDown': {
           e.preventDefault();
+          if (filtered.length === 0) return;
           setSelectedIndex((prev) => (prev + 1) % filtered.length);
           break;
         }
         case 'ArrowUp': {
           e.preventDefault();
+          if (filtered.length === 0) return;
           setSelectedIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
           break;
         }
         case 'Enter': {
           e.preventDefault();
           if (filtered.length > 0) {
-            onExecute(filtered[selectedIndex].id);
+            onExecute(filtered[selectedIndex].command.id);
           }
           break;
         }
@@ -112,7 +140,7 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
           autoFocus
         />
 
-        <div className="max-h-[320px] overflow-y-auto">
+        <div ref={listRef} className="max-h-[320px] overflow-y-auto">
           {filtered.length === 0 ? (
             <div
               data-testid="command-palette-empty"
@@ -121,7 +149,7 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
               No matching commands
             </div>
           ) : (
-            filtered.map((cmd, index) => (
+            filtered.map(({ command: cmd, indices }, index) => (
               <div
                 key={cmd.id}
                 data-testid="command-palette-item"
@@ -133,20 +161,44 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
                 }`}
                 onClick={() => onExecute(cmd.id)}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <span
                     data-testid="command-category"
                     className="text-[10px] uppercase tracking-wider text-foreground-muted"
                   >
                     {cmd.category}
                   </span>
-                  <span className="text-sm text-foreground">{cmd.label}</span>
+                  <span className="truncate text-sm text-foreground">
+                    {splitOnMatches(cmd.label, indices).map((part, partIndex) =>
+                      part.match ? (
+                        <span
+                          key={partIndex}
+                          data-testid="command-label-match"
+                          className="font-semibold text-primary"
+                        >
+                          {part.text}
+                        </span>
+                      ) : (
+                        <span key={partIndex}>{part.text}</span>
+                      )
+                    )}
+                  </span>
+                  {showRecentBadges && recentSet.has(cmd.id) && (
+                    <span
+                      data-testid="command-recent"
+                      title="Recently used"
+                      aria-label="Recently used"
+                      className="text-[10px] text-foreground-muted"
+                    >
+                      ↩
+                    </span>
+                  )}
                 </div>
 
                 {cmd.shortcut && (
                   <span
                     data-testid="command-shortcut"
-                    className="rounded bg-background-dark px-1.5 py-0.5 text-xs text-foreground-muted"
+                    className="ml-3 shrink-0 rounded bg-background-dark px-1.5 py-0.5 text-xs text-foreground-muted"
                   >
                     {cmd.shortcut}
                   </span>
@@ -154,6 +206,13 @@ export function CommandPalette({ commands, isOpen, onClose, onExecute }: Command
               </div>
             ))
           )}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-border-dark px-4 py-1.5 text-[11px] text-foreground-muted">
+          <span data-testid="command-palette-count">
+            {filtered.length} {filtered.length === 1 ? 'command' : 'commands'}
+          </span>
+          <span>↑↓ navigate · ↵ run · esc close</span>
         </div>
       </div>
     </div>

@@ -23,6 +23,7 @@ import { createGoalsSlice, type GoalsSlice } from './goalsSlice';
 import { createConductorSlice, type ConductorSlice } from './conductorSlice';
 import { createToastSlice, type ToastSlice } from './toastSlice';
 import { createExcalidrawSlice, type ExcalidrawSlice } from './excalidrawSlice';
+import { createCommandUsageSlice, type CommandUsageSlice } from './commandUsageSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -47,7 +48,8 @@ export type StoreState = FileTreeSlice &
   GoalsSlice &
   ConductorSlice &
   ToastSlice &
-  ExcalidrawSlice;
+  ExcalidrawSlice &
+  CommandUsageSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -73,6 +75,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createGoalsSlice(...a),
   ...createConductorSlice(...a),
   ...createToastSlice(...a),
+  ...createCommandUsageSlice(...a),
   ...createExcalidrawSlice(...a),
 }));
 
