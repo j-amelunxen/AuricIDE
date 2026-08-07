@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useCallback, type MouseEvent } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, type MouseEvent } from 'react';
 import { useStore } from '@/lib/store';
+import { createAutosave } from '@/lib/editor/autosave';
 import { TIPS, activityItems } from '../ide/constants';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { type FileNode } from '@/lib/store/fileTreeSlice';
@@ -342,24 +343,53 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state, clearProjectState, handleRefresh, loadProjectData]
   );
 
+  // Editing autosaves, but a write per keystroke races itself: two writes of
+  // the same file can land out of order and undo what was just typed. The
+  // queue debounces the burst and keeps writes serialized per file.
+  const autosaveRef = useRef<ReturnType<typeof createAutosave> | null>(null);
+  if (autosaveRef.current === null) {
+    autosaveRef.current = createAutosave({
+      write: writeFile,
+      onSaved: (path, content) => {
+        const store = useStore.getState();
+        store.markDirty(path, false);
+        store.updateFileInIndex(path, content);
+      },
+      onError: (path, error) => {
+        const name = path.split('/').pop() ?? path;
+        useStore
+          .getState()
+          .showToast(
+            `Could not save ${name}: ${error instanceof Error ? error.message : String(error)}`,
+            'error'
+          );
+      },
+    });
+  }
+  const autosave = autosaveRef.current;
+
+  // A window closing mid-debounce would drop the last few hundred milliseconds
+  // of typing.
+  useEffect(() => {
+    const flushPending = () => void autosave.flush();
+    window.addEventListener('beforeunload', flushPending);
+    return () => window.removeEventListener('beforeunload', flushPending);
+  }, [autosave]);
+
   const handleSave = useCallback(async () => {
     if (!state.activeTabId) return;
-    await writeFile(state.activeTabId, state.editorContent);
-    state.markDirty(state.activeTabId, false);
-  }, [state]);
+    autosave.schedule(state.activeTabId, state.editorContent);
+    await autosave.flush();
+  }, [state, autosave]);
 
   const handleEditorChange = useCallback(
     (newContent: string) => {
       state.setEditorContent(newContent);
-      state.markDirty(state.activeTabId!, true);
-      if (state.activeTabId) {
-        writeFile(state.activeTabId, newContent).then(() => {
-          state.markDirty(state.activeTabId!, false);
-          state.updateFileInIndex(state.activeTabId!, newContent);
-        });
-      }
+      if (!state.activeTabId) return;
+      state.markDirty(state.activeTabId, true);
+      autosave.schedule(state.activeTabId, newContent);
     },
-    [state]
+    [state, autosave]
   );
 
   const handleSelectionSpawn = useCallback(

@@ -30,6 +30,9 @@ vi.mock('@/lib/tauri/opener', () => ({
 
 // Mock Store
 const mockRefreshGitStatus = vi.fn();
+const mockMarkDirty = vi.fn();
+const mockUpdateFileInIndex = vi.fn();
+const mockShowToast = vi.fn();
 const mockSaveGoals = vi.fn();
 let mockFileTree: unknown[] = [];
 let mockActiveTabId: string | null = null;
@@ -41,6 +44,9 @@ vi.mock('@/lib/store', () => ({
       activeTabId: mockActiveTabId,
       fileTree: mockFileTree,
       saveGoals: mockSaveGoals,
+      markDirty: mockMarkDirty,
+      updateFileInIndex: mockUpdateFileInIndex,
+      showToast: mockShowToast,
     }),
   },
 }));
@@ -937,6 +943,84 @@ describe('useIDEHandlers', () => {
       await result.current.loadTabContent('/project/notes.md');
 
       expect(mockState.setEditorContent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('editor autosave', () => {
+    // Mirrors the real store: the buffer the editor shows IS what a save writes.
+    let buffer = '# Notes';
+    const editorState = {
+      ...mockState,
+      activeTabId: '/project/notes.md',
+      get editorContent() {
+        return buffer;
+      },
+      setEditorContent: (content: string) => {
+        buffer = content;
+      },
+      markDirty: vi.fn(),
+      updateFileInIndex: vi.fn(),
+    };
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      buffer = '# Notes';
+      mockWriteFile.mockResolvedValue(undefined);
+    });
+
+    it('does not write on every keystroke', () => {
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+
+      result.current.handleEditorChange('a');
+      result.current.handleEditorChange('ab');
+      result.current.handleEditorChange('abc');
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it('marks the tab dirty as soon as it is edited', () => {
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+      result.current.handleEditorChange('a');
+      expect(editorState.markDirty).toHaveBeenCalledWith('/project/notes.md', true);
+    });
+
+    it('writes only the final text of a typing burst on save', async () => {
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+
+      result.current.handleEditorChange('a');
+      result.current.handleEditorChange('ab');
+      result.current.handleEditorChange('abc');
+      await result.current.handleSave();
+
+      expect(mockWriteFile).toHaveBeenCalledTimes(1);
+      expect(mockWriteFile).toHaveBeenCalledWith('/project/notes.md', 'abc');
+    });
+
+    it('clears the dirty marker once the write landed', async () => {
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+
+      result.current.handleEditorChange('abc');
+      await result.current.handleSave();
+
+      expect(mockMarkDirty).toHaveBeenCalledWith('/project/notes.md', false);
+      expect(mockUpdateFileInIndex).toHaveBeenCalledWith('/project/notes.md', 'abc');
+    });
+
+    it('reports a failed write instead of losing it silently', async () => {
+      mockWriteFile.mockRejectedValue(new Error('disk full'));
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+
+      result.current.handleEditorChange('abc');
+      await result.current.handleSave();
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('disk full'), 'error');
+      expect(mockMarkDirty).not.toHaveBeenCalledWith('/project/notes.md', false);
+    });
+
+    it('saves the current buffer even when nothing was typed since the last save', async () => {
+      const { result } = renderHook(() => useIDEHandlers(editorState));
+      await result.current.handleSave();
+      expect(mockWriteFile).toHaveBeenCalledWith('/project/notes.md', '# Notes');
     });
   });
 });
