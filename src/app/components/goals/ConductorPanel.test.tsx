@@ -209,3 +209,57 @@ describe('ConductorPanel', () => {
     expect(screen.getByTestId('conductor-log').textContent).toContain('Launched sonnet agent');
   });
 });
+
+describe('ConductorPanel preflight', () => {
+  const preflight = { ready: 0, blocked: 0, needsApproval: 0, inProgress: 0, exhausted: 0 };
+
+  it('says what a run would pick up before it starts', () => {
+    renderPanel({ preflight: { ...preflight, ready: 3 } });
+    expect(screen.getByTestId('conductor-preflight')).toHaveTextContent('3 ready');
+  });
+
+  it('names the work that is held back', () => {
+    renderPanel({
+      preflight: { ...preflight, ready: 1, blocked: 4, needsApproval: 2, exhausted: 1 },
+    });
+    const readout = screen.getByTestId('conductor-preflight');
+    expect(readout).toHaveTextContent('1 ready');
+    expect(readout).toHaveTextContent('4 blocked');
+    expect(readout).toHaveTextContent('2 need approval');
+    expect(readout).toHaveTextContent('1 out of attempts');
+  });
+
+  it('omits categories that are empty', () => {
+    renderPanel({ preflight: { ...preflight, ready: 2 } });
+    const readout = screen.getByTestId('conductor-preflight');
+    expect(readout).not.toHaveTextContent('blocked');
+    expect(readout).not.toHaveTextContent('approval');
+  });
+
+  it('says a scoped run with no work left will verify the goal', () => {
+    renderPanel({ preflight, selectedGoalName: 'Ship v1' });
+    expect(screen.getByTestId('conductor-preflight')).toHaveTextContent(
+      'nothing to work — will verify the goal'
+    );
+  });
+
+  it('says an unscoped run with no work left has nothing to do', () => {
+    renderPanel({ preflight });
+    expect(screen.getByTestId('conductor-preflight')).toHaveTextContent('no open tickets');
+  });
+
+  it('hides the readout while the conductor is running', () => {
+    renderPanel({ running: true, preflight: { ...preflight, ready: 3 } });
+    expect(screen.queryByTestId('conductor-preflight')).not.toBeInTheDocument();
+  });
+
+  it('hides the readout when no project is open', () => {
+    renderPanel({ canStart: false, preflight: { ...preflight, ready: 3 } });
+    expect(screen.queryByTestId('conductor-preflight')).not.toBeInTheDocument();
+  });
+
+  it('renders without a preflight prop', () => {
+    renderPanel();
+    expect(screen.queryByTestId('conductor-preflight')).not.toBeInTheDocument();
+  });
+});

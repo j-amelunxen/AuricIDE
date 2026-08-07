@@ -83,6 +83,70 @@ export function filterTicketsForGoal(
   return tickets.filter((t) => !!t.goalId && ids.has(t.goalId));
 }
 
+/**
+ * What a conductor run would find if it started right now. Every number comes
+ * from the same predicates the tick itself uses, so the readout can never
+ * promise work the loop would not actually pick up.
+ */
+export interface ConductorPreflight {
+  /** Unblocked open tickets the conductor may spawn for immediately. */
+  ready: number;
+  /** Open tickets waiting on an unfinished dependency. */
+  blocked: number;
+  /** Unblocked open tickets held back for human approval. */
+  needsApproval: number;
+  /** Tickets already being worked. */
+  inProgress: number;
+  /** Open tickets that used up their attempts and will not be retried. */
+  exhausted: number;
+}
+
+export function getConductorPreflight(input: {
+  tickets: PmTicket[];
+  dependencies: PmDependency[];
+  goals: PmGoal[];
+  goalId: string | null;
+  failedTickets: Record<string, number>;
+  approvedTickets: string[];
+}): ConductorPreflight {
+  const { tickets, dependencies, goals, goalId, failedTickets, approvedTickets } = input;
+  const scoped = goalId ? filterTicketsForGoal(tickets, goals, goalId) : tickets;
+
+  // Dependencies resolve against ALL tickets: a blocker outside the goal scope
+  // still blocks, exactly as it does in the tick.
+  const unblocked = new Set(
+    getUnblockedOpenTickets(scoped, dependencies, tickets).map((t) => t.id)
+  );
+
+  const result: ConductorPreflight = {
+    ready: 0,
+    blocked: 0,
+    needsApproval: 0,
+    inProgress: 0,
+    exhausted: 0,
+  };
+
+  for (const ticket of scoped) {
+    if (ticket.status === 'in_progress') {
+      result.inProgress++;
+      continue;
+    }
+    if (ticket.status !== 'open') continue;
+
+    if ((failedTickets[ticket.id] ?? 0) >= MAX_TICKET_ATTEMPTS) {
+      result.exhausted++;
+    } else if (!unblocked.has(ticket.id)) {
+      result.blocked++;
+    } else if (ticket.needsHumanSupervision && !approvedTickets.includes(ticket.id)) {
+      result.needsApproval++;
+    } else {
+      result.ready++;
+    }
+  }
+
+  return result;
+}
+
 /** Maps a ticket's declared capability need to a concrete model. */
 export function modelForPower(power: 'low' | 'medium' | 'high' | undefined): string {
   switch (power) {

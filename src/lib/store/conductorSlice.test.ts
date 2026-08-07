@@ -5,9 +5,11 @@ import { createGoalsSlice } from './goalsSlice';
 import { createPmSlice } from './pmSlice';
 import {
   createConductorSlice,
+  getConductorPreflight,
   getUnblockedOpenTickets,
   modelForPower,
   buildConductorPrompt,
+  MAX_TICKET_ATTEMPTS,
 } from './conductorSlice';
 import type { StoreState } from './index';
 import type { PmDependency, PmTicket } from '../tauri/pm';
@@ -89,6 +91,120 @@ function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
     ...overrides,
   };
 }
+
+describe('getConductorPreflight', () => {
+  function preflight(
+    tickets: PmTicket[],
+    options: {
+      dependencies?: PmDependency[];
+      goals?: PmGoal[];
+      goalId?: string | null;
+      failed?: Record<string, number>;
+      approved?: string[];
+    } = {}
+  ) {
+    return getConductorPreflight({
+      tickets,
+      dependencies: options.dependencies ?? [],
+      goals: options.goals ?? [],
+      goalId: options.goalId ?? null,
+      failedTickets: options.failed ?? {},
+      approvedTickets: options.approved ?? [],
+    });
+  }
+
+  it('reports nothing for an empty backlog', () => {
+    expect(preflight([])).toEqual({
+      ready: 0,
+      blocked: 0,
+      needsApproval: 0,
+      inProgress: 0,
+      exhausted: 0,
+    });
+  });
+
+  it('counts unblocked open tickets as ready', () => {
+    const result = preflight([makeTicket({ id: 'a' }), makeTicket({ id: 'b' })]);
+    expect(result.ready).toBe(2);
+  });
+
+  it('counts tickets waiting on an unfinished dependency as blocked', () => {
+    const result = preflight([makeTicket({ id: 'a' }), makeTicket({ id: 'b' })], {
+      dependencies: [
+        { id: 'd1', sourceId: 'b', targetId: 'a', targetType: 'ticket', kind: 'blocks' },
+      ] as PmDependency[],
+    });
+    expect(result).toMatchObject({ ready: 1, blocked: 1 });
+  });
+
+  it('separates tickets that need human approval from ready work', () => {
+    const result = preflight([
+      makeTicket({ id: 'a' }),
+      makeTicket({ id: 'b', needsHumanSupervision: true }),
+    ]);
+    expect(result).toMatchObject({ ready: 1, needsApproval: 1 });
+  });
+
+  it('counts an already approved supervised ticket as ready', () => {
+    const result = preflight([makeTicket({ id: 'b', needsHumanSupervision: true })], {
+      approved: ['b'],
+    });
+    expect(result).toMatchObject({ ready: 1, needsApproval: 0 });
+  });
+
+  it('counts tickets that used up their attempts as exhausted, not ready', () => {
+    const result = preflight([makeTicket({ id: 'a' })], { failed: { a: MAX_TICKET_ATTEMPTS } });
+    expect(result).toMatchObject({ ready: 0, exhausted: 1 });
+  });
+
+  it('counts in-progress tickets separately', () => {
+    const result = preflight([makeTicket({ id: 'a', status: 'in_progress' })]);
+    expect(result).toMatchObject({ ready: 0, inProgress: 1 });
+  });
+
+  it('ignores done and archived tickets', () => {
+    const result = preflight([
+      makeTicket({ id: 'a', status: 'done' }),
+      makeTicket({ id: 'b', status: 'archived' }),
+    ]);
+    expect(result).toMatchObject({ ready: 0, blocked: 0, inProgress: 0 });
+  });
+
+  it('restricts the scope to the goal subtree', () => {
+    const goals = [makeGoal({ id: 'g1' }), makeGoal({ id: 'g2', parentId: 'g1' })];
+    const result = preflight(
+      [
+        makeTicket({ id: 'a', goalId: 'g1' }),
+        makeTicket({ id: 'b', goalId: 'g2' }),
+        makeTicket({ id: 'c', goalId: 'other' }),
+        makeTicket({ id: 'd' }),
+      ],
+      { goals, goalId: 'g1' }
+    );
+    expect(result.ready).toBe(2);
+  });
+
+  it('resolves dependencies against tickets outside the goal scope', () => {
+    const goals = [makeGoal({ id: 'g1' })];
+    const result = preflight(
+      [makeTicket({ id: 'inside', goalId: 'g1' }), makeTicket({ id: 'outside', status: 'open' })],
+      {
+        goals,
+        goalId: 'g1',
+        dependencies: [
+          {
+            id: 'd1',
+            sourceId: 'inside',
+            targetId: 'outside',
+            targetType: 'ticket',
+            kind: 'blocks',
+          },
+        ] as PmDependency[],
+      }
+    );
+    expect(result).toMatchObject({ ready: 0, blocked: 1 });
+  });
+});
 
 describe('conductor pure helpers', () => {
   it('getUnblockedOpenTickets returns open tickets sorted by priority then sortOrder', () => {
