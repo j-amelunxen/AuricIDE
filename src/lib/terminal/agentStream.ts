@@ -5,6 +5,18 @@ export interface TerminalLike {
   write: (data: string) => void;
 }
 
+export interface AgentStreamHandle {
+  /** Stop following the agent's output. */
+  detach: () => void;
+  /**
+   * Resolves once the initial screen is on the terminal. Restoring from a
+   * mirror snapshot is asynchronous (the mirror must finish parsing its
+   * queue), so without this signal a caller cannot tell an empty terminal
+   * from one that has not been painted yet. Never rejects.
+   */
+  restored: Promise<void>;
+}
+
 /**
  * Feed a terminal from the store's agent log buffer: replay the retained
  * history, then follow new appends via a synchronous store subscription
@@ -24,9 +36,10 @@ export interface TerminalLike {
  * that arrive while the snapshot settles are buffered and deduped against
  * the snapshot's seq.
  *
- * Returns a detach function.
+ * Returns a handle with a detach function and a `restored` promise that
+ * resolves once the initial screen has been written.
  */
-export function attachAgentStream(term: TerminalLike, agentId: string): () => void {
+export function attachAgentStream(term: TerminalLike, agentId: string): AgentStreamHandle {
   const initial = useStore.getState();
   const meta = initial.agentLogMeta[agentId];
   let cursor = meta?.seq ?? 0;
@@ -39,9 +52,10 @@ export function attachAgentStream(term: TerminalLike, agentId: string): () => vo
   let buffered: { seq: number; data: string }[] | null = null;
 
   const snapshot = trimmed || agentMirrorResized(agentId) ? snapshotAgentScreen(agentId) : null;
+  let restored: Promise<void>;
   if (snapshot) {
     buffered = [];
-    snapshot.then(({ data, seq }) => {
+    restored = snapshot.then(({ data, seq }) => {
       if (detached) return;
       term.write(data);
       for (const chunk of buffered ?? []) {
@@ -49,8 +63,9 @@ export function attachAgentStream(term: TerminalLike, agentId: string): () => vo
       }
       buffered = null;
     });
-  } else if (history.length > 0) {
-    term.write(history.join(''));
+  } else {
+    if (history.length > 0) term.write(history.join(''));
+    restored = Promise.resolve();
   }
 
   const unsubscribe = useStore.subscribe((state) => {
@@ -71,8 +86,11 @@ export function attachAgentStream(term: TerminalLike, agentId: string): () => vo
     cursor = seq;
   });
 
-  return () => {
-    detached = true;
-    unsubscribe();
+  return {
+    detach: () => {
+      detached = true;
+      unsubscribe();
+    },
+    restored,
   };
 }

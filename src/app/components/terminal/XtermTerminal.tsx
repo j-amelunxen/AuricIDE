@@ -152,7 +152,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
         // replayed screen is laid out for the width it is displayed at. The
         // TUI agent repaints itself for the new size via SIGWINCH.
         resizeShell(id, term.rows, term.cols).catch(() => {});
-        let detach = attachAgentStream({ write: writeTerm }, agentId);
+        let { detach } = attachAgentStream({ write: writeTerm }, agentId);
         // Another view (the fullscreen modal) may take the PTY geometry over.
         // Adopt it and redraw from a fresh mirror snapshot — keeping a screen
         // laid out for the old width produces scrambled fragments.
@@ -161,7 +161,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
           detach();
           term.resize(cols, rows);
           term.reset();
-          detach = attachAgentStream({ write: writeTerm }, agentId);
+          detach = attachAgentStream({ write: writeTerm }, agentId).detach;
         });
         setIsInitialized(true);
         return () => {

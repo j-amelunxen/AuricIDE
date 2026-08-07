@@ -72,7 +72,10 @@ vi.mock('@/lib/terminal/imageInsert', () => ({
 
 // Agent-mode collaborators: stream attach + PTY resize notifications
 const mockDetachAgentStream = vi.fn();
-const mockAttachAgentStream = vi.fn((..._args: unknown[]) => mockDetachAgentStream);
+const mockAttachAgentStream = vi.fn((..._args: unknown[]) => ({
+  detach: mockDetachAgentStream,
+  restored: Promise.resolve(),
+}));
 vi.mock('@/lib/terminal/agentStream', () => ({
   attachAgentStream: (...args: unknown[]) => mockAttachAgentStream(...args),
 }));

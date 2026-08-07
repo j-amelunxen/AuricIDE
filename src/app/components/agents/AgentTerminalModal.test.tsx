@@ -72,6 +72,21 @@ const mockAttachImagePaste = vi.fn((_c: HTMLElement, sendText: (text: string) =>
 });
 const mockAttachFileDrop = vi.fn(() => mockDetachFileDrop);
 
+// Restore latency is the interesting variable here: by default the real stream
+// is used, one test swaps in a restore that stays pending.
+let pendingRestore: Promise<void> | null = null;
+
+vi.mock('@/lib/terminal/agentStream', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/terminal/agentStream')>();
+  return {
+    ...actual,
+    attachAgentStream: (...args: Parameters<typeof actual.attachAgentStream>) => {
+      const handle = actual.attachAgentStream(...args);
+      return pendingRestore ? { ...handle, restored: pendingRestore } : handle;
+    },
+  };
+});
+
 vi.mock('@/lib/terminal/imageInsert', () => ({
   attachImagePaste: (container: HTMLElement, sendText: (text: string) => void) =>
     mockAttachImagePaste(container, sendText),
@@ -478,5 +493,44 @@ describe('AgentTerminalModal', () => {
 
       expect(screen.queryByText('Spawn Agent with Selection')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('AgentTerminalModal restore feedback', () => {
+  const agent: AgentInfo = {
+    id: 'agent-restore',
+    name: 'Restoring Agent',
+    model: 'sonnet',
+    provider: 'claude',
+    status: 'running',
+    startedAt: 1000,
+  };
+
+  beforeEach(() => {
+    pendingRestore = null;
+    vi.useRealTimers();
+  });
+
+  it('stays quiet while a restore completes quickly', async () => {
+    render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('agent-xterm')).toBeInTheDocument());
+    await new Promise((r) => setTimeout(r, 250));
+    expect(screen.queryByTestId('terminal-restoring')).not.toBeInTheDocument();
+  });
+
+  it('says it is restoring when the screen takes a noticeable moment', async () => {
+    let finishRestore = () => {};
+    pendingRestore = new Promise<void>((resolve) => {
+      finishRestore = resolve;
+    });
+
+    render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('terminal-restoring')).toBeInTheDocument());
+
+    await act(async () => {
+      finishRestore();
+      await pendingRestore;
+    });
+    await waitFor(() => expect(screen.queryByTestId('terminal-restoring')).not.toBeInTheDocument());
   });
 });

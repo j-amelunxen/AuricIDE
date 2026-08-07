@@ -23,6 +23,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
     selection: string;
   } | null>(null);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -92,7 +93,20 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       // Single source of truth: the store (see attachAgentStream). A second
       // Tauri event channel had an await gap between backfill and live
       // subscribe, so chunks got lost or shown twice.
-      let detachStream = attachAgentStream(term, agentId);
+      // Restoring a long-running agent means replaying its whole mirror screen,
+      // which is not instant. Say so rather than showing a black rectangle —
+      // but only once it is slow enough to notice, so the common case is quiet.
+      const followRestore = (restored: Promise<void>) => {
+        const slowEnoughToMention = setTimeout(() => setIsRestoring(true), 150);
+        void restored.finally(() => {
+          clearTimeout(slowEnoughToMention);
+          setIsRestoring(false);
+        });
+      };
+
+      const stream = attachAgentStream(term, agentId);
+      let detachStream = stream.detach;
+      followRestore(stream.restored);
 
       // Another view (the bottom terminal preview) may take the PTY geometry
       // over. Adopt it and redraw from a fresh mirror snapshot — keeping a
@@ -102,7 +116,9 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         detachStream();
         term.resize(cols, rows);
         term.reset();
-        detachStream = attachAgentStream(term, agentId);
+        const reattached = attachAgentStream(term, agentId);
+        detachStream = reattached.detach;
+        followRestore(reattached.restored);
       });
 
       // Forward keyboard input to the agent PTY
@@ -174,6 +190,14 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
     <>
       <div className="relative h-full w-full">
         <div ref={containerRef} data-testid="agent-xterm" className="h-full w-full" />
+        {isRestoring && (
+          <div
+            data-testid="terminal-restoring"
+            className="pointer-events-none absolute left-3 top-3 z-30 rounded-full bg-black/70 px-2.5 py-1 text-[10px] text-foreground-muted"
+          >
+            Restoring screen…
+          </div>
+        )}
         {isDropTarget && (
           <div
             data-testid="terminal-drop-overlay"
