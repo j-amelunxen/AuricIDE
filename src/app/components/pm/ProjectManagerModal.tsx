@@ -36,6 +36,8 @@ function ProjectManagerDialog() {
   const loadPmData = useStore((s) => s.loadPmData);
   const refreshPmData = useStore((s) => s.refreshPmData);
   const savePmData = useStore((s) => s.savePmData);
+  const pmLoading = useStore((s) => s.pmLoading);
+  const pmLoadError = useStore((s) => s.pmLoadError);
   const discardPmChanges = useStore((s) => s.discardPmChanges);
   const addEpic = useStore((s) => s.addEpic);
   const updateEpic = useStore((s) => s.updateEpic);
@@ -426,6 +428,8 @@ function ProjectManagerDialog() {
             {/* Ticket list */}
             <div className="w-[280px] shrink-0 border-l border-r border-white/[0.08]">
               <TicketTable
+                loading={pmLoading}
+                loadError={pmLoadError}
                 tickets={filteredTickets}
                 allTickets={draftTickets}
                 testCases={draftTestCases}

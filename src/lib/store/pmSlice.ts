@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import { withPersistFeedback } from './persistFeedback';
+import { IDLE_LOAD_STATE, trackLoad } from './loadState';
 import type {
   PmEpic,
   PmTicket,
@@ -17,6 +18,10 @@ import {
 import { initProjectDb } from '../tauri/db';
 
 export interface PmSlice {
+  /** True while project data is being read; distinguishes empty from not-yet. */
+  pmLoading: boolean;
+  /** Why the last load failed; null when it succeeded or never ran. */
+  pmLoadError: string | null;
   // Persisted state (last saved)
   pmEpics: PmEpic[];
   pmTickets: PmTicket[];
@@ -150,6 +155,8 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
   // Status history
   pmStatusHistory: [],
   pmHistoryLoading: false,
+  pmLoading: IDLE_LOAD_STATE.loading,
+  pmLoadError: IDLE_LOAD_STATE.error,
   // UI state
   pmModalOpen: false,
   pmSelectedEpicId: null,
@@ -168,36 +175,40 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
 
   setPmModalOpen: (open) => set({ pmModalOpen: open }),
 
-  loadPmData: async (projectPath) => {
-    await initProjectDb(projectPath);
-    const state = await ipcPmLoad(projectPath);
+  loadPmData: (projectPath) =>
+    trackLoad(
+      (s) => set({ pmLoading: s.loading, pmLoadError: s.error }),
+      async () => {
+        await initProjectDb(projectPath);
+        const state = await ipcPmLoad(projectPath);
 
-    // Auto-archive 'done' tickets older than 24 hours
-    const now = new Date();
-    let hasArchived = false;
-    const processedTickets = state.tickets.map((t) => {
-      if (t.status === 'done' && t.statusUpdatedAt) {
-        const updatedAt = new Date(t.statusUpdatedAt);
-        if (now.getTime() - updatedAt.getTime() > 24 * 60 * 60 * 1000) {
-          hasArchived = true;
-          return { ...t, status: 'archived' as const, statusUpdatedAt: now.toISOString() };
-        }
+        // Auto-archive 'done' tickets older than 24 hours
+        const now = new Date();
+        let hasArchived = false;
+        const processedTickets = state.tickets.map((t) => {
+          if (t.status === 'done' && t.statusUpdatedAt) {
+            const updatedAt = new Date(t.statusUpdatedAt);
+            if (now.getTime() - updatedAt.getTime() > 24 * 60 * 60 * 1000) {
+              hasArchived = true;
+              return { ...t, status: 'archived' as const, statusUpdatedAt: now.toISOString() };
+            }
+          }
+          return t;
+        });
+
+        set({
+          pmEpics: state.epics,
+          pmTickets: processedTickets,
+          pmTestCases: state.testCases,
+          pmDependencies: state.dependencies,
+          pmDraftEpics: state.epics,
+          pmDraftTickets: processedTickets,
+          pmDraftTestCases: state.testCases,
+          pmDraftDependencies: state.dependencies,
+          pmDirty: hasArchived,
+        });
       }
-      return t;
-    });
-
-    set({
-      pmEpics: state.epics,
-      pmTickets: processedTickets,
-      pmTestCases: state.testCases,
-      pmDependencies: state.dependencies,
-      pmDraftEpics: state.epics,
-      pmDraftTickets: processedTickets,
-      pmDraftTestCases: state.testCases,
-      pmDraftDependencies: state.dependencies,
-      pmDirty: hasArchived,
-    });
-  },
+    ),
 
   refreshPmData: async (projectPath) => {
     try {

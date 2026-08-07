@@ -183,3 +183,33 @@ describe('TicketTable', () => {
     expect(screen.queryByTitle('Blocked by dependencies')).toBeNull();
   });
 });
+
+describe('TicketTable load status', () => {
+  const props = {
+    tickets: [] as PmTicket[],
+    allTickets: [] as PmTicket[],
+    testCases: [] as PmTestCase[],
+    selectedTicketId: null as string | null,
+    dependencies: [] as PmDependency[],
+    onSelectTicket: vi.fn(),
+    onUpdateTicket: vi.fn(),
+    onAddTicket: vi.fn(),
+  };
+
+  it('does not claim there are no tickets while they load', () => {
+    render(<TicketTable {...props} loading />);
+    expect(screen.getByTestId('ticket-table-loading')).toBeInTheDocument();
+    expect(screen.queryByText('No tickets')).not.toBeInTheDocument();
+  });
+
+  it('says tickets could not be read instead of showing none', () => {
+    render(<TicketTable {...props} loadError="database is locked" />);
+    expect(screen.getByTestId('ticket-table-error')).toHaveTextContent('database is locked');
+    expect(screen.queryByText('No tickets')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty state once a load finished with no tickets', () => {
+    render(<TicketTable {...props} />);
+    expect(screen.getByText('No tickets')).toBeInTheDocument();
+  });
+});

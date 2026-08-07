@@ -815,3 +815,64 @@ describe('savePmData failure feedback', () => {
     expect(store.getState().toasts).toEqual([]);
   });
 });
+
+describe('load status', () => {
+  beforeEach(() => {
+    mockPmLoad
+      .mockReset()
+      .mockResolvedValue({ epics: [], tickets: [], testCases: [], dependencies: [] });
+    mockInitProjectDb.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('starts neither loading nor failed', () => {
+    const store = createTestStore();
+    expect(store.getState().pmLoading).toBe(false);
+    expect(store.getState().pmLoadError).toBeNull();
+  });
+
+  it('reports loading while the read is in flight', async () => {
+    const store = createTestStore();
+    let release: (() => void) | null = null;
+    mockPmLoad.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ epics: [], tickets: [], testCases: [], dependencies: [] });
+        })
+    );
+
+    const done = store.getState().loadPmData('/repo');
+    expect(store.getState().pmLoading).toBe(true);
+
+    // initProjectDb is awaited first, so let the chain reach the read itself.
+    await Promise.resolve();
+    await Promise.resolve();
+    release!();
+    await done;
+    expect(store.getState().pmLoading).toBe(false);
+  });
+
+  it('records why a load failed instead of looking empty', async () => {
+    const store = createTestStore();
+    mockPmLoad.mockRejectedValueOnce(new Error('no such table: pm_epics'));
+
+    await store.getState().loadPmData('/repo');
+
+    expect(store.getState().pmLoading).toBe(false);
+    expect(store.getState().pmLoadError).toBe('no such table: pm_epics');
+    expect(store.getState().pmEpics).toEqual([]);
+  });
+
+  it('does not reject — nobody awaits an opened surface', async () => {
+    const store = createTestStore();
+    mockPmLoad.mockRejectedValueOnce(new Error('boom'));
+    await expect(store.getState().loadPmData('/repo')).resolves.toBeUndefined();
+  });
+
+  it('clears a previous error on a successful retry', async () => {
+    const store = createTestStore();
+    mockPmLoad.mockRejectedValueOnce(new Error('boom'));
+    await store.getState().loadPmData('/repo');
+    await store.getState().loadPmData('/repo');
+    expect(store.getState().pmLoadError).toBeNull();
+  });
+});
