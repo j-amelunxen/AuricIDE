@@ -203,4 +203,87 @@ describe('CommandPalette', () => {
     const items = screen.getAllByTestId('command-palette-item');
     expect(items[0]).toHaveAttribute('data-selected', 'true');
   });
+
+  it('finds a command by acronym', async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.type(screen.getByTestId('command-palette-input'), 'ts');
+    const items = screen.getAllByTestId('command-palette-item');
+    expect(items[0]).toHaveTextContent('Toggle Sidebar');
+  });
+
+  it('finds a command by scattered characters', async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.type(screen.getByTestId('command-palette-input'), 'cmt');
+    const items = screen.getAllByTestId('command-palette-item');
+    expect(items[0]).toHaveTextContent('Commit Changes');
+  });
+
+  it('highlights the matched characters in the label', async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.type(screen.getByTestId('command-palette-input'), 'cmt');
+    const marks = within(screen.getAllByTestId('command-palette-item')[0]).getAllByTestId(
+      'command-label-match'
+    );
+    expect(marks.map((m) => m.textContent).join('')).toBe('Cmt');
+  });
+
+  it('lists recently used commands first', () => {
+    renderPalette({ recentIds: ['agent.deploy', 'git.commit'] });
+    const items = screen.getAllByTestId('command-palette-item');
+    expect(items[0]).toHaveTextContent('Deploy Agent');
+    expect(items[1]).toHaveTextContent('Commit Changes');
+  });
+
+  it('marks recently used commands so they are recognisable', () => {
+    renderPalette({ recentIds: ['agent.deploy'] });
+    const items = screen.getAllByTestId('command-palette-item');
+    expect(within(items[0]).getByTestId('command-recent')).toBeInTheDocument();
+    expect(within(items[1]).queryByTestId('command-recent')).not.toBeInTheDocument();
+  });
+
+  it('does not mark commands as recent while a query is active', async () => {
+    const user = userEvent.setup();
+    renderPalette({ recentIds: ['agent.deploy'] });
+    await user.type(screen.getByTestId('command-palette-input'), 'deploy');
+    const items = screen.getAllByTestId('command-palette-item');
+    expect(within(items[0]).queryByTestId('command-recent')).not.toBeInTheDocument();
+  });
+
+  it('does not execute anything when Enter is pressed with no results', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette();
+    await user.type(screen.getByTestId('command-palette-input'), 'zzzzzzz');
+    await user.keyboard('{Enter}');
+    expect(props.onExecute).not.toHaveBeenCalled();
+  });
+
+  it('keeps arrow navigation stable when there are no results', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette();
+    await user.type(screen.getByTestId('command-palette-input'), 'zzzzzzz');
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByTestId('command-palette-empty')).toBeInTheDocument();
+    expect(props.onExecute).not.toHaveBeenCalled();
+  });
+
+  it('scrolls the selected command into view', async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderPalette();
+    await user.keyboard('{ArrowDown}');
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  it('shows the result count', async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    expect(screen.getByTestId('command-palette-count')).toHaveTextContent('5');
+    await user.type(screen.getByTestId('command-palette-input'), 'save');
+    expect(screen.getByTestId('command-palette-count')).toHaveTextContent('1');
+  });
 });

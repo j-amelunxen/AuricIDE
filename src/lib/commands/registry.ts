@@ -1,3 +1,5 @@
+import { rankCommands } from './fuzzy';
+
 export interface Command {
   id: string;
   label: string;
@@ -24,26 +26,7 @@ export function createCommandRegistry(): {
     },
 
     search(query: string): Command[] {
-      const all = Array.from(commands.values());
-      if (query === '') return all;
-
-      const lowerQuery = query.toLowerCase();
-
-      const prefixMatches: Command[] = [];
-      const substringMatches: Command[] = [];
-
-      for (const cmd of all) {
-        const lowerLabel = cmd.label.toLowerCase();
-        const lowerCategory = cmd.category.toLowerCase();
-
-        if (lowerLabel.startsWith(lowerQuery) || lowerCategory.startsWith(lowerQuery)) {
-          prefixMatches.push(cmd);
-        } else if (lowerLabel.includes(lowerQuery) || lowerCategory.includes(lowerQuery)) {
-          substringMatches.push(cmd);
-        }
-      }
-
-      return [...prefixMatches, ...substringMatches];
+      return rankCommands(Array.from(commands.values()), query).map((r) => r.command);
     },
 
     getAll(): Command[] {

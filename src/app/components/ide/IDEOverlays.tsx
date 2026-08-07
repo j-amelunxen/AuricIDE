@@ -131,6 +131,7 @@ export function IDEOverlays({
 }: IDEOverlaysProps) {
   const goalsDraft = useStore((s) => s.goalsDraft);
   const activeAgents = useStore((s) => s.agents);
+  const recentCommandIds = useStore((s) => s.recentCommandIds);
   return (
     <>
       <SpawnAgentDialog
@@ -181,6 +182,7 @@ export function IDEOverlays({
         <CommandPalette
           commands={commands}
           isOpen
+          recentIds={recentCommandIds}
           onClose={() => setCommandPaletteOpen(false)}
           onExecute={handleCommandExecute}
         />
