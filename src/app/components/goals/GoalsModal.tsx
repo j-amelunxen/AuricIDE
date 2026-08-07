@@ -59,6 +59,8 @@ function GoalsModalContent() {
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
   const setOrchestrationOpen = useStore((s) => s.setOrchestrationOpen);
   const loadGoals = useStore((s) => s.loadGoals);
+  const goalsLoading = useStore((s) => s.goalsLoading);
+  const goalsLoadError = useStore((s) => s.goalsLoadError);
   const saveGoals = useStore((s) => s.saveGoals);
   const discardGoalChanges = useStore((s) => s.discardGoalChanges);
   const addGoal = useStore((s) => s.addGoal);
@@ -287,6 +289,8 @@ function GoalsModalContent() {
               selectedId={selectedGoalId}
               onSelect={setSelectedGoalId}
               activeAgentsByGoal={activeAgentsByGoal}
+              loading={goalsLoading}
+              loadError={goalsLoadError}
               onCreate={() => {
                 setCreateParentId(null);
                 setCreateOpen(true);

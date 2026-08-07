@@ -104,3 +104,41 @@ describe('GoalTree', () => {
     expect(screen.getByTestId('goal-agents-g1').textContent).toContain('2');
   });
 });
+
+describe('GoalTree load status', () => {
+  const baseProps = {
+    goals: [makeGoal({ id: 'g1' })],
+    tickets: [makeTicket()],
+    selectedId: null,
+    onSelect: () => {},
+    onCreate: vi.fn(),
+  };
+
+  it('does not claim emptiness while goals are still loading', () => {
+    render(<GoalTree {...baseProps} goals={[]} loading />);
+    expect(screen.queryByTestId('goal-tree-empty')).not.toBeInTheDocument();
+    expect(screen.getByTestId('goal-tree-loading')).toBeInTheDocument();
+  });
+
+  it('says goals could not be read instead of showing an empty tree', () => {
+    render(<GoalTree {...baseProps} goals={[]} loadError="database is locked" />);
+    expect(screen.queryByTestId('goal-tree-empty')).not.toBeInTheDocument();
+    expect(screen.getByTestId('goal-tree-error')).toHaveTextContent('database is locked');
+  });
+
+  it('offers no "create your first goal" while the load is broken', () => {
+    render(<GoalTree {...baseProps} goals={[]} loadError="boom" />);
+    expect(screen.queryByTestId('goal-tree-empty-create')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty state once a load finished with no goals', () => {
+    render(<GoalTree {...baseProps} goals={[]} />);
+    expect(screen.getByTestId('goal-tree-empty')).toBeInTheDocument();
+  });
+
+  it('keeps showing goals already loaded during a refresh', () => {
+    render(<GoalTree {...baseProps} loading />);
+    expect(screen.getByTestId('goal-tree')).toBeInTheDocument();
+    expect(screen.queryByTestId('goal-tree-loading')).not.toBeInTheDocument();
+  });
+});

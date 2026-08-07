@@ -23,6 +23,10 @@ interface GoalTreeProps {
   activeAgentsByGoal?: Record<string, number>;
   /** Opens the goal creation dialog; enables the empty-state call to action. */
   onCreate?: () => void;
+  /** True while goals are being read — an empty tree is not yet a fact. */
+  loading?: boolean;
+  /** Why the goals could not be read; shown instead of a false empty state. */
+  loadError?: string | null;
 }
 
 interface GoalNodeProps extends GoalTreeProps {
@@ -159,6 +163,8 @@ export function GoalTree({
   onSelect,
   activeAgentsByGoal,
   onCreate,
+  loading = false,
+  loadError = null,
 }: GoalTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const roots = useMemo(() => getRootGoals(goals), [goals]);
@@ -170,6 +176,35 @@ export function GoalTree({
       else next.add(id);
       return next;
     });
+
+  // An empty tree means three different things. Saying "no goals yet" while
+  // the read is still running — or failed — is the one that makes a user
+  // believe their project state is gone.
+  if (roots.length === 0 && loadError) {
+    return (
+      <div
+        data-testid="goal-tree-error"
+        className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
+      >
+        <span className="material-symbols-outlined text-3xl text-red-400/60">error</span>
+        <p className="text-xs font-medium text-foreground">Goals could not be read</p>
+        <p className="max-w-[260px] text-[10px] leading-relaxed text-foreground-muted">
+          {loadError}
+        </p>
+      </div>
+    );
+  }
+
+  if (roots.length === 0 && loading) {
+    return (
+      <div
+        data-testid="goal-tree-loading"
+        className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
+      >
+        <p className="text-xs text-foreground-muted">Loading goals…</p>
+      </div>
+    );
+  }
 
   if (roots.length === 0) {
     return (

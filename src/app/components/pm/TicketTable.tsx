@@ -21,6 +21,10 @@ interface TicketTableProps {
   onUpdateTicket: (id: string, updates: Partial<PmTicket>) => void;
   onSave?: () => Promise<void>;
   onAddTicket: () => void;
+  /** True while project data is being read — an empty list is not yet a fact. */
+  loading?: boolean;
+  /** Why the tickets could not be read; shown instead of a false empty state. */
+  loadError?: string | null;
 }
 
 type SortKey = 'name' | 'status' | 'priority' | 'createdAt';
@@ -76,6 +80,8 @@ export function TicketTable({
   onUpdateTicket,
   onSave,
   onAddTicket,
+  loading = false,
+  loadError = null,
 }: TicketTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortAsc, setSortAsc] = useState(true);
@@ -214,7 +220,27 @@ export function TicketTable({
 
       {/* Ticket list */}
       <div className="flex-1 overflow-y-auto">
-        {sorted.length === 0 && (
+        {sorted.length === 0 && loadError && (
+          <div
+            data-testid="ticket-table-error"
+            className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center"
+          >
+            <span className="material-symbols-outlined text-[28px] text-red-400/60">error</span>
+            <p className="text-xs text-foreground">Tickets could not be read</p>
+            <p className="max-w-[260px] text-[10px] text-foreground-muted">{loadError}</p>
+          </div>
+        )}
+
+        {sorted.length === 0 && !loadError && loading && (
+          <div
+            data-testid="ticket-table-loading"
+            className="flex flex-col items-center justify-center px-4 py-10"
+          >
+            <p className="text-xs text-foreground-muted">Loading tickets…</p>
+          </div>
+        )}
+
+        {sorted.length === 0 && !loadError && !loading && (
           <div className="flex flex-col items-center justify-center px-4 py-10 gap-2">
             <span className="material-symbols-outlined text-[28px] text-foreground-muted/20">
               inbox

@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import { withPersistFeedback } from './persistFeedback';
+import { IDLE_LOAD_STATE, trackLoad } from './loadState';
 import type {
   PmRequirement,
   PmRequirementTestLink,
@@ -38,6 +39,10 @@ export function getTestLinksForRequirement(
 }
 
 export interface RequirementsSlice {
+  /** True while project data is being read; distinguishes empty from not-yet. */
+  requirementsLoading: boolean;
+  /** Why the last load failed; null when it succeeded or never ran. */
+  requirementsLoadError: string | null;
   // Persisted state (last saved)
   requirements: PmRequirement[];
   requirementTestLinks: PmRequirementTestLink[];
@@ -78,6 +83,8 @@ export interface RequirementsSlice {
 export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, get) => ({
   // Persisted state
   requirements: [],
+  requirementsLoading: IDLE_LOAD_STATE.loading,
+  requirementsLoadError: IDLE_LOAD_STATE.error,
   requirementTestLinks: [],
   // Draft state
   requirementsDraft: [],
@@ -94,34 +101,39 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
   requirementFilterVerification: '',
   requirementSearchQuery: '',
 
-  loadRequirements: async (projectPath) => {
-    await initProjectDb(projectPath);
-    const state: RequirementsState = await ipcRequirementsLoad(projectPath);
-    // Rust stores applies_to as a JSON string — parse it into a real array
-    const requirements = state.requirements.map((r) => ({
-      ...r,
-      appliesTo: typeof r.appliesTo === 'string' ? JSON.parse(r.appliesTo) : (r.appliesTo ?? []),
-    }));
-    const { requirementsDirty, currentRequirementsProject } = get();
-    const isNewProject = currentRequirementsProject !== projectPath;
+  loadRequirements: (projectPath) =>
+    trackLoad(
+      (s) => set({ requirementsLoading: s.loading, requirementsLoadError: s.error }),
+      async () => {
+        await initProjectDb(projectPath);
+        const state: RequirementsState = await ipcRequirementsLoad(projectPath);
+        // Rust stores applies_to as a JSON string — parse it into a real array
+        const requirements = state.requirements.map((r) => ({
+          ...r,
+          appliesTo:
+            typeof r.appliesTo === 'string' ? JSON.parse(r.appliesTo) : (r.appliesTo ?? []),
+        }));
+        const { requirementsDirty, currentRequirementsProject } = get();
+        const isNewProject = currentRequirementsProject !== projectPath;
 
-    if (!requirementsDirty || isNewProject) {
-      set({
-        requirements,
-        requirementsDraft: requirements,
-        requirementTestLinks: state.testLinks,
-        requirementTestLinksDraft: state.testLinks,
-        requirementsDirty: false,
-        currentRequirementsProject: projectPath,
-      });
-    } else {
-      set({
-        requirements,
-        requirementTestLinks: state.testLinks,
-        currentRequirementsProject: projectPath,
-      });
-    }
-  },
+        if (!requirementsDirty || isNewProject) {
+          set({
+            requirements,
+            requirementsDraft: requirements,
+            requirementTestLinks: state.testLinks,
+            requirementTestLinksDraft: state.testLinks,
+            requirementsDirty: false,
+            currentRequirementsProject: projectPath,
+          });
+        } else {
+          set({
+            requirements,
+            requirementTestLinks: state.testLinks,
+            currentRequirementsProject: projectPath,
+          });
+        }
+      }
+    ),
 
   saveRequirements: (projectPath) =>
     withPersistFeedback(get(), 'requirements', async () => {

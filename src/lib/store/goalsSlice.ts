@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { IDLE_LOAD_STATE, trackLoad } from './loadState';
 import { withPersistFeedback } from './persistFeedback';
 import type {
   GoalsState,
@@ -202,6 +203,10 @@ function nowTimestamp(): string {
 let goalsSaveChain: Promise<void> = Promise.resolve();
 
 export interface GoalsSlice {
+  /** True while project data is being read; distinguishes empty from not-yet. */
+  goalsLoading: boolean;
+  /** Why the last load failed; null when it succeeded or never ran. */
+  goalsLoadError: string | null;
   // Persisted state (last saved)
   goals: PmGoal[];
   goalRuns: PmGoalRun[];
@@ -237,6 +242,8 @@ export interface GoalsSlice {
 
 export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   goals: [],
+  goalsLoading: IDLE_LOAD_STATE.loading,
+  goalsLoadError: IDLE_LOAD_STATE.error,
   goalRuns: [],
   goalRequirementLinks: [],
   goalsDraft: [],
@@ -248,46 +255,53 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   selectedGoalId: null,
   orchestrationOpen: false,
 
-  loadGoals: async (projectPath) => {
-    await initProjectDb(projectPath);
-    const state: GoalsState = await ipcGoalsLoad(projectPath);
-    const { goalsDirty, currentGoalsProject } = get();
-    const isNewProject = currentGoalsProject !== projectPath;
+  loadGoals: (projectPath) =>
+    trackLoad(
+      (s) => set({ goalsLoading: s.loading, goalsLoadError: s.error }),
+      async () => {
+        await initProjectDb(projectPath);
+        const state: GoalsState = await ipcGoalsLoad(projectPath);
+        const { goalsDirty, currentGoalsProject } = get();
+        const isNewProject = currentGoalsProject !== projectPath;
 
-    if (!goalsDirty || isNewProject) {
-      set({
-        goals: state.goals,
-        goalsDraft: state.goals,
-        goalRuns: state.goalRuns,
-        goalRunsDraft: state.goalRuns,
-        goalRequirementLinks: state.requirementLinks,
-        goalRequirementLinksDraft: state.requirementLinks,
-        goalsDirty: false,
-        currentGoalsProject: projectPath,
-      });
-    } else {
-      // Dirty draft: keep local edits, but adopt rows created since the last
-      // load (e.g. goals an MCP agent decomposed) so they are not invisible.
-      const { goals, goalsDraft, goalRuns, goalRunsDraft, goalRequirementLinksDraft } = get();
-      const knownGoalIds = new Set([...goals, ...goalsDraft].map((g) => g.id));
-      const knownRunIds = new Set([...goalRuns, ...goalRunsDraft].map((r) => r.id));
-      const knownLinkIds = new Set(
-        [...get().goalRequirementLinks, ...goalRequirementLinksDraft].map((l) => l.id)
-      );
-      set({
-        goals: state.goals,
-        goalRuns: state.goalRuns,
-        goalRequirementLinks: state.requirementLinks,
-        goalsDraft: [...goalsDraft, ...state.goals.filter((g) => !knownGoalIds.has(g.id))],
-        goalRunsDraft: [...goalRunsDraft, ...state.goalRuns.filter((r) => !knownRunIds.has(r.id))],
-        goalRequirementLinksDraft: [
-          ...goalRequirementLinksDraft,
-          ...state.requirementLinks.filter((l) => !knownLinkIds.has(l.id)),
-        ],
-        currentGoalsProject: projectPath,
-      });
-    }
-  },
+        if (!goalsDirty || isNewProject) {
+          set({
+            goals: state.goals,
+            goalsDraft: state.goals,
+            goalRuns: state.goalRuns,
+            goalRunsDraft: state.goalRuns,
+            goalRequirementLinks: state.requirementLinks,
+            goalRequirementLinksDraft: state.requirementLinks,
+            goalsDirty: false,
+            currentGoalsProject: projectPath,
+          });
+        } else {
+          // Dirty draft: keep local edits, but adopt rows created since the last
+          // load (e.g. goals an MCP agent decomposed) so they are not invisible.
+          const { goals, goalsDraft, goalRuns, goalRunsDraft, goalRequirementLinksDraft } = get();
+          const knownGoalIds = new Set([...goals, ...goalsDraft].map((g) => g.id));
+          const knownRunIds = new Set([...goalRuns, ...goalRunsDraft].map((r) => r.id));
+          const knownLinkIds = new Set(
+            [...get().goalRequirementLinks, ...goalRequirementLinksDraft].map((l) => l.id)
+          );
+          set({
+            goals: state.goals,
+            goalRuns: state.goalRuns,
+            goalRequirementLinks: state.requirementLinks,
+            goalsDraft: [...goalsDraft, ...state.goals.filter((g) => !knownGoalIds.has(g.id))],
+            goalRunsDraft: [
+              ...goalRunsDraft,
+              ...state.goalRuns.filter((r) => !knownRunIds.has(r.id)),
+            ],
+            goalRequirementLinksDraft: [
+              ...goalRequirementLinksDraft,
+              ...state.requirementLinks.filter((l) => !knownLinkIds.has(l.id)),
+            ],
+            currentGoalsProject: projectPath,
+          });
+        }
+      }
+    ),
 
   saveGoals: (projectPath) => {
     const doSave = async (): Promise<void> => {
