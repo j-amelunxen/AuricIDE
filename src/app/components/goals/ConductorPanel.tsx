@@ -2,7 +2,11 @@
 
 import { useState } from 'react';
 import type { PmTicket } from '@/lib/tauri/pm';
-import type { ConductorDecision, ConductorRunSummary } from '@/lib/store/conductorSlice';
+import type {
+  ConductorDecision,
+  ConductorPreflight,
+  ConductorRunSummary,
+} from '@/lib/store/conductorSlice';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 
 interface ConductorPanelProps {
@@ -14,6 +18,10 @@ interface ConductorPanelProps {
   decisions: ConductorDecision[];
   lastRun: ConductorRunSummary | null;
   canStart: boolean;
+  /** What a run would find right now — shown before starting. */
+  preflight?: ConductorPreflight;
+  /** Goal a run would be scoped to; null = all tickets. */
+  selectedGoalName?: string | null;
   providers: ProviderInfo[];
   providerId: string | null;
   model: string | null;
@@ -69,6 +77,27 @@ const DECISION_ICONS: Record<ConductorDecision['action'], { icon: string; cls: s
   goal_achieved: { icon: 'military_tech', cls: 'text-green-300' },
 };
 
+/**
+ * Reads the preflight as a sentence a human can act on: what the run will pick
+ * up first, then what it will leave alone and why.
+ */
+function preflightLabel(preflight: ConductorPreflight, selectedGoalName: string | null): string {
+  const held: string[] = [];
+  if (preflight.blocked > 0) held.push(`${preflight.blocked} blocked`);
+  if (preflight.needsApproval > 0) held.push(`${preflight.needsApproval} need approval`);
+  if (preflight.inProgress > 0) held.push(`${preflight.inProgress} in progress`);
+  if (preflight.exhausted > 0) held.push(`${preflight.exhausted} out of attempts`);
+
+  if (preflight.ready === 0 && preflight.inProgress === 0) {
+    const nothing = selectedGoalName
+      ? 'nothing to work — will verify the goal'
+      : 'no open tickets in scope';
+    return held.length > 0 ? `${nothing} · ${held.join(' · ')}` : nothing;
+  }
+
+  return [`${preflight.ready} ready`, ...held].join(' · ');
+}
+
 export function ConductorPanel({
   running,
   scopeGoalName,
@@ -78,6 +107,8 @@ export function ConductorPanel({
   decisions,
   lastRun,
   canStart,
+  preflight,
+  selectedGoalName = null,
   providers,
   providerId,
   model,
@@ -184,6 +215,15 @@ export function ConductorPanel({
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {/* What pressing Start would actually do, in the same glance as the button. */}
+          {!running && canStart && preflight && (
+            <span
+              data-testid="conductor-preflight"
+              className="text-[10px] text-foreground-muted tabular-nums"
+            >
+              {preflightLabel(preflight, selectedGoalName)}
+            </span>
+          )}
           <button
             data-testid="conductor-log-toggle"
             onClick={() => setLogExpanded((v) => !v)}

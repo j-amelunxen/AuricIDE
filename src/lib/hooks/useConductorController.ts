@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { useStore } from '@/lib/store';
+import { getConductorPreflight } from '@/lib/store/conductorSlice';
 
 /**
  * Shared wiring for the ConductorPanel: derives every prop the panel needs
@@ -21,8 +22,11 @@ export function useConductorController() {
   const model = useStore((s) => s.conductorModel);
   const providers = useStore((s) => s.providers);
   const tickets = useStore((s) => s.pmDraftTickets);
+  const dependencies = useStore((s) => s.pmDraftDependencies);
   const goals = useStore((s) => s.goalsDraft);
   const selectedGoalId = useStore((s) => s.selectedGoalId);
+  const failedTickets = useStore((s) => s.conductorFailedTickets);
+  const approvedTickets = useStore((s) => s.conductorApprovedTickets);
   const rootPath = useStore((s) => s.rootPath);
 
   const startConductor = useStore((s) => s.startConductor);
@@ -37,6 +41,29 @@ export function useConductorController() {
   const pendingApprovals = useMemo(
     () => tickets.filter((t) => pendingApprovalIds.includes(t.id)),
     [tickets, pendingApprovalIds]
+  );
+
+  // Scoped to the SELECTED goal, not the running one: this answers "what would
+  // happen if I pressed Start now".
+  const preflight = useMemo(
+    () =>
+      getConductorPreflight({
+        tickets: tickets ?? [],
+        // Mirrors conductorTick's own defensive reads: these slices may not be
+        // populated yet on a freshly opened project.
+        dependencies: dependencies ?? [],
+        goals: goals ?? [],
+        goalId: selectedGoalId,
+        failedTickets: failedTickets ?? {},
+        approvedTickets: approvedTickets ?? [],
+      }),
+    [tickets, dependencies, goals, selectedGoalId, failedTickets, approvedTickets]
+  );
+
+  const selectedGoalName = useMemo(
+    () =>
+      selectedGoalId ? ((goals ?? []).find((g) => g.id === selectedGoalId)?.name ?? null) : null,
+    [selectedGoalId, goals]
   );
 
   const scopeGoalName = useMemo(() => {
@@ -64,6 +91,8 @@ export function useConductorController() {
     pendingApprovals,
     decisions,
     lastRun,
+    preflight,
+    selectedGoalName,
     canStart: rootPath !== null,
     providers,
     providerId,
