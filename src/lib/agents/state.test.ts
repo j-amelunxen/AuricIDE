@@ -37,6 +37,20 @@ describe('agentState', () => {
     expect(agentState(agent({ status: 'queued' }), NOW)).toBe('queued');
   });
 
+  it('escalates a long-quiet agent to stalled', () => {
+    // Waiting is normal; silence past the stall window is the user's problem
+    // now — the card must say so instead of leaving them to compare clocks.
+    expect(agentState(agent({ lastActivityAt: NOW - 120_000 }), NOW)).toBe('stalled');
+  });
+
+  it('does not call an agent stalled while it is merely waiting', () => {
+    expect(agentState(agent({ lastActivityAt: NOW - 60_000 }), NOW)).toBe('waiting');
+  });
+
+  it('never calls a fresh agent stalled before it ever spoke', () => {
+    expect(agentState(agent({ lastActivityAt: undefined }), NOW)).toBe('waiting');
+  });
+
   it('calls out an agent that is waiting on a human', () => {
     // Trumps "working": a redrawing permission menu keeps the agent looking
     // live while it is in fact blocked on the user.
@@ -51,7 +65,15 @@ describe('agentState', () => {
   });
 
   it('labels every state', () => {
-    const states = ['working', 'waiting', 'needs-input', 'done', 'error', 'queued'] as const;
+    const states = [
+      'working',
+      'waiting',
+      'needs-input',
+      'stalled',
+      'done',
+      'error',
+      'queued',
+    ] as const;
     states.forEach((state) => expect(AGENT_STATE_LABEL[state]).toBeTruthy());
   });
 
