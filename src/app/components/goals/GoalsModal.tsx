@@ -11,6 +11,7 @@ import { GoalCreateDialog } from './GoalCreateDialog';
 import { ConductorPanel } from './ConductorPanel';
 import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflowStrip';
 import type { PmGoal } from '@/lib/tauri/goals';
+import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
 
 /** Builds the launch prompt for a goal: explicit goalPrompt wins, else generated. */
 export function buildGoalLaunchPrompt(goal: PmGoal): string {
@@ -118,7 +119,7 @@ function GoalsModalContent() {
   // as an unhandled rejection instead of a message.
   const handleSave = useCallback(async () => {
     if (!rootPath) return;
-    await saveGoals(rootPath).catch(() => {});
+    await persistQuietly(saveGoals(rootPath));
   }, [rootPath, saveGoals]);
 
   useEffect(() => {
@@ -154,7 +155,7 @@ function GoalsModalContent() {
     async (goal: PmGoal) => {
       addGoal(goal);
       setSelectedGoalId(goal.id);
-      if (rootPath) await saveGoals(rootPath).catch(() => {});
+      if (rootPath) await persistQuietly(saveGoals(rootPath));
     },
     [addGoal, setSelectedGoalId, rootPath, saveGoals]
   );
@@ -176,7 +177,7 @@ function GoalsModalContent() {
   const handleLinkTicket = useCallback(
     (goalId: string, ticketId: string) => {
       updateTicket(ticketId, { goalId });
-      if (rootPath) void savePmData(rootPath).catch(() => {});
+      if (rootPath) persistInBackground(savePmData(rootPath));
     },
     [updateTicket, savePmData, rootPath]
   );
@@ -184,7 +185,7 @@ function GoalsModalContent() {
   const handleUnlinkTicket = useCallback(
     (ticketId: string) => {
       updateTicket(ticketId, { goalId: null });
-      if (rootPath) void savePmData(rootPath).catch(() => {});
+      if (rootPath) persistInBackground(savePmData(rootPath));
     },
     [updateTicket, savePmData, rootPath]
   );

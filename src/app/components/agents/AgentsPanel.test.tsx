@@ -103,8 +103,11 @@ describe('AgentsPanel', () => {
         onKillRepo={onKillRepo}
       />
     );
+    // Killing running agents now asks first (see "destructive actions" below).
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(screen.getByText('Kill All'));
     expect(onKillRepo).toHaveBeenCalledWith('/repo-a');
+    confirmSpy.mockRestore();
   });
 
   it('renders a collapse button when onCollapse is provided', () => {
@@ -209,5 +212,81 @@ describe('AgentsPanel', () => {
       await user.click(screen.getByRole('button', { name: /dismiss/i }));
       expect(onDiscardInterrupted).toHaveBeenCalledWith('agent-9');
     });
+  });
+});
+
+describe('AgentsPanel destructive actions', () => {
+  const repoAgents: AgentInfo[] = [
+    { ...agents[0], id: 'a1', status: 'running', repoPath: '/work/api' },
+    { ...agents[0], id: 'a2', status: 'running', repoPath: '/work/api' },
+    { ...agents[1], id: 'a3', status: 'idle', repoPath: '/work/api' },
+  ];
+
+  it('asks before killing every agent of a repo', async () => {
+    const user = userEvent.setup();
+    const onKillRepo = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(
+      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
+    );
+    await user.click(screen.getByRole('button', { name: /kill all/i }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onKillRepo).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('says how much work the kill would end', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(
+      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={vi.fn()} />
+    );
+    await user.click(screen.getByRole('button', { name: /kill all/i }));
+
+    const message = confirmSpy.mock.calls[0][0] as string;
+    expect(message).toContain('2');
+    expect(message).toContain('api');
+    confirmSpy.mockRestore();
+  });
+
+  it('kills the repo once confirmed', async () => {
+    const user = userEvent.setup();
+    const onKillRepo = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(
+      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
+    );
+    await user.click(screen.getByRole('button', { name: /kill all/i }));
+
+    expect(onKillRepo).toHaveBeenCalledWith('/work/api');
+    confirmSpy.mockRestore();
+  });
+});
+
+describe('AgentsPanel running count', () => {
+  it('counts only the agents actually working', () => {
+    const mixed: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running' },
+      { ...agents[0], id: 'a2', status: 'running' },
+      { ...agents[1], id: 'a3', status: 'idle' },
+      { ...agents[1], id: 'a4', status: 'error' },
+    ];
+    render(<AgentsPanel agents={mixed} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agents-running-count')).toHaveTextContent('2');
+  });
+
+  it('shows no count when nothing is running', () => {
+    render(
+      <AgentsPanel
+        agents={[{ ...agents[1], id: 'a1', status: 'idle' }]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('agents-running-count')).not.toBeInTheDocument();
   });
 });

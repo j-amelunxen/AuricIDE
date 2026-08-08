@@ -9,6 +9,7 @@ import { RequirementList } from './RequirementList';
 import { RequirementDetailPanel } from './RequirementDetailPanel';
 import { RequirementCreateDialog } from './RequirementCreateDialog';
 import type { PmRequirement } from '@/lib/tauri/requirements';
+import { persistQuietly } from '@/lib/store/persistFeedback';
 
 function RequirementsDialog() {
   const dialogRef = useDialogA11y<HTMLDivElement>();
@@ -59,7 +60,7 @@ function RequirementsDialog() {
   // as an unhandled rejection instead of a message.
   const handleSave = useCallback(async () => {
     if (!rootPath) return;
-    await saveRequirements(rootPath).catch(() => {});
+    await persistQuietly(saveRequirements(rootPath));
   }, [rootPath, saveRequirements]);
 
   useEffect(() => {
@@ -132,7 +133,7 @@ function RequirementsDialog() {
   const handleCreate = useCallback(
     async (req: PmRequirement) => {
       addRequirement(req);
-      if (rootPath) await saveRequirements(rootPath).catch(() => {});
+      if (rootPath) await persistQuietly(saveRequirements(rootPath));
     },
     [addRequirement, saveRequirements, rootPath]
   );

@@ -54,12 +54,38 @@ export function AgentsPanel({
 
   const grouped = groupAgentsByRepo(agents);
   const repoKeys = Object.keys(grouped);
+  const runningCount = agents.filter((a) => a.status === 'running').length;
+
+  /**
+   * Killing a repo's agents throws away however much work they had done, and
+   * the button sits one row above the cards. Name the cost before doing it.
+   */
+  const confirmKillRepo = (repoPath: string) => {
+    const running = (grouped[repoPath] ?? []).filter((a) => a.status === 'running').length;
+    const repoName =
+      repoPath === 'Unknown' ? 'this group' : (repoPath.split('/').pop() ?? repoPath);
+    const what = running === 1 ? '1 running agent' : `${running} running agents`;
+    if (running > 0 && !confirm(`Stop ${what} in ${repoName}? Their work in progress is lost.`)) {
+      return;
+    }
+    onKillRepo?.(repoPath);
+  };
 
   return (
     <div data-testid="agents-panel" className="flex flex-col h-full bg-panel-bg">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-dark">
-        <h2 className="text-xs font-semibold tracking-wider text-foreground-muted">
+        <h2 className="flex items-center gap-2 text-xs font-semibold tracking-wider text-foreground-muted">
           ACTIVE AGENTS
+          {/* The list keeps finished agents around for review, so the header
+              would otherwise imply more is happening than actually is. */}
+          {runningCount > 0 && (
+            <span
+              data-testid="agents-running-count"
+              className="rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-bold text-primary-light tabular-nums"
+            >
+              {runningCount} running
+            </span>
+          )}
         </h2>
         {onCollapse && (
           <button
@@ -127,7 +153,7 @@ export function AgentsPanel({
                 {onKillRepo && (
                   <button
                     type="button"
-                    onClick={() => onKillRepo(repoPath)}
+                    onClick={() => confirmKillRepo(repoPath)}
                     className="text-xs px-2 py-0.5 rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
                   >
                     Kill All
