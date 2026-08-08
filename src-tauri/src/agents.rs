@@ -611,6 +611,41 @@ pub async fn kill_agent_impl(
     Ok(())
 }
 
+// ── rename_agent ────────────────────────────────────────────────────
+
+/// Gives a running agent a human-chosen name. Every agent spawned into the
+/// same repo would otherwise carry the same generated name, which makes a
+/// fleet unreadable. The new name is written to both the live agent and the
+/// persistence file, so it also survives a restart-and-resume.
+pub async fn rename_agent_impl(
+    agent_id: &str,
+    name: &str,
+    state: &AgentManagerState,
+    app: &AppHandle,
+) -> Result<AgentInfo, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Agent name must not be empty".to_string());
+    }
+
+    let mut manager = state.lock().await;
+    let process = manager
+        .agents
+        .get_mut(agent_id)
+        .ok_or_else(|| format!("Agent not found: {}", agent_id))?;
+    process.info.name = name.to_string();
+    let info = process.info.clone();
+    drop(manager);
+
+    if let Some(persistence) = app.try_state::<AgentPersistenceState>() {
+        if let Ok(mut p) = persistence.lock() {
+            p.rename(agent_id, name);
+        }
+    }
+
+    Ok(info)
+}
+
 // ── kill_agents_for_repo ────────────────────────────────────────────
 
 pub async fn kill_agents_for_repo_impl(

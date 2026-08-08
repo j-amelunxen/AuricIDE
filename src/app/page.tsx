@@ -494,6 +494,7 @@ export default function Home() {
             onDiscardInterrupted={state.discardInterruptedAgent}
             minimizedAgentIds={state.minimizedAgentIds}
             onToggleMinimize={state.setAgentMinimized}
+            onRename={state.renameRunningAgent}
           />
         }
         bottomPanel={

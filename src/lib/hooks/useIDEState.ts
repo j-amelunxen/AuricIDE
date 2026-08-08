@@ -65,6 +65,7 @@ export function useIDEState() {
   const resumeInterruptedAgent = useStore((s) => s.resumeInterruptedAgent);
   const discardInterruptedAgent = useStore((s) => s.discardInterruptedAgent);
   const minimizedAgentIds = useStore((s) => s.minimizedAgentIds);
+  const renameRunningAgent = useStore((s) => s.renameRunningAgent);
   const setAgentMinimized = useStore((s) => s.setAgentMinimized);
   const canvasNodes = useStore((s) => s.canvasNodes);
   const canvasEdges = useStore((s) => s.canvasEdges);
@@ -256,6 +257,7 @@ export function useIDEState() {
     discardInterruptedAgent,
     minimizedAgentIds,
     setAgentMinimized,
+    renameRunningAgent,
     canvasNodes,
     canvasEdges,
     setCanvasData,

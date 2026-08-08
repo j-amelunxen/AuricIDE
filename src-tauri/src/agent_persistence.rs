@@ -87,6 +87,24 @@ impl AgentPersistence {
         self.save();
     }
 
+    /// Renames a persisted agent so a name given in the UI survives a restart.
+    /// Reaches both this run's agents and the interrupted ones — an agent
+    /// waiting to be resumed is exactly the kind you want to label. Returns
+    /// whether an agent with that id was found.
+    pub fn rename(&mut self, agent_id: &str, name: &str) -> bool {
+        let mut renamed = false;
+        for agent in self.active.iter_mut().chain(self.interrupted.iter_mut()) {
+            if agent.id == agent_id {
+                agent.name = name.to_string();
+                renamed = true;
+            }
+        }
+        if renamed {
+            self.save();
+        }
+        renamed
+    }
+
     pub fn interrupted(&self) -> Vec<PersistedAgent> {
         self.interrupted.clone()
     }
@@ -221,6 +239,38 @@ mod tests {
         }
         let third = AgentPersistence::load(Some(path));
         assert_eq!(third.interrupted(), vec![sample_agent("agent-1")]);
+    }
+
+    #[test]
+    fn test_rename_survives_a_restart() {
+        let path = temp_path("agents.json");
+        let mut p = AgentPersistence::load(Some(path.clone()));
+        p.record_spawn(sample_agent("agent-1"));
+
+        assert!(p.rename("agent-1", "Docs sweep"));
+
+        let restarted = AgentPersistence::load(Some(path));
+        assert_eq!(restarted.interrupted()[0].name, "Docs sweep");
+    }
+
+    #[test]
+    fn test_rename_reaches_an_interrupted_agent_too() {
+        let path = temp_path("agents.json");
+        {
+            let mut p = AgentPersistence::load(Some(path.clone()));
+            p.record_spawn(sample_agent("agent-1"));
+        }
+        let mut second = AgentPersistence::load(Some(path.clone()));
+        assert!(second.rename("agent-1", "Renamed while parked"));
+
+        let third = AgentPersistence::load(Some(path));
+        assert_eq!(third.interrupted()[0].name, "Renamed while parked");
+    }
+
+    #[test]
+    fn test_rename_reports_an_unknown_agent() {
+        let mut p = AgentPersistence::load(Some(temp_path("agents.json")));
+        assert!(!p.rename("agent-404", "Nobody"));
     }
 
     #[test]

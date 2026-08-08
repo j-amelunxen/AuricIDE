@@ -22,6 +22,7 @@ vi.mock('../tauri/agents', () => ({
   killAgent: vi.fn(async () => undefined),
   recordAgentPromptHistory: vi.fn(async () => undefined),
   killAgentsForRepo: vi.fn(async () => 2),
+  renameAgent: vi.fn(async () => undefined),
   listAgents: vi.fn(async () => [
     {
       id: 'agent-remote-1',
@@ -853,5 +854,50 @@ describe('agentSlice – minimized agents', () => {
 
     expect(store.getState().agents.find((a) => a.id === 'agent-0')).toBeUndefined();
     expect(store.getState().minimizedAgentIds).toEqual([]);
+  });
+});
+
+describe('agentSlice – renaming agents', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const agent = (id: string, name: string) => ({
+    id,
+    name,
+    model: 'm',
+    provider: 'claude',
+    status: 'running' as const,
+    startedAt: 0,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+    store.setState({ agents: [agent('a1', 'Agent (repo)'), agent('a2', 'Agent (repo)')] });
+  });
+
+  it('renames only the agent asked for', async () => {
+    await store.getState().renameRunningAgent('a1', 'Docs sweep');
+    expect(store.getState().agents.map((a) => a.name)).toEqual(['Docs sweep', 'Agent (repo)']);
+  });
+
+  it('trims the name before storing it', async () => {
+    await store.getState().renameRunningAgent('a1', '  Docs sweep  ');
+    expect(store.getState().agents[0].name).toBe('Docs sweep');
+  });
+
+  it('ignores a blank name rather than leaving a nameless agent', async () => {
+    const agents = await import('../tauri/agents');
+    await store.getState().renameRunningAgent('a1', '   ');
+    expect(store.getState().agents[0].name).toBe('Agent (repo)');
+    expect(agents.renameAgent).not.toHaveBeenCalled();
+  });
+
+  it('keeps the new name when the backend is unavailable', async () => {
+    const agents = await import('../tauri/agents');
+    vi.mocked(agents.renameAgent).mockRejectedValueOnce(new Error('no backend'));
+
+    // Browser mode has no Rust side; the rename is still worth honouring locally.
+    await expect(store.getState().renameRunningAgent('a1', 'Docs sweep')).resolves.toBeUndefined();
+    expect(store.getState().agents[0].name).toBe('Docs sweep');
   });
 });

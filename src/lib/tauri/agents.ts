@@ -77,6 +77,11 @@ export async function killAgent(agentId: string): Promise<void> {
   await invoke('kill_agent', { agentId });
 }
 
+/** Gives a running agent a human-chosen name; survives a restart-and-resume. */
+export async function renameAgent(agentId: string, name: string): Promise<AgentInfo> {
+  return await invoke<AgentInfo>('rename_agent', { agentId, name });
+}
+
 export async function killAgentsForRepo(repoPath: string): Promise<number> {
   return await invoke<number>('kill_agents_for_repo', { repoPath });
 }

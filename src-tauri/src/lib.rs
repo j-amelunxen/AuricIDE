@@ -1155,6 +1155,16 @@ async fn kill_agent(
     agents::kill_agent_impl(&agent_id, &state, &app).await
 }
 
+#[tauri::command]
+async fn rename_agent(
+    agent_id: String,
+    name: String,
+    state: tauri::State<'_, AgentManagerState>,
+    app: tauri::AppHandle,
+) -> Result<agents::AgentInfo, String> {
+    agents::rename_agent_impl(&agent_id, &name, &state, &app).await
+}
+
 // ── Interrupted agents (restart persistence) ────────────────────────
 
 #[tauri::command]
@@ -1794,6 +1804,7 @@ pub fn run() {
             spawn_agent,
             kill_agent,
             kill_agents_for_repo,
+            rename_agent,
             list_interrupted_agents,
             resume_interrupted_agent,
             discard_interrupted_agent,
