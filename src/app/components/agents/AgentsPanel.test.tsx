@@ -30,9 +30,10 @@ describe('AgentsPanel', () => {
     expect(screen.getByTestId('agents-panel')).toBeInTheDocument();
   });
 
-  it('shows "Active Agents" header', () => {
+  it('shows the agents header', () => {
     render(<AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={vi.fn()} />);
-    expect(screen.getByText('ACTIVE AGENTS')).toBeInTheDocument();
+    // Not "active agents" — parked and finished agents live here too.
+    expect(screen.getByText('AGENTS')).toBeInTheDocument();
   });
 
   it('renders agent cards for each agent', () => {
@@ -58,11 +59,14 @@ describe('AgentsPanel', () => {
   it('kill button on card calls onKill with agent id', async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
+    // Ending a running agent asks first (see "killing a single agent" below).
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={onKill} />);
 
     const killButtons = screen.getAllByTitle('Terminate Agent');
     await user.click(killButtons[0]);
     expect(onKill).toHaveBeenCalledWith('agent-1');
+    confirmSpy.mockRestore();
   });
 
   it('groups agents by repo path', () => {
@@ -477,5 +481,89 @@ describe('AgentsPanel – finished agents', () => {
       />
     );
     expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+  });
+});
+
+describe('AgentsPanel – killing a single agent', () => {
+  const working: AgentInfo = { ...agents[0], id: 'a1', name: 'Writer', status: 'running' };
+
+  it('asks before ending a running agent', async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={onKill} />);
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onKill).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('names the agent in the question', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+
+    expect(confirmSpy.mock.calls[0][0]).toContain('Writer');
+    confirmSpy.mockRestore();
+  });
+
+  it('kills once confirmed', async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={onKill} />);
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+
+    expect(onKill).toHaveBeenCalledWith('a1');
+    confirmSpy.mockRestore();
+  });
+
+  it('asks before ending a parked agent too', async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(
+      <AgentsPanel
+        agents={[working]}
+        minimizedAgentIds={['a1']}
+        onToggleMinimize={vi.fn()}
+        onSpawn={vi.fn()}
+        onKill={onKill}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Terminate Writer' }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onKill).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('does not ask about an agent that has already stopped', async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const stopped: AgentInfo = { ...working, status: 'idle' };
+
+    render(
+      <AgentsPanel
+        agents={[stopped]}
+        minimizedAgentIds={['a1']}
+        onToggleMinimize={vi.fn()}
+        onSpawn={vi.fn()}
+        onKill={onKill}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Terminate Writer' }));
+
+    // There is no work left to lose, so a question would just be friction.
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(onKill).toHaveBeenCalledWith('a1');
+    confirmSpy.mockRestore();
   });
 });
