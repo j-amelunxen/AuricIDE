@@ -8,6 +8,7 @@ import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { ContextMenu } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
+import { agentState, type AgentState } from '@/lib/agents/state';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 
@@ -233,22 +234,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 
 // ── Agent tab state ────────────────────────────────────────────────
 
-export type AgentTabState = 'working' | 'waiting' | 'done' | 'error' | 'queued';
-
-export function agentTabState(agent: AgentInfo, now: number): AgentTabState {
-  switch (agent.status) {
-    case 'running':
-      return isAgentLive(agent, now) ? 'working' : 'waiting';
-    case 'idle':
-      return 'done';
-    case 'queued':
-      return 'queued';
-    default:
-      return 'error';
-  }
-}
-
-const TAB_STATE_STYLES: Record<AgentTabState, { dot: string; label: string }> = {
+const TAB_STATE_STYLES: Record<AgentState, { dot: string; label: string }> = {
   working: { dot: 'bg-primary animate-pulse', label: 'text-primary' },
   waiting: { dot: 'bg-amber-400', label: 'text-amber-400' },
   done: { dot: 'bg-emerald-400', label: 'text-emerald-400' },
@@ -398,7 +384,7 @@ function AgentTerminalDialog({
           >
             {agents.map((a) => {
               const isActive = a.id === agent.id;
-              const state = agentTabState(a, now);
+              const state = agentState(a, now);
               const style = TAB_STATE_STYLES[state];
               return (
                 <button

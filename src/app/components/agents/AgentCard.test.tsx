@@ -60,14 +60,22 @@ describe('AgentCard', () => {
     expect(screen.getByText('Writing documentation')).toBeInTheDocument();
   });
 
-  it('shows status text for running agent', () => {
+  it('names the state in words a person uses', () => {
+    // The raw status field calls a finished agent "idle" and a quiet running
+    // one "running" — neither is what the reader needs to know.
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
-    expect(screen.getByText('running')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-state')).toHaveTextContent('Waiting');
   });
 
-  it('shows status text for idle agent', () => {
+  it('tells a finished agent apart from a quiet one', () => {
     render(<AgentCard agent={idleAgent} onKill={vi.fn()} />);
-    expect(screen.getByText('idle')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-state')).toHaveTextContent('Done');
+  });
+
+  it('says exactly once what the state is', () => {
+    render(<AgentCard agent={makeLiveAgent()} onKill={vi.fn()} />);
+    expect(screen.getAllByTestId('agent-state')).toHaveLength(1);
+    expect(screen.getByTestId('agent-state')).toHaveTextContent('Working');
   });
 
   it('terminate button calls onKill with agent id', async () => {
@@ -99,7 +107,7 @@ describe('AgentCard', () => {
 
   it('shows awaiting message when no task', () => {
     render(<AgentCard agent={idleAgent} onKill={vi.fn()} />);
-    expect(screen.getByText('Awaiting instructions...')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting instructions…')).toBeInTheDocument();
   });
 
   it('calls onSelect on card click', async () => {
@@ -112,15 +120,20 @@ describe('AgentCard', () => {
     expect(onSelect).toHaveBeenCalledWith('agent-1');
   });
 
-  it('displays agent id', () => {
+  it('keeps the agent id reachable without spending space on it', () => {
+    // The id is for debugging, not for reading — the name identifies the agent.
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
-    expect(screen.getByText('agent-1')).toBeInTheDocument();
+    expect(screen.queryByText('agent-1')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Writer' })).toHaveAttribute(
+      'title',
+      expect.stringContaining('agent-1')
+    );
   });
 
   describe('live state', () => {
-    it('shows Live badge when agent has recent activity', () => {
+    it('reads as working when the agent has recent activity', () => {
       render(<AgentCard agent={makeLiveAgent()} onKill={vi.fn()} />);
-      expect(screen.getByText('Live')).toBeInTheDocument();
+      expect(screen.getByTestId('agent-state')).toHaveTextContent('Working');
     });
 
     it('applies glow class to card when agent is live', () => {
@@ -128,9 +141,9 @@ describe('AgentCard', () => {
       expect(container.firstElementChild?.className).toContain('shadow-');
     });
 
-    it('does not show Idle badge when agent is live', () => {
+    it('does not also claim to be waiting', () => {
       render(<AgentCard agent={makeLiveAgent()} onKill={vi.fn()} />);
-      expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+      expect(screen.getByTestId('agent-state')).not.toHaveTextContent('Waiting');
     });
 
     it('stays live while its timestamp is merely one bump interval stale', () => {
@@ -139,25 +152,24 @@ describe('AgentCard', () => {
       // badge and the pulsing dot flicker several times a minute.
       const streaming = { ...makeLiveAgent(), lastActivityAt: Date.now() - 2_500 };
       render(<AgentCard agent={streaming} onKill={vi.fn()} />);
-      expect(screen.getByText('Live')).toBeInTheDocument();
-      expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+      expect(screen.getByTestId('agent-state')).toHaveTextContent('Working');
     });
   });
 
-  describe('idle state', () => {
-    it('shows Idle badge when running agent has no recent activity', () => {
+  describe('quiet state', () => {
+    it('reads as waiting when a running agent has gone quiet', () => {
       render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
-      expect(screen.getByText('Idle')).toBeInTheDocument();
+      expect(screen.getByTestId('agent-state')).toHaveTextContent('Waiting');
     });
 
-    it('does not show Live badge when agent has no recent activity', () => {
+    it('does not also claim to be working', () => {
       render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
-      expect(screen.queryByText('Live')).not.toBeInTheDocument();
+      expect(screen.getByTestId('agent-state')).not.toHaveTextContent('Working');
     });
 
-    it('does not show Idle badge for non-running agents', () => {
+    it('never calls a finished agent waiting', () => {
       render(<AgentCard agent={idleAgent} onKill={vi.fn()} />);
-      expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+      expect(screen.getByTestId('agent-state')).toHaveTextContent('Done');
     });
   });
 });
@@ -243,16 +255,24 @@ describe('AgentCard – naming', () => {
 });
 
 describe('AgentCard – elapsed time', () => {
-  it('says how long a running agent has been working', () => {
+  it('says how long a working agent has been running', () => {
     render(
-      <AgentCard agent={{ ...runningAgent, startedAt: Date.now() - 5 * 60_000 }} onKill={vi.fn()} />
+      <AgentCard
+        agent={{
+          ...runningAgent,
+          startedAt: Date.now() - 5 * 60_000,
+          lastActivityAt: Date.now(),
+        }}
+        onKill={vi.fn()}
+      />
     );
     expect(screen.getByTestId('agent-runtime')).toHaveTextContent('5m');
   });
 
-  it('says how long a quiet agent has been quiet', () => {
-    // "Idle" alone can mean five seconds of thinking or twenty minutes of
-    // waiting on a question nobody answered.
+  it('switches to how long it has been quiet once it stops producing', () => {
+    // Five seconds of thinking and twenty minutes of waiting on an unanswered
+    // question look identical without this, and while an agent is quiet the
+    // silence is the more useful of the two numbers.
     render(
       <AgentCard
         agent={{
@@ -263,19 +283,86 @@ describe('AgentCard – elapsed time', () => {
         onKill={vi.fn()}
       />
     );
-    expect(screen.getByText('Idle 7m')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-runtime')).toHaveTextContent('quiet 7m');
   });
 
-  it('says only Idle before the agent has produced anything', () => {
+  it('shows one duration, never two', () => {
+    // Two bare numbers on one card read as a mistake — and on a fresh agent
+    // they are literally the same number.
+    render(
+      <AgentCard
+        agent={{
+          ...runningAgent,
+          startedAt: Date.now() - 17_000,
+          lastActivityAt: Date.now() - 17_000,
+        }}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getAllByTestId('agent-runtime')).toHaveLength(1);
+  });
+
+  it('falls back to runtime before the agent has produced anything', () => {
     // With no activity yet there is no silence to measure — claiming one
     // would be inventing a number.
-    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
-    expect(screen.getByText('Idle')).toBeInTheDocument();
+    render(
+      <AgentCard agent={{ ...runningAgent, startedAt: Date.now() - 3 * 60_000 }} onKill={vi.fn()} />
+    );
+    const runtime = screen.getByTestId('agent-runtime');
+    expect(runtime).toHaveTextContent('3m');
+    expect(runtime).not.toHaveTextContent('quiet');
   });
 
   it('does not run a clock on an agent that has stopped', () => {
     render(<AgentCard agent={{ ...idleAgent, startedAt: Date.now() - 60_000 }} onKill={vi.fn()} />);
     expect(screen.queryByTestId('agent-runtime')).not.toBeInTheDocument();
+  });
+});
+
+describe('AgentCard – saying each thing once', () => {
+  it('drops the objective when the name already is it', () => {
+    // Names are derived from the instruction, so the two were the same text
+    // twice — once truncated at the top, once in full below it.
+    render(
+      <AgentCard agent={{ ...runningAgent, name: 'Writing documentation' }} onKill={vi.fn()} />
+    );
+    expect(screen.getAllByText(/Writing documentation/)).toHaveLength(1);
+  });
+
+  it('keeps the objective when it says more than the name', () => {
+    render(<AgentCard agent={{ ...runningAgent, name: 'Docs sweep' }} onKill={vi.fn()} />);
+    expect(screen.getByText('Writing documentation')).toBeInTheDocument();
+  });
+
+  it('drops the objective when the name is its elided form', () => {
+    render(<AgentCard agent={{ ...runningAgent, name: 'Writing docu…' }} onKill={vi.fn()} />);
+    expect(screen.queryByText('Writing documentation')).not.toBeInTheDocument();
+  });
+
+  it('keeps the full instruction reachable as a tooltip', () => {
+    render(
+      <AgentCard agent={{ ...runningAgent, name: 'Writing documentation' }} onKill={vi.fn()} />
+    );
+    expect(screen.getByRole('heading', { name: 'Writing documentation' })).toHaveAttribute(
+      'title',
+      expect.stringContaining('Writing documentation')
+    );
+  });
+
+  it('never wraps the name onto a second line', () => {
+    render(
+      <AgentCard
+        agent={{ ...runningAgent, name: 'A very long agent name that would wrap' }}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('heading', { level: 3 })).toHaveClass('truncate');
+  });
+
+  it('keeps the state chip on one line', () => {
+    // "Idle 17s" wrapping inside a rounded pill turned it into a circle.
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-state').className).toContain('whitespace-nowrap');
   });
 });
 
