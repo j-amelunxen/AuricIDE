@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 use tokio::process::Command;
@@ -670,9 +671,38 @@ fn git_discard(repo_path: &str, file_path: &str) -> Result<(), String> {
     git_discard_impl(repo_path, file_path)
 }
 
+/// Marker in the sibling temp file name an atomic write uses. Defined once so
+/// the writer and the watcher filter can never disagree about what to hide.
+const ATOMIC_WRITE_MARKER: &str = ".tmp-";
+
+/// True for the short-lived sibling file `write_file_impl` renames into place.
+/// Its shape is `.{name}.tmp-{pid}-{counter}`; both trailing parts must be
+/// numeric so a user's own `.notes.tmp-draft` stays visible.
+pub fn is_atomic_write_temp(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if !name.starts_with('.') {
+        return false;
+    }
+    let Some((_, tail)) = name.rsplit_once(ATOMIC_WRITE_MARKER) else {
+        return false;
+    };
+    match tail.split_once('-') {
+        Some((pid, counter)) => {
+            !pid.is_empty()
+                && !counter.is_empty()
+                && pid.chars().all(|c| c.is_ascii_digit())
+                && counter.chars().all(|c| c.is_ascii_digit())
+        }
+        None => false,
+    }
+}
+
 /// Returns true if the path should be filtered out from file watcher events.
 pub fn should_filter_watcher_path(path: &str) -> bool {
-    path.contains("/.git/") || path.contains("/node_modules/") || path.contains("/target/")
+    path.contains("/.git/")
+        || path.contains("/node_modules/")
+        || path.contains("/target/")
+        || is_atomic_write_temp(path)
 }
 
 // Pure functions for testability
@@ -709,8 +739,66 @@ pub fn read_file_impl(path: &str) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))
 }
 
+/// Distinguishes concurrent writes within this process; the pid separates processes.
+static WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Writes a file so it is never observed half-written.
+///
+/// `fs::write` truncates the target and then fills it. A crash, a power loss or
+/// a disk that runs out of space between those two steps leaves the user with a
+/// truncated or empty file — and the editor autosaves continuously, so that
+/// window is open all day. Writing to a sibling temp file and renaming it over
+/// the target closes it: `rename` within a directory is atomic, so a reader
+/// sees either the old file or the new one, never a partial one.
 pub fn write_file_impl(path: &str, content: &str) -> Result<(), String> {
-    fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))
+    let requested = Path::new(path);
+    // Resolve symlinks first: renaming onto a link would replace the link
+    // itself with a regular file, silently detaching it from its target.
+    let target = fs::canonicalize(requested).unwrap_or_else(|_| requested.to_path_buf());
+
+    let dir = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| "Failed to write file: path has no parent directory".to_string())?;
+
+    // The temp file must share the target's directory — rename is only atomic
+    // within a filesystem, and /tmp is frequently a different one.
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| "Failed to write file: path has no file name".to_string())?
+        .to_string_lossy()
+        .to_string();
+    let temp_path = dir.join(format!(
+        ".{}{}{}-{}",
+        file_name,
+        ATOMIC_WRITE_MARKER,
+        std::process::id(),
+        WRITE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = fs::File::create(&temp_path)?;
+        file.write_all(content.as_bytes())?;
+        // Without this, the rename can land before the content does and a
+        // power loss leaves an atomically-renamed empty file.
+        file.sync_all()?;
+        drop(file);
+
+        // A fresh temp file carries default permissions; the target may be an
+        // executable script or have deliberately tightened access.
+        if let Ok(metadata) = fs::metadata(&target) {
+            fs::set_permissions(&temp_path, metadata.permissions())?;
+        }
+
+        fs::rename(&temp_path, &target)
+    })();
+
+    if let Err(e) = write_result {
+        let _ = fs::remove_file(&temp_path);
+        return Err(format!("Failed to write file: {}", e));
+    }
+
+    Ok(())
 }
 
 pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
@@ -1839,6 +1927,142 @@ mod tests {
     use super::*;
     use std::process::Command as StdCommand;
     use tempfile::TempDir;
+
+    #[test]
+    fn atomic_write_temp_files_are_hidden_from_the_watcher() {
+        assert!(is_atomic_write_temp("/project/.note.md.tmp-4321-0"));
+        assert!(should_filter_watcher_path("/project/.note.md.tmp-4321-7"));
+    }
+
+    #[test]
+    fn ordinary_files_are_not_mistaken_for_write_temp_files() {
+        assert!(!is_atomic_write_temp("/project/note.md"));
+        assert!(!is_atomic_write_temp("/project/.gitignore"));
+        // A user's own temp-ish dotfile must stay visible.
+        assert!(!is_atomic_write_temp("/project/.notes.tmp-draft"));
+        assert!(!is_atomic_write_temp("/project/note.md.tmp-1-2"));
+        assert!(!is_atomic_write_temp("/project/.note.md.tmp-1"));
+    }
+
+    #[test]
+    fn the_temp_file_a_write_creates_is_one_the_watcher_hides() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("subdir");
+        fs::create_dir(&path).unwrap();
+        // Renaming onto a directory fails, so the temp file is observable.
+        let _ = write_file_impl(path.to_str().unwrap(), "nope");
+
+        // Nothing survives; had it, the watcher filter must have covered it.
+        let leftovers: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path().to_string_lossy().to_string())
+            .filter(|p| !p.ends_with("subdir"))
+            .collect();
+        for leftover in &leftovers {
+            assert!(
+                is_atomic_write_temp(leftover),
+                "unfiltered leftover: {leftover}"
+            );
+        }
+    }
+
+    #[test]
+    fn write_file_impl_writes_content() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("note.md");
+        write_file_impl(path.to_str().unwrap(), "hello").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
+    }
+
+    #[test]
+    fn write_file_impl_replaces_existing_content() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("note.md");
+        fs::write(&path, "old and much longer content").unwrap();
+        write_file_impl(path.to_str().unwrap(), "new").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+    }
+
+    #[test]
+    fn write_file_impl_leaves_no_temp_files_behind() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("note.md");
+        write_file_impl(path.to_str().unwrap(), "hello").unwrap();
+        let entries: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(entries, vec!["note.md".to_string()]);
+    }
+
+    #[test]
+    fn write_file_impl_keeps_the_old_content_when_the_write_fails() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("subdir");
+        fs::create_dir(&path).unwrap();
+        // A directory can never be replaced by a file write; the original must survive.
+        let result = write_file_impl(path.to_str().unwrap(), "nope");
+        assert!(result.is_err());
+        assert!(path.is_dir());
+    }
+
+    #[test]
+    fn write_file_impl_reports_a_missing_directory() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nope").join("note.md");
+        let err = write_file_impl(path.to_str().unwrap(), "hello").unwrap_err();
+        assert!(
+            err.contains("Failed to write file"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn write_file_impl_cleans_up_after_a_failed_write() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("subdir");
+        fs::create_dir(&path).unwrap();
+        let _ = write_file_impl(path.to_str().unwrap(), "nope");
+        // The temp file must not survive a failure.
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|name| name != "subdir")
+            .collect();
+        assert!(leftovers.is_empty(), "left behind: {leftovers:?}");
+    }
+
+    #[test]
+    fn write_file_impl_preserves_unix_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("script.sh");
+        fs::write(&path, "#!/bin/sh\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+
+        write_file_impl(path.to_str().unwrap(), "#!/bin/sh\necho hi\n").unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "the executable bit must survive a save");
+    }
+
+    #[test]
+    fn write_file_impl_writes_through_a_symlink() {
+        use std::os::unix::fs::symlink;
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("real.md");
+        let link = dir.path().join("link.md");
+        fs::write(&target, "old").unwrap();
+        symlink(&target, &link).unwrap();
+
+        write_file_impl(link.to_str().unwrap(), "new").unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
 
     fn init_test_repo() -> TempDir {
         let dir = TempDir::new().unwrap();
