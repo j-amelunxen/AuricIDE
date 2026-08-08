@@ -12,6 +12,12 @@ export interface AgentInfo {
    * never sends it.
    */
   currentActivity?: string;
+  /**
+   * True when the newest output looks like a prompt waiting on the user
+   * (permission menu, y/n question). Frontend-only, derived alongside
+   * `currentActivity`.
+   */
+  awaitingInput?: boolean;
   startedAt: number;
   lastActivityAt?: number;
   repoPath?: string;

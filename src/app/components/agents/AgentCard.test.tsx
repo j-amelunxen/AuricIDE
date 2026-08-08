@@ -72,6 +72,13 @@ describe('AgentCard', () => {
     expect(screen.getByTestId('agent-state')).toHaveTextContent('Done');
   });
 
+  it('says when the agent is blocked on the user, even while it looks live', () => {
+    // A redrawing permission menu keeps lastActivityAt fresh — without this
+    // state the card would claim "Working" while the agent waits for a human.
+    render(<AgentCard agent={{ ...makeLiveAgent(), awaitingInput: true }} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-state')).toHaveTextContent('Needs input');
+  });
+
   it('says exactly once what the state is', () => {
     render(<AgentCard agent={makeLiveAgent()} onKill={vi.fn()} />);
     expect(screen.getAllByTestId('agent-state')).toHaveLength(1);

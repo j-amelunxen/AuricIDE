@@ -237,6 +237,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 const TAB_STATE_STYLES: Record<AgentState, { dot: string; label: string }> = {
   working: { dot: 'bg-primary animate-pulse', label: 'text-primary' },
   waiting: { dot: 'bg-amber-400', label: 'text-amber-400' },
+  'needs-input': { dot: 'bg-amber-300', label: 'text-amber-300' },
   done: { dot: 'bg-emerald-400', label: 'text-emerald-400' },
   error: { dot: 'bg-red-400', label: 'text-red-400' },
   queued: { dot: 'bg-foreground-muted', label: 'text-foreground-muted' },

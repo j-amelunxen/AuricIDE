@@ -42,6 +42,30 @@ describe('agentAttention', () => {
   });
 });
 
+describe('agentAttention — needs input', () => {
+  it('flags an agent whose output waits on a human, even while it looks live', () => {
+    // Permission menus redraw themselves, keeping lastActivityAt fresh — a
+    // blocked agent that looks busy is exactly what must not slip through.
+    expect(agentAttention(agent({ awaitingInput: true, lastActivityAt: NOW }), NOW)).toBe(
+      'needs-input'
+    );
+  });
+
+  it('ranks a failure above a prompt', () => {
+    expect(agentAttention(agent({ status: 'error', awaitingInput: true }), NOW)).toBe('error');
+  });
+
+  it('ranks a prompt above a stall — it is the more actionable reason', () => {
+    expect(
+      agentAttention(agent({ awaitingInput: true, lastActivityAt: NOW - AGENT_STALL_MS - 1 }), NOW)
+    ).toBe('needs-input');
+  });
+
+  it('ignores awaitingInput on an agent that already stopped', () => {
+    expect(agentAttention(agent({ status: 'idle', awaitingInput: true }), NOW)).toBeNull();
+  });
+});
+
 describe('needsAttention / countNeedingAttention', () => {
   it('counts exactly the agents with a reason', () => {
     const fleet = [

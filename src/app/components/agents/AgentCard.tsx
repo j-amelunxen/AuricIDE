@@ -16,6 +16,9 @@ const EMPTY_LOGS: string[] = [];
 const STATE_CHIP: Record<AgentState, string> = {
   working: 'border-primary/30 bg-primary/10 text-primary-light',
   waiting: 'border-amber-500/25 bg-amber-500/10 text-amber-400/90',
+  // The one running state that is actually blocked on the user — a shade
+  // firmer than waiting, still quieter than a failure.
+  'needs-input': 'border-amber-400/50 bg-amber-400/15 text-amber-300',
   done: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-400/90',
   error: 'border-red-400/30 bg-red-400/10 text-red-400',
   queued: 'border-white/10 bg-white/5 text-foreground-muted',
