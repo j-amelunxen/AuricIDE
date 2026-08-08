@@ -773,3 +773,85 @@ describe('agentSlice – bounded finished-agent retention', () => {
     expect(store.getState().agents).toHaveLength(2);
   });
 });
+
+describe('agentSlice – minimized agents', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const agent = (id: string) => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status: 'running' as const,
+    startedAt: 0,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('starts with nothing minimized', () => {
+    expect(store.getState().minimizedAgentIds).toEqual([]);
+  });
+
+  it('minimizes and restores an agent', () => {
+    store.getState().setAgentMinimized('a1', true);
+    expect(store.getState().minimizedAgentIds).toEqual(['a1']);
+
+    store.getState().setAgentMinimized('a1', false);
+    expect(store.getState().minimizedAgentIds).toEqual([]);
+  });
+
+  it('minimizing twice does not duplicate the entry', () => {
+    store.getState().setAgentMinimized('a1', true);
+    store.getState().setAgentMinimized('a1', true);
+    expect(store.getState().minimizedAgentIds).toEqual(['a1']);
+  });
+
+  it('keeps a minimized agent in the fleet — parking is not stopping', () => {
+    store.setState({ agents: [agent('a1'), agent('a2')] });
+    store.getState().setAgentMinimized('a1', true);
+    expect(store.getState().agents).toHaveLength(2);
+  });
+
+  it('forgets the minimized flag once the agent is killed', async () => {
+    store.setState({ agents: [agent('a1')] });
+    store.getState().setAgentMinimized('a1', true);
+
+    await store.getState().killRunningAgent('a1');
+
+    expect(store.getState().minimizedAgentIds).toEqual([]);
+  });
+
+  it('forgets minimized flags when a whole repo is stopped', async () => {
+    store.setState({
+      agents: [
+        { ...agent('a1'), repoPath: '/repo' },
+        { ...agent('a2'), repoPath: '/other' },
+      ],
+    });
+    store.getState().setAgentMinimized('a1', true);
+    store.getState().setAgentMinimized('a2', true);
+
+    await store.getState().killAgentsForRepoPath('/repo');
+
+    expect(store.getState().minimizedAgentIds).toEqual(['a2']);
+  });
+
+  it('forgets minimized flags for agents evicted by the retention cap', () => {
+    const finished = Array.from({ length: MAX_FINISHED_AGENTS + 1 }, (_, i) => ({
+      ...agent(`agent-${i}`),
+      status: 'idle' as const,
+      startedAt: i,
+    }));
+    store.setState({ agents: finished });
+    store.getState().setAgentMinimized('agent-0', true);
+
+    // Pushes the finished count past the cap, evicting the oldest (agent-0).
+    store.getState().updateAgentStatus('agent-1', 'idle');
+
+    expect(store.getState().agents.find((a) => a.id === 'agent-0')).toBeUndefined();
+    expect(store.getState().minimizedAgentIds).toEqual([]);
+  });
+});
