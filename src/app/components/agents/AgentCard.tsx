@@ -6,9 +6,20 @@ import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentIdling, isAgentLive } from '@/lib/agents/liveness';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import { AGENT_STATE_LABEL, agentState, type AgentState } from '@/lib/agents/state';
 import { stripAnsi } from '@/lib/terminal/ansi';
 
 const EMPTY_LOGS: string[] = [];
+
+/** Muted by default — the chip states a fact, it does not compete with the name. */
+const STATE_CHIP: Record<AgentState, string> = {
+  working: 'border-primary/30 bg-primary/10 text-primary-light',
+  waiting: 'border-amber-500/25 bg-amber-500/10 text-amber-400/90',
+  done: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-400/90',
+  error: 'border-red-400/30 bg-red-400/10 text-red-400',
+  queued: 'border-white/10 bg-white/5 text-foreground-muted',
+};
+
 // The card preview is ~10 lines tall — rendering the whole retained buffer
 // (up to MAX_AGENT_LOG_BYTES) per streamed chunk wastes CPU for nothing.
 const LOG_PREVIEW_CHUNKS = 50;
@@ -33,10 +44,35 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
   const isIdling = isAgentIdling(agent, now);
-  // Without any recorded activity there is no silence to measure — reporting
-  // one would be inventing a number.
-  const quietFor =
-    agent.lastActivityAt === undefined ? null : formatAgentDuration(now - agent.lastActivityAt);
+  const state = agentState(agent, now);
+
+  /**
+   * One duration, chosen by state. While an agent is quiet, how long it has
+   * been quiet is the useful number; otherwise it is how long it has been
+   * running. Showing both put two bare numbers side by side that read as a
+   * mistake — and on a fresh agent they are literally the same number. With no
+   * recorded activity there is no silence to measure, so runtime stands in.
+   */
+  const runtime = formatAgentDuration(now - agent.startedAt);
+  const showQuiet = state === 'waiting' && agent.lastActivityAt !== undefined;
+  const durationLabel = showQuiet
+    ? `quiet ${formatAgentDuration(now - (agent.lastActivityAt ?? now))}`
+    : runtime;
+  const durationTitle = showQuiet
+    ? `No output for a while — running for ${runtime}`
+    : 'Running for';
+
+  /** The name is derived from the instruction, so the two are often the same
+   * text. Showing it twice — truncated above, in full below — is noise. */
+  const nameStem = agent.name.replace(/…$/, '');
+  const objectiveRepeatsName = !!agent.currentTask && agent.currentTask.startsWith(nameStem);
+  const nameTooltip = [
+    agent.currentTask ?? agent.name,
+    agent.id,
+    onRename && 'Double-click to rename',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   // Subscribe only to this agent's logs, and only while the terminal preview
   // is visible — in status mode the stable EMPTY_LOGS reference means log
@@ -150,10 +186,10 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between z-10">
-        <div className="flex items-center gap-2">
+      <div className="z-10 flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <div
-            className={`relative flex h-8 w-8 items-center justify-center rounded-lg border border-white/5 bg-gradient-to-br ${
+            className={`relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/5 bg-gradient-to-br ${
               isLive
                 ? 'from-primary/30 via-primary/10 to-transparent'
                 : isIdling
@@ -164,8 +200,11 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
             <span aria-hidden="true" className="material-symbols-outlined text-lg text-foreground">
               {viewMode === 'terminal' ? 'terminal' : 'smart_toy'}
             </span>
+            {/* Anchored inside the tile rather than hanging half outside it,
+                where it read as a stray dot. It scans the list at a glance;
+                the chip carries the same state in words. */}
             {isRunning && (
-              <span className="absolute bottom-0 right-0 h-2 w-2 translate-x-1/2 translate-y-1/2">
+              <span className="absolute bottom-0.5 right-0.5 h-2 w-2">
                 {isLive ? (
                   <>
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
@@ -178,52 +217,62 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
               </span>
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              {isRenaming ? (
-                <input
-                  ref={nameInputRef}
-                  type="text"
-                  defaultValue={agent.name}
-                  aria-label="Agent name"
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={handleNameKeyDown}
-                  onBlur={commitRename}
-                  className="w-28 rounded border border-primary/40 bg-black/40 px-1 py-0.5 font-display text-xs font-bold text-foreground outline-none focus:border-primary"
-                />
-              ) : (
-                <h3
-                  onDoubleClick={onRename ? startRename : undefined}
-                  title={onRename ? 'Double-click to rename' : undefined}
-                  className="font-display text-xs font-bold text-foreground group-hover:text-primary transition-colors"
-                >
-                  {agent.name}
-                </h3>
-              )}
-              {/* The pulsing dot on the avatar already carries "live"; a second
-                  and third out-of-phase pulse on the same card just twitches. */}
-              {isLive && (
-                <span className="rounded-full bg-primary/20 px-1 py-0.5 text-[7px] font-black text-primary border border-primary/30 uppercase tracking-tighter">
-                  Live
-                </span>
-              )}
-              {/* How long it has been quiet is the whole question: five
-                  seconds of thinking and twenty minutes of waiting on an
-                  unanswered prompt look identical without it. */}
-              {isIdling && (
-                <span className="flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1 py-0.5 text-[7px] font-black text-amber-400/80 border border-amber-500/25 uppercase tracking-tighter">
-                  <span className="h-1 w-1 rounded-full bg-amber-400/70" />
-                  {quietFor === null ? 'Idle' : `Idle ${quietFor}`}
-                </span>
+          <div className="min-w-0 flex-1">
+            {isRenaming ? (
+              <input
+                ref={nameInputRef}
+                type="text"
+                defaultValue={agent.name}
+                aria-label="Agent name"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={handleNameKeyDown}
+                onBlur={commitRename}
+                className="w-full rounded border border-primary/40 bg-black/40 px-1 py-0.5 font-display text-[13px] font-semibold text-foreground outline-none focus:border-primary"
+              />
+            ) : (
+              /* One line, always. The name is the loudest thing on the card
+                 because it is what you are looking for. */
+              <h3
+                onDoubleClick={onRename ? startRename : undefined}
+                title={nameTooltip}
+                className="truncate font-display text-[13px] font-semibold leading-tight tracking-[-0.01em] text-foreground transition-colors group-hover:text-primary"
+              >
+                {agent.name}
+              </h3>
+            )}
+            {/* One quiet line of context: which model, and the single duration
+                that matters in this state. Never two bare numbers. */}
+            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] leading-none text-foreground-muted/70">
+              <span className="truncate font-mono">
+                {agent.model.split('-').slice(0, 2).join(' ')}
+              </span>
+              {isRunning && (
+                <>
+                  <span aria-hidden="true" className="opacity-40">
+                    ·
+                  </span>
+                  <span
+                    data-testid="agent-runtime"
+                    title={durationTitle}
+                    className="flex-shrink-0 font-mono tabular-nums"
+                  >
+                    {durationLabel}
+                  </span>
+                </>
               )}
             </div>
-            <span className="text-[9px] font-mono text-foreground-muted opacity-60 uppercase">
-              {agent.model.split('-').slice(0, 2).join(' ')}
-            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        {/* Exactly one statement of what the agent is doing. */}
+        <span
+          data-testid="agent-state"
+          className={`flex-shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${STATE_CHIP[state]}`}
+        >
+          {AGENT_STATE_LABEL[state]}
+        </span>
+
+        <div className="flex flex-shrink-0 items-center gap-0.5">
           {onRename && !isRenaming && (
             <button
               onClick={startRename}
@@ -281,21 +330,21 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
       <div className="flex-1 min-h-0 relative">
         {viewMode === 'status' ? (
           <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
-            {agent.currentTask ? (
-              <div className="rounded-lg border border-white/5 bg-black/20 p-2.5">
-                <p className="line-clamp-2 text-[10px] leading-relaxed text-foreground-muted">
-                  <span className="mr-1.5 font-bold text-primary/80 uppercase text-[8px] tracking-wider">
-                    Objective:
-                  </span>
-                  {agent.currentTask}
-                </p>
-              </div>
-            ) : (
-              <div className="h-10 rounded-lg border border-white/5 bg-black/20 p-2 flex items-center justify-center">
-                <span className="text-[10px] text-foreground-muted italic opacity-30">
-                  Awaiting instructions...
-                </span>
-              </div>
+            {/* Only when it adds something the name did not already say. The
+                label is gone too: position and phrasing carry it, a magenta
+                "OBJECTIVE:" only shouted. */}
+            {agent.currentTask && !objectiveRepeatsName && (
+              <p
+                title={agent.currentTask}
+                className="line-clamp-2 rounded-lg border border-white/5 bg-black/20 px-2.5 py-2 text-[11px] leading-relaxed text-foreground-muted"
+              >
+                {agent.currentTask}
+              </p>
+            )}
+            {!agent.currentTask && (
+              <p className="rounded-lg border border-white/5 bg-black/20 px-2.5 py-2 text-[11px] italic text-foreground-muted/30">
+                Awaiting instructions…
+              </p>
             )}
 
             {/* The objective is what the agent was asked to do; this is what
@@ -323,29 +372,9 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
               </div>
             )}
 
-            <div className="flex items-center justify-between px-1 mt-1">
-              <span
-                className={`text-[9px] font-black uppercase tracking-widest ${
-                  isLive ? 'text-primary' : isIdling ? 'text-amber-400/70' : 'text-foreground-muted'
-                }`}
-              >
-                {agent.status}
-              </span>
-              <div className="flex items-center gap-2">
-                {isRunning && (
-                  <span
-                    data-testid="agent-runtime"
-                    title="Running for"
-                    className="font-mono text-[8px] tabular-nums text-foreground-muted opacity-50"
-                  >
-                    {formatAgentDuration(now - agent.startedAt)}
-                  </span>
-                )}
-                <span className="font-mono text-[8px] text-foreground-muted opacity-30">
-                  {agent.id}
-                </span>
-              </div>
-            </div>
+            {/* No status footer: the chip in the header already said it, the
+                raw status word disagreed with it, and the agent id belongs in
+                a tooltip rather than in the card's scarcest space. */}
           </div>
         ) : (
           /* Reading the stream, selecting text from it and typing a reply are
