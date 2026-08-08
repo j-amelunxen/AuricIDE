@@ -38,6 +38,7 @@ import { emptyExcalidrawSceneJson } from '@/lib/excalidraw/serialize';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { defaultCommands } from '@/lib/commands/registry';
 import { type useIDEState } from './useIDEState';
+import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
 
 /** Label matches each OS's own file manager, following VS Code's convention. */
 function revealInFileManagerLabel(): string {
@@ -408,10 +409,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       // Spawning against a goal recorded a goal run — persist it immediately
       // so it isn't lost if the user closes the Goals modal without saving.
       if (config.spawnedByGoalId && state.rootPath) {
-        await useStore
-          .getState()
-          .saveGoals(state.rootPath)
-          .catch(() => {});
+        await persistQuietly(useStore.getState().saveGoals(state.rootPath));
       }
     },
     [state]
@@ -659,7 +657,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       });
       dependencies.forEach((dep) => store.addDependency(dep));
 
-      if (store.rootPath) void store.savePmData(store.rootPath).catch(() => {});
+      if (store.rootPath) persistInBackground(store.savePmData(store.rootPath));
     },
     []
   );

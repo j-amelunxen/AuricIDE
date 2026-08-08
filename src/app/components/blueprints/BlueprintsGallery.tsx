@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { BlueprintCreateModal } from './BlueprintCreateModal';
 import type { Blueprint } from '@/lib/tauri/blueprints';
+import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
 import {
   COMPLEXITY_OPTIONS,
   COMPLEXITY_MAP,
@@ -82,7 +83,7 @@ function BlueprintsGalleryContent() {
         const now = new Date().toISOString();
         addBlueprint({ id: crypto.randomUUID(), createdAt: now, updatedAt: now, ...data });
       }
-      if (rootPath) await saveBlueprints(rootPath).catch(() => {});
+      if (rootPath) await persistQuietly(saveBlueprints(rootPath));
       setBlueprintsModalOpen(false);
       setEditTarget(null);
     },
@@ -101,7 +102,7 @@ function BlueprintsGalleryContent() {
     async (id: string) => {
       deleteBlueprint(id);
       if (selectedBlueprintId === id) setSelectedBlueprintId(null);
-      if (rootPath) await saveBlueprints(rootPath).catch(() => {});
+      if (rootPath) await persistQuietly(saveBlueprints(rootPath));
     },
     [deleteBlueprint, selectedBlueprintId, setSelectedBlueprintId, saveBlueprints, rootPath]
   );
@@ -335,7 +336,7 @@ function BlueprintsGalleryContent() {
                   Discard
                 </button>
                 <button
-                  onClick={() => rootPath && void saveBlueprints(rootPath).catch(() => {})}
+                  onClick={() => rootPath && persistInBackground(saveBlueprints(rootPath))}
                   className="flex-1 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary/80 transition-colors shadow-lg shadow-primary/20"
                 >
                   Save

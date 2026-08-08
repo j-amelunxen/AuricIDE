@@ -6,6 +6,7 @@ import { BlueprintCard } from './BlueprintCard';
 import { BlueprintCreateModal } from './BlueprintCreateModal';
 import type { Blueprint } from '@/lib/tauri/blueprints';
 import { CATEGORY_LABELS } from '@/lib/blueprints/constants';
+import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
 
 export function BlueprintsPanel() {
   const {
@@ -51,7 +52,7 @@ export function BlueprintsPanel() {
       updatedAt: now,
       ...data,
     });
-    if (rootPath) await saveBlueprints(rootPath).catch(() => {});
+    if (rootPath) await persistQuietly(saveBlueprints(rootPath));
     setBlueprintsModalOpen(false);
   };
 
@@ -158,7 +159,7 @@ export function BlueprintsPanel() {
                 onClick={async () => {
                   deleteBlueprint(selectedBlueprintId);
                   setSelectedBlueprintId(null);
-                  if (rootPath) await saveBlueprints(rootPath).catch(() => {});
+                  if (rootPath) await persistQuietly(saveBlueprints(rootPath));
                 }}
                 className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-[10px] font-medium text-rose-300 hover:bg-rose-500/20 transition-colors"
               >
@@ -175,7 +176,7 @@ export function BlueprintsPanel() {
                   Discard
                 </button>
                 <button
-                  onClick={() => rootPath && void saveBlueprints(rootPath).catch(() => {})}
+                  onClick={() => rootPath && persistInBackground(saveBlueprints(rootPath))}
                   className="rounded-lg bg-primary px-4 py-1.5 text-[10px] font-bold text-white hover:bg-primary/80 transition-colors shadow-lg shadow-primary/20"
                 >
                   Save

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { withPersistFeedback } from './persistFeedback';
+import { persistInBackground, persistQuietly, withPersistFeedback } from './persistFeedback';
 
 describe('withPersistFeedback', () => {
   it('returns the value and stays quiet on success', async () => {
@@ -48,5 +48,37 @@ describe('withPersistFeedback', () => {
         throw new Error('boom');
       })
     ).rejects.toThrow('boom');
+  });
+});
+
+describe('persistInBackground', () => {
+  it('swallows a rejection so it never surfaces as unhandled', async () => {
+    expect(() => persistInBackground(Promise.reject(new Error('locked')))).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('survives a save action that returns nothing', () => {
+    expect(() => persistInBackground(undefined)).not.toThrow();
+  });
+});
+
+describe('persistQuietly', () => {
+  it('resolves even when the save failed', async () => {
+    await expect(persistQuietly(Promise.reject(new Error('locked')))).resolves.toBeUndefined();
+  });
+
+  it('survives a save action that returns nothing', async () => {
+    await expect(persistQuietly(undefined)).resolves.toBeUndefined();
+  });
+
+  it('waits for the save to finish', async () => {
+    let done = false;
+    await persistQuietly(
+      (async () => {
+        await Promise.resolve();
+        done = true;
+      })()
+    );
+    expect(done).toBe(true);
   });
 });
