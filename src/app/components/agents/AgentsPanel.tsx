@@ -4,6 +4,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { groupAgentsByRepo } from '@/lib/store/agentSlice';
 import type { InterruptedAgent } from '@/lib/tauri/agents';
 import { AgentCard } from './AgentCard';
+import { ParkedAgentRow } from './ParkedAgentRow';
 
 export interface AgentsPanelProps {
   agents: AgentInfo[];
@@ -17,6 +18,9 @@ export interface AgentsPanelProps {
   onCollapse?: () => void;
   onResumeInterrupted?: (agentId: string) => void;
   onDiscardInterrupted?: (agentId: string) => void;
+  /** Agents folded down to a one-line row — still running, just out of the way. */
+  minimizedAgentIds?: string[];
+  onToggleMinimize?: (agentId: string, minimized: boolean) => void;
 }
 
 export function AgentsPanel({
@@ -30,6 +34,8 @@ export function AgentsPanel({
   onCollapse,
   onResumeInterrupted,
   onDiscardInterrupted,
+  minimizedAgentIds = [],
+  onToggleMinimize,
 }: AgentsPanelProps): React.JSX.Element {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -52,7 +58,13 @@ export function AgentsPanel({
     }
   };
 
-  const grouped = groupAgentsByRepo(agents);
+  // Parking only changes how an agent is drawn, so the running count and the
+  // repo grouping still speak for the whole fleet.
+  const parkedIds = new Set(minimizedAgentIds);
+  const parked = agents.filter((a) => parkedIds.has(a.id));
+  const expanded = agents.filter((a) => !parkedIds.has(a.id));
+
+  const grouped = groupAgentsByRepo(expanded);
   const repoKeys = Object.keys(grouped);
   const runningCount = agents.filter((a) => a.status === 'running').length;
 
@@ -61,7 +73,11 @@ export function AgentsPanel({
    * the button sits one row above the cards. Name the cost before doing it.
    */
   const confirmKillRepo = (repoPath: string) => {
-    const running = (grouped[repoPath] ?? []).filter((a) => a.status === 'running').length;
+    // Counted over every agent in the repo, parked ones included — Kill All
+    // stops those too, so hiding them from the count would understate the loss.
+    const running = agents.filter(
+      (a) => (a.repoPath ?? 'Unknown') === repoPath && a.status === 'running'
+    ).length;
     const repoName =
       repoPath === 'Unknown' ? 'this group' : (repoPath.split('/').pop() ?? repoPath);
     const what = running === 1 ? '1 running agent' : `${running} running agents`;
@@ -167,11 +183,32 @@ export function AgentsPanel({
                   onDrop={(e) => handleDrop(e, agent.id)}
                   className="rounded transition hover:ring-2 hover:ring-primary/50"
                 >
-                  <AgentCard agent={agent} onKill={onKill} onSelect={onSelectAgent} />
+                  <AgentCard
+                    agent={agent}
+                    onKill={onKill}
+                    onSelect={onSelectAgent}
+                    onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
+                  />
                 </div>
               ))}
             </div>
           ))
+        )}
+
+        {parked.length > 0 && (
+          <div data-testid="parked-agents" className="mt-1 flex flex-col gap-0.5">
+            <span className="px-1.5 text-[10px] font-black uppercase tracking-widest text-foreground-muted/60">
+              Parked · {parked.length}
+            </span>
+            {parked.map((agent) => (
+              <ParkedAgentRow
+                key={agent.id}
+                agent={agent}
+                onRestore={(id) => onToggleMinimize?.(id, false)}
+                onKill={onKill}
+              />
+            ))}
+          </div>
         )}
       </div>
 

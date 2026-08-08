@@ -492,6 +492,8 @@ export default function Home() {
             onCollapse={() => state.setRightCollapsed(true)}
             onResumeInterrupted={handlers.handleResumeInterrupted}
             onDiscardInterrupted={state.discardInterruptedAgent}
+            minimizedAgentIds={state.minimizedAgentIds}
+            onToggleMinimize={state.setAgentMinimized}
           />
         }
         bottomPanel={

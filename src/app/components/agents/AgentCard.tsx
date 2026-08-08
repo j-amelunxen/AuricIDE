@@ -16,9 +16,11 @@ export interface AgentCardProps {
   agent: AgentInfo;
   onKill: (id: string) => void;
   onSelect?: (id: string) => void;
+  /** Fold this agent down to a parked one-liner. Omit to hide the control. */
+  onMinimize?: (id: string) => void;
 }
 
-export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
+export function AgentCard({ agent, onKill, onSelect, onMinimize }: AgentCardProps) {
   const [viewMode, setViewMode] = useState<'status' | 'terminal'>('status');
   const now = useNow();
   const isRunning = agent.status === 'running';
@@ -127,6 +129,21 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
         </div>
 
         <div className="flex items-center gap-1">
+          {onMinimize && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMinimize(agent.id);
+              }}
+              className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              title="Park agent — keeps it running, folds it to one line"
+              aria-label="Park agent"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-sm">
+                keyboard_arrow_down
+              </span>
+            </button>
+          )}
           <button
             onClick={toggleView}
             className={`rounded p-1.5 transition-all hover:bg-white/10 ${viewMode === 'terminal' ? 'text-primary bg-primary/10' : 'text-foreground-muted'}`}

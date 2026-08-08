@@ -290,3 +290,90 @@ describe('AgentsPanel running count', () => {
     expect(screen.queryByTestId('agents-running-count')).not.toBeInTheDocument();
   });
 });
+
+describe('AgentsPanel – parked agents', () => {
+  const parkedProps = {
+    agents,
+    onSpawn: vi.fn(),
+    onKill: vi.fn(),
+  };
+
+  it('shows a minimize control on each card when parking is available', () => {
+    render(<AgentsPanel {...parkedProps} onToggleMinimize={vi.fn()} />);
+    expect(screen.getAllByRole('button', { name: 'Park agent' })).toHaveLength(2);
+  });
+
+  it('parking an agent reports it upward', async () => {
+    const user = userEvent.setup();
+    const onToggleMinimize = vi.fn();
+    render(<AgentsPanel {...parkedProps} onToggleMinimize={onToggleMinimize} />);
+
+    await user.click(screen.getAllByRole('button', { name: 'Park agent' })[0]);
+    expect(onToggleMinimize).toHaveBeenCalledWith('agent-1', true);
+  });
+
+  it('renders a parked agent as a compact row instead of a card', () => {
+    render(
+      <AgentsPanel {...parkedProps} minimizedAgentIds={['agent-1']} onToggleMinimize={vi.fn()} />
+    );
+    const parked = screen.getByTestId('parked-agents');
+    expect(parked).toHaveTextContent('Writer');
+    // The card's objective text is what makes a card tall — a parked row drops it.
+    expect(screen.queryByText('Writing docs')).not.toBeInTheDocument();
+  });
+
+  it('keeps unparked agents as full cards', () => {
+    render(
+      <AgentsPanel {...parkedProps} minimizedAgentIds={['agent-1']} onToggleMinimize={vi.fn()} />
+    );
+    expect(screen.getByText('Reviewer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Park agent' })).toBeInTheDocument();
+  });
+
+  it('restores a parked agent', async () => {
+    const user = userEvent.setup();
+    const onToggleMinimize = vi.fn();
+    render(
+      <AgentsPanel
+        {...parkedProps}
+        minimizedAgentIds={['agent-1']}
+        onToggleMinimize={onToggleMinimize}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Restore Writer' }));
+    expect(onToggleMinimize).toHaveBeenCalledWith('agent-1', false);
+  });
+
+  it('says how many agents are parked', () => {
+    render(
+      <AgentsPanel {...parkedProps} minimizedAgentIds={['agent-1']} onToggleMinimize={vi.fn()} />
+    );
+    expect(screen.getByTestId('parked-agents')).toHaveTextContent('Parked · 1');
+  });
+
+  it('does not show a parked section when nothing is parked', () => {
+    render(<AgentsPanel {...parkedProps} onToggleMinimize={vi.fn()} />);
+    expect(screen.queryByTestId('parked-agents')).not.toBeInTheDocument();
+  });
+
+  it('still counts parked agents as running in the header', () => {
+    render(
+      <AgentsPanel {...parkedProps} minimizedAgentIds={['agent-1']} onToggleMinimize={vi.fn()} />
+    );
+    // Parking is a view state, not a lifecycle state — the agent keeps working.
+    expect(screen.getByTestId('agents-running-count')).toHaveTextContent('1 running');
+  });
+
+  it('never claims "no agents" while agents are only parked', () => {
+    render(
+      <AgentsPanel
+        {...parkedProps}
+        minimizedAgentIds={['agent-1', 'agent-2']}
+        onToggleMinimize={vi.fn()}
+      />
+    );
+    expect(screen.queryByText('No agents running')).not.toBeInTheDocument();
+    expect(screen.getByTestId('parked-agents')).toHaveTextContent('Writer');
+  });
+});

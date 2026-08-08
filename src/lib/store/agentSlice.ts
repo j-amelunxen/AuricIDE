@@ -43,8 +43,15 @@ export interface AgentSlice {
   selectedAgentId: string | null;
   /** Agents from a previous app run that died with the app (restart persistence). */
   interruptedAgents: InterruptedAgent[];
+  /**
+   * Agents parked out of the way: still running, still streaming, just folded
+   * down to one line so a fleet you'll come back to later stops eating the
+   * panel. Session-scoped — nothing about the agent itself changes.
+   */
+  minimizedAgentIds: string[];
   /** Previously used start prompts for the open project, newest first. */
   promptHistory: string[];
+  setAgentMinimized: (agentId: string, minimized: boolean) => void;
   loadPromptHistory: (projectPath: string) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   killRunningAgent: (agentId: string) => Promise<void>;
@@ -88,7 +95,16 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   agentLogMeta: {},
   selectedAgentId: null,
   interruptedAgents: [],
+  minimizedAgentIds: [],
   promptHistory: [],
+
+  setAgentMinimized: (agentId, minimized) => {
+    const current = get().minimizedAgentIds;
+    if (minimized === current.includes(agentId)) return;
+    set({
+      minimizedAgentIds: minimized ? [...current, agentId] : current.filter((id) => id !== agentId),
+    });
+  },
 
   loadPromptHistory: async (projectPath) => {
     if (!projectPath) {
@@ -195,6 +211,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agents: get().agents.filter((a) => a.id !== agentId),
       agentLogs: remainingLogs,
       agentLogMeta: remainingMeta,
+      minimizedAgentIds: get().minimizedAgentIds.filter((id) => id !== agentId),
     });
   },
 
@@ -227,6 +244,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentLogMeta: Object.fromEntries(
         Object.entries(agentLogMeta).filter(([id]) => !evictedIds.has(id))
       ),
+      minimizedAgentIds: get().minimizedAgentIds.filter((id) => !evictedIds.has(id)),
     });
   },
 
@@ -315,7 +333,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   killAgentsForRepoPath: async (repoPath) => {
     await killAgentsForRepo(repoPath);
-    const { agents, agentLogs, agentLogMeta } = get();
+    const { agents, agentLogs, agentLogMeta, minimizedAgentIds } = get();
     const killedIds = new Set(agents.filter((a) => a.repoPath === repoPath).map((a) => a.id));
     set({
       agents: agents.filter((a) => !killedIds.has(a.id)),
@@ -323,6 +341,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentLogMeta: Object.fromEntries(
         Object.entries(agentLogMeta).filter(([id]) => !killedIds.has(id))
       ),
+      minimizedAgentIds: minimizedAgentIds.filter((id) => !killedIds.has(id)),
     });
   },
 });
