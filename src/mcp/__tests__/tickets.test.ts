@@ -206,9 +206,9 @@ describe('ticket tools', () => {
     it('updates priority without changing other fields', () => {
       const ticket = createTicket(db, { epicId: 'epic-1', name: 'Priority Test' });
 
-      const updated = updateTicket(db, { id: ticket.id, priority: 'urgent' });
+      const updated = updateTicket(db, { id: ticket.id, priority: 'critical' });
 
-      expect(updated.priority).toBe('urgent');
+      expect(updated.priority).toBe('critical');
       expect(updated.name).toBe('Priority Test');
       expect(updated.status).toBe('open');
     });

@@ -1,5 +1,6 @@
-export type GoalStatus = 'draft' | 'active' | 'in_progress' | 'achieved' | 'failed' | 'archived';
-export type GoalPriority = 'low' | 'normal' | 'high' | 'critical';
+import type { GoalStatusValue, Priority } from '@/lib/pm/enums';
+export type GoalStatus = GoalStatusValue;
+export type GoalPriority = Priority;
 export type GoalActor = 'ui' | 'mcp' | 'conductor' | 'agent';
 export type GoalRunOutcome = 'running' | 'completed' | 'failed' | 'killed';
 

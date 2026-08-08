@@ -1,3 +1,4 @@
+import type { ModelPower, Priority, TicketStatus } from '@/lib/pm/enums';
 export interface PmEpic {
   id: string;
   name: string;
@@ -18,13 +19,13 @@ export interface PmTicket {
   epicId: string;
   name: string;
   description: string;
-  status: 'open' | 'in_progress' | 'done' | 'archived';
+  status: TicketStatus;
   statusUpdatedAt: string;
   sortOrder: number;
   workingDirectory?: string;
   context?: PmContextItem[];
-  modelPower?: 'low' | 'medium' | 'high';
-  priority: 'low' | 'normal' | 'high' | 'critical';
+  modelPower?: ModelPower;
+  priority: Priority;
   needsHumanSupervision?: boolean;
   goalId?: string | null;
   createdAt: string;
