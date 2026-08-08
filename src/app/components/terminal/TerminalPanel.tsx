@@ -5,6 +5,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { sendToAgent } from '@/lib/tauri/agents';
 import { XtermTerminal } from './XtermTerminal';
 import { useNow } from '@/lib/hooks/useNow';
+import { isAgentLive } from '@/lib/agents/liveness';
 
 export type TerminalTabId = 'terminal' | string;
 
@@ -79,7 +80,7 @@ export function TerminalPanel({
             const isExtra = extraIds.includes(tabId);
             const isAgent = !staticTabs.includes(tabId) && !isExtra;
             const agent = agents.find((a) => a.id === tabId);
-            const isLive = agent?.lastActivityAt && now - agent.lastActivityAt < 2000;
+            const isLive = agent !== undefined && isAgentLive(agent, now);
 
             return (
               <button

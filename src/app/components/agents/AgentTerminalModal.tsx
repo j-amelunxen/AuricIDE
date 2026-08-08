@@ -7,6 +7,7 @@ import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { ContextMenu } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
+import { isAgentLive } from '@/lib/agents/liveness';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 
@@ -234,16 +235,10 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 
 export type AgentTabState = 'working' | 'waiting' | 'done' | 'error' | 'queued';
 
-// appendAgentLog throttles lastActivityAt bumps to one per 2s, so a 2s window
-// would flicker for a continuously streaming agent — use a wider one.
-const WORKING_WINDOW_MS = 5_000;
-
 export function agentTabState(agent: AgentInfo, now: number): AgentTabState {
   switch (agent.status) {
     case 'running':
-      return agent.lastActivityAt && now - agent.lastActivityAt < WORKING_WINDOW_MS
-        ? 'working'
-        : 'waiting';
+      return isAgentLive(agent, now) ? 'working' : 'waiting';
     case 'idle':
       return 'done';
     case 'queued':
@@ -326,7 +321,7 @@ function AgentTerminalDialog({
   }, [handleKeyDown]);
 
   const isRunning = agent.status === 'running';
-  const isLive = agent.lastActivityAt && now - agent.lastActivityAt < 2000;
+  const isLive = isAgentLive(agent, now);
 
   return (
     <div

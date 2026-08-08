@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react'
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
+import { isAgentIdling, isAgentLive } from '@/lib/agents/liveness';
 import { stripAnsi } from '@/lib/terminal/ansi';
 
 const EMPTY_LOGS: string[] = [];
@@ -21,8 +22,8 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
   const [viewMode, setViewMode] = useState<'status' | 'terminal'>('status');
   const now = useNow();
   const isRunning = agent.status === 'running';
-  const isLive = agent.lastActivityAt && now - agent.lastActivityAt < 2000;
-  const isIdling = isRunning && !isLive;
+  const isLive = isAgentLive(agent, now);
+  const isIdling = isAgentIdling(agent, now);
 
   // Subscribe only to this agent's logs, and only while the terminal preview
   // is visible — in status mode the stable EMPTY_LOGS reference means log
@@ -105,8 +106,10 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
               <h3 className="font-display text-xs font-bold text-foreground group-hover:text-primary transition-colors">
                 {agent.name}
               </h3>
+              {/* The pulsing dot on the avatar already carries "live"; a second
+                  and third out-of-phase pulse on the same card just twitches. */}
               {isLive && (
-                <span className="animate-pulse rounded-full bg-primary/20 px-1 py-0.5 text-[7px] font-black text-primary border border-primary/30 uppercase tracking-tighter">
+                <span className="rounded-full bg-primary/20 px-1 py-0.5 text-[7px] font-black text-primary border border-primary/30 uppercase tracking-tighter">
                   Live
                 </span>
               )}
@@ -174,11 +177,7 @@ export function AgentCard({ agent, onKill, onSelect }: AgentCardProps) {
             <div className="flex items-center justify-between px-1 mt-1">
               <span
                 className={`text-[9px] font-black uppercase tracking-widest ${
-                  isLive
-                    ? 'text-primary animate-pulse-soft'
-                    : isIdling
-                      ? 'text-amber-400/70'
-                      : 'text-foreground-muted'
+                  isLive ? 'text-primary' : isIdling ? 'text-amber-400/70' : 'text-foreground-muted'
                 }`}
               >
                 {agent.status}
