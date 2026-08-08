@@ -295,6 +295,76 @@ describe('AgentsPanel running count', () => {
   });
 });
 
+describe('AgentsPanel attention count', () => {
+  it('says how many agents need a human', () => {
+    const mixed: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() },
+      { ...agents[1], id: 'a2', status: 'error' },
+      { ...agents[1], id: 'a3', status: 'error' },
+    ];
+    render(<AgentsPanel agents={mixed} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agents-attention-count')).toHaveTextContent('2 need attention');
+  });
+
+  it('uses the singular for a single agent', () => {
+    const mixed: AgentInfo[] = [{ ...agents[1], id: 'a2', status: 'error' }];
+    render(<AgentsPanel agents={mixed} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agents-attention-count')).toHaveTextContent('1 needs attention');
+  });
+
+  it('counts an agent that has stalled mid-run', () => {
+    const stalled: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() - 10 * 60_000 },
+    ];
+    render(<AgentsPanel agents={stalled} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agents-attention-count')).toHaveTextContent('1 needs attention');
+  });
+
+  it('stays silent while nothing needs a human', () => {
+    // The absence of the badge is the "all fine" signal — a zero would be
+    // one more thing to read on every glance.
+    const calm: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() },
+      { ...agents[1], id: 'a2', status: 'idle' },
+    ];
+    render(<AgentsPanel agents={calm} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agents-attention-count')).not.toBeInTheDocument();
+  });
+
+  it('still counts agents whose repo group is folded shut', () => {
+    // Folding hides cards, never facts.
+    const hidden: AgentInfo[] = [
+      { ...agents[1], id: 'a2', status: 'error', repoPath: '/work/api' },
+    ];
+    render(
+      <AgentsPanel
+        agents={hidden}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agents-attention-count')).toHaveTextContent('1 needs attention');
+  });
+
+  it('still counts parked agents', () => {
+    const parked: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() - 10 * 60_000 },
+    ];
+    render(
+      <AgentsPanel
+        agents={parked}
+        minimizedAgentIds={['a1']}
+        onToggleMinimize={vi.fn()}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agents-attention-count')).toHaveTextContent('1 needs attention');
+  });
+});
+
 describe('AgentsPanel – parked agents', () => {
   const parkedProps = {
     agents,
