@@ -1,12 +1,13 @@
+import type { Priority, RequirementStatusValue, RequirementTypeValue } from '@/lib/pm/enums';
 export interface PmRequirement {
   id: string;
   reqId: string;
   title: string;
   description: string;
-  type: 'functional' | 'non_functional';
+  type: RequirementTypeValue;
   category: string;
-  priority: 'low' | 'normal' | 'high' | 'critical';
-  status: 'draft' | 'active' | 'implemented' | 'verified' | 'deprecated';
+  priority: Priority;
+  status: RequirementStatusValue;
   rationale: string;
   acceptanceCriteria: string;
   source: string;

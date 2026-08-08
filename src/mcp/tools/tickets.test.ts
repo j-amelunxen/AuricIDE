@@ -58,3 +58,60 @@ describe('ticket MCP tools', () => {
     });
   });
 });
+
+describe('ticket state validation', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = createTestDb();
+    insertEpic(db);
+  });
+
+  it('rejects a status outside the vocabulary', () => {
+    const ticket = createTicket(db, { epicId: 'e1', name: 'Do the thing' });
+    expect(() => updateTicket(db, { id: ticket.id, status: 'Done' })).toThrow(/status/i);
+  });
+
+  it('names the field, what was expected and what arrived', () => {
+    const ticket = createTicket(db, { epicId: 'e1', name: 'Do the thing' });
+    let message = '';
+    try {
+      updateTicket(db, { id: ticket.id, status: 'complete' });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('status');
+    expect(message).toContain('complete');
+    expect(message).toContain('open');
+  });
+
+  it('leaves the ticket untouched when the status is rejected', () => {
+    const ticket = createTicket(db, { epicId: 'e1', name: 'Do the thing' });
+    expect(() => updateTicket(db, { id: ticket.id, status: 'Done', name: 'Renamed' })).toThrow();
+    const after = listTickets(db).find((t) => t.id === ticket.id)!;
+    expect(after.status).toBe('open');
+    expect(after.name).toBe('Do the thing');
+  });
+
+  it('accepts every status the app can reason about', () => {
+    const ticket = createTicket(db, { epicId: 'e1', name: 'Do the thing' });
+    for (const status of ['open', 'in_progress', 'done', 'archived']) {
+      expect(() => updateTicket(db, { id: ticket.id, status })).not.toThrow();
+    }
+  });
+
+  it('rejects a priority outside the ladder', () => {
+    const ticket = createTicket(db, { epicId: 'e1', name: 'Do the thing' });
+    expect(() => updateTicket(db, { id: ticket.id, priority: 'urgent' })).toThrow(/priority/i);
+  });
+
+  it('rejects an invalid priority at creation', () => {
+    expect(() => createTicket(db, { epicId: 'e1', name: 'X', priority: 'URGENT' })).toThrow(
+      /priority/i
+    );
+  });
+
+  it('rejects an unknown status filter instead of silently listing nothing', () => {
+    expect(() => listTickets(db, { status: 'Done' })).toThrow(/status/i);
+  });
+});

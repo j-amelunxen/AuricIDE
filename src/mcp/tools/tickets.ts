@@ -3,6 +3,7 @@ import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { insertStatusHistory } from './history';
 import { resolveEpicId, resolveGoalId, resolveTicketId } from './resolve';
+import { assertOneOf, PRIORITIES, TICKET_STATUSES } from '@/lib/pm/enums';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +59,7 @@ export function listTickets(db: Database.Database, params?: ListTicketsParams): 
   const values: unknown[] = [];
 
   if (params?.status) {
+    assertOneOf('ticket status', params.status, TICKET_STATUSES);
     conditions.push('status = ?');
     values.push(params.status);
   }
@@ -76,7 +78,10 @@ export function listTickets(db: Database.Database, params?: ListTicketsParams): 
 export function createTicket(db: Database.Database, params: CreateTicketParams): Ticket {
   const id = crypto.randomUUID();
   const description = params.description ?? '';
-  const priority = params.priority ?? 'normal';
+  const priority =
+    params.priority === undefined
+      ? 'normal'
+      : assertOneOf('ticket priority', params.priority, PRIORITIES);
   const status = 'open';
 
   const maxRow = db
@@ -111,6 +116,11 @@ export function updateTicket(db: Database.Database, params: UpdateTicketParams):
   if (!existing) {
     throw new Error(`Ticket not found: ${params.id}`);
   }
+
+  // Validate everything before writing anything: a rejected field must not
+  // leave the ticket half-updated.
+  if (params.status !== undefined) assertOneOf('ticket status', params.status, TICKET_STATUSES);
+  if (params.priority !== undefined) assertOneOf('ticket priority', params.priority, PRIORITIES);
 
   const setClauses: string[] = [];
   const values: unknown[] = [];
@@ -237,7 +247,7 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
       'List tickets with optional status and epicId filters. ' +
       'Use status="in_progress" to list in-progress tickets.',
     parameters: z.object({
-      status: z.string().optional().describe('Filter by ticket status (e.g. open, done)'),
+      status: z.enum(TICKET_STATUSES).optional().describe('Filter by ticket status'),
       epicId: z.string().optional().describe('Filter by epic ID (full UUID or unique prefix)'),
     }),
     execute: async (params) => {
@@ -270,7 +280,7 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
         .describe('The epic ID to create the ticket in (full UUID or unique prefix)'),
       name: z.string().describe('Ticket name'),
       description: z.string().optional().describe('Ticket description'),
-      priority: z.string().optional().describe('Ticket priority (default: normal)'),
+      priority: z.enum(PRIORITIES).optional().describe('Ticket priority (default: normal)'),
       goalId: z
         .string()
         .optional()
@@ -289,10 +299,10 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
     description: 'Update an existing ticket',
     parameters: z.object({
       id: z.string().describe('The ticket ID to update (full UUID or unique prefix)'),
-      status: z.string().optional().describe('New status'),
+      status: z.enum(TICKET_STATUSES).optional().describe('New status'),
       name: z.string().optional().describe('New name'),
       description: z.string().optional().describe('New description'),
-      priority: z.string().optional().describe('New priority'),
+      priority: z.enum(PRIORITIES).optional().describe('New priority'),
       needsHumanSupervision: z
         .boolean()
         .optional()

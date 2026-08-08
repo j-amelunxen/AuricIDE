@@ -6,6 +6,7 @@ import type { AgentSlice } from './agentSlice';
 import type { GoalsSlice } from './goalsSlice';
 import { getGoalDescendants, getGoalSatisfaction } from './goalsSlice';
 import type { PmRequirement } from '../tauri/requirements';
+import type { ModelPower } from '../pm/enums';
 import { notifyConductor } from '../ide/conductorNotifications';
 
 export const MAX_TICKET_ATTEMPTS = 2;
@@ -148,7 +149,7 @@ export function getConductorPreflight(input: {
 }
 
 /** Maps a ticket's declared capability need to a concrete model. */
-export function modelForPower(power: 'low' | 'medium' | 'high' | undefined): string {
+export function modelForPower(power: ModelPower | undefined): string {
   switch (power) {
     case 'low':
       return 'haiku';
