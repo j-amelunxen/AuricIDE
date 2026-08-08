@@ -996,6 +996,71 @@ describe('agentSlice – distinguishable names on spawn', () => {
   });
 });
 
+describe('agentSlice – dismissing finished agents', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const withStatus = (id: string, status: 'running' | 'idle' | 'error') => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status,
+    startedAt: 0,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('clears a finished agent out of the fleet', () => {
+    store.setState({
+      agents: [withStatus('done', 'idle'), withStatus('busy', 'running')],
+      agentLogs: { done: ['output'], busy: ['output'] },
+      agentLogMeta: { done: { seq: 1, bytes: 6 }, busy: { seq: 1, bytes: 6 } },
+    });
+
+    store.getState().dismissFinishedAgent('done');
+
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['busy']);
+    expect(store.getState().agentLogs).toEqual({ busy: ['output'] });
+    expect(store.getState().agentLogMeta.done).toBeUndefined();
+  });
+
+  it('clears a failed agent too', () => {
+    store.setState({ agents: [withStatus('broken', 'error')] });
+    store.getState().dismissFinishedAgent('broken');
+    expect(store.getState().agents).toEqual([]);
+  });
+
+  it('refuses to dismiss an agent that is still working', async () => {
+    const agents = await import('../tauri/agents');
+    store.setState({ agents: [withStatus('busy', 'running')] });
+
+    // Dismissing is tidying up, not stopping — it must never silently
+    // discard an agent that is still doing something.
+    store.getState().dismissFinishedAgent('busy');
+
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['busy']);
+    expect(agents.killAgent).not.toHaveBeenCalled();
+  });
+
+  it('forgets a parked flag along with the agent', () => {
+    store.setState({ agents: [withStatus('done', 'idle')] });
+    store.getState().setAgentMinimized('done', true);
+
+    store.getState().dismissFinishedAgent('done');
+
+    expect(store.getState().minimizedAgentIds).toEqual([]);
+  });
+
+  it('shrugs off an unknown id', () => {
+    store.setState({ agents: [withStatus('done', 'idle')] });
+    store.getState().dismissFinishedAgent('nope');
+    expect(store.getState().agents).toHaveLength(1);
+  });
+});
+
 describe('agentSlice – derived current activity', () => {
   let store: StoreApi<AgentSlice>;
 

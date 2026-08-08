@@ -4,10 +4,15 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
 
-export interface ParkedAgentRowProps {
+export interface CompactAgentRowProps {
   agent: AgentInfo;
-  onRestore: (id: string) => void;
-  onKill: (id: string) => void;
+  /** What clicking the row does, phrased for the label ("Restore", "Open logs of"). */
+  activateLabel: string;
+  onActivate: (id: string) => void;
+  /** Secondary action on hover ("Terminate", "Dismiss"). */
+  dismissLabel: string;
+  dismissIcon: string;
+  onDismiss: (id: string) => void;
 }
 
 const DOT_BY_STATUS: Record<AgentInfo['status'], string> = {
@@ -18,11 +23,18 @@ const DOT_BY_STATUS: Record<AgentInfo['status'], string> = {
 };
 
 /**
- * A parked agent: still running, folded down to a single line. The row keeps
- * exactly what you need to decide whether to come back to it — is it alive,
- * what is it called — and nothing that would cost vertical space.
+ * One agent folded to a single line. Used for both the agents you set aside
+ * and the ones that have stopped — in both cases you want to know it is
+ * there, what it was, and how to get back to it, and nothing more.
  */
-export function ParkedAgentRow({ agent, onRestore, onKill }: ParkedAgentRowProps) {
+export function CompactAgentRow({
+  agent,
+  activateLabel,
+  onActivate,
+  dismissLabel,
+  dismissIcon,
+  onDismiss,
+}: CompactAgentRowProps) {
   const now = useNow();
   const dot = isAgentLive(agent, now) ? 'bg-primary' : DOT_BY_STATUS[agent.status];
   // What it is doing now beats what it was asked to do — that is the thing you
@@ -34,8 +46,8 @@ export function ParkedAgentRow({ agent, onRestore, onKill }: ParkedAgentRowProps
       <span aria-hidden="true" className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${dot}`} />
       <button
         type="button"
-        onClick={() => onRestore(agent.id)}
-        aria-label={`Restore ${agent.name}`}
+        onClick={() => onActivate(agent.id)}
+        aria-label={`${activateLabel} ${agent.name}`}
         title={detail ? `${agent.name} — ${detail}` : agent.name}
         className="flex-1 truncate text-left text-[11px] text-foreground-muted transition-colors hover:text-foreground"
       >
@@ -43,13 +55,13 @@ export function ParkedAgentRow({ agent, onRestore, onKill }: ParkedAgentRowProps
       </button>
       <button
         type="button"
-        onClick={() => onKill(agent.id)}
-        aria-label={`Terminate ${agent.name}`}
-        title={`Terminate ${agent.name}`}
+        onClick={() => onDismiss(agent.id)}
+        aria-label={`${dismissLabel} ${agent.name}`}
+        title={`${dismissLabel} ${agent.name}`}
         className="flex-shrink-0 rounded p-0.5 text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 focus-visible:opacity-100"
       >
         <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-          power_settings_new
+          {dismissIcon}
         </span>
       </button>
     </div>

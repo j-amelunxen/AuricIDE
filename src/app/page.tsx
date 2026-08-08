@@ -495,6 +495,7 @@ export default function Home() {
             minimizedAgentIds={state.minimizedAgentIds}
             onToggleMinimize={state.setAgentMinimized}
             onRename={state.renameRunningAgent}
+            onDismissFinished={state.dismissFinishedAgent}
           />
         }
         bottomPanel={

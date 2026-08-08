@@ -3,8 +3,9 @@
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { groupAgentsByRepo } from '@/lib/store/agentSlice';
 import type { InterruptedAgent } from '@/lib/tauri/agents';
+import { splitFleet } from '@/lib/agents/fleet';
 import { AgentCard } from './AgentCard';
-import { ParkedAgentRow } from './ParkedAgentRow';
+import { CompactAgentRow } from './CompactAgentRow';
 
 export interface AgentsPanelProps {
   agents: AgentInfo[];
@@ -22,6 +23,8 @@ export interface AgentsPanelProps {
   minimizedAgentIds?: string[];
   onToggleMinimize?: (agentId: string, minimized: boolean) => void;
   onRename?: (agentId: string, name: string) => void;
+  /** Clear a stopped agent out of the list once its output has been read. */
+  onDismissFinished?: (agentId: string) => void;
 }
 
 export function AgentsPanel({
@@ -38,6 +41,7 @@ export function AgentsPanel({
   minimizedAgentIds = [],
   onToggleMinimize,
   onRename,
+  onDismissFinished,
 }: AgentsPanelProps): React.JSX.Element {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -60,13 +64,12 @@ export function AgentsPanel({
     }
   };
 
-  // Parking only changes how an agent is drawn, so the running count and the
-  // repo grouping still speak for the whole fleet.
-  const parkedIds = new Set(minimizedAgentIds);
-  const parked = agents.filter((a) => parkedIds.has(a.id));
-  const expanded = agents.filter((a) => !parkedIds.has(a.id));
+  // Cards are for work in progress. Agents that have stopped and agents you
+  // set aside are worth one line each — the running count below still speaks
+  // for the whole fleet, however each of them happens to be drawn.
+  const { active, finished, parked } = splitFleet(agents, minimizedAgentIds);
 
-  const grouped = groupAgentsByRepo(expanded);
+  const grouped = groupAgentsByRepo(active);
   const repoKeys = Object.keys(grouped);
   const runningCount = agents.filter((a) => a.status === 'running').length;
 
@@ -204,11 +207,46 @@ export function AgentsPanel({
               Parked · {parked.length}
             </span>
             {parked.map((agent) => (
-              <ParkedAgentRow
+              <CompactAgentRow
                 key={agent.id}
                 agent={agent}
-                onRestore={(id) => onToggleMinimize?.(id, false)}
-                onKill={onKill}
+                activateLabel="Restore"
+                onActivate={(id) => onToggleMinimize?.(id, false)}
+                dismissLabel="Terminate"
+                dismissIcon="power_settings_new"
+                onDismiss={onKill}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Stopped agents are kept for review, but a finished agent has no
+            claim on a full card — it is a list you scan, not one you watch. */}
+        {finished.length > 0 && (
+          <div data-testid="finished-agents" className="mt-1 flex flex-col gap-0.5">
+            <div className="flex items-center justify-between px-1.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-foreground-muted/60">
+                Done · {finished.length}
+              </span>
+              {onDismissFinished && finished.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => finished.forEach((a) => onDismissFinished(a.id))}
+                  className="rounded px-1 text-[10px] text-foreground-muted/60 transition-colors hover:bg-white/5 hover:text-foreground"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {finished.map((agent) => (
+              <CompactAgentRow
+                key={agent.id}
+                agent={agent}
+                activateLabel="Open logs of"
+                onActivate={(id) => onSelectAgent?.(id)}
+                dismissLabel="Dismiss"
+                dismissIcon="close"
+                onDismiss={(id) => onDismissFinished?.(id)}
               />
             ))}
           </div>

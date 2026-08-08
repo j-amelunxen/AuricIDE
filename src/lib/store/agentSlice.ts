@@ -13,6 +13,7 @@ import {
   spawnAgent,
 } from '../tauri/agents';
 import { deriveAgentActivity } from '../agents/activity';
+import { isFinishedAgent } from '../agents/fleet';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import { uniqueAgentName } from '../agents/naming';
 import type { GoalsSlice } from './goalsSlice';
@@ -59,6 +60,7 @@ export interface AgentSlice {
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   killRunningAgent: (agentId: string) => Promise<void>;
   renameRunningAgent: (agentId: string, name: string) => Promise<void>;
+  dismissFinishedAgent: (agentId: string) => void;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
   appendAgentLog: (agentId: string, log: string) => void;
   refreshAgents: () => Promise<void>;
@@ -250,6 +252,26 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       // Browser mode, or the agent already exited on the Rust side. The name
       // is a label for the human — keep it rather than snapping it back.
     }
+  },
+
+  /**
+   * Clears a stopped agent out of the panel once its output has been read.
+   * This is tidying up, not stopping: an agent still doing something is left
+   * alone, and no ticket or goal bookkeeping is touched.
+   */
+  dismissFinishedAgent: (agentId) => {
+    const { agents, agentLogs, agentLogMeta, minimizedAgentIds } = get();
+    const agent = agents.find((a) => a.id === agentId);
+    if (!agent || !isFinishedAgent(agent)) return;
+
+    const { [agentId]: _logs, ...remainingLogs } = agentLogs;
+    const { [agentId]: _meta, ...remainingMeta } = agentLogMeta;
+    set({
+      agents: agents.filter((a) => a.id !== agentId),
+      agentLogs: remainingLogs,
+      agentLogMeta: remainingMeta,
+      minimizedAgentIds: minimizedAgentIds.filter((id) => id !== agentId),
+    });
   },
 
   updateAgentStatus: (agentId, status) => {
