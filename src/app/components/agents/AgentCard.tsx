@@ -26,7 +26,9 @@ export interface AgentCardProps {
 export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: AgentCardProps) {
   const [viewMode, setViewMode] = useState<'status' | 'terminal'>('status');
   const [isRenaming, setIsRenaming] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const replyRef = useRef<HTMLInputElement>(null);
   const now = useNow();
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
@@ -63,6 +65,14 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
     if (isRenaming) nameInputRef.current?.select();
   }, [isRenaming]);
 
+  // Switching to the terminal view is asking to talk to the agent, so put the
+  // caret there — but without preventScroll the browser yanks the whole panel
+  // to the card, which is not what "let me peek at this one" should do.
+  useEffect(() => {
+    if (viewMode === 'terminal') replyRef.current?.focus({ preventScroll: true });
+    else setReplyError(null);
+  }, [viewMode]);
+
   const toggleView = (e: React.MouseEvent) => {
     e.stopPropagation();
     setViewMode((v) => (v === 'status' ? 'terminal' : 'status'));
@@ -83,6 +93,29 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
     const next = nameInputRef.current?.value.trim() ?? '';
     setIsRenaming(false);
     if (next && next !== agent.name) onRename?.(agent.id, next);
+  };
+
+  /**
+   * Sends a reply to the agent's PTY. The input element is captured before the
+   * await: React resets the event's currentTarget once the handler returns, so
+   * touching it afterwards would clear the wrong thing — or nothing at all.
+   * A message that failed to reach the agent stays in the field, because
+   * clearing it would look exactly like a delivered one.
+   */
+  const sendReply = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    const input = e.currentTarget;
+    const message = input.value;
+    if (!message) return;
+
+    setReplyError(null);
+    try {
+      const { writeToShell } = await import('@/lib/tauri/terminal');
+      await writeToShell(`agent-${agent.id}`, `${message}\n`);
+      input.value = '';
+    } catch {
+      setReplyError('Message could not be delivered — the agent may have exited.');
+    }
   };
 
   const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -315,8 +348,17 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
             </div>
           </div>
         ) : (
-          <div className="h-40 flex flex-col rounded-lg border border-white/10 bg-black/40 p-2 font-mono text-[9px] animate-in fade-in slide-in-from-left-2 duration-300">
-            <div className="flex-1 overflow-y-auto no-scrollbar custom-scrollbar select-text">
+          /* Reading the stream, selecting text from it and typing a reply are
+             all things you do *without* wanting the fullscreen terminal, so
+             this whole area stops the card's select click. */
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="h-40 flex flex-col rounded-lg border border-white/10 bg-black/40 p-2 font-mono text-[9px] animate-in fade-in slide-in-from-left-2 duration-300"
+          >
+            <div
+              data-testid="agent-log-preview"
+              className="flex-1 overflow-y-auto no-scrollbar custom-scrollbar select-text"
+            >
               {logs.length === 0 ? (
                 <div className="h-full flex items-center justify-center opacity-20 italic">
                   No activity stream...
@@ -333,21 +375,19 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
             <div className="mt-1 flex items-center gap-1 border-t border-white/5 pt-1">
               <span className="text-primary font-bold opacity-50">❯</span>
               <input
+                ref={replyRef}
                 type="text"
-                autoFocus
                 placeholder="Reply to agent..."
+                aria-label={`Reply to ${agent.name}`}
                 className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:opacity-20 text-[9px] focus:ring-1 focus:ring-primary/50 rounded px-1"
-                onKeyDown={async (e) => {
-                  if (e.key === 'Enter') {
-                    const val = e.currentTarget.value;
-                    if (!val) return;
-                    const { writeToShell } = await import('@/lib/tauri/terminal');
-                    await writeToShell(`agent-${agent.id}`, val + '\n');
-                    e.currentTarget.value = '';
-                  }
-                }}
+                onKeyDown={sendReply}
               />
             </div>
+            {replyError && (
+              <p role="alert" className="mt-1 text-[8px] text-red-400">
+                {replyError}
+              </p>
+            )}
 
             <div className="mt-1 flex items-center gap-1 text-[8px] text-primary/40 uppercase tracking-widest border-t border-white/5 pt-1">
               <span className="animate-pulse">●</span>

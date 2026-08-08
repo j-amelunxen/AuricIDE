@@ -9,6 +9,10 @@ vi.mock('@/lib/hooks/useNow', () => ({
   useNow: () => Date.now(),
 }));
 
+vi.mock('@/lib/tauri/terminal', () => ({
+  writeToShell: vi.fn(async () => undefined),
+}));
+
 const runningAgent: AgentInfo = {
   id: 'agent-1',
   name: 'Writer',
@@ -308,5 +312,75 @@ describe('AgentCard – current activity', () => {
       <AgentCard agent={{ ...idleAgent, currentActivity: 'Editing setup.ts' }} onKill={vi.fn()} />
     );
     expect(screen.queryByTestId('agent-activity')).not.toBeInTheDocument();
+  });
+});
+
+describe('AgentCard – replying from the card', () => {
+  async function openTerminal(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Show Terminal' }));
+    return screen.getByPlaceholderText('Reply to agent...');
+  }
+
+  it('does not open the agent fullscreen when clicking into the reply field', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onSelect={onSelect} />);
+
+    const input = await openTerminal(user);
+    onSelect.mockClear();
+    await user.click(input);
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('does not open the agent fullscreen when selecting log text', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onSelect={onSelect} />);
+
+    await openTerminal(user);
+    onSelect.mockClear();
+    await user.click(screen.getByTestId('agent-log-preview'));
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('sends the reply to the agent on Enter and clears the field', async () => {
+    const user = userEvent.setup();
+    const { writeToShell } = await import('@/lib/tauri/terminal');
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+
+    const input = await openTerminal(user);
+    await user.type(input, 'yes{Enter}');
+
+    expect(writeToShell).toHaveBeenCalledWith('agent-agent-1', 'yes\n');
+    expect(input).toHaveValue('');
+  });
+
+  it('sends nothing for an empty reply', async () => {
+    const user = userEvent.setup();
+    const { writeToShell } = await import('@/lib/tauri/terminal');
+    vi.mocked(writeToShell).mockClear();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+
+    const input = await openTerminal(user);
+    await user.type(input, '{Enter}');
+
+    expect(writeToShell).not.toHaveBeenCalled();
+  });
+
+  it('keeps the text and says so when the agent cannot be reached', async () => {
+    const user = userEvent.setup();
+    const { writeToShell } = await import('@/lib/tauri/terminal');
+    vi.mocked(writeToShell).mockRejectedValueOnce(new Error('no such session'));
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+
+    const input = await openTerminal(user);
+    await user.type(input, 'yes{Enter}');
+
+    // Silently swallowing the message would leave the user believing the
+    // agent had been answered.
+    expect(await screen.findByText(/could not be delivered/i)).toBeInTheDocument();
+    expect(input).toHaveValue('yes');
   });
 });
