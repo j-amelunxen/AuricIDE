@@ -19,6 +19,7 @@ const STATE_CHIP: Record<AgentState, string> = {
   // The one running state that is actually blocked on the user — a shade
   // firmer than waiting, still quieter than a failure.
   'needs-input': 'border-amber-400/50 bg-amber-400/15 text-amber-300',
+  stalled: 'border-orange-400/40 bg-orange-400/10 text-orange-300',
   done: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-400/90',
   error: 'border-red-400/30 bg-red-400/10 text-red-400',
   queued: 'border-white/10 bg-white/5 text-foreground-muted',
@@ -72,7 +73,8 @@ export function AgentCard({
    * recorded activity there is no silence to measure, so runtime stands in.
    */
   const runtime = formatAgentDuration(now - agent.startedAt);
-  const showQuiet = state === 'waiting' && agent.lastActivityAt !== undefined;
+  const showQuiet =
+    (state === 'waiting' || state === 'stalled') && agent.lastActivityAt !== undefined;
   const durationLabel = showQuiet
     ? `quiet ${formatAgentDuration(now - (agent.lastActivityAt ?? now))}`
     : runtime;
