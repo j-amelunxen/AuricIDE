@@ -7,6 +7,7 @@ import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { deriveAgentName } from '@/lib/agents/naming';
 
 interface SpawnAgentDialogProps {
   isOpen: boolean;
@@ -111,7 +112,9 @@ function SpawnAgentDialogPanel({
 
   const handleDeploy = () => {
     const folderName = repoPath ? repoPath.split('/').pop() : '';
-    const name = folderName ? `Agent (${folderName})` : 'Agent';
+    // Named after the instruction, so a fleet in one repo doesn't turn into a
+    // column of identical labels. Editable afterwards from the agent card.
+    const name = deriveAgentName(task, folderName || undefined);
     onSpawn({
       name,
       model,

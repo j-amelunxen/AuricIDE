@@ -134,7 +134,7 @@ describe('SpawnAgentDialog', () => {
     expect(screen.getByText('Moonshot Kimi k2 Thinking')).toBeInTheDocument();
   });
 
-  it('auto-generates agent name from repo path folder', async () => {
+  it('names the agent after the instruction, not after the repo', async () => {
     const user = userEvent.setup();
     const onSpawn = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
@@ -143,26 +143,29 @@ describe('SpawnAgentDialog', () => {
     await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
-    expect(onSpawn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Agent (repo)',
-      })
-    );
+    // Naming every agent after its repo made a fleet of five unreadable.
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ name: 'Fix bugs' }));
   });
 
-  it('uses "Agent" as name when no repo path', async () => {
+  it('falls back to the repo folder when deployed without an instruction', async () => {
     const user = userEvent.setup();
     const onSpawn = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
-    await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
+    await user.type(screen.getByLabelText(/working directory/i), '/my/repo');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
-    expect(onSpawn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Agent',
-      })
-    );
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ name: 'Agent (repo)' }));
+  });
+
+  it('falls back to a plain name without repo or instruction', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ name: 'Agent' }));
   });
 
   // ── Permission Mode ──────────────────────────────────────────────
@@ -270,7 +273,7 @@ describe('SpawnAgentDialog', () => {
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/projects/beta',
-        name: 'Agent (beta)',
+        name: 'Fix bugs',
       })
     );
   });

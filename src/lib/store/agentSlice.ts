@@ -14,6 +14,7 @@ import {
 } from '../tauri/agents';
 import { deriveAgentActivity } from '../agents/activity';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
+import { uniqueAgentName } from '../agents/naming';
 import type { GoalsSlice } from './goalsSlice';
 import type { PmGoalRun } from '../tauri/goals';
 
@@ -132,7 +133,24 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   spawnNewAgent: async (config) => {
     const agent = await spawnAgent(config);
-    set({ agents: [...get().agents, agent] });
+    // Two agents started from the same instruction would otherwise be
+    // indistinguishable in the panel.
+    const name = uniqueAgentName(
+      agent.name,
+      get().agents.map((a) => a.name)
+    );
+    const named = name === agent.name ? agent : { ...agent, name };
+    set({ agents: [...get().agents, named] });
+
+    // Keep the backend's copy in step so the name survives a restart-resume.
+    // Guarded: a label is cosmetic and must never take a spawn down with it.
+    if (name !== agent.name) {
+      try {
+        renameAgent(agent.id, name).catch(() => {});
+      } catch {
+        // No backend at all (browser/test mode).
+      }
+    }
 
     // Remember the start prompt in the project DB (last 100). Fire-and-forget:
     // history bookkeeping must never fail or delay the spawn itself.
@@ -141,7 +159,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       recordAgentPromptHistory(rootPath, {
         id: crypto.randomUUID(),
         prompt: config.task,
-        agentName: config.name,
+        agentName: name,
         model: config.model,
         provider: config.provider ?? agent.provider,
         cwd: config.cwd ?? agent.repoPath ?? null,
@@ -172,7 +190,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         goalsSlice.recordGoalRun(run);
       }
     }
-    return agent;
+    return named;
   },
 
   killRunningAgent: async (agentId) => {
