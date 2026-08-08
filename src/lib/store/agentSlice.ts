@@ -11,6 +11,7 @@ import {
   resumeInterruptedAgent,
   spawnAgent,
 } from '../tauri/agents';
+import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import type { GoalsSlice } from './goalsSlice';
 import type { PmGoalRun } from '../tauri/goals';
 
@@ -251,10 +252,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     // Throttle lastActivityAt bumps: replacing the agents array on every
     // streamed chunk forces every agents-derived memo (orchestration graph,
-    // fleet panel, goal badges) to recompute many times per second.
+    // fleet panel, goal badges) to recompute many times per second. The
+    // liveness window is sized around this interval — see agents/liveness.ts.
     const agent = state.agents.find((a) => a.id === agentId);
     const now = Date.now();
-    const shouldBumpActivity = agent !== undefined && now - (agent.lastActivityAt ?? 0) > 2_000;
+    const shouldBumpActivity =
+      agent !== undefined && now - (agent.lastActivityAt ?? 0) > AGENT_ACTIVITY_BUMP_MS;
 
     set({
       agentLogs: {

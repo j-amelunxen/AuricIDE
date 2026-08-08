@@ -128,6 +128,16 @@ describe('AgentCard', () => {
       render(<AgentCard agent={makeLiveAgent()} onKill={vi.fn()} />);
       expect(screen.queryByText('Idle')).not.toBeInTheDocument();
     });
+
+    it('stays live while its timestamp is merely one bump interval stale', () => {
+      // The store refreshes lastActivityAt at most every 2s, so a busy agent's
+      // timestamp is routinely that old. Reading that as "gone idle" made the
+      // badge and the pulsing dot flicker several times a minute.
+      const streaming = { ...makeLiveAgent(), lastActivityAt: Date.now() - 2_500 };
+      render(<AgentCard agent={streaming} onKill={vi.fn()} />);
+      expect(screen.getByText('Live')).toBeInTheDocument();
+      expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+    });
   });
 
   describe('idle state', () => {
