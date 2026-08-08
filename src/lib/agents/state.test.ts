@@ -37,8 +37,21 @@ describe('agentState', () => {
     expect(agentState(agent({ status: 'queued' }), NOW)).toBe('queued');
   });
 
+  it('calls out an agent that is waiting on a human', () => {
+    // Trumps "working": a redrawing permission menu keeps the agent looking
+    // live while it is in fact blocked on the user.
+    expect(agentState(agent({ awaitingInput: true, lastActivityAt: NOW - 100 }), NOW)).toBe(
+      'needs-input'
+    );
+  });
+
+  it('does not carry needs-input past the end of the run', () => {
+    expect(agentState(agent({ status: 'idle', awaitingInput: true }), NOW)).toBe('done');
+    expect(agentState(agent({ status: 'error', awaitingInput: true }), NOW)).toBe('error');
+  });
+
   it('labels every state', () => {
-    const states = ['working', 'waiting', 'done', 'error', 'queued'] as const;
+    const states = ['working', 'waiting', 'needs-input', 'done', 'error', 'queued'] as const;
     states.forEach((state) => expect(AGENT_STATE_LABEL[state]).toBeTruthy());
   });
 

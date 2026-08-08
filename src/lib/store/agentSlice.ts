@@ -13,6 +13,7 @@ import {
   spawnAgent,
 } from '../tauri/agents';
 import { deriveAgentActivity } from '../agents/activity';
+import { detectAwaitingInput } from '../agents/awaitingInput';
 import type { AgentColor } from '../agents/colors';
 import { isFinishedAgent } from '../agents/fleet';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
@@ -398,6 +399,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
                     ...a,
                     lastActivityAt: now,
                     currentActivity: deriveAgentActivity(updated) ?? a.currentActivity,
+                    // Rides the same throttle as the activity line; unlike it,
+                    // this clears as soon as the prompt scrolls away.
+                    awaitingInput: detectAwaitingInput(updated),
                   }
                 : a
             ),

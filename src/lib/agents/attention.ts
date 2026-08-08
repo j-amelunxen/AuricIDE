@@ -16,14 +16,17 @@ export const AGENT_STALL_MS = 120_000;
  * polling every card to find out. Watching is the machine's job here —
  * anything running normally, queued, or cleanly done asks for nothing.
  */
-export type AttentionReason = 'error' | 'stalled';
+export type AttentionReason = 'error' | 'needs-input' | 'stalled';
 
-export function agentAttention(
-  agent: Pick<AgentInfo, 'status' | 'lastActivityAt'>,
-  now: number
-): AttentionReason | null {
+/** The slice of an agent the attention model reads. */
+export type AttentionInput = Pick<AgentInfo, 'status' | 'lastActivityAt' | 'awaitingInput'>;
+
+export function agentAttention(agent: AttentionInput, now: number): AttentionReason | null {
   if (agent.status === 'error') return 'error';
   if (agent.status !== 'running') return null;
+  // Checked before the stall clock: a permission menu redraws itself, keeping
+  // lastActivityAt fresh — a blocked agent that looks busy must still surface.
+  if (agent.awaitingInput) return 'needs-input';
   // No recorded activity yet means the agent never spoke — its silence starts
   // at launch, and flagging that would cry wolf on every spawn.
   if (agent.lastActivityAt === undefined) return null;
@@ -31,17 +34,11 @@ export function agentAttention(
 }
 
 /** True when the agent has a reason to pull the user in. */
-export function needsAttention(
-  agent: Pick<AgentInfo, 'status' | 'lastActivityAt'>,
-  now: number
-): boolean {
+export function needsAttention(agent: AttentionInput, now: number): boolean {
   return agentAttention(agent, now) !== null;
 }
 
 /** How many agents in the fleet currently need a human. */
-export function countNeedingAttention(
-  agents: Pick<AgentInfo, 'status' | 'lastActivityAt'>[],
-  now: number
-): number {
+export function countNeedingAttention(agents: AttentionInput[], now: number): number {
   return agents.reduce((n, agent) => n + (needsAttention(agent, now) ? 1 : 0), 0);
 }
