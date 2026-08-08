@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import { useStore } from '@/lib/store';
 import { CompactAgentRow } from './CompactAgentRow';
 
 vi.mock('@/lib/hooks/useNow', () => ({ useNow: () => Date.now() }));
@@ -33,6 +34,34 @@ function renderRow(overrides: Partial<AgentInfo> = {}, handlers = {}) {
     />
   );
 }
+
+describe('CompactAgentRow – error digest', () => {
+  it('states why a failed agent died, right on the row', () => {
+    // Finding out what went wrong must cost a glance, not opening a terminal.
+    useStore.setState({
+      agentLogs: { 'agent-1': ['Compiling...\n', 'error: cannot find module "fleet"\n'] },
+    });
+    renderRow({ status: 'error' });
+    expect(screen.getByTestId('agent-error-digest')).toHaveTextContent(
+      'error: cannot find module "fleet"'
+    );
+    useStore.setState({ agentLogs: {} });
+  });
+
+  it('shows no digest while the agent is still running', () => {
+    useStore.setState({
+      agentLogs: { 'agent-1': ['error: transient, retrying\n'] },
+    });
+    renderRow({ status: 'running' });
+    expect(screen.queryByTestId('agent-error-digest')).not.toBeInTheDocument();
+    useStore.setState({ agentLogs: {} });
+  });
+
+  it('stays quiet when a failed agent left no output', () => {
+    renderRow({ status: 'error' });
+    expect(screen.queryByTestId('agent-error-digest')).not.toBeInTheDocument();
+  });
+});
 
 describe('CompactAgentRow', () => {
   it('names the agent and activates it on click', async () => {

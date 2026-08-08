@@ -1,10 +1,15 @@
 'use client';
 
+import { useCallback, useMemo } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
+
+const EMPTY_LOGS: string[] = [];
 
 export interface CompactAgentRowProps {
   agent: AgentInfo;
@@ -44,9 +49,23 @@ export function CompactAgentRow({
 }: CompactAgentRowProps) {
   const now = useNow();
   const dot = isAgentLive(agent, now) ? 'bg-primary' : DOT_BY_STATUS[agent.status];
+
+  // A failed agent states its reason on the row itself — finding out what
+  // went wrong must cost a glance, not opening a terminal. Subscribed only
+  // for failed agents; everyone else keeps the stable empty reference.
+  const isError = agent.status === 'error';
+  const logs = useStore(
+    useCallback(
+      (s) => (isError ? (s.agentLogs[agent.id] ?? EMPTY_LOGS) : EMPTY_LOGS),
+      [agent.id, isError]
+    )
+  );
+  const errorDigest = useMemo(() => (isError ? deriveErrorDigest(logs) : null), [isError, logs]);
+
   // What it is doing now beats what it was asked to do — that is the thing you
   // came back to check on. Fall back to the instruction before any output.
-  const detail = (agent.status === 'running' && agent.currentActivity) || agent.currentTask;
+  const detail =
+    errorDigest ?? ((agent.status === 'running' && agent.currentActivity) || agent.currentTask);
   const markerHex = agentColorHex(color);
   const markerLabel = agentColorLabel(color);
 
@@ -75,6 +94,11 @@ export function CompactAgentRow({
         className="flex-1 truncate text-left text-[11px] text-foreground-muted transition-colors hover:text-foreground"
       >
         {agent.name}
+        {errorDigest && (
+          <span data-testid="agent-error-digest" className="ml-1.5 text-[10px] text-red-400/80">
+            {errorDigest}
+          </span>
+        )}
       </button>
       {/* Coming back to a parked agent, "how long has this been going" is the
           first thing you want — and it costs no extra line here. */}
