@@ -567,3 +567,116 @@ describe('AgentsPanel – killing a single agent', () => {
     confirmSpy.mockRestore();
   });
 });
+
+describe('AgentsPanel – collapsible repo groups', () => {
+  const repoAgents: AgentInfo[] = [
+    { ...agents[0], id: 'a1', name: 'Writer', status: 'running', repoPath: '/work/api' },
+    { ...agents[0], id: 'a2', name: 'Fixer', status: 'running', repoPath: '/work/api' },
+  ];
+
+  it('leaves the group header plain when folding is not offered', () => {
+    render(<AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /collapse api/i })).not.toBeInTheDocument();
+    expect(screen.getByText('api')).toBeInTheDocument();
+  });
+
+  it('folds a group shut on click', async () => {
+    const user = userEvent.setup();
+    const onToggleRepoCollapsed = vi.fn();
+    render(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onToggleRepoCollapsed={onToggleRepoCollapsed}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Collapse api' }));
+    expect(onToggleRepoCollapsed).toHaveBeenCalledWith('/work/api');
+  });
+
+  it('hides the cards of a folded group', () => {
+    render(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.queryByText('Writer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fixer')).not.toBeInTheDocument();
+  });
+
+  it('says how many agents a folded group is hiding', () => {
+    render(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    // Folding must not make agents feel gone.
+    expect(screen.getByRole('button', { name: 'Expand api' })).toHaveTextContent('2');
+  });
+
+  it('reports its state to assistive technology', () => {
+    const { rerender } = render(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Collapse api' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+
+    rerender(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Expand api' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+  });
+
+  it('keeps the running count honest while a group is folded', () => {
+    render(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agents-running-count')).toHaveTextContent('2 running');
+  });
+
+  it('still offers Kill All for a folded group', () => {
+    render(
+      <AgentsPanel
+        agents={repoAgents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onKillRepo={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Kill All')).toBeInTheDocument();
+  });
+});

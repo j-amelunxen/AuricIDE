@@ -496,6 +496,8 @@ export default function Home() {
             onToggleMinimize={state.setAgentMinimized}
             onRename={state.renameRunningAgent}
             onDismissFinished={state.dismissFinishedAgent}
+            collapsedRepos={state.collapsedAgentRepos}
+            onToggleRepoCollapsed={state.toggleAgentRepoCollapsed}
           />
         }
         bottomPanel={
