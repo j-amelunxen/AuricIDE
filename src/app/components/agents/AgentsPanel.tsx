@@ -74,6 +74,23 @@ export function AgentsPanel({
   const runningCount = agents.filter((a) => a.status === 'running').length;
 
   /**
+   * The terminate control sits a few pixels from the terminal toggle and only
+   * appears on hover, so a mis-click is easy and costs everything the agent
+   * has done so far. An agent that has already stopped has nothing left to
+   * lose, so asking there would be friction for its own sake.
+   */
+  const confirmKill = (agentId: string) => {
+    const agent = agents.find((a) => a.id === agentId);
+    if (
+      agent?.status === 'running' &&
+      !confirm(`Stop ${agent.name}? Its work in progress is lost.`)
+    ) {
+      return;
+    }
+    onKill(agentId);
+  };
+
+  /**
    * Killing a repo's agents throws away however much work they had done, and
    * the button sits one row above the cards. Name the cost before doing it.
    */
@@ -96,9 +113,10 @@ export function AgentsPanel({
     <div data-testid="agents-panel" className="flex flex-col h-full bg-panel-bg">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-dark">
         <h2 className="flex items-center gap-2 text-xs font-semibold tracking-wider text-foreground-muted">
-          ACTIVE AGENTS
-          {/* The list keeps finished agents around for review, so the header
-              would otherwise imply more is happening than actually is. */}
+          {/* Not "active agents": the panel also holds the ones you parked and
+              the ones that have stopped. The count is what says how much is
+              actually happening. */}
+          AGENTS
           {runningCount > 0 && (
             <span
               data-testid="agents-running-count"
@@ -190,7 +208,7 @@ export function AgentsPanel({
                 >
                   <AgentCard
                     agent={agent}
-                    onKill={onKill}
+                    onKill={confirmKill}
                     onSelect={onSelectAgent}
                     onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
                     onRename={onRename}
@@ -214,7 +232,7 @@ export function AgentsPanel({
                 onActivate={(id) => onToggleMinimize?.(id, false)}
                 dismissLabel="Terminate"
                 dismissIcon="power_settings_new"
-                onDismiss={onKill}
+                onDismiss={confirmKill}
               />
             ))}
           </div>
