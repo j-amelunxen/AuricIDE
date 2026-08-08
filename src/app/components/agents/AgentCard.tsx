@@ -5,6 +5,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentIdling, isAgentLive } from '@/lib/agents/liveness';
+import { formatAgentDuration } from '@/lib/agents/duration';
 import { stripAnsi } from '@/lib/terminal/ansi';
 
 const EMPTY_LOGS: string[] = [];
@@ -30,6 +31,10 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
   const isIdling = isAgentIdling(agent, now);
+  // Without any recorded activity there is no silence to measure — reporting
+  // one would be inventing a number.
+  const quietFor =
+    agent.lastActivityAt === undefined ? null : formatAgentDuration(now - agent.lastActivityAt);
 
   // Subscribe only to this agent's logs, and only while the terminal preview
   // is visible — in status mode the stable EMPTY_LOGS reference means log
@@ -169,10 +174,13 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
                   Live
                 </span>
               )}
+              {/* How long it has been quiet is the whole question: five
+                  seconds of thinking and twenty minutes of waiting on an
+                  unanswered prompt look identical without it. */}
               {isIdling && (
                 <span className="flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1 py-0.5 text-[7px] font-black text-amber-400/80 border border-amber-500/25 uppercase tracking-tighter">
                   <span className="h-1 w-1 rounded-full bg-amber-400/70" />
-                  Idle
+                  {quietFor === null ? 'Idle' : `Idle ${quietFor}`}
                 </span>
               )}
             </div>
@@ -290,9 +298,20 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
               >
                 {agent.status}
               </span>
-              <span className="font-mono text-[8px] text-foreground-muted opacity-30">
-                {agent.id}
-              </span>
+              <div className="flex items-center gap-2">
+                {isRunning && (
+                  <span
+                    data-testid="agent-runtime"
+                    title="Running for"
+                    className="font-mono text-[8px] tabular-nums text-foreground-muted opacity-50"
+                  >
+                    {formatAgentDuration(now - agent.startedAt)}
+                  </span>
+                )}
+                <span className="font-mono text-[8px] text-foreground-muted opacity-30">
+                  {agent.id}
+                </span>
+              </div>
             </div>
           </div>
         ) : (

@@ -238,6 +238,43 @@ describe('AgentCard – naming', () => {
   });
 });
 
+describe('AgentCard – elapsed time', () => {
+  it('says how long a running agent has been working', () => {
+    render(
+      <AgentCard agent={{ ...runningAgent, startedAt: Date.now() - 5 * 60_000 }} onKill={vi.fn()} />
+    );
+    expect(screen.getByTestId('agent-runtime')).toHaveTextContent('5m');
+  });
+
+  it('says how long a quiet agent has been quiet', () => {
+    // "Idle" alone can mean five seconds of thinking or twenty minutes of
+    // waiting on a question nobody answered.
+    render(
+      <AgentCard
+        agent={{
+          ...runningAgent,
+          startedAt: Date.now() - 20 * 60_000,
+          lastActivityAt: Date.now() - 7 * 60_000,
+        }}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Idle 7m')).toBeInTheDocument();
+  });
+
+  it('says only Idle before the agent has produced anything', () => {
+    // With no activity yet there is no silence to measure — claiming one
+    // would be inventing a number.
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.getByText('Idle')).toBeInTheDocument();
+  });
+
+  it('does not run a clock on an agent that has stopped', () => {
+    render(<AgentCard agent={{ ...idleAgent, startedAt: Date.now() - 60_000 }} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agent-runtime')).not.toBeInTheDocument();
+  });
+});
+
 describe('AgentCard – current activity', () => {
   it('shows what the agent is doing right now', () => {
     render(

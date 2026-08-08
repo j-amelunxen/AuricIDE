@@ -88,6 +88,11 @@ describe('CompactAgentRow', () => {
     expect(onDismiss).toHaveBeenCalledWith('agent-1');
   });
 
+  it('says how old the agent is without spending a line on it', () => {
+    renderRow({ startedAt: Date.now() - 8 * 60_000 });
+    expect(screen.getByTestId('compact-agent-age')).toHaveTextContent('8m');
+  });
+
   it('still shows liveness while folded away', () => {
     const { container } = renderRow({ lastActivityAt: Date.now() });
     expect(container.querySelector('.bg-primary')).toBeInTheDocument();

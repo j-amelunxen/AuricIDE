@@ -3,6 +3,7 @@
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
+import { formatAgentDuration } from '@/lib/agents/duration';
 
 export interface CompactAgentRowProps {
   agent: AgentInfo;
@@ -53,6 +54,14 @@ export function CompactAgentRow({
       >
         {agent.name}
       </button>
+      {/* Coming back to a parked agent, "how long has this been going" is the
+          first thing you want — and it costs no extra line here. */}
+      <span
+        data-testid="compact-agent-age"
+        className="flex-shrink-0 font-mono text-[9px] tabular-nums text-foreground-muted/40 group-hover:opacity-0"
+      >
+        {formatAgentDuration(now - agent.startedAt)}
+      </span>
       <button
         type="button"
         onClick={() => onDismiss(agent.id)}
