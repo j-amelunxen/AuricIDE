@@ -902,6 +902,100 @@ describe('agentSlice – renaming agents', () => {
   });
 });
 
+describe('agentSlice – distinguishable names on spawn', () => {
+  let store: StoreApi<AgentSlice>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('keeps the name it was given when nothing clashes', async () => {
+    const agent = await store
+      .getState()
+      .spawnNewAgent({ name: 'Fix the redirect', model: 'm', task: 't' });
+    expect(agent.name).toBe('Fix the redirect');
+  });
+
+  it('numbers a second agent started from the same instruction', async () => {
+    store.setState({
+      agents: [
+        {
+          id: 'existing',
+          name: 'Fix the redirect',
+          model: 'm',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 0,
+        },
+      ],
+    });
+
+    const agent = await store
+      .getState()
+      .spawnNewAgent({ name: 'Fix the redirect', model: 'm', task: 't' });
+
+    expect(agent.name).toBe('Fix the redirect 2');
+    expect(store.getState().agents.map((a) => a.name)).toEqual([
+      'Fix the redirect',
+      'Fix the redirect 2',
+    ]);
+  });
+
+  it('tells the backend about the disambiguated name', async () => {
+    const agents = await import('../tauri/agents');
+    store.setState({
+      agents: [
+        {
+          id: 'existing',
+          name: 'Fix the redirect',
+          model: 'm',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 0,
+        },
+      ],
+    });
+
+    await store.getState().spawnNewAgent({ name: 'Fix the redirect', model: 'm', task: 't' });
+
+    expect(agents.renameAgent).toHaveBeenCalledWith('mock-agent-1', 'Fix the redirect 2');
+  });
+
+  it('still spawns when the rename call itself blows up', async () => {
+    const agents = await import('../tauri/agents');
+    vi.mocked(agents.renameAgent).mockImplementationOnce(() => {
+      throw new Error('no such command');
+    });
+    store.setState({
+      agents: [
+        {
+          id: 'existing',
+          name: 'Fix the redirect',
+          model: 'm',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 0,
+        },
+      ],
+    });
+
+    // A label is cosmetic; losing it must never cost the agent.
+    const agent = await store
+      .getState()
+      .spawnNewAgent({ name: 'Fix the redirect', model: 'm', task: 't' });
+
+    expect(agent.name).toBe('Fix the redirect 2');
+    expect(store.getState().agents).toHaveLength(2);
+  });
+
+  it('does not call the backend when no disambiguation was needed', async () => {
+    const agents = await import('../tauri/agents');
+    await store.getState().spawnNewAgent({ name: 'Fix the redirect', model: 'm', task: 't' });
+    expect(agents.renameAgent).not.toHaveBeenCalled();
+  });
+});
+
 describe('agentSlice – derived current activity', () => {
   let store: StoreApi<AgentSlice>;
 

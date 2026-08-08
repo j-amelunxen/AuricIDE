@@ -32,6 +32,7 @@ vi.mock('../tauri/agents', () => ({
     spawnedByGoalId: config.spawnedByGoalId,
   })),
   killAgent: vi.fn(async () => undefined),
+  renameAgent: vi.fn(async () => undefined),
   listAgents: vi.fn(async () => []),
 }));
 
