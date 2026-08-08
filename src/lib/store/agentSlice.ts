@@ -8,6 +8,7 @@ import {
   listAgents,
   listInterruptedAgents,
   recordAgentPromptHistory,
+  renameAgent,
   resumeInterruptedAgent,
   spawnAgent,
 } from '../tauri/agents';
@@ -55,6 +56,7 @@ export interface AgentSlice {
   loadPromptHistory: (projectPath: string) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   killRunningAgent: (agentId: string) => Promise<void>;
+  renameRunningAgent: (agentId: string, name: string) => Promise<void>;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
   appendAgentLog: (agentId: string, log: string) => void;
   refreshAgents: () => Promise<void>;
@@ -213,6 +215,22 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentLogMeta: remainingMeta,
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => id !== agentId),
     });
+  },
+
+  renameRunningAgent: async (agentId, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    set({
+      agents: get().agents.map((a) => (a.id === agentId ? { ...a, name: trimmed } : a)),
+    });
+
+    try {
+      await renameAgent(agentId, trimmed);
+    } catch {
+      // Browser mode, or the agent already exited on the Rust side. The name
+      // is a label for the human — keep it rather than snapping it back.
+    }
   },
 
   updateAgentStatus: (agentId, status) => {

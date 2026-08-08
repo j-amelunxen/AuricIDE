@@ -157,3 +157,83 @@ describe('AgentCard', () => {
     });
   });
 });
+
+describe('AgentCard – naming', () => {
+  it('has no rename affordance when renaming is not offered', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /rename/i })).not.toBeInTheDocument();
+  });
+
+  it('opens an editor seeded with the current name', async () => {
+    const user = userEvent.setup();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onRename={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Rename agent' }));
+    expect(screen.getByRole('textbox', { name: 'Agent name' })).toHaveValue('Writer');
+  });
+
+  it('commits the new name on Enter', async () => {
+    const user = userEvent.setup();
+    const onRename = vi.fn();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onRename={onRename} />);
+
+    await user.click(screen.getByRole('button', { name: 'Rename agent' }));
+    await user.clear(screen.getByRole('textbox', { name: 'Agent name' }));
+    await user.type(screen.getByRole('textbox', { name: 'Agent name' }), 'Docs sweep{Enter}');
+
+    expect(onRename).toHaveBeenCalledWith('agent-1', 'Docs sweep');
+    expect(screen.queryByRole('textbox', { name: 'Agent name' })).not.toBeInTheDocument();
+  });
+
+  it('commits on blur, so clicking away does not silently discard the name', async () => {
+    const user = userEvent.setup();
+    const onRename = vi.fn();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onRename={onRename} />);
+
+    await user.click(screen.getByRole('button', { name: 'Rename agent' }));
+    await user.clear(screen.getByRole('textbox', { name: 'Agent name' }));
+    await user.type(screen.getByRole('textbox', { name: 'Agent name' }), 'Docs sweep');
+    await user.tab();
+
+    expect(onRename).toHaveBeenCalledWith('agent-1', 'Docs sweep');
+  });
+
+  it('abandons the edit on Escape', async () => {
+    const user = userEvent.setup();
+    const onRename = vi.fn();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onRename={onRename} />);
+
+    await user.click(screen.getByRole('button', { name: 'Rename agent' }));
+    await user.type(screen.getByRole('textbox', { name: 'Agent name' }), 'nonsense{Escape}');
+
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.getByText('Writer')).toBeInTheDocument();
+  });
+
+  it('does not accept an empty name', async () => {
+    const user = userEvent.setup();
+    const onRename = vi.fn();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onRename={onRename} />);
+
+    await user.click(screen.getByRole('button', { name: 'Rename agent' }));
+    await user.clear(screen.getByRole('textbox', { name: 'Agent name' }));
+    await user.keyboard('{Enter}');
+
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.getByText('Writer')).toBeInTheDocument();
+  });
+
+  it('does not select the agent while its name is being edited', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(
+      <AgentCard agent={runningAgent} onKill={vi.fn()} onRename={vi.fn()} onSelect={onSelect} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Rename agent' }));
+    onSelect.mockClear();
+    await user.click(screen.getByRole('textbox', { name: 'Agent name' }));
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});

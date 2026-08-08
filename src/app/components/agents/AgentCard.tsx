@@ -18,10 +18,14 @@ export interface AgentCardProps {
   onSelect?: (id: string) => void;
   /** Fold this agent down to a parked one-liner. Omit to hide the control. */
   onMinimize?: (id: string) => void;
+  /** Give the agent a human-chosen name. Omit to hide the control. */
+  onRename?: (id: string, name: string) => void;
 }
 
-export function AgentCard({ agent, onKill, onSelect, onMinimize }: AgentCardProps) {
+export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: AgentCardProps) {
   const [viewMode, setViewMode] = useState<'status' | 'terminal'>('status');
+  const [isRenaming, setIsRenaming] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const now = useNow();
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
@@ -50,9 +54,42 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize }: AgentCardProp
     }
   }, [logs, viewMode]);
 
+  useEffect(() => {
+    if (isRenaming) nameInputRef.current?.select();
+  }, [isRenaming]);
+
   const toggleView = (e: React.MouseEvent) => {
     e.stopPropagation();
     setViewMode((v) => (v === 'status' ? 'terminal' : 'status'));
+  };
+
+  const startRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsRenaming(true);
+  };
+
+  /**
+   * Commits on blur as well as on Enter: a name typed and then clicked away
+   * from is a name the user meant. Escape is the way to back out, and it
+   * clears the field first so the blur that follows has nothing to commit.
+   */
+  const commitRename = () => {
+    if (!isRenaming) return;
+    const next = nameInputRef.current?.value.trim() ?? '';
+    setIsRenaming(false);
+    if (next && next !== agent.name) onRename?.(agent.id, next);
+  };
+
+  const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.currentTarget.value = agent.name;
+      setIsRenaming(false);
+    }
   };
 
   // Card border + glow varies by agent activity state
@@ -105,9 +142,26 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize }: AgentCardProp
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-display text-xs font-bold text-foreground group-hover:text-primary transition-colors">
-                {agent.name}
-              </h3>
+              {isRenaming ? (
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  defaultValue={agent.name}
+                  aria-label="Agent name"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={handleNameKeyDown}
+                  onBlur={commitRename}
+                  className="w-28 rounded border border-primary/40 bg-black/40 px-1 py-0.5 font-display text-xs font-bold text-foreground outline-none focus:border-primary"
+                />
+              ) : (
+                <h3
+                  onDoubleClick={onRename ? startRename : undefined}
+                  title={onRename ? 'Double-click to rename' : undefined}
+                  className="font-display text-xs font-bold text-foreground group-hover:text-primary transition-colors"
+                >
+                  {agent.name}
+                </h3>
+              )}
               {/* The pulsing dot on the avatar already carries "live"; a second
                   and third out-of-phase pulse on the same card just twitches. */}
               {isLive && (
@@ -129,6 +183,18 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize }: AgentCardProp
         </div>
 
         <div className="flex items-center gap-1">
+          {onRename && !isRenaming && (
+            <button
+              onClick={startRename}
+              className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              title="Rename agent"
+              aria-label="Rename agent"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-sm">
+                edit
+              </span>
+            </button>
+          )}
           {onMinimize && (
             <button
               onClick={(e) => {

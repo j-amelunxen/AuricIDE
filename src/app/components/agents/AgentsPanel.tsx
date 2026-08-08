@@ -21,6 +21,7 @@ export interface AgentsPanelProps {
   /** Agents folded down to a one-line row — still running, just out of the way. */
   minimizedAgentIds?: string[];
   onToggleMinimize?: (agentId: string, minimized: boolean) => void;
+  onRename?: (agentId: string, name: string) => void;
 }
 
 export function AgentsPanel({
@@ -36,6 +37,7 @@ export function AgentsPanel({
   onDiscardInterrupted,
   minimizedAgentIds = [],
   onToggleMinimize,
+  onRename,
 }: AgentsPanelProps): React.JSX.Element {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -188,6 +190,7 @@ export function AgentsPanel({
                     onKill={onKill}
                     onSelect={onSelectAgent}
                     onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
+                    onRename={onRename}
                   />
                 </div>
               ))}
