@@ -7,6 +7,7 @@ import { useNow } from '@/lib/hooks/useNow';
 import { isAgentIdling, isAgentLive } from '@/lib/agents/liveness';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { AGENT_STATE_LABEL, agentState, type AgentState } from '@/lib/agents/state';
+import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 import { stripAnsi } from '@/lib/terminal/ansi';
 
 const EMPTY_LOGS: string[] = [];
@@ -32,9 +33,21 @@ export interface AgentCardProps {
   onMinimize?: (id: string) => void;
   /** Give the agent a human-chosen name. Omit to hide the control. */
   onRename?: (id: string, name: string) => void;
+  /** Marker colour the user put on this agent, for grouping and flagging. */
+  color?: AgentColor;
+  /** Right-click on the card — the panel turns this into the colour menu. */
+  onContextMenu?: (e: React.MouseEvent, id: string) => void;
 }
 
-export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: AgentCardProps) {
+export function AgentCard({
+  agent,
+  onKill,
+  onSelect,
+  onMinimize,
+  onRename,
+  color,
+  onContextMenu,
+}: AgentCardProps) {
   const [viewMode, setViewMode] = useState<'status' | 'terminal'>('status');
   const [isRenaming, setIsRenaming] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
@@ -45,6 +58,8 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
   const isLive = isAgentLive(agent, now);
   const isIdling = isAgentIdling(agent, now);
   const state = agentState(agent, now);
+  const markerHex = agentColorHex(color);
+  const markerLabel = agentColorLabel(color);
 
   /**
    * One duration, chosen by state. While an agent is quiet, how long it has
@@ -176,10 +191,25 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
   return (
     <div
       onClick={() => onSelect?.(agent.id)}
+      onContextMenu={onContextMenu && ((e) => onContextMenu(e, agent.id))}
       className={`glass-card group relative flex flex-col gap-3 rounded-xl p-3 transition-all duration-500 cursor-pointer overflow-hidden ${cardGlowClass} ${
         viewMode === 'terminal' ? 'min-h-[200px]' : ''
-      }`}
+      } ${markerHex ? 'pl-4' : ''}`}
     >
+      {/* The marker gets the left edge, deliberately away from the state chip:
+          status already owns amber, emerald, red and the accent, so painting a
+          user's colour into that slot would quietly change what the card
+          claims. An edge stripe also scans a whole column at a glance. */}
+      {markerHex && (
+        <span
+          data-testid="agent-color-marker"
+          aria-label={`Marked ${markerLabel}`}
+          role="img"
+          className="pointer-events-none absolute inset-y-0 left-0 w-1.5"
+          style={{ backgroundColor: markerHex }}
+        />
+      )}
+
       {/* Live: subtle purple inner glow overlay */}
       {isLive && (
         <div className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-br from-primary/[0.07] via-transparent to-transparent" />

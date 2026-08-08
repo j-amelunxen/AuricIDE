@@ -4,6 +4,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 
 export interface CompactAgentRowProps {
   agent: AgentInfo;
@@ -14,6 +15,9 @@ export interface CompactAgentRowProps {
   dismissLabel: string;
   dismissIcon: string;
   onDismiss: (id: string) => void;
+  /** Marker colour the user put on this agent. */
+  color?: AgentColor;
+  onContextMenu?: (e: React.MouseEvent, id: string) => void;
 }
 
 const DOT_BY_STATUS: Record<AgentInfo['status'], string> = {
@@ -35,15 +39,33 @@ export function CompactAgentRow({
   dismissLabel,
   dismissIcon,
   onDismiss,
+  color,
+  onContextMenu,
 }: CompactAgentRowProps) {
   const now = useNow();
   const dot = isAgentLive(agent, now) ? 'bg-primary' : DOT_BY_STATUS[agent.status];
   // What it is doing now beats what it was asked to do — that is the thing you
   // came back to check on. Fall back to the instruction before any output.
   const detail = (agent.status === 'running' && agent.currentActivity) || agent.currentTask;
+  const markerHex = agentColorHex(color);
+  const markerLabel = agentColorLabel(color);
 
   return (
-    <div className="group flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-white/5">
+    <div
+      onContextMenu={onContextMenu && ((e) => onContextMenu(e, agent.id))}
+      className="group relative flex items-center gap-2 rounded-md py-1 pl-2.5 pr-1.5 transition-colors hover:bg-white/5"
+    >
+      {/* Same left edge as the card, so a marked agent stays recognisable
+          whether it is expanded, parked or done. */}
+      {markerHex && (
+        <span
+          data-testid="agent-color-marker"
+          aria-label={`Marked ${markerLabel}`}
+          role="img"
+          className="pointer-events-none absolute inset-y-0.5 left-0 w-1 rounded-full"
+          style={{ backgroundColor: markerHex }}
+        />
+      )}
       <span aria-hidden="true" className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${dot}`} />
       <button
         type="button"
