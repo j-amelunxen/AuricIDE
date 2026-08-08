@@ -242,7 +242,7 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
           <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
             {agent.currentTask ? (
               <div className="rounded-lg border border-white/5 bg-black/20 p-2.5">
-                <p className="line-clamp-3 text-[10px] leading-relaxed text-foreground-muted">
+                <p className="line-clamp-2 text-[10px] leading-relaxed text-foreground-muted">
                   <span className="mr-1.5 font-bold text-primary/80 uppercase text-[8px] tracking-wider">
                     Objective:
                   </span>
@@ -253,6 +253,31 @@ export function AgentCard({ agent, onKill, onSelect, onMinimize, onRename }: Age
               <div className="h-10 rounded-lg border border-white/5 bg-black/20 p-2 flex items-center justify-center">
                 <span className="text-[10px] text-foreground-muted italic opacity-30">
                   Awaiting instructions...
+                </span>
+              </div>
+            )}
+
+            {/* The objective is what the agent was asked to do; this is what
+                it is doing about it. Only while it is still running — a frozen
+                last line would read as ongoing work. */}
+            {isRunning && agent.currentActivity && (
+              <div
+                data-testid="agent-activity"
+                title={agent.currentActivity}
+                className="flex items-center gap-1.5 px-1"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`text-[9px] ${isLive ? 'text-primary' : 'text-amber-400/60'}`}
+                >
+                  ▸
+                </span>
+                <span
+                  className={`truncate font-mono text-[9px] ${
+                    isLive ? 'text-primary-light/90' : 'text-foreground-muted/70'
+                  }`}
+                >
+                  {agent.currentActivity}
                 </span>
               </div>
             )}

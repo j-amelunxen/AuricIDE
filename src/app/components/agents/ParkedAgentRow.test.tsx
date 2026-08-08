@@ -34,6 +34,20 @@ describe('ParkedAgentRow', () => {
     );
   });
 
+  it('prefers what the agent is doing over what it was asked to do', () => {
+    render(
+      <ParkedAgentRow
+        agent={{ ...agent, currentActivity: 'Editing setup.ts' }}
+        onRestore={vi.fn()}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Restore Writer' })).toHaveAttribute(
+      'title',
+      'Writer — Editing setup.ts'
+    );
+  });
+
   it('can terminate a parked agent without restoring it first', async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();

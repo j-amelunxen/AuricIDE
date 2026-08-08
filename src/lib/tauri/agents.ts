@@ -4,7 +4,14 @@ export interface AgentInfo {
   status: 'running' | 'idle' | 'queued' | 'error';
   model: string;
   provider: string;
+  /** The instruction the agent was started with — set once, never changes. */
   currentTask?: string;
+  /**
+   * What the agent is doing right now, distilled from its newest output.
+   * Frontend-only: derived in the store as output streams in, so the backend
+   * never sends it.
+   */
+  currentActivity?: string;
   startedAt: number;
   lastActivityAt?: number;
   repoPath?: string;

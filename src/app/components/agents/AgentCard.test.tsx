@@ -237,3 +237,39 @@ describe('AgentCard – naming', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 });
+
+describe('AgentCard – current activity', () => {
+  it('shows what the agent is doing right now', () => {
+    render(
+      <AgentCard
+        agent={{ ...runningAgent, currentActivity: 'Editing setup.ts' }}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agent-activity')).toHaveTextContent('Editing setup.ts');
+  });
+
+  it('shows it alongside the instruction, not instead of it', () => {
+    render(
+      <AgentCard
+        agent={{ ...runningAgent, currentActivity: 'Editing setup.ts' }}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Writing documentation')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-activity')).toBeInTheDocument();
+  });
+
+  it('spends no space on the line before there is any output', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agent-activity')).not.toBeInTheDocument();
+  });
+
+  it('drops the line once the agent has finished', () => {
+    // A last log line frozen in place would read as ongoing work.
+    render(
+      <AgentCard agent={{ ...idleAgent, currentActivity: 'Editing setup.ts' }} onKill={vi.fn()} />
+    );
+    expect(screen.queryByTestId('agent-activity')).not.toBeInTheDocument();
+  });
+});

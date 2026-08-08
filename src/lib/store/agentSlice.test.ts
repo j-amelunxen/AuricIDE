@@ -901,3 +901,54 @@ describe('agentSlice – renaming agents', () => {
     expect(store.getState().agents[0].name).toBe('Docs sweep');
   });
 });
+
+describe('agentSlice – derived current activity', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const runningAgent = {
+    id: 'a1',
+    name: 'A',
+    model: 'm',
+    provider: 'claude',
+    status: 'running' as const,
+    startedAt: 0,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+    store.setState({ agents: [runningAgent] });
+  });
+
+  it('reports what the agent is doing from its newest output', () => {
+    store.getState().appendAgentLog('a1', 'Editing setup.ts\n');
+    expect(store.getState().agents[0].currentActivity).toBe('Editing setup.ts');
+  });
+
+  it('leaves the start instruction alone — the two say different things', () => {
+    store.setState({ agents: [{ ...runningAgent, currentTask: 'Refactor the parser' }] });
+    store.getState().appendAgentLog('a1', 'Editing setup.ts\n');
+
+    const agent = store.getState().agents[0];
+    expect(agent.currentTask).toBe('Refactor the parser');
+    expect(agent.currentActivity).toBe('Editing setup.ts');
+  });
+
+  it('keeps the last known activity while the output is only redraw noise', () => {
+    store.getState().appendAgentLog('a1', 'Editing setup.ts\n');
+    // Force the next append past the throttle window so it would update.
+    store.setState({ agents: store.getState().agents.map((a) => ({ ...a, lastActivityAt: 0 })) });
+    store.getState().appendAgentLog('a1', '╭───╮\n');
+
+    expect(store.getState().agents[0].currentActivity).toBe('Editing setup.ts');
+  });
+
+  it('costs no extra renders — it rides the throttled activity bump', () => {
+    store.getState().appendAgentLog('a1', 'first line\n');
+    const afterFirst = store.getState().agents;
+
+    // Within the throttle window the agents array must stay identical.
+    store.getState().appendAgentLog('a1', 'second line\n');
+    expect(store.getState().agents).toBe(afterFirst);
+  });
+});
