@@ -68,7 +68,7 @@ describe('AgentsPanel', () => {
   it('groups agents by repo path', () => {
     const agentsWithRepo = [
       { ...agents[0], repoPath: '/repo-a' },
-      { ...agents[1], repoPath: '/repo-b' },
+      { ...agents[1], status: 'running' as const, repoPath: '/repo-b' },
     ];
     render(<AgentsPanel agents={agentsWithRepo} onSpawn={vi.fn()} onKill={vi.fn()} />);
     expect(screen.getByText('repo-a')).toBeInTheDocument();
@@ -299,7 +299,9 @@ describe('AgentsPanel – parked agents', () => {
   };
 
   it('shows a minimize control on each card when parking is available', () => {
-    render(<AgentsPanel {...parkedProps} onToggleMinimize={vi.fn()} />);
+    // Only working agents get a card, and only cards can be parked.
+    const working = agents.map((a) => ({ ...a, status: 'running' as const }));
+    render(<AgentsPanel {...parkedProps} agents={working} onToggleMinimize={vi.fn()} />);
     expect(screen.getAllByRole('button', { name: 'Park agent' })).toHaveLength(2);
   });
 
@@ -323,8 +325,14 @@ describe('AgentsPanel – parked agents', () => {
   });
 
   it('keeps unparked agents as full cards', () => {
+    const working = agents.map((a) => ({ ...a, status: 'running' as const }));
     render(
-      <AgentsPanel {...parkedProps} minimizedAgentIds={['agent-1']} onToggleMinimize={vi.fn()} />
+      <AgentsPanel
+        {...parkedProps}
+        agents={working}
+        minimizedAgentIds={['agent-1']}
+        onToggleMinimize={vi.fn()}
+      />
     );
     expect(screen.getByText('Reviewer')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Park agent' })).toBeInTheDocument();
@@ -375,5 +383,99 @@ describe('AgentsPanel – parked agents', () => {
     );
     expect(screen.queryByText('No agents running')).not.toBeInTheDocument();
     expect(screen.getByTestId('parked-agents')).toHaveTextContent('Writer');
+  });
+});
+
+describe('AgentsPanel – finished agents', () => {
+  const finishedAgent = {
+    ...agents[1],
+    id: 'agent-done',
+    name: 'Reviewer',
+    status: 'idle' as const,
+  };
+  const workingAgent = { ...agents[0], status: 'running' as const };
+
+  it('folds a stopped agent into a compact list instead of a card', () => {
+    render(
+      <AgentsPanel agents={[workingAgent, finishedAgent]} onSpawn={vi.fn()} onKill={vi.fn()} />
+    );
+
+    expect(screen.getByTestId('finished-agents')).toHaveTextContent('Reviewer');
+    // The card is what costs vertical space; its controls come with it.
+    expect(screen.getAllByRole('button', { name: 'Show Terminal' })).toHaveLength(1);
+  });
+
+  it('says how many agents have finished', () => {
+    render(
+      <AgentsPanel agents={[workingAgent, finishedAgent]} onSpawn={vi.fn()} onKill={vi.fn()} />
+    );
+    expect(screen.getByTestId('finished-agents')).toHaveTextContent('Done · 1');
+  });
+
+  it('has no finished section while everything is still working', () => {
+    render(<AgentsPanel agents={[workingAgent]} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('finished-agents')).not.toBeInTheDocument();
+  });
+
+  it('opens a finished agent to read its output', async () => {
+    const user = userEvent.setup();
+    const onSelectAgent = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[finishedAgent]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onSelectAgent={onSelectAgent}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open logs of Reviewer' }));
+    expect(onSelectAgent).toHaveBeenCalledWith('agent-done');
+  });
+
+  it('dismisses a finished agent without going through kill', async () => {
+    const user = userEvent.setup();
+    const onDismissFinished = vi.fn();
+    const onKill = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[finishedAgent]}
+        onSpawn={vi.fn()}
+        onKill={onKill}
+        onDismissFinished={onDismissFinished}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss Reviewer' }));
+    expect(onDismissFinished).toHaveBeenCalledWith('agent-done');
+    expect(onKill).not.toHaveBeenCalled();
+  });
+
+  it('clears the whole finished list at once', async () => {
+    const user = userEvent.setup();
+    const onDismissFinished = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[finishedAgent, { ...finishedAgent, id: 'agent-done-2', name: 'Second' }]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onDismissFinished={onDismissFinished}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(onDismissFinished).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers no Clear for a single finished agent', () => {
+    render(
+      <AgentsPanel
+        agents={[finishedAgent]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onDismissFinished={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 });
