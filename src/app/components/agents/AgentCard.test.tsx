@@ -471,3 +471,37 @@ describe('AgentCard – replying from the card', () => {
     expect(input).toHaveValue('yes');
   });
 });
+
+describe('AgentCard – marker colour', () => {
+  it('shows no marker on an unmarked agent', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agent-color-marker')).not.toBeInTheDocument();
+  });
+
+  it('marks the card along its edge', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} color="red" />);
+    const marker = screen.getByTestId('agent-color-marker');
+    expect(marker).toHaveStyle({ backgroundColor: '#ff6b6b' });
+  });
+
+  it('names the colour for assistive technology', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} color="green" />);
+    expect(screen.getByLabelText('Marked Green')).toBeInTheDocument();
+  });
+
+  it('leaves the state chip alone — a marker must not read as status', () => {
+    // Status already owns amber, emerald, red and the accent. A user marker
+    // painted into the same slot would quietly change what the card claims.
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} color="green" />);
+    expect(screen.getByTestId('agent-state')).toHaveTextContent('Waiting');
+  });
+
+  it('offers the colour menu on right-click', async () => {
+    const user = userEvent.setup();
+    const onContextMenu = vi.fn();
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} onContextMenu={onContextMenu} />);
+
+    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Writer') });
+    expect(onContextMenu).toHaveBeenCalledWith(expect.anything(), 'agent-1');
+  });
+});

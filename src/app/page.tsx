@@ -498,6 +498,8 @@ export default function Home() {
             onDismissFinished={state.dismissFinishedAgent}
             collapsedRepos={state.collapsedAgentRepos}
             onToggleRepoCollapsed={state.toggleAgentRepoCollapsed}
+            agentColors={state.agentColors}
+            onSetColor={state.setAgentColor}
           />
         }
         bottomPanel={

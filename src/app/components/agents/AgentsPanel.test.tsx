@@ -680,3 +680,96 @@ describe('AgentsPanel – collapsible repo groups', () => {
     expect(screen.getByText('Kill All')).toBeInTheDocument();
   });
 });
+
+describe('AgentsPanel – colouring agents', () => {
+  const working: AgentInfo = { ...agents[0], id: 'a1', name: 'Writer', status: 'running' };
+
+  it('opens a colour menu on right-click', async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={vi.fn()} onSetColor={vi.fn()} />
+    );
+
+    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Writer') });
+    expect(screen.getByRole('menuitem', { name: 'Red' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Blue' })).toBeInTheDocument();
+  });
+
+  it('marks the agent with the chosen colour', async () => {
+    const user = userEvent.setup();
+    const onSetColor = vi.fn();
+    render(
+      <AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={vi.fn()} onSetColor={onSetColor} />
+    );
+
+    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Writer') });
+    await user.click(screen.getByRole('menuitem', { name: 'Green' }));
+
+    expect(onSetColor).toHaveBeenCalledWith('a1', 'green');
+  });
+
+  it('offers no way to remove a marker the agent does not have', async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={vi.fn()} onSetColor={vi.fn()} />
+    );
+
+    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Writer') });
+    expect(screen.queryByRole('menuitem', { name: /remove/i })).not.toBeInTheDocument();
+  });
+
+  it('removes an existing marker', async () => {
+    const user = userEvent.setup();
+    const onSetColor = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[working]}
+        agentColors={{ a1: 'red' }}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onSetColor={onSetColor}
+      />
+    );
+
+    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Writer') });
+    await user.click(screen.getByRole('menuitem', { name: /remove/i }));
+
+    expect(onSetColor).toHaveBeenCalledWith('a1', null);
+  });
+
+  it('paints the card with the agent colour', () => {
+    render(
+      <AgentsPanel
+        agents={[working]}
+        agentColors={{ a1: 'red' }}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onSetColor={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agent-color-marker')).toHaveStyle({ backgroundColor: '#ff6b6b' });
+  });
+
+  it('keeps the marker on a parked agent', () => {
+    render(
+      <AgentsPanel
+        agents={[working]}
+        agentColors={{ a1: 'blue' }}
+        minimizedAgentIds={['a1']}
+        onToggleMinimize={vi.fn()}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onSetColor={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agent-color-marker')).toBeInTheDocument();
+  });
+
+  it('leaves right-click alone when colouring is not offered', async () => {
+    const user = userEvent.setup();
+    render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={vi.fn()} />);
+
+    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Writer') });
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+  });
+});

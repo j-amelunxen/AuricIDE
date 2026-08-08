@@ -108,7 +108,11 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
               }`}
             >
               {option.icon && (
+                /* The glyph is a ligature, so its source text ("circle",
+                   "delete") is read out as part of the item's name — hide it
+                   and let the label speak for the item. */
                 <span
+                  aria-hidden="true"
                   className="material-symbols-outlined text-[14px]"
                   style={option.iconColor ? { color: option.iconColor } : undefined}
                 >

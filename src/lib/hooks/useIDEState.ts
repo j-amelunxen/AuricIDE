@@ -69,6 +69,8 @@ export function useIDEState() {
   const dismissFinishedAgent = useStore((s) => s.dismissFinishedAgent);
   const collapsedAgentRepos = useStore((s) => s.collapsedAgentRepos);
   const toggleAgentRepoCollapsed = useStore((s) => s.toggleAgentRepoCollapsed);
+  const agentColors = useStore((s) => s.agentColors);
+  const setAgentColor = useStore((s) => s.setAgentColor);
   const setAgentMinimized = useStore((s) => s.setAgentMinimized);
   const canvasNodes = useStore((s) => s.canvasNodes);
   const canvasEdges = useStore((s) => s.canvasEdges);
@@ -264,6 +266,8 @@ export function useIDEState() {
     dismissFinishedAgent,
     collapsedAgentRepos,
     toggleAgentRepoCollapsed,
+    agentColors,
+    setAgentColor,
     canvasNodes,
     canvasEdges,
     setCanvasData,

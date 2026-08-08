@@ -13,6 +13,7 @@ import {
   spawnAgent,
 } from '../tauri/agents';
 import { deriveAgentActivity } from '../agents/activity';
+import type { AgentColor } from '../agents/colors';
 import { isFinishedAgent } from '../agents/fleet';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import { uniqueAgentName } from '../agents/naming';
@@ -58,10 +59,17 @@ export interface AgentSlice {
    * 'Unknown'), session-scoped like the parked list.
    */
   collapsedAgentRepos: string[];
+  /**
+   * Marker colours the user put on agents, to group them or flag the ones
+   * worth coming back to. Session-scoped, like the other view state — the
+   * marker lives exactly as long as the agent it marks.
+   */
+  agentColors: Record<string, AgentColor>;
   /** Previously used start prompts for the open project, newest first. */
   promptHistory: string[];
   setAgentMinimized: (agentId: string, minimized: boolean) => void;
   toggleAgentRepoCollapsed: (repoPath: string) => void;
+  setAgentColor: (agentId: string, color: AgentColor | null) => void;
   loadPromptHistory: (projectPath: string) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   killRunningAgent: (agentId: string) => Promise<void>;
@@ -91,6 +99,14 @@ function completeRunForAgent(
   if (run) goalsSlice.completeGoalRun(run.id, outcome);
 }
 
+/** Drops marker colours for agents that no longer exist. */
+function withoutColors(
+  colors: Record<string, AgentColor>,
+  gone: (agentId: string) => boolean
+): Record<string, AgentColor> {
+  return Object.fromEntries(Object.entries(colors).filter(([id]) => !gone(id)));
+}
+
 export function groupAgentsByRepo(agents: AgentInfo[]): Record<string, AgentInfo[]> {
   const groups: Record<string, AgentInfo[]> = {};
   for (const agent of agents) {
@@ -109,7 +125,13 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   interruptedAgents: [],
   minimizedAgentIds: [],
   collapsedAgentRepos: [],
+  agentColors: {},
   promptHistory: [],
+
+  setAgentColor: (agentId, color) => {
+    const { [agentId]: _cleared, ...rest } = get().agentColors;
+    set({ agentColors: color ? { ...rest, [agentId]: color } : rest });
+  },
 
   toggleAgentRepoCollapsed: (repoPath) => {
     const current = get().collapsedAgentRepos;
@@ -251,6 +273,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentLogs: remainingLogs,
       agentLogMeta: remainingMeta,
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => id !== agentId),
+      agentColors: withoutColors(get().agentColors, (id) => id === agentId),
     });
   },
 
@@ -287,6 +310,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentLogs: remainingLogs,
       agentLogMeta: remainingMeta,
       minimizedAgentIds: minimizedAgentIds.filter((id) => id !== agentId),
+      agentColors: withoutColors(get().agentColors, (id) => id === agentId),
     });
   },
 
@@ -320,6 +344,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         Object.entries(agentLogMeta).filter(([id]) => !evictedIds.has(id))
       ),
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => !evictedIds.has(id)),
+      agentColors: withoutColors(get().agentColors, (id) => evictedIds.has(id)),
     });
   },
 
@@ -429,6 +454,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         Object.entries(agentLogMeta).filter(([id]) => !killedIds.has(id))
       ),
       minimizedAgentIds: minimizedAgentIds.filter((id) => !killedIds.has(id)),
+      agentColors: withoutColors(get().agentColors, (id) => killedIds.has(id)),
     });
   },
 });

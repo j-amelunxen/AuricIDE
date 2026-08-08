@@ -3,7 +3,10 @@
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { groupAgentsByRepo } from '@/lib/store/agentSlice';
 import type { InterruptedAgent } from '@/lib/tauri/agents';
+import { useState } from 'react';
 import { splitFleet } from '@/lib/agents/fleet';
+import { AGENT_COLORS, type AgentColor } from '@/lib/agents/colors';
+import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { AgentCard } from './AgentCard';
 import { CompactAgentRow } from './CompactAgentRow';
 
@@ -28,6 +31,9 @@ export interface AgentsPanelProps {
   /** Repo groups folded shut, by repo path (or 'Unknown'). */
   collapsedRepos?: string[];
   onToggleRepoCollapsed?: (repoPath: string) => void;
+  /** Marker colours by agent id, for grouping and flagging agents. */
+  agentColors?: Record<string, AgentColor>;
+  onSetColor?: (agentId: string, color: AgentColor | null) => void;
 }
 
 export function AgentsPanel({
@@ -47,7 +53,44 @@ export function AgentsPanel({
   onDismissFinished,
   collapsedRepos = [],
   onToggleRepoCollapsed,
+  agentColors = {},
+  onSetColor,
 }: AgentsPanelProps): React.JSX.Element {
+  const [colorMenu, setColorMenu] = useState<{ x: number; y: number; agentId: string } | null>(
+    null
+  );
+
+  /**
+   * Right-click marks an agent. Colours are a grouping tool the user invents
+   * meanings for, so the menu offers the palette and nothing else — and
+   * "Remove" only appears when there is a marker to remove.
+   */
+  const openColorMenu = (e: React.MouseEvent, agentId: string) => {
+    if (!onSetColor) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setColorMenu({ x: e.clientX, y: e.clientY, agentId });
+  };
+
+  const colorMenuOptions = (agentId: string): ContextMenuOption[] => [
+    { type: 'header', label: 'Colour' },
+    ...AGENT_COLORS.map((option) => ({
+      label: option.label,
+      icon: 'circle',
+      iconColor: option.hex,
+      action: () => onSetColor?.(agentId, option.key),
+    })),
+    ...(agentColors[agentId]
+      ? [
+          { type: 'separator' as const },
+          {
+            label: 'Remove colour',
+            icon: 'format_color_reset',
+            action: () => onSetColor?.(agentId, null),
+          },
+        ]
+      : []),
+  ];
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -249,6 +292,8 @@ export function AgentsPanel({
                         onSelect={onSelectAgent}
                         onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
                         onRename={onRename}
+                        color={agentColors[agent.id]}
+                        onContextMenu={onSetColor && openColorMenu}
                       />
                     </div>
                   ))}
@@ -271,6 +316,8 @@ export function AgentsPanel({
                 dismissLabel="Terminate"
                 dismissIcon="power_settings_new"
                 onDismiss={confirmKill}
+                color={agentColors[agent.id]}
+                onContextMenu={onSetColor && openColorMenu}
               />
             ))}
           </div>
@@ -303,6 +350,8 @@ export function AgentsPanel({
                 dismissLabel="Dismiss"
                 dismissIcon="close"
                 onDismiss={(id) => onDismissFinished?.(id)}
+                color={agentColors[agent.id]}
+                onContextMenu={onSetColor && openColorMenu}
               />
             ))}
           </div>
@@ -318,6 +367,15 @@ export function AgentsPanel({
           New Agent…
         </button>
       </div>
+
+      {colorMenu && (
+        <ContextMenu
+          x={colorMenu.x}
+          y={colorMenu.y}
+          options={colorMenuOptions(colorMenu.agentId)}
+          onClose={() => setColorMenu(null)}
+        />
+      )}
     </div>
   );
 }

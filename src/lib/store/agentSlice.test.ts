@@ -996,6 +996,95 @@ describe('agentSlice – distinguishable names on spawn', () => {
   });
 });
 
+describe('agentSlice – marker colours', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const withStatus = (id: string, status: 'running' | 'idle' = 'running') => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status,
+    startedAt: 0,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+    store.setState({ agents: [withStatus('a1'), withStatus('a2')] });
+  });
+
+  it('starts with no agent marked', () => {
+    expect(store.getState().agentColors).toEqual({});
+  });
+
+  it('marks one agent without touching the others', () => {
+    store.getState().setAgentColor('a1', 'red');
+    expect(store.getState().agentColors).toEqual({ a1: 'red' });
+  });
+
+  it('changes a marker', () => {
+    store.getState().setAgentColor('a1', 'red');
+    store.getState().setAgentColor('a1', 'blue');
+    expect(store.getState().agentColors.a1).toBe('blue');
+  });
+
+  it('clears a marker', () => {
+    store.getState().setAgentColor('a1', 'red');
+    store.getState().setAgentColor('a1', null);
+    expect(store.getState().agentColors).toEqual({});
+  });
+
+  it('lets several agents share a colour — that is how grouping works', () => {
+    store.getState().setAgentColor('a1', 'green');
+    store.getState().setAgentColor('a2', 'green');
+    expect(store.getState().agentColors).toEqual({ a1: 'green', a2: 'green' });
+  });
+
+  it('forgets the marker once the agent is killed', async () => {
+    store.getState().setAgentColor('a1', 'red');
+    await store.getState().killRunningAgent('a1');
+    expect(store.getState().agentColors).toEqual({});
+  });
+
+  it('forgets markers when a whole repo is stopped', async () => {
+    store.setState({
+      agents: [
+        { ...withStatus('a1'), repoPath: '/repo' },
+        { ...withStatus('a2'), repoPath: '/other' },
+      ],
+    });
+    store.getState().setAgentColor('a1', 'red');
+    store.getState().setAgentColor('a2', 'blue');
+
+    await store.getState().killAgentsForRepoPath('/repo');
+
+    expect(store.getState().agentColors).toEqual({ a2: 'blue' });
+  });
+
+  it('forgets the marker of a dismissed agent', () => {
+    store.setState({ agents: [withStatus('done', 'idle')] });
+    store.getState().setAgentColor('done', 'yellow');
+
+    store.getState().dismissFinishedAgent('done');
+
+    expect(store.getState().agentColors).toEqual({});
+  });
+
+  it('forgets markers for agents evicted by the retention cap', () => {
+    const finished = Array.from({ length: MAX_FINISHED_AGENTS + 1 }, (_, i) => ({
+      ...withStatus(`agent-${i}`, 'idle'),
+      startedAt: i,
+    }));
+    store.setState({ agents: finished });
+    store.getState().setAgentColor('agent-0', 'purple');
+
+    store.getState().updateAgentStatus('agent-1', 'idle');
+
+    expect(store.getState().agentColors['agent-0']).toBeUndefined();
+  });
+});
+
 describe('agentSlice – collapsed repo groups', () => {
   let store: StoreApi<AgentSlice>;
 

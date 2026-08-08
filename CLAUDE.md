@@ -130,6 +130,10 @@ Rules that hold across all of it:
   `killRunningAgent` is the one with side effects.
 - **Ending work asks first.** Both single kills and Kill All confirm while an
   agent is still running; already-stopped agents are cleared without a prompt.
+- **Marker colours never touch the status slot.** Status owns amber, emerald,
+  red and the accent; a user's marker (right-click → colour) lives on the left
+  edge of the card or row. Painting a marker where status is read would quietly
+  change what the card claims.
 
 Supporting modules in `src/lib/agents/`:
 
@@ -140,6 +144,8 @@ Supporting modules in `src/lib/agents/`:
 - `naming.ts` — derives a name from the start instruction and disambiguates
   collisions, so a fleet is not a column of identical labels.
 - `duration.ts` — compact ages that count in seconds below a minute.
+- `colors.ts` — the marker palette. Explicit hex, not theme tokens: "the red
+  one" must stay red whatever accent the user picked.
 
 ## Requirements vs. Tickets
 
