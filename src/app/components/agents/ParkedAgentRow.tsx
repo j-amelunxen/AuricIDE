@@ -25,6 +25,9 @@ const DOT_BY_STATUS: Record<AgentInfo['status'], string> = {
 export function ParkedAgentRow({ agent, onRestore, onKill }: ParkedAgentRowProps) {
   const now = useNow();
   const dot = isAgentLive(agent, now) ? 'bg-primary' : DOT_BY_STATUS[agent.status];
+  // What it is doing now beats what it was asked to do — that is the thing you
+  // came back to check on. Fall back to the instruction before any output.
+  const detail = (agent.status === 'running' && agent.currentActivity) || agent.currentTask;
 
   return (
     <div className="group flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-white/5">
@@ -33,7 +36,7 @@ export function ParkedAgentRow({ agent, onRestore, onKill }: ParkedAgentRowProps
         type="button"
         onClick={() => onRestore(agent.id)}
         aria-label={`Restore ${agent.name}`}
-        title={agent.currentTask ? `${agent.name} — ${agent.currentTask}` : agent.name}
+        title={detail ? `${agent.name} — ${detail}` : agent.name}
         className="flex-1 truncate text-left text-[11px] text-foreground-muted transition-colors hover:text-foreground"
       >
         {agent.name}

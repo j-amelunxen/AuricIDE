@@ -12,6 +12,7 @@ import {
   resumeInterruptedAgent,
   spawnAgent,
 } from '../tauri/agents';
+import { deriveAgentActivity } from '../agents/activity';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import type { GoalsSlice } from './goalsSlice';
 import type { PmGoalRun } from '../tauri/goals';
@@ -304,9 +305,21 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         ...state.agentLogMeta,
         [agentId]: { seq: meta.seq + 1, bytes },
       },
+      // Distilling "what is it doing right now" rides the same throttle: it
+      // only runs when the agents array is being replaced anyway, so the
+      // display line costs no additional renders. A tail of pure redraw noise
+      // leaves the previous line standing rather than blanking it.
       ...(shouldBumpActivity
         ? {
-            agents: state.agents.map((a) => (a.id === agentId ? { ...a, lastActivityAt: now } : a)),
+            agents: state.agents.map((a) =>
+              a.id === agentId
+                ? {
+                    ...a,
+                    lastActivityAt: now,
+                    currentActivity: deriveAgentActivity(updated) ?? a.currentActivity,
+                  }
+                : a
+            ),
           }
         : {}),
     });
