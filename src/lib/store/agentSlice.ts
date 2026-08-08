@@ -53,9 +53,15 @@ export interface AgentSlice {
    * panel. Session-scoped — nothing about the agent itself changes.
    */
   minimizedAgentIds: string[];
+  /**
+   * Repo groups folded shut in the agents panel. Keyed by repo path (or
+   * 'Unknown'), session-scoped like the parked list.
+   */
+  collapsedAgentRepos: string[];
   /** Previously used start prompts for the open project, newest first. */
   promptHistory: string[];
   setAgentMinimized: (agentId: string, minimized: boolean) => void;
+  toggleAgentRepoCollapsed: (repoPath: string) => void;
   loadPromptHistory: (projectPath: string) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   killRunningAgent: (agentId: string) => Promise<void>;
@@ -102,7 +108,17 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   selectedAgentId: null,
   interruptedAgents: [],
   minimizedAgentIds: [],
+  collapsedAgentRepos: [],
   promptHistory: [],
+
+  toggleAgentRepoCollapsed: (repoPath) => {
+    const current = get().collapsedAgentRepos;
+    set({
+      collapsedAgentRepos: current.includes(repoPath)
+        ? current.filter((p) => p !== repoPath)
+        : [...current, repoPath],
+    });
+  },
 
   setAgentMinimized: (agentId, minimized) => {
     const current = get().minimizedAgentIds;

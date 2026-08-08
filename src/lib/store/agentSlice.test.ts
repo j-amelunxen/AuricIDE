@@ -996,6 +996,33 @@ describe('agentSlice – distinguishable names on spawn', () => {
   });
 });
 
+describe('agentSlice – collapsed repo groups', () => {
+  let store: StoreApi<AgentSlice>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  it('starts with every group open', () => {
+    expect(store.getState().collapsedAgentRepos).toEqual([]);
+  });
+
+  it('collapses and reopens a group', () => {
+    store.getState().toggleAgentRepoCollapsed('/work/api');
+    expect(store.getState().collapsedAgentRepos).toEqual(['/work/api']);
+
+    store.getState().toggleAgentRepoCollapsed('/work/api');
+    expect(store.getState().collapsedAgentRepos).toEqual([]);
+  });
+
+  it('keeps groups independent of each other', () => {
+    store.getState().toggleAgentRepoCollapsed('/work/api');
+    store.getState().toggleAgentRepoCollapsed('/work/web');
+    expect(store.getState().collapsedAgentRepos).toEqual(['/work/api', '/work/web']);
+  });
+});
+
 describe('agentSlice – dismissing finished agents', () => {
   let store: StoreApi<AgentSlice>;
 

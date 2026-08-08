@@ -25,6 +25,9 @@ export interface AgentsPanelProps {
   onRename?: (agentId: string, name: string) => void;
   /** Clear a stopped agent out of the list once its output has been read. */
   onDismissFinished?: (agentId: string) => void;
+  /** Repo groups folded shut, by repo path (or 'Unknown'). */
+  collapsedRepos?: string[];
+  onToggleRepoCollapsed?: (repoPath: string) => void;
 }
 
 export function AgentsPanel({
@@ -42,6 +45,8 @@ export function AgentsPanel({
   onToggleMinimize,
   onRename,
   onDismissFinished,
+  collapsedRepos = [],
+  onToggleRepoCollapsed,
 }: AgentsPanelProps): React.JSX.Element {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -183,40 +188,73 @@ export function AgentsPanel({
         {agents.length === 0 ? (
           <p className="text-xs text-foreground-muted text-center py-4">No agents running</p>
         ) : (
-          repoKeys.map((repoPath) => (
-            <div key={repoPath} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-foreground-muted">
-                  {repoPath === 'Unknown' ? 'Unknown' : repoPath.split('/').pop()}
-                </span>
-                {onKillRepo && (
-                  <button
-                    type="button"
-                    onClick={() => confirmKillRepo(repoPath)}
-                    className="text-xs px-2 py-0.5 rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
-                  >
-                    Kill All
-                  </button>
-                )}
-              </div>
-              {grouped[repoPath].map((agent) => (
-                <div
-                  key={agent.id}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, agent.id)}
-                  className="rounded transition hover:ring-2 hover:ring-primary/50"
-                >
-                  <AgentCard
-                    agent={agent}
-                    onKill={confirmKill}
-                    onSelect={onSelectAgent}
-                    onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
-                    onRename={onRename}
-                  />
+          repoKeys.map((repoPath) => {
+            const repoName = repoPath === 'Unknown' ? 'Unknown' : repoPath.split('/').pop();
+            const isCollapsed = collapsedRepos.includes(repoPath);
+            const groupAgents = grouped[repoPath];
+
+            return (
+              <div key={repoPath} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  {/* Working across several repos means several stacks of
+                      cards; folding the ones you are not watching is the
+                      difference between scanning and scrolling. */}
+                  {onToggleRepoCollapsed ? (
+                    <button
+                      type="button"
+                      onClick={() => onToggleRepoCollapsed(repoPath)}
+                      aria-expanded={!isCollapsed}
+                      aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${repoName}`}
+                      className="group/repo -ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-xs font-semibold text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`material-symbols-outlined text-sm transition-transform ${
+                          isCollapsed ? '-rotate-90' : ''
+                        }`}
+                      >
+                        expand_more
+                      </span>
+                      {repoName}
+                      {isCollapsed && (
+                        <span className="ml-0.5 rounded-full bg-white/5 px-1.5 text-[10px] tabular-nums">
+                          {groupAgents.length}
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="text-xs font-semibold text-foreground-muted">{repoName}</span>
+                  )}
+                  {onKillRepo && (
+                    <button
+                      type="button"
+                      onClick={() => confirmKillRepo(repoPath)}
+                      className="text-xs px-2 py-0.5 rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
+                    >
+                      Kill All
+                    </button>
+                  )}
                 </div>
-              ))}
-            </div>
-          ))
+                {!isCollapsed &&
+                  groupAgents.map((agent) => (
+                    <div
+                      key={agent.id}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, agent.id)}
+                      className="rounded transition hover:ring-2 hover:ring-primary/50"
+                    >
+                      <AgentCard
+                        agent={agent}
+                        onKill={confirmKill}
+                        onSelect={onSelectAgent}
+                        onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
+                        onRename={onRename}
+                      />
+                    </div>
+                  ))}
+              </div>
+            );
+          })
         )}
 
         {parked.length > 0 && (
