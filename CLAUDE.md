@@ -84,7 +84,7 @@ Key slices and what they own:
 | Slice              | Key Concern                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------- |
 | `pmSlice`          | Epics, tickets, test cases, dependencies; draft/persisted split with a `pmDirty` flag |
-| `agentSlice`       | Running AI agents, per-agent logs                                                     |
+| `agentSlice`       | Running AI agents, per-agent logs, fleet view state (see below)                       |
 | `gitSlice`         | Branch, file statuses (A/M/D), staging, commit                                        |
 | `tabsSlice`        | Open editor tabs and active tab                                                       |
 | `mcpSlice`         | MCP server running state and PID                                                      |
@@ -104,6 +104,42 @@ Goals lead; epics are storage. The primary workflow of the app is one loop:
 4. **Verified done** — when no work is left, `getGoalSatisfaction` checks: all subtree tickets `done` + all linked requirements `verified` + all child goals `achieved`. If green, the goal auto-achieves; otherwise the blockers are listed. A goal with nothing attached never auto-satisfies.
 
 Tickets still belong to an epic (`epicId`, required) — that is the organizational/backlog view. The goal link (`goalId`, optional) is the outcome view and drives satisfaction. `getGoalWorkflowStage` (goalsSlice) derives which loop stage a goal is in and powers the onboarding stepper in `GoalDetailPanel` plus the workflow strip in `GoalsModal`.
+
+## Managing the Agent Fleet
+
+Several agents run at once, so the panel's job is to make a fleet readable
+rather than to show every agent at full size. Three shapes, one source of truth
+(`splitFleet` in `src/lib/agents/fleet.ts`):
+
+| Shape       | Who gets it                         | Why                                   |
+| ----------- | ----------------------------------- | ------------------------------------- |
+| Card        | `running` / `queued`, not parked    | Work in progress is what you watch    |
+| Compact row | Parked agents (`minimizedAgentIds`) | Still running, deliberately set aside |
+| Compact row | `idle` / `error`                    | Kept for review, but claims no space  |
+
+Rules that hold across all of it:
+
+- **Parking is a view state.** A parked agent keeps running and streaming; it
+  still counts as running in the header and still belongs to its repo for
+  Kill All. Nothing about the process changes.
+- **Counts never lie about what is hidden.** Folding a repo group, parking an
+  agent or collapsing finished ones must not change any number the panel
+  states, nor what a destructive action would actually hit.
+- **Dismiss ≠ kill.** `dismissFinishedAgent` only clears stopped agents from
+  the list; it refuses running ones and touches no ticket or goal bookkeeping.
+  `killRunningAgent` is the one with side effects.
+- **Ending work asks first.** Both single kills and Kill All confirm while an
+  agent is still running; already-stopped agents are cleared without a prompt.
+
+Supporting modules in `src/lib/agents/`:
+
+- `liveness.ts` — one definition of "live". The window must stay wider than
+  `AGENT_ACTIVITY_BUMP_MS` plus the 1s UI tick, or badges flicker.
+- `activity.ts` — distils "what is it doing now" from the newest output.
+  Derived inside the store's throttled activity bump, never per chunk.
+- `naming.ts` — derives a name from the start instruction and disambiguates
+  collisions, so a fleet is not a column of identical labels.
+- `duration.ts` — compact ages that count in seconds below a minute.
 
 ## Requirements vs. Tickets
 
