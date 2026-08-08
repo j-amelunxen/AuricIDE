@@ -4,7 +4,9 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { groupAgentsByRepo } from '@/lib/store/agentSlice';
 import type { InterruptedAgent } from '@/lib/tauri/agents';
 import { useState } from 'react';
+import { useNow } from '@/lib/hooks/useNow';
 import { splitFleet } from '@/lib/agents/fleet';
+import { countNeedingAttention } from '@/lib/agents/attention';
 import { AGENT_COLORS, type AgentColor } from '@/lib/agents/colors';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { AgentCard } from './AgentCard';
@@ -120,6 +122,11 @@ export function AgentsPanel({
   const grouped = groupAgentsByRepo(active);
   const repoKeys = Object.keys(grouped);
   const runningCount = agents.filter((a) => a.status === 'running').length;
+  // Counted over the whole fleet — parked agents and folded groups included.
+  // The badge is the one number that decides whether you need to look at all,
+  // so nothing the view hides may be missing from it.
+  const now = useNow();
+  const attentionCount = countNeedingAttention(agents, now);
 
   /**
    * The terminate control sits a few pixels from the terminal toggle and only
@@ -171,6 +178,17 @@ export function AgentsPanel({
               className="rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-bold text-primary-light tabular-nums"
             >
               {runningCount} running
+            </span>
+          )}
+          {/* Only rendered while something actually needs a human — its
+              absence is the "all fine" signal, and a standing zero would be
+              one more thing to read on every glance. */}
+          {attentionCount > 0 && (
+            <span
+              data-testid="agents-attention-count"
+              className="rounded-full bg-amber-500/15 px-1.5 py-px text-[10px] font-bold text-amber-400 tabular-nums"
+            >
+              {attentionCount} {attentionCount === 1 ? 'needs' : 'need'} attention
             </span>
           )}
         </h2>
