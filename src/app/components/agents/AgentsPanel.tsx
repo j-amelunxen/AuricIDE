@@ -6,7 +6,7 @@ import type { InterruptedAgent } from '@/lib/tauri/agents';
 import { useState } from 'react';
 import { useNow } from '@/lib/hooks/useNow';
 import { splitFleet } from '@/lib/agents/fleet';
-import { countNeedingAttention } from '@/lib/agents/attention';
+import { countNeedingAttention, needsAttention } from '@/lib/agents/attention';
 import { AGENT_COLORS, type AgentColor } from '@/lib/agents/colors';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { AgentCard } from './AgentCard';
@@ -130,6 +130,11 @@ export function AgentsPanel({
   // so nothing the view hides may be missing from it.
   const now = useNow();
   const attentionCount = countNeedingAttention(agents, now);
+  // The one place to check when the badge says something needs you. Parked
+  // agents included: parking is a view state, their claim on the user is not
+  // parked with it. Cards stay put in their repo groups — this section
+  // points, it does not move things under the cursor.
+  const attentionAgents = agents.filter((a) => needsAttention(a, now));
 
   /**
    * The terminate control sits a few pixels from the terminal toggle and only
@@ -224,6 +229,26 @@ export function AgentsPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+        {attentionAgents.length > 0 && (
+          <div data-testid="attention-agents" className="flex flex-col gap-0.5">
+            <span className="px-1.5 text-[10px] font-black uppercase tracking-widest text-amber-400">
+              Needs attention · {attentionAgents.length}
+            </span>
+            {attentionAgents.map((agent) => (
+              <CompactAgentRow
+                key={agent.id}
+                agent={agent}
+                activateLabel="Check on"
+                onActivate={(id) => onSelectAgent?.(id)}
+                dismissLabel={agent.status === 'error' ? 'Dismiss' : 'Terminate'}
+                dismissIcon={agent.status === 'error' ? 'close' : 'power_settings_new'}
+                onDismiss={agent.status === 'error' ? (id) => onDismissFinished?.(id) : confirmKill}
+                color={agentColors[agent.id]}
+                onContextMenu={onSetColor && openColorMenu}
+              />
+            ))}
+          </div>
+        )}
         {interruptedAgents.length > 0 && (
           <div data-testid="interrupted-agents" className="flex flex-col gap-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
