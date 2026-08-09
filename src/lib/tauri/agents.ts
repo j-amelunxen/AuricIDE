@@ -20,6 +20,11 @@ export interface AgentInfo {
   awaitingInput?: boolean;
   startedAt: number;
   lastActivityAt?: number;
+  /**
+   * When the agent stopped (done or failed). Frontend-only, stamped once on
+   * the first stop signal — the review list sorts by it.
+   */
+  finishedAt?: number;
   repoPath?: string;
   spawnedByTicketId?: string;
   spawnedByGoalId?: string;

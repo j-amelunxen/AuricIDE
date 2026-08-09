@@ -324,7 +324,18 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       conductor.conductorHandleAgentStatus?.(agentId, status);
     }
     const { agentLogs, agentLogMeta } = get();
-    const updatedAgents = get().agents.map((a) => (a.id === agentId ? { ...a, status } : a));
+    const stopped = status === 'idle' || status === 'error';
+    const updatedAgents = get().agents.map((a) =>
+      a.id === agentId
+        ? {
+            ...a,
+            status,
+            // Stamped once: the first stop is when it stopped, and a late
+            // duplicate event must not shuffle the review order.
+            finishedAt: stopped ? (a.finishedAt ?? Date.now()) : a.finishedAt,
+          }
+        : a
+    );
 
     const finished = updatedAgents.filter((a) => a.status === 'idle' || a.status === 'error');
     const excess = finished.length - MAX_FINISHED_AGENTS;

@@ -163,6 +163,44 @@ describe('agentSlice', () => {
     expect(store.getState().agents[0].status).toBe('idle');
   });
 
+  it('stamps finishedAt when the agent stops', async () => {
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    const before = Date.now();
+    store.getState().updateAgentStatus('mock-agent-1', 'idle');
+    const finishedAt = store.getState().agents[0].finishedAt;
+    expect(finishedAt).toBeGreaterThanOrEqual(before);
+    expect(finishedAt).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('does not restamp finishedAt on a repeated stop signal', async () => {
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    store.getState().updateAgentStatus('mock-agent-1', 'idle');
+    const first = store.getState().agents[0].finishedAt;
+    store.getState().updateAgentStatus('mock-agent-1', 'error');
+    // The first stop is when it stopped; a late duplicate event must not
+    // shuffle the review order.
+    expect(store.getState().agents[0].finishedAt).toBe(first);
+  });
+
+  it('leaves finishedAt unset while the agent runs', async () => {
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    expect(store.getState().agents[0].finishedAt).toBeUndefined();
+  });
+
   it('updateAgentStatus is a no-op for unknown agent id', () => {
     store.getState().updateAgentStatus('nonexistent', 'error');
     expect(store.getState().agents).toEqual([]);

@@ -62,7 +62,23 @@ describe('splitFleet', () => {
 
   it('shows the most recently finished agent first', () => {
     // Finished agents are a review list — the last one to stop is the one
-    // you are most likely looking for.
+    // you are most likely looking for. When it stopped is what counts; a
+    // long-running agent that just failed must not sort as ancient because
+    // it started early.
+    const { finished } = splitFleet(
+      [
+        agent('started-late-finished-early', 'idle', 300, { finishedAt: 1_000 }),
+        agent('started-early-finished-late', 'error', 100, { finishedAt: 2_000 }),
+      ],
+      []
+    );
+    expect(finished.map((a) => a.id)).toEqual([
+      'started-early-finished-late',
+      'started-late-finished-early',
+    ]);
+  });
+
+  it('falls back to startedAt for finished agents without a stamp', () => {
     const { finished } = splitFleet([agent('old', 'idle', 100), agent('new', 'error', 300)], []);
     expect(finished.map((a) => a.id)).toEqual(['new', 'old']);
   });
