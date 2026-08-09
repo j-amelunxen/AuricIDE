@@ -201,6 +201,44 @@ describe('agentSlice', () => {
     expect(store.getState().agents[0].finishedAt).toBeUndefined();
   });
 
+  it('marks a finished agent reviewed when its logs are opened', async () => {
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    store.getState().updateAgentStatus('mock-agent-1', 'idle');
+
+    store.getState().selectAgent('mock-agent-1');
+    expect(store.getState().reviewedAgentIds).toContain('mock-agent-1');
+  });
+
+  it('does not mark a still-running agent reviewed', async () => {
+    // Peeking at a running agent is not reviewing its outcome — there is no
+    // outcome yet. The unseen marker must survive until the result was seen.
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    store.getState().selectAgent('mock-agent-1');
+    expect(store.getState().reviewedAgentIds).not.toContain('mock-agent-1');
+  });
+
+  it('forgets the reviewed mark when the agent is dismissed', async () => {
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    store.getState().updateAgentStatus('mock-agent-1', 'idle');
+    store.getState().selectAgent('mock-agent-1');
+
+    store.getState().dismissFinishedAgent('mock-agent-1');
+    expect(store.getState().reviewedAgentIds).not.toContain('mock-agent-1');
+  });
+
   it('updateAgentStatus is a no-op for unknown agent id', () => {
     store.getState().updateAgentStatus('nonexistent', 'error');
     expect(store.getState().agents).toEqual([]);

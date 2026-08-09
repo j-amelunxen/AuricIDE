@@ -36,6 +36,8 @@ export interface AgentsPanelProps {
   /** Marker colours by agent id, for grouping and flagging agents. */
   agentColors?: Record<string, AgentColor>;
   onSetColor?: (agentId: string, color: AgentColor | null) => void;
+  /** Stopped agents whose outcome has been opened — the rest show unseen. */
+  reviewedAgentIds?: string[];
 }
 
 export function AgentsPanel({
@@ -57,6 +59,7 @@ export function AgentsPanel({
   onToggleRepoCollapsed,
   agentColors = {},
   onSetColor,
+  reviewedAgentIds = [],
 }: AgentsPanelProps): React.JSX.Element {
   const [colorMenu, setColorMenu] = useState<{ x: number; y: number; agentId: string } | null>(
     null
@@ -370,6 +373,7 @@ export function AgentsPanel({
                 onDismiss={(id) => onDismissFinished?.(id)}
                 color={agentColors[agent.id]}
                 onContextMenu={onSetColor && openColorMenu}
+                unseen={!reviewedAgentIds.includes(agent.id)}
               />
             ))}
           </div>
