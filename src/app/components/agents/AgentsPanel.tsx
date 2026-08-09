@@ -194,6 +194,20 @@ export function AgentsPanel({
               {attentionCount} {attentionCount === 1 ? 'needs' : 'need'} attention
             </span>
           )}
+          {/* The explicit all-clear: agents are working and none needs a
+              human. Absence of alarms alone is not permission to look away —
+              this is. Deliberately the quietest thing in the header. */}
+          {runningCount > 0 && attentionCount === 0 && (
+            <span
+              data-testid="agents-all-quiet"
+              className="flex items-center gap-0.5 text-[10px] font-medium text-emerald-400/70"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
+                check
+              </span>
+              all quiet
+            </span>
+          )}
         </h2>
         {onCollapse && (
           <button
