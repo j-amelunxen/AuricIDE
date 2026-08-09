@@ -465,6 +465,61 @@ describe('AgentsPanel attention section', () => {
   });
 });
 
+describe('AgentsPanel – park the healthy fleet', () => {
+  const healthy = (id: string): AgentInfo => ({
+    ...agents[0],
+    id,
+    name: id,
+    status: 'running',
+    lastActivityAt: Date.now(),
+  });
+
+  it('parks every healthy working agent in one move', async () => {
+    const user = userEvent.setup();
+    const onToggleMinimize = vi.fn();
+    const stalled: AgentInfo = {
+      ...agents[0],
+      id: 'stuck',
+      name: 'Stuck',
+      status: 'running',
+      lastActivityAt: Date.now() - 10 * 60_000,
+    };
+    render(
+      <AgentsPanel
+        agents={[healthy('h1'), healthy('h2'), stalled]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onToggleMinimize={onToggleMinimize}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /park working/i }));
+    // What stays on cards afterwards is exactly what needs a human.
+    expect(onToggleMinimize).toHaveBeenCalledWith('h1', true);
+    expect(onToggleMinimize).toHaveBeenCalledWith('h2', true);
+    expect(onToggleMinimize).not.toHaveBeenCalledWith('stuck', true);
+  });
+
+  it('does not offer the move for a single card', () => {
+    render(
+      <AgentsPanel
+        agents={[healthy('h1')]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onToggleMinimize={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /park working/i })).not.toBeInTheDocument();
+  });
+
+  it('does not offer the move when parking is unavailable', () => {
+    render(
+      <AgentsPanel agents={[healthy('h1'), healthy('h2')]} onSpawn={vi.fn()} onKill={vi.fn()} />
+    );
+    expect(screen.queryByRole('button', { name: /park working/i })).not.toBeInTheDocument();
+  });
+});
+
 describe('AgentsPanel – attention announcements', () => {
   it('announces to assistive technology when agents need a human', () => {
     // Visual pings are exactly what a screen-reader user cannot poll — the
