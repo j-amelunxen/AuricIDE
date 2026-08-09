@@ -18,6 +18,7 @@ import type { AgentColor } from '../agents/colors';
 import { isFinishedAgent } from '../agents/fleet';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import { uniqueAgentName } from '../agents/naming';
+import { MAX_TICKET_ATTEMPTS } from './conductorSlice';
 import type { GoalsSlice } from './goalsSlice';
 import type { PmGoalRun } from '../tauri/goals';
 
@@ -130,6 +131,23 @@ export function groupAgentsByRepo(agents: AgentInfo[]): Record<string, AgentInfo
     groups[key].push(agent);
   }
   return groups;
+}
+
+/**
+ * True when the conductor manages this agent's ticket and still has attempts
+ * left — it will requeue the work itself, so a failure toast would interrupt
+ * the user for something the system is about to handle. Only the final,
+ * given-up failure earns the interrupt.
+ */
+function willConductorRetry(state: AgentSlice, agentId: string): boolean {
+  const cross = state as AgentSlice &
+    Partial<{
+      conductorAssignments: Record<string, string>;
+      conductorFailedTickets: Record<string, number>;
+    }>;
+  const entry = Object.entries(cross.conductorAssignments ?? {}).find(([, a]) => a === agentId);
+  if (!entry) return false;
+  return (cross.conductorFailedTickets?.[entry[0]] ?? 0) + 1 < MAX_TICKET_ATTEMPTS;
 }
 
 export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
@@ -368,7 +386,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     // Guarded on the *transition* so a duplicate stop event cannot stack.
     if (status === 'error') {
       const failing = get().agents.find((a) => a.id === agentId);
-      if (failing && failing.status !== 'error') {
+      if (failing && failing.status !== 'error' && !willConductorRetry(get(), agentId)) {
         const toaster = get() as AgentSlice & {
           showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
         };
