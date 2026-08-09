@@ -8,6 +8,7 @@ import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { deriveAgentName } from '@/lib/agents/naming';
+import { loadSpawnDefaults, saveSpawnDefaults } from '@/lib/agents/spawnDefaults';
 
 interface SpawnAgentDialogProps {
   isOpen: boolean;
@@ -66,7 +67,12 @@ function SpawnAgentDialogPanel({
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     FALLBACK_CRUSH_PROVIDER.defaultPermissionMode as PermissionMode
   );
-  const [headless, setHeadless] = useState(false);
+  const [headless, setHeadless] = useState(() => loadSpawnDefaults()?.headless ?? false);
+  // The last launch's choices, applied once when their provider becomes
+  // current — four decisions per agent become zero for a same-as-last-time
+  // fleet, while an explicit provider switch still resets to that
+  // provider's own defaults.
+  const savedDefaultsRef = useRef(loadSpawnDefaults());
 
   const currentProvider = providers.find((p) => p.id === selectedProviderId) ?? providers[0];
 
@@ -75,7 +81,8 @@ function SpawnAgentDialogPanel({
       .then((fetched) => {
         if (fetched.length > 0) {
           setProviders(fetched);
-          const defaultProvider = fetched[0];
+          const saved = savedDefaultsRef.current;
+          const defaultProvider = fetched.find((p) => p.id === saved?.providerId) ?? fetched[0];
           setSelectedProviderId(defaultProvider.id);
           setModel(defaultProvider.defaultModel);
           setPermissionMode(defaultProvider.defaultPermissionMode as PermissionMode);
@@ -104,8 +111,25 @@ function SpawnAgentDialogPanel({
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }, []);
 
-  // Sync model/permission defaults when provider changes
+  // Sync model/permission defaults when provider changes. The remembered
+  // choices apply exactly once, and only if they still exist in the
+  // provider's current offering — a renamed model must not resurrect.
   useEffect(() => {
+    const saved = savedDefaultsRef.current;
+    if (saved && saved.providerId === currentProvider.id) {
+      savedDefaultsRef.current = null;
+      setModel(
+        currentProvider.models.some((m) => m.value === saved.model)
+          ? saved.model
+          : currentProvider.defaultModel
+      );
+      setPermissionMode(
+        currentProvider.permissionModes.some((m) => m.value === saved.permissionMode)
+          ? saved.permissionMode
+          : (currentProvider.defaultPermissionMode as PermissionMode)
+      );
+      return;
+    }
     setModel(currentProvider.defaultModel);
     setPermissionMode(currentProvider.defaultPermissionMode as PermissionMode);
   }, [currentProvider]);
@@ -115,6 +139,12 @@ function SpawnAgentDialogPanel({
     // Named after the instruction, so a fleet in one repo doesn't turn into a
     // column of identical labels. Editable afterwards from the agent card.
     const name = deriveAgentName(task, folderName || undefined);
+    saveSpawnDefaults({
+      providerId: selectedProviderId,
+      model,
+      permissionMode,
+      headless,
+    });
     onSpawn({
       name,
       model,
