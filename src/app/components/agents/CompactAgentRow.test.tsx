@@ -35,6 +35,27 @@ function renderRow(overrides: Partial<AgentInfo> = {}, handlers = {}) {
   );
 }
 
+describe('CompactAgentRow – retry', () => {
+  it('offers a retry on a failed agent and reports the click', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    renderRow({ status: 'error' }, { onRetry });
+
+    await user.click(screen.getByRole('button', { name: 'Retry Writer' }));
+    expect(onRetry).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('offers no retry on an agent that did not fail', () => {
+    renderRow({ status: 'idle' }, { onRetry: vi.fn() });
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no retry when the caller cannot relaunch', () => {
+    renderRow({ status: 'error' });
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
+});
+
 describe('CompactAgentRow – live activity on the row', () => {
   it('shows what a running agent is doing right now', () => {
     // A parked agent is still being supervised — the one-line activity is

@@ -71,6 +71,7 @@ export function useIDEState() {
   const toggleAgentRepoCollapsed = useStore((s) => s.toggleAgentRepoCollapsed);
   const agentColors = useStore((s) => s.agentColors);
   const reviewedAgentIds = useStore((s) => s.reviewedAgentIds);
+  const retryFailedAgent = useStore((s) => s.retryFailedAgent);
   const setAgentColor = useStore((s) => s.setAgentColor);
   const setAgentMinimized = useStore((s) => s.setAgentMinimized);
   const canvasNodes = useStore((s) => s.canvasNodes);
@@ -269,6 +270,7 @@ export function useIDEState() {
     toggleAgentRepoCollapsed,
     agentColors,
     reviewedAgentIds,
+    retryFailedAgent,
     setAgentColor,
     canvasNodes,
     canvasEdges,
