@@ -35,6 +35,26 @@ function renderRow(overrides: Partial<AgentInfo> = {}, handlers = {}) {
   );
 }
 
+describe('CompactAgentRow – live activity on the row', () => {
+  it('shows what a running agent is doing right now', () => {
+    // A parked agent is still being supervised — the one-line activity is
+    // what lets that happen without restoring the card.
+    renderRow({ status: 'running', currentActivity: 'Editing setup.ts' });
+    expect(screen.getByTestId('agent-row-activity')).toHaveTextContent('Editing setup.ts');
+  });
+
+  it('shows no activity line once the agent stopped', () => {
+    // A frozen last line would read as ongoing work.
+    renderRow({ status: 'idle', currentActivity: 'Editing setup.ts' });
+    expect(screen.queryByTestId('agent-row-activity')).not.toBeInTheDocument();
+  });
+
+  it('shows nothing extra while there is no activity to report', () => {
+    renderRow({ status: 'running', currentActivity: undefined });
+    expect(screen.queryByTestId('agent-row-activity')).not.toBeInTheDocument();
+  });
+});
+
 describe('CompactAgentRow – age of a finished agent', () => {
   it('says how long ago it finished, not how old it is', () => {
     // For a review list the useful number is recency of the outcome; the
