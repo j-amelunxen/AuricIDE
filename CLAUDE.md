@@ -135,6 +135,42 @@ Rules that hold across all of it:
   edge of the card or row. Painting a marker where status is read would quietly
   change what the card claims.
 
+### The attention model — the system says when it needs you
+
+The panel's core job is cutting the oversight tax: the human must never have
+to poll cards to find out whether they are needed. One definition of "needs a
+human" lives in `attention.ts` (`agentAttention`: `error` > `needs-input` >
+`stalled`), and everything else derives from it:
+
+- **Header badge + attention section.** "N need attention" counts the whole
+  fleet — parked agents and folded groups included. The section at the top
+  lists exactly those agents as pointer rows; cards never move. A folded
+  repo group carries an amber dot when it hides a flagged agent.
+- **Needs input beats liveness.** Permission menus redraw themselves, keeping
+  `lastActivityAt` fresh — `awaitingInput` (derived in the store from prompt
+  shapes in the output tail, `awaitingInput.ts`) must be checked before any
+  live/waiting logic, or a blocked agent reads as Working forever.
+- **Stalled is an escalation, not a state of alarm.** Waiting is normal;
+  silence past `AGENT_STALL_MS` (far wider than the live window) turns the
+  chip to "Stalled?" — question mark on purpose — and offers a one-click
+  Enter nudge.
+- **All-quiet is explicit.** "✓ all quiet" appears only while agents run and
+  none needs a human. Absence of alarms is not permission to look away; a
+  monitored silence says so. The window title mirrors the count ("(2)
+  AuricIDE") so the answer is readable from the dock.
+- **Failures interrupt once; successes never do.** running→error raises one
+  toast. Clean finishes are represented by the unseen marker and the
+  all-quiet signal — a toast per success trains the user to dismiss unread.
+- **Review is bookkept, not remembered.** `finishedAt` orders the Done list
+  newest-outcome-first; stopped agents stay marked unseen until their logs
+  are opened (opening a _running_ agent does not count); bulk Clear spares
+  unreviewed failures. Failed rows and the failed agent's terminal lead with
+  the last error line (`errorDigest.ts`), and Retry relaunches with the
+  verbatim stored config (`agentSpawnConfigs`).
+- **Decisions default.** The spawn dialog remembers provider, model,
+  permission mode and headless from the last launch, validated against the
+  provider's current offering.
+
 Supporting modules in `src/lib/agents/`:
 
 - `liveness.ts` — one definition of "live". The window must stay wider than
