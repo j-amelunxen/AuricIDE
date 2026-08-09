@@ -179,13 +179,15 @@ export function SourceControlPanel({
           disabled={agenticCommit ? isCommitting : !commitMessage.trim() || isCommitting}
           className="mt-2 w-full rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
+          {/* The plain path is exactly a commit — the backend has no push,
+              and a button must not claim work it does not do. */}
           {isCommitting
             ? agenticCommit
               ? 'Running Agent...'
               : 'Committing...'
             : agenticCommit
               ? 'Agentic Commit'
-              : 'Commit & Push'}
+              : 'Commit'}
         </button>
       </div>
 

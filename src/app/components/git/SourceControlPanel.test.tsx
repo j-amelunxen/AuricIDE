@@ -61,13 +61,13 @@ describe('SourceControlPanel', () => {
     const onCommit = vi.fn();
     render(<SourceControlPanel {...defaultProps} commitMessage="fix bug" onCommit={onCommit} />);
 
-    await user.click(screen.getByText('Commit & Push'));
+    await user.click(screen.getByText('Commit'));
     expect(onCommit).toHaveBeenCalled();
   });
 
   it('disables commit button when message is empty', () => {
     render(<SourceControlPanel {...defaultProps} commitMessage="" />);
-    expect(screen.getByText('Commit & Push')).toBeDisabled();
+    expect(screen.getByText('Commit')).toBeDisabled();
   });
 
   it('disables commit button when committing', () => {
@@ -139,9 +139,11 @@ describe('SourceControlPanel', () => {
     expect(screen.getByText('Agentic Commit')).toBeInTheDocument();
   });
 
-  it('shows "Commit & Push" button text when agentic is OFF', () => {
+  it('shows a plain "Commit" button when agentic is OFF', () => {
     render(<SourceControlPanel {...defaultProps} agenticCommit={false} />);
-    expect(screen.getByText('Commit & Push')).toBeInTheDocument();
+    // The plain path is exactly a commit — the backend has no push, and a
+    // button must not claim work it does not do.
+    expect(screen.getByText('Commit')).toBeInTheDocument();
   });
 
   it('shows "Running Agent..." spinner text when agentic committing', () => {
