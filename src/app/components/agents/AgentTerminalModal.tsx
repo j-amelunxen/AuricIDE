@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import { useStore } from '@/lib/store';
+import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
 import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
@@ -11,6 +13,8 @@ import { isAgentLive } from '@/lib/agents/liveness';
 import { agentState, type AgentState } from '@/lib/agents/state';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
+
+const EMPTY_ERROR_LOGS: string[] = [];
 
 interface AgentXtermProps {
   agentId: string;
@@ -311,6 +315,20 @@ function AgentTerminalDialog({
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
 
+  // Opening a failed agent should answer "why" before any scrollback hunting
+  // — the same digest the review row shows, pinned above the terminal.
+  const isError = agent.status === 'error';
+  const errorLogs = useStore(
+    useCallback(
+      (s) => (isError ? (s.agentLogs[agent.id] ?? EMPTY_ERROR_LOGS) : EMPTY_ERROR_LOGS),
+      [agent.id, isError]
+    )
+  );
+  const errorDigest = useMemo(
+    () => (isError ? deriveErrorDigest(errorLogs) : null),
+    [isError, errorLogs]
+  );
+
   return (
     <div
       data-testid="agent-modal-backdrop"
@@ -376,6 +394,18 @@ function AgentTerminalDialog({
             </button>
           </div>
         </div>
+
+        {errorDigest && (
+          <div
+            data-testid="terminal-error-digest"
+            className="flex flex-shrink-0 items-center gap-2 border-b border-red-400/20 bg-red-500/5 px-5 py-2"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-sm text-red-400">
+              error
+            </span>
+            <span className="truncate font-mono text-[11px] text-red-300">{errorDigest}</span>
+          </div>
+        )}
 
         {/* Agent tabs — fast switching between active agents with state preview */}
         {agents && agents.length > 0 && (
