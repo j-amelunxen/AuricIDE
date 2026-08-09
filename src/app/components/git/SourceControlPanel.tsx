@@ -9,6 +9,9 @@ export interface SourceControlProps {
   fileStatuses: GitFileStatus[];
   commitMessage: string;
   isCommitting: boolean;
+  isPushing?: boolean;
+  /** Pushes the current branch to origin. Omit to hide the button. */
+  onPush?: () => void;
   agenticCommit?: boolean;
   ticketPrefix?: string;
   providers?: ProviderInfo[];
@@ -98,6 +101,8 @@ export function SourceControlPanel({
   fileStatuses,
   commitMessage,
   isCommitting,
+  isPushing = false,
+  onPush,
   agenticCommit = false,
   ticketPrefix,
   onCommitMessageChange,
@@ -174,21 +179,34 @@ export function SourceControlPanel({
             </select>
           )}
         </div>
-        <button
-          onClick={onCommit}
-          disabled={agenticCommit ? isCommitting : !commitMessage.trim() || isCommitting}
-          className="mt-2 w-full rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {/* The plain path is exactly a commit — the backend has no push,
-              and a button must not claim work it does not do. */}
-          {isCommitting
-            ? agenticCommit
-              ? 'Running Agent...'
-              : 'Committing...'
-            : agenticCommit
-              ? 'Agentic Commit'
-              : 'Commit'}
-        </button>
+        {/* Commit and push are two separate actions, classic-git style: a
+            commit is local and cheap, a push publishes. One button per
+            promise, each label saying exactly what it does. */}
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={onCommit}
+            disabled={agenticCommit ? isCommitting : !commitMessage.trim() || isCommitting}
+            className="flex-1 rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isCommitting
+              ? agenticCommit
+                ? 'Running Agent...'
+                : 'Committing...'
+              : agenticCommit
+                ? 'Agentic Commit'
+                : 'Commit'}
+          </button>
+          {onPush && (
+            <button
+              onClick={onPush}
+              disabled={isPushing}
+              title="Push the current branch to origin"
+              className="rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary-light transition-colors hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isPushing ? 'Pushing...' : 'Push'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Changed files */}

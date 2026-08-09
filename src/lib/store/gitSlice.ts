@@ -1,16 +1,26 @@
 import type { StateCreator } from 'zustand';
 import type { BranchInfo, GitFileStatus } from '../tauri/git';
-import { getBranchInfo, commitChanges, stageFiles, getGitStatus, unstageFiles } from '../tauri/git';
+import {
+  getBranchInfo,
+  commitChanges,
+  pushChanges,
+  stageFiles,
+  getGitStatus,
+  unstageFiles,
+} from '../tauri/git';
 
 export interface GitSlice {
   branchInfo: BranchInfo | null;
   fileStatuses: GitFileStatus[];
   commitMessage: string;
   isCommitting: boolean;
+  isPushing: boolean;
   refreshGitStatus: (repoPath: string) => Promise<void>;
   stageFile: (repoPath: string, path: string) => Promise<void>;
   unstageFile: (repoPath: string, path: string) => Promise<void>;
   commit: (repoPath: string) => Promise<string | null>;
+  /** Pushes the current branch to origin. Rethrows so the caller can report. */
+  push: (repoPath: string) => Promise<void>;
   setCommitMessage: (msg: string) => void;
 }
 
@@ -19,6 +29,7 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => ({
   fileStatuses: [],
   commitMessage: '',
   isCommitting: false,
+  isPushing: false,
 
   refreshGitStatus: async (repoPath) => {
     const [statuses, branch] = await Promise.all([getGitStatus(repoPath), getBranchInfo(repoPath)]);
@@ -47,6 +58,17 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => ({
       return oid;
     } finally {
       set({ isCommitting: false });
+    }
+  },
+
+  push: async (repoPath) => {
+    set({ isPushing: true });
+    try {
+      await pushChanges(repoPath);
+      // The branch's ahead/behind display is what a push changes.
+      await get().refreshGitStatus(repoPath);
+    } finally {
+      set({ isPushing: false });
     }
   },
 

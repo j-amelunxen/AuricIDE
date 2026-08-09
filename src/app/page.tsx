@@ -177,6 +177,8 @@ export default function Home() {
             }
             onCommitMessageChange={state.setCommitMessage}
             onCommit={handlers.handleCommit}
+            isPushing={state.isPushing}
+            onPush={handlers.handlePush}
             onStageFile={(path) => state.rootPath && state.stageFile(state.rootPath, path)}
             onUnstageFile={(path) => state.rootPath && state.unstageFile(state.rootPath, path)}
             onFileClick={handlers.handleDiffFileClick}

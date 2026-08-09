@@ -48,6 +48,8 @@ export function useIDEState() {
   const fileStatuses = useStore((s) => s.fileStatuses);
   const commitMessage = useStore((s) => s.commitMessage);
   const isCommitting = useStore((s) => s.isCommitting);
+  const isPushing = useStore((s) => s.isPushing);
+  const pushBranch = useStore((s) => s.push);
   const setCommitMessage = useStore((s) => s.setCommitMessage);
   const stageFile = useStore((s) => s.stageFile);
   const unstageFile = useStore((s) => s.unstageFile);
@@ -246,6 +248,8 @@ export function useIDEState() {
     fileStatuses,
     commitMessage,
     isCommitting,
+    isPushing,
+    pushBranch,
     setCommitMessage,
     stageFile,
     unstageFile,
