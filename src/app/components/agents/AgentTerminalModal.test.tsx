@@ -104,6 +104,26 @@ const agent: AgentInfo = {
   lastActivityAt: Date.now(),
 };
 
+describe('AgentTerminalModal – failure digest bar', () => {
+  it('answers "why did it fail" the moment the terminal opens', () => {
+    useStore.setState({
+      agentLogs: { 'agent-1': ['Compiling...\n', 'error: cannot find module "fleet"\n'] },
+    });
+    render(<AgentTerminalModal agent={{ ...agent, status: 'error' }} onClose={vi.fn()} />);
+    expect(screen.getByTestId('terminal-error-digest')).toHaveTextContent(
+      'error: cannot find module "fleet"'
+    );
+    useStore.setState({ agentLogs: {} });
+  });
+
+  it('shows no digest bar for a running agent', () => {
+    useStore.setState({ agentLogs: { 'agent-1': ['error: transient, retrying\n'] } });
+    render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+    expect(screen.queryByTestId('terminal-error-digest')).not.toBeInTheDocument();
+    useStore.setState({ agentLogs: {} });
+  });
+});
+
 describe('AgentTerminalModal', () => {
   it('renders nothing when no agent is provided', () => {
     const { container } = render(<AgentTerminalModal agent={null} onClose={vi.fn()} />);
