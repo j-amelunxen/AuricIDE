@@ -35,6 +35,32 @@ function renderRow(overrides: Partial<AgentInfo> = {}, handlers = {}) {
   );
 }
 
+describe('CompactAgentRow – quiet duration on a stalled agent', () => {
+  it('says how long a stalled agent has been silent', () => {
+    // The cost of ignoring a stalled agent is exactly its silence — the row
+    // states it instead of leaving the user to compare clocks.
+    vi.useFakeTimers();
+    vi.setSystemTime(20 * 60_000);
+    try {
+      renderRow({ status: 'running', startedAt: 0, lastActivityAt: 10 * 60_000 });
+      expect(screen.getByTestId('compact-agent-age')).toHaveTextContent('quiet 10m');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps plain runtime while the silence is still ordinary waiting', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5 * 60_000);
+    try {
+      renderRow({ status: 'running', startedAt: 0, lastActivityAt: 4 * 60_000 });
+      expect(screen.getByTestId('compact-agent-age')).toHaveTextContent(/^5m$/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('CompactAgentRow – retry', () => {
   it('offers a retry on a failed agent and reports the click', async () => {
     const user = userEvent.setup();

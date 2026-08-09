@@ -8,6 +8,7 @@ import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { deriveErrorDigest } from '@/lib/agents/errorDigest';
+import { agentAttention } from '@/lib/agents/attention';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 
 const EMPTY_LOGS: string[] = [];
@@ -145,7 +146,10 @@ export function CompactAgentRow({
       >
         {isFinishedAgent(agent) && agent.finishedAt !== undefined
           ? `${formatAgentDuration(now - agent.finishedAt)} ago`
-          : formatAgentDuration(now - agent.startedAt)}
+          : agentAttention(agent, now) === 'stalled' && agent.lastActivityAt !== undefined
+            ? // The cost of ignoring a stalled agent is exactly its silence.
+              `quiet ${formatAgentDuration(now - agent.lastActivityAt)}`
+            : formatAgentDuration(now - agent.startedAt)}
       </span>
       {/* The most likely next action on a failure: run it again, exact same
           config — rebuilding the launch by hand was the expensive part. */}
