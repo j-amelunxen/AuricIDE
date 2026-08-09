@@ -35,6 +35,46 @@ function renderRow(overrides: Partial<AgentInfo> = {}, handlers = {}) {
   );
 }
 
+describe('CompactAgentRow – age of a finished agent', () => {
+  it('says how long ago it finished, not how old it is', () => {
+    // For a review list the useful number is recency of the outcome; the
+    // start time answers a question nobody is asking anymore.
+    vi.useFakeTimers();
+    vi.setSystemTime(10 * 60_000);
+    try {
+      renderRow({ status: 'idle', startedAt: 0, finishedAt: 7 * 60_000 });
+      expect(screen.getByTestId('compact-agent-age')).toHaveTextContent('3m ago');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the runtime reachable in the tooltip', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10 * 60_000);
+    try {
+      renderRow({ status: 'idle', startedAt: 0, finishedAt: 7 * 60_000 });
+      expect(screen.getByTestId('compact-agent-age')).toHaveAttribute(
+        'title',
+        expect.stringContaining('7m')
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows plain runtime for an agent that is still running', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5 * 60_000);
+    try {
+      renderRow({ status: 'running', startedAt: 0 });
+      expect(screen.getByTestId('compact-agent-age')).toHaveTextContent(/^5m$/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('CompactAgentRow – unseen marker', () => {
   it('marks a stopped agent whose outcome nobody looked at yet', () => {
     renderRow({ status: 'idle' }, { unseen: true });
