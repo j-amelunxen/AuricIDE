@@ -365,6 +365,35 @@ describe('AgentsPanel attention count', () => {
   });
 });
 
+describe('AgentsPanel all-quiet signal', () => {
+  it('says all quiet while agents work and none needs a human', () => {
+    // The absence of alarms is not the same as permission to look away —
+    // an explicit all-clear is what lets the user stop polling.
+    const calm: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() },
+    ];
+    render(<AgentsPanel agents={calm} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agents-all-quiet')).toHaveTextContent(/all quiet/i);
+  });
+
+  it('withdraws the all-clear the moment something needs attention', () => {
+    const troubled: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() },
+      { ...agents[1], id: 'a2', status: 'error' },
+    ];
+    render(<AgentsPanel agents={troubled} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agents-all-quiet')).not.toBeInTheDocument();
+  });
+
+  it('claims nothing while no agent is running', () => {
+    // "All quiet" is a statement about work being watched; with nothing
+    // running there is nothing to vouch for.
+    const stopped: AgentInfo[] = [{ ...agents[1], id: 'a2', status: 'idle' }];
+    render(<AgentsPanel agents={stopped} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agents-all-quiet')).not.toBeInTheDocument();
+  });
+});
+
 describe('AgentsPanel – parked agents', () => {
   const parkedProps = {
     agents,
