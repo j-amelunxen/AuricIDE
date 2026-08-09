@@ -23,12 +23,66 @@ vi.mock('@/lib/tauri/providers', async (importOriginal) => {
 // Default: reject so only FALLBACK_CRUSH_PROVIDER is used
 beforeEach(() => {
   mockListProviders.mockRejectedValue(new Error('browser mode'));
+  localStorage.clear();
 });
 
 // Helpers matching the FALLBACK_CRUSH_PROVIDER constants
 const DEFAULT_MODEL = 'auto';
 const DEFAULT_PROVIDER = 'crush';
 const DEFAULT_PERMISSION_MODE = 'default';
+
+describe('SpawnAgentDialog – remembered launch choices', () => {
+  it('starts from the previous launch instead of factory defaults', async () => {
+    localStorage.setItem(
+      'auric.agent-spawn-defaults',
+      JSON.stringify({
+        providerId: DEFAULT_PROVIDER,
+        model: 'moonshotai/kimi-k2-thinking',
+        permissionMode: 'yolo',
+        headless: true,
+      })
+    );
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/model/i)).toHaveValue('moonshotai/kimi-k2-thinking');
+    });
+    expect(screen.getByLabelText(/permission mode/i)).toHaveValue('yolo');
+    expect(screen.getByRole('checkbox')).toBeChecked();
+  });
+
+  it('falls back to the provider default when the saved model vanished', async () => {
+    // A renamed or retired model must not resurrect from storage.
+    localStorage.setItem(
+      'auric.agent-spawn-defaults',
+      JSON.stringify({
+        providerId: DEFAULT_PROVIDER,
+        model: 'no-longer-offered',
+        permissionMode: 'yolo',
+        headless: false,
+      })
+    );
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/permission mode/i)).toHaveValue('yolo');
+    });
+    expect(screen.getByLabelText(/model/i)).toHaveValue(DEFAULT_MODEL);
+  });
+
+  it('remembers the choices made on launch', async () => {
+    const user = userEvent.setup();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
+    await user.type(screen.getByLabelText(/instruction/i), 'Do the thing');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    const saved = JSON.parse(localStorage.getItem('auric.agent-spawn-defaults')!);
+    expect(saved.permissionMode).toBe('yolo');
+    expect(saved.providerId).toBe(DEFAULT_PROVIDER);
+  });
+});
 
 describe('SpawnAgentDialog', () => {
   it('renders nothing when isOpen is false', () => {
