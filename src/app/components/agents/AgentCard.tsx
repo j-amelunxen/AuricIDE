@@ -9,6 +9,7 @@ import { formatAgentDuration } from '@/lib/agents/duration';
 import { AGENT_STATE_LABEL, agentState, type AgentState } from '@/lib/agents/state';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 import { stripAnsi } from '@/lib/terminal/ansi';
+import { scrollBehavior } from '@/lib/motion';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -113,7 +114,7 @@ export function AgentCard({
 
   useEffect(() => {
     if (viewMode === 'terminal') {
-      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      logEndRef.current?.scrollIntoView({ behavior: scrollBehavior() });
     }
   }, [logs, viewMode]);
 
