@@ -479,6 +479,41 @@ describe('AgentCard – replying from the card', () => {
   });
 });
 
+describe('AgentCard – quick reply while blocked on input', () => {
+  const blocked: AgentInfo = { ...makeLiveAgent(), awaitingInput: true };
+
+  it('offers the reply field right in the status view', () => {
+    // Answering a prompt is THE next action on a blocked agent — requiring
+    // a switch to the terminal view first was one hop of pure friction.
+    render(<AgentCard agent={blocked} onKill={vi.fn()} />);
+    expect(screen.getByPlaceholderText('Reply to agent...')).toBeInTheDocument();
+  });
+
+  it('sends the quick reply to the agent PTY', async () => {
+    const user = userEvent.setup();
+    const { writeToShell } = await import('@/lib/tauri/terminal');
+    vi.mocked(writeToShell).mockClear();
+    render(<AgentCard agent={blocked} onKill={vi.fn()} />);
+
+    await user.type(screen.getByPlaceholderText('Reply to agent...'), '1{Enter}');
+    expect(writeToShell).toHaveBeenCalledWith('agent-agent-live', '1\n');
+  });
+
+  it('shows no quick reply while the agent is merely working', () => {
+    render(<AgentCard agent={makeLiveAgent()} onKill={vi.fn()} />);
+    expect(screen.queryByPlaceholderText('Reply to agent...')).not.toBeInTheDocument();
+  });
+
+  it('does not select the card when clicking into the quick reply', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<AgentCard agent={blocked} onKill={vi.fn()} onSelect={onSelect} />);
+
+    await user.click(screen.getByPlaceholderText('Reply to agent...'));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
 describe('AgentCard – marker colour', () => {
   it('shows no marker on an unmarked agent', () => {
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
