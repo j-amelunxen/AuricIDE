@@ -5,6 +5,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
+import { isFinishedAgent } from '@/lib/agents/fleet';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
@@ -115,13 +116,22 @@ export function CompactAgentRow({
           </span>
         )}
       </button>
-      {/* Coming back to a parked agent, "how long has this been going" is the
-          first thing you want — and it costs no extra line here. */}
+      {/* One number, chosen by state. Parked and running: how long it has
+          been going. Stopped: how fresh the outcome is — a review list sorts
+          by recency, and the start time answers a question nobody is asking
+          anymore. The runtime moves to the tooltip. */}
       <span
         data-testid="compact-agent-age"
+        title={
+          isFinishedAgent(agent) && agent.finishedAt !== undefined
+            ? `Ran for ${formatAgentDuration(agent.finishedAt - agent.startedAt)}`
+            : 'Running for'
+        }
         className="flex-shrink-0 font-mono text-[9px] tabular-nums text-foreground-muted/40 group-hover:opacity-0"
       >
-        {formatAgentDuration(now - agent.startedAt)}
+        {isFinishedAgent(agent) && agent.finishedAt !== undefined
+          ? `${formatAgentDuration(now - agent.finishedAt)} ago`
+          : formatAgentDuration(now - agent.startedAt)}
       </span>
       <button
         type="button"
