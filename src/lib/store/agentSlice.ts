@@ -362,6 +362,19 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   },
 
   updateAgentStatus: (agentId, status) => {
+    // A failure is the one transition worth interrupting for — it reaches the
+    // user even with the agents panel closed. Clean finishes stay silent:
+    // they are represented by the unseen marker and the all-quiet signal.
+    // Guarded on the *transition* so a duplicate stop event cannot stack.
+    if (status === 'error') {
+      const failing = get().agents.find((a) => a.id === agentId);
+      if (failing && failing.status !== 'error') {
+        const toaster = get() as AgentSlice & {
+          showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
+        };
+        toaster.showToast?.(`${failing.name} failed — its last output is on the row`, 'error');
+      }
+    }
     if (status === 'idle' || status === 'error') {
       completeRunForAgent(get(), agentId, status === 'idle' ? 'completed' : 'failed');
       const conductor = get() as AgentSlice & {

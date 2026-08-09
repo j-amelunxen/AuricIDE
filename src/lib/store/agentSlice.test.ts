@@ -201,6 +201,44 @@ describe('agentSlice', () => {
     expect(store.getState().agents[0].finishedAt).toBeUndefined();
   });
 
+  it('announces a failure as a toast, once', async () => {
+    const { createToastSlice } = await import('./toastSlice');
+    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createToastSlice(...a),
+    }));
+    await combined.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    combined.getState().updateAgentStatus('mock-agent-1', 'error');
+    expect(combined.getState().toasts).toHaveLength(1);
+    expect(combined.getState().toasts[0].message).toContain('Writer');
+    expect(combined.getState().toasts[0].variant).toBe('error');
+
+    // A duplicate stop signal must not stack a second toast.
+    combined.getState().updateAgentStatus('mock-agent-1', 'error');
+    expect(combined.getState().toasts).toHaveLength(1);
+  });
+
+  it('does not toast a clean finish — only failures make noise', async () => {
+    const { createToastSlice } = await import('./toastSlice');
+    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createToastSlice(...a),
+    }));
+    await combined.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+    expect(combined.getState().toasts).toHaveLength(0);
+  });
+
   it('retries a failed agent with its original launch config', async () => {
     const { spawnAgent } = await import('../tauri/agents');
     await store.getState().spawnNewAgent({
