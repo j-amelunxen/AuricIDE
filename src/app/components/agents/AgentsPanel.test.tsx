@@ -815,15 +815,55 @@ describe('AgentsPanel – finished agents', () => {
     expect(onDismissFinished).toHaveBeenCalledTimes(2);
   });
 
+  it('an unreviewed failure lives in the attention section, not in Done', () => {
+    // One alarm, one place. Rendering it in both sections was the same
+    // failure twice, with disagreeing unseen state.
+    render(
+      <AgentsPanel
+        agents={[
+          { ...finishedAgent, id: 'done-ok', name: 'Clean' },
+          { ...finishedAgent, id: 'done-err', name: 'Broken', status: 'error' },
+        ]}
+        reviewedAgentIds={[]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onDismissFinished={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('attention-agents')).toHaveTextContent('Broken');
+    expect(screen.getByTestId('finished-agents')).not.toHaveTextContent('Broken');
+    expect(screen.getByTestId('finished-agents')).toHaveTextContent('Done · 1');
+  });
+
+  it('a reviewed failure migrates to Done and stops claiming attention', () => {
+    // Opening the logs is the acknowledgement — the user owns the decision
+    // now, and an alarm that cannot be quitted gets ignored.
+    render(
+      <AgentsPanel
+        agents={[{ ...finishedAgent, id: 'done-err', name: 'Broken', status: 'error' }]}
+        reviewedAgentIds={['done-err']}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onDismissFinished={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByTestId('attention-agents')).not.toBeInTheDocument();
+    expect(screen.getByTestId('finished-agents')).toHaveTextContent('Broken');
+    expect(screen.queryByTestId('agents-attention-count')).not.toBeInTheDocument();
+  });
+
   it('Clear keeps failures nobody has looked at', async () => {
-    // Bulk-clearing must not silently discard an unreviewed failure — that
-    // would be the panel deciding the error did not matter.
+    // Bulk-clearing must not silently discard an unreviewed failure — it is
+    // not even in the Done list; it still sits in the attention section.
     const user = userEvent.setup();
     const onDismissFinished = vi.fn();
     render(
       <AgentsPanel
         agents={[
           { ...finishedAgent, id: 'done-ok', name: 'Clean' },
+          { ...finishedAgent, id: 'done-ok-2', name: 'Clean Two' },
           { ...finishedAgent, id: 'done-err', name: 'Broken', status: 'error' },
         ]}
         reviewedAgentIds={[]}
@@ -835,6 +875,7 @@ describe('AgentsPanel – finished agents', () => {
 
     await user.click(screen.getByRole('button', { name: 'Clear' }));
     expect(onDismissFinished).toHaveBeenCalledWith('done-ok');
+    expect(onDismissFinished).toHaveBeenCalledWith('done-ok-2');
     expect(onDismissFinished).not.toHaveBeenCalledWith('done-err');
   });
 

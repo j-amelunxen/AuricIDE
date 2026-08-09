@@ -103,7 +103,7 @@ export default function Home() {
   useIDEActions(state, handlers);
   // The fleet's "do I need to look?" number, readable from the dock and any
   // other app via the window title.
-  useAttentionTitle(state.agents);
+  useAttentionTitle(state.agents, state.reviewedAgentIds);
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const handleCreateProject = async (options: NewProjectOptions) => {

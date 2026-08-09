@@ -6,7 +6,7 @@ import type { InterruptedAgent } from '@/lib/tauri/agents';
 import { useState } from 'react';
 import { useNow } from '@/lib/hooks/useNow';
 import { splitFleet } from '@/lib/agents/fleet';
-import { countNeedingAttention, needsAttention } from '@/lib/agents/attention';
+import { countNeedingAttention, needsAttention, withReviewFlags } from '@/lib/agents/attention';
 import { AGENT_COLORS, type AgentColor } from '@/lib/agents/colors';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { AgentCard } from './AgentCard';
@@ -132,12 +132,21 @@ export function AgentsPanel({
   // The badge is the one number that decides whether you need to look at all,
   // so nothing the view hides may be missing from it.
   const now = useNow();
-  const attentionCount = countNeedingAttention(agents, now);
+  // Review-aware: a failure whose logs were opened is acknowledged and stops
+  // claiming attention — an alarm that cannot be quitted gets ignored.
+  const flagged = withReviewFlags(agents, reviewedAgentIds);
+  const attentionCount = countNeedingAttention(flagged, now);
   // The one place to check when the badge says something needs you. Parked
   // agents included: parking is a view state, their claim on the user is not
   // parked with it. Cards stay put in their repo groups — this section
   // points, it does not move things under the cursor.
-  const attentionAgents = agents.filter((a) => needsAttention(a, now));
+  const attentionAgents = flagged.filter((a) => needsAttention(a, now));
+  // An unreviewed failure lives in the attention section only; rendering it
+  // again under Done would be the same alarm twice, with disagreeing state.
+  // Once reviewed it migrates down here, dot-free.
+  const reviewList = finished.filter(
+    (a) => a.status !== 'error' || reviewedAgentIds.includes(a.id)
+  );
   // Healthy working agents still drawn as cards — the candidates for a
   // one-move park that leaves only what needs a human on screen.
   const parkableAgents = onToggleMinimize
@@ -428,19 +437,21 @@ export function AgentsPanel({
 
         {/* Stopped agents are kept for review, but a finished agent has no
             claim on a full card — it is a list you scan, not one you watch. */}
-        {finished.length > 0 && (
+        {reviewList.length > 0 && (
           <div data-testid="finished-agents" className="mt-1 flex flex-col gap-0.5">
             <div className="flex items-center justify-between px-1.5">
               <span className="text-[10px] font-black uppercase tracking-widest text-foreground-muted/60">
-                Done · {finished.length}
+                Done · {reviewList.length}
               </span>
-              {onDismissFinished && finished.length > 1 && (
+              {onDismissFinished && reviewList.length > 1 && (
                 <button
                   type="button"
                   // A failure nobody looked at survives the sweep: bulk-clear
                   // must not be the panel deciding an error did not matter.
+                  // (Unreviewed failures are not even in this list — they
+                  // still sit in the attention section above.)
                   onClick={() =>
-                    finished
+                    reviewList
                       .filter((a) => a.status !== 'error' || reviewedAgentIds.includes(a.id))
                       .forEach((a) => onDismissFinished(a.id))
                   }
@@ -451,7 +462,7 @@ export function AgentsPanel({
                 </button>
               )}
             </div>
-            {finished.map((agent) => (
+            {reviewList.map((agent) => (
               <CompactAgentRow
                 key={agent.id}
                 agent={agent}
