@@ -20,6 +20,29 @@ const defaultProps: SourceControlProps = {
   onAgenticToggle: vi.fn(),
 };
 
+describe('SourceControlPanel – push', () => {
+  it('pushes on click, independently of the commit message', async () => {
+    // A push publishes what is already committed — it must not be gated on
+    // the commit form.
+    const user = userEvent.setup();
+    const onPush = vi.fn();
+    render(<SourceControlPanel {...defaultProps} onPush={onPush} />);
+
+    await user.click(screen.getByRole('button', { name: 'Push' }));
+    expect(onPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it is pushing and refuses a second push meanwhile', () => {
+    render(<SourceControlPanel {...defaultProps} onPush={vi.fn()} isPushing />);
+    expect(screen.getByRole('button', { name: 'Pushing...' })).toBeDisabled();
+  });
+
+  it('offers no push when the caller cannot push', () => {
+    render(<SourceControlPanel {...defaultProps} />);
+    expect(screen.queryByRole('button', { name: /push/i })).not.toBeInTheDocument();
+  });
+});
+
 describe('SourceControlPanel', () => {
   it('renders the panel', () => {
     render(<SourceControlPanel {...defaultProps} />);

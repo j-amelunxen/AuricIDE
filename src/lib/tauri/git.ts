@@ -36,6 +36,11 @@ export async function commitChanges(repoPath: string, message: string): Promise<
   return await invoke<string>('git_commit', { repoPath, message });
 }
 
+/** Pushes the current branch to origin; the backend handles credentials. */
+export async function pushChanges(repoPath: string): Promise<void> {
+  await invoke('git_push', { repoPath });
+}
+
 export async function discardChanges(repoPath: string, filePath: string): Promise<void> {
   await invoke('git_discard', { repoPath, filePath });
 }

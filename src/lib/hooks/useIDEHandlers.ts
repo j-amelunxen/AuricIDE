@@ -752,6 +752,19 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleRefresh();
   }, [state, handleRefresh]);
 
+  const handlePush = useCallback(async () => {
+    if (!state.rootPath) return;
+    const { showToast } = useStore.getState();
+    try {
+      await state.pushBranch(state.rootPath);
+      showToast('Pushed to origin', 'success');
+    } catch (e) {
+      // The error names the fix (no remote, no credentials) — surface it
+      // instead of leaving a button that silently did nothing.
+      showToast(String(e), 'error');
+    }
+  }, [state]);
+
   const handleDiscardFile = useCallback(
     async (filePath: string) => {
       if (!state.rootPath) return;
@@ -1247,6 +1260,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleMindmapNodesChange,
     handleMindmapNodeEdit,
     handleCommit,
+    handlePush,
     handleDiscardFile,
     handleDiffFileClick,
     handleContextMenu,
