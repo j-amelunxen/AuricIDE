@@ -500,6 +500,7 @@ export default function Home() {
             onToggleRepoCollapsed={state.toggleAgentRepoCollapsed}
             agentColors={state.agentColors}
             onSetColor={state.setAgentColor}
+            reviewedAgentIds={state.reviewedAgentIds}
           />
         }
         bottomPanel={

@@ -23,6 +23,8 @@ export interface CompactAgentRowProps {
   /** Marker colour the user put on this agent. */
   color?: AgentColor;
   onContextMenu?: (e: React.MouseEvent, id: string) => void;
+  /** True while a stopped agent's outcome has not been opened yet. */
+  unseen?: boolean;
 }
 
 const DOT_BY_STATUS: Record<AgentInfo['status'], string> = {
@@ -46,6 +48,7 @@ export function CompactAgentRow({
   onDismiss,
   color,
   onContextMenu,
+  unseen = false,
 }: CompactAgentRowProps) {
   const now = useNow();
   const dot = isAgentLive(agent, now) ? 'bg-primary' : DOT_BY_STATUS[agent.status];
@@ -86,12 +89,24 @@ export function CompactAgentRow({
         />
       )}
       <span aria-hidden="true" className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${dot}`} />
+      {/* An outcome nobody has looked at yet keeps a visible claim on the
+          user — the dot only clears when the logs were actually opened. */}
+      {unseen && (
+        <span
+          data-testid="agent-unseen-dot"
+          role="img"
+          aria-label="Not yet reviewed"
+          className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary"
+        />
+      )}
       <button
         type="button"
         onClick={() => onActivate(agent.id)}
         aria-label={`${activateLabel} ${agent.name}`}
         title={detail ? `${agent.name} — ${detail}` : agent.name}
-        className="flex-1 truncate text-left text-[11px] text-foreground-muted transition-colors hover:text-foreground"
+        className={`flex-1 truncate text-left text-[11px] transition-colors hover:text-foreground ${
+          unseen ? 'font-medium text-foreground' : 'text-foreground-muted'
+        }`}
       >
         {agent.name}
         {errorDigest && (

@@ -35,6 +35,23 @@ function renderRow(overrides: Partial<AgentInfo> = {}, handlers = {}) {
   );
 }
 
+describe('CompactAgentRow – unseen marker', () => {
+  it('marks a stopped agent whose outcome nobody looked at yet', () => {
+    renderRow({ status: 'idle' }, { unseen: true });
+    expect(screen.getByTestId('agent-unseen-dot')).toBeInTheDocument();
+  });
+
+  it('drops the marker once the outcome was reviewed', () => {
+    renderRow({ status: 'idle' }, { unseen: false });
+    expect(screen.queryByTestId('agent-unseen-dot')).not.toBeInTheDocument();
+  });
+
+  it('tells assistive technology what the dot means', () => {
+    renderRow({ status: 'idle' }, { unseen: true });
+    expect(screen.getByTestId('agent-unseen-dot')).toHaveAccessibleName(/not.*reviewed/i);
+  });
+});
+
 describe('CompactAgentRow – error digest', () => {
   it('states why a failed agent died, right on the row', () => {
     // Finding out what went wrong must cost a glance, not opening a terminal.

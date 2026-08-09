@@ -66,6 +66,12 @@ export interface AgentSlice {
    * marker lives exactly as long as the agent it marks.
    */
   agentColors: Record<string, AgentColor>;
+  /**
+   * Stopped agents whose outcome the user has opened. The complement drives
+   * the unseen marker: a finished agent stays visibly unreviewed until its
+   * logs were looked at, so nothing slips silently off the review pile.
+   */
+  reviewedAgentIds: string[];
   /** Previously used start prompts for the open project, newest first. */
   promptHistory: string[];
   setAgentMinimized: (agentId: string, minimized: boolean) => void;
@@ -127,6 +133,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   minimizedAgentIds: [],
   collapsedAgentRepos: [],
   agentColors: {},
+  reviewedAgentIds: [],
   promptHistory: [],
 
   setAgentColor: (agentId, color) => {
@@ -312,6 +319,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentLogMeta: remainingMeta,
       minimizedAgentIds: minimizedAgentIds.filter((id) => id !== agentId),
       agentColors: withoutColors(get().agentColors, (id) => id === agentId),
+      reviewedAgentIds: get().reviewedAgentIds.filter((id) => id !== agentId),
     });
   },
 
@@ -357,6 +365,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       ),
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => !evictedIds.has(id)),
       agentColors: withoutColors(get().agentColors, (id) => evictedIds.has(id)),
+      reviewedAgentIds: get().reviewedAgentIds.filter((id) => !evictedIds.has(id)),
     });
   },
 
@@ -426,7 +435,18 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     set({ agents });
   },
 
-  selectAgent: (agentId) => set({ selectedAgentId: agentId }),
+  selectAgent: (agentId) => {
+    const state = get();
+    // Opening a *stopped* agent is reviewing its outcome; peeking at a
+    // running one is not — there is no outcome yet, so the unseen marker
+    // must survive that visit.
+    const agent = agentId ? state.agents.find((a) => a.id === agentId) : undefined;
+    const nowReviewed =
+      agent && isFinishedAgent(agent) && !state.reviewedAgentIds.includes(agent.id)
+        ? [...state.reviewedAgentIds, agent.id]
+        : state.reviewedAgentIds;
+    set({ selectedAgentId: agentId, reviewedAgentIds: nowReviewed });
+  },
 
   loadInterruptedAgents: async () => {
     try {
