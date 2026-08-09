@@ -6,7 +6,12 @@ import type { InterruptedAgent } from '@/lib/tauri/agents';
 import { useState } from 'react';
 import { useNow } from '@/lib/hooks/useNow';
 import { splitFleet } from '@/lib/agents/fleet';
-import { countNeedingAttention, needsAttention, withReviewFlags } from '@/lib/agents/attention';
+import {
+  countNeedingAttention,
+  needsAttention,
+  sortByUrgency,
+  withReviewFlags,
+} from '@/lib/agents/attention';
 import { AGENT_COLORS, type AgentColor } from '@/lib/agents/colors';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { AgentCard } from './AgentCard';
@@ -136,11 +141,12 @@ export function AgentsPanel({
   // claiming attention — an alarm that cannot be quitted gets ignored.
   const flagged = withReviewFlags(agents, reviewedAgentIds);
   const attentionCount = countNeedingAttention(flagged, now);
-  // The one place to check when the badge says something needs you. Parked
+  // The one place to check when the badge says something needs you, most
+  // urgent first — the triage list must be trustable by position. Parked
   // agents included: parking is a view state, their claim on the user is not
   // parked with it. Cards stay put in their repo groups — this section
   // points, it does not move things under the cursor.
-  const attentionAgents = flagged.filter((a) => needsAttention(a, now));
+  const attentionAgents = sortByUrgency(flagged, now);
   // An unreviewed failure lives in the attention section only; rendering it
   // again under Done would be the same alarm twice, with disagreeing state.
   // Once reviewed it migrates down here, dot-free.

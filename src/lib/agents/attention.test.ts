@@ -5,6 +5,7 @@ import {
   countNeedingAttention,
   nextAttentionAgentId,
   withReviewFlags,
+  sortByUrgency,
   AGENT_STALL_MS,
 } from './attention';
 import { AGENT_LIVE_WINDOW_MS } from './liveness';
@@ -113,6 +114,49 @@ describe('needsAttention / countNeedingAttention', () => {
     ];
     expect(fleet.map((a) => needsAttention(a, NOW))).toEqual([true, true, false, false]);
     expect(countNeedingAttention(fleet, NOW)).toBe(2);
+  });
+});
+
+describe('sortByUrgency', () => {
+  it('ranks failures over prompts over stalls', () => {
+    const fleet = [
+      { id: 'stalled', status: 'running' as const, lastActivityAt: NOW - AGENT_STALL_MS - 1 },
+      { id: 'blocked', status: 'running' as const, awaitingInput: true, lastActivityAt: NOW },
+      { id: 'failed', status: 'error' as const, lastActivityAt: undefined },
+    ];
+    expect(sortByUrgency(fleet, NOW).map((a) => a.id)).toEqual(['failed', 'blocked', 'stalled']);
+  });
+
+  it('puts the longest-ignored failure first', () => {
+    const fleet = [
+      { id: 'fresh', status: 'error' as const, lastActivityAt: undefined, finishedAt: NOW - 1_000 },
+      { id: 'old', status: 'error' as const, lastActivityAt: undefined, finishedAt: NOW - 60_000 },
+    ];
+    expect(sortByUrgency(fleet, NOW).map((a) => a.id)).toEqual(['old', 'fresh']);
+  });
+
+  it('puts the longest-silent stall first', () => {
+    const fleet = [
+      {
+        id: 'briefly',
+        status: 'running' as const,
+        lastActivityAt: NOW - AGENT_STALL_MS - 1_000,
+      },
+      {
+        id: 'forever',
+        status: 'running' as const,
+        lastActivityAt: NOW - AGENT_STALL_MS - 600_000,
+      },
+    ];
+    expect(sortByUrgency(fleet, NOW).map((a) => a.id)).toEqual(['forever', 'briefly']);
+  });
+
+  it('drops the calm agents entirely', () => {
+    const fleet = [
+      { id: 'ok', status: 'running' as const, lastActivityAt: NOW },
+      { id: 'failed', status: 'error' as const, lastActivityAt: undefined },
+    ];
+    expect(sortByUrgency(fleet, NOW).map((a) => a.id)).toEqual(['failed']);
   });
 });
 
