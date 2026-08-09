@@ -465,6 +465,75 @@ describe('AgentsPanel attention section', () => {
   });
 });
 
+describe('AgentsPanel – folded groups and alarms', () => {
+  it('marks a folded group that hides an agent needing a human', () => {
+    const hidden: AgentInfo[] = [
+      {
+        ...agents[0],
+        id: 'stuck',
+        name: 'Stuck',
+        status: 'running',
+        lastActivityAt: Date.now() - 10 * 60_000,
+        repoPath: '/work/api',
+      },
+    ];
+    render(
+      <AgentsPanel
+        agents={hidden}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('repo-attention-dot')).toBeInTheDocument();
+  });
+
+  it('leaves a folded group unmarked while its agents are fine', () => {
+    const calm: AgentInfo[] = [
+      {
+        ...agents[0],
+        id: 'ok',
+        status: 'running',
+        lastActivityAt: Date.now(),
+        repoPath: '/work/api',
+      },
+    ];
+    render(
+      <AgentsPanel
+        agents={calm}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        collapsedRepos={['/work/api']}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('repo-attention-dot')).not.toBeInTheDocument();
+  });
+
+  it('needs no mark while the group is open — the cards speak for themselves', () => {
+    const visible: AgentInfo[] = [
+      {
+        ...agents[0],
+        id: 'stuck',
+        name: 'Stuck',
+        status: 'running',
+        lastActivityAt: Date.now() - 10 * 60_000,
+        repoPath: '/work/api',
+      },
+    ];
+    render(
+      <AgentsPanel
+        agents={visible}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onToggleRepoCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('repo-attention-dot')).not.toBeInTheDocument();
+  });
+});
+
 describe('AgentsPanel all-quiet signal', () => {
   it('says all quiet while agents work and none needs a human', () => {
     // The absence of alarms is not the same as permission to look away —
