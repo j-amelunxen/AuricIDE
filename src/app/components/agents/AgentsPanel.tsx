@@ -135,6 +135,11 @@ export function AgentsPanel({
   // parked with it. Cards stay put in their repo groups — this section
   // points, it does not move things under the cursor.
   const attentionAgents = agents.filter((a) => needsAttention(a, now));
+  // Healthy working agents still drawn as cards — the candidates for a
+  // one-move park that leaves only what needs a human on screen.
+  const parkableAgents = onToggleMinimize
+    ? active.filter((a) => a.status === 'running' && !needsAttention(a, now))
+    : [];
 
   /**
    * The terminate control sits a few pixels from the terminal toggle and only
@@ -223,18 +228,33 @@ export function AgentsPanel({
             </span>
           )}
         </h2>
-        {onCollapse && (
-          <button
-            type="button"
-            onClick={onCollapse}
-            aria-label="Hide agents panel"
-            className="group flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
-          >
-            <span aria-hidden="true" className="material-symbols-outlined text-base">
-              right_panel_close
-            </span>
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {/* One move to a triage view: park everything that is healthy, so
+              the cards that remain are exactly the ones that need a human.
+              Only offered when it would actually fold something away. */}
+          {parkableAgents.length > 1 && (
+            <button
+              type="button"
+              onClick={() => parkableAgents.forEach((a) => onToggleMinimize?.(a.id, true))}
+              title="Park all healthy working agents — they keep running as one-line rows"
+              className="rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+            >
+              Park working
+            </button>
+          )}
+          {onCollapse && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              aria-label="Hide agents panel"
+              className="group flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-base">
+                right_panel_close
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
