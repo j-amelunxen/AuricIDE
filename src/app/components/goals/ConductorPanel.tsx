@@ -214,12 +214,16 @@ export function ConductorPanel({
           </>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* What pressing Start would actually do, in the same glance as the button. */}
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          {/* What pressing Start would actually do, in the same glance as the
+              button. One line, always: squeezed by the bar it truncates with
+              the full sentence in the tooltip — a one-word-per-line column
+              reads as a broken layout, not as information. */}
           {!running && canStart && preflight && (
             <span
               data-testid="conductor-preflight"
-              className="text-[10px] text-foreground-muted tabular-nums"
+              title={preflightLabel(preflight, selectedGoalName)}
+              className="min-w-0 truncate text-[10px] text-foreground-muted tabular-nums"
             >
               {preflightLabel(preflight, selectedGoalName)}
             </span>
@@ -227,7 +231,7 @@ export function ConductorPanel({
           <button
             data-testid="conductor-log-toggle"
             onClick={() => setLogExpanded((v) => !v)}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
+            className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
           >
             <span className="material-symbols-outlined text-sm">receipt_long</span>
             Log ({decisions.length})
@@ -236,7 +240,7 @@ export function ConductorPanel({
             <button
               data-testid="conductor-stop-btn"
               onClick={onStop}
-              className="flex items-center gap-1.5 rounded-lg bg-red-500/15 border border-red-500/25 px-3 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/25 transition-colors"
+              className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-red-500/15 border border-red-500/25 px-3 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/25 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">stop</span>
               Stop
@@ -251,7 +255,7 @@ export function ConductorPanel({
                   ? 'Autonomously work all unblocked tickets in scope'
                   : 'Open a project first'
               }
-              className="flex items-center gap-1.5 rounded-lg bg-green-500/15 border border-green-500/25 px-3 py-1 text-[11px] font-bold text-green-300 hover:bg-green-500/25 transition-colors disabled:opacity-40"
+              className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-green-500/15 border border-green-500/25 px-3 py-1 text-[11px] font-bold text-green-300 hover:bg-green-500/25 transition-colors disabled:opacity-40"
             >
               <span className="material-symbols-outlined text-sm">play_arrow</span>
               Start

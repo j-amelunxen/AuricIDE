@@ -248,6 +248,15 @@ describe('ConductorPanel preflight', () => {
     expect(screen.getByTestId('conductor-preflight')).toHaveTextContent('no open tickets');
   });
 
+  it('stays a single truncating line with the full sentence in the tooltip', () => {
+    // Squeezed by the bar, the readout must shorten with an ellipsis — a
+    // one-word-per-line column reads as a broken layout, not as information.
+    renderPanel({ preflight });
+    const readout = screen.getByTestId('conductor-preflight');
+    expect(readout.className).toContain('truncate');
+    expect(readout).toHaveAttribute('title', expect.stringContaining('no open tickets'));
+  });
+
   it('hides the readout while the conductor is running', () => {
     renderPanel({ running: true, preflight: { ...preflight, ready: 3 } });
     expect(screen.queryByTestId('conductor-preflight')).not.toBeInTheDocument();
