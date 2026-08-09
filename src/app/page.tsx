@@ -41,6 +41,7 @@ import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
 import { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
+import { useAttentionTitle } from '@/lib/hooks/useAttentionTitle';
 
 // Memoized sub-components
 const MemoizedHeader = memo(Header);
@@ -100,6 +101,9 @@ export default function Home() {
   const state = useIDEState();
   const handlers = useIDEHandlers(state);
   useIDEActions(state, handlers);
+  // The fleet's "do I need to look?" number, readable from the dock and any
+  // other app via the window title.
+  useAttentionTitle(state.agents);
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const handleCreateProject = async (options: NewProjectOptions) => {
