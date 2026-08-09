@@ -408,6 +408,31 @@ export function AgentCard({
               </div>
             )}
 
+            {/* Answering the prompt is THE next action on a blocked agent —
+                requiring a switch to the terminal view first was one hop of
+                pure friction. Same wire as the terminal reply. */}
+            {state === 'needs-input' && (
+              <div onClick={(e) => e.stopPropagation()} className="flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 rounded-lg border border-amber-400/25 bg-black/30 px-2 py-1.5">
+                  <span aria-hidden="true" className="text-[10px] font-bold text-amber-300/70">
+                    ❯
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Reply to agent..."
+                    aria-label={`Reply to ${agent.name}`}
+                    className="flex-1 rounded border-none bg-transparent px-1 text-[10px] text-foreground outline-none placeholder:opacity-30 focus:ring-1 focus:ring-amber-400/40"
+                    onKeyDown={sendReply}
+                  />
+                </div>
+                {replyError && (
+                  <p role="alert" className="text-[8px] text-red-400">
+                    {replyError}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* No status footer: the chip in the header already said it, the
                 raw status word disagreed with it, and the agent id belongs in
                 a tooltip rather than in the card's scarcest space. */}
