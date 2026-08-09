@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { agentAttention, needsAttention, countNeedingAttention, AGENT_STALL_MS } from './attention';
+import {
+  agentAttention,
+  needsAttention,
+  countNeedingAttention,
+  nextAttentionAgentId,
+  AGENT_STALL_MS,
+} from './attention';
 import { AGENT_LIVE_WINDOW_MS } from './liveness';
 
 const NOW = 1_000_000_000;
@@ -76,6 +82,32 @@ describe('needsAttention / countNeedingAttention', () => {
     ];
     expect(fleet.map((a) => needsAttention(a, NOW))).toEqual([true, true, false, false]);
     expect(countNeedingAttention(fleet, NOW)).toBe(2);
+  });
+});
+
+describe('nextAttentionAgentId', () => {
+  const fleet = [
+    { id: 'ok', status: 'running' as const, lastActivityAt: NOW },
+    { id: 'err-1', status: 'error' as const, lastActivityAt: undefined },
+    { id: 'ok-2', status: 'idle' as const, lastActivityAt: undefined },
+    { id: 'err-2', status: 'error' as const, lastActivityAt: undefined },
+  ];
+
+  it('starts at the first agent needing a human', () => {
+    expect(nextAttentionAgentId(fleet, null, NOW)).toBe('err-1');
+  });
+
+  it('cycles through the attention set, skipping the calm agents', () => {
+    expect(nextAttentionAgentId(fleet, 'err-1', NOW)).toBe('err-2');
+    expect(nextAttentionAgentId(fleet, 'err-2', NOW)).toBe('err-1');
+  });
+
+  it('treats a selected calm agent like no selection', () => {
+    expect(nextAttentionAgentId(fleet, 'ok', NOW)).toBe('err-1');
+  });
+
+  it('returns null when nobody needs a human — the shortcut stays inert', () => {
+    expect(nextAttentionAgentId([fleet[0]], null, NOW)).toBeNull();
   });
 });
 
