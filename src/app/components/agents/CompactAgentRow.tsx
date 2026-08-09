@@ -142,14 +142,22 @@ export function CompactAgentRow({
             ? `Ran for ${formatAgentDuration(agent.finishedAt - agent.startedAt)}`
             : 'Running for'
         }
-        className="flex-shrink-0 font-mono text-[9px] tabular-nums text-foreground-muted/40 group-hover:opacity-0"
+        className={`flex-shrink-0 font-mono text-[9px] tabular-nums group-hover:opacity-0 ${
+          agentAttention(agent, now) === 'needs-input'
+            ? 'text-amber-300/80'
+            : 'text-foreground-muted/40'
+        }`}
       >
         {isFinishedAgent(agent) && agent.finishedAt !== undefined
           ? `${formatAgentDuration(now - agent.finishedAt)} ago`
-          : agentAttention(agent, now) === 'stalled' && agent.lastActivityAt !== undefined
-            ? // The cost of ignoring a stalled agent is exactly its silence.
-              `quiet ${formatAgentDuration(now - agent.lastActivityAt)}`
-            : formatAgentDuration(now - agent.startedAt)}
+          : agentAttention(agent, now) === 'needs-input'
+            ? // A redrawing prompt makes both runtime and quiet time lie —
+              // the reason is the only true thing to print here.
+              'needs input'
+            : agentAttention(agent, now) === 'stalled' && agent.lastActivityAt !== undefined
+              ? // The cost of ignoring a stalled agent is exactly its silence.
+                `quiet ${formatAgentDuration(now - agent.lastActivityAt)}`
+              : formatAgentDuration(now - agent.startedAt)}
       </span>
       {/* The most likely next action on a failure: run it again, exact same
           config — rebuilding the launch by hand was the expensive part. */}
