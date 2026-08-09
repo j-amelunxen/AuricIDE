@@ -42,3 +42,20 @@ export function needsAttention(agent: AttentionInput, now: number): boolean {
 export function countNeedingAttention(agents: AttentionInput[], now: number): number {
   return agents.reduce((n, agent) => n + (needsAttention(agent, now) ? 1 : 0), 0);
 }
+
+/**
+ * The next agent to check on, cycling through the ones that need a human in
+ * fleet order. A calm or absent current selection starts the cycle at the
+ * top; null when nobody needs anyone — the caller's shortcut stays inert.
+ */
+export function nextAttentionAgentId(
+  agents: (AttentionInput & { id: string })[],
+  currentId: string | null,
+  now: number
+): string | null {
+  const needing = agents.filter((agent) => needsAttention(agent, now));
+  if (needing.length === 0) return null;
+
+  const currentIndex = needing.findIndex((agent) => agent.id === currentId);
+  return needing[(currentIndex + 1) % needing.length].id;
+}

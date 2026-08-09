@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import { getProjectFilesInfo } from '@/lib/tauri/fs';
 import { listProviders } from '@/lib/tauri/providers';
 import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter';
+import { nextAttentionAgentId } from '@/lib/agents/attention';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
@@ -185,9 +186,15 @@ export function useIDEActions(
       } else if (mod && e.shiftKey && e.key === 'G') {
         e.preventDefault();
         state.setActiveActivity('source-control');
+      } else if (mod && e.shiftKey && e.key === 'A') {
+        // Jump to the next agent that needs a human — triage without
+        // reaching for the mouse or scanning the panel. Inert while calm.
+        e.preventDefault();
+        const nextId = nextAttentionAgentId(state.agents, state.selectedAgentId, Date.now());
+        if (nextId) handlers.handleSelectAgent(nextId);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [state]);
+  }, [state, handlers]);
 }
