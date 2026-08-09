@@ -541,6 +541,50 @@ describe('AgentsPanel – finished agents', () => {
     expect(onDismissFinished).toHaveBeenCalledTimes(2);
   });
 
+  it('Clear keeps failures nobody has looked at', async () => {
+    // Bulk-clearing must not silently discard an unreviewed failure — that
+    // would be the panel deciding the error did not matter.
+    const user = userEvent.setup();
+    const onDismissFinished = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[
+          { ...finishedAgent, id: 'done-ok', name: 'Clean' },
+          { ...finishedAgent, id: 'done-err', name: 'Broken', status: 'error' },
+        ]}
+        reviewedAgentIds={[]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onDismissFinished={onDismissFinished}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(onDismissFinished).toHaveBeenCalledWith('done-ok');
+    expect(onDismissFinished).not.toHaveBeenCalledWith('done-err');
+  });
+
+  it('Clear takes a failure the user has reviewed', async () => {
+    const user = userEvent.setup();
+    const onDismissFinished = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[
+          { ...finishedAgent, id: 'done-ok', name: 'Clean' },
+          { ...finishedAgent, id: 'done-err', name: 'Broken', status: 'error' },
+        ]}
+        reviewedAgentIds={['done-err']}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onDismissFinished={onDismissFinished}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(onDismissFinished).toHaveBeenCalledWith('done-ok');
+    expect(onDismissFinished).toHaveBeenCalledWith('done-err');
+  });
+
   it('offers no Clear for a single finished agent', () => {
     render(
       <AgentsPanel

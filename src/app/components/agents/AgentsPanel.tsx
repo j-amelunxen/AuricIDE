@@ -355,7 +355,14 @@ export function AgentsPanel({
               {onDismissFinished && finished.length > 1 && (
                 <button
                   type="button"
-                  onClick={() => finished.forEach((a) => onDismissFinished(a.id))}
+                  // A failure nobody looked at survives the sweep: bulk-clear
+                  // must not be the panel deciding an error did not matter.
+                  onClick={() =>
+                    finished
+                      .filter((a) => a.status !== 'error' || reviewedAgentIds.includes(a.id))
+                      .forEach((a) => onDismissFinished(a.id))
+                  }
+                  title="Clear reviewed and successful agents — unreviewed failures stay"
                   className="rounded px-1 text-[10px] text-foreground-muted/60 transition-colors hover:bg-white/5 hover:text-foreground"
                 >
                   Clear
