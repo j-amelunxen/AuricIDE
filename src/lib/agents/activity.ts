@@ -20,8 +20,12 @@ const CHROME_PATTERNS = [/^esc to interrupt/i, /^\? for shortcuts/i, /^ctrl\+[a-
 /** Leading decoration CLIs prefix their status lines with (⏺, ✻, ▪, >, ·). */
 const LEADING_DECORATION = /^[^\p{L}\p{N}(["']+/u;
 
-/** A line worth showing has at least one letter or digit in it. */
-const HAS_WORDS = /[\p{L}\p{N}]/u;
+/**
+ * A line worth showing has at least one letter in it. Digits alone are not
+ * enough: a bare "62%" or "███ 45%" tick flickers up several times a second
+ * and says nothing about what the number measures.
+ */
+const HAS_WORDS = /\p{L}/u;
 
 /**
  * The newest line of an agent's output that actually says something, cleaned
