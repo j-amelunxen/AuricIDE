@@ -265,6 +265,19 @@ describe('agentSlice', () => {
     expect(combined.getState().toasts).toHaveLength(1);
   });
 
+  it('keeps a resumed agent retryable with its persisted config', async () => {
+    // The interrupted record carries permission mode and headless — a later
+    // retry must not silently downgrade them to defaults.
+    await store.getState().loadInterruptedAgents();
+    const resumed = await store.getState().resumeInterruptedAgent('agent-9');
+
+    const config = store.getState().agentSpawnConfigs[resumed.id];
+    expect(config).toBeDefined();
+    expect(config.permissionMode).toBe('auto');
+    expect(config.task).toBe('refactor the parser');
+    expect(config.cwd).toBe('/repo');
+  });
+
   it('does not toast a clean finish — only failures make noise', async () => {
     const { createToastSlice } = await import('./toastSlice');
     const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({

@@ -532,11 +532,36 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   resumeInterruptedAgent: async (agentId) => {
     // The backend consumes the persisted entry and re-spawns; only drop the
     // local entry once that succeeded, so a failed resume stays retryable.
+    const interrupted = get().interruptedAgents.find((a) => a.id === agentId);
     const agent = await resumeInterruptedAgent(agentId);
     set({
       interruptedAgents: get().interruptedAgents.filter((a) => a.id !== agentId),
       agents: [...get().agents, agent],
       selectedAgentId: agent.id,
+      // The persisted record carries permission mode and headless — keep the
+      // resumed agent one-click-retryable without downgrading either.
+      ...(interrupted
+        ? {
+            agentSpawnConfigs: {
+              ...get().agentSpawnConfigs,
+              [agent.id]: {
+                name: interrupted.name,
+                model: interrupted.model,
+                task: interrupted.task,
+                cwd: interrupted.cwd ?? undefined,
+                permissionMode: (interrupted.permissionMode ?? undefined) as
+                  | AgentConfig['permissionMode']
+                  | undefined,
+                dangerouslyIgnorePermissions: interrupted.dangerouslyIgnorePermissions,
+                autoAcceptEdits: interrupted.autoAcceptEdits,
+                provider: interrupted.provider,
+                headless: interrupted.headless,
+                spawnedByTicketId: interrupted.spawnedByTicketId ?? undefined,
+                spawnedByGoalId: interrupted.spawnedByGoalId ?? undefined,
+              },
+            },
+          }
+        : {}),
     });
     return agent;
   },
