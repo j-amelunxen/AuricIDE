@@ -129,7 +129,7 @@ The easiest way to get started is using the provided development scripts:
 
 ```bash
 # Clone the repository
-git clone https://github.com/PlasmaLampe/AuricIDE.git
+git clone https://github.com/j-amelunxen/AuricIDE.git
 cd AuricIDE
 
 # Check your environment and start the development server

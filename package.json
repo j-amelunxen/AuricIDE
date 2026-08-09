@@ -5,11 +5,11 @@
   "private": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/PlasmaLampe/AuricIDE.git"
+    "url": "https://github.com/j-amelunxen/AuricIDE.git"
   },
-  "homepage": "https://github.com/PlasmaLampe/AuricIDE",
+  "homepage": "https://github.com/j-amelunxen/AuricIDE",
   "bugs": {
-    "url": "https://github.com/PlasmaLampe/AuricIDE/issues"
+    "url": "https://github.com/j-amelunxen/AuricIDE/issues"
   },
   "scripts": {
     "dev": "next dev --turbopack --port 41873",
