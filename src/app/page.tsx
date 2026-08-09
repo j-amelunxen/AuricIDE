@@ -42,6 +42,7 @@ import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
 import { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
 import { useAttentionTitle } from '@/lib/hooks/useAttentionTitle';
+import type { AgentInfo } from '@/lib/tauri/agents';
 
 // Memoized sub-components
 const MemoizedHeader = memo(Header);
@@ -97,13 +98,26 @@ function buildCanvasContextMenuOptions(
   ];
 }
 
+/**
+ * A null leaf that owns the window-title/dock-badge mirroring. The hook ticks
+ * on useNow — mounting it here instead of in Home keeps the 1 Hz timer off
+ * the page root, which would otherwise re-render the whole IDE every second.
+ */
+function AttentionTitle({
+  agents,
+  reviewedAgentIds,
+}: {
+  agents: AgentInfo[];
+  reviewedAgentIds: string[];
+}): null {
+  useAttentionTitle(agents, reviewedAgentIds);
+  return null;
+}
+
 export default function Home() {
   const state = useIDEState();
   const handlers = useIDEHandlers(state);
   useIDEActions(state, handlers);
-  // The fleet's "do I need to look?" number, readable from the dock and any
-  // other app via the window title.
-  useAttentionTitle(state.agents, state.reviewedAgentIds);
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const handleCreateProject = async (options: NewProjectOptions) => {
@@ -245,6 +259,7 @@ export default function Home() {
           onClose={() => state.setFileTicketCreate(null)}
         />
       )}
+      <AttentionTitle agents={state.agents} reviewedAgentIds={state.reviewedAgentIds} />
       <RequirementsModal />
       <ExcalidrawBrowser
         onImported={() => void handlers.handleRefresh()}

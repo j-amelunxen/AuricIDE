@@ -160,8 +160,15 @@ export function useIDEActions(
     }
   }, [state.fileSelectorOpen, state.rootPath, state.setProjectFilesInfo]);
 
+  // `state` and `handlers` are fresh objects every render — depending on them
+  // would tear the global listener down and re-register it on each render.
+  // The listener reads the freshest values through a ref instead and is
+  // registered exactly once.
+  const latest = useRef({ state, handlers });
+  latest.current = { state, handlers };
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const { state, handlers } = latest.current;
       if (e.key === 'Shift') {
         const now = Date.now();
         if (now - lastShiftTime.current < 300) state.setFileSearchOpen(true);
@@ -200,5 +207,5 @@ export function useIDEActions(
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [state, handlers]);
+  }, []);
 }
