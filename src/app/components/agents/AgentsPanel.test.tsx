@@ -465,6 +465,27 @@ describe('AgentsPanel attention section', () => {
   });
 });
 
+describe('AgentsPanel – attention announcements', () => {
+  it('announces to assistive technology when agents need a human', () => {
+    // Visual pings are exactly what a screen-reader user cannot poll — the
+    // live region is their version of the amber badge.
+    const troubled: AgentInfo[] = [
+      { ...agents[1], id: 'a2', status: 'error' },
+      { ...agents[1], id: 'a3', status: 'error' },
+    ];
+    render(<AgentsPanel agents={troubled} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('2 agents need attention');
+  });
+
+  it('keeps the live region empty while all is quiet', () => {
+    const calm: AgentInfo[] = [
+      { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() },
+    ];
+    render(<AgentsPanel agents={calm} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+});
+
 describe('AgentsPanel – folded groups and alarms', () => {
   it('marks a folded group that hides an agent needing a human', () => {
     const hidden: AgentInfo[] = [

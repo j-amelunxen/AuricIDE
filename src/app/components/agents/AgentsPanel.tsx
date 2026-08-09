@@ -174,6 +174,15 @@ export function AgentsPanel({
 
   return (
     <div data-testid="agents-panel" className="flex flex-col h-full bg-panel-bg">
+      {/* The screen-reader version of the amber badge: visual pings are
+          exactly what a non-sighted user cannot poll. Polite, and silent
+          while there is nothing to say. */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {attentionCount > 0 &&
+          `${attentionCount} agent${attentionCount === 1 ? '' : 's'} need${
+            attentionCount === 1 ? 's' : ''
+          } attention`}
+      </div>
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-dark">
         <h2 className="flex items-center gap-2 text-xs font-semibold tracking-wider text-foreground-muted">
           {/* Not "active agents": the panel also holds the ones you parked and
