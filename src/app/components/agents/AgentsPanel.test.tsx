@@ -365,6 +365,106 @@ describe('AgentsPanel attention count', () => {
   });
 });
 
+describe('AgentsPanel attention section', () => {
+  it('gathers the agents that need a human at the top of the panel', () => {
+    const mixed: AgentInfo[] = [
+      { ...agents[0], id: 'ok', name: 'Fine', status: 'running', lastActivityAt: Date.now() },
+      {
+        ...agents[0],
+        id: 'stuck',
+        name: 'Stuck',
+        status: 'running',
+        lastActivityAt: Date.now() - 10 * 60_000,
+      },
+      { ...agents[1], id: 'broken', name: 'Broken', status: 'error' },
+    ];
+    render(<AgentsPanel agents={mixed} onSpawn={vi.fn()} onKill={vi.fn()} />);
+
+    const section = screen.getByTestId('attention-agents');
+    expect(section).toHaveTextContent('Stuck');
+    expect(section).toHaveTextContent('Broken');
+    expect(section).not.toHaveTextContent('Fine');
+  });
+
+  it('does not exist while nothing needs a human', () => {
+    // The section is a summons, not furniture — an empty shell of it would
+    // be one more thing to glance at.
+    const calm: AgentInfo[] = [
+      { ...agents[0], id: 'ok', status: 'running', lastActivityAt: Date.now() },
+    ];
+    render(<AgentsPanel agents={calm} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('attention-agents')).not.toBeInTheDocument();
+  });
+
+  it('keeps the card of a flagged agent in its repo group', () => {
+    // The section points, it does not move — cards must not jump around
+    // under the cursor when an agent stalls.
+    const mixed: AgentInfo[] = [
+      {
+        ...agents[0],
+        id: 'stuck',
+        name: 'Stuck',
+        status: 'running',
+        lastActivityAt: Date.now() - 10 * 60_000,
+        repoPath: '/work/api',
+      },
+    ];
+    render(<AgentsPanel agents={mixed} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    // Once as the compact pointer row, once as the full card in its group.
+    expect(screen.getAllByText('Stuck').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('api')).toBeInTheDocument();
+  });
+
+  it('opens the flagged agent on click', async () => {
+    const user = userEvent.setup();
+    const onSelectAgent = vi.fn();
+    const mixed: AgentInfo[] = [
+      {
+        ...agents[0],
+        id: 'stuck',
+        name: 'Stuck',
+        status: 'running',
+        lastActivityAt: Date.now() - 10 * 60_000,
+      },
+    ];
+    render(
+      <AgentsPanel
+        agents={mixed}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onSelectAgent={onSelectAgent}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Check on Stuck' }));
+    expect(onSelectAgent).toHaveBeenCalledWith('stuck');
+  });
+
+  it('surfaces a parked agent that started needing a human', () => {
+    // Parking is a view state; a parked agent's claim on the user is not
+    // parked with it.
+    const parked: AgentInfo[] = [
+      {
+        ...agents[0],
+        id: 'stuck',
+        name: 'Stuck',
+        status: 'running',
+        lastActivityAt: Date.now() - 10 * 60_000,
+      },
+    ];
+    render(
+      <AgentsPanel
+        agents={parked}
+        minimizedAgentIds={['stuck']}
+        onToggleMinimize={vi.fn()}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('attention-agents')).toHaveTextContent('Stuck');
+  });
+});
+
 describe('AgentsPanel all-quiet signal', () => {
   it('says all quiet while agents work and none needs a human', () => {
     // The absence of alarms is not the same as permission to look away —
