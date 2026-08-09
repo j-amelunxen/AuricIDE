@@ -479,6 +479,45 @@ describe('AgentCard – replying from the card', () => {
   });
 });
 
+describe('AgentCard – nudging a stalled agent', () => {
+  const stalled: AgentInfo = {
+    ...runningAgent,
+    id: 'agent-stalled',
+    lastActivityAt: Date.now() - 10 * 60_000,
+  };
+
+  it('offers a nudge once the agent reads as stalled', () => {
+    render(<AgentCard agent={stalled} onKill={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /nudge/i })).toBeInTheDocument();
+  });
+
+  it('sends a bare Enter to the PTY — the commonest unstick', async () => {
+    const user = userEvent.setup();
+    const { writeToShell } = await import('@/lib/tauri/terminal');
+    vi.mocked(writeToShell).mockClear();
+    render(<AgentCard agent={stalled} onKill={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /nudge/i }));
+    expect(writeToShell).toHaveBeenCalledWith('agent-agent-stalled', '\n');
+  });
+
+  it('offers no nudge while the agent is merely waiting', () => {
+    // Waiting is normal; poking a thinking agent would interleave stray
+    // input with its work.
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /nudge/i })).not.toBeInTheDocument();
+  });
+
+  it('does not select the card when nudging', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<AgentCard agent={stalled} onKill={vi.fn()} onSelect={onSelect} />);
+
+    await user.click(screen.getByRole('button', { name: /nudge/i }));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
 describe('AgentCard – quick reply while blocked on input', () => {
   const blocked: AgentInfo = { ...makeLiveAgent(), awaitingInput: true };
 

@@ -408,6 +408,36 @@ export function AgentCard({
               </div>
             )}
 
+            {/* A stalled CLI most often just wants an Enter — make that one
+                click instead of open-terminal-and-type. Anything more than a
+                nudge goes through the terminal as before. */}
+            {state === 'stalled' && (
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setReplyError(null);
+                  try {
+                    const { writeToShell } = await import('@/lib/tauri/terminal');
+                    await writeToShell(`agent-${agent.id}`, '\n');
+                  } catch {
+                    setReplyError('Nudge could not be delivered — the agent may have exited.');
+                  }
+                }}
+                className="flex items-center justify-center gap-1 rounded-lg border border-orange-400/25 bg-orange-400/5 px-2 py-1.5 text-[10px] font-medium text-orange-300 transition-colors hover:bg-orange-400/15"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
+                  notifications_active
+                </span>
+                Nudge — send Enter
+              </button>
+            )}
+            {state === 'stalled' && replyError && (
+              <p role="alert" className="text-[8px] text-red-400">
+                {replyError}
+              </p>
+            )}
+
             {/* Answering the prompt is THE next action on a blocked agent —
                 requiring a switch to the terminal view first was one hop of
                 pure friction. Same wire as the terminal reply. */}
