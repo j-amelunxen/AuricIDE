@@ -19,3 +19,18 @@ export async function applyWindowTitle(title: string): Promise<void> {
     if (typeof document !== 'undefined') document.title = title;
   }
 }
+
+/**
+ * Mirrors the attention count onto the dock icon (macOS/Linux). The dock is
+ * visible even with the app hidden entirely — the last place the "do I need
+ * to look?" number can reach. Zero clears the badge. Best-effort: browsers
+ * and platforms without badges just skip it.
+ */
+export async function applyDockBadge(attentionCount: number): Promise<void> {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setBadgeCount(attentionCount > 0 ? attentionCount : undefined);
+  } catch {
+    // No Tauri backend or unsupported platform — the title still carries it.
+  }
+}

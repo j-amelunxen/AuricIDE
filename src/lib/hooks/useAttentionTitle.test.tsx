@@ -5,6 +5,12 @@ import { useAttentionTitle } from './useAttentionTitle';
 
 vi.mock('@/lib/hooks/useNow', () => ({ useNow: () => Date.now() }));
 
+// The badge call is native-only — spy on it, keep the title path real.
+vi.mock('@/lib/agents/windowTitle', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/agents/windowTitle')>();
+  return { ...actual, applyDockBadge: vi.fn(async () => undefined) };
+});
+
 const agent = (overrides: Partial<AgentInfo>): AgentInfo => ({
   id: 'a1',
   name: 'Agent',
@@ -13,6 +19,25 @@ const agent = (overrides: Partial<AgentInfo>): AgentInfo => ({
   status: 'running',
   startedAt: 0,
   ...overrides,
+});
+
+describe('useAttentionTitle – dock badge', () => {
+  it('mirrors the count onto the dock badge alongside the title', async () => {
+    const { applyDockBadge } = await import('@/lib/agents/windowTitle');
+    const spy = vi.mocked(applyDockBadge);
+    renderHook(() => useAttentionTitle([agent({ status: 'error' })]));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(1));
+  });
+
+  it('clears the badge when the fleet calms down', async () => {
+    const { applyDockBadge } = await import('@/lib/agents/windowTitle');
+    const spy = vi.mocked(applyDockBadge);
+    const { rerender } = renderHook(({ agents }) => useAttentionTitle(agents), {
+      initialProps: { agents: [agent({ status: 'error' })] },
+    });
+    rerender({ agents: [agent({ status: 'idle' })] });
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(0));
+  });
 });
 
 describe('useAttentionTitle', () => {

@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useNow } from './useNow';
 import { countNeedingAttention } from '@/lib/agents/attention';
-import { applyWindowTitle, composeWindowTitle } from '@/lib/agents/windowTitle';
+import { applyDockBadge, applyWindowTitle, composeWindowTitle } from '@/lib/agents/windowTitle';
 
 /**
  * Mirrors the fleet's attention count into the window title, so the one
@@ -17,5 +17,7 @@ export function useAttentionTitle(agents: AgentInfo[]): void {
 
   useEffect(() => {
     void applyWindowTitle(composeWindowTitle(attentionCount));
+    // The dock badge reaches even a fully hidden app; zero clears it.
+    void applyDockBadge(attentionCount);
   }, [attentionCount]);
 }
