@@ -223,6 +223,48 @@ describe('agentSlice', () => {
     expect(combined.getState().toasts).toHaveLength(1);
   });
 
+  it('stays silent while the conductor will retry the ticket itself', async () => {
+    // Interrupting the user for a failure the system is about to handle
+    // would be a false alarm — only the final, given-up failure toasts.
+    const { createToastSlice } = await import('./toastSlice');
+    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createToastSlice(...a),
+    }));
+    await combined.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    combined.setState({
+      conductorAssignments: { 'ticket-1': 'mock-agent-1' },
+      conductorFailedTickets: {},
+    } as never);
+
+    combined.getState().updateAgentStatus('mock-agent-1', 'error');
+    expect(combined.getState().toasts).toHaveLength(0);
+  });
+
+  it('toasts the conductor ticket that has used up its attempts', async () => {
+    const { createToastSlice } = await import('./toastSlice');
+    const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createToastSlice(...a),
+    }));
+    await combined.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    combined.setState({
+      conductorAssignments: { 'ticket-1': 'mock-agent-1' },
+      conductorFailedTickets: { 'ticket-1': 1 },
+    } as never);
+
+    combined.getState().updateAgentStatus('mock-agent-1', 'error');
+    expect(combined.getState().toasts).toHaveLength(1);
+  });
+
   it('does not toast a clean finish — only failures make noise', async () => {
     const { createToastSlice } = await import('./toastSlice');
     const combined = createStore<AgentSlice & import('./toastSlice').ToastSlice>()((...a) => ({
