@@ -35,6 +35,15 @@ function renderRow(overrides: Partial<AgentInfo> = {}, handlers = {}) {
   );
 }
 
+describe('CompactAgentRow – blocked on input', () => {
+  it('names the reason instead of a meaningless duration', () => {
+    // A permission menu redraws itself, so neither runtime nor quiet time
+    // says anything true about a blocked agent — the reason does.
+    renderRow({ status: 'running', awaitingInput: true, lastActivityAt: Date.now() });
+    expect(screen.getByTestId('compact-agent-age')).toHaveTextContent('needs input');
+  });
+});
+
 describe('CompactAgentRow – quiet duration on a stalled agent', () => {
   it('says how long a stalled agent has been silent', () => {
     // The cost of ignoring a stalled agent is exactly its silence — the row
