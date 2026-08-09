@@ -18,9 +18,10 @@ const STATE_CHIP: Record<AgentState, string> = {
   working: 'border-primary/30 bg-primary/10 text-primary-light',
   waiting: 'border-amber-500/25 bg-amber-500/10 text-amber-400/90',
   // The one running state that is actually blocked on the user — a shade
-  // firmer than waiting, still quieter than a failure.
-  'needs-input': 'border-amber-400/50 bg-amber-400/15 text-amber-300',
-  stalled: 'border-orange-400/40 bg-orange-400/10 text-orange-300',
+  // firmer than waiting (brighter text), still quieter than a failure
+  // (border stays below error's 30% alpha).
+  'needs-input': 'border-amber-400/25 bg-amber-400/10 text-amber-300',
+  stalled: 'border-orange-400/25 bg-orange-400/10 text-orange-300',
   done: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-400/90',
   error: 'border-red-400/30 bg-red-400/10 text-red-400',
   queued: 'border-white/10 bg-white/5 text-foreground-muted',
@@ -187,12 +188,19 @@ export function AgentCard({
     }
   };
 
-  // Card border + glow varies by agent activity state
-  const cardGlowClass = isLive
-    ? 'border-primary/50 shadow-[0_0_35px_rgba(var(--primary-rgb),0.25),0_0_70px_rgba(var(--primary-rgb),0.08)] hover:shadow-[0_0_45px_rgba(var(--primary-rgb),0.35)]'
-    : isIdling
-      ? 'border-amber-500/25 hover:border-amber-500/40 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]'
-      : 'hover:border-primary/30 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]';
+  // The card's primary surface escalates with the state, not just liveness:
+  // a card blocked on the user or stalled must read different from ordinary
+  // thinking at arm's length, not only in the 9px chip.
+  const cardGlowClass =
+    state === 'needs-input'
+      ? 'border-amber-400/40 shadow-[0_0_25px_rgba(251,191,36,0.12)] hover:shadow-[0_0_35px_rgba(251,191,36,0.18)]'
+      : state === 'stalled'
+        ? 'border-orange-400/40 shadow-[0_0_25px_rgba(251,146,60,0.10)] hover:shadow-[0_0_35px_rgba(251,146,60,0.16)]'
+        : isLive
+          ? 'border-primary/50 shadow-[0_0_35px_rgba(var(--primary-rgb),0.25),0_0_70px_rgba(var(--primary-rgb),0.08)] hover:shadow-[0_0_45px_rgba(var(--primary-rgb),0.35)]'
+          : isIdling
+            ? 'border-amber-500/25 hover:border-amber-500/40 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]'
+            : 'hover:border-primary/30 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]';
 
   return (
     <div
@@ -351,7 +359,7 @@ export function AgentCard({
               e.stopPropagation();
               onKill(agent.id);
             }}
-            className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+            className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 focus-visible:opacity-100"
             title="Terminate Agent"
             aria-label="Terminate Agent"
           >

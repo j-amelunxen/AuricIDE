@@ -479,6 +479,24 @@ describe('AgentCard – replying from the card', () => {
   });
 });
 
+describe('AgentCard – attention escalation on the surface', () => {
+  it('paints a blocked card amber, not just its chip', () => {
+    // At arm's length the chip is 9px — the card surface itself must read
+    // different from ordinary thinking when the agent waits on a human.
+    const { container } = render(
+      <AgentCard agent={{ ...makeLiveAgent(), awaitingInput: true }} onKill={vi.fn()} />
+    );
+    expect(container.firstElementChild?.className).toContain('border-amber');
+  });
+
+  it('keeps the terminate control visible to keyboard focus', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Terminate Agent' }).className).toContain(
+      'focus-visible:opacity-100'
+    );
+  });
+});
+
 describe('AgentCard – nudging a stalled agent', () => {
   const stalled: AgentInfo = {
     ...runningAgent,
