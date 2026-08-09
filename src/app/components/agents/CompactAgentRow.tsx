@@ -26,6 +26,8 @@ export interface CompactAgentRowProps {
   onContextMenu?: (e: React.MouseEvent, id: string) => void;
   /** True while a stopped agent's outcome has not been opened yet. */
   unseen?: boolean;
+  /** Relaunch a failed agent with its original config. Omit to hide. */
+  onRetry?: (id: string) => void;
 }
 
 const DOT_BY_STATUS: Record<AgentInfo['status'], string> = {
@@ -50,6 +52,7 @@ export function CompactAgentRow({
   color,
   onContextMenu,
   unseen = false,
+  onRetry,
 }: CompactAgentRowProps) {
   const now = useNow();
   const dot = isAgentLive(agent, now) ? 'bg-primary' : DOT_BY_STATUS[agent.status];
@@ -144,6 +147,21 @@ export function CompactAgentRow({
           ? `${formatAgentDuration(now - agent.finishedAt)} ago`
           : formatAgentDuration(now - agent.startedAt)}
       </span>
+      {/* The most likely next action on a failure: run it again, exact same
+          config — rebuilding the launch by hand was the expensive part. */}
+      {onRetry && agent.status === 'error' && (
+        <button
+          type="button"
+          onClick={() => onRetry(agent.id)}
+          aria-label={`Retry ${agent.name}`}
+          title={`Retry ${agent.name} with the same configuration`}
+          className="flex-shrink-0 rounded p-0.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
+            replay
+          </span>
+        </button>
+      )}
       <button
         type="button"
         onClick={() => onDismiss(agent.id)}

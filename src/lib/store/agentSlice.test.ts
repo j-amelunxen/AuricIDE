@@ -201,6 +201,50 @@ describe('agentSlice', () => {
     expect(store.getState().agents[0].finishedAt).toBeUndefined();
   });
 
+  it('retries a failed agent with its original launch config', async () => {
+    const { spawnAgent } = await import('../tauri/agents');
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+      permissionMode: 'acceptEdits',
+    });
+    store.getState().updateAgentStatus('mock-agent-1', 'error');
+
+    vi.mocked(spawnAgent).mockResolvedValueOnce({
+      id: 'mock-agent-2',
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      provider: 'claude',
+      status: 'running',
+      currentTask: 'Write docs',
+      startedAt: 2000,
+    });
+    const replacement = await store.getState().retryFailedAgent('mock-agent-1');
+
+    // The exact config again — permission mode included, not a downgraded
+    // reconstruction from the agent's display fields.
+    expect(spawnAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ task: 'Write docs', permissionMode: 'acceptEdits' })
+    );
+    expect(replacement?.id).toBe('mock-agent-2');
+    // The failed run is answered by its retry — it leaves the review pile.
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['mock-agent-2']);
+  });
+
+  it('refuses to retry an agent that is not in error', async () => {
+    const { spawnAgent } = await import('../tauri/agents');
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    vi.mocked(spawnAgent).mockClear();
+
+    expect(await store.getState().retryFailedAgent('mock-agent-1')).toBeNull();
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
   it('marks a finished agent reviewed when its logs are opened', async () => {
     await store.getState().spawnNewAgent({
       name: 'Writer',

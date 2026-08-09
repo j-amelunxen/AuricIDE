@@ -72,6 +72,12 @@ export interface AgentSlice {
    * logs were looked at, so nothing slips silently off the review pile.
    */
   reviewedAgentIds: string[];
+  /**
+   * The exact config each agent was launched with, kept for one-click retry.
+   * AgentInfo alone cannot reconstruct a launch — permission mode and
+   * headless are not display fields.
+   */
+  agentSpawnConfigs: Record<string, AgentConfig>;
   /** Previously used start prompts for the open project, newest first. */
   promptHistory: string[];
   setAgentMinimized: (agentId: string, minimized: boolean) => void;
@@ -79,6 +85,8 @@ export interface AgentSlice {
   setAgentColor: (agentId: string, color: AgentColor | null) => void;
   loadPromptHistory: (projectPath: string) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
+  /** Relaunches a failed agent with its original config; null if not failed. */
+  retryFailedAgent: (agentId: string) => Promise<AgentInfo | null>;
   killRunningAgent: (agentId: string) => Promise<void>;
   renameRunningAgent: (agentId: string, name: string) => Promise<void>;
   dismissFinishedAgent: (agentId: string) => void;
@@ -134,6 +142,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   collapsedAgentRepos: [],
   agentColors: {},
   reviewedAgentIds: [],
+  agentSpawnConfigs: {},
   promptHistory: [],
 
   setAgentColor: (agentId, color) => {
@@ -188,7 +197,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       get().agents.map((a) => a.name)
     );
     const named = name === agent.name ? agent : { ...agent, name };
-    set({ agents: [...get().agents, named] });
+    set({
+      agents: [...get().agents, named],
+      // Kept verbatim for one-click retry — permission mode and headless
+      // cannot be reconstructed from the agent's display fields.
+      agentSpawnConfigs: { ...get().agentSpawnConfigs, [agent.id]: config },
+    });
 
     // Keep the backend's copy in step so the name survives a restart-resume.
     // Guarded: a label is cosmetic and must never take a spawn down with it.
@@ -239,6 +253,28 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       }
     }
     return named;
+  },
+
+  retryFailedAgent: async (agentId) => {
+    const state = get();
+    const failed = state.agents.find((a) => a.id === agentId);
+    // Only a failure earns a retry — rerunning a clean result silently would
+    // double its side effects.
+    if (!failed || failed.status !== 'error') return null;
+
+    const config = state.agentSpawnConfigs[agentId] ?? {
+      name: failed.name,
+      model: failed.model,
+      task: failed.currentTask ?? 'wait',
+      cwd: failed.repoPath,
+      provider: failed.provider,
+      spawnedByTicketId: failed.spawnedByTicketId,
+      spawnedByGoalId: failed.spawnedByGoalId,
+    };
+    const replacement = await get().spawnNewAgent(config);
+    // The failed run is answered by its retry — it leaves the review pile.
+    get().dismissFinishedAgent(agentId);
+    return replacement;
   },
 
   killRunningAgent: async (agentId) => {
@@ -313,7 +349,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     const { [agentId]: _logs, ...remainingLogs } = agentLogs;
     const { [agentId]: _meta, ...remainingMeta } = agentLogMeta;
+    const { [agentId]: _config, ...remainingConfigs } = get().agentSpawnConfigs;
     set({
+      agentSpawnConfigs: remainingConfigs,
       agents: agents.filter((a) => a.id !== agentId),
       agentLogs: remainingLogs,
       agentLogMeta: remainingMeta,
@@ -366,6 +404,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => !evictedIds.has(id)),
       agentColors: withoutColors(get().agentColors, (id) => evictedIds.has(id)),
       reviewedAgentIds: get().reviewedAgentIds.filter((id) => !evictedIds.has(id)),
+      agentSpawnConfigs: Object.fromEntries(
+        Object.entries(get().agentSpawnConfigs).filter(([id]) => !evictedIds.has(id))
+      ),
     });
   },
 

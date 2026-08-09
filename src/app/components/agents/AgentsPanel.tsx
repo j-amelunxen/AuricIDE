@@ -38,6 +38,8 @@ export interface AgentsPanelProps {
   onSetColor?: (agentId: string, color: AgentColor | null) => void;
   /** Stopped agents whose outcome has been opened — the rest show unseen. */
   reviewedAgentIds?: string[];
+  /** Relaunch a failed agent with its original config. */
+  onRetryFailed?: (agentId: string) => void;
 }
 
 export function AgentsPanel({
@@ -60,6 +62,7 @@ export function AgentsPanel({
   agentColors = {},
   onSetColor,
   reviewedAgentIds = [],
+  onRetryFailed,
 }: AgentsPanelProps): React.JSX.Element {
   const [colorMenu, setColorMenu] = useState<{ x: number; y: number; agentId: string } | null>(
     null
@@ -274,6 +277,7 @@ export function AgentsPanel({
                 onDismiss={agent.status === 'error' ? (id) => onDismissFinished?.(id) : confirmKill}
                 color={agentColors[agent.id]}
                 onContextMenu={onSetColor && openColorMenu}
+                onRetry={onRetryFailed}
               />
             ))}
           </div>
@@ -459,6 +463,7 @@ export function AgentsPanel({
                 color={agentColors[agent.id]}
                 onContextMenu={onSetColor && openColorMenu}
                 unseen={!reviewedAgentIds.includes(agent.id)}
+                onRetry={onRetryFailed}
               />
             ))}
           </div>

@@ -505,6 +505,7 @@ export default function Home() {
             agentColors={state.agentColors}
             onSetColor={state.setAgentColor}
             reviewedAgentIds={state.reviewedAgentIds}
+            onRetryFailed={state.retryFailedAgent}
           />
         }
         bottomPanel={
