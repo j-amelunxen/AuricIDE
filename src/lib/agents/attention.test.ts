@@ -4,6 +4,7 @@ import {
   needsAttention,
   countNeedingAttention,
   nextAttentionAgentId,
+  withReviewFlags,
   AGENT_STALL_MS,
 } from './attention';
 import { AGENT_LIVE_WINDOW_MS } from './liveness';
@@ -45,6 +46,36 @@ describe('agentAttention', () => {
   it('is calm about done and queued agents — they ask nothing of you', () => {
     expect(agentAttention(agent({ status: 'idle' }), NOW)).toBeNull();
     expect(agentAttention(agent({ status: 'queued' }), NOW)).toBeNull();
+  });
+});
+
+describe('agentAttention — reviewed failures', () => {
+  it('stops counting a failure once its outcome was reviewed', () => {
+    // Opening the logs is the acknowledgement: the user has seen it and now
+    // owns the decision to retry or dismiss. Keeping the badge lit past that
+    // point would make the alarm unquittable — and ignored.
+    expect(agentAttention(agent({ status: 'error', reviewed: true }), NOW)).toBeNull();
+    expect(agentAttention(agent({ status: 'error', reviewed: false }), NOW)).toBe('error');
+    expect(agentAttention(agent({ status: 'error' }), NOW)).toBe('error');
+  });
+
+  it('never quiets a running agent through review — there is no outcome yet', () => {
+    expect(
+      agentAttention(agent({ reviewed: true, lastActivityAt: NOW - AGENT_STALL_MS - 1 }), NOW)
+    ).toBe('stalled');
+  });
+});
+
+describe('withReviewFlags', () => {
+  it('marks exactly the reviewed agents', () => {
+    const flagged = withReviewFlags(
+      [
+        { id: 'a', status: 'error' as const, lastActivityAt: undefined },
+        { id: 'b', status: 'error' as const, lastActivityAt: undefined },
+      ],
+      ['b']
+    );
+    expect(flagged.map((a) => a.reviewed)).toEqual([false, true]);
   });
 });
 

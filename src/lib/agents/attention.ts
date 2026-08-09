@@ -19,10 +19,18 @@ export const AGENT_STALL_MS = 120_000;
 export type AttentionReason = 'error' | 'needs-input' | 'stalled';
 
 /** The slice of an agent the attention model reads. */
-export type AttentionInput = Pick<AgentInfo, 'status' | 'lastActivityAt' | 'awaitingInput'>;
+export type AttentionInput = Pick<AgentInfo, 'status' | 'lastActivityAt' | 'awaitingInput'> & {
+  /**
+   * True once the user opened this stopped agent's outcome. A reviewed
+   * failure stops claiming attention: the acknowledgement is the review, and
+   * an alarm that cannot be quitted is an alarm that gets ignored. Running
+   * agents are never quieted this way — there is no outcome to review yet.
+   */
+  reviewed?: boolean;
+};
 
 export function agentAttention(agent: AttentionInput, now: number): AttentionReason | null {
-  if (agent.status === 'error') return 'error';
+  if (agent.status === 'error') return agent.reviewed ? null : 'error';
   if (agent.status !== 'running') return null;
   // Checked before the stall clock: a permission menu redraws itself, keeping
   // lastActivityAt fresh — a blocked agent that looks busy must still surface.
@@ -41,6 +49,17 @@ export function needsAttention(agent: AttentionInput, now: number): boolean {
 /** How many agents in the fleet currently need a human. */
 export function countNeedingAttention(agents: AttentionInput[], now: number): number {
   return agents.reduce((n, agent) => n + (needsAttention(agent, now) ? 1 : 0), 0);
+}
+
+/**
+ * Stamps each agent with whether its outcome has been reviewed, so the
+ * attention functions can be fed straight from the store's list + id set.
+ */
+export function withReviewFlags<T extends { id: string }>(
+  agents: T[],
+  reviewedAgentIds: readonly string[]
+): (T & { reviewed: boolean })[] {
+  return agents.map((agent) => ({ ...agent, reviewed: reviewedAgentIds.includes(agent.id) }));
 }
 
 /**
