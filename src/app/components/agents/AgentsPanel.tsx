@@ -324,6 +324,16 @@ export function AgentsPanel({
                           {groupAgents.length}
                         </span>
                       )}
+                      {/* Folding hides cards, never facts: a hidden agent's
+                          claim on the user stays visible on the fold. */}
+                      {isCollapsed && groupAgents.some((a) => needsAttention(a, now)) && (
+                        <span
+                          data-testid="repo-attention-dot"
+                          role="img"
+                          aria-label="An agent in this group needs attention"
+                          className="ml-0.5 h-1.5 w-1.5 rounded-full bg-amber-400"
+                        />
+                      )}
                     </button>
                   ) : (
                     <span className="text-xs font-semibold text-foreground-muted">{repoName}</span>
