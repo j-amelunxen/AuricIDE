@@ -61,6 +61,28 @@ describe('deriveAgentActivity', () => {
     expect(result?.endsWith('…')).toBe(true);
   });
 
+  it('strips a braille spinner frame but keeps the words next to it', () => {
+    // CLI spinners cycle through ⠋⠙⠹… many times a second; the frame is
+    // noise, the caption beside it is the actual activity.
+    expect(deriveAgentActivity(['⠹ Analyzing dependencies\n'])).toBe('Analyzing dependencies');
+  });
+
+  it('skips a line that is only a progress bar', () => {
+    expect(deriveAgentActivity(['Editing setup.ts\n', '███████░░░░░ 45%\n'])).toBe(
+      'Editing setup.ts'
+    );
+  });
+
+  it('skips a bare percentage tick', () => {
+    // "62%" alone flickers up several times a second and says nothing about
+    // what the number measures.
+    expect(deriveAgentActivity(['Uploading bundle\n', '62%\n'])).toBe('Uploading bundle');
+  });
+
+  it('still reports a progress line that carries words', () => {
+    expect(deriveAgentActivity(['Compiling 45% (312/700)\n'])).toBe('Compiling 45% (312/700)');
+  });
+
   it('returns null when there is nothing to report', () => {
     expect(deriveAgentActivity([])).toBeNull();
     expect(deriveAgentActivity(['\n', '  ', '─────'])).toBeNull();
