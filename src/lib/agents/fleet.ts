@@ -40,7 +40,9 @@ export function splitFleet(agents: AgentInfo[], minimizedAgentIds: string[]): Fl
     (a, b) =>
       (ACTIVE_RANK[a.status] ?? 2) - (ACTIVE_RANK[b.status] ?? 2) || a.startedAt - b.startedAt
   );
-  finished.sort((a, b) => b.startedAt - a.startedAt);
+  // By when they stopped, not when they started: the review list reads
+  // newest-outcome-first, and a long runner that just failed is fresh news.
+  finished.sort((a, b) => (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt));
 
   // Ordered by the park list, not by the fleet — parking order is the order
   // the user set them aside in.
