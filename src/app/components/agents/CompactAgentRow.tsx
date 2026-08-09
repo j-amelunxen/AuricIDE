@@ -115,6 +115,17 @@ export function CompactAgentRow({
             {errorDigest}
           </span>
         )}
+        {/* A parked agent is still being supervised — the one-line activity
+            is what lets that happen without restoring the card. Running
+            agents only: a frozen last line would read as ongoing work. */}
+        {!errorDigest && agent.status === 'running' && agent.currentActivity && (
+          <span
+            data-testid="agent-row-activity"
+            className="ml-1.5 font-mono text-[9px] text-foreground-muted/50"
+          >
+            {agent.currentActivity}
+          </span>
+        )}
       </button>
       {/* One number, chosen by state. Parked and running: how long it has
           been going. Stopped: how fresh the outcome is — a review list sorts
