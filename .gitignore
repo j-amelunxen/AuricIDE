@@ -69,3 +69,6 @@ public/excalidraw-assets/
 
 # CodeGraph local index
 .codegraph/
+
+# Generated promo/marketing assets (Higgsfield experiments) — keep out of the repo
+promo-assets/
