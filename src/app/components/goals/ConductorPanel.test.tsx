@@ -46,11 +46,16 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     providers: [],
     providerId: null,
     model: null,
+    requireReview: false,
+    judgeForm: 'llm' as const,
+    judgeConfigured: true,
     onStart: vi.fn(),
     onStop: vi.fn(),
     onSetMaxConcurrent: vi.fn(),
     onSetProvider: vi.fn(),
     onSetModel: vi.fn(),
+    onSetRequireReview: vi.fn(),
+    onSetJudgeForm: vi.fn(),
     onApprove: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
@@ -211,7 +216,14 @@ describe('ConductorPanel', () => {
 });
 
 describe('ConductorPanel preflight', () => {
-  const preflight = { ready: 0, blocked: 0, needsApproval: 0, inProgress: 0, exhausted: 0 };
+  const preflight = {
+    ready: 0,
+    blocked: 0,
+    needsApproval: 0,
+    inProgress: 0,
+    inReview: 0,
+    exhausted: 0,
+  };
 
   it('says what a run would pick up before it starts', () => {
     renderPanel({ preflight: { ...preflight, ready: 3 } });
@@ -270,5 +282,25 @@ describe('ConductorPanel preflight', () => {
   it('renders without a preflight prop', () => {
     renderPanel();
     expect(screen.queryByTestId('conductor-preflight')).not.toBeInTheDocument();
+  });
+
+  describe('judge review toggle', () => {
+    it('is disabled when no judge model is configured', () => {
+      renderPanel({ judgeConfigured: false });
+      expect(screen.getByTestId('conductor-require-review')).toBeDisabled();
+    });
+
+    it('toggles review on via the setter when a judge model is configured', () => {
+      const props = renderPanel({ judgeConfigured: true, requireReview: false });
+      fireEvent.click(screen.getByTestId('conductor-require-review'));
+      expect(props.onSetRequireReview).toHaveBeenCalledWith(true);
+    });
+
+    it('shows the judge form picker only when review is on', () => {
+      renderPanel({ requireReview: false, judgeConfigured: true });
+      expect(screen.queryByTestId('conductor-judge-form')).not.toBeInTheDocument();
+      renderPanel({ requireReview: true, judgeConfigured: true });
+      expect(screen.getByTestId('conductor-judge-form')).toBeInTheDocument();
+    });
   });
 });

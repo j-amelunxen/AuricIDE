@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useIDEHandlers } from './useIDEHandlers';
+import { CONTEXT_BOUND_COMMANDS, useIDEHandlers } from './useIDEHandlers';
+import { defaultCommands } from '@/lib/commands/registry';
 
 // Mock Tauri FS
 const mockReadDirectory = vi.fn();
@@ -11,6 +12,7 @@ const mockCreateDirectory = vi.fn();
 const mockListAllFiles = vi.fn();
 const mockMovePath = vi.fn();
 const mockExists = vi.fn();
+const mockDeleteFile = vi.fn();
 
 vi.mock('@/lib/tauri/fs', () => ({
   readDirectory: (...args: unknown[]) => mockReadDirectory(...args),
@@ -21,6 +23,7 @@ vi.mock('@/lib/tauri/fs', () => ({
   listAllFiles: (...args: unknown[]) => mockListAllFiles(...args),
   movePath: (...args: unknown[]) => mockMovePath(...args),
   exists: (...args: unknown[]) => mockExists(...args),
+  deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
 }));
 
 const mockRevealInFileManager = vi.fn();
@@ -30,16 +33,23 @@ vi.mock('@/lib/tauri/opener', () => ({
 
 // Mock Store
 const mockRefreshGitStatus = vi.fn();
+const mockStageAll = vi.fn();
 const mockMarkDirty = vi.fn();
 const mockUpdateFileInIndex = vi.fn();
 const mockShowToast = vi.fn();
 const mockSaveGoals = vi.fn();
 let mockFileTree: unknown[] = [];
 let mockActiveTabId: string | null = null;
+let mockScratchDir: string | null = null;
+let mockScratches: { name: string; path: string }[] = [];
+const mockInitScratches = vi.fn(async () => {});
+const mockRefreshScratches = vi.fn(async () => {});
 vi.mock('@/lib/store', () => ({
   useStore: {
     getState: () => ({
       refreshGitStatus: mockRefreshGitStatus,
+      stageAll: mockStageAll,
+      rootPath: '/p',
       fileStatuses: [],
       activeTabId: mockActiveTabId,
       fileTree: mockFileTree,
@@ -47,6 +57,10 @@ vi.mock('@/lib/store', () => ({
       markDirty: mockMarkDirty,
       updateFileInIndex: mockUpdateFileInIndex,
       showToast: mockShowToast,
+      scratchDir: mockScratchDir,
+      scratches: mockScratches,
+      initScratches: mockInitScratches,
+      refreshScratches: mockRefreshScratches,
     }),
   },
 }));
@@ -60,6 +74,7 @@ describe('useIDEHandlers', () => {
     setFileTree: vi.fn(),
     setDirectoryChildren: vi.fn(),
     toggleExpand: vi.fn(),
+    closeTab: vi.fn(),
     closeAllTabs: vi.fn(),
     clearLinkIndex: vi.fn(),
     clearHeadingIndex: vi.fn(),
@@ -1021,6 +1036,153 @@ describe('useIDEHandlers', () => {
       const { result } = renderHook(() => useIDEHandlers(editorState));
       await result.current.handleSave();
       expect(mockWriteFile).toHaveBeenCalledWith('/project/notes.md', '# Notes');
+    });
+  });
+
+  describe('scratch files', () => {
+    beforeEach(() => {
+      mockScratchDir = '/data/scratches';
+      mockScratches = [];
+      mockWriteFile.mockResolvedValue(undefined);
+      mockDeleteFile.mockResolvedValue(undefined);
+      mockMovePath.mockResolvedValue(undefined);
+    });
+
+    it('creates the next scratch file and opens it, without requiring a project', async () => {
+      mockState.rootPath = null;
+      mockScratches = [{ name: 'scratch-2.md', path: '/data/scratches/scratch-2.md' }];
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewScratch();
+
+      expect(mockWriteFile).toHaveBeenCalledWith('/data/scratches/scratch-3.md', '');
+      expect(mockRefreshScratches).toHaveBeenCalled();
+      expect(mockState.openTab).toHaveBeenCalledWith(
+        expect.objectContaining({ path: '/data/scratches/scratch-3.md' })
+      );
+    });
+
+    it('resolves the scratch dir on first use', async () => {
+      mockScratchDir = null;
+      mockInitScratches.mockImplementationOnce(async () => {
+        mockScratchDir = '/data/scratches';
+      });
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewScratch();
+
+      expect(mockInitScratches).toHaveBeenCalled();
+      expect(mockWriteFile).toHaveBeenCalledWith('/data/scratches/scratch-1.md', '');
+    });
+
+    it('reports an error when the scratch dir cannot be resolved', async () => {
+      mockScratchDir = null;
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleNewScratch();
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'error');
+    });
+
+    it('flushes pending autosaves before deleting, so the file cannot be resurrected', async () => {
+      const path = '/data/scratches/scratch-1.md';
+      const scratchState = { ...mockState, activeTabId: path, markDirty: vi.fn() };
+      const { result } = renderHook(() => useIDEHandlers(scratchState));
+
+      result.current.handleEditorChange('draft to flush');
+      await result.current.handleDeleteScratch(path);
+
+      // The debounced write must land before the delete, never after it.
+      expect(mockWriteFile).toHaveBeenCalledWith(path, 'draft to flush');
+      const writeOrder = mockWriteFile.mock.invocationCallOrder[0];
+      const deleteOrder = mockDeleteFile.mock.invocationCallOrder[0];
+      expect(writeOrder).toBeLessThan(deleteOrder);
+      expect(scratchState.closeTab).toHaveBeenCalledWith(path);
+      expect(mockRefreshScratches).toHaveBeenCalled();
+    });
+
+    it('clean-all deletes every scratch and closes their tabs', async () => {
+      mockScratches = [
+        { name: 'scratch-2.md', path: '/data/scratches/scratch-2.md' },
+        { name: 'scratch-1.md', path: '/data/scratches/scratch-1.md' },
+      ];
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCleanAllScratches();
+
+      expect(mockDeleteFile).toHaveBeenCalledTimes(2);
+      expect(mockState.closeTab).toHaveBeenCalledWith('/data/scratches/scratch-2.md');
+      expect(mockState.closeTab).toHaveBeenCalledWith('/data/scratches/scratch-1.md');
+      expect(mockRefreshScratches).toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('2'), 'success');
+    });
+
+    it('renames a scratch and keeps the open tab pointing at the new path', async () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameScratch('/data/scratches/scratch-1.md', 'api-notes');
+
+      expect(mockMovePath).toHaveBeenCalledWith(
+        '/data/scratches/scratch-1.md',
+        '/data/scratches/api-notes.md'
+      );
+      expect(mockState.renamePath).toHaveBeenCalledWith(
+        '/data/scratches/scratch-1.md',
+        '/data/scratches/api-notes.md'
+      );
+      expect(mockRefreshScratches).toHaveBeenCalled();
+    });
+
+    it('rejects a rename that collides with an existing scratch', async () => {
+      mockScratches = [{ name: 'api-notes.md', path: '/data/scratches/api-notes.md' }];
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameScratch('/data/scratches/scratch-1.md', 'api-notes');
+
+      expect(mockMovePath).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('api-notes.md'), 'error');
+    });
+  });
+
+  describe('command coverage', () => {
+    // A command that is offered but does nothing is a lie the caller cannot
+    // see: the palette closes, the menu item flashes, and an external driver
+    // reads it as success. Every declared command must either do its work or
+    // say out loud that it cannot — never shrug.
+    it('leaves no declared command without an action or a stated context', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      const performable = new Set(result.current.performableCommandIds);
+
+      const shrugging = defaultCommands
+        .map((c) => c.id)
+        .filter((id) => !performable.has(id) && !(id in CONTEXT_BOUND_COMMANDS));
+
+      expect(shrugging).toEqual([]);
+    });
+
+    it('explains a context-bound command instead of doing nothing', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'markdown.rename-heading')!.action();
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('F2'), 'info');
+    });
+
+    it('names every context-bound command in the registry', () => {
+      const declared = new Set(defaultCommands.map((c) => c.id));
+      const orphans = Object.keys(CONTEXT_BOUND_COMMANDS).filter((id) => !declared.has(id));
+
+      // A hint for a command nobody offers is dead weight that will rot.
+      expect(orphans).toEqual([]);
+    });
+
+    it('stages every changed file for git.stage-all', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'git.stage-all')!.action();
+
+      expect(mockStageAll).toHaveBeenCalledWith('/p');
     });
   });
 });

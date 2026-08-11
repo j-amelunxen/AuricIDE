@@ -32,6 +32,7 @@ type SortKey = 'name' | 'status' | 'priority' | 'createdAt';
 const statusLabel: Record<PmTicket['status'], string> = {
   open: 'Open',
   in_progress: 'IP',
+  in_review: 'Review',
   done: 'Done',
   archived: 'Archived',
 };
@@ -39,6 +40,7 @@ const statusLabel: Record<PmTicket['status'], string> = {
 const statusBadge: Record<PmTicket['status'], string> = {
   open: 'bg-white/10 text-foreground-muted',
   in_progress: 'bg-yellow-500/10 text-git-modified',
+  in_review: 'bg-indigo-500/10 text-indigo-300',
   done: 'bg-green-500/10 text-git-added',
   archived: 'bg-purple-500/10 text-purple-400',
 };
@@ -46,6 +48,7 @@ const statusBadge: Record<PmTicket['status'], string> = {
 const statusDot: Record<PmTicket['status'], string> = {
   open: 'bg-white/25',
   in_progress: 'bg-yellow-400/60',
+  in_review: 'bg-indigo-400/60',
   done: 'bg-green-400/60',
   archived: 'bg-purple-400/60',
 };

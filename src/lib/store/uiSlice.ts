@@ -27,15 +27,20 @@ export interface UISlice {
   initialAgentTask: string;
   cliConnected: boolean;
   llmConfigured: boolean;
+  /** True when a SEPARATE judge model is configured (judge_llm_settings has an
+   * api_key). Gates the LLM-judge review — without it a claim stays blocking. */
+  judgeLlmConfigured: boolean;
   agentSettings: AgentSettings;
   enableDeepNlp: boolean;
   importSpecDialogOpen: boolean;
+  videoImportDialogOpen: boolean;
   referencesPanelOpen: boolean;
   referencesPanelQuery: string;
   referencesPanelResults: ReferenceResult[];
   providers: ProviderInfo[];
 
   setImportSpecDialogOpen: (open: boolean) => void;
+  setVideoImportDialogOpen: (open: boolean) => void;
   addTerminalLog: (log: LogEntry) => void;
   clearTerminalLogs: (tab?: string) => void;
   setCursorPos: (line: number, col: number) => void;
@@ -49,6 +54,7 @@ export interface UISlice {
   setInitialAgentTask: (task: string) => void;
   setCliConnected: (connected: boolean) => void;
   setLlmConfigured: (configured: boolean) => void;
+  setJudgeLlmConfigured: (configured: boolean) => void;
   setEnableDeepNlp: (enabled: boolean) => void;
   updateAgentSettings: (settings: Partial<AgentSettings>) => void;
   setReferencesPanel: (open: boolean, query?: string, results?: ReferenceResult[]) => void;
@@ -68,8 +74,10 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   initialAgentTask: '',
   cliConnected: false,
   llmConfigured: false,
+  judgeLlmConfigured: false,
   enableDeepNlp: false,
   importSpecDialogOpen: false,
+  videoImportDialogOpen: false,
   referencesPanelOpen: false,
   referencesPanelQuery: '',
   referencesPanelResults: [],
@@ -118,10 +126,12 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   setCliConnected: (connected) => set({ cliConnected: connected }),
 
   setLlmConfigured: (configured) => set({ llmConfigured: configured }),
+  setJudgeLlmConfigured: (configured) => set({ judgeLlmConfigured: configured }),
 
   setEnableDeepNlp: (enabled) => set({ enableDeepNlp: enabled }),
 
   setImportSpecDialogOpen: (open) => set({ importSpecDialogOpen: open }),
+  setVideoImportDialogOpen: (open) => set({ videoImportDialogOpen: open }),
 
   updateAgentSettings: (newSettings) =>
     set((state) => ({

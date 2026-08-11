@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { LlmContent } from './settings/LlmContent';
+import { JudgeLlmContent } from './settings/JudgeLlmContent';
 import { AgentContent } from './settings/AgentContent';
 import { CommandsContent } from './settings/CommandsContent';
 import { EditorContent } from './settings/EditorContent';
@@ -11,6 +12,7 @@ import { SystemContent } from './settings/SystemContent';
 import { McpSettingsContent } from './McpSettingsContent';
 import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
 import { ExcalidrawContent } from './settings/ExcalidrawContent';
+import { VideoImportContent } from './settings/VideoImportContent';
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -20,17 +22,20 @@ export interface SettingsModalProps {
 type SettingsCategory =
   | 'agent'
   | 'llm'
+  | 'judge'
   | 'commands'
   | 'editor'
   | 'appearance'
   | 'system'
   | 'mcp'
   | 'blueprints'
-  | 'excalidraw';
+  | 'excalidraw'
+  | 'video-import';
 
 const CATEGORIES: { id: SettingsCategory; icon: string; label: string }[] = [
   { id: 'agent', icon: 'robot_2', label: 'Agent' },
   { id: 'llm', icon: 'psychology', label: 'LLM' },
+  { id: 'judge', icon: 'gavel', label: 'Judge' },
   { id: 'commands', icon: 'terminal', label: 'Commands' },
   { id: 'editor', icon: 'edit_note', label: 'Editor' },
   { id: 'appearance', icon: 'palette', label: 'Appearance' },
@@ -38,6 +43,7 @@ const CATEGORIES: { id: SettingsCategory; icon: string; label: string }[] = [
   { id: 'mcp', icon: 'hub', label: 'MCP' },
   { id: 'blueprints', icon: 'sync', label: 'Blueprints' },
   { id: 'excalidraw', icon: 'draw', label: 'Excalidraw+' },
+  { id: 'video-import', icon: 'video_file', label: 'Video Import' },
 ];
 
 function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
@@ -58,6 +64,8 @@ function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
         return <AgentContent />;
       case 'llm':
         return <LlmContent />;
+      case 'judge':
+        return <JudgeLlmContent />;
       case 'commands':
         return <CommandsContent />;
       case 'editor':
@@ -72,6 +80,8 @@ function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
         return <BlueprintSyncContent />;
       case 'excalidraw':
         return <ExcalidrawContent />;
+      case 'video-import':
+        return <VideoImportContent />;
     }
   };
 

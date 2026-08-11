@@ -14,8 +14,16 @@ export interface FsEventRouterOptions {
   onTreeChange: () => void;
   /** Debounced callback for project DB changes (PM/requirements/goals reload). */
   onProjectDataChange: () => void;
+  /**
+   * Debounced callback for evidence re-evaluation. Non-DB changes feed BOTH
+   * the tree and this lane — a file appearing is exactly what a
+   * `file_exists` station predicate is waiting for. The router stays dumb:
+   * whether any open station cares is the callback's job.
+   */
+  onEvidenceChange?: () => void;
   treeDebounceMs?: number;
   dataDebounceMs?: number;
+  evidenceDebounceMs?: number;
 }
 
 export interface FsEventRouter {
@@ -30,10 +38,18 @@ export interface FsEventRouter {
  * and tree changes must not re-read the database.
  */
 export function createFsEventRouter(options: FsEventRouterOptions): FsEventRouter {
-  const { onTreeChange, onProjectDataChange, treeDebounceMs = 300, dataDebounceMs = 500 } = options;
+  const {
+    onTreeChange,
+    onProjectDataChange,
+    onEvidenceChange,
+    treeDebounceMs = 300,
+    dataDebounceMs = 500,
+    evidenceDebounceMs = 1000,
+  } = options;
 
   let treeTimer: ReturnType<typeof setTimeout> | undefined;
   let dataTimer: ReturnType<typeof setTimeout> | undefined;
+  let evidenceTimer: ReturnType<typeof setTimeout> | undefined;
 
   return {
     handle: (event) => {
@@ -43,11 +59,16 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
       } else {
         clearTimeout(treeTimer);
         treeTimer = setTimeout(onTreeChange, treeDebounceMs);
+        if (onEvidenceChange) {
+          clearTimeout(evidenceTimer);
+          evidenceTimer = setTimeout(onEvidenceChange, evidenceDebounceMs);
+        }
       }
     },
     dispose: () => {
       clearTimeout(treeTimer);
       clearTimeout(dataTimer);
+      clearTimeout(evidenceTimer);
     },
   };
 }

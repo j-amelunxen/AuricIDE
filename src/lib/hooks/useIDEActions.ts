@@ -10,6 +10,7 @@ import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
+import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { type useIDEState } from './useIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
 
@@ -27,6 +28,9 @@ export function useIDEActions(
   // Cmd/Ctrl+W closes the active tab, not the window
   useCloseTabShortcut();
 
+  // The native menu runs commands through the same dispatch as the palette
+  useMenuCommands(handlers.handleCommandExecute, state.rootPath);
+
   // On mount: load recent projects and custom slash commands from localStorage
   useEffect(() => {
     state.loadRecentProjects();
@@ -34,6 +38,9 @@ export function useIDEActions(
     state.loadRecentCommands();
     state.loadCustomSlashCommands();
     state.loadBlueprintServerUrl();
+    // Resolve the global scratch dir up front so scratch tabs can be
+    // identified (icon, panel) before the panel is first opened.
+    void useStore.getState().initScratches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -86,6 +93,17 @@ export function useIDEActions(
         void s.loadRequirements(root);
         void s.loadGoals(root);
       },
+      onEvidenceChange: () => {
+        // Lazy: the engine itself skips goals without machine predicates,
+        // so a quiet project costs nothing here.
+        const s = useStore.getState();
+        if (s.goalStationsDraft.length === 0) return;
+        void import('@/lib/evidence/engine').then((m) => {
+          void m.checkFrontStations();
+          // An out-of-band MCP agent may have claimed a station done; judge it.
+          void m.checkClaimedStations();
+        });
+      },
     });
   }
 
@@ -108,7 +126,31 @@ export function useIDEActions(
       },
       [appendAgentLog]
     ),
-    useCallback((event) => updateAgentStatus(event.agentId, event.status), [updateAgentStatus])
+    useCallback(
+      (event) => {
+        updateAgentStatus(event.agentId, event.status);
+        // An agent finishing is the moment its evidence lands: re-check the
+        // front of the goal it worked, whether it succeeded or crashed.
+        if (event.status === 'idle' || event.status === 'error') {
+          const agent = useStore.getState().agents.find((a) => a.id === event.agentId);
+          const goalId =
+            agent?.spawnedByGoalId ??
+            (agent?.spawnedByTicketId
+              ? useStore
+                  .getState()
+                  .goalStationsDraft.find((s) => s.ticketId === agent.spawnedByTicketId)?.goalId
+              : undefined);
+          if (goalId) {
+            void import('@/lib/evidence/engine').then((m) => {
+              void m.checkFrontStations(goalId);
+              // The agent may have claimed a station done — judge it now too.
+              void m.checkClaimedStations(goalId);
+            });
+          }
+        }
+      },
+      [updateAgentStatus]
+    )
   );
 
   useEffect(() => {
@@ -121,6 +163,11 @@ export function useIDEActions(
       m.dbGet(path, 'llm_settings', 'api_key').then((k) => {
         if (canceled) return;
         state.setLlmConfigured(!!k);
+      });
+      // The separate judge model is configured independently.
+      m.dbGet(path, 'judge_llm_settings', 'api_key').then((k) => {
+        if (canceled) return;
+        state.setJudgeLlmConfigured(!!k);
       });
     });
 
@@ -184,6 +231,9 @@ export function useIDEActions(
       } else if (mod && e.shiftKey && e.key === 'F') {
         e.preventDefault();
         state.setFileSelectorOpen(true);
+      } else if (mod && !e.shiftKey && e.key === 'n') {
+        e.preventDefault();
+        void handlers.handleNewScratch();
       } else if (mod && e.key === 'b') {
         e.preventDefault();
         state.setBottomCollapsed(!state.bottomCollapsed);

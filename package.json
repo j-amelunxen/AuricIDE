@@ -32,9 +32,11 @@
     "tauri:machete": "cd src-tauri && cargo machete",
     "knip": "knip",
     "jscpd": "jscpd src",
-    "check:all": "pnpm lint && pnpm format:check && pnpm knip && pnpm jscpd && pnpm test:run && pnpm tauri:test && pnpm tauri:clippy && pnpm tauri:fmt:check && pnpm tauri:machete",
+    "check:all": "pnpm lint && pnpm automation-surface:check && pnpm format:check && pnpm knip && pnpm jscpd && pnpm test:run && pnpm tauri:test && pnpm tauri:clippy && pnpm tauri:fmt:check && pnpm tauri:machete",
     "prepare": "husky",
-    "postinstall": "node scripts/copy-excalidraw-assets.mjs"
+    "postinstall": "node scripts/copy-excalidraw-assets.mjs",
+    "automation-surface": "node scripts/generate-automation-surface.mjs",
+    "automation-surface:check": "node scripts/generate-automation-surface.mjs --check"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",

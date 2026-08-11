@@ -46,10 +46,114 @@ export interface PmGoalRequirementLink {
   createdAt: string;
 }
 
+import type { EvidenceKindValue, StationKind, StationStoredStatus } from '@/lib/pm/enums';
+
+/**
+ * What would prove a station done. `undefined` is the honest placeholder for
+ * "check to be defined" — drawn visibly on the map, never hidden. `human` can
+ * only ever be cleared by a person.
+ */
+export type StationPredicate =
+  | { type: 'undefined' }
+  | { type: 'human' }
+  | { type: 'ticket_done'; ticketId: string }
+  | { type: 'requirement_verified'; requirementId: string }
+  | { type: 'file_exists'; glob: string }
+  | { type: 'git_touches'; pathPrefix: string; sinceIso?: string }
+  | { type: 'judged'; prompt: string };
+
+/** Durable provenance for a station created from external source material. */
+export interface StationSourceContext {
+  importId: string;
+  sourcePath: string;
+  transcriptSegments: Array<{
+    startMs: number;
+    endMs: number;
+    text: string;
+  }>;
+  frames: Array<{
+    timestampMs: number;
+    path: string;
+  }>;
+  notes: string[];
+}
+
+/**
+ * One step of a goal's line. In TS the predicate is a parsed object; over IPC
+ * it travels as a JSON string (the appliesTo pattern) — `parseStationRow` /
+ * `serializeStationRow` are the one boundary.
+ */
+export interface PmGoalStation {
+  id: string;
+  goalId: string;
+  name: string;
+  kind: StationKind;
+  status: StationStoredStatus;
+  evidenceKind: EvidenceKindValue;
+  predicate: StationPredicate;
+  evidenceNote: string;
+  /** Source notes and screenshots are explanatory context, not completion evidence. */
+  sourceContext?: StationSourceContext;
+  ticketId: string | null;
+  /** Reserved for branch lines; always 0 for now. */
+  lane: number;
+  sortOrder: number;
+  lastCheckedAt: string | null;
+  doneAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The station exactly as it crosses IPC: predicate still a JSON string. */
+export type PmGoalStationWire = Omit<PmGoalStation, 'predicate' | 'sourceContext'> & {
+  predicate: string;
+  sourceContext?: string;
+};
+
+export function parseStationRow(row: PmGoalStationWire): PmGoalStation {
+  let predicate: StationPredicate = { type: 'undefined' };
+  try {
+    const parsed: unknown = JSON.parse(row.predicate);
+    if (parsed && typeof parsed === 'object' && 'type' in parsed) {
+      predicate = parsed as StationPredicate;
+    }
+  } catch {
+    // A corrupt predicate degrades to "check to be defined" instead of
+    // taking the whole board down; the station stays visibly unproven.
+  }
+  let sourceContext: StationSourceContext | undefined;
+  try {
+    const parsed: unknown = row.sourceContext ? JSON.parse(row.sourceContext) : undefined;
+    if (parsed && typeof parsed === 'object') sourceContext = parsed as StationSourceContext;
+  } catch {
+    // Corrupt optional context must not make the process itself unreadable.
+  }
+  const { sourceContext: _wireContext, ...rest } = row;
+  return { ...rest, predicate, ...(sourceContext ? { sourceContext } : {}) };
+}
+
+export function serializeStationRow(station: PmGoalStation): PmGoalStationWire {
+  const { sourceContext, ...rest } = station;
+  return {
+    ...rest,
+    predicate: JSON.stringify(station.predicate),
+    sourceContext: JSON.stringify(sourceContext ?? null),
+  };
+}
+
 export interface GoalsState {
   goals: PmGoal[];
   goalRuns: PmGoalRun[];
   requirementLinks: PmGoalRequirementLink[];
+  stations: PmGoalStation[];
+}
+
+/** GoalsState as loaded over IPC, before predicates are parsed. */
+interface GoalsStateWire {
+  goals: PmGoal[];
+  goalRuns: PmGoalRun[];
+  requirementLinks: PmGoalRequirementLink[];
+  stations?: PmGoalStationWire[];
 }
 
 /**
@@ -60,16 +164,21 @@ export interface GoalsSyncPayload extends GoalsState {
   deletedGoalIds: string[];
   deletedRunIds: string[];
   deletedLinkIds: string[];
+  deletedStationIds: string[];
 }
 
 import { invoke } from './invoke';
 
 export async function goalsLoad(projectPath: string): Promise<GoalsState> {
-  return await invoke<GoalsState>('goals_load', { projectPath });
+  const wire = await invoke<GoalsStateWire>('goals_load', { projectPath });
+  return { ...wire, stations: (wire.stations ?? []).map(parseStationRow) };
 }
 
 export async function goalsSave(projectPath: string, payload: GoalsSyncPayload): Promise<void> {
-  await invoke('goals_save', { projectPath, payload });
+  await invoke('goals_save', {
+    projectPath,
+    payload: { ...payload, stations: payload.stations.map(serializeStationRow) },
+  });
 }
 
 export async function goalsClear(projectPath: string): Promise<void> {

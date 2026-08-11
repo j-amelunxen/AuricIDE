@@ -59,6 +59,7 @@ function GoalsModalContent() {
   const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
   const setOrchestrationOpen = useStore((s) => s.setOrchestrationOpen);
+  const setGoalLinesOpen = useStore((s) => s.setGoalLinesOpen);
   const loadGoals = useStore((s) => s.loadGoals);
   const goalsLoading = useStore((s) => s.goalsLoading);
   const goalsLoadError = useStore((s) => s.goalsLoadError);
@@ -249,6 +250,15 @@ function GoalsModalContent() {
             >
               <span className="material-symbols-outlined text-sm">graph_3</span>
               Orchestration
+            </button>
+            <button
+              data-testid="goals-goal-lines-btn"
+              onClick={() => setGoalLinesOpen(true)}
+              title="Every goal as a metro line"
+              className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">route</span>
+              Goal Lines
             </button>
             <button
               data-testid="goals-create-btn"

@@ -703,6 +703,184 @@ mod tests {
         );
     }
 
+    // ── Dynamic Provider Tests (Grok Emulation) ───────────────────────
+
+    /// Mirrors dynamic-providers/grok.json. The expected command strings below
+    /// were checked against a real `grok 1.0.0` install, not just its --help.
+    fn get_grok_config() -> ProviderConfig {
+        let json = r#"{
+          "id": "grok",
+          "name": "Grok CLI",
+          "executable": "grok",
+          "arguments": [
+            { "type": "model", "flag": "--model", "ignoreIfAuto": true },
+            { "type": "headless", "flag": "-p" },
+            { "type": "task", "quote": true },
+            { "type": "permission", "map": {
+                "auto": "--permission-mode auto",
+                "acceptEdits": "--permission-mode acceptEdits",
+                "bypassPermissions": "--permission-mode bypassPermissions",
+                "plan": "--permission-mode plan",
+                "default": ""
+              },
+              "fallback": ""
+            }
+          ],
+          "info": {
+            "models": [],
+            "permissionModes": [],
+            "defaultModel": "auto",
+            "defaultPermissionMode": "auto"
+          },
+          "versionCheck": { "command": "grok", "args": ["--version"] },
+          "promptTemplate": "grok -p \""
+        }"#;
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn test_dynamic_grok_interactive_auto() {
+        let provider = DynamicProvider::new(get_grok_config());
+        // grok "task" — the prompt is a positional argument in interactive mode.
+        let cmd =
+            provider.build_spawn_command("auto", "task", Some("default"), false, false, false);
+        assert_eq!(cmd.command, "grok \"task\"");
+    }
+
+    #[test]
+    fn test_dynamic_grok_headless_model() {
+        let provider = DynamicProvider::new(get_grok_config());
+        // grok --model grok-4.5 -p "task" --permission-mode auto
+        let cmd =
+            provider.build_spawn_command("grok-4.5", "task", Some("auto"), false, false, true);
+        assert_eq!(
+            cmd.command,
+            "grok --model grok-4.5 -p \"task\" --permission-mode auto"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_grok_unattended_default_is_guarded_not_bypass() {
+        // Automated spawns (conductor, goal launches) pass no mode at all, so
+        // the configured default decides. It must run without prompting and it
+        // must not be the guardrail-free one.
+        let provider = DynamicProvider::new(get_grok_config());
+        let cmd = provider.build_spawn_command("auto", "task", None, false, false, true);
+        assert_eq!(cmd.command, "grok -p \"task\" --permission-mode auto");
+    }
+
+    #[test]
+    fn test_dynamic_grok_maps_every_offered_permission_mode() {
+        let provider = DynamicProvider::new(get_grok_config());
+        for (mode, expected_flag) in [
+            ("acceptEdits", "--permission-mode acceptEdits"),
+            ("bypassPermissions", "--permission-mode bypassPermissions"),
+            ("plan", "--permission-mode plan"),
+        ] {
+            let cmd = provider.build_spawn_command("auto", "task", Some(mode), false, false, true);
+            assert_eq!(cmd.command, format!("grok -p \"task\" {}", expected_flag));
+        }
+    }
+
+    // ── Dynamic Provider Tests (Codex Emulation) ──────────────────────
+
+    /// Mirrors dynamic-providers/codex.json. Codex splits what other CLIs call
+    /// a permission mode across two flags, and `codex exec` accepts only the
+    /// sandbox half — `--ask-for-approval` exists on the interactive form
+    /// alone, so the shared map may never contain it. The command strings below
+    /// were checked against a real `codex-cli 0.146.1` argument parser.
+    fn get_codex_config() -> ProviderConfig {
+        let json = r#"{
+          "id": "codex",
+          "name": "Codex CLI",
+          "executable": "codex",
+          "arguments": [
+            { "type": "headless", "flag": "exec" },
+            { "type": "model", "flag": "--model", "ignoreIfAuto": true },
+            { "type": "task", "quote": true },
+            { "type": "permission", "map": {
+                "acceptEdits": "--sandbox workspace-write",
+                "bypassPermissions": "--dangerously-bypass-approvals-and-sandbox",
+                "plan": "--sandbox read-only",
+                "default": ""
+              },
+              "fallback": ""
+            }
+          ],
+          "info": {
+            "models": [],
+            "permissionModes": [],
+            "defaultModel": "auto",
+            "defaultPermissionMode": "acceptEdits"
+          },
+          "versionCheck": { "command": "codex", "args": ["--version"] },
+          "promptTemplate": "codex exec \""
+        }"#;
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn test_dynamic_codex_headless_uses_exec_subcommand() {
+        let provider = DynamicProvider::new(get_codex_config());
+        // The subcommand has to lead; --model and the prompt follow it.
+        let cmd = provider.build_spawn_command(
+            "gpt-5.6-sol",
+            "task",
+            Some("acceptEdits"),
+            false,
+            false,
+            true,
+        );
+        assert_eq!(
+            cmd.command,
+            "codex exec --model gpt-5.6-sol \"task\" --sandbox workspace-write"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_codex_interactive_drops_the_subcommand() {
+        let provider = DynamicProvider::new(get_codex_config());
+        let cmd = provider.build_spawn_command("auto", "task", Some("plan"), false, false, false);
+        assert_eq!(cmd.command, "codex \"task\" --sandbox read-only");
+    }
+
+    #[test]
+    fn test_dynamic_codex_unattended_default_sandboxes_the_workspace() {
+        // Automated spawns pass no mode, so the configured default decides. It
+        // must confine writes to the workspace rather than lift the sandbox.
+        let provider = DynamicProvider::new(get_codex_config());
+        let cmd = provider.build_spawn_command("auto", "task", None, false, false, true);
+        assert_eq!(cmd.command, "codex exec \"task\" --sandbox workspace-write");
+    }
+
+    #[test]
+    fn test_dynamic_codex_bypass_is_the_only_mode_without_a_sandbox() {
+        let provider = DynamicProvider::new(get_codex_config());
+        let cmd = provider.build_spawn_command(
+            "auto",
+            "task",
+            Some("bypassPermissions"),
+            false,
+            false,
+            true,
+        );
+        assert_eq!(
+            cmd.command,
+            "codex exec \"task\" --dangerously-bypass-approvals-and-sandbox"
+        );
+        assert!(!cmd.command.contains("--sandbox"));
+    }
+
+    #[test]
+    fn test_dynamic_codex_unoffered_mode_falls_back_to_no_flag() {
+        // Codex has no classifier-guarded mode, so "auto" is not offered. A
+        // spawn default carried over from another provider must not silently
+        // become a sandbox choice — it leaves the decision to codex's config.
+        let provider = DynamicProvider::new(get_codex_config());
+        let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
+        assert_eq!(cmd.command, "codex exec \"task\"");
+    }
+
     // ── CrushProvider Tests ────────────────────────────────────────────
 
     #[test]

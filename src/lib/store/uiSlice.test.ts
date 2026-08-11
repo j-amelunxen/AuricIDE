@@ -33,6 +33,14 @@ describe('uiSlice – agenticCommit settings', () => {
     expect(store.current.agentSettings.agenticCommit).toBe(true);
   });
 
+  it('tracks judgeLlmConfigured independently of llmConfigured', () => {
+    expect(store.current.judgeLlmConfigured).toBe(false);
+    store.current.setJudgeLlmConfigured(true);
+    expect(store.current.judgeLlmConfigured).toBe(true);
+    // The implementer LLM flag is untouched.
+    expect(store.current.llmConfigured).toBe(false);
+  });
+
   it('defaults agenticCommitPrompt to commit prompt with {ticket} placeholder', () => {
     expect(store.current.agentSettings.agenticCommitPrompt).toBe(DEFAULT_PROMPT);
   });
@@ -200,6 +208,18 @@ describe('uiSlice – importSpecDialogOpen', () => {
     store.setImportSpecDialogOpen(true);
     store.setImportSpecDialogOpen(false);
     expect(store.current.importSpecDialogOpen).toBe(false);
+  });
+});
+
+describe('uiSlice – videoImportDialogOpen', () => {
+  it('opens and closes the video import independently', () => {
+    const store = createTestStore();
+    expect(store.current.videoImportDialogOpen).toBe(false);
+    store.setVideoImportDialogOpen(true);
+    expect(store.current.videoImportDialogOpen).toBe(true);
+    expect(store.current.importSpecDialogOpen).toBe(false);
+    store.setVideoImportDialogOpen(false);
+    expect(store.current.videoImportDialogOpen).toBe(false);
   });
 });
 

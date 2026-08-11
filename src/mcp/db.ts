@@ -262,6 +262,56 @@ function runMigrations(db: Database.Database): void {
     `);
     record(13, 'create_pm_goals');
   }
+
+  // Migration #15: Goal line stations. (#14 is agent_prompt_history, Rust-only —
+  // the MCP server never touches it, so the id is skipped here on purpose.)
+  // Keep in sync with src-tauri/src/database.rs migration 15.
+  if (!applied(15)) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pm_goal_stations (
+        id              TEXT PRIMARY KEY,
+        goal_id         TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        kind            TEXT NOT NULL DEFAULT 'normal',
+        status          TEXT NOT NULL DEFAULT 'planned',
+        evidence_kind   TEXT NOT NULL DEFAULT 'claim',
+        predicate       TEXT NOT NULL DEFAULT '{"type":"undefined"}',
+        evidence_note   TEXT NOT NULL DEFAULT '',
+        ticket_id       TEXT REFERENCES pm_tickets(id) ON DELETE SET NULL,
+        lane            INTEGER NOT NULL DEFAULT 0,
+        sort_order      INTEGER NOT NULL DEFAULT 0,
+        last_checked_at TEXT,
+        done_at         TEXT,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_goal_stations_goal ON pm_goal_stations(goal_id);
+    `);
+    record(15, 'create_pm_goal_stations');
+  }
+
+  // Migration #16: Ticket reviews (a review agent's verdict on a finished ticket).
+  // Keep in sync with src-tauri/src/database.rs migration 16.
+  if (!applied(16)) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pm_ticket_reviews (
+        id          TEXT PRIMARY KEY,
+        ticket_id   TEXT NOT NULL REFERENCES pm_tickets(id) ON DELETE CASCADE,
+        verdict     INTEGER NOT NULL,
+        reason      TEXT NOT NULL,
+        reviewer    TEXT NOT NULL DEFAULT '',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_ticket_reviews_ticket ON pm_ticket_reviews(ticket_id);
+    `);
+    record(16, 'create_pm_ticket_reviews');
+  }
+
+  // Migration #17: durable provenance for video/import-created stations.
+  if (!applied(17)) {
+    db.exec(`ALTER TABLE pm_goal_stations ADD COLUMN source_context TEXT NOT NULL DEFAULT 'null'`);
+    record(17, 'add_goal_station_source_context');
+  }
 }
 
 export function openDatabase(path: string): Database.Database {

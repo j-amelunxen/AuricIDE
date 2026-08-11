@@ -7,6 +7,20 @@ use tauri::State;
 pub struct LlmMessage {
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub parts: Vec<LlmContentPart>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LlmContentPart {
+    Text {
+        text: String,
+    },
+    ImageUrl {
+        #[serde(rename = "imageUrl")]
+        image_url: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -16,6 +30,20 @@ pub struct LlmRequest {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub project_path: String,
+    /// Which model config to use: "judge" reads a separate, independently
+    /// configured provider so an LLM review runs on a different model than the
+    /// implementer. Anything else (incl. None) uses the default settings. The
+    /// client never passes a raw namespace — the role maps to a fixed one here.
+    pub role: Option<String>,
+}
+
+/// Maps a request role to the KV namespace its provider settings live in.
+/// Pure and total: an unknown role falls back to the default namespace.
+fn settings_namespace(role: Option<&str>) -> &'static str {
+    match role {
+        Some("judge") => "judge_llm_settings",
+        _ => "llm_settings",
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,6 +62,36 @@ struct OpenAIChoice {
     message: LlmMessage,
 }
 
+fn openai_messages(messages: &[LlmMessage]) -> serde_json::Value {
+    serde_json::Value::Array(
+        messages
+            .iter()
+            .map(|message| {
+                if message.parts.is_empty() {
+                    serde_json::json!({ "role": message.role, "content": message.content })
+                } else {
+                    let mut content = vec![serde_json::json!({
+                        "type": "text",
+                        "text": message.content
+                    })];
+                    for part in &message.parts {
+                        content.push(match part {
+                            LlmContentPart::Text { text } => {
+                                serde_json::json!({ "type": "text", "text": text })
+                            }
+                            LlmContentPart::ImageUrl { image_url } => serde_json::json!({
+                                "type": "image_url",
+                                "image_url": { "url": image_url }
+                            }),
+                        });
+                    }
+                    serde_json::json!({ "role": message.role, "content": content })
+                }
+            })
+            .collect(),
+    )
+}
+
 pub async fn llm_call_impl(
     request: LlmRequest,
     db_state: State<'_, DatabaseState>,
@@ -45,13 +103,16 @@ pub async fn llm_call_impl(
             .get(&request.project_path)
             .ok_or("Database not initialized for this project")?;
 
-        let base_url = kv_get(conn, "llm_settings", "base_url")?
+        let namespace = settings_namespace(request.role.as_deref());
+        let base_url = kv_get(conn, namespace, "base_url")?
             .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
-        let api_key =
-            kv_get(conn, "llm_settings", "api_key")?.ok_or("LLM API Key not configured")?;
-        let model = kv_get(conn, "llm_settings", "model")?
+        // A missing api_key IS the block: a judge namespace with no key makes
+        // this return Err, surfacing upstream as a failed check, never a silent pass.
+        let api_key = kv_get(conn, namespace, "api_key")?
+            .ok_or_else(|| format!("API key not configured for '{}'", namespace))?;
+        let model = kv_get(conn, namespace, "model")?
             .unwrap_or_else(|| "moonshotai/kimi-k2-thinking".to_string());
-        let reasoning_enabled = kv_get(conn, "llm_settings", "reasoning_enabled")?
+        let reasoning_enabled = kv_get(conn, namespace, "reasoning_enabled")?
             .map(|v| v == "true")
             .unwrap_or(true); // Default to true for Kimi Thinking
 
@@ -72,7 +133,7 @@ pub async fn llm_call_impl(
 
     let mut body = serde_json::json!({
         "model": model,
-        "messages": request.messages,
+        "messages": openai_messages(&request.messages),
         "reasoning": {
             "enabled": reasoning_enabled
         }
@@ -118,4 +179,34 @@ pub async fn llm_call_impl(
         .ok_or("No response from LLM")?;
 
     Ok(LlmResponse { content })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{openai_messages, settings_namespace, LlmContentPart, LlmMessage};
+
+    #[test]
+    fn role_maps_to_a_fixed_namespace() {
+        assert_eq!(settings_namespace(Some("judge")), "judge_llm_settings");
+        assert_eq!(settings_namespace(Some("default")), "llm_settings");
+        assert_eq!(settings_namespace(None), "llm_settings");
+        // Unknown roles fall back to default, never an arbitrary namespace.
+        assert_eq!(settings_namespace(Some("../secrets")), "llm_settings");
+    }
+
+    #[test]
+    fn multimodal_parts_map_to_openai_content_without_dropping_the_prompt() {
+        let messages = openai_messages(&[LlmMessage {
+            role: "user".to_string(),
+            content: "Transcript context".to_string(),
+            parts: vec![LlmContentPart::ImageUrl {
+                image_url: "data:image/jpeg;base64,eA==".to_string(),
+            }],
+        }]);
+        assert_eq!(messages[0]["content"][0]["text"], "Transcript context");
+        assert_eq!(
+            messages[0]["content"][1]["image_url"]["url"],
+            "data:image/jpeg;base64,eA=="
+        );
+    }
 }

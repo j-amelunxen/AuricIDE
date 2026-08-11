@@ -21,6 +21,7 @@ import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
 import { type AgentInfo, type AgentConfig } from '@/lib/tauri/agents';
 import { type Command } from '@/lib/commands/registry';
+import { VideoImportDialog } from '@/app/components/videoImport/VideoImportDialog';
 
 interface IDEOverlaysProps {
   // Modals state
@@ -168,6 +169,7 @@ export function IDEOverlays({
         onSpawn={handleSpawnNewAgent}
         workingDirectory={rootPath || ''}
       />
+      <VideoImportDialog />
       <GenerateDiagramDialog
         isOpen={diagramDialogFolder !== null}
         onClose={() => setDiagramDialogFolder(null)}

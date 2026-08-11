@@ -62,4 +62,45 @@ describe('gitSlice', () => {
     await store.getState().unstageFile('/repo', 'file.md');
     expect(mockUnstage).toHaveBeenCalledWith('/repo', ['file.md']);
   });
+
+  describe('stageAll', () => {
+    it('stages every changed path in one call', async () => {
+      const { getGitStatus, stageFiles: mockStage } = await import('../tauri/git');
+      vi.mocked(getGitStatus).mockResolvedValue([
+        { path: 'a.md', status: 'modified' },
+        { path: 'b.md', status: 'added' },
+      ]);
+      await store.getState().refreshGitStatus('/repo');
+
+      await store.getState().stageAll('/repo');
+
+      // One IPC round trip, not one per file.
+      expect(mockStage).toHaveBeenCalledTimes(1);
+      expect(mockStage).toHaveBeenCalledWith('/repo', ['a.md', 'b.md']);
+    });
+
+    it('leaves ignored files alone', async () => {
+      const { getGitStatus, stageFiles: mockStage } = await import('../tauri/git');
+      vi.mocked(getGitStatus).mockResolvedValue([
+        { path: 'a.md', status: 'modified' },
+        { path: 'build/out.js', status: 'ignored' },
+      ]);
+      await store.getState().refreshGitStatus('/repo');
+
+      await store.getState().stageAll('/repo');
+
+      expect(mockStage).toHaveBeenCalledWith('/repo', ['a.md']);
+    });
+
+    it('does not call git when there is nothing to stage', async () => {
+      const { getGitStatus, stageFiles: mockStage } = await import('../tauri/git');
+      vi.mocked(getGitStatus).mockResolvedValue([]);
+      await store.getState().refreshGitStatus('/repo');
+      vi.mocked(mockStage).mockClear();
+
+      await store.getState().stageAll('/repo');
+
+      expect(mockStage).not.toHaveBeenCalled();
+    });
+  });
 });

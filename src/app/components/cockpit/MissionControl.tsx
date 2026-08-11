@@ -75,6 +75,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
   const loadRequirements = useStore((s) => s.loadRequirements);
   const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
   const setImportSpecDialogOpen = useStore((s) => s.setImportSpecDialogOpen);
+  const setVideoImportDialogOpen = useStore((s) => s.setVideoImportDialogOpen);
   const setExcalidrawBrowserOpen = useStore((s) => s.setExcalidrawBrowserOpen);
 
   const conductor = useConductorController();
@@ -200,6 +201,16 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
               className="rounded-xl bg-primary/10 border border-primary/20 px-6 py-2.5 text-xs font-bold text-primary-light transition-[background-color,box-shadow] duration-150 hover:bg-primary/20 hover:shadow-[0_0_25px_rgba(var(--primary-rgb),0.2)] active:scale-[0.98]"
             >
               Import Spec
+            </button>
+            <button
+              data-testid="mc-import-video"
+              onClick={() => setVideoImportDialogOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-white/10 px-5 py-2.5 text-xs font-bold text-foreground transition-[background-color,border-color] duration-150 hover:border-white/20 hover:bg-white/5 active:scale-[0.98]"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-sm">
+                video_file
+              </span>
+              Import Video
             </button>
             <button
               data-testid="mc-new-goal"

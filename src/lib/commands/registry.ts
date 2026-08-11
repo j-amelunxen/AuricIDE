@@ -1,10 +1,15 @@
 import { rankCommands } from './fuzzy';
+import manifest from './commands.json';
+
+export type CommandCategory = 'file' | 'git' | 'agent' | 'canvas' | 'view' | 'markdown';
 
 export interface Command {
   id: string;
   label: string;
-  category: 'file' | 'git' | 'agent' | 'canvas' | 'view' | 'markdown';
+  category: CommandCategory;
   shortcut?: string;
+  /** The action needs an open project; the native menu greys it out otherwise. */
+  requiresProject?: boolean;
   action: () => void;
 }
 
@@ -35,61 +40,10 @@ export function createCommandRegistry(): {
   };
 }
 
-export const defaultCommands: Omit<Command, 'action'>[] = [
-  { id: 'file.new', label: 'New File', category: 'file' },
-  { id: 'file.open-folder', label: 'Open Folder', category: 'file' },
-  {
-    id: 'file.search',
-    label: 'Search Files Everywhere',
-    category: 'file',
-    shortcut: 'Shift Shift',
-  },
-  {
-    id: 'file.advanced-selection',
-    label: 'Advanced File Selection (Filter/Copy)',
-    category: 'file',
-    shortcut: '⌘⌥F',
-  },
-  { id: 'file.save', label: 'Save', category: 'file', shortcut: '⌘S' },
-  { id: 'git.commit', label: 'Commit Changes', category: 'git' },
-  { id: 'git.stage-all', label: 'Stage All Changes', category: 'git' },
-  { id: 'git.show-changes', label: 'Show Changes', category: 'git' },
-  { id: 'agent.deploy', label: 'Deploy New Agent', category: 'agent' },
-  { id: 'agent.ascii-art', label: 'Generate ASCII Art', category: 'agent' },
-  { id: 'agent.kill-all', label: 'Kill All Agents', category: 'agent' },
-  { id: 'canvas.toggle', label: 'Toggle Canvas View', category: 'canvas' },
-  { id: 'canvas.fit', label: 'Fit Canvas to Screen', category: 'canvas' },
-  { id: 'view.toggle-sidebar', label: 'Toggle Left Sidebar', category: 'view', shortcut: '⌘B' },
-  { id: 'view.toggle-terminal', label: 'Toggle Terminal', category: 'view', shortcut: '⌘J' },
-  { id: 'view.focus-explorer', label: 'Focus Explorer', category: 'view', shortcut: '⌘⇧E' },
-  {
-    id: 'view.focus-source-control',
-    label: 'Focus Source Control',
-    category: 'view',
-    shortcut: '⌘⇧G',
-  },
-  { id: 'view.link-graph', label: 'Show Link Graph', category: 'view' },
-  { id: 'view.cockpit', label: 'Open Mission Control', category: 'view' },
-  { id: 'view.goals', label: 'Open Goals & Orchestration', category: 'view' },
-  {
-    id: 'markdown.rename-heading',
-    label: 'Rename Heading',
-    category: 'markdown',
-    shortcut: 'F2',
-  },
-  {
-    id: 'markdown.find-references',
-    label: 'Find All References',
-    category: 'markdown',
-    shortcut: 'Alt+F7',
-  },
-  {
-    id: 'markdown.extract-section',
-    label: 'Extract Section to File',
-    category: 'markdown',
-  },
-  { id: 'file.import-spec', label: 'Import Project Spec', category: 'file' },
-  { id: 'excalidraw.new', label: 'Excalidraw: New Diagram', category: 'file' },
-  { id: 'excalidraw.browse', label: 'Excalidraw+: Browse Workspace', category: 'view' },
-  { id: 'excalidraw.sync-all', label: 'Excalidraw+: Sync All Specs', category: 'file' },
-];
+export const defaultCommands: Omit<Command, 'action'>[] = manifest.commands.map((c) => ({
+  id: c.id,
+  label: c.label,
+  category: c.category as CommandCategory,
+  ...('shortcut' in c && c.shortcut ? { shortcut: c.shortcut } : {}),
+  ...('requiresProject' in c && c.requiresProject ? { requiresProject: true as const } : {}),
+}));

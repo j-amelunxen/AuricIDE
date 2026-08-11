@@ -6,8 +6,11 @@ mod excalidraw;
 mod llm;
 mod mcp;
 mod memory_report;
+#[cfg(target_os = "macos")]
+mod menu;
 mod providers;
 mod utf8_stream;
+mod video_import;
 
 use agents::AgentManagerState;
 use database::{
@@ -367,6 +370,21 @@ fn save_temp_image(base64_data: String, app: tauri::AppHandle) -> Result<String,
     Ok(file_path.to_string_lossy().to_string())
 }
 
+/// Scratch files live in one global directory under the app-data dir,
+/// independent of any opened project.
+fn ensure_scratch_dir(base: std::path::PathBuf) -> Result<std::path::PathBuf, String> {
+    let dir = base.join("scratches");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+#[tauri::command]
+fn get_scratch_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let dir = ensure_scratch_dir(base)?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 async fn get_system_memory(
     agent_state: tauri::State<'_, agents::AgentManagerState>,
@@ -636,6 +654,20 @@ pub struct BranchInfo {
     behind: u32,
 }
 
+/// One commit as the evidence engine reads history: what it touched is the
+/// payload — "a commit touches this path prefix" is a station predicate.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitInfo {
+    pub oid: String,
+    pub summary: String,
+    pub author: String,
+    /// UTC, `YYYY-MM-DD HH:MM:SS` — the app's one timestamp format.
+    pub timestamp: String,
+    /// Repo-relative paths this commit changed (diff against first parent).
+    pub touched: Vec<String>,
+}
+
 #[tauri::command]
 fn git_status(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
     git_status_impl(repo_path)
@@ -674,6 +706,133 @@ fn git_discard(repo_path: &str, file_path: &str) -> Result<(), String> {
 #[tauri::command]
 fn git_push(repo_path: &str) -> Result<(), String> {
     git_push_impl(repo_path)
+}
+
+/// Commits actually walked before we give up, whether or not they matched.
+/// The `limit` bounds the answer; this bounds the *work*. A `path_prefix` that
+/// matches nothing (a freshly planned line is the normal case) would otherwise
+/// diff every commit in the repo looking for a match that never comes, which
+/// on a large history is tens of seconds of frozen work.
+const GIT_LOG_MAX_SCAN: usize = 2000;
+
+// `async` so Tauri runs this off the IPC thread: even bounded, 2000 tree diffs
+// on a big repo should never block the window. A sync command would run inline.
+#[tauri::command(async)]
+fn git_log_since(
+    repo_path: String,
+    since_iso: Option<String>,
+    path_prefix: Option<String>,
+) -> Result<Vec<CommitInfo>, String> {
+    // Hard cap: history is evidence, not an archive browser. 200 commits is
+    // far beyond any staleness window a station predicate looks at.
+    git_log_since_impl(
+        &repo_path,
+        since_iso.as_deref(),
+        path_prefix.as_deref(),
+        200,
+        GIT_LOG_MAX_SCAN,
+    )
+}
+
+/// Walks history from HEAD, newest first, stopping below `since_iso`, at
+/// `limit` matches, or after `max_scan` commits visited. `path_prefix` keeps
+/// only commits touching that prefix. Not a repo is an empty answer, not an
+/// error — same contract as `git_status_impl`.
+pub fn git_log_since_impl(
+    repo_path: &str,
+    since_iso: Option<&str>,
+    path_prefix: Option<&str>,
+    limit: usize,
+    max_scan: usize,
+) -> Result<Vec<CommitInfo>, String> {
+    let repo = match Repository::open(repo_path) {
+        Ok(r) => r,
+        Err(_) => return Ok(Vec::new()),
+    };
+    if repo.head().is_err() {
+        return Ok(Vec::new()); // empty repo: no commits yet
+    }
+
+    let since_epoch: Option<i64> = match since_iso {
+        Some(raw) => {
+            let normalized = raw.replace('T', " ");
+            let trimmed = normalized.trim_end_matches('Z').trim().to_string();
+            let parsed = chrono::NaiveDateTime::parse_from_str(&trimmed, "%Y-%m-%d %H:%M:%S")
+                .or_else(|_| {
+                    chrono::NaiveDate::parse_from_str(&trimmed, "%Y-%m-%d")
+                        .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
+                })
+                .map_err(|e| format!("Invalid since_iso '{}': {}", raw, e))?;
+            Some(parsed.and_utc().timestamp())
+        }
+        None => None,
+    };
+
+    let mut walk = repo
+        .revwalk()
+        .map_err(|e| format!("Failed to walk history: {}", e))?;
+    walk.push_head()
+        .map_err(|e| format!("Failed to start at HEAD: {}", e))?;
+    walk.set_sorting(git2::Sort::TIME)
+        .map_err(|e| format!("Failed to sort history: {}", e))?;
+
+    let mut result = Vec::new();
+    for (scanned, oid) in walk.enumerate() {
+        if result.len() >= limit || scanned >= max_scan {
+            break;
+        }
+        let oid = oid.map_err(|e| format!("Failed to read commit id: {}", e))?;
+        let commit = repo
+            .find_commit(oid)
+            .map_err(|e| format!("Failed to read commit: {}", e))?;
+        let seconds = commit.time().seconds();
+        if let Some(since) = since_epoch {
+            // TIME sorting walks newest → oldest: past the cutoff means done.
+            if seconds < since {
+                break;
+            }
+        }
+
+        let tree = commit
+            .tree()
+            .map_err(|e| format!("Failed to read commit tree: {}", e))?;
+        let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+        let diff = repo
+            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)
+            .map_err(|e| format!("Failed to diff commit: {}", e))?;
+        // HashSet membership, not a linear rescan: a merge commit diffed
+        // against its first parent can touch thousands of files, and the old
+        // `touched.iter().any(...)` made that quadratic.
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut touched: Vec<String> = Vec::with_capacity(diff.deltas().len().saturating_mul(2));
+        for delta in diff.deltas() {
+            for file in [delta.new_file(), delta.old_file()] {
+                if let Some(path) = file.path().and_then(|p| p.to_str()) {
+                    if seen.insert(path.to_string()) {
+                        touched.push(path.to_string());
+                    }
+                }
+            }
+        }
+
+        if let Some(prefix) = path_prefix {
+            if !touched.iter().any(|p| p.starts_with(prefix)) {
+                continue;
+            }
+        }
+
+        let timestamp = chrono::DateTime::from_timestamp(seconds, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default();
+        result.push(CommitInfo {
+            oid: oid.to_string(),
+            summary: commit.summary().unwrap_or("").to_string(),
+            author: commit.author().name().unwrap_or("").to_string(),
+            timestamp,
+            touched,
+        });
+    }
+    Ok(result)
 }
 
 /// Marker in the sibling temp file name an atomic write uses. Defined once so
@@ -1565,6 +1724,20 @@ fn agent_prompt_history_list(
 }
 
 #[tauri::command]
+fn pm_latest_ticket_review(
+    project_path: String,
+    ticket_id: String,
+    since_iso: Option<String>,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<Option<database::TicketReview>, String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::pm_latest_ticket_review_impl(conn, &ticket_id, since_iso.as_deref())
+}
+
+#[tauri::command]
 fn pm_clear(project_path: String, state: tauri::State<'_, DatabaseState>) -> Result<(), String> {
     let connections = state.connections.lock().unwrap();
     let conn = connections
@@ -1803,6 +1976,17 @@ fn mcp_status(state: tauri::State<'_, mcp::McpServerState>) -> mcp::McpStatusInf
     mcp::get_mcp_status(&state)
 }
 
+/// Greys out the project-gated menu commands when no project is open, so the
+/// native menu reports what the app can actually do right now. No-op off macOS,
+/// where there is no app menu to keep honest.
+#[tauri::command]
+fn set_menu_command_states(app: tauri::AppHandle, project_open: bool) {
+    #[cfg(target_os = "macos")]
+    menu::set_command_states(&app, project_open);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, project_open);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -1870,6 +2054,7 @@ pub fn run() {
             move_path,
             save_temp_image,
             save_image_to_path,
+            get_scratch_dir,
             check_cli_status,
             watch_directory,
             unwatch_directory,
@@ -1883,6 +2068,7 @@ pub fn run() {
             git_unstage,
             git_commit,
             git_push,
+            git_log_since,
             git_discard,
             list_agents,
             spawn_agent,
@@ -1908,6 +2094,7 @@ pub fn run() {
             pm_load,
             pm_load_history,
             pm_clear,
+            pm_latest_ticket_review,
             agent_prompt_history_add,
             agent_prompt_history_list,
             blueprints_save,
@@ -1931,7 +2118,13 @@ pub fn run() {
             excalidraw_scene_url,
             start_mcp,
             stop_mcp,
-            mcp_status
+            mcp_status,
+            set_menu_command_states,
+            video_import::video_import_analyze_media,
+            video_import::video_import_local_status,
+            video_import::video_import_install_local,
+            video_import::video_import_save_process,
+            video_import::video_import_clear
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
@@ -1994,22 +2187,37 @@ pub fn run() {
                     break;
                 }
             }
+            // Every command in the palette also gets a real menu item, so the
+            // app is drivable through the one surface macOS always exposes
+            // semantically — even while a modal owns the webview's focus.
+            menu::extend_with_commands(handle, &menu)?;
+
             Ok(menu)
         })
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "close_tab" => {
-                let _ = app.emit("menu:close-tab", ());
-            }
-            "close_window" => {
-                let focused = app
-                    .webview_windows()
-                    .into_values()
-                    .find(|w| w.is_focused().unwrap_or(false));
-                if let Some(window) = focused {
-                    let _ = window.close();
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref().to_string();
+            match id.as_str() {
+                "close_tab" => {
+                    let _ = app.emit("menu:close-tab", ());
                 }
+                "close_window" => {
+                    let focused = app
+                        .webview_windows()
+                        .into_values()
+                        .find(|w| w.is_focused().unwrap_or(false));
+                    if let Some(window) = focused {
+                        let _ = window.close();
+                    }
+                }
+                // A manifest command. The frontend runs it through the very
+                // same path the command palette uses, so a menu invocation and
+                // a palette invocation are indistinguishable — including the
+                // usage bookkeeping.
+                other if other.contains('.') => {
+                    let _ = app.emit("menu:command", other);
+                }
+                _ => {}
             }
-            _ => {}
         });
 
     builder
@@ -2034,6 +2242,16 @@ mod tests {
         git_stage_impl(&path, &["a.txt".to_string()]).unwrap();
         git_commit_impl(&path, "init").unwrap();
         path
+    }
+
+    #[test]
+    fn scratch_dir_is_created_under_the_base_and_is_idempotent() {
+        let base = TempDir::new().unwrap();
+        let dir = ensure_scratch_dir(base.path().to_path_buf()).unwrap();
+        assert!(dir.is_dir());
+        assert!(dir.ends_with("scratches"));
+        let again = ensure_scratch_dir(base.path().to_path_buf()).unwrap();
+        assert_eq!(dir, again);
     }
 
     #[test]
@@ -2241,6 +2459,143 @@ mod tests {
             .output()
             .unwrap();
         dir
+    }
+
+    fn commit_file(dir: &TempDir, rel_path: &str, content: &str, message: &str) {
+        let full = dir.path().join(rel_path);
+        if let Some(parent) = full.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&full, content).unwrap();
+        StdCommand::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        StdCommand::new("git")
+            .args(["commit", "-m", message])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    fn test_git_log_since_lists_commits_newest_first_with_touched_paths() {
+        let dir = init_test_repo();
+        commit_file(&dir, "src/a.rs", "a", "first");
+        commit_file(&dir, "docs/readme.md", "d", "second");
+
+        let log =
+            git_log_since_impl(dir.path().to_str().unwrap(), None, None, 200, usize::MAX).unwrap();
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[0].summary, "second");
+        assert_eq!(log[0].touched, vec!["docs/readme.md".to_string()]);
+        assert_eq!(log[1].summary, "first");
+        assert_eq!(log[1].touched, vec!["src/a.rs".to_string()]);
+        assert!(!log[0].timestamp.is_empty());
+    }
+
+    #[test]
+    fn test_git_log_since_filters_by_path_prefix() {
+        let dir = init_test_repo();
+        commit_file(&dir, "src/a.rs", "a", "code");
+        commit_file(&dir, "docs/readme.md", "d", "docs");
+
+        let log = git_log_since_impl(
+            dir.path().to_str().unwrap(),
+            None,
+            Some("docs/"),
+            200,
+            usize::MAX,
+        )
+        .unwrap();
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].summary, "docs");
+    }
+
+    #[test]
+    fn test_git_log_since_respects_the_cutoff() {
+        let dir = init_test_repo();
+        commit_file(&dir, "src/a.rs", "a", "old");
+        // A cutoff far in the future excludes everything.
+        let log = git_log_since_impl(
+            dir.path().to_str().unwrap(),
+            Some("2099-01-01 00:00:00"),
+            None,
+            200,
+            usize::MAX,
+        )
+        .unwrap();
+        assert!(log.is_empty());
+        // A cutoff far in the past includes it.
+        let log = git_log_since_impl(
+            dir.path().to_str().unwrap(),
+            Some("2000-01-01"),
+            None,
+            200,
+            usize::MAX,
+        )
+        .unwrap();
+        assert_eq!(log.len(), 1);
+    }
+
+    #[test]
+    fn test_git_log_since_caps_at_limit() {
+        let dir = init_test_repo();
+        for i in 0..5 {
+            commit_file(&dir, "f.txt", &format!("v{}", i), &format!("c{}", i));
+        }
+        let log =
+            git_log_since_impl(dir.path().to_str().unwrap(), None, None, 3, usize::MAX).unwrap();
+        assert_eq!(log.len(), 3);
+        assert_eq!(log[0].summary, "c4");
+    }
+
+    #[test]
+    fn test_git_log_since_caps_work_at_max_scan() {
+        let dir = init_test_repo();
+        // Five commits, none touching the requested prefix. Without a scan cap
+        // the walk would diff all five hunting a match; max_scan stops it early.
+        for i in 0..5 {
+            commit_file(&dir, "src/f.txt", &format!("v{}", i), &format!("c{}", i));
+        }
+        let log =
+            git_log_since_impl(dir.path().to_str().unwrap(), None, Some("docs/"), 200, 2).unwrap();
+        // Prefix matches nothing, and we gave up after 2 commits: no results,
+        // and — the point of the test — the loop terminated rather than
+        // scanning the whole history.
+        assert!(log.is_empty());
+    }
+
+    #[test]
+    fn test_git_log_since_is_empty_for_non_repo_and_empty_repo() {
+        let plain = TempDir::new().unwrap();
+        assert!(
+            git_log_since_impl(plain.path().to_str().unwrap(), None, None, 200, usize::MAX)
+                .unwrap()
+                .is_empty()
+        );
+        let empty = init_test_repo();
+        assert!(
+            git_log_since_impl(empty.path().to_str().unwrap(), None, None, 200, usize::MAX)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_git_log_since_rejects_garbage_cutoff() {
+        let dir = init_test_repo();
+        commit_file(&dir, "f.txt", "x", "c");
+        let err = git_log_since_impl(
+            dir.path().to_str().unwrap(),
+            Some("next tuesday"),
+            None,
+            200,
+            usize::MAX,
+        )
+        .unwrap_err();
+        assert!(err.contains("Invalid since_iso"));
     }
 
     #[test]

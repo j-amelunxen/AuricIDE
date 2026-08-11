@@ -6,7 +6,7 @@ describe('activityItems — the rail leads with the loop', () => {
     expect(activityItems[0].id).toBe('cockpit');
   });
 
-  it('keeps the loop surfaces primary: cockpit, explorer, source control, plan, requirements', () => {
+  it('keeps the loop surfaces primary: cockpit, explorer, source control, plan, requirements, goal lines', () => {
     const primary = activityItems.filter((i) => i.section !== 'tools').map((i) => i.id);
     expect(primary).toEqual([
       'cockpit',
@@ -14,12 +14,21 @@ describe('activityItems — the rail leads with the loop', () => {
       'source-control',
       'project-mgmt',
       'requirements',
+      'goal-lines',
     ]);
   });
 
   it('demotes viewers and toolboxes to the tools section', () => {
     const tools = activityItems.filter((i) => i.section === 'tools').map((i) => i.id);
-    expect(tools).toEqual(['outline', 'graph', 'qa', 'blueprints', 'extensions', 'settings']);
+    expect(tools).toEqual([
+      'outline',
+      'scratches',
+      'graph',
+      'qa',
+      'blueprints',
+      'extensions',
+      'settings',
+    ]);
   });
 
   it('has no dedicated goals slot — the conductor pulse and cockpit own that path', () => {

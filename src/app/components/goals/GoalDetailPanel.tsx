@@ -5,6 +5,7 @@ import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '@/lib/tauri/goals
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
 import { getGoalSatisfaction, getGoalWorkflowStage, getRunsForGoal } from '@/lib/store/goalsSlice';
+import { useStore } from '@/lib/store';
 import { GOAL_STATUS_STYLES } from './GoalTree';
 
 const WORKFLOW_STEP_LABELS = ['Define', 'Attach', 'Conduct', 'Achieved'] as const;
@@ -59,16 +60,22 @@ export function GoalDetailPanel({
   const [ticketPickerOpen, setTicketPickerOpen] = useState(false);
   const [ticketQuery, setTicketQuery] = useState('');
 
+  const stations = useStore((s) => s.goalStationsDraft);
+
   const satisfaction = useMemo(
     () =>
-      goal ? getGoalSatisfaction(goals, tickets, requirements, requirementLinks, goal.id) : null,
-    [goal, goals, tickets, requirements, requirementLinks]
+      goal
+        ? getGoalSatisfaction(goals, tickets, requirements, requirementLinks, stations, goal.id)
+        : null,
+    [goal, goals, tickets, requirements, requirementLinks, stations]
   );
 
   const workflowStep = useMemo(
     () =>
-      goal ? getGoalWorkflowStage(goals, tickets, requirements, requirementLinks, goal.id) : null,
-    [goal, goals, tickets, requirements, requirementLinks]
+      goal
+        ? getGoalWorkflowStage(goals, tickets, requirements, requirementLinks, stations, goal.id)
+        : null,
+    [goal, goals, tickets, requirements, requirementLinks, stations]
   );
 
   const goalTickets = useMemo(
