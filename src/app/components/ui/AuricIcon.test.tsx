@@ -32,6 +32,7 @@ describe('AuricIcon', () => {
     const { container } = render(<AuricIcon name="folder" />);
     const accent = container.querySelector('[fill="var(--primary)"]');
     expect(accent).toBeTruthy();
+    expect(accent?.getAttribute('fill-opacity')).toBe('0.55');
     expect(container.querySelector('svg')?.getAttribute('stroke')).toBe('currentColor');
   });
 

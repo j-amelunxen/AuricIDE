@@ -26,7 +26,7 @@ const iconMap: Record<string, string> = {
   folder: 'folder_open',
   commit: 'source',
   extension: 'extension',
-  settings: 'tune',
+  settings: 'settings',
   toc: 'toc',
   hub: 'hub',
 };
