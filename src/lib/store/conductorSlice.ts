@@ -99,6 +99,10 @@ export function filterTicketsForGoal(
  * promise work the loop would not actually pick up.
  */
 export interface ConductorPreflight {
+  /** All tickets in the selected scope, including completed work. */
+  total: number;
+  /** Scoped tickets already completed. */
+  done: number;
   /** Unblocked open tickets the conductor may spawn for immediately. */
   ready: number;
   /** Open tickets waiting on an unfinished dependency. */
@@ -131,6 +135,8 @@ export function getConductorPreflight(input: {
   );
 
   const result: ConductorPreflight = {
+    total: scoped.length,
+    done: scoped.filter((ticket) => ticket.status === 'done').length,
     ready: 0,
     blocked: 0,
     needsApproval: 0,
@@ -396,6 +402,25 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     };
   };
 
+  const completeLinkedStation = (
+    ticketId: string,
+    evidenceKind: 'claim' | 'judged',
+    note: string
+  ): void => {
+    const full = cross();
+    const station = (full.goalStationsDraft ?? []).find((item) => item.ticketId === ticketId);
+    if (!station || station.kind === 'human' || station.predicate.type === 'human') return;
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    full.updateStation?.(station.id, {
+      status: 'done',
+      evidenceKind,
+      evidenceNote: note,
+      lastCheckedAt: evidenceKind === 'judged' ? timestamp : null,
+      doneAt: timestamp,
+      updatedAt: timestamp,
+    });
+  };
+
   /**
    * Applies a judge verdict to a ticket under review: pass → done, reject →
    * reopened as an attempt (the shared MAX_TICKET_ATTEMPTS ledger). Either way
@@ -409,6 +434,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     const { [ticketId]: _at, ...restStarted } = state.conductorReviewStartedAt;
     if (verdict.pass) {
       full.updateTicket?.(ticketId, { status: 'done' });
+      completeLinkedStation(ticketId, 'judged', verdict.reason);
       set((s: ConductorSlice) => ({
         conductorReviewAssignments: restReview,
         conductorReviewStartedAt: restStarted,
@@ -889,6 +915,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           return;
         }
         full.updateTicket?.(ticketId, { status: 'done' });
+        completeLinkedStation(ticketId, 'claim', `Linked ticket ${ticketId} completed by agent.`);
         set((s: ConductorSlice) => ({
           conductorAssignments: remaining,
           conductorRunCompleted: s.conductorRunCompleted + 1,

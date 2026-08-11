@@ -32,8 +32,7 @@ function now(): string {
 
 export function resolveStationId(db: Database.Database, prefix: string): string {
   const exact = db.prepare('SELECT id FROM pm_goal_stations WHERE id = ?').get(prefix) as
-    | { id: string }
-    | undefined;
+    { id: string } | undefined;
   if (exact) return exact.id;
   const matches = db
     .prepare('SELECT id FROM pm_goal_stations WHERE id LIKE ?')
@@ -51,8 +50,7 @@ export function listStations(db: Database.Database, goalId: string): StationRow[
 
 function getStation(db: Database.Database, id: string): StationRow | undefined {
   return db.prepare('SELECT * FROM pm_goal_stations WHERE id = ?').get(id) as
-    | StationRow
-    | undefined;
+    StationRow | undefined;
 }
 
 function parsePredicateParam(raw: string | undefined): string {
@@ -245,6 +243,28 @@ export function reorderStation(
   return listStations(db, station.goal_id);
 }
 
+export function updateStation(
+  db: Database.Database,
+  stationId: string,
+  params: { name?: string; kind?: string; predicate?: string; ticketId?: string }
+): StationRow {
+  const id = resolveStationId(db, stationId);
+  const station = getStation(db, id);
+  if (!station) throw new Error(`Station '${stationId}' not found`);
+  const finalKind = params.kind ?? station.kind;
+  const finalPredicate =
+    finalKind === 'human'
+      ? '{"type":"human"}'
+      : params.predicate !== undefined
+        ? parsePredicateParam(params.predicate)
+        : station.predicate;
+  const ticketId = params.ticketId ? resolveTicketId(db, params.ticketId) : station.ticket_id;
+  db.prepare(
+    'UPDATE pm_goal_stations SET name = ?, kind = ?, predicate = ?, ticket_id = ?, updated_at = ? WHERE id = ?'
+  ).run(params.name ?? station.name, finalKind, finalPredicate, ticketId, now(), id);
+  return getStation(db, id)!;
+}
+
 export function registerStationTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
     name: 'list_stations',
@@ -289,31 +309,16 @@ export function registerStationTools(server: FastMCP, db: Database.Database): vo
   server.addTool({
     name: 'update_station',
     description:
-      'Update a station name, kind, or predicate. Cannot set status — use mark_station_done, which records the result as a claim.',
+      'Update a station name, kind, predicate, or linked ticket. Cannot set status — use mark_station_done, which records the result as a claim.',
     parameters: z.object({
       stationId: z.string().describe('Station ID (UUID or unique prefix)'),
       name: z.string().min(1).optional(),
       kind: z.enum(STATION_KINDS).optional(),
       predicate: z.string().optional().describe('JSON predicate'),
+      ticketId: z.string().optional().describe('Ticket ID or unique prefix to link'),
     }),
-    execute: async ({ stationId, name, kind, predicate }) => {
-      const id = resolveStationId(db, stationId);
-      const station = getStation(db, id);
-      if (!station) return JSON.stringify({ error: 'Station not found' });
-      const finalKind = kind ?? station.kind;
-      // Same human invariant as create_station: a human step keeps the human
-      // predicate no matter what predicate the caller supplies.
-      const finalPredicate =
-        finalKind === 'human'
-          ? '{"type":"human"}'
-          : predicate !== undefined
-            ? parsePredicateParam(predicate)
-            : station.predicate;
-      db.prepare(
-        'UPDATE pm_goal_stations SET name = ?, kind = ?, predicate = ?, updated_at = ? WHERE id = ?'
-      ).run(name ?? station.name, finalKind, finalPredicate, now(), id);
-      return JSON.stringify(getStation(db, id));
-    },
+    execute: async ({ stationId, name, kind, predicate, ticketId }) =>
+      JSON.stringify(updateStation(db, stationId, { name, kind, predicate, ticketId })),
   });
 
   server.addTool({

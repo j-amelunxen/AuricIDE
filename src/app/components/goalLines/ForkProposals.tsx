@@ -120,7 +120,7 @@ export function ForkProposals() {
         >
           <span className="text-foreground">
             {p.commits.length} commit{p.commits.length === 1 ? '' : 's'} in{' '}
-            <span className="font-mono">{p.pathPrefix}</span> match no station
+            <span className="font-mono">{p.pathPrefix}</span> match no checkpoint
           </span>
           <span className="ml-auto flex items-center gap-2">
             <select
@@ -141,7 +141,7 @@ export function ForkProposals() {
               onClick={() => claim(p.pathPrefix, p.suggestedName)}
               className="rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/10"
             >
-              Make it a station
+              Make it a checkpoint
             </button>
             <button
               data-testid={`fork-dismiss-${p.pathPrefix}`}

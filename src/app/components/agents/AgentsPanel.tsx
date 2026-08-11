@@ -207,8 +207,8 @@ export function AgentsPanel({
             attentionCount === 1 ? 's' : ''
           } attention`}
       </div>
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border-dark">
-        <h2 className="flex items-center gap-2 text-xs font-semibold tracking-wider text-foreground-muted">
+      <div className="flex flex-wrap items-center justify-between gap-1 px-3 py-2 border-b border-border-dark">
+        <h2 className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-semibold tracking-wider text-foreground-muted">
           {/* Not "active agents": the panel also holds the ones you parked and
               the ones that have stopped. The count is what says how much is
               actually happening. */}
@@ -250,7 +250,7 @@ export function AgentsPanel({
               title="Park working (still running)"
               className="rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
             >
-              Park working
+              Park {parkableAgents.length}
             </button>
           )}
           {onCollapse && (
@@ -258,7 +258,7 @@ export function AgentsPanel({
               type="button"
               onClick={onCollapse}
               aria-label="Hide agents panel"
-              className="group flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+              className="group flex h-6 w-6 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60"
             >
               <AuricIcon name="right_panel_close" aria-hidden="true" className="text-base" />
             </button>
@@ -378,9 +378,10 @@ export function AgentsPanel({
                     <button
                       type="button"
                       onClick={() => confirmKillRepo(repoPath)}
-                      className="text-xs px-2 py-0.5 rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 transition-colors"
+                      aria-label={`Stop all agents in ${repoName}`}
+                      className="min-h-6 rounded px-1.5 py-0.5 text-[10px] text-foreground-muted transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60"
                     >
-                      Kill All
+                      Stop all
                     </button>
                   )}
                 </div>
@@ -390,7 +391,7 @@ export function AgentsPanel({
                       key={agent.id}
                       onDragOver={handleDragOver}
                       onDrop={(e) => handleDrop(e, agent.id)}
-                      className="rounded transition hover:ring-2 hover:ring-primary/50"
+                      className="min-w-0"
                     >
                       <AgentCard
                         agent={agent}

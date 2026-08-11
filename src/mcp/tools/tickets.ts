@@ -39,6 +39,7 @@ export interface CreateTicketParams {
   priority?: string;
   /** Goal this ticket serves; the ticket counts toward that goal's satisfaction. */
   goalId?: string;
+  needsHumanSupervision?: boolean;
 }
 
 export interface UpdateTicketParams {
@@ -90,8 +91,9 @@ export function createTicket(db: Database.Database, params: CreateTicketParams):
   const sortOrder = maxRow.max_sort + 1;
 
   db.prepare(
-    `INSERT INTO pm_tickets (id, epic_id, name, description, status, sort_order, priority, goal_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO pm_tickets
+     (id, epic_id, name, description, status, sort_order, priority, goal_id, needs_human_supervision)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     params.epicId,
@@ -100,7 +102,8 @@ export function createTicket(db: Database.Database, params: CreateTicketParams):
     status,
     sortOrder,
     priority,
-    params.goalId ?? null
+    params.goalId ?? null,
+    params.needsHumanSupervision ? 1 : 0
   );
 
   insertStatusHistory(db, id, null, 'open', 'mcp');
@@ -110,8 +113,7 @@ export function createTicket(db: Database.Database, params: CreateTicketParams):
 
 export function updateTicket(db: Database.Database, params: UpdateTicketParams): Ticket {
   const existing = db.prepare('SELECT * FROM pm_tickets WHERE id = ?').get(params.id) as
-    | Ticket
-    | undefined;
+    Ticket | undefined;
 
   if (!existing) {
     throw new Error(`Ticket not found: ${params.id}`);
@@ -285,6 +287,10 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
         .string()
         .optional()
         .describe('Goal this ticket serves (full UUID or unique prefix)'),
+      needsHumanSupervision: z
+        .boolean()
+        .optional()
+        .describe('Require a person to approve the ticket before conductor launch'),
     }),
     execute: async (params) => {
       const epicId = resolveEpicId(db, params.epicId);

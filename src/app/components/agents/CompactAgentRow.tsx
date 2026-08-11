@@ -11,6 +11,7 @@ import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { agentAttention } from '@/lib/agents/attention';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { agentDisplayName } from '@/lib/agents/displayName';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -77,6 +78,10 @@ export function CompactAgentRow({
     errorDigest ?? ((agent.status === 'running' && agent.currentActivity) || agent.currentTask);
   const markerHex = agentColorHex(color);
   const markerLabel = agentColorLabel(color);
+  const displayName = agentDisplayName(agent.name, agent.currentTask);
+  const identityTooltip = [displayName, agent.name !== displayName && agent.name, agent.id, detail]
+    .filter(Boolean)
+    .join(' — ');
 
   return (
     <div
@@ -108,13 +113,13 @@ export function CompactAgentRow({
       <button
         type="button"
         onClick={() => onActivate(agent.id)}
-        aria-label={`${activateLabel} ${agent.name}`}
-        title={detail ? `${agent.name} · ${detail}` : agent.name}
-        className={`flex-1 truncate text-left text-[11px] transition-colors hover:text-foreground ${
+        aria-label={`${activateLabel} ${displayName}`}
+        title={identityTooltip}
+        className={`min-w-0 flex-1 truncate text-left text-[11px] transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 ${
           unseen ? 'font-medium text-foreground' : 'text-foreground-muted'
         }`}
       >
-        {agent.name}
+        {displayName}
         {errorDigest && (
           <span data-testid="agent-error-digest" className="ml-1.5 text-[10px] text-red-400/80">
             {errorDigest}
@@ -166,9 +171,9 @@ export function CompactAgentRow({
         <button
           type="button"
           onClick={() => onRetry(agent.id)}
-          aria-label={`Retry ${agent.name}`}
+          aria-label={`Retry ${displayName}`}
           title={`Retry ${agent.name} with the same configuration`}
-          className="flex-shrink-0 rounded p-0.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-100 focus-visible:opacity-100"
         >
           <AuricIcon name="replay" aria-hidden="true" className="text-[13px]" />
         </button>
@@ -176,9 +181,9 @@ export function CompactAgentRow({
       <button
         type="button"
         onClick={() => onDismiss(agent.id)}
-        aria-label={`${dismissLabel} ${agent.name}`}
+        aria-label={`${dismissLabel} ${displayName}`}
         title={`${dismissLabel} ${agent.name}`}
-        className="flex-shrink-0 rounded p-0.5 text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 focus-visible:opacity-100"
+        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60 group-hover:opacity-100 focus-visible:opacity-100"
       >
         <AuricIcon name={dismissIcon} aria-hidden="true" className="text-[13px]" />
       </button>

@@ -11,6 +11,7 @@ import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/co
 import { stripAnsi } from '@/lib/terminal/ansi';
 import { scrollBehavior } from '@/lib/motion';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { agentDisplayIdentity } from '@/lib/agents/displayName';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -67,6 +68,7 @@ export function AgentCard({
   const state = agentState(agent, now);
   const markerHex = agentColorHex(color);
   const markerLabel = agentColorLabel(color);
+  const { displayName, taskSummary } = agentDisplayIdentity(agent.name, agent.currentTask);
 
   /**
    * One duration, chosen by state. While an agent is quiet, how long it has
@@ -87,10 +89,11 @@ export function AgentCard({
 
   /** The name is derived from the instruction, so the two are often the same
    * text. Showing it twice — truncated above, in full below — is noise. */
-  const nameStem = agent.name.replace(/…$/, '');
+  const nameStem = displayName.replace(/…$/, '');
   const objectiveRepeatsName = !!agent.currentTask && agent.currentTask.startsWith(nameStem);
   const nameTooltip = [
-    agent.currentTask ?? agent.name,
+    agent.name,
+    agent.currentTask,
     agent.id,
     onRename && 'Double-click to rename',
   ]
@@ -129,12 +132,12 @@ export function AgentCard({
   // to the card, which is not what "let me peek at this one" should do.
   useEffect(() => {
     if (viewMode === 'terminal') replyRef.current?.focus({ preventScroll: true });
-    else setReplyError(null);
   }, [viewMode]);
 
   const toggleView = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setViewMode((v) => (v === 'status' ? 'terminal' : 'status'));
+    if (viewMode === 'terminal') setReplyError(null);
+    setViewMode(viewMode === 'status' ? 'terminal' : 'status');
   };
 
   const startRename = (e: React.MouseEvent) => {
@@ -207,7 +210,7 @@ export function AgentCard({
     <div
       onClick={() => onSelect?.(agent.id)}
       onContextMenu={onContextMenu && ((e) => onContextMenu(e, agent.id))}
-      className={`glass-card group relative flex flex-col gap-3 rounded-xl p-3 transition-all duration-500 cursor-pointer overflow-hidden ${cardGlowClass} ${
+      className={`glass-card group relative flex flex-col gap-2 rounded-xl p-2.5 transition-all duration-500 cursor-pointer overflow-hidden ${cardGlowClass} ${
         viewMode === 'terminal' ? 'min-h-[200px]' : ''
       } ${markerHex ? 'pl-4' : ''}`}
     >
@@ -231,10 +234,10 @@ export function AgentCard({
       )}
 
       {/* Header */}
-      <div className="z-10 flex min-w-0 items-center gap-2">
+      <div className="z-10 flex min-w-0 items-start gap-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div
-            className={`relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/5 bg-gradient-to-br ${
+            className={`relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-white/5 bg-gradient-to-br ${
               isLive
                 ? 'from-primary/30 via-primary/10 to-transparent'
                 : isIdling
@@ -284,17 +287,23 @@ export function AgentCard({
                 title={nameTooltip}
                 className="truncate font-display text-[13px] font-semibold leading-tight tracking-[-0.01em] text-foreground transition-colors group-hover:text-primary"
               >
-                {agent.name}
+                {displayName}
               </h3>
             )}
             {/* One quiet line of context: which model, and the single duration
                 that matters in this state. Never two bare numbers. */}
-            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] leading-none text-foreground-muted/70">
+            <div
+              data-testid="agent-metadata"
+              className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px] leading-none text-foreground-muted/70"
+            >
               <span className="truncate font-mono">
                 {agent.model.split('-').slice(0, 2).join(' ')}
               </span>
               {isRunning && (
-                <>
+                <span
+                  data-testid="agent-duration-group"
+                  className="flex flex-shrink-0 items-center gap-1.5"
+                >
                   <span aria-hidden="true" className="opacity-40">
                     ·
                   </span>
@@ -305,25 +314,23 @@ export function AgentCard({
                   >
                     {durationLabel}
                   </span>
-                </>
+                </span>
               )}
+              <span
+                data-testid="agent-state"
+                className={`flex-shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${STATE_CHIP[state]}`}
+              >
+                {AGENT_STATE_LABEL[state]}
+              </span>
             </div>
           </div>
         </div>
-
-        {/* Exactly one statement of what the agent is doing. */}
-        <span
-          data-testid="agent-state"
-          className={`flex-shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${STATE_CHIP[state]}`}
-        >
-          {AGENT_STATE_LABEL[state]}
-        </span>
 
         <div className="flex flex-shrink-0 items-center gap-0.5">
           {onRename && !isRenaming && (
             <button
               onClick={startRename}
-              className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-100 focus-visible:opacity-100"
               title="Rename agent"
               aria-label="Rename agent"
             >
@@ -336,7 +343,7 @@ export function AgentCard({
                 e.stopPropagation();
                 onMinimize(agent.id);
               }}
-              className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-100 focus-visible:opacity-100"
               title="Park (still running)"
               aria-label="Park agent"
             >
@@ -345,7 +352,7 @@ export function AgentCard({
           )}
           <button
             onClick={toggleView}
-            className={`rounded p-1.5 transition-all hover:bg-white/10 ${viewMode === 'terminal' ? 'text-primary bg-primary/10' : 'text-foreground-muted'}`}
+            className={`flex h-6 w-6 items-center justify-center rounded transition-all hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-primary/60 ${viewMode === 'terminal' ? 'text-primary bg-primary/10' : 'text-foreground-muted'}`}
             title={viewMode === 'terminal' ? 'Show Status' : 'Show Terminal'}
             aria-label={viewMode === 'terminal' ? 'Show Status' : 'Show Terminal'}
           >
@@ -360,7 +367,7 @@ export function AgentCard({
               e.stopPropagation();
               onKill(agent.id);
             }}
-            className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 focus-visible:opacity-100"
+            className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60 group-hover:opacity-100 focus-visible:opacity-100"
             title="Terminate Agent"
             aria-label="Terminate Agent"
           >
@@ -372,16 +379,17 @@ export function AgentCard({
       {/* Main Content Area */}
       <div className="flex-1 min-h-0 relative">
         {viewMode === 'status' ? (
-          <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
+          <div className="flex flex-col gap-1.5 animate-in fade-in slide-in-from-right-2 duration-300">
             {/* Only when it adds something the name did not already say. The
                 label is gone too: position and phrasing carry it, a magenta
                 "OBJECTIVE:" only shouted. */}
-            {agent.currentTask && !objectiveRepeatsName && (
+            {taskSummary && !objectiveRepeatsName && (
               <p
-                title={agent.currentTask}
-                className="line-clamp-2 rounded-lg border border-white/5 bg-black/20 px-2.5 py-2 text-[11px] leading-relaxed text-foreground-muted"
+                data-testid="agent-task-context"
+                title={taskSummary}
+                className="line-clamp-2 px-0.5 text-[11px] leading-snug text-foreground-muted"
               >
-                {agent.currentTask}
+                {taskSummary}
               </p>
             )}
             {!agent.currentTask && (
@@ -431,7 +439,7 @@ export function AgentCard({
                     setReplyError('Nudge could not be delivered. The agent may have exited.');
                   }
                 }}
-                className="flex items-center justify-center gap-1 rounded-lg border border-orange-400/25 bg-orange-400/5 px-2 py-1.5 text-[10px] font-medium text-orange-300 transition-colors hover:bg-orange-400/15"
+                className="flex min-h-6 self-start items-center gap-1 rounded px-2 py-1 text-[10px] font-medium text-orange-300 transition-colors hover:bg-orange-400/10 focus-visible:ring-2 focus-visible:ring-orange-400/60"
               >
                 <AuricIcon name="notifications_active" aria-hidden="true" className="text-[13px]" />
                 Nudge: send Enter
