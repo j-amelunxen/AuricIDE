@@ -1,229 +1,173 @@
 <p align="center">
-  <img src="docs/assets/hero-banner.jpg" alt="AuricIDE — AI Native" width="100%" />
+  <img src="docs/assets/hero-banner.jpg" alt="AuricIDE" width="100%" />
 </p>
 
 # AuricIDE
 
 > [!WARNING]
-> **ALPHA SOFTWARE — NOT PRODUCTION READY**
-> This project is in early alpha. Expect breaking changes, missing features, and rough edges. Use at your own risk.
+> **Alpha.** Breaking changes, missing features, rough edges. Don't put production work on this yet.
 
-**AuricIDE** is a Tauri desktop IDE for Markdown-based project work with AI agent orchestration. It bridges structured documentation and agentic workflows: define a **goal**, decompose it into **tickets**, let the **conductor** dispatch AI agents against those tickets, and watch the goal verify itself as done.
+Desktop IDE (Tauri) for Markdown-heavy project work with AI agent orchestration. You define a **goal** with checkable success criteria, hang **tickets** (and optionally requirements) off it, start the **conductor**, and it dispatches agents until the goal is actually satisfied — not until an agent says it is.
 
-> **Auric** (adj.): Derived from gold (aurum). An IDE for the "Golden Age" of AI-driven development.
-
-![AuricIDE Screenshot](public/screenshot.png)
+![Screenshot](public/screenshot.png)
 
 ---
 
-## Why AuricIDE
+## How the loop works
 
-Chat-window coding assistants make you babysit: you prompt, you watch, you approve every step, you re-explain context every session. AuricIDE is built around a different premise — **you define what "done" means, and the IDE proves it, not you.**
+1. **Goal** — desired outcome + `successCriteria`. Goals form a tree (`parentId`).
+2. **Work** — link tickets, attach requirements as gates, or let a planning agent call `decompose_goal` / `create_ticket`.
+3. **Conductor** — spawns agents for unblocked open tickets (priority + deps, concurrency cap, max 2 attempts). Tickets marked `needsHumanSupervision` wait for explicit approval.
+4. **Done** — `getGoalSatisfaction` requires: subtree tickets `done`, linked requirements `verified`, child goals `achieved`. Otherwise you get the blockers. Empty goals never auto-satisfy.
 
-<p align="center">
-  <img src="docs/assets/goal-loop.jpg" alt="Goal → Tickets → Agents → Verified" width="100%" />
-</p>
+Epics/tickets stay the backlog view; the goal link is the outcome view. Conductor decisions go into a timestamped log (`conductorDecisions`).
 
-That's the core loop: define a **goal** with machine-checkable success criteria, attach the work (tickets, requirements, or a planning agent that decomposes the goal itself), start the **conductor**, and walk away. The conductor dispatches agents against unblocked work, retries failures, pauses for your approval where you asked it to, and only marks the goal achieved once every linked ticket is done and every linked requirement is verified — not when an agent _claims_ it's done. Every decision it makes is logged, so "walk away" doesn't mean "lose visibility."
-
-**Who it's for:** developers and small teams who run AI agents against real codebases, live in an IDE all day, and think in issue-tracker terms (epics, tickets, dependencies) — but want to steer agents at the goal level instead of supervising every tool call.
-
-**What makes it different from most AI coding assistants:**
-
-- **Outcomes over chat turns.** Most AI IDEs optimize the single edit-and-accept loop. AuricIDE's unit of work is a goal with `successCriteria` — the conductor keeps dispatching agents against a ticket backlog until the goal is machine-verified, unattended, with a bounded retry budget and a full audit trail.
-- **Requirements as invariants, not tickets.** A requirement is never "done" — it's `fulfilled` or `violated`, tracked with verification freshness (a requirement unverified for 30+ days is flagged stale). This is closer to a loop invariant than a backlog item, and it gates goal completion.
-- **Markdown as the actual source of truth.** The visual workflow canvas isn't a JSON blob behind a pretty UI — its nodes and edges _are_ `## Node:` headings with metadata in a plain `.md` file, so it stays diffable, greppable, and readable without the app.
-- **Prose stays prose.** NLP highlighting marks actionable/factual content instead of tinting every noun and verb — built to keep long specs skimmable, not decorate them.
+The agent panel is built so you don't have to poll cards: one attention model (`error` > `needs-input` > `stalled`), a real "all quiet" signal while things run, parked agents still running but out of the way. Details live in `src/lib/agents/`.
 
 ---
 
-## Reducing the Oversight Tax
+## Features (honest list)
 
-AI coding tools give time back on execution and take it back on watching. The [oversight tax](https://software-architecture.ai/research/oversight-tax) research names this pattern directly: automating the doing while leaving a human to verify every step is not free — vigilance degrades the longer a system looks reliable, an "almost right" result forces a full re-check anyway, and splitting that verification work across many tools compounds the load. The fix isn't more discipline from the user; it's removing the reasons vigilance was needed in the first place.
+**Goals & conductor**
 
-<p align="center">
-  <img src="docs/assets/agent-fleet.jpg" alt="The agent fleet: running, parked, and finished agents stay visually distinct — one badge says who needs a human" width="85%" />
-</p>
+- Goal tree, ticket links, requirement gates, planning-agent decomposition
+- Conductor on ticket events + 15s watchdog; dependency-aware scheduling
+- Decision log; opt-in human approval per ticket
 
-AuricIDE's agent panel and conductor are built around exactly that idea, not as an afterthought:
+**Agents**
 
-- **One definition of "needs a human."** `agentAttention()` (`src/lib/agents/attention.ts`) ranks every agent by a single rule — error, then blocked-on-input, then stalled — and that's the only thing that raises the "N need attention" count. `detectAwaitingInput()` (`src/lib/agents/awaitingInput.ts`) exists because a permission prompt keeps redrawing itself and refreshes the activity timestamp; without that check a genuinely stuck agent would read as "working" forever. The user checks one badge instead of scanning every card for signs of trouble.
-- **"All quiet" is a signal, not an absence.** The fleet panel shows "✓ all quiet" only while agents are running and none of them needs attention — the calm state has to say so explicitly, because no red badge is not the same as permission to stop watching.
-- **Verified done, not claimed done — with a real audit trail.** `getGoalSatisfaction` (`src/lib/store/goalsSlice.ts`) only marks a goal achieved once every ticket in its subtree is `done`, every linked requirement is `verified`, and every child goal is `achieved`; otherwise it returns the specific blockers instead of a vague "in progress." Every conductor action along the way — spawn, complete, fail, approval needed — is written to `conductorDecisions` (`src/lib/store/conductorSlice.ts`) with a timestamp, so verification is one bounded check against a log the user can read on their own schedule, not a transcript they have to watch live.
-- **Approval is opt-in, not per-keystroke.** A ticket marked `needsHumanSupervision` parks in a pending-approvals queue and the conductor won't spawn an agent for it until explicitly approved (`src/lib/store/conductorSlice.ts`). Oversight sits exactly where the user asked for it instead of being sprinkled across every tool call the agent makes.
-- **The panel has three shapes, not one pile.** `splitFleet()` (`src/lib/agents/fleet.ts`) separates agents into cards for what's actively running, a compact row for what's parked (still running, deliberately set aside), and a compact row for what's finished and waiting on review. Parking is a view state only — a parked agent keeps streaming and still counts toward Kill All — but keeping "in progress," "set aside on purpose," and "done, needs a look" visually distinct stops the panel from turning into ten identical tabs to re-check.
+- Real child processes over PTY (`portable-pty`), streamed output, real exit codes
+- Built-in providers: Claude Code, Codex, Gemini, Grok, Crush/Kimi
+- Extra CLIs via JSON under `dynamic-providers/` (no recompile)
+- Repo grouping, kill one / kill all, image attach, per-project prompt history
+- Permission modes delegated to the underlying CLI flags
 
----
+**Requirements**
 
-## Key Features
+- Long-lived invariants, not tickets: lifecycle `draft → active → implemented → verified → deprecated`
+- Stale after 30 days without re-verify; link to test cases; MCP-exposed
 
-### Goals → Tickets → Conductor → Verified (the core loop)
+**PM**
 
-- **Goals as the outcome view:** a goal is a desired world state with machine-checkable `successCriteria`, organized in a tree via `parentId`. Epics and tickets remain the organizational backlog underneath it.
-- **Attach work:** link tickets to a goal, attach requirements as acceptance gates, or launch a planning agent that decomposes the goal into tickets on its own.
-- **The Conductor:** a genuinely autonomous dispatcher — it ticks on ticket-completion events plus a 15-second watchdog heartbeat so it can't silently stall, resolves unblocked work dependency-aware and priority-sorted, respects a configurable concurrency cap, and builds goal-aware prompts that inject the success criteria and linked test cases straight into the agent's instructions.
-- **Retry, not blind persistence:** a failed ticket gets up to two attempts before the conductor gives up and surfaces it; a ticket you kill by hand reopens instead of being silently retried.
-- **Human-supervision gate:** mark a ticket `needsHumanSupervision` and the conductor parks it in a pending-approvals queue instead of spawning an agent — it only proceeds after you explicitly approve it.
-- **Verified done, not claimed done:** a goal auto-achieves only once every ticket in its subtree is `done`, every linked requirement is `verified`, and every child goal has `achieved` — otherwise the blockers are listed explicitly, not hand-waved.
-- **Decision log:** every conductor action (start, spawn, complete, fail, approval needed, approved, goal achieved) is recorded with a timestamp — a real audit trail for unattended runs, not a decorative activity feed.
+- Epics / tickets / deps — table, dependency graph (xyflow + dagre), metrics
+- Deps actually block conductor scheduling
+- Test cases per ticket feed into agent prompts
 
-### Cockpit (Mission Control)
+**Editor / docs**
 
-- The home view whenever a project is open with nothing focused — a literal **Spec → Plan → Execute → Verify** station strip with live counts (spec docs found, open tickets, running agents, requirements still needing proof) plus the full conductor panel embedded.
-- **Quick Access:** a hold-to-star project switcher for jumping between workspaces in one click, with a deliberate hold-to-unstar gesture (radial progress ring) so you can't remove a starred project by a stray click.
+- CodeMirror 6: Markdown-first, remark-lint, JSON/XML/YAML diagnostics
+- NLP highlighting aimed at actionable/factual bits (not rainbow POS tagging)
+- WikiLinks, Mermaid widgets (round-trip), mindmaps, Excalidraw embed
+- Workflow canvas stored as plain Markdown (`## Node:` …) — also Obsidian `.canvas`
+- ASCII box-drawing repair for mangled AI diagrams
+- Slash commands, blueprint templates
 
-### Agent Orchestration
+**Git / terminal**
 
-- Agents run as real child processes over a PTY (Rust's `portable-pty`), with output streamed to the frontend and real exit codes surfaced — a crashed agent shows as `Error`, not silently as idle.
-- **Pluggable providers:** ships with Claude Code, Codex, Gemini, Grok, and Crush/Kimi support out of the box, and you can register your own provider via a JSON config — no fork required.
-- Agents are grouped by repo in the Agents panel, with per-agent or "kill all" control, drag-and-drop image attachment, and persisted prompt history per project.
-- Fine-grained tool-call approval (plan mode, auto-accept, etc.) is delegated to the underlying CLI's own flags — AuricIDE's supervision model is spawn / kill / approval-gate-at-the-ticket-level with a full decision log, not per-keystroke babysitting.
+- git2-rs: status, diff, stage, commit, discard; CodeMirror git gutter
+- Agentic commit (agent writes message from staged diff)
+- Full PTY terminal (xterm.js)
+- No in-app branch switch yet (known gap)
 
-### Requirements as Invariants
+**MCP**
 
-- **Application Invariants:** long-lived functional & non-functional requirements a project must continuously satisfy — unlike tickets, requirements are never "done"; they're `fulfilled` or `violated`.
-- **Lifecycle tracking:** `draft → active → implemented → verified → deprecated`, with a real "Verify Now" action and a `lastVerifiedAt` timestamp. Requirements unverified for 30+ days are flagged stale, and that count drives the Cockpit's headline "needs proof" number — it's not cosmetic.
-- **Test linkage:** connect requirements to the test cases that prove them; exposed via MCP so agents can verify requirements as part of their own workflow.
-- **Scoped & filterable:** category-based auto ID generation (`REQ-AUTH-01`), an editable `appliesTo` file-path scope, and filters by priority, status, or verification freshness (Fresh / Stale / Unverified).
-- **Acceptance criteria:** Markdown checklists that define what "fulfilled" means, bridging spec and test.
-
-### Project Management: Epics, Tickets & Dependencies
-
-- Three real views on the same backlog: a sortable **table**, a **dependency graph** (`@xyflow/react` + `dagre` auto-layout, with heat-map coloring by blocker load), and a **metrics** view (burndown + velocity).
-- Dependencies you create actually block conductor scheduling — this isn't a decorative graph.
-- Test cases attach per-ticket and feed directly into conductor prompts as acceptance criteria.
-
-### Visual & Diagramming
-
-- **Markdown-as-canvas:** a node-based workflow canvas (`@xyflow/react`) whose nodes and edges are literally `## Node:` headings with metadata in a plain `.md` file — bidirectional, diffable, and readable without the app.
-- **Obsidian `.canvas` compatibility** for reading and writing Obsidian's own canvas format.
-- **Live Mermaid diagrams:** inline, round-trip editable diagram widgets directly in the Markdown flow — edit the diagram, the source updates, and vice versa.
-- **Mindmaps & Excalidraw:** dedicated mindmap views and embedded Excalidraw sketches for freeform structural thinking.
-- **WikiLink ecosystem:** `[[WikiLinks]]` with fuzzy autocomplete, hover previews, broken-link detection, find-references, and heading rename that updates references across the project.
-
-### Editor Intelligence
-
-- **NLP highlighting:** marks actionable/factual content rather than tinting every word class, so long specs stay skimmable instead of looking like a syntax-highlighted novel.
-- **ASCII-art repair:** detects and reconstructs broken box-drawing diagrams (`┌─┐│└─┘`) via majority-voting and fuzzy matching — genuinely useful when an AI-generated ASCII diagram goes ragged.
-- **Per-language diagnostics:** real-time linting with gutter markers for Markdown (via `remark-lint`), JSON, XML, and YAML.
-- **Slash commands:** Notion-style `/commands` for inserting templates, diagrams, and agent prompts.
-- **Blueprints:** a gallery of reusable, categorized spec templates with optional sync from a remote blueprint server for repeatable project scaffolding.
-
-### Git & Terminal
-
-- Real git integration via `git2-rs`: status, diff, stage/unstage, commit, and discard — plus a from-scratch CodeMirror gutter extension showing added/modified/deleted lines at the source level.
-- **Agentic commit:** a toggle that hands the staged diff to an agent to write and make the commit, instead of you writing the message.
-- **Professional terminal:** full PTY sessions (`portable-pty` + `xterm.js`) for seamless CLI interaction alongside the editor.
-- _Known gap:_ no in-app branch switching yet — this is alpha software, and that's on the roadmap, not silently missing on purpose.
-
-### MCP Server
-
-AuricIDE ships its own [FastMCP](https://github.com/punkpeye/fastmcp) server (`src/mcp/server.ts`) that exposes the project's PM database — goals, epics, tickets, requirements, test cases, dependencies, blueprints, canvas, and history — as tools any MCP-compatible AI client can call. It runs as a Rust-managed subprocess over stdio, so agents (and Claude Code / Cursor / Gemini via `.mcp.json`) can read and mutate project state directly — the same state the conductor and UI operate on, not a separate read-only export.
+- FastMCP server (`src/mcp/server.ts`) over the project SQLite DB
+- Goals, epics, tickets, requirements, tests, deps, blueprints, canvas, history
+- Same state as the UI/conductor — agents mutate the real project, not a side export
 
 ---
 
-## Tech Stack
+## Stack
 
-| Layer                  | Technology                                                                                                                    |
-| :--------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
-| **Desktop Core**       | [Tauri v2](https://tauri.app/) (Rust)                                                                                         |
-| **Frontend Framework** | [Next.js 16](https://nextjs.org/) (App Router), React 19                                                                      |
-| **Editor Engine**      | [CodeMirror 6](https://codemirror.net/)                                                                                       |
-| **Styling**            | [Tailwind CSS 4](https://tailwindcss.com/)                                                                                    |
-| **Visual Canvas**      | [XYFlow](https://xyflow.com/) (React Flow) + [dagre](https://github.com/dagrejs/dagre), [Excalidraw](https://excalidraw.com/) |
-| **3D**                 | [react-three-fiber](https://github.com/pmndrs/react-three-fiber) + [drei](https://github.com/pmndrs/drei)                     |
-| **NLP Engine**         | [wink-nlp](https://winkjs.org/), [Transformers.js](https://huggingface.co/docs/transformers.js/)                              |
-| **State Management**   | [Zustand](https://github.com/pmndrs/zustand)                                                                                  |
-| **Terminal**           | [xterm.js](https://xtermjs.org/) + `portable-pty`                                                                             |
-| **Local Database**     | SQLite via `better-sqlite3` (frontend/MCP) and `rusqlite` (Tauri backend)                                                     |
-| **Agent Protocol**     | [FastMCP](https://github.com/punkpeye/fastmcp) (Model Context Protocol server)                                                |
+| Layer        | Tech                                              |
+| ------------ | ------------------------------------------------- |
+| Shell        | Tauri v2 (Rust)                                   |
+| UI           | Next.js 16, React 19, Tailwind 4                  |
+| Editor       | CodeMirror 6                                      |
+| Canvas       | XYFlow, dagre, Excalidraw                         |
+| State        | Zustand                                           |
+| DB           | SQLite (`rusqlite` backend, `better-sqlite3` MCP) |
+| Terminal     | portable-pty + xterm.js                           |
+| Agents / MCP | PTY child processes, FastMCP                      |
+| NLP          | wink-nlp, Transformers.js (optional bits)         |
 
 ---
 
-## Getting Started
+## Requirements
 
-### Prerequisites
+- Node.js ≥ 20
+- pnpm ≥ 8
+- Rust ≥ 1.77
+- [Tauri system deps](https://v2.tauri.app/start/prerequisites/) for your OS
 
-- **Node.js** >= 20
-- **pnpm** >= 8
-- **Rust** >= 1.77 (for building the Tauri backend)
-- [Tauri Dependencies](https://v2.tauri.app/start/prerequisites/) for your OS.
+---
 
-### Installation & Development
-
-The easiest way to get started is using the provided development scripts:
+## Run
 
 ```bash
-# Clone the repository
 git clone https://github.com/j-amelunxen/AuricIDE.git
 cd AuricIDE
-
-# Check your environment and start the development server
-./run_dev.sh
+./run_dev.sh          # check_env + pnpm install + tauri dev
 ```
 
-Alternatively, you can run the steps manually:
+Or step by step:
 
 ```bash
-# Verify your environment
 ./check_env.sh
-
-# Install dependencies
 pnpm install
-
-# Launch in Development Mode (Full Desktop App)
-pnpm tauri:dev
-
-# Run Web-only Preview (Limited native features)
-pnpm dev
+pnpm tauri:dev        # full desktop app
+pnpm dev              # Next only — limited native features
 ```
 
 ---
 
-## Quality Assurance
+## Tests & checks
 
-AuricIDE is built with a focus on reliability and performance, following a strict TDD workflow (see `CLAUDE.md`).
+TDD is the house rule (see `CLAUDE.md`). Don't run `pnpm test` in CI/agents — watch mode hangs. Use `test:run`.
 
 ```bash
-pnpm check:all         # Runs lint, format check, knip, jscpd, TS tests, Rust tests, and Clippy
-pnpm test:run          # Run Vitest suite once (do NOT use `pnpm test` — its watch mode hangs CI/agents)
-pnpm tauri:test        # Run Cargo tests (Rust backend)
-pnpm tauri:clippy      # Rust linter
-pnpm test:e2e          # Run Playwright end-to-end tests
-pnpm lint              # ESLint
-pnpm format:check      # Prettier check
+pnpm check:all        # lint, format, knip, jscpd, TS tests, cargo test, clippy, fmt, machete
+pnpm test:run         # Vitest once
+pnpm tauri:test       # Rust
+pnpm tauri:clippy
+pnpm test:e2e         # Playwright
+pnpm lint
+pnpm format:check
+```
+
+Single file / name:
+
+```bash
+pnpm test:run src/lib/store/pmSlice.test.ts
+pnpm test:run -t "epic"
 ```
 
 ---
 
-## Project Structure
+## Layout
 
 ```text
-├── src/
-│   ├── app/                # Next.js Application (App Router)
-│   │   └── components/     # UI: goals, pm, requirements, agents, canvas, mindmap,
-│   │                       #     excalidraw, cockpit, git, terminal, editor, ...
-│   ├── lib/                # Shared logic
-│   │   ├── store/          # Zustand slices (pm, goals, conductor, agents, git, canvas, ...)
-│   │   ├── editor/          # CodeMirror extensions (highlighting, mermaid, wikilinks, git gutter)
-│   │   ├── tauri/           # Typed IPC wrappers around Tauri commands
-│   │   ├── nlp/             # wink-nlp / Transformers.js based highlighting & entity extraction
-│   │   ├── orchestration/   # Ticket/dependency graph building for the conductor
-│   │   └── ...              # ascii-art, blueprints, canvas, mermaid, refactoring, qa, ...
-│   ├── mcp/                 # FastMCP server + tool implementations (one file per domain)
-│   └── types/                # Global TypeScript definitions
-├── src-tauri/
-│   ├── src/                 # Rust backend (database, agents, git, PTY shell, LLM, MCP subprocess)
-│   └── tauri.conf.json      # Tauri configuration
-└── e2e/                      # Playwright E2E tests
+src/
+  app/                 # Next App Router UI
+  lib/
+    store/             # Zustand slices (pm, goals, conductor, agents, …)
+    editor/            # CodeMirror extensions
+    tauri/             # typed IPC wrappers
+    agents/            # fleet, attention, liveness, …
+    nlp/ orchestration/ …
+  mcp/                 # FastMCP server + tools (one file per domain)
+src-tauri/src/         # Rust: DB, agents, git, PTY, LLM, MCP subprocess
+e2e/                   # Playwright
+dynamic-providers/     # drop-in agent CLI JSON configs
+docs/                  # assets, brand, automation surface notes
 ```
-
----
-
-Driven by: https://software-architecture.ai
 
 ---
 
 ## License
 
-Licensed under **AGPL v3**. Commercial licensing available on request.
+**AGPL-3.0-only.** Commercial licensing on request.
+
+---
+
+Driven by: [software-architecture.ai](https://software-architecture.ai)

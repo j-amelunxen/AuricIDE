@@ -3,14 +3,16 @@ import { renderHook, waitFor } from '@testing-library/react';
 
 const listeners = new Map<string, (event: { payload: unknown }) => void>();
 const mockUnlisten = vi.fn();
-const mockListen = vi.fn(async (event: string, handler: (e: { payload: unknown }) => void) => {
-  listeners.set(event, handler);
-  return mockUnlisten;
-});
-const mockInvoke = vi.fn(async () => undefined);
+const mockListen = vi.fn(
+  async (event: string, handler: (e: { payload: unknown }) => void): Promise<() => void> => {
+    listeners.set(event, handler);
+    return mockUnlisten;
+  }
+);
+const mockInvoke = vi.fn(async (_command: string, _args?: Record<string, unknown>) => undefined);
 
-vi.mock('@tauri-apps/api/event', () => ({ listen: (...args: never[]) => mockListen(...args) }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: never[]) => mockInvoke(...args) }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: mockListen }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }));
 
 import { useMenuCommands } from './useMenuCommands';
 
@@ -19,12 +21,12 @@ function emit(event: string, payload: unknown) {
 }
 
 describe('useMenuCommands', () => {
-  let onCommand: ReturnType<typeof vi.fn>;
+  let onCommand: ReturnType<typeof vi.fn<(commandId: string) => void>>;
 
   beforeEach(() => {
     listeners.clear();
     vi.clearAllMocks();
-    onCommand = vi.fn();
+    onCommand = vi.fn<(commandId: string) => void>();
   });
 
   afterEach(() => {
@@ -58,7 +60,7 @@ describe('useMenuCommands', () => {
     });
     await waitFor(() => expect(listeners.has('menu:command')).toBe(true));
 
-    const replacement = vi.fn();
+    const replacement = vi.fn<(commandId: string) => void>();
     rerender({ handler: replacement });
     emit('menu:command', 'file.save');
 
@@ -72,8 +74,8 @@ describe('useMenuCommands', () => {
     });
     await waitFor(() => expect(mockListen).toHaveBeenCalledTimes(1));
 
-    rerender({ handler: vi.fn() });
-    rerender({ handler: vi.fn() });
+    rerender({ handler: vi.fn<(commandId: string) => void>() });
+    rerender({ handler: vi.fn<(commandId: string) => void>() });
 
     expect(mockListen).toHaveBeenCalledTimes(1);
   });

@@ -4,7 +4,12 @@ import { useMemo, useState } from 'react';
 import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
-import { getGoalSatisfaction, getGoalWorkflowStage, getRunsForGoal } from '@/lib/store/goalsSlice';
+import {
+  getGoalDescendants,
+  getGoalSatisfaction,
+  getGoalWorkflowStage,
+  getRunsForGoal,
+} from '@/lib/store/goalsSlice';
 import { useStore } from '@/lib/store';
 import { GOAL_STATUS_STYLES } from './GoalTree';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -109,6 +114,12 @@ export function GoalDetailPanel({
     });
   }, [goal, tickets, ticketQuery]);
 
+  const validParents = useMemo(() => {
+    if (!goal) return [];
+    const excluded = new Set([goal.id, ...getGoalDescendants(goals, goal.id).map((g) => g.id)]);
+    return goals.filter((candidate) => !excluded.has(candidate.id));
+  }, [goal, goals]);
+
   if (!goal) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-center">
@@ -152,6 +163,22 @@ export function GoalDetailPanel({
             {['low', 'normal', 'high', 'critical'].map((p) => (
               <option key={p} value={p} className="bg-background-dark">
                 {p}
+              </option>
+            ))}
+          </select>
+          <select
+            data-testid="goal-detail-parent"
+            aria-label="Parent goal"
+            value={goal.parentId ?? ''}
+            onChange={(e) => onUpdate(goal.id, { parentId: e.target.value || null })}
+            className="max-w-48 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-foreground outline-none"
+          >
+            <option value="" className="bg-background-dark">
+              No parent (top level)
+            </option>
+            {validParents.map((candidate) => (
+              <option key={candidate.id} value={candidate.id} className="bg-background-dark">
+                Parent: {candidate.name}
               </option>
             ))}
           </select>

@@ -385,7 +385,9 @@ export function evaluateGoal(
   // A goal with nothing attached is vacuously "true" but not meaningfully
   // achieved — refuse to report it as satisfied.
   if (tickets.length === 0 && reqs.length === 0 && children.length === 0 && stations.length === 0) {
-    blockers.push('Goal has no tickets, requirements, or sub-goals — nothing to verify');
+    blockers.push(
+      'This goal has no attached tickets, linked requirements, child goals, or goal-line stations. Add work before running the conductor.'
+    );
   }
 
   return {

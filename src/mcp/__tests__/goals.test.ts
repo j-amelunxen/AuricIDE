@@ -43,7 +43,7 @@ describe('evaluateGoal — the SQL twin of getGoalSatisfaction', () => {
     const goal = createGoal(db, { name: 'Bare goal' }, 'mcp');
     const result = evaluateGoal(db, goal.id);
     expect(result.satisfied).toBe(false);
-    expect(result.blockers.join(' ')).toContain('nothing to verify');
+    expect(result.blockers.join(' ')).toContain('Add work before running the conductor');
   });
 
   it('is satisfied when all attached tickets are done', () => {

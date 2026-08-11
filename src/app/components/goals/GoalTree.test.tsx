@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { GoalTree } from './GoalTree';
+import { getGoalDropPosition, GoalTree } from './GoalTree';
 import type { PmGoal } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 
@@ -102,6 +102,74 @@ describe('GoalTree', () => {
       />
     );
     expect(screen.getByTestId('goal-agents-g1').textContent).toContain('2');
+  });
+
+  it('highlights an inside drop and reports the tree move', () => {
+    const onMoveGoal = vi.fn();
+    const goals = [makeGoal({ id: 'source' }), makeGoal({ id: 'target' })];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onMoveGoal={onMoveGoal}
+      />
+    );
+    const source = screen.getByTestId('goal-node-source');
+    const target = screen.getByTestId('goal-node-target');
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      height: 40,
+      bottom: 40,
+      left: 0,
+      right: 200,
+      width: 200,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer, clientY: 20 });
+    expect(target.className).toContain('ring-primary/60');
+    fireEvent.drop(target, { dataTransfer, clientY: 20 });
+
+    expect(onMoveGoal).toHaveBeenCalledWith('source', 'target', 'inside');
+  });
+
+  it('divides a goal row into before, inside, and after drop zones', () => {
+    const rect = { top: 100, height: 40 };
+    expect(getGoalDropPosition(102, rect)).toBe('before');
+    expect(getGoalDropPosition(120, rect)).toBe('inside');
+    expect(getGoalDropPosition(138, rect)).toBe('after');
+  });
+
+  it('blocks drops into descendants', () => {
+    const onMoveGoal = vi.fn();
+    const goals = [
+      makeGoal({ id: 'root' }),
+      makeGoal({ id: 'child', parentId: 'root' }),
+      makeGoal({ id: 'sibling', sortOrder: 1 }),
+    ];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onMoveGoal={onMoveGoal}
+      />
+    );
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+
+    fireEvent.dragStart(screen.getByTestId('goal-node-root'), { dataTransfer });
+    const child = screen.getByTestId('goal-node-child');
+    fireEvent.dragOver(child, { dataTransfer, clientY: 20 });
+    expect(child.className).not.toContain('ring-primary/60');
+    fireEvent.drop(child, { dataTransfer, clientY: 20 });
+    expect(onMoveGoal).not.toHaveBeenCalled();
   });
 });
 

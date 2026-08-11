@@ -376,7 +376,7 @@ fn import_legacy_webkit_profiles() -> Vec<RecentProject> {
                 }
             }
         }
-        return merge_projects(imported);
+        merge_projects(imported)
     }
     #[cfg(not(target_os = "macos"))]
     Vec::new()
@@ -405,7 +405,7 @@ fn import_legacy_starred_profiles() -> Vec<StarredProject> {
                 }
             }
         }
-        return merge_starred_projects(imported);
+        merge_starred_projects(imported)
     }
     #[cfg(not(target_os = "macos"))]
     Vec::new()

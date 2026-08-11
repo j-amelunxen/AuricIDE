@@ -15,14 +15,18 @@ function describe(error: unknown): string {
  * it always announces itself first.
  */
 export async function withPersistFeedback<T>(
-  state: Partial<ToastSlice>,
+  state: unknown,
   what: string,
   run: () => Promise<T>
 ): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    state.showToast?.(`Could not save ${what}: ${describe(error)}`, 'error');
+    const showToast =
+      typeof state === 'object' && state !== null && 'showToast' in state
+        ? (state as Partial<ToastSlice>).showToast
+        : undefined;
+    showToast?.(`Could not save ${what}: ${describe(error)}`, 'error');
     throw error;
   }
 }

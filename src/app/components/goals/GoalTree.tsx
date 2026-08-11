@@ -1,9 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type DragEvent } from 'react';
 import type { PmGoal } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
-import { getGoalChildren, getGoalProgress, getRootGoals } from '@/lib/store/goalsSlice';
+import {
+  getGoalChildren,
+  getGoalDescendants,
+  getGoalProgress,
+  getRootGoals,
+  type GoalDropPosition,
+} from '@/lib/store/goalsSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export const GOAL_STATUS_STYLES: Record<string, { dot: string; label: string; text: string }> = {
@@ -20,6 +26,7 @@ interface GoalTreeProps {
   tickets: PmTicket[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onMoveGoal?: (draggedId: string, targetId: string, position: GoalDropPosition) => void;
   /** Agent count per goal id (running agents working toward the goal). */
   activeAgentsByGoal?: Record<string, number>;
   /** Opens the goal creation dialog; enables the empty-state call to action. */
@@ -35,6 +42,20 @@ interface GoalNodeProps extends GoalTreeProps {
   depth: number;
   collapsed: Set<string>;
   onToggle: (id: string) => void;
+  draggedId: string | null;
+  dropTarget: { id: string; position: GoalDropPosition } | null;
+  onDragStart: (id: string, event: DragEvent<HTMLDivElement>) => void;
+  onDragOverGoal: (id: string, event: DragEvent<HTMLDivElement>) => void;
+  onDropGoal: (id: string, event: DragEvent<HTMLDivElement>) => void;
+  onDragEnd: () => void;
+}
+
+export function getGoalDropPosition(
+  clientY: number,
+  rect: Pick<DOMRect, 'top' | 'height'>
+): GoalDropPosition {
+  const ratio = (clientY - rect.top) / Math.max(rect.height, 1);
+  return ratio < 0.25 ? 'before' : ratio > 0.75 ? 'after' : 'inside';
 }
 
 function GoalNode({
@@ -44,9 +65,16 @@ function GoalNode({
   tickets,
   selectedId,
   onSelect,
+  onMoveGoal,
   activeAgentsByGoal,
   collapsed,
   onToggle,
+  draggedId,
+  dropTarget,
+  onDragStart,
+  onDragOverGoal,
+  onDropGoal,
+  onDragEnd,
 }: GoalNodeProps) {
   const children = getGoalChildren(goals, goal.id);
   const progress = getGoalProgress(goals, tickets, goal.id);
@@ -58,13 +86,25 @@ function GoalNode({
       ? Math.round((progress.doneTickets / progress.totalTickets) * 100)
       : null;
   const agentCount = activeAgentsByGoal?.[goal.id] ?? 0;
+  const dropPosition = dropTarget?.id === goal.id ? dropTarget.position : null;
 
   return (
-    <div>
+    <div className="relative">
+      {dropPosition === 'before' && (
+        <span
+          data-testid={`goal-drop-before-${goal.id}`}
+          className="pointer-events-none absolute -top-px left-3 right-3 z-10 h-0.5 rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary-light-rgb),0.7)]"
+        />
+      )}
       <div
         data-testid={`goal-node-${goal.id}`}
         role="button"
         tabIndex={0}
+        draggable
+        onDragStart={(event) => onDragStart(goal.id, event)}
+        onDragOver={(event) => onDragOverGoal(goal.id, event)}
+        onDrop={(event) => onDropGoal(goal.id, event)}
+        onDragEnd={onDragEnd}
         onClick={() => onSelect(goal.id)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -73,8 +113,14 @@ function GoalNode({
           }
         }}
         style={{ paddingLeft: `${12 + depth * 20}px` }}
-        className={`group flex w-full cursor-pointer items-center gap-2 rounded-lg py-2 pr-3 text-left transition-colors ${
-          isSelected ? 'bg-primary/15 ring-1 ring-primary/30' : 'hover:bg-white/5'
+        className={`group flex w-full cursor-grab items-center gap-2 rounded-lg py-2 pr-3 text-left transition-[background-color,box-shadow,opacity] active:cursor-grabbing ${
+          draggedId === goal.id ? 'opacity-35' : ''
+        } ${
+          dropPosition === 'inside'
+            ? 'bg-primary/20 ring-1 ring-inset ring-primary/60'
+            : isSelected
+              ? 'bg-primary/15 ring-1 ring-primary/30'
+              : 'hover:bg-white/5'
         }`}
       >
         {children.length > 0 ? (
@@ -138,6 +184,13 @@ function GoalNode({
         )}
       </div>
 
+      {dropPosition === 'after' && (
+        <span
+          data-testid={`goal-drop-after-${goal.id}`}
+          className="pointer-events-none absolute -bottom-px left-3 right-3 z-10 h-0.5 rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary-light-rgb),0.7)]"
+        />
+      )}
+
       {!isCollapsed &&
         children.map((child) => (
           <GoalNode
@@ -148,9 +201,16 @@ function GoalNode({
             tickets={tickets}
             selectedId={selectedId}
             onSelect={onSelect}
+            onMoveGoal={onMoveGoal}
             activeAgentsByGoal={activeAgentsByGoal}
             collapsed={collapsed}
             onToggle={onToggle}
+            draggedId={draggedId}
+            dropTarget={dropTarget}
+            onDragStart={onDragStart}
+            onDragOverGoal={onDragOverGoal}
+            onDropGoal={onDropGoal}
+            onDragEnd={onDragEnd}
           />
         ))}
     </div>
@@ -162,12 +222,18 @@ export function GoalTree({
   tickets,
   selectedId,
   onSelect,
+  onMoveGoal,
   activeAgentsByGoal,
   onCreate,
   loading = false,
   loadError = null,
 }: GoalTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    id: string;
+    position: GoalDropPosition;
+  } | null>(null);
   const roots = useMemo(() => getRootGoals(goals), [goals]);
 
   const toggle = (id: string) =>
@@ -177,6 +243,52 @@ export function GoalTree({
       else next.add(id);
       return next;
     });
+
+  const canDrop = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return false;
+    return !getGoalDescendants(goals, sourceId).some((goal) => goal.id === targetId);
+  };
+
+  const handleDragStart = (id: string, event: DragEvent<HTMLDivElement>) => {
+    setDraggedId(id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+  };
+
+  const handleDragOverGoal = (targetId: string, event: DragEvent<HTMLDivElement>) => {
+    if (!draggedId || !canDrop(draggedId, targetId)) {
+      setDropTarget(null);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = getGoalDropPosition(event.clientY, rect);
+    setDropTarget({ id: targetId, position });
+  };
+
+  const handleDropGoal = (targetId: string, event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (draggedId && dropTarget?.id === targetId && canDrop(draggedId, targetId)) {
+      onMoveGoal?.(draggedId, targetId, dropTarget.position);
+      if (dropTarget.position === 'inside') {
+        setCollapsed((previous) => {
+          const next = new Set(previous);
+          next.delete(targetId);
+          return next;
+        });
+      }
+    }
+    setDraggedId(null);
+    setDropTarget(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+    setDropTarget(null);
+  };
 
   // An empty tree means three different things. Saying "no goals yet" while
   // the read is still running — or failed — is the one that makes a user
@@ -243,9 +355,16 @@ export function GoalTree({
           tickets={tickets}
           selectedId={selectedId}
           onSelect={onSelect}
+          onMoveGoal={onMoveGoal}
           activeAgentsByGoal={activeAgentsByGoal}
           collapsed={collapsed}
           onToggle={toggle}
+          draggedId={draggedId}
+          dropTarget={dropTarget}
+          onDragStart={handleDragStart}
+          onDragOverGoal={handleDragOverGoal}
+          onDropGoal={handleDropGoal}
+          onDragEnd={handleDragEnd}
         />
       ))}
     </div>

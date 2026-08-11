@@ -23,24 +23,34 @@ export function JudgeLlmContent() {
   const [model, setModel] = useState('');
   const [reasoningEnabled, setReasoningEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (!rootPath) return;
     const load = async () => {
-      const { dbGet } = await import('@/lib/tauri/db');
-      const b = await dbGet(rootPath, JUDGE_NS, 'base_url');
-      const k = await dbGet(rootPath, JUDGE_NS, 'api_key');
-      const m = await dbGet(rootPath, JUDGE_NS, 'model');
-      const r = await dbGet(rootPath, JUDGE_NS, 'reasoning_enabled');
-      setBaseUrl(b || 'https://openrouter.ai/api/v1');
-      setApiKey(k || '');
-      setModel(m || '');
-      setReasoningEnabled(r !== 'false');
-      setJudgeLlmConfigured(!!k);
-      setLoading(false);
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const { dbGet } = await import('@/lib/tauri/db');
+        const [b, k, m, r] = await Promise.all([
+          dbGet(rootPath, JUDGE_NS, 'base_url'),
+          dbGet(rootPath, JUDGE_NS, 'api_key'),
+          dbGet(rootPath, JUDGE_NS, 'model'),
+          dbGet(rootPath, JUDGE_NS, 'reasoning_enabled'),
+        ]);
+        setBaseUrl(b || 'https://openrouter.ai/api/v1');
+        setApiKey(k || '');
+        setModel(m || '');
+        setReasoningEnabled(r !== 'false');
+        setJudgeLlmConfigured(!!k);
+      } catch (error) {
+        setLoadError(`Could not load judge settings: ${String(error)}`);
+      } finally {
+        setLoading(false);
+      }
     };
-    load();
+    void load();
   }, [rootPath, setJudgeLlmConfigured]);
 
   const saveSetting = async (key: string, value: string) => {
@@ -95,7 +105,14 @@ export function JudgeLlmContent() {
     }
   };
 
+  if (!rootPath)
+    return (
+      <div className="text-xs text-foreground-muted">
+        Open a project to configure the judge model.
+      </div>
+    );
   if (loading) return <div className="text-xs text-foreground-muted">Loading settings...</div>;
+  if (loadError) return <div className="text-xs text-red-400">{loadError}</div>;
 
   return (
     <div className="space-y-6">
@@ -119,8 +136,8 @@ export function JudgeLlmContent() {
 
         <SettingsToggle
           label="Enable Reasoning"
-          description="Mandatory for Kimi Thinking on OpenRouter"
-          tooltip="Enables Chain-of-Thought / Thinking models via 'reasoning: { enabled: true }' flag."
+          description="For supported reasoning models on OpenRouter; automatically omitted for Mistral"
+          tooltip="Sends OpenRouter's reasoning extension for compatible models. Mistral APIs reject this extension, so AuricIDE omits it automatically."
           checked={reasoningEnabled}
           onChange={(checked) => {
             setReasoningEnabled(checked);

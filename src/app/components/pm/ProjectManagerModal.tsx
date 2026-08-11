@@ -434,7 +434,9 @@ function ProjectManagerDialog() {
                 dependencies={draftDependencies}
                 onSelectTicket={setPmSelectedTicketId}
                 onUpdateTicket={updateTicket}
-                onSave={handleSave}
+                onSave={async () => {
+                  await handleSave();
+                }}
                 onAddTicket={handleOpenCreateTicket}
               />
             </div>
@@ -449,7 +451,9 @@ function ProjectManagerDialog() {
                 dependencies={ticketDependencies}
                 availableItems={availableItems}
                 onUpdateTicket={updateTicket}
-                onSave={handleSave}
+                onSave={async () => {
+                  await handleSave();
+                }}
                 onSaveAndClose={handleSaveAndClose}
                 onCancel={() => setPmSelectedTicketId(null)}
                 onDeleteTicket={(id) => {

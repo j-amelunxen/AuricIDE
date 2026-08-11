@@ -94,6 +94,36 @@ describe('GoalDetailPanel workflow stepper', () => {
   });
 });
 
+describe('GoalDetailPanel hierarchy', () => {
+  it('reparents an existing goal from the parent selector', async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    const root = makeGoal({ id: 'root', name: 'Research workspace' });
+    const currentParent = makeGoal({ id: 'parent', parentId: 'root', name: 'Count records' });
+    const selected = makeGoal({ id: 'selected', parentId: 'parent', name: 'Select audience' });
+
+    renderPanel(selected, [], { goals: [root, currentParent, selected], onUpdate });
+    await user.selectOptions(screen.getByTestId('goal-detail-parent'), 'root');
+
+    expect(onUpdate).toHaveBeenCalledWith('selected', { parentId: 'root' });
+  });
+
+  it('does not offer itself or descendants as parents', () => {
+    const selected = makeGoal({ id: 'selected', name: 'Selected' });
+    const child = makeGoal({ id: 'child', parentId: 'selected', name: 'Child' });
+    const sibling = makeGoal({ id: 'sibling', name: 'Sibling' });
+
+    renderPanel(selected, [], { goals: [selected, child, sibling] });
+
+    const options = Array.from(
+      screen.getByTestId<HTMLSelectElement>('goal-detail-parent').options
+    ).map((option) => option.value);
+    expect(options).toContain('sibling');
+    expect(options).not.toContain('selected');
+    expect(options).not.toContain('child');
+  });
+});
+
 describe('GoalDetailPanel ticket browser', () => {
   it('opens a browsable picker of unlinked tickets on demand', async () => {
     const user = userEvent.setup();

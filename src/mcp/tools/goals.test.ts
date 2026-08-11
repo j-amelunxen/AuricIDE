@@ -223,7 +223,7 @@ describe('goal MCP tools', () => {
       const g = createGoal(db, { name: 'Empty' }, 'mcp');
       const result = evaluateGoal(db, g.id);
       expect(result.satisfied).toBe(false);
-      expect(result.blockers.join(' ')).toContain('nothing to verify');
+      expect(result.blockers.join(' ')).toContain('Add work before running the conductor');
     });
   });
 });
