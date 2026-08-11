@@ -72,3 +72,6 @@ public/excalidraw-assets/
 
 # Generated promo/marketing assets (Higgsfield experiments) — keep out of the repo
 promo-assets/
+
+# Local tool notes — not repo content
+workarounds/
