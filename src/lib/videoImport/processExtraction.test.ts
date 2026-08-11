@@ -112,4 +112,34 @@ describe('video process extraction', () => {
     expect(() => parseExtractedProcess('{"title":"No steps","steps":[]}')).toThrow(/steps/);
     expect(() => parseExtractedProcess('not json')).toThrow(/JSON/);
   });
+
+  it('rejects duplicate, fractional, negative or out-of-range source references', () => {
+    const raw = JSON.stringify({
+      title: 'Import',
+      objective: 'Run it',
+      successCriteria: 'Done',
+      steps: [
+        {
+          title: 'Bad source',
+          actor: 'agent',
+          confidence: 1,
+          sourceSegmentIds: [0, 0],
+          frameTimestampsMs: [100],
+        },
+      ],
+    });
+
+    expect(() => parseExtractedProcess(raw, { transcriptLength: 1 })).toThrow(/unique/);
+    expect(() =>
+      parseExtractedProcess(raw.replace('[0,0]', '[1]'), { transcriptLength: 1 })
+    ).toThrow(/range/);
+    expect(() =>
+      parseExtractedProcess(raw.replace('[0,0]', '[-1]'), { transcriptLength: 1 })
+    ).toThrow(/non-negative integer/);
+    expect(() =>
+      parseExtractedProcess(raw.replace('[0,0]', '[0]').replace('[100]', '[null]'), {
+        transcriptLength: 1,
+      })
+    ).toThrow(/finite non-negative/);
+  });
 });

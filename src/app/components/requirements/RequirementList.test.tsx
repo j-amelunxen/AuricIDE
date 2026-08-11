@@ -169,7 +169,7 @@ describe('RequirementList', () => {
       />
     );
     const indicator = screen.getByTestId('verification-indicator-REQ-AUTH-01');
-    expect(indicator.textContent).toBe('—');
+    expect(indicator.textContent).toBe('-');
   });
 
   it('verification indicator shows green dot for recently verified', () => {

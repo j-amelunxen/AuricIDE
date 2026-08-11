@@ -198,7 +198,7 @@ export function GoalLineCard({
                           onClick={() =>
                             setSourceOpen((current) => (current === s.id ? null : s.id))
                           }
-                          title="Show source notes, transcript and screenshots"
+                          title="Source notes / transcript / frames"
                           className="rounded-md px-2 py-0.5 text-[10px] font-semibold text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
                         >
                           source {sourceOpen === s.id ? '▾' : '▸'}
@@ -228,7 +228,7 @@ export function GoalLineCard({
                         <button
                           data-testid={`station-verify-${s.id}`}
                           onClick={() => onVerify(s.id)}
-                          title="Run the machine check for this station now"
+                          title="Run check"
                           className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
                         >
                           Verify

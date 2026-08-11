@@ -399,7 +399,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         const toaster = get() as AgentSlice & {
           showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
         };
-        toaster.showToast?.(`${failing.name} failed — its last output is on the row`, 'error');
+        toaster.showToast?.(`${failing.name} failed · see row output`, 'error');
       }
     }
     if (status === 'idle' || status === 'error') {

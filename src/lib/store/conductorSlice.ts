@@ -41,7 +41,7 @@ export interface ConductorDecision {
 }
 
 /**
- * The outcome of the most recent conductor run — what the user reads first
+ * The outcome of the most recent conductor run · what the user reads first
  * when they come back to the app. Everything here is derived from actual run
  * state (tickets completed, attempts exhausted, satisfaction blockers), never
  * asserted decoratively.
@@ -189,7 +189,7 @@ export function buildConductorPrompt(
   if (goal) {
     sections.push(
       `## Goal context\nThis task serves the goal "${goal.name}" (goalId: ${goal.id}). ` +
-        'Use this exact goalId with the auric-pm MCP tools (e.g. get_goal, evaluate_goal) — ' +
+        'Use this exact goalId with the auric-pm MCP tools (e.g. get_goal, evaluate_goal) · ' +
         'do not look it up by name.'
     );
     if (goal.description) sections.push(goal.description);
@@ -217,7 +217,7 @@ export function buildConductorPrompt(
     '## Working agreement\n' +
       'Work autonomously and stay strictly within the scope of this task. ' +
       'If the auric-pm MCP tools are available, you may add findings as context items, ' +
-      'but do NOT change ticket statuses and do NOT call record_goal_run — the conductor ' +
+      'but do NOT change ticket statuses and do NOT call record_goal_run · the conductor ' +
       'already tracks this run and its completion. ' +
       'Exit with a non-zero code if you could not complete the task.'
   );
@@ -291,11 +291,11 @@ export const REVIEW_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Placeholder assignment value while a spawn is in flight. */
 const PENDING_SPAWN = '__pending__';
-/** Marker for a ticket under inline (LLM) review — no spawned agent to track. */
+/** Marker for a ticket under inline (LLM) review · no spawned agent to track. */
 const PENDING_REVIEW = '__pending_review__';
 
 export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => {
-  // Heartbeat lives in the creator closure — it is runtime state, not app state.
+  // Heartbeat lives in the creator closure · it is runtime state, not app state.
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   const stopHeartbeat = (): void => {
@@ -360,7 +360,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       await full.savePmData?.(projectPath);
       await full.saveGoals?.(projectPath);
     } catch {
-      // Browser mode / DB not initialized — drafts stay in memory
+      // Browser mode / DB not initialized · drafts stay in memory
     }
   };
 
@@ -416,7 +416,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       }));
       addDecision({
         action: 'complete',
-        detail: `Judge approved — ticket marked done`,
+        detail: `Judge approved · ticket marked done`,
         ticketId,
       });
     } else {
@@ -431,8 +431,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         action: 'fail',
         detail:
           fails < MAX_TICKET_ATTEMPTS
-            ? `Judge rejected — requeued (attempt ${fails}/${MAX_TICKET_ATTEMPTS}): ${verdict.reason}`
-            : `Judge rejected — giving up after ${fails} attempts: ${verdict.reason}`,
+            ? `Judge rejected · requeued (attempt ${fails}/${MAX_TICKET_ATTEMPTS}): ${verdict.reason}`
+            : `Judge rejected · giving up after ${fails} attempts: ${verdict.reason}`,
         ticketId,
       });
     }
@@ -467,7 +467,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     full.updateTicket?.(ticketId, { status: 'in_review' });
     addDecision({
       action: 'review_started',
-      detail: 'Implementer finished — ticket sent to the judge',
+      detail: 'Implementer finished · ticket sent to the judge',
       ticketId,
       agentId: implementerAgentId,
     });
@@ -514,7 +514,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
   /**
    * A spawned review agent (agent form) exited: collect the verdict it wrote,
    * or treat a crash / no-verdict exit as a rejection. Never an approval by
-   * default — silence is not a pass.
+   * default · silence is not a pass.
    */
   const handleReviewAgentExit = async (
     ticketId: string,
@@ -578,7 +578,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         detail: goalId ? `Conductor started for goal ${goalId}` : 'Conductor started (all tickets)',
       });
       // Watchdog: the loop is event-driven, but a swallowed error or lost
-      // event must not park it silently — the heartbeat re-drives the tick.
+      // event must not park it silently · the heartbeat re-drives the tick.
       stopHeartbeat();
       heartbeat = setInterval(() => {
         void get()
@@ -616,7 +616,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         detail:
           reason ??
           (runningAgentIds.length > 0
-            ? `Conductor stopped — killing ${runningAgentIds.length} running agent(s)`
+            ? `Conductor stopped · killing ${runningAgentIds.length} running agent(s)`
             : 'Conductor stopped'),
       });
     },
@@ -657,7 +657,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
       // A judge rejected a ticket-linked station claim (done+claim, with a
       // lastCheckedAt stamp): the station half judged it, the conductor owns
-      // reopening the ticket so it is reworked — within the shared attempt
+      // reopening the ticket so it is reworked · within the shared attempt
       // ledger. A ticket in any non-done state is handled by the ticket judge;
       // this catches the case where the ticket is already done.
       if (goalId) {
@@ -685,7 +685,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           }));
           addDecision({
             action: 'fail',
-            detail: `Station "${st.name}" rejected by the judge — ticket reopened`,
+            detail: `Station "${st.name}" rejected by the judge · ticket reopened`,
             ticketId: ticket.id,
           });
         }
@@ -723,7 +723,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             full.achieveGoal?.(goalId);
             addDecision({
               action: 'goal_achieved',
-              detail: `Goal ${goalId} achieved — all checks green`,
+              detail: `Goal ${goalId} achieved · all checks green`,
             });
             halt();
             finishRun('goal_achieved', goalName, []);
@@ -895,7 +895,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         }));
         addDecision({
           action: 'complete',
-          detail: 'Agent finished — ticket marked done',
+          detail: 'Agent finished · ticket marked done',
           ticketId,
           agentId,
         });
@@ -910,8 +910,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           action: 'fail',
           detail:
             fails < MAX_TICKET_ATTEMPTS
-              ? `Agent errored — requeued (attempt ${fails}/${MAX_TICKET_ATTEMPTS})`
-              : `Agent errored — giving up after ${fails} attempts`,
+              ? `Agent errored · requeued (attempt ${fails}/${MAX_TICKET_ATTEMPTS})`
+              : `Agent errored · giving up after ${fails} attempts`,
           ticketId,
           agentId,
         });
@@ -929,7 +929,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       const full = cross();
 
       // A killed REVIEW agent: the verdict was aborted. Reopen the ticket and
-      // take it out of this run, exactly like a killed implementer — never let
+      // take it out of this run, exactly like a killed implementer · never let
       // it read as an approval.
       const reviewEntry = Object.entries(state.conductorReviewAssignments).find(
         ([, a]) => a === agentId
@@ -949,7 +949,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         });
         addDecision({
           action: 'fail',
-          detail: 'Review agent killed by user — ticket reopened and excluded from this run',
+          detail: 'Review agent killed by user · ticket reopened and excluded from this run',
           ticketId,
           agentId,
         });
@@ -978,7 +978,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       });
       addDecision({
         action: 'fail',
-        detail: 'Agent killed by user — ticket reopened and excluded from this conductor run',
+        detail: 'Agent killed by user · ticket reopened and excluded from this conductor run',
         ticketId,
         agentId,
       });

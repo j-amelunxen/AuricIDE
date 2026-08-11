@@ -48,7 +48,7 @@ describe('TruthsLight', () => {
     expect(screen.queryByTestId('truths-light')).not.toBeInTheDocument();
   });
 
-  it('glows green while every invariant is freshly proven', () => {
+  it('glows green while every requirement is verified', () => {
     useStore.setState({
       requirementsDraft: [
         makeRequirement({ lastVerifiedAt: new Date().toISOString() }),
@@ -57,7 +57,7 @@ describe('TruthsLight', () => {
     });
     render(<TruthsLight />);
     const light = screen.getByTestId('truths-light');
-    expect(light).toHaveTextContent('2/2 truths held');
+    expect(light).toHaveTextContent('2/2 verified');
     expect(screen.getByTestId('truths-light-dot')).toHaveClass('bg-green-400');
   });
 
@@ -68,11 +68,11 @@ describe('TruthsLight', () => {
       ],
     });
     render(<TruthsLight />);
-    expect(screen.getByTestId('truths-light')).toHaveTextContent('1 need proof');
+    expect(screen.getByTestId('truths-light')).toHaveTextContent('1 stale');
     expect(screen.getByTestId('truths-light-dot')).toHaveClass('bg-amber-400');
   });
 
-  it('turns amber for active-but-unverified invariants', () => {
+  it('turns amber for active-but-unverified requirements', () => {
     useStore.setState({
       requirementsDraft: [
         makeRequirement({ status: 'active', lastVerifiedAt: null }),
@@ -81,7 +81,7 @@ describe('TruthsLight', () => {
       ],
     });
     render(<TruthsLight />);
-    expect(screen.getByTestId('truths-light')).toHaveTextContent('2 need proof');
+    expect(screen.getByTestId('truths-light')).toHaveTextContent('2 stale');
   });
 
   it('ignores deprecated requirements entirely', () => {
@@ -92,7 +92,7 @@ describe('TruthsLight', () => {
       ],
     });
     render(<TruthsLight />);
-    expect(screen.getByTestId('truths-light')).toHaveTextContent('1/1 truths held');
+    expect(screen.getByTestId('truths-light')).toHaveTextContent('1/1 verified');
   });
 
   it('opens the requirements surface when clicked', () => {

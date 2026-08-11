@@ -642,11 +642,11 @@ describe('lockstep: a claimed station blocks satisfaction until verified', () =>
     ...overrides,
   });
 
-  it('a done+claim station blocks with a "claimed, not verified" blocker', () => {
+  it('a done+claim station blocks with an unverified-claim blocker', () => {
     const goal = makeGoal({ id: 'g1', name: 'Ship it' });
     const result = getGoalSatisfaction([goal], [], [], [], [claimStation()], 'g1');
     expect(result.satisfied).toBe(false);
-    expect(result.blockers).toContain('Station "Build the parser" is claimed, not verified');
+    expect(result.blockers).toContain('Station "Build the parser": unverified claim');
   });
 
   it('the same station satisfies once verified (judged / proof / human)', () => {

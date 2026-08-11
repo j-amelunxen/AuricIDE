@@ -149,6 +149,42 @@ function numberList(source: Record<string, unknown>, key: string): number[] {
   return value;
 }
 
+function sourceSegmentIds(
+  source: Record<string, unknown>,
+  index: number,
+  transcriptLength?: number
+): number[] {
+  const values = numberList(source, 'sourceSegmentIds');
+  if (values.some((value) => !Number.isInteger(value) || value < 0)) {
+    throw new Error(
+      `Invalid extracted process: steps[${index}].sourceSegmentIds must contain non-negative integers`
+    );
+  }
+  if (new Set(values).size !== values.length) {
+    throw new Error(`Invalid extracted process: steps[${index}].sourceSegmentIds must be unique`);
+  }
+  if (transcriptLength !== undefined && values.some((value) => value >= transcriptLength)) {
+    throw new Error(
+      `Invalid extracted process: steps[${index}].sourceSegmentIds is outside transcript range`
+    );
+  }
+  return values;
+}
+
+function frameTimestamps(source: Record<string, unknown>, index: number): number[] {
+  const value = source.frameTimestampsMs;
+  if (value === undefined) return [];
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== 'number' || !Number.isFinite(item) || item < 0)
+  ) {
+    throw new Error(
+      `Invalid extracted process: steps[${index}].frameTimestampsMs must contain finite non-negative numbers`
+    );
+  }
+  return [...new Set(value)];
+}
+
 function extractJson(raw: string): unknown {
   const cleaned = raw.replace(/```(?:json)?/gi, '').trim();
   const start = cleaned.indexOf('{');
@@ -161,7 +197,10 @@ function extractJson(raw: string): unknown {
   }
 }
 
-export function parseExtractedProcess(raw: string): ExtractedProcess {
+export function parseExtractedProcess(
+  raw: string,
+  bounds: { transcriptLength?: number } = {}
+): ExtractedProcess {
   const root = record(extractJson(raw));
   if (!root) throw new Error('Invalid extracted process: expected an object');
   if (!Array.isArray(root.steps) || root.steps.length === 0) {
@@ -191,8 +230,8 @@ export function parseExtractedProcess(raw: string): ExtractedProcess {
       actor: actor as ProcessActor,
       stationKind,
       confidence: Math.max(0, Math.min(1, confidence)),
-      sourceSegmentIds: numberList(step, 'sourceSegmentIds'),
-      frameTimestampsMs: numberList(step, 'frameTimestampsMs'),
+      sourceSegmentIds: sourceSegmentIds(step, index, bounds.transcriptLength),
+      frameTimestampsMs: frameTimestamps(step, index),
     };
   });
 

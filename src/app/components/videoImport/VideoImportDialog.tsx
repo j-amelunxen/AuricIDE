@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
-import { dbGet } from '@/lib/tauri/db';
+import { dbGet, dbSet } from '@/lib/tauri/db';
 import { readFileBase64 } from '@/lib/tauri/fs';
 import { llmCall } from '@/lib/tauri/llm';
 import {
@@ -18,7 +18,12 @@ import {
   type ProcessActor,
   type ProcessStationKind,
 } from '@/lib/videoImport/processExtraction';
-import { buildVideoImportCommit } from '@/lib/videoImport/commitImport';
+import {
+  buildVideoImportCommit,
+  reconcileVideoImportCommitIdentity,
+  reconcileVideoImportDraftState,
+  type VideoImportCommitIdentity,
+} from '@/lib/videoImport/commitImport';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 type DialogStage = 'select' | 'analyzing' | 'review' | 'saving';
@@ -56,9 +61,9 @@ function VideoImportDialogContent() {
   const dropRef = useRef<HTMLDivElement>(null);
   const rootPath = useStore((s) => s.rootPath);
   const setOpen = useStore((s) => s.setVideoImportDialogOpen);
-  const addGoal = useStore((s) => s.addGoal);
-  const addStation = useStore((s) => s.addStation);
+  const savePmData = useStore((s) => s.savePmData);
   const saveGoals = useStore((s) => s.saveGoals);
+  const startConductor = useStore((s) => s.startConductor);
   const setGoalLinesOpen = useStore((s) => s.setGoalLinesOpen);
   const showToast = useStore((s) => s.showToast);
 
@@ -69,6 +74,12 @@ function VideoImportDialogContent() {
   const [media, setMedia] = useState<VideoMediaAnalysis | null>(null);
   const [process, setProcess] = useState<ExtractedProcess | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runAfterCreate, setRunAfterCreate] = useState(false);
+  const [stepKeys, setStepKeys] = useState<string[]>([]);
+  const [announcement, setAnnouncement] = useState('');
+  const [focusRequest, setFocusRequest] = useState<{ key: string; nonce: number } | null>(null);
+  const stepTitleRefs = useRef(new Map<string, HTMLInputElement>());
+  const commitIds = useRef<VideoImportCommitIdentity | null>(null);
 
   const close = useCallback(() => {
     if (stage === 'analyzing' || stage === 'saving') return;
@@ -135,11 +146,11 @@ function VideoImportDialogContent() {
     setStage('analyzing');
     setError(null);
     try {
-      setProgress('Transcribing audio and preserving timed source material...');
+      setProgress('Transcribing…');
       const analyzed = await analyzeVideoMedia(rootPath, sourcePath);
       setMedia(analyzed);
 
-      setProgress('Grounding the process in transcript and screenshots...');
+      setProgress('Analyzing transcript + frames…');
       const visionEnabled =
         (await dbGet(rootPath, 'video_import_settings', 'vision_enabled')) !== 'false';
       const frames = await Promise.all(
@@ -165,14 +176,18 @@ function VideoImportDialogContent() {
           sourceName: analyzed.sourceName,
         }),
       });
-      const extracted = parseExtractedProcess(response.content);
-      await saveVideoProcessAnalysis(rootPath, analyzed.importId, {
-        extracted,
-        completeTranscript: analyzed.transcript,
-        allFrames: analyzed.frames,
-        sourcePath: analyzed.sourcePath,
-        workspacePath: analyzed.workspacePath,
+      const extracted = parseExtractedProcess(response.content, {
+        transcriptLength: analyzed.transcript.length,
       });
+      setStepKeys(extracted.steps.map(() => crypto.randomUUID()));
+      const savedIds = await dbGet(rootPath, 'video_import_commit_ids', analyzed.sourcePath);
+      if (savedIds) {
+        try {
+          commitIds.current = JSON.parse(savedIds);
+        } catch {
+          commitIds.current = null;
+        }
+      }
       setProcess(extracted);
       setStage('review');
     } catch (reason) {
@@ -180,6 +195,11 @@ function VideoImportDialogContent() {
       setStage('select');
     }
   };
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    stepTitleRefs.current.get(focusRequest.key)?.focus();
+  }, [focusRequest]);
 
   const updateStep = (index: number, changes: Partial<ExtractedProcess['steps'][number]>) => {
     setProcess((current) =>
@@ -194,34 +214,131 @@ function VideoImportDialogContent() {
     );
   };
 
+  const moveStep = (index: number, offset: -1 | 1) => {
+    setProcess((current) => {
+      if (!current) return current;
+      const target = index + offset;
+      if (target < 0 || target >= current.steps.length) return current;
+      const steps = [...current.steps];
+      [steps[index], steps[target]] = [steps[target], steps[index]];
+      setStepKeys((keys) => {
+        const next = [...keys];
+        [next[index], next[target]] = [next[target], next[index]];
+        setFocusRequest({ key: next[target], nonce: Date.now() });
+        return next;
+      });
+      setAnnouncement(`Moved ${current.steps[index].title} to position ${target + 1}`);
+      return { ...current, steps };
+    });
+  };
+
+  const deleteStep = (index: number) => {
+    const deleted = process?.steps[index];
+    if (!process || !deleted || process.steps.length === 1) return;
+    const nextKeys = stepKeys.filter((_, i) => i !== index);
+    setStepKeys(nextKeys);
+    setProcess({ ...process, steps: process.steps.filter((_, i) => i !== index) });
+    setFocusRequest({ key: nextKeys[Math.min(index, nextKeys.length - 1)], nonce: Date.now() });
+    setAnnouncement(`Deleted ${deleted.title}`);
+  };
+
+  const addStep = () => {
+    const key = crypto.randomUUID();
+    setStepKeys((keys) => [...keys, key]);
+    setProcess((current) =>
+      current
+        ? {
+            ...current,
+            steps: [
+              ...current.steps,
+              {
+                title: 'New step',
+                description: '',
+                actor: 'agent',
+                stationKind: 'normal',
+                confidence: 1,
+                sourceSegmentIds: [],
+                frameTimestampsMs: [],
+              },
+            ],
+          }
+        : current
+    );
+    setFocusRequest({ key, nonce: Date.now() });
+    setAnnouncement(`Added step ${(process?.steps.length ?? 0) + 1}`);
+  };
+
   const commit = async () => {
     if (!rootPath || !media || !process || stage === 'saving') return;
     setStage('saving');
     setError(null);
     try {
-      const goalId = crypto.randomUUID();
+      commitIds.current = reconcileVideoImportCommitIdentity(
+        commitIds.current,
+        media.importId,
+        process.steps.length
+      );
+      const ids = commitIds.current;
+      await dbSet(rootPath, 'video_import_commit_ids', media.sourcePath, JSON.stringify(ids));
       const built = buildVideoImportCommit({
         process,
         media,
-        goalId,
-        stationIds: process.steps.map(() => crypto.randomUUID()),
+        ...ids,
         now: timestamp(),
       });
-      addGoal(built.goal);
-      built.stations.forEach(addStation);
       await saveVideoProcessAnalysis(rootPath, media.importId, {
+        status: 'pending',
         reviewedProcess: process,
-        goalId,
+        commitIdentity: ids,
+        completeTranscript: media.transcript,
+        allFrames: media.frames,
+        sourcePath: media.sourcePath,
+        workspacePath: media.workspacePath,
+      });
+      const current = useStore.getState();
+      const reconciled = reconcileVideoImportDraftState(
+        {
+          goals: current.goalsDraft,
+          stations: current.goalStationsDraft,
+          epics: current.pmDraftEpics,
+          tickets: current.pmDraftTickets,
+          dependencies: current.pmDraftDependencies,
+        },
+        built,
+        ids
+      );
+      useStore.setState({
+        goalsDraft: reconciled.goals,
+        goalStationsDraft: reconciled.stations,
+        goalsDirty: true,
+        pmDraftEpics: reconciled.epics,
+        pmDraftTickets: reconciled.tickets,
+        pmDraftDependencies: reconciled.dependencies,
+        pmDirty: true,
+      });
+      // PM first means a failed goal save leaves harmless, retryable orphan work instead of a
+      // conductor-visible goal that points at tickets which do not exist yet.
+      await savePmData(rootPath);
+      await saveGoals(rootPath);
+      await saveVideoProcessAnalysis(rootPath, media.importId, {
+        status: 'committed',
+        reviewedProcess: process,
+        goalId: built.goal.id,
+        epicId: built.epic.id,
         stationIds: built.stations.map((station) => station.id),
+        ticketIds: built.tickets.map((ticket) => ticket.id),
+        dependencyIds: built.dependencies.map((dependency) => dependency.id),
         unassignedTranscript: built.unassignedTranscript,
         completeTranscript: media.transcript,
         allFrames: media.frames,
+        sourcePath: media.sourcePath,
+        workspacePath: media.workspacePath,
       });
-      await saveGoals(rootPath);
       setOpen(false);
-      setGoalLinesOpen(true);
+      if (runAfterCreate) startConductor(built.goal.id);
+      else setGoalLinesOpen(true);
       showToast(
-        `Created “${built.goal.name}” with ${built.stations.length} sourced stations`,
+        `Created “${built.goal.name}” with ${built.tickets.length} executable tickets${runAfterCreate ? ' and started it' : ''}`,
         'success'
       );
     } catch (reason) {
@@ -240,7 +357,7 @@ function VideoImportDialogContent() {
 
   return (
     <div
-      className="fixed inset-0 z-[350] flex items-center justify-center bg-black/80 p-5 backdrop-blur-sm"
+      className="fixed inset-0 z-[350] flex items-center justify-center bg-black/80 p-2 backdrop-blur-sm sm:p-5"
       onClick={close}
     >
       <div
@@ -252,17 +369,17 @@ function VideoImportDialogContent() {
         className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a10] shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex items-center gap-3 border-b border-white/5 px-6 py-4">
+        <header className="flex flex-wrap items-center gap-2 border-b border-white/5 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4">
           <AuricIcon name="video_file" aria-hidden="true" className="text-lg text-primary-light" />
           <div>
             <h2 id="video-import-title" className="text-sm font-bold text-foreground">
               Import process from video
             </h2>
             <p className="mt-0.5 text-[10px] text-foreground-muted">
-              Transcript, screenshots and source links remain inspectable after import.
+              Transcript, frames and links stay after import.
             </p>
           </div>
-          <ol className="ml-auto flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.12em]">
+          <ol className="order-3 flex w-full items-center justify-between gap-1 font-mono text-[8px] uppercase tracking-[0.08em] sm:order-none sm:ml-auto sm:w-auto sm:justify-start sm:gap-2 sm:text-[9px] sm:tracking-[0.12em]">
             {['Video', 'Analyze', 'Review', 'Create'].map((label, index) => {
               const active =
                 (stage === 'select' && index === 0) ||
@@ -283,13 +400,13 @@ function VideoImportDialogContent() {
             onClick={close}
             disabled={stage === 'analyzing' || stage === 'saving'}
             aria-label="Close video import"
-            className="ml-2 rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground disabled:opacity-30"
+            className="ml-auto flex size-11 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary-light disabled:opacity-30 sm:ml-2"
           >
             <AuricIcon name="close" aria-hidden="true" className="text-lg" />
           </button>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <main className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
           {stage === 'select' && (
             <div className="mx-auto flex max-w-2xl flex-col gap-5">
               <div
@@ -312,8 +429,8 @@ function VideoImportDialogContent() {
                 </p>
                 <p className="mt-1 max-w-md text-[11px] leading-relaxed text-foreground-muted">
                   {sourcePath
-                    ? 'Ready to transcribe. The original remains untouched.'
-                    : 'MP4, MOV, MKV, WEBM or M4V. Audio, timed transcript and sampled frames are stored in the project import record.'}
+                    ? 'Ready to transcribe. Original stays untouched.'
+                    : 'MP4, MOV, MKV, WEBM or M4V. Stored in the import record.'}
                 </p>
                 <button
                   onClick={() => void chooseVideo()}
@@ -329,13 +446,11 @@ function VideoImportDialogContent() {
                   className="text-base text-primary-light"
                 />
                 <div>
-                  <p className="text-[11px] font-semibold text-foreground">
-                    No source information is discarded
-                  </p>
+                  <p className="text-[11px] font-semibold text-foreground">Source kept</p>
                   <p className="mt-0.5 text-[10px] leading-relaxed text-foreground-muted">
-                    Every transcript segment and screenshot stays in{' '}
-                    <span className="font-mono">.auric/video-imports</span>. Unassigned material is
-                    called out during review instead of silently omitted.
+                    Transcript + frames under{' '}
+                    <span className="font-mono">.auric/video-imports</span>. Unassigned bits show
+                    in review.
                   </p>
                 </div>
               </div>
@@ -385,23 +500,34 @@ function VideoImportDialogContent() {
                   />
                 </label>
 
-                <div className="mt-5 flex items-baseline gap-2">
+                <div className="mt-5 flex items-center gap-2">
                   <h3 className="text-xs font-bold text-foreground">Process stations</h3>
                   <span className="font-mono text-[9px] text-foreground-muted">
                     {process.steps.length} extracted
                   </span>
+                  <button
+                    type="button"
+                    onClick={addStep}
+                    className="ml-auto rounded-lg border border-white/10 px-2.5 py-1 text-[10px] font-semibold text-foreground-muted hover:bg-white/5 hover:text-foreground"
+                  >
+                    Add step
+                  </button>
                 </div>
                 <div className="mt-2 divide-y divide-white/5 border-y border-white/5">
                   {process.steps.map((step, index) => (
                     <div
-                      key={index}
-                      className="grid grid-cols-[24px_minmax(0,1fr)_110px] gap-3 py-3"
+                      key={stepKeys[index] ?? `step-${index}`}
+                      className="grid grid-cols-[24px_minmax(0,1fr)] gap-3 py-3 sm:grid-cols-[24px_minmax(0,1fr)_120px]"
                     >
                       <span className="pt-2 font-mono text-[10px] text-foreground-muted/50">
                         {String(index + 1).padStart(2, '0')}
                       </span>
                       <div className="min-w-0">
                         <input
+                          ref={(element) => {
+                            const key = stepKeys[index];
+                            if (key && element) stepTitleRefs.current.set(key, element);
+                          }}
                           aria-label={`Step ${index + 1} title`}
                           value={step.title}
                           onChange={(event) => updateStep(index, { title: event.target.value })}
@@ -457,6 +583,35 @@ function VideoImportDialogContent() {
                             </option>
                           ))}
                         </select>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            aria-label={`Move step ${index + 1} up`}
+                            disabled={index === 0}
+                            onClick={() => moveStep(index, -1)}
+                            className="min-h-11 min-w-11 rounded border border-white/10 px-2 py-1 text-[12px] text-foreground-muted focus-visible:outline-2 focus-visible:outline-primary-light disabled:opacity-30"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Move step ${index + 1} down`}
+                            disabled={index === process.steps.length - 1}
+                            onClick={() => moveStep(index, 1)}
+                            className="min-h-11 min-w-11 rounded border border-white/10 px-2 py-1 text-[12px] text-foreground-muted focus-visible:outline-2 focus-visible:outline-primary-light disabled:opacity-30"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete step ${index + 1}`}
+                            disabled={process.steps.length === 1}
+                            onClick={() => deleteStep(index)}
+                            className="ml-auto min-h-11 rounded border border-red-500/20 px-2 py-1 text-[10px] text-red-300 focus-visible:outline-2 focus-visible:outline-primary-light disabled:opacity-30"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -492,6 +647,45 @@ function VideoImportDialogContent() {
                       </dd>
                     </div>
                   </dl>
+                  <details className="mt-3 rounded-lg border border-white/5 bg-black/20 p-2">
+                    <summary className="cursor-pointer text-[10px] font-semibold text-foreground">
+                      Inspect transcript
+                    </summary>
+                    <ol className="mt-2 max-h-44 space-y-2 overflow-y-auto text-[9px] leading-relaxed text-foreground-muted">
+                      {media.transcript.map((segment, index) => (
+                        <li key={`${segment.startMs}-${index}`} className="flex gap-2">
+                          <span className="font-mono text-primary-light">{index}</span>
+                          <span>{segment.text}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                  <details className="mt-2 rounded-lg border border-white/5 bg-black/20 p-2">
+                    <summary className="cursor-pointer text-[10px] font-semibold text-foreground">
+                      Inspect screenshots
+                    </summary>
+                    <ul className="mt-2 max-h-44 space-y-2 overflow-y-auto text-[9px] text-foreground-muted">
+                      {media.frames.map((frame) => (
+                        <li key={frame.path}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void import('@tauri-apps/plugin-opener').then(({ openPath }) =>
+                                openPath(frame.path)
+                              )
+                            }
+                            aria-label={`Open screenshot at ${Math.round(frame.timestampMs / 1000)} second${Math.round(frame.timestampMs / 1000) === 1 ? '' : 's'}`}
+                            className="flex min-h-11 w-full items-center gap-2 rounded-md border border-white/5 px-2 text-left hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-primary-light"
+                          >
+                            <span className="font-mono text-primary-light">
+                              {Math.round(frame.timestampMs / 1000)}s
+                            </span>
+                            <span className="break-all">Open {shortPath(frame.path)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 </div>
                 <div
                   className={`rounded-xl border px-3 py-2.5 ${unassignedCount > 0 ? 'border-[#ffce2e]/20 bg-[#ffce2e]/[0.04]' : 'border-[#2effa5]/20 bg-[#2effa5]/[0.04]'}`}
@@ -545,13 +739,16 @@ function VideoImportDialogContent() {
           )}
         </main>
 
-        <footer className="flex items-center justify-between border-t border-white/5 px-6 py-4">
+        <p role="status" aria-live="polite" className="sr-only">
+          {announcement}
+        </p>
+        <footer className="flex flex-col gap-3 border-t border-white/5 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
           <p className="max-w-lg text-[9px] leading-relaxed text-foreground-muted/60">
             {media
               ? `Import record: ${media.workspacePath}`
               : 'Uses Parakeet for transcription and the LLM configured in Settings for process analysis.'}
           </p>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:flex-nowrap">
             {stage === 'review' && (
               <button
                 onClick={() => setStage('select')}
@@ -570,15 +767,30 @@ function VideoImportDialogContent() {
               </button>
             )}
             {(stage === 'review' || stage === 'saving') && (
-              <button
-                onClick={() => void commit()}
-                disabled={
-                  stage === 'saving' || !process?.title.trim() || !process?.successCriteria.trim()
-                }
-                className="rounded-lg bg-primary px-5 py-2 text-[11px] font-bold text-white transition-[filter,opacity] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                {stage === 'saving' ? 'Creating mission...' : 'Create mission'}
-              </button>
+              <div className="flex flex-col items-end gap-2">
+                <label className="flex items-center gap-2 text-[10px] text-foreground-muted">
+                  <input
+                    type="checkbox"
+                    checked={runAfterCreate}
+                    onChange={(event) => setRunAfterCreate(event.target.checked)}
+                    disabled={stage === 'saving'}
+                  />
+                  Start conductor after creation
+                </label>
+                <button
+                  onClick={() => void commit()}
+                  disabled={
+                    stage === 'saving' || !process?.title.trim() || !process?.successCriteria.trim()
+                  }
+                  className="rounded-lg bg-primary px-5 py-2 text-[11px] font-bold text-white transition-[filter,opacity] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  {stage === 'saving'
+                    ? 'Creating mission...'
+                    : runAfterCreate
+                      ? 'Create and run'
+                      : 'Create and review'}
+                </button>
+              </div>
             )}
           </div>
         </footer>

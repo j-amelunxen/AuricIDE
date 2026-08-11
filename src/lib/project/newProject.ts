@@ -60,7 +60,7 @@ export function scaffoldProjectFiles(
         readme,
         {
           path: at('spec.md'),
-          content: `# ${name} — Specification\n\n## Goal\n\n_Describe what this project should achieve._\n\n## Requirements\n\n- [ ] First requirement\n`,
+          content: `# ${name}: Specification\n\n## Goal\n\n_Describe what this project should achieve._\n\n## Requirements\n\n- [ ] First requirement\n`,
         },
       ];
     case 'empty':

@@ -176,7 +176,7 @@ export function RequirementDetailPanel({
               className="w-full rounded bg-white/5 px-2 py-1 text-foreground outline-none"
             />
           ) : (
-            <span>{current.category || '—'}</span>
+            <span>{current.category || '-'}</span>
           )}
         </Field>
         <Field label="Source" colSpan={2}>
@@ -187,7 +187,7 @@ export function RequirementDetailPanel({
               className="w-full rounded bg-white/5 px-2 py-1 text-foreground outline-none"
             />
           ) : (
-            <span>{current.source || '—'}</span>
+            <span>{current.source || '-'}</span>
           )}
         </Field>
         <Field label="Last Verified">
@@ -233,7 +233,7 @@ export function RequirementDetailPanel({
                   </span>
                 ))
               ) : (
-                <span className="text-foreground-muted">—</span>
+                <span className="text-foreground-muted">-</span>
               )}
             </div>
           )}
@@ -325,7 +325,7 @@ function TextArea({
         />
       ) : (
         <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-foreground">
-          {value || '—'}
+          {value || '-'}
         </p>
       )}
     </div>

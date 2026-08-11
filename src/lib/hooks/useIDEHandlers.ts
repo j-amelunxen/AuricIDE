@@ -62,7 +62,7 @@ function revealInFileManagerLabel(): string {
  * menu item flashes, and an external driver reads it as success.
  */
 export const CONTEXT_BOUND_COMMANDS: Record<string, string> = {
-  'agent.kill-all': 'Kill All lives in the Agents panel, per repository — it asks before it acts.',
+  'agent.kill-all': 'Kill All lives in the Agents panel, per repository. It asks before it acts.',
   'canvas.toggle': 'Open a canvas file first; this switches the view of the active canvas.',
   'canvas.fit': 'Open a canvas file first; this fits the active canvas to the screen.',
   'markdown.rename-heading': 'Put the cursor on a heading in the editor, then press F2.',
@@ -1131,7 +1131,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         icon: 'account_tree',
         action: () => {
           const tabId = `mindmap::${node.path}`;
-          state.openTab({ id: tabId, path: node.path, name: `${node.name} — Mindmap` });
+          state.openTab({ id: tabId, path: node.path, name: `${node.name} · Mindmap` });
         },
       });
       options.push({

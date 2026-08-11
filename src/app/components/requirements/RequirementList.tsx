@@ -71,8 +71,7 @@ export function RequirementList({
         </p>
         {noneExist && (
           <p className="max-w-xs text-xs leading-relaxed text-foreground-muted opacity-60">
-            Requirements are application invariants — provable and continuously checked. Create one
-            to start tracking what must always hold.
+            Add one to track what must always hold.
           </p>
         )}
       </div>
@@ -115,7 +114,7 @@ export function RequirementList({
                     {badge.label}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-foreground-muted">{req.category || '—'}</td>
+                <td className="px-3 py-2 text-foreground-muted">{req.category || '-'}</td>
                 <td className={`px-3 py-2 font-medium ${PRIORITY_COLORS[req.priority] ?? ''}`}>
                   {req.priority}
                 </td>
@@ -131,7 +130,7 @@ export function RequirementList({
                   {(() => {
                     const indicator = getVerificationIndicator(req);
                     if (indicator.type === 'dash') {
-                      return <span className={indicator.className}>—</span>;
+                      return <span className={indicator.className}>-</span>;
                     }
                     return (
                       <span className="flex items-center gap-1.5">

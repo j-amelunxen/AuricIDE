@@ -61,6 +61,7 @@ describe('MissionControl', () => {
       requirementsModalOpen: false,
       goalsModalOpen: false,
       importSpecDialogOpen: false,
+      videoImportDialogOpen: false,
       loadPmData: vi.fn(async () => {}),
       loadRequirements: vi.fn(async () => {}),
       loadGoals: vi.fn(async () => {}),
@@ -190,6 +191,13 @@ describe('MissionControl', () => {
     useStore.setState({ pmDraftTickets: [makeTicket({})] });
     render(<MissionControl />);
     expect(screen.queryByTestId('mc-import-spec')).not.toBeInTheDocument();
+  });
+
+  it('keeps video import discoverable after first run', () => {
+    useStore.setState({ pmDraftTickets: [makeTicket({})] });
+    render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('mc-import-video-persistent'));
+    expect(useStore.getState().videoImportDialogOpen).toBe(true);
   });
 
   it('opens the Excalidraw+ browser from the cockpit', () => {

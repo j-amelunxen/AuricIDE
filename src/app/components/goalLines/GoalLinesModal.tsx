@@ -9,6 +9,7 @@ import { getRootGoals } from '@/lib/store/goalsSlice';
 import { buildGoalLines } from '@/lib/goals/goalLinesLayout';
 import { buildForYouQueue, type ForYouItem } from '@/lib/goals/forYou';
 import { GoalLineBoard } from './GoalLineBoard';
+import { GoalLineLegend } from './GoalLineLegend';
 import { ForYouQueue } from './ForYouQueue';
 import { PlannerPanel } from './PlannerPanel';
 import { ForkProposals } from './ForkProposals';
@@ -222,7 +223,7 @@ function GoalLinesModalContent() {
             />
             <p className="text-xs text-foreground-muted">No goal has work attached yet.</p>
             <p className="max-w-[320px] text-[10px] text-foreground-muted/70">
-              Create a goal and attach tickets — each goal becomes a line here, with done work on
+              Create a goal and attach tickets. Each goal becomes a line here, with done work on
               the left and the goal always on the right.
             </p>
             <button
@@ -255,11 +256,7 @@ function GoalLinesModalContent() {
               onMove={handleMove}
               onVerify={handleVerify}
             />
-            <p className="border-t border-white/5 pt-3 font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-muted/50">
-              ● proven · ◉ front · ○ planned · · fog · hollow = claimed, not proven · dashed halo =
-              AI-judged · amber ring = evidence stale · squares wait on a human · motion = an agent
-              is computing there
-            </p>
+            <GoalLineLegend />
           </div>
         )}
       </div>

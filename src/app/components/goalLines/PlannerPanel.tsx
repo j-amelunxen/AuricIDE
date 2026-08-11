@@ -200,7 +200,7 @@ export function PlannerPanel() {
         <div className="mt-3 flex flex-col gap-3">
           {!llmConfigured && (
             <p className="text-[11px] text-[#ffce2e]">
-              No LLM configured — set an API key in Settings to use the planner.
+              No LLM configured. Set an API key in Settings to use the planner.
             </p>
           )}
 
@@ -237,7 +237,7 @@ export function PlannerPanel() {
                 value={dump}
                 onChange={(e) => setDump(e.target.value)}
                 spellCheck={false}
-                placeholder="Dump what's in your head. Unstructured is fine — whatever you don't say stays in the fog."
+                placeholder="Rough notes. Unstructured is fine."
                 className="min-h-[110px] w-full resize-y rounded-xl bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-foreground outline-none placeholder:text-foreground-muted/40 focus:bg-black/50"
               />
               <div className="flex justify-end">
@@ -260,7 +260,7 @@ export function PlannerPanel() {
                   draft · v{revisions.length + 1}
                 </span>
                 <span className="text-[10px] text-foreground-muted">
-                  {graph.stations.length} stations — not on the board until you start it
+                  {graph.stations.length} stations · not started yet
                 </span>
               </div>
               <div data-testid="planner-preview" className="rounded-xl bg-black/20 px-2 py-1">
@@ -277,7 +277,7 @@ export function PlannerPanel() {
                     if (e.key === 'Enter') void applyRefinement();
                   }}
                   disabled={busy}
-                  placeholder="Tell the planner what to change, Enter applies"
+                  placeholder="Refine plan… Enter to apply"
                   className="flex-1 rounded-lg bg-black/30 px-2.5 py-1.5 text-[11px] text-foreground outline-none placeholder:text-foreground-muted/40 focus:bg-black/50"
                 />
                 <button

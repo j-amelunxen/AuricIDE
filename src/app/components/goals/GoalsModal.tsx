@@ -25,12 +25,12 @@ export function buildGoalLaunchPrompt(goal: PmGoal): string {
   }
   parts.push(
     '## Working agreement\n' +
-      `Work autonomously toward this goal. Its goalId is "${goal.id}" — use this exact ` +
+      `Work autonomously toward this goal. Its goalId is "${goal.id}". Use this exact ` +
       'value with the auric-pm MCP tools, do not look it up by name. If those tools are ' +
       `available, use decompose_goal (parentId: "${goal.id}") to plan sub-goals and ` +
       `create_ticket (goalId: "${goal.id}") to add work items, evaluate_goal (id: "${goal.id}") ` +
       'to check progress, and record findings as context items or via write_finding. Do NOT ' +
-      'call record_goal_run — this run is already recorded. Exit when the success ' +
+      'call record_goal_run: this run is already recorded. Exit when the success ' +
       'criteria are met or you are blocked.'
   );
   // Launching an agent for a goal invokes the /goal command first.
@@ -256,7 +256,7 @@ function GoalsModalContent() {
             <button
               data-testid="goals-orchestration-btn"
               onClick={() => setOrchestrationOpen(true)}
-              title="Live orchestration canvas"
+              title="Orchestration graph"
               className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
             >
               <AuricIcon name="graph_3" className="text-sm" />
@@ -265,7 +265,7 @@ function GoalsModalContent() {
             <button
               data-testid="goals-goal-lines-btn"
               onClick={() => setGoalLinesOpen(true)}
-              title="Every goal as a metro line"
+              title="Goal station map"
               className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
             >
               <AuricIcon name="route" className="text-sm" />

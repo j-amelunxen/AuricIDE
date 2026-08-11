@@ -30,11 +30,11 @@ export function conductorNotificationContent(
     case 'goal_achieved':
       return {
         title: 'Goal achieved',
-        body: `"${detail}" — all checks green.`,
+        body: `"${detail}": all checks green.`,
       };
     case 'goal_blocked':
       return {
-        title: 'Conductor stopped — goal not satisfied',
+        title: 'Conductor stopped: goal not satisfied',
         body: detail,
       };
     case 'run_finished':

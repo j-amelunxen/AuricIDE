@@ -103,7 +103,7 @@ export function GoalCreateDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              placeholder="What world state should exist when this goal is achieved?"
+              placeholder="What should be true when this is done?"
               className={inputCls}
             />
           </div>

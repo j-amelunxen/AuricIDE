@@ -547,8 +547,7 @@ export function TicketEditPanel({
                 </button>
               </div>
               <p className="mt-1.5 text-[10px] text-foreground-muted">
-                If set, agents spawned from this ticket will start in this directory. Leave empty to
-                use the default project root.
+                Agent cwd. Empty = project root.
               </p>
             </div>
 
@@ -578,8 +577,8 @@ export function TicketEditPanel({
               </button>
               <p className="mt-1.5 text-[10px] text-foreground-muted">
                 {ticket.needsHumanSupervision
-                  ? 'This ticket requires human supervision. It will be skipped by automatic task fetching; only a human can assign or start it.'
-                  : 'Agents can automatically pick up this ticket. Enable to require manual assignment.'}
+                  ? 'Needs human start. Conductor skips it.'
+                  : 'Conductor can pick this up.'}
               </p>
             </div>
           </div>

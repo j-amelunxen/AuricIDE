@@ -232,28 +232,22 @@ export function AgentsPanel({
               {attentionCount} {attentionCount === 1 ? 'needs' : 'need'} attention
             </span>
           )}
-          {/* The explicit all-clear: agents are working and none needs a
-              human. Absence of alarms alone is not permission to look away —
-              this is. Deliberately the quietest thing in the header. */}
           {runningCount > 0 && attentionCount === 0 && (
             <span
               data-testid="agents-all-quiet"
               className="flex items-center gap-0.5 text-[10px] font-medium text-emerald-400/70"
             >
               <AuricIcon name="check" aria-hidden="true" className="text-[12px]" />
-              all quiet
+              idle
             </span>
           )}
         </h2>
         <div className="flex items-center gap-1">
-          {/* One move to a triage view: park everything that is healthy, so
-              the cards that remain are exactly the ones that need a human.
-              Only offered when it would actually fold something away. */}
           {parkableAgents.length > 1 && (
             <button
               type="button"
               onClick={() => parkableAgents.forEach((a) => onToggleMinimize?.(a.id, true))}
-              title="Park all healthy working agents — they keep running as one-line rows"
+              title="Park working (still running)"
               className="rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
             >
               Park working
@@ -372,7 +366,7 @@ export function AgentsPanel({
                         <span
                           data-testid="repo-attention-dot"
                           role="img"
-                          aria-label="An agent in this group needs attention"
+                          aria-label="Agent needs attention"
                           className="ml-0.5 h-1.5 w-1.5 rounded-full bg-amber-400"
                         />
                       )}
@@ -455,7 +449,7 @@ export function AgentsPanel({
                       .filter((a) => a.status !== 'error' || reviewedAgentIds.includes(a.id))
                       .forEach((a) => onDismissFinished(a.id))
                   }
-                  title="Clear reviewed and successful agents — unreviewed failures stay"
+                  title="Clear done (keep unreviewed fails)"
                   className="rounded px-1 text-[10px] text-foreground-muted/60 transition-colors hover:bg-white/5 hover:text-foreground"
                 >
                   Clear

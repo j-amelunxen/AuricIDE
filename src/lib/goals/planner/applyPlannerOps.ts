@@ -70,7 +70,7 @@ export function applyPlannerOps(graph: PlannerGraph, ops: PlannerOp[]): PlannerG
   });
 
   if (stations.length === 0) {
-    throw new Error('Refinement would leave the plan empty — batch rejected');
+    throw new Error('Refinement would leave the plan empty; batch rejected');
   }
   return { stations };
 }

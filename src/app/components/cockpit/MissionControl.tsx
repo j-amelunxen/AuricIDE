@@ -131,7 +131,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           icon="description"
           label="Spec"
           value={String(specDocs)}
-          hint="Spec documents under specs/ — click to write a new spec"
+          hint="Specs under specs/"
           onClick={() => onCreateSpec?.()}
         />
         <StationArrow />
@@ -140,7 +140,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           icon="task_alt"
           label="Plan"
           value={String(openTickets)}
-          hint="Open tickets — open project management"
+          hint="Open tickets"
           onClick={openPlan}
         />
         <StationArrow />
@@ -149,7 +149,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           icon="smart_toy"
           label="Execute"
           value={String(runningAgents)}
-          hint="Agents working right now — open Goals & Orchestration"
+          hint="Running agents"
           onClick={() => setGoalsModalOpen(true)}
         />
         <StationArrow />
@@ -157,23 +157,32 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           id="verify"
           icon="verified"
           label="Verify"
-          value={relevantTruths.length > 0 ? `${heldTruths}/${relevantTruths.length}` : '—'}
-          hint="Invariants freshly proven vs. total — open Requirements"
+          value={relevantTruths.length > 0 ? `${heldTruths}/${relevantTruths.length}` : '-'}
+          hint="Verified / total"
           onClick={openTruths}
         />
       </div>
 
       {/* Quiet secondary path into the spec station */}
-      <button
-        data-testid="mc-excalidraw-browse"
-        onClick={() => setExcalidrawBrowserOpen(true)}
-        className="flex items-center gap-1.5 text-[11px] text-foreground-muted transition-colors hover:text-foreground"
-      >
-        <AuricIcon name="draw" aria-hidden="true" className="text-sm" />
-        Import diagrams from Excalidraw+
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+        <button
+          data-testid="mc-import-video-persistent"
+          onClick={() => setVideoImportDialogOpen(true)}
+          className="flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+        >
+          <AuricIcon name="video_file" aria-hidden="true" className="text-sm" />
+          Import process video
+        </button>
+        <button
+          data-testid="mc-excalidraw-browse"
+          onClick={() => setExcalidrawBrowserOpen(true)}
+          className="flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+        >
+          <AuricIcon name="draw" aria-hidden="true" className="text-sm" />
+          Import diagrams from Excalidraw+
+        </button>
+      </div>
 
-      {/* What's decaying */}
       {needProof > 0 && (
         <button
           data-testid="mc-truths-warning"
@@ -181,16 +190,14 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-2 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
         >
           <AuricIcon name="warning" aria-hidden="true" className="text-sm" />
-          {needProof} invariant{needProof === 1 ? '' : 's'} stale or unverified — review now
+          {needProof} stale/unverified
         </button>
       )}
 
-      {/* First run: one clear next action */}
       {firstRun && (
         <div className="flex flex-col items-center gap-3 text-center">
           <p className="max-w-sm text-xs leading-relaxed text-foreground-muted">
-            You have a spec. Let the conductor build a plan: import a spec document as epics and
-            tickets, or define a goal and let agents decompose it.
+            Import a spec, import a video, or create a goal.
           </p>
           <div className="flex items-center gap-3">
             <button

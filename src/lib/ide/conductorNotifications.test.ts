@@ -27,7 +27,7 @@ describe('conductorNotificationContent', () => {
 
   it('describes a blocked stop with the blockers', () => {
     const content = conductorNotificationContent('goal_blocked', '2 tickets stuck');
-    expect(content.title).toBe('Conductor stopped — goal not satisfied');
+    expect(content.title).toBe('Conductor stopped: goal not satisfied');
     expect(content.body).toContain('2 tickets stuck');
   });
 

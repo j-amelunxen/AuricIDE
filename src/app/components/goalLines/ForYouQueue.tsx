@@ -26,12 +26,7 @@ function itemKey(item: ForYouItem): string {
   }
 }
 
-/**
- * The system hands the supervisor their queue, ranked — so nobody has to
- * poll cards to find out whether they are needed. When agents run and none
- * needs a human, the quiet is stated explicitly: a monitored silence says
- * so; absence of alarms is not permission to look away.
- */
+/** Ranked queue of board items that need a human. */
 export function ForYouQueue({ items, runningCount, onItemClick }: ForYouQueueProps) {
   if (items.length === 0 && runningCount === 0) return null;
 
@@ -42,8 +37,7 @@ export function ForYouQueue({ items, runningCount, onItemClick }: ForYouQueuePro
       </p>
       {items.length === 0 ? (
         <p data-testid="for-you-all-quiet" className="font-mono text-[11px] text-foreground-muted">
-          <span className="text-[#2effa5]/70">✓ all quiet</span> · {runningCount} agent
-          {runningCount === 1 ? '' : 's'} working, none needs you
+          <span className="text-[#2effa5]/70">✓ idle</span> · {runningCount} running
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">
