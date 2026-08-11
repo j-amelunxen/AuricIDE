@@ -75,3 +75,6 @@ promo-assets/
 
 # Local tool notes — not repo content
 workarounds/
+
+# pnpm local package store (cache, never commit)
+.pnpm-store/
