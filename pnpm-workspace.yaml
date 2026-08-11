@@ -1,0 +1,13 @@
+# Supply-chain policy: resolve only releases that have aged for seven days,
+# and reject dependencies that smuggle non-registry sources into their graph.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: false
+blockExoticSubdeps: true
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
+  tldjs: true
+  unrs-resolver: true
