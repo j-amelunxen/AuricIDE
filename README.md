@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/hero-banner.jpg" alt="AuricIDE — AI Native" width="100%" />
+</p>
+
 # AuricIDE
 
 > [!WARNING]
@@ -12,9 +16,13 @@
 
 ---
 
-## 🌟 Why AuricIDE
+## Why AuricIDE
 
 Chat-window coding assistants make you babysit: you prompt, you watch, you approve every step, you re-explain context every session. AuricIDE is built around a different premise — **you define what "done" means, and the IDE proves it, not you.**
+
+<p align="center">
+  <img src="docs/assets/goal-loop.jpg" alt="Goal → Tickets → Agents → Verified" width="100%" />
+</p>
 
 That's the core loop: define a **goal** with machine-checkable success criteria, attach the work (tickets, requirements, or a planning agent that decomposes the goal itself), start the **conductor**, and walk away. The conductor dispatches agents against unblocked work, retries failures, pauses for your approval where you asked it to, and only marks the goal achieved once every linked ticket is done and every linked requirement is verified — not when an agent _claims_ it's done. Every decision it makes is logged, so "walk away" doesn't mean "lose visibility."
 
@@ -29,9 +37,27 @@ That's the core loop: define a **goal** with machine-checkable success criteria,
 
 ---
 
-## 🚀 Key Features
+## Reducing the Oversight Tax
 
-### 🎯 Goals → Tickets → Conductor → Verified (the core loop)
+AI coding tools give time back on execution and take it back on watching. The [oversight tax](https://software-architecture.ai/research/oversight-tax) research names this pattern directly: automating the doing while leaving a human to verify every step is not free — vigilance degrades the longer a system looks reliable, an "almost right" result forces a full re-check anyway, and splitting that verification work across many tools compounds the load. The fix isn't more discipline from the user; it's removing the reasons vigilance was needed in the first place.
+
+<p align="center">
+  <img src="docs/assets/agent-fleet.jpg" alt="The agent fleet: running, parked, and finished agents stay visually distinct — one badge says who needs a human" width="85%" />
+</p>
+
+AuricIDE's agent panel and conductor are built around exactly that idea, not as an afterthought:
+
+- **One definition of "needs a human."** `agentAttention()` (`src/lib/agents/attention.ts`) ranks every agent by a single rule — error, then blocked-on-input, then stalled — and that's the only thing that raises the "N need attention" count. `detectAwaitingInput()` (`src/lib/agents/awaitingInput.ts`) exists because a permission prompt keeps redrawing itself and refreshes the activity timestamp; without that check a genuinely stuck agent would read as "working" forever. The user checks one badge instead of scanning every card for signs of trouble.
+- **"All quiet" is a signal, not an absence.** The fleet panel shows "✓ all quiet" only while agents are running and none of them needs attention — the calm state has to say so explicitly, because no red badge is not the same as permission to stop watching.
+- **Verified done, not claimed done — with a real audit trail.** `getGoalSatisfaction` (`src/lib/store/goalsSlice.ts`) only marks a goal achieved once every ticket in its subtree is `done`, every linked requirement is `verified`, and every child goal is `achieved`; otherwise it returns the specific blockers instead of a vague "in progress." Every conductor action along the way — spawn, complete, fail, approval needed — is written to `conductorDecisions` (`src/lib/store/conductorSlice.ts`) with a timestamp, so verification is one bounded check against a log the user can read on their own schedule, not a transcript they have to watch live.
+- **Approval is opt-in, not per-keystroke.** A ticket marked `needsHumanSupervision` parks in a pending-approvals queue and the conductor won't spawn an agent for it until explicitly approved (`src/lib/store/conductorSlice.ts`). Oversight sits exactly where the user asked for it instead of being sprinkled across every tool call the agent makes.
+- **The panel has three shapes, not one pile.** `splitFleet()` (`src/lib/agents/fleet.ts`) separates agents into cards for what's actively running, a compact row for what's parked (still running, deliberately set aside), and a compact row for what's finished and waiting on review. Parking is a view state only — a parked agent keeps streaming and still counts toward Kill All — but keeping "in progress," "set aside on purpose," and "done, needs a look" visually distinct stops the panel from turning into ten identical tabs to re-check.
+
+---
+
+## Key Features
+
+### Goals → Tickets → Conductor → Verified (the core loop)
 
 - **Goals as the outcome view:** a goal is a desired world state with machine-checkable `successCriteria`, organized in a tree via `parentId`. Epics and tickets remain the organizational backlog underneath it.
 - **Attach work:** link tickets to a goal, attach requirements as acceptance gates, or launch a planning agent that decomposes the goal into tickets on its own.
@@ -41,19 +67,19 @@ That's the core loop: define a **goal** with machine-checkable success criteria,
 - **Verified done, not claimed done:** a goal auto-achieves only once every ticket in its subtree is `done`, every linked requirement is `verified`, and every child goal has `achieved` — otherwise the blockers are listed explicitly, not hand-waved.
 - **Decision log:** every conductor action (start, spawn, complete, fail, approval needed, approved, goal achieved) is recorded with a timestamp — a real audit trail for unattended runs, not a decorative activity feed.
 
-### 🕹️ Cockpit (Mission Control)
+### Cockpit (Mission Control)
 
 - The home view whenever a project is open with nothing focused — a literal **Spec → Plan → Execute → Verify** station strip with live counts (spec docs found, open tickets, running agents, requirements still needing proof) plus the full conductor panel embedded.
 - **Quick Access:** a hold-to-star project switcher for jumping between workspaces in one click, with a deliberate hold-to-unstar gesture (radial progress ring) so you can't remove a starred project by a stray click.
 
-### 🤖 Agent Orchestration
+### Agent Orchestration
 
 - Agents run as real child processes over a PTY (Rust's `portable-pty`), with output streamed to the frontend and real exit codes surfaced — a crashed agent shows as `Error`, not silently as idle.
-- **Pluggable providers:** ships with Claude Code, Gemini, and Crush/Kimi support out of the box, and you can register your own provider via a JSON config — no fork required.
+- **Pluggable providers:** ships with Claude Code, Codex, Gemini, Grok, and Crush/Kimi support out of the box, and you can register your own provider via a JSON config — no fork required.
 - Agents are grouped by repo in the Agents panel, with per-agent or "kill all" control, drag-and-drop image attachment, and persisted prompt history per project.
 - Fine-grained tool-call approval (plan mode, auto-accept, etc.) is delegated to the underlying CLI's own flags — AuricIDE's supervision model is spawn / kill / approval-gate-at-the-ticket-level with a full decision log, not per-keystroke babysitting.
 
-### 📋 Requirements as Invariants
+### Requirements as Invariants
 
 - **Application Invariants:** long-lived functional & non-functional requirements a project must continuously satisfy — unlike tickets, requirements are never "done"; they're `fulfilled` or `violated`.
 - **Lifecycle tracking:** `draft → active → implemented → verified → deprecated`, with a real "Verify Now" action and a `lastVerifiedAt` timestamp. Requirements unverified for 30+ days are flagged stale, and that count drives the Cockpit's headline "needs proof" number — it's not cosmetic.
@@ -61,13 +87,13 @@ That's the core loop: define a **goal** with machine-checkable success criteria,
 - **Scoped & filterable:** category-based auto ID generation (`REQ-AUTH-01`), an editable `appliesTo` file-path scope, and filters by priority, status, or verification freshness (Fresh / Stale / Unverified).
 - **Acceptance criteria:** Markdown checklists that define what "fulfilled" means, bridging spec and test.
 
-### 🗂️ Project Management: Epics, Tickets & Dependencies
+### Project Management: Epics, Tickets & Dependencies
 
 - Three real views on the same backlog: a sortable **table**, a **dependency graph** (`@xyflow/react` + `dagre` auto-layout, with heat-map coloring by blocker load), and a **metrics** view (burndown + velocity).
 - Dependencies you create actually block conductor scheduling — this isn't a decorative graph.
 - Test cases attach per-ticket and feed directly into conductor prompts as acceptance criteria.
 
-### 🎨 Visual & Diagramming
+### Visual & Diagramming
 
 - **Markdown-as-canvas:** a node-based workflow canvas (`@xyflow/react`) whose nodes and edges are literally `## Node:` headings with metadata in a plain `.md` file — bidirectional, diffable, and readable without the app.
 - **Obsidian `.canvas` compatibility** for reading and writing Obsidian's own canvas format.
@@ -75,7 +101,7 @@ That's the core loop: define a **goal** with machine-checkable success criteria,
 - **Mindmaps & Excalidraw:** dedicated mindmap views and embedded Excalidraw sketches for freeform structural thinking.
 - **WikiLink ecosystem:** `[[WikiLinks]]` with fuzzy autocomplete, hover previews, broken-link detection, find-references, and heading rename that updates references across the project.
 
-### 🧠 Editor Intelligence
+### Editor Intelligence
 
 - **NLP highlighting:** marks actionable/factual content rather than tinting every word class, so long specs stay skimmable instead of looking like a syntax-highlighted novel.
 - **ASCII-art repair:** detects and reconstructs broken box-drawing diagrams (`┌─┐│└─┘`) via majority-voting and fuzzy matching — genuinely useful when an AI-generated ASCII diagram goes ragged.
@@ -83,20 +109,20 @@ That's the core loop: define a **goal** with machine-checkable success criteria,
 - **Slash commands:** Notion-style `/commands` for inserting templates, diagrams, and agent prompts.
 - **Blueprints:** a gallery of reusable, categorized spec templates with optional sync from a remote blueprint server for repeatable project scaffolding.
 
-### 🛠️ Git & Terminal
+### Git & Terminal
 
 - Real git integration via `git2-rs`: status, diff, stage/unstage, commit, and discard — plus a from-scratch CodeMirror gutter extension showing added/modified/deleted lines at the source level.
 - **Agentic commit:** a toggle that hands the staged diff to an agent to write and make the commit, instead of you writing the message.
 - **Professional terminal:** full PTY sessions (`portable-pty` + `xterm.js`) for seamless CLI interaction alongside the editor.
 - _Known gap:_ no in-app branch switching yet — this is alpha software, and that's on the roadmap, not silently missing on purpose.
 
-### 🔌 MCP Server
+### MCP Server
 
 AuricIDE ships its own [FastMCP](https://github.com/punkpeye/fastmcp) server (`src/mcp/server.ts`) that exposes the project's PM database — goals, epics, tickets, requirements, test cases, dependencies, blueprints, canvas, and history — as tools any MCP-compatible AI client can call. It runs as a Rust-managed subprocess over stdio, so agents (and Claude Code / Cursor / Gemini via `.mcp.json`) can read and mutate project state directly — the same state the conductor and UI operate on, not a separate read-only export.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer                  | Technology                                                                                                                    |
 | :--------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
@@ -114,7 +140,7 @@ AuricIDE ships its own [FastMCP](https://github.com/punkpeye/fastmcp) server (`s
 
 ---
 
-## 🏁 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -154,7 +180,7 @@ pnpm dev
 
 ---
 
-## 🧪 Quality Assurance
+## Quality Assurance
 
 AuricIDE is built with a focus on reliability and performance, following a strict TDD workflow (see `CLAUDE.md`).
 
@@ -170,7 +196,7 @@ pnpm format:check      # Prettier check
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 ├── src/
@@ -198,6 +224,6 @@ Driven by: https://software-architecture.ai
 
 ---
 
-## 📜 License
+## License
 
 Licensed under **AGPL v3**. Commercial licensing available on request.
