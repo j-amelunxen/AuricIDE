@@ -197,9 +197,6 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
     currentPath !== null && starredProjects.some((p) => p.path === currentPath);
   const canStarCurrent = currentPath !== null && !currentStarred;
 
-  // Nothing to show and nothing to offer — stay out of the cockpit entirely.
-  if (starredProjects.length === 0 && !canStarCurrent) return null;
-
   return (
     <div data-testid="quick-access" className="flex w-full max-w-3xl flex-col items-center gap-3">
       <div className="flex items-center gap-1.5">
@@ -216,6 +213,11 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
         )}
       </div>
       <div className="flex flex-wrap items-start justify-center gap-x-2 gap-y-4">
+        {starredProjects.length === 0 && !canStarCurrent && (
+          <p className="text-[11px] text-foreground-muted/70">
+            No starred projects yet. Star one from Recent Projects.
+          </p>
+        )}
         {sortedProjects.map((project) => (
           <ProjectTile
             key={project.path}

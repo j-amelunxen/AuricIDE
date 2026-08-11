@@ -44,14 +44,14 @@ describe('recentProjectsSlice', () => {
     expect(projects[1].path).toBe('/b');
   });
 
-  it('caps the list at 5 projects', () => {
-    for (let i = 1; i <= 7; i++) {
+  it('retains a generous history without growing without bounds', () => {
+    for (let i = 1; i <= 52; i++) {
       useStore.getState().addRecentProject(`/project-${i}`);
     }
     const projects = useStore.getState().recentProjects;
-    expect(projects).toHaveLength(5);
-    expect(projects[0].path).toBe('/project-7');
-    expect(projects[4].path).toBe('/project-3');
+    expect(projects).toHaveLength(50);
+    expect(projects[0].path).toBe('/project-52');
+    expect(projects[49].path).toBe('/project-3');
   });
 
   it('removes a recent project', () => {

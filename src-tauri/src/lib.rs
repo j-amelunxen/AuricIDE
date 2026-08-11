@@ -9,6 +9,7 @@ mod memory_report;
 #[cfg(target_os = "macos")]
 mod menu;
 mod providers;
+mod recent_projects;
 mod utf8_stream;
 mod video_import;
 
@@ -2000,6 +2001,23 @@ pub fn run() {
             }
             app.manage(providers::new_provider_registry(Some(app.handle())));
 
+            let recent_projects_path = app
+                .path()
+                .app_data_dir()
+                .map_err(|error| error.to_string())?
+                .join("recent-projects.json");
+            app.manage(recent_projects::RecentProjectsState::initialize(
+                recent_projects_path,
+            ));
+            let starred_projects_path = app
+                .path()
+                .app_data_dir()
+                .map_err(|error| error.to_string())?
+                .join("starred-projects.json");
+            app.manage(recent_projects::StarredProjectsState::initialize(
+                starred_projects_path,
+            ));
+
             // Restart persistence: agents running when the app last quit are
             // loaded as "interrupted" and offered for resume in the frontend.
             let persistence_path = app
@@ -2120,6 +2138,14 @@ pub fn run() {
             stop_mcp,
             mcp_status,
             set_menu_command_states,
+            recent_projects::recent_projects_list,
+            recent_projects::recent_projects_import,
+            recent_projects::recent_projects_add,
+            recent_projects::recent_projects_remove,
+            recent_projects::starred_projects_list,
+            recent_projects::starred_projects_import,
+            recent_projects::starred_projects_add,
+            recent_projects::starred_projects_remove,
             video_import::video_import_analyze_media,
             video_import::video_import_local_status,
             video_import::video_import_install_local,
