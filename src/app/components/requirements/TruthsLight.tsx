@@ -5,12 +5,7 @@ import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/req
 
 const STALE_DAYS = 30;
 
-/**
- * Ambient verification light for the status bar: green while every active
- * invariant is freshly proven, amber the moment a proof goes stale or an
- * invariant lacks one. Hidden until the project declares requirements, so
- * the bar stays quiet on projects that don't use them.
- */
+/** Status-bar light: green = all verified, amber = stale/unverified. Hidden if none. */
 export function TruthsLight() {
   const requirements = useStore((s) => s.requirementsDraft);
   const rootPath = useStore((s) => s.rootPath);
@@ -39,8 +34,8 @@ export function TruthsLight() {
       onClick={handleClick}
       title={
         needProof > 0
-          ? `${needProof} invariant(s) stale or unverified — open Requirements`
-          : 'Every invariant is freshly proven'
+          ? `${needProof} stale/unverified · open Requirements`
+          : 'All verified'
       }
       className="flex items-center gap-1.5 hover:text-foreground transition-colors"
     >
@@ -54,7 +49,7 @@ export function TruthsLight() {
         }`}
       />
       <span className={needProof > 0 ? 'text-amber-300' : undefined}>
-        {needProof > 0 ? `${needProof} need proof` : `${held}/${relevant.length} truths held`}
+        {needProof > 0 ? `${needProof} stale` : `${held}/${relevant.length} verified`}
       </span>
     </button>
   );

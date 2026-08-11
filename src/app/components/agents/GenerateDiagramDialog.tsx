@@ -28,7 +28,7 @@ function buildAgentTask(diagramType: string, detailLevel: string, folderPath: st
   if (diagramType === 'component-diagram') {
     const levelDescription: Record<string, string> = {
       abstract:
-        'Show only the top-level subsystems (e.g. Frontend, Backend, Database). Keep it minimal — 3 to 8 nodes.',
+        'Show only the top-level subsystems (e.g. Frontend, Backend, Database). Keep it minimal: 3 to 8 nodes.',
       medium:
         'Show main modules within each subsystem and their key connections. Include IPC channels and data flows.',
       detailed:
@@ -43,12 +43,12 @@ Your task is to create a high-level Component and Module Diagram in Mermaid synt
 IMPORTANT: Stay at the architectural level. Do NOT descend into individual functions, methods, or class implementations. Focus on the broad structure of the system.
 
 Identify and document:
-1. Main components and modules — the top-level building blocks of the application
-2. Component interactions — how the components depend on or communicate with each other
-3. Process communication — IPC channels, API calls, message passing, and events between processes
-4. Data flow — how data moves through the system from input to output
-5. Data storage — where data is persisted (databases, files, local storage, config files, etc.)
-6. Technology and process boundaries — frontend vs backend, separate processes or services
+1. Main components and modules: the top-level building blocks of the application
+2. Component interactions: how the components depend on or communicate with each other
+3. Process communication: IPC channels, API calls, message passing, and events between processes
+4. Data flow: how data moves through the system from input to output
+5. Data storage: where data is persisted (databases, files, local storage, config files, etc.)
+6. Technology and process boundaries: frontend vs backend, separate processes or services
 
 Detail level: ${detailLevel}
 ${description}

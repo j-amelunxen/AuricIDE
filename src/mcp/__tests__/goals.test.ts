@@ -82,7 +82,7 @@ describe('evaluateGoal — the SQL twin of getGoalSatisfaction', () => {
     seedStation(db, 's1', goal.id, 'Build the parser', 'done', 'claim');
     const result = evaluateGoal(db, goal.id);
     expect(result.satisfied).toBe(false);
-    expect(result.blockers).toContain('Station "Build the parser" is claimed, not verified');
+    expect(result.blockers).toContain('Station "Build the parser": unverified claim');
   });
 
   it('a judged, proof, or human station satisfies', () => {

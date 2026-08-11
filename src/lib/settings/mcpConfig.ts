@@ -42,11 +42,11 @@ export async function initMcpJson(projectPath: string): Promise<InitMcpResult> {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      throw new Error('.mcp.json exists but contains invalid JSON — not overwriting it');
+      throw new Error('.mcp.json exists but contains invalid JSON; not overwriting it');
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       throw new Error(
-        '.mcp.json exists but is invalid (expected a JSON object) — not overwriting it'
+        '.mcp.json exists but is invalid (expected a JSON object); not overwriting it'
       );
     }
     config = parsed as Record<string, unknown>;

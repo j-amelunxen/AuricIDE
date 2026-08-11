@@ -9,7 +9,7 @@ export async function openExternalUrl(url: string): Promise<void> {
     await openUrl(url);
   } catch {
     await navigator.clipboard.writeText(url);
-    throw new Error('Could not open the browser — link copied to clipboard instead');
+    throw new Error('Could not open the browser. Link copied to clipboard instead.');
   }
 }
 

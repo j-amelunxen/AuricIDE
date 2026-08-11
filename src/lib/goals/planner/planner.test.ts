@@ -72,6 +72,88 @@ describe('plannerSchema', () => {
     expect(() => parsePlannerGraph(bad)).toThrow(/file_exists requires a glob/);
   });
 
+  it('repairs an evidenceKind that repeats its fully specified predicate type', () => {
+    const graph = parsePlannerGraph(
+      JSON.stringify({
+        stations: [
+          {
+            name: 'Write the guide',
+            kind: 'normal',
+            evidenceKind: 'file_exists',
+            predicate: { type: 'file_exists', glob: 'docs/guide.md' },
+          },
+        ],
+      })
+    );
+
+    expect(graph.stations[0]).toMatchObject({
+      evidenceKind: 'proof',
+      predicate: { type: 'file_exists', glob: 'docs/guide.md' },
+    });
+  });
+
+  it('maps a repeated undefined predicate type to claim evidence', () => {
+    const graph = parsePlannerGraph(
+      JSON.stringify({
+        stations: [
+          {
+            name: 'Determine the check later',
+            evidenceKind: 'undefined',
+            predicate: { type: 'undefined' },
+          },
+        ],
+      })
+    );
+
+    expect(graph.stations[0]).toMatchObject({
+      evidenceKind: 'claim',
+      predicate: { type: 'undefined' },
+    });
+  });
+
+  it('repairs the same unambiguous field confusion in planner ops', () => {
+    const ops = parsePlannerOps(
+      JSON.stringify({
+        ops: [
+          {
+            op: 'set_evidence',
+            index: 0,
+            evidenceKind: 'undefined',
+            predicate: { type: 'undefined' },
+          },
+          {
+            op: 'add',
+            station: {
+              name: 'Create changelog',
+              evidenceKind: 'git_touches',
+              predicate: { type: 'git_touches', pathPrefix: 'CHANGELOG.md' },
+            },
+          },
+        ],
+      })
+    );
+
+    expect(ops[0]).toMatchObject({ evidenceKind: 'claim', predicate: { type: 'undefined' } });
+    expect(ops[1]).toMatchObject({
+      station: { evidenceKind: 'proof', predicate: { type: 'git_touches' } },
+    });
+  });
+
+  it('does not repair mismatched, incomplete, or arbitrary evidence kinds', () => {
+    const station = (evidenceKind: string, predicate: object) =>
+      JSON.stringify({ stations: [{ name: 'X', evidenceKind, predicate }] });
+
+    expect(() =>
+      parsePlannerGraph(station('file_exists', { type: 'git_touches', pathPrefix: 'src/' }))
+    ).toThrow(/evidenceKind.*file_exists/);
+    expect(() => parsePlannerGraph(station('file_exists', { type: 'file_exists' }))).toThrow(
+      /file_exists requires a glob/
+    );
+    expect(() =>
+      parsePlannerGraph(station('looks_good', { type: 'file_exists', glob: 'README.md' }))
+    ).toThrow(/evidenceKind.*looks_good/);
+  });
+
   it('parses ops and rejects unknown op names', () => {
     const ops = parsePlannerOps('{ "ops": [ { "op": "remove", "index": 1 } ] }');
     expect(ops).toEqual([{ op: 'remove', index: 1 }]);
@@ -80,6 +162,28 @@ describe('plannerSchema', () => {
 
   it('extractJson refuses responses without JSON', () => {
     expect(() => extractJson('I would rather chat about the weather.')).toThrow(/No JSON/);
+  });
+
+  it('logs the proposal phase, model response, and parse error before rethrowing', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => parsePlannerGraph('not json')).toThrow(/No JSON/);
+    expect(error).toHaveBeenCalledWith(
+      '[Planner] Failed to parse initial proposal',
+      expect.objectContaining({ response: 'not json', error: expect.stringMatching(/No JSON/) })
+    );
+
+    error.mockClear();
+    expect(() => parsePlannerOps('{"ops":[{"op":"nope"}]}')).toThrow(/nope/);
+    expect(error).toHaveBeenCalledWith(
+      '[Planner] Failed to parse refinement proposal',
+      expect.objectContaining({
+        response: '{"ops":[{"op":"nope"}]}',
+        error: expect.stringMatching(/nope/),
+      })
+    );
+
+    error.mockRestore();
   });
 });
 

@@ -251,7 +251,7 @@ describe('ConductorPanel preflight', () => {
   it('says a scoped run with no work left will verify the goal', () => {
     renderPanel({ preflight, selectedGoalName: 'Ship v1' });
     expect(screen.getByTestId('conductor-preflight')).toHaveTextContent(
-      'nothing to work — will verify the goal'
+      'nothing to work; will verify the goal'
     );
   });
 

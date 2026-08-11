@@ -5,7 +5,7 @@ import { type ActivityItem } from '@/app/components/ide/ActivityBar';
 /**
  * The rail leads with the loop: Cockpit → Files → Git → Plan → Requirements
  * are destinations a supervisor lives in. Everything below the separator is
- * a tool — a means, reachable but not shouting. Goals & Orchestration has no
+ * a tool: a means, reachable but not shouting. Goals & Orchestration has no
  * slot: the conductor pulse (header) and Mission Control own that path.
  */
 export const activityItems: ActivityItem[] = [
@@ -42,7 +42,7 @@ export const TIPS: { icon: string; text: React.ReactNode }[] = [
     text: (
       <>
         Press <kbd className={KBD}>Shift</kbd> twice quickly to open{' '}
-        <span className="text-primary-light font-medium">File Search</span> — find any file in your
+        <span className="text-primary-light font-medium">File Search</span>: find any file in your
         project instantly.
       </>
     ),

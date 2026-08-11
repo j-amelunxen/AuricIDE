@@ -9,7 +9,7 @@
     "label        shown verbatim in the palette AND the menu, so the axbridge",
     "             path 'Category > Label' is derivable from this file alone",
     "category     groups the palette and becomes a native submenu",
-    "shortcut     display string for the palette only — NOT a real accelerator.",
+    "shortcut     display string for the palette only: NOT a real accelerator.",
     "             Registering these as menu accelerators would consume the key",
     "             before the webview sees it (see the CmdOrCtrl+W note in lib.rs).",
     "requiresProject  the action provably does nothing without an open project,",

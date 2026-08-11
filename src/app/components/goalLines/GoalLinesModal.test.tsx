@@ -103,6 +103,7 @@ describe('GoalLinesModal', () => {
     expect(screen.queryByTestId(`goal-line-card-${bare.id}`)).toBeNull();
     // the bare goal lands in the quiet not-started strip instead
     expect(screen.getByTestId('goal-lines-not-started').textContent).toContain('Bare goal');
+    expect(screen.getByTestId('goal-line-legend')).toBeTruthy();
   });
 
   it('shows an empty state with a path to Goals when nothing exists', () => {
@@ -153,7 +154,7 @@ describe('GoalLinesModal', () => {
     expect(screen.getByTestId('goal-lines-need-you').textContent).toContain('1');
   });
 
-  it('states the all-quiet explicitly while agents run and none needs a human', () => {
+  it('states idle while agents run and none needs a human', () => {
     const goal = makeGoal();
     const ticket = makeTicket({ goalId: goal.id, status: 'in_progress' });
     const healthy = makeAgent({ spawnedByTicketId: ticket.id });
@@ -163,7 +164,7 @@ describe('GoalLinesModal', () => {
       agents: [healthy],
     });
     render(<GoalLinesModal />);
-    expect(screen.getByTestId('for-you-all-quiet').textContent).toContain('all quiet');
+    expect(screen.getByTestId('for-you-all-quiet').textContent).toContain('idle');
   });
 
   it('perches the running agent on its station in the map', () => {

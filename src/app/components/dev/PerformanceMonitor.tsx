@@ -337,15 +337,15 @@ export function PerformanceMonitor() {
             {/* Thresholds */}
             <div className="text-[10px] space-y-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-green-500" /> &lt; {WARN_TOTAL_MB} MB —
+                <span className="w-2 h-2 rounded-full bg-green-500" /> &lt; {WARN_TOTAL_MB} MB:
                 Normal
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500" /> &gt; {WARN_TOTAL_MB} MB —
+                <span className="w-2 h-2 rounded-full bg-amber-500" /> &gt; {WARN_TOTAL_MB} MB:
                 Elevated
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500" /> &gt; {CRITICAL_TOTAL_MB} MB —
+                <span className="w-2 h-2 rounded-full bg-red-500" /> &gt; {CRITICAL_TOTAL_MB} MB:
                 Critical
               </div>
             </div>

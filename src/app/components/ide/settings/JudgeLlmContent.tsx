@@ -118,10 +118,8 @@ export function JudgeLlmContent() {
     <div className="space-y-6">
       <SettingsSection title="Judge Model" icon="gavel">
         <p className="text-[11px] leading-relaxed text-foreground-muted">
-          The independent reviewer that verifies an agent&apos;s claimed work before it counts. Use
-          a different — ideally stronger — model than the implementer, so the one who builds the
-          work is not the one who signs it off. Without a key here, a claim stays blocking and is
-          never auto-approved.
+          Reviews agent claims. Prefer a stronger model than the implementer. No key = no
+          auto-approve.
         </p>
 
         <div className="pt-1">

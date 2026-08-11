@@ -187,7 +187,7 @@ export function getGoalSatisfaction(
     } else if (!isVerifiedEvidence(station.evidenceKind)) {
       // Done, but only claimed — the judge (or a person) has to verify it
       // before it counts. A bare claim blocks exactly like a pending station.
-      blockers.push(`Station "${station.name}" is claimed, not verified`);
+      blockers.push(`Station "${station.name}": unverified claim`);
     }
   }
 
@@ -246,7 +246,7 @@ export function getGoalWorkflowStage(
       hint:
         goal?.status === 'achieved'
           ? 'Goal achieved.'
-          : 'All checks green: mark achieved, or let the conductor do it.',
+          : 'Checks green: mark achieved or run conductor.',
     };
   }
 
@@ -254,7 +254,7 @@ export function getGoalWorkflowStage(
     return {
       stage: 'define',
       index: 1,
-      hint: 'Write success criteria so this goal becomes machine-checkable.',
+      hint: 'Add success criteria.',
     };
   }
 
@@ -271,14 +271,14 @@ export function getGoalWorkflowStage(
     return {
       stage: 'attach',
       index: 2,
-      hint: 'Attach work: link tickets, or launch a planning agent to decompose this goal.',
+      hint: 'Link tickets or run a planning agent.',
     };
   }
 
   return {
     stage: 'execute',
     index: 3,
-    hint: 'Start the conductor: it works the open tickets and verifies the goal.',
+    hint: 'Start the conductor to work open tickets.',
   };
 }
 

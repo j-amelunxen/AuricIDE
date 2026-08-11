@@ -6,10 +6,10 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 export const WORKFLOW_STRIP_DISMISSED_KEY = 'auric.goals.workflow-strip-dismissed';
 
 const STEPS = [
-  { title: 'Define a goal', detail: 'a target state with success criteria' },
-  { title: 'Attach work', detail: 'link tickets or let an agent decompose' },
-  { title: 'Run the conductor', detail: 'agents work the tickets' },
-  { title: 'Achieved', detail: 'every check green, verified automatically' },
+  { title: 'Define a goal', detail: 'name + criteria' },
+  { title: 'Attach work', detail: 'link tickets' },
+  { title: 'Run the conductor', detail: 'agents pick tickets' },
+  { title: 'Achieved', detail: 'auto when green' },
 ];
 
 interface GoalsWorkflowStripProps {

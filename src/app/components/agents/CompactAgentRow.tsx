@@ -109,7 +109,7 @@ export function CompactAgentRow({
         type="button"
         onClick={() => onActivate(agent.id)}
         aria-label={`${activateLabel} ${agent.name}`}
-        title={detail ? `${agent.name} — ${detail}` : agent.name}
+        title={detail ? `${agent.name} · ${detail}` : agent.name}
         className={`flex-1 truncate text-left text-[11px] transition-colors hover:text-foreground ${
           unseen ? 'font-medium text-foreground' : 'text-foreground-muted'
         }`}

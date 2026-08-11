@@ -2,12 +2,7 @@
 
 import { useStore } from '@/lib/store';
 
-/**
- * The conductor's heartbeat — a permanently visible organ in the header.
- * The state it renders (running, working agents, pending approvals) already
- * lives in conductorSlice; this makes it ambient instead of modal-buried.
- * Clicking opens Goals & Orchestration where the full controls live.
- */
+/** Header pulse for conductor state. Click opens Goals. */
 export function ConductorPulse() {
   const running = useStore((s) => s.conductorRunning);
   const assignments = useStore((s) => s.conductorAssignments);
@@ -22,11 +17,7 @@ export function ConductorPulse() {
       data-testid="conductor-pulse"
       aria-label="Conductor status"
       onClick={() => setGoalsModalOpen(true)}
-      title={
-        running
-          ? 'The conductor is working autonomously — click for Goals & Orchestration'
-          : 'Start the conductor from Goals & Orchestration'
-      }
+      title={running ? 'Conductor running · open Goals' : 'Start conductor in Goals'}
       className={`group flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-medium backdrop-blur-sm transition-colors duration-150 hover:bg-white/10 ${
         running ? 'border-green-500/25 bg-green-500/5' : 'border-white/5 bg-black/20'
       }`}
@@ -47,7 +38,7 @@ export function ConductorPulse() {
           data-testid="conductor-pulse-waiting"
           className="rounded-full bg-amber-500/20 px-1.5 py-0.5 font-bold text-amber-300"
         >
-          {waitingCount} waiting for you
+          {waitingCount} need you
         </span>
       )}
     </button>

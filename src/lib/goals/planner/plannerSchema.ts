@@ -121,6 +121,34 @@ export function parsePredicate(field: string, raw: unknown): StationPredicate {
   }
 }
 
+function parseEvidenceKind(
+  field: string,
+  raw: unknown,
+  predicate: StationPredicate
+): EvidenceKindValue {
+  const value = typeof raw === 'string' ? raw : 'claim';
+  if ((EVIDENCE_KINDS as readonly string[]).includes(value)) {
+    return value as EvidenceKindValue;
+  }
+
+  // Some models copy the predicate type into evidenceKind. Repair only when
+  // both fields name the exact same predicate, so a typo or contradictory
+  // response still fails at this boundary.
+  if (value === predicate.type) {
+    switch (predicate.type) {
+      case 'ticket_done':
+      case 'requirement_verified':
+      case 'file_exists':
+      case 'git_touches':
+        return 'proof';
+      case 'undefined':
+        return 'claim';
+    }
+  }
+
+  return assertOneOf(field, value, EVIDENCE_KINDS);
+}
+
 function parseStation(field: string, raw: unknown): PlannerStation {
   if (!isRecord(raw)) throw new Error(`Invalid ${field}: expected an object`);
   if (typeof raw.name !== 'string' || !raw.name.trim()) {
@@ -131,15 +159,11 @@ function parseStation(field: string, raw: unknown): PlannerStation {
     typeof raw.kind === 'string' ? raw.kind : 'normal',
     STATION_KINDS
   );
-  const evidenceKind = assertOneOf(
-    `${field}.evidenceKind`,
-    typeof raw.evidenceKind === 'string' ? raw.evidenceKind : 'claim',
-    EVIDENCE_KINDS
-  );
   const predicate = parsePredicate(
     `${field}.predicate`,
     raw.predicate ?? { type: kind === 'human' ? 'human' : 'undefined' }
   );
+  const evidenceKind = parseEvidenceKind(`${field}.evidenceKind`, raw.evidenceKind, predicate);
   return {
     name: raw.name.trim(),
     kind,
@@ -149,7 +173,23 @@ function parseStation(field: string, raw: unknown): PlannerStation {
   };
 }
 
+function logParseFailure(phase: 'initial' | 'refinement', raw: string, error: unknown): void {
+  console.error(`[Planner] Failed to parse ${phase} proposal`, {
+    response: raw,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 export function parsePlannerGraph(raw: string): PlannerGraph {
+  try {
+    return parsePlannerGraphStrict(raw);
+  } catch (error) {
+    logParseFailure('initial', raw, error);
+    throw error;
+  }
+}
+
+function parsePlannerGraphStrict(raw: string): PlannerGraph {
   const json = extractJson(raw);
   const root = isRecord(json) ? json : { stations: json };
   if (!Array.isArray(root.stations)) {
@@ -162,6 +202,15 @@ export function parsePlannerGraph(raw: string): PlannerGraph {
 }
 
 export function parsePlannerOps(raw: string): PlannerOp[] {
+  try {
+    return parsePlannerOpsStrict(raw);
+  } catch (error) {
+    logParseFailure('refinement', raw, error);
+    throw error;
+  }
+}
+
+function parsePlannerOpsStrict(raw: string): PlannerOp[] {
   const json = extractJson(raw);
   const list = isRecord(json) && Array.isArray(json.ops) ? json.ops : json;
   if (!Array.isArray(list)) {
@@ -212,17 +261,19 @@ export function parsePlannerOps(raw: string): PlannerOp[] {
           throw new Error(`Invalid ${field}.gate: expected a boolean`);
         }
         return { op, index: index(), gate: entry.gate };
-      case 'set_evidence':
+      case 'set_evidence': {
+        const predicate = parsePredicate(`${field}.predicate`, entry.predicate);
         return {
           op,
           index: index(),
-          evidenceKind: assertOneOf(
+          evidenceKind: parseEvidenceKind(
             `${field}.evidenceKind`,
-            typeof entry.evidenceKind === 'string' ? entry.evidenceKind : '',
-            EVIDENCE_KINDS
+            entry.evidenceKind ?? '',
+            predicate
           ),
-          predicate: parsePredicate(`${field}.predicate`, entry.predicate),
+          predicate,
         };
+      }
     }
   });
 }

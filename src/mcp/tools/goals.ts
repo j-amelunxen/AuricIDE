@@ -369,7 +369,7 @@ export function evaluateGoal(
     } else if (!isVerifiedEvidence(s.evidence_kind)) {
       // Lockstep twin of getGoalSatisfaction: a claimed-but-unverified station
       // blocks exactly like a pending one until the judge promotes it.
-      blockers.push(`Station "${s.name}" is claimed, not verified`);
+      blockers.push(`Station "${s.name}": unverified claim`);
     }
   }
 

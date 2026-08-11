@@ -611,14 +611,14 @@ describe('AgentsPanel – folded groups and alarms', () => {
 });
 
 describe('AgentsPanel all-quiet signal', () => {
-  it('says all quiet while agents work and none needs a human', () => {
+  it('says idle while agents work and none needs a human', () => {
     // The absence of alarms is not the same as permission to look away —
     // an explicit all-clear is what lets the user stop polling.
     const calm: AgentInfo[] = [
       { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() },
     ];
     render(<AgentsPanel agents={calm} onSpawn={vi.fn()} onKill={vi.fn()} />);
-    expect(screen.getByTestId('agents-all-quiet')).toHaveTextContent(/all quiet/i);
+    expect(screen.getByTestId('agents-all-quiet')).toHaveTextContent(/idle/i);
   });
 
   it('withdraws the all-clear the moment something needs attention', () => {

@@ -178,7 +178,7 @@ describe('RequirementDetailPanel', () => {
     render(<RequirementDetailPanel requirement={req} onUpdate={onUpdate} onDelete={onDelete} />);
     // The Applies To section should show a dash
     const appliesToSection = screen.getByText('Applies To').parentElement;
-    expect(appliesToSection?.textContent).toContain('—');
+    expect(appliesToSection?.textContent).toContain('-');
   });
 
   it('shows "No linked tests" when no testCases provided', () => {

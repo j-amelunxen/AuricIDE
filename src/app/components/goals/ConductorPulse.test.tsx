@@ -40,10 +40,10 @@ describe('ConductorPulse', () => {
     expect(screen.getByTestId('conductor-pulse-dot')).not.toHaveClass('animate-pulse');
   });
 
-  it('surfaces pending approvals as "waiting for you"', () => {
+  it('surfaces pending approvals as "need you"', () => {
     useStore.setState({ conductorRunning: true, conductorPendingApprovals: ['t1'] });
     render(<ConductorPulse />);
-    expect(screen.getByTestId('conductor-pulse')).toHaveTextContent('1 waiting for you');
+    expect(screen.getByTestId('conductor-pulse')).toHaveTextContent('1 need you');
   });
 
   it('opens Goals & Orchestration when clicked', () => {

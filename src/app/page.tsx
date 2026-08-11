@@ -473,7 +473,7 @@ export default function Home() {
                                 }}
                                 title={
                                   isStarred
-                                    ? 'Unstar — remove from Quick Access'
+                                    ? 'Unstar: remove from Quick Access'
                                     : 'Star for Quick Access'
                                 }
                                 data-testid={`star-recent-${project.path}`}

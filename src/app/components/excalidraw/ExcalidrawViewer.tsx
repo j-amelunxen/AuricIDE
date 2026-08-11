@@ -113,7 +113,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
     if (!rootPath || !link) return;
     try {
       await unlinkSpec(rootPath, relPath);
-      showToast(`Unlinked "${link.sceneName}" — the file is now local and editable`, 'success');
+      showToast(`Unlinked "${link.sceneName}" · local now`, 'success');
     } catch (err) {
       showToast(String(err), 'error');
     }
@@ -123,14 +123,14 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
     if (!rootPath || !link) return;
     if (
       !confirm(
-        `Delete the local copy "${fileName}"? The scene stays untouched on Excalidraw+ and can be re-imported anytime.`
+        `Delete local copy "${fileName}"? Scene stays on Excalidraw+.`
       )
     ) {
       return;
     }
     try {
       await removeSpecFile(rootPath, relPath);
-      showToast(`Local copy of "${link.sceneName}" deleted — still on Excalidraw+`, 'success');
+      showToast(`Deleted local "${link.sceneName}" · still on Excalidraw+`, 'success');
       closeTab(filePath);
     } catch (err) {
       showToast(String(err), 'error');
@@ -159,8 +159,8 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
           data-testid="excalidraw-mode-badge"
           title={
             editable
-              ? 'Local diagram — edits are saved back to this file'
-              : 'Linked to Excalidraw+ — the source of truth lives there, edit it via "Open in Excalidraw+"'
+              ? 'Local · edits save to this file'
+              : 'Linked to Excalidraw+ · edit there'
           }
           className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-wider ${
             editable ? 'bg-primary/10 text-primary-light' : 'bg-white/5 text-foreground-muted'
@@ -202,7 +202,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
             <button
               data-testid="excalidraw-unlink"
               onClick={handleUnlink}
-              title="Remove the link to Excalidraw+ — the file stays and becomes locally editable"
+              title="Unlink (file stays local)"
               className="flex h-6 w-6 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
               aria-label="Unlink from Excalidraw+"
             >
@@ -211,7 +211,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
             <button
               data-testid="excalidraw-remove-local"
               onClick={handleRemoveLocal}
-              title="Delete the local copy — the scene stays on Excalidraw+"
+              title="Delete local copy"
               className="flex h-6 w-6 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-red-500/15 hover:text-red-300"
               aria-label="Delete local copy"
             >

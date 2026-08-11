@@ -109,14 +109,14 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
     if (!rootPath || !relPath) return;
     if (
       !confirm(
-        `Delete the local copy of "${scene.name}" (${relPath})? The scene stays untouched on Excalidraw+.`
+        `Delete local copy of "${scene.name}" (${relPath})? Scene stays on Excalidraw+.`
       )
     ) {
       return;
     }
     try {
       await removeSpecFile(rootPath, relPath);
-      showToast(`Local copy of "${scene.name}" deleted — still on Excalidraw+`, 'success');
+      showToast(`Deleted local "${scene.name}" · still on Excalidraw+`, 'success');
       onImported?.();
     } catch (err) {
       showToast(String(err), 'error');
@@ -320,7 +320,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
                             <button
                               data-testid={`excalidraw-remove-local-${scene.id}`}
                               onClick={() => void handleRemoveLocal(scene)}
-                              title="Delete the local copy — the scene stays on Excalidraw+"
+                              title="Delete local copy"
                               aria-label={`Delete local copy of ${scene.name}`}
                               className="flex h-6 w-6 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-red-500/15 hover:text-red-300"
                             >

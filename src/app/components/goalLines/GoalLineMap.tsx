@@ -44,15 +44,15 @@ export interface GoalLineMapProps {
 }
 
 /**
- * One goal as a transit map. Evidence class changes the station FILL, never
- * the line color: proof/human filled, a claim stays hollow with a center dot
- * (an agent says done; nobody proved it), fog dims out. Motion on a segment
- * means an agent is computing there — a still line is an idle line.
+ * One goal as a transit map. Evidence drives station fill, not line color:
+ * proven/human = solid, claim = hollow + center dot, fog = dim.
+ * Segment pulse = agent running there.
  */
 export function GoalLineMap({ line, agentsById, big = false, onStationDrop }: GoalLineMapProps) {
   const H = big ? 170 : 120;
   const midY = H / 2 + (big ? 8 : 6);
   const r = big ? 7 : 5.5;
+  const hasDenseLabels = line.stations.length >= 6;
   const px = (x: number): number => PAD + x * (W - PAD * 2);
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -145,7 +145,7 @@ export function GoalLineMap({ line, agentsById, big = false, onStationDrop }: Go
       data-testid={`goal-line-map-${line.goalId}`}
     >
       {segments}
-      {line.stations.map((s) => {
+      {line.stations.map((s, stationIndex) => {
         const cx = px(s.x);
         const dim = s.state === 'fog' ? 0.25 : s.state === 'planned' ? 0.55 : 1;
         const humanGate = s.kind === 'gate' && s.evidence === 'human';
@@ -155,6 +155,18 @@ export function GoalLineMap({ line, agentsById, big = false, onStationDrop }: Go
 
         const draggable = isDraggable(s);
         const dragging = drag?.id === s.id;
+        const labelBelow = hasDenseLabels && stationIndex % 2 === 1;
+        const labelY = labelBelow
+          ? midY + (big ? 29 : 24)
+          : midY - (big ? 18 : 14) - (s.agentIds.length > 0 ? (big ? 16 : 13) : 0);
+        const labelAnchor =
+          line.stations.length === 1
+            ? 'middle'
+            : stationIndex === 0
+              ? 'start'
+              : stationIndex === line.stations.length - 1
+                ? 'end'
+                : 'middle';
 
         return (
           <g
@@ -176,9 +188,9 @@ export function GoalLineMap({ line, agentsById, big = false, onStationDrop }: Go
           >
             <title>
               {s.label}
-              {s.detail ? ` — ${s.detail}` : ''}
-              {hollow ? ' (claimed, not proven)' : ''}
-              {s.stale ? ' (evidence stale, re-verify)' : ''}
+              {s.detail ? ` · ${s.detail}` : ''}
+              {hollow ? ' (claim)' : ''}
+              {s.stale ? ' (stale)' : ''}
             </title>
             {done && s.evidence === 'judged' && (
               <circle
@@ -250,8 +262,8 @@ export function GoalLineMap({ line, agentsById, big = false, onStationDrop }: Go
             {(big || s.state !== 'fog') && (
               <text
                 x={cx}
-                y={midY - (big ? 18 : 14) - (s.agentIds.length > 0 ? (big ? 16 : 13) : 0)}
-                textAnchor="middle"
+                y={labelY}
+                textAnchor={labelAnchor}
                 className="font-mono"
                 fontSize={big ? 10 : 9}
                 fill="#8a8a9c"

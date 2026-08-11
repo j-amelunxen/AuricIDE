@@ -67,7 +67,7 @@ function lastRunLabel(run: ConductorRunSummary): string {
     case 'goal_achieved':
       return run.goalName ? `achieved "${run.goalName}"` : 'goal achieved';
     case 'goal_blocked':
-      return `blocked — ${run.blockers.length} blocker${run.blockers.length === 1 ? '' : 's'}`;
+      return `blocked: ${run.blockers.length} blocker${run.blockers.length === 1 ? '' : 's'}`;
     case 'finished':
       return 'finished';
     case 'user_stopped':
@@ -100,7 +100,7 @@ function preflightLabel(preflight: ConductorPreflight, selectedGoalName: string 
 
   if (preflight.ready === 0 && preflight.inProgress === 0) {
     const nothing = selectedGoalName
-      ? 'nothing to work — will verify the goal'
+      ? 'nothing to work; will verify the goal'
       : 'no open tickets in scope';
     return held.length > 0 ? `${nothing} · ${held.join(' · ')}` : nothing;
   }

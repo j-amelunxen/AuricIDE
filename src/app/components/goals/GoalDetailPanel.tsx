@@ -263,7 +263,7 @@ export function GoalDetailPanel({
           {satisfaction.satisfied ? (
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-medium text-green-300">
-                All checks green. Ready to achieve.
+                Checks green. Ready to mark achieved.
               </p>
               {goal.status !== 'achieved' && (
                 <button
@@ -333,7 +333,7 @@ export function GoalDetailPanel({
           value={goal.description}
           onChange={(e) => onUpdate(goal.id, { description: e.target.value })}
           rows={3}
-          placeholder="What world state does this goal describe?"
+          placeholder="What should be true when this is done?"
           className={inputCls}
         />
       </div>
@@ -346,20 +346,20 @@ export function GoalDetailPanel({
           value={goal.successCriteria}
           onChange={(e) => onUpdate(goal.id, { successCriteria: e.target.value })}
           rows={3}
-          placeholder="- Machine-checkable checklist that defines 'achieved'"
+          placeholder="- Checkable criteria that define done"
           className={inputCls}
         />
       </div>
 
       {/* Goal prompt */}
       <div>
-        <label className={labelCls}>Goal prompt (agent launch artifact)</label>
+        <label className={labelCls}>Goal prompt</label>
         <textarea
           data-testid="goal-detail-prompt"
           value={goal.goalPrompt}
           onChange={(e) => onUpdate(goal.id, { goalPrompt: e.target.value })}
           rows={3}
-          placeholder="Optional: exact prompt used when launching agents. Leave empty to auto-generate from name, description and criteria."
+          placeholder="Optional agent prompt (auto if empty)"
           className={inputCls}
         />
       </div>
@@ -469,7 +469,7 @@ export function GoalDetailPanel({
 
       {/* Linked requirements */}
       <div>
-        <label className={labelCls}>Requirements (invariants)</label>
+        <label className={labelCls}>Requirements</label>
         {linkedRequirements.length === 0 && goalTickets.length > 0 && (
           <p
             data-testid="goal-no-requirement-hint"

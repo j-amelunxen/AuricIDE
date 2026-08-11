@@ -82,7 +82,7 @@ export function AgentCard({
     ? `quiet ${formatAgentDuration(now - (agent.lastActivityAt ?? now))}`
     : runtime;
   const durationTitle = showQuiet
-    ? `No output for a while — running for ${runtime}`
+    ? `No output for a while · running for ${runtime}`
     : 'Running for';
 
   /** The name is derived from the instruction, so the two are often the same
@@ -173,7 +173,7 @@ export function AgentCard({
       await writeToShell(`agent-${agent.id}`, `${message}\n`);
       input.value = '';
     } catch {
-      setReplyError('Message could not be delivered — the agent may have exited.');
+      setReplyError('Message could not be delivered. The agent may have exited.');
     }
   };
 
@@ -337,7 +337,7 @@ export function AgentCard({
                 onMinimize(agent.id);
               }}
               className="rounded p-1.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-              title="Park agent — keeps it running, folds it to one line"
+              title="Park (still running)"
               aria-label="Park agent"
             >
               <AuricIcon name="keyboard_arrow_down" aria-hidden="true" className="text-sm" />
@@ -428,13 +428,13 @@ export function AgentCard({
                     const { writeToShell } = await import('@/lib/tauri/terminal');
                     await writeToShell(`agent-${agent.id}`, '\n');
                   } catch {
-                    setReplyError('Nudge could not be delivered — the agent may have exited.');
+                    setReplyError('Nudge could not be delivered. The agent may have exited.');
                   }
                 }}
                 className="flex items-center justify-center gap-1 rounded-lg border border-orange-400/25 bg-orange-400/5 px-2 py-1.5 text-[10px] font-medium text-orange-300 transition-colors hover:bg-orange-400/15"
               >
                 <AuricIcon name="notifications_active" aria-hidden="true" className="text-[13px]" />
-                Nudge — send Enter
+                Nudge: send Enter
               </button>
             )}
             {state === 'stalled' && replyError && (

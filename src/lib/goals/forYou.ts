@@ -27,8 +27,8 @@ export interface ForYouInput extends GoalLinesInput {
 
 const AGENT_LABEL: Record<AttentionReason, (name: string) => string> = {
   error: (name) => `${name} failed`,
-  'needs-input': (name) => `${name} is waiting for your answer`,
-  stalled: (name) => `${name} may be stalled`,
+  'needs-input': (name) => `${name} needs input`,
+  stalled: (name) => `${name} stalled?`,
 };
 
 /**
@@ -84,7 +84,7 @@ export function buildForYouQueue(input: ForYouInput): ForYouItem[] {
           kind: 'approval',
           ticketId: station.ticketId!,
           goalId: line.goalId,
-          label: `"${station.label}" needs your approval`,
+          label: `"${station.label}" needs approval`,
         });
       }
     }
@@ -94,7 +94,7 @@ export function buildForYouQueue(input: ForYouInput): ForYouItem[] {
       unclaimed.push({
         kind: 'unclaimed',
         goalId: line.goalId,
-        label: `"${line.name}" has ready work and no agent`,
+        label: `"${line.name}" ready, no agent`,
       });
     }
   }
