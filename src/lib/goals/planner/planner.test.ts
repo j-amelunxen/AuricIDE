@@ -259,6 +259,41 @@ describe('plannerDraft persistence', () => {
     expect(loaded?.graph.stations).toHaveLength(3);
   });
 
+  it('serializes saves so a slow older write cannot overwrite the latest draft', async () => {
+    let releaseFirst!: () => void;
+    mockDbSet
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          })
+      )
+      .mockResolvedValueOnce(undefined);
+    const first = {
+      graph: {
+        stations: [
+          {
+            name: 'old',
+            kind: 'normal' as const,
+            evidenceKind: 'claim' as const,
+            predicate: { type: 'undefined' as const },
+          },
+        ],
+      },
+      revisions: [],
+    };
+    const latest = {
+      graph: { stations: [{ ...first.graph.stations[0], name: 'latest' }] },
+      revisions: [],
+    };
+    const savingFirst = savePlannerDraft('/p', 'ordered', first);
+    const savingLatest = savePlannerDraft('/p', 'ordered', latest);
+    await vi.waitFor(() => expect(mockDbSet).toHaveBeenCalledTimes(1));
+    releaseFirst();
+    await Promise.all([savingFirst, savingLatest]);
+    expect(JSON.parse(mockDbSet.mock.calls[1][3] as string).graph.stations[0].name).toBe('latest');
+  });
+
   it('discards a corrupt draft instead of crashing', async () => {
     mockDbGet.mockResolvedValueOnce('not json at all {');
     expect(await loadPlannerDraft('/p', 'g1')).toBeNull();
@@ -267,5 +302,27 @@ describe('plannerDraft persistence', () => {
   it('deletes through the same namespace', async () => {
     await deletePlannerDraft('/p', 'g1');
     expect(mockDbDelete).toHaveBeenCalledWith('/p', 'goal_line_planner', 'g1');
+  });
+
+  it('waits for a pending save before deleting so the draft cannot be resurrected', async () => {
+    let releaseSave!: () => void;
+    mockDbSet.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        })
+    );
+    const draft = { graph: parsePlannerGraph(GRAPH_JSON), revisions: [] };
+    const saving = savePlannerDraft('/p', 'delete-ordered', draft);
+    await vi.waitFor(() => expect(mockDbSet).toHaveBeenCalledTimes(1));
+    const deleting = deletePlannerDraft('/p', 'delete-ordered');
+    await Promise.resolve();
+    expect(mockDbDelete).not.toHaveBeenCalled();
+    releaseSave();
+    await Promise.all([saving, deleting]);
+    expect(mockDbDelete).toHaveBeenCalledWith('/p', 'goal_line_planner', 'delete-ordered');
+    expect(mockDbSet.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDbDelete.mock.invocationCallOrder[0]
+    );
   });
 });

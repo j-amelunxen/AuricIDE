@@ -121,7 +121,7 @@ describe('GoalLinesModal', () => {
     expect(useStore.getState().goalLinesOpen).toBe(false);
   });
 
-  it('clicking a card navigates to the goal in the Goals modal', () => {
+  it('clicking a card opens and closes an accessible large detail layer', () => {
     const goal = makeGoal();
     seedStore({
       goalsDraft: [goal],
@@ -129,9 +129,14 @@ describe('GoalLinesModal', () => {
     });
     render(<GoalLinesModal />);
     fireEvent.click(screen.getByTestId(`goal-line-open-${goal.id}`));
-    expect(useStore.getState().selectedGoalId).toBe(goal.id);
-    expect(useStore.getState().goalsModalOpen).toBe(true);
-    expect(useStore.getState().goalLinesOpen).toBe(false);
+    const detail = screen.getByTestId('goal-line-detail');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(detail.getAttribute('role')).toBe('dialog');
+    expect(detail.getAttribute('aria-modal')).toBe('true');
+    expect(detail.getAttribute('aria-labelledby')).toBe('goal-line-detail-title');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('goal-line-detail')).toBeNull();
+    expect(screen.getByTestId(`goal-line-open-${goal.id}`)).toBe(document.activeElement);
   });
 
   it('surfaces a failed agent at the head of the For-you queue', () => {
@@ -228,6 +233,49 @@ describe('station interactions on the board', () => {
     const updated = useStore.getState().goalStationsDraft.find((s) => s.id === s1.id)!;
     expect(updated.status).toBe('done');
     expect(updated.evidenceKind).toBe('human');
+  });
+
+  it('resets a started line after inline confirmation and persists', () => {
+    const goal = makeGoal({ status: 'active' });
+    const s1 = station(goal.id);
+    const saveGoals = vi.fn(async () => {});
+    seedStore({ goalsDraft: [goal], goalStationsDraft: [s1], saveGoals });
+    render(<GoalLinesModal />);
+    fireEvent.click(screen.getByTestId(`goal-line-reset-${goal.id}`));
+    expect(screen.getByTestId(`goal-line-reset-confirm-${goal.id}`)).toBeTruthy();
+    expect(screen.getByTestId(`goal-line-reset-cancel-${goal.id}`)).toBe(document.activeElement);
+    fireEvent.click(screen.getByTestId(`goal-line-reset-confirm-${goal.id}`));
+    expect(useStore.getState().goalStationsDraft).toHaveLength(0);
+    expect(useStore.getState().goalsDraft[0].status).toBe('draft');
+    expect(saveGoals).toHaveBeenCalled();
+  });
+
+  it('Escape cancels reset confirmation and restores focus to Reset', () => {
+    const goal = makeGoal();
+    seedStore({ goalsDraft: [goal], goalStationsDraft: [station(goal.id)] });
+    render(<GoalLinesModal />);
+    fireEvent.click(screen.getByTestId(`goal-line-reset-${goal.id}`));
+    fireEvent.keyDown(screen.getByTestId(`goal-line-reset-cancel-${goal.id}`), { key: 'Escape' });
+    expect(screen.queryByTestId(`goal-line-reset-confirm-${goal.id}`)).toBeNull();
+    expect(screen.getByTestId(`goal-line-reset-${goal.id}`)).toBe(document.activeElement);
+  });
+
+  it('disables reset while a station has an assigned running agent and explains why', () => {
+    const goal = makeGoal();
+    const ticket = makeTicket({ id: 'ticket-1', goalId: goal.id, status: 'in_progress' });
+    const s1 = station(goal.id, { ticketId: ticket.id });
+    const agent = makeAgent({ spawnedByTicketId: ticket.id, status: 'running' });
+    seedStore({
+      goalsDraft: [goal],
+      goalStationsDraft: [s1],
+      pmDraftTickets: [ticket],
+      agents: [agent],
+    });
+    render(<GoalLinesModal />);
+    const reset = screen.getByTestId(`goal-line-reset-${goal.id}`);
+    expect(reset.getAttribute('aria-disabled')).toBe('true');
+    expect(reset.getAttribute('title')).toContain('agent');
+    expect(screen.getByTestId(`goal-line-reset-blocked-${goal.id}`).textContent).toContain('agent');
   });
 
   it('reorder buttons move a station while done work stays put', () => {

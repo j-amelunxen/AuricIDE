@@ -7,6 +7,7 @@ import type { PlannerGraph } from './plannerSchema';
  * leak onto the board — only "Start this line" writes stations.
  */
 const NAMESPACE = 'goal_line_planner';
+const saveChains = new Map<string, Promise<void>>();
 
 export interface PlannerRevision {
   instruction: string;
@@ -40,9 +41,29 @@ export async function savePlannerDraft(
   goalId: string,
   draft: PlannerDraft
 ): Promise<void> {
-  await dbSet(projectPath, NAMESPACE, goalId, JSON.stringify(draft));
+  const key = `${projectPath}\0${goalId}`;
+  const previous = saveChains.get(key) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => dbSet(projectPath, NAMESPACE, goalId, JSON.stringify(draft)));
+  saveChains.set(key, next);
+  try {
+    await next;
+  } finally {
+    if (saveChains.get(key) === next) saveChains.delete(key);
+  }
 }
 
 export async function deletePlannerDraft(projectPath: string, goalId: string): Promise<void> {
-  await dbDelete(projectPath, NAMESPACE, goalId);
+  const key = `${projectPath}\0${goalId}`;
+  const previous = saveChains.get(key) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => dbDelete(projectPath, NAMESPACE, goalId).then(() => undefined));
+  saveChains.set(key, next);
+  try {
+    await next;
+  } finally {
+    if (saveChains.get(key) === next) saveChains.delete(key);
+  }
 }

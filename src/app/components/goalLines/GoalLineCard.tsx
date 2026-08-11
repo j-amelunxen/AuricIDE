@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { GoalLine, LineStation } from '@/lib/goals/goalLinesLayout';
 import { formatAgentDuration } from '@/lib/agents/duration';
@@ -21,6 +21,7 @@ export interface GoalLineCardProps {
   onMove: (goalId: string, stationId: string, toIndex: number) => void;
   /** Runs the machine check for a station with a checkable predicate. */
   onVerify: (stationId: string) => void;
+  onReset: (goalId: string) => void;
 }
 
 interface LineFlag {
@@ -83,12 +84,35 @@ export function GoalLineCard({
   onTick,
   onMove,
   onVerify,
+  onReset,
 }: GoalLineCardProps) {
   const [quickAdd, setQuickAdd] = useState('');
   const [stationsOpen, setStationsOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const resetRef = useRef<HTMLButtonElement>(null);
+  const cancelResetRef = useRef<HTMLButtonElement>(null);
+  const wasConfirmingReset = useRef(false);
   const flag = lineFlag(line, agentsById, now);
   const runningHere = line.stations.reduce((n, s) => n + s.agentIds.length, 0);
+  const resetBlocked = line.stations
+    .flatMap((station) => station.agentIds)
+    .some((id) => {
+      const status = agentsById.get(id)?.status;
+      return status === 'running' || status === 'queued';
+    });
+  useEffect(() => {
+    if (confirmReset) {
+      cancelResetRef.current?.focus();
+      wasConfirmingReset.current = true;
+    } else if (wasConfirmingReset.current) {
+      resetRef.current?.focus();
+      wasConfirmingReset.current = false;
+    }
+  }, [confirmReset]);
+  const cancelReset = () => {
+    setConfirmReset(false);
+  };
 
   const nowText = line.now
     ? runningHere > 0
@@ -300,7 +324,7 @@ export function GoalLineCard({
         </div>
       )}
 
-      <div className="flex gap-2 border-t border-white/5 pt-2">
+      <div className="flex flex-wrap gap-2 border-t border-white/5 pt-2">
         <input
           data-testid={`goal-line-quick-add-${line.goalId}`}
           type="text"
@@ -310,8 +334,64 @@ export function GoalLineCard({
             if (e.key === 'Enter') commitQuickAdd();
           }}
           placeholder="+ human step: “Call the client”, Enter to add"
-          className="flex-1 rounded-lg bg-black/30 px-2.5 py-1.5 text-[11px] text-foreground outline-none transition-colors placeholder:text-foreground-muted/40 focus:bg-black/50"
+          className="flex-1 rounded-lg bg-black/30 px-2.5 py-1.5 text-[11px] text-foreground outline-none transition-colors placeholder:text-foreground-muted/40 focus:bg-black/50 focus-visible:ring-2 focus-visible:ring-primary/70"
         />
+        {line.planCommitted && !confirmReset && (
+          <button
+            ref={resetRef}
+            data-testid={`goal-line-reset-${line.goalId}`}
+            aria-disabled={resetBlocked}
+            aria-describedby={resetBlocked ? `goal-line-reset-blocked-${line.goalId}` : undefined}
+            title={
+              resetBlocked
+                ? 'Wait until the assigned agent is no longer running.'
+                : 'Reset this line'
+            }
+            onClick={() => {
+              if (!resetBlocked) setConfirmReset(true);
+            }}
+            className="min-h-6 rounded-lg px-2 text-[10px] text-[#ff8a8a] hover:bg-[#ff4a4a]/10 focus-visible:ring-2 focus-visible:ring-primary/70 aria-disabled:cursor-not-allowed aria-disabled:opacity-40"
+          >
+            Reset line
+          </button>
+        )}
+        {line.planCommitted && resetBlocked && !confirmReset && (
+          <span
+            id={`goal-line-reset-blocked-${line.goalId}`}
+            data-testid={`goal-line-reset-blocked-${line.goalId}`}
+            className="basis-full text-[10px] text-foreground-muted"
+          >
+            An assigned agent is still running. Reset becomes available when it stops.
+          </span>
+        )}
+        {line.planCommitted && confirmReset && (
+          <span
+            className="flex flex-wrap items-center gap-1 text-[10px] text-foreground-muted"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.stopPropagation();
+                cancelReset();
+              }
+            }}
+          >
+            Remove all stations? The goal remains as a draft.
+            <button
+              data-testid={`goal-line-reset-confirm-${line.goalId}`}
+              onClick={() => onReset(line.goalId)}
+              className="min-h-6 min-w-6 rounded-md bg-[#ff4a4a]/15 px-2 py-1 font-semibold text-[#ff8a8a] focus-visible:ring-2 focus-visible:ring-primary/70"
+            >
+              Yes, reset
+            </button>
+            <button
+              ref={cancelResetRef}
+              data-testid={`goal-line-reset-cancel-${line.goalId}`}
+              onClick={cancelReset}
+              className="min-h-6 rounded-md px-2 py-1 hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-primary/70"
+            >
+              Cancel
+            </button>
+          </span>
+        )}
       </div>
     </div>
   );

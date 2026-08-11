@@ -335,6 +335,8 @@ export interface GoalsSlice {
   addStation: (station: PmGoalStation) => void;
   updateStation: (id: string, updates: Partial<PmGoalStation>) => void;
   deleteStation: (id: string) => void;
+  /** Removes a committed line without deleting its goal or descendant lines. */
+  resetGoalLine: (goalId: string) => void;
   /** A person ticks a human step off — the one evidence only they can give. */
   tickHumanStation: (id: string, note?: string) => void;
   moveStationTo: (goalId: string, stationId: string, toIndex: number) => void;
@@ -636,6 +638,19 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalStationsDraft: s.goalStationsDraft.filter((st) => st.id !== id),
       goalsDirty: true,
     })),
+
+  resetGoalLine: (goalId) => {
+    const ts = nowTimestamp();
+    set((s) => ({
+      goalStationsDraft: s.goalStationsDraft.filter((station) => station.goalId !== goalId),
+      goalsDraft: s.goalsDraft.map((goal) =>
+        goal.id === goalId && goal.status !== 'archived' && goal.status !== 'achieved'
+          ? { ...goal, status: 'draft', achievedAt: null, updatedAt: ts }
+          : goal
+      ),
+      goalsDirty: true,
+    }));
+  },
 
   tickHumanStation: (id, note) => {
     const ts = nowTimestamp();

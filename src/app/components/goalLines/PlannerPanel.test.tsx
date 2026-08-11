@@ -128,6 +128,101 @@ describe('PlannerPanel', () => {
     fireEvent.keyDown(screen.getByTestId('planner-refine'), { key: 'Enter' });
 
     await waitFor(() => expect(screen.getByText(/v2: shorter name/)).toBeTruthy());
+    expect(screen.getByTestId('planner-refine-label').textContent).toContain('Reprompt');
+  });
+
+  it('manually edits, adds, reorders and removes stations and persists each change', async () => {
+    const goal = makeGoal();
+    seed(goal);
+    mockLlmCall.mockResolvedValueOnce({ content: GRAPH_RESPONSE });
+    render(<PlannerPanel />);
+    await proposeDraft(goal);
+
+    fireEvent.change(screen.getByTestId('planner-station-name-0'), {
+      target: { value: 'Inventory every guide' },
+    });
+    fireEvent.change(screen.getByTestId('planner-station-predicate-0'), {
+      target: { value: 'file_exists' },
+    });
+    fireEvent.change(screen.getByTestId('planner-station-predicate-value-0'), {
+      target: { value: 'docs/**/*.md' },
+    });
+    fireEvent.click(screen.getByTestId('planner-station-fog-0'));
+    fireEvent.click(screen.getByTestId('planner-station-down-0'));
+    fireEvent.click(screen.getByTestId('planner-add-station'));
+    fireEvent.click(screen.getByTestId('planner-station-remove-2'));
+
+    await waitFor(() => expect(mockDbSet.mock.calls.length).toBeGreaterThanOrEqual(7));
+    const saved = JSON.parse(mockDbSet.mock.calls.at(-1)![3] as string);
+    expect(saved.graph.stations).toHaveLength(2);
+    expect(saved.graph.stations[1]).toMatchObject({
+      name: 'Inventory every guide',
+      evidenceKind: 'proof',
+      predicate: { type: 'file_exists', glob: 'docs/**/*.md' },
+      fog: true,
+    });
+  });
+
+  it('keeps human station fields coherent and blocks start for incomplete values', async () => {
+    const goal = makeGoal();
+    seed(goal);
+    mockLlmCall.mockResolvedValueOnce({ content: GRAPH_RESPONSE });
+    render(<PlannerPanel />);
+    await proposeDraft(goal);
+
+    fireEvent.change(screen.getByTestId('planner-station-kind-0'), {
+      target: { value: 'human' },
+    });
+    expect((screen.getByTestId('planner-station-evidence-0') as HTMLSelectElement).value).toBe(
+      'human'
+    );
+    expect((screen.getByTestId('planner-station-predicate-0') as HTMLSelectElement).value).toBe(
+      'human'
+    );
+    fireEvent.change(screen.getByTestId('planner-station-kind-0'), {
+      target: { value: 'gate' },
+    });
+    expect((screen.getByTestId('planner-station-evidence-0') as HTMLSelectElement).value).toBe(
+      'claim'
+    );
+    expect((screen.getByTestId('planner-station-predicate-0') as HTMLSelectElement).value).toBe(
+      'undefined'
+    );
+
+    fireEvent.change(screen.getByTestId('planner-station-evidence-0'), {
+      target: { value: 'judged' },
+    });
+    expect((screen.getByTestId('planner-station-predicate-0') as HTMLSelectElement).value).toBe(
+      'judged'
+    );
+
+    fireEvent.change(screen.getByTestId('planner-station-name-0'), { target: { value: '   ' } });
+    expect(screen.getByTestId('planner-start')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('planner-validation').textContent).toContain('name');
+    expect(screen.getByTestId('planner-station-name-0').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('reprompts from the manually edited current graph and remains repeatable', async () => {
+    const goal = makeGoal();
+    seed(goal);
+    mockLlmCall.mockResolvedValueOnce({ content: GRAPH_RESPONSE });
+    render(<PlannerPanel />);
+    await proposeDraft(goal);
+    fireEvent.change(screen.getByTestId('planner-station-name-0'), {
+      target: { value: 'Manual current step' },
+    });
+    mockLlmCall.mockResolvedValueOnce({ content: JSON.stringify({ ops: [] }) });
+    fireEvent.change(screen.getByTestId('planner-refine'), { target: { value: 'First reprompt' } });
+    fireEvent.click(screen.getByTestId('planner-apply'));
+    await waitFor(() => expect(screen.getByText(/v2: First reprompt/)).toBeTruthy());
+    expect(JSON.stringify(mockLlmCall.mock.calls[1])).toContain('Manual current step');
+
+    mockLlmCall.mockResolvedValueOnce({ content: JSON.stringify({ ops: [] }) });
+    fireEvent.change(screen.getByTestId('planner-refine'), {
+      target: { value: 'Second reprompt' },
+    });
+    fireEvent.click(screen.getByTestId('planner-apply'));
+    await waitFor(() => expect(screen.getByText(/v3: Second reprompt/)).toBeTruthy());
   });
 
   it('"Start this line" commits stations, activates the goal, and clears the draft', async () => {
@@ -144,7 +239,9 @@ describe('PlannerPanel', () => {
     expect(state.goalStationsDraft[1].kind).toBe('human');
     expect(state.goalsDraft[0].status).toBe('active');
     expect(state.saveGoals).toHaveBeenCalled();
-    expect(mockDbDelete).toHaveBeenCalledWith('/tmp/demo-project', 'goal_line_planner', goal.id);
+    await waitFor(() =>
+      expect(mockDbDelete).toHaveBeenCalledWith('/tmp/demo-project', 'goal_line_planner', goal.id)
+    );
   });
 
   it('resumes a persisted draft when the goal is selected', async () => {
