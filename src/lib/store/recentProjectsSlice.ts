@@ -1,7 +1,9 @@
 import type { StateCreator } from 'zustand';
+import * as nativeRecentProjects from '../tauri/recentProjects';
 
 const STORAGE_KEY = 'auric-recent-projects';
-const MAX_RECENT = 5;
+const MAX_RECENT = 50;
+let syncRevision = 0;
 
 export interface RecentProject {
   path: string;
@@ -13,7 +15,7 @@ export interface RecentProjectsSlice {
   recentProjects: RecentProject[];
   addRecentProject: (path: string) => void;
   removeRecentProject: (path: string) => void;
-  loadRecentProjects: () => void;
+  loadRecentProjects: () => Promise<void>;
 }
 
 function persist(projects: RecentProject[]) {
@@ -22,6 +24,25 @@ function persist(projects: RecentProject[]) {
   } catch {
     // storage full or unavailable — silently ignore
   }
+}
+
+function loadLegacyProjects(): RecentProject[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function applyNativeResult(
+  projects: RecentProject[],
+  set: (state: Partial<RecentProjectsSlice>) => void
+) {
+  set({ recentProjects: projects });
+  persist(projects);
 }
 
 export const createRecentProjectsSlice: StateCreator<RecentProjectsSlice> = (set, get) => ({
@@ -37,23 +58,44 @@ export const createRecentProjectsSlice: StateCreator<RecentProjectsSlice> = (set
     const updated = [{ path, name, openedAt: Date.now() }, ...filtered].slice(0, MAX_RECENT);
     set({ recentProjects: updated });
     persist(updated);
+    const revision = ++syncRevision;
+    void nativeRecentProjects
+      .addRecentProject(path)
+      .then((projects) => {
+        if (revision === syncRevision) applyNativeResult(projects, set);
+      })
+      .catch(() => {
+        /* Browser-only development uses the localStorage fallback. */
+      });
   },
 
   removeRecentProject: (path) => {
     const updated = get().recentProjects.filter((p) => p.path !== path);
     set({ recentProjects: updated });
     persist(updated);
+    const revision = ++syncRevision;
+    void nativeRecentProjects
+      .removeRecentProject(path)
+      .then((projects) => {
+        if (revision === syncRevision) applyNativeResult(projects, set);
+      })
+      .catch(() => {
+        /* Browser-only development uses the localStorage fallback. */
+      });
   },
 
-  loadRecentProjects: () => {
+  loadRecentProjects: async () => {
+    const revision = ++syncRevision;
+    const legacyProjects = loadLegacyProjects();
+    if (legacyProjects.length > 0) set({ recentProjects: legacyProjects });
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as RecentProject[];
-        set({ recentProjects: parsed });
-      }
+      const projects =
+        legacyProjects.length > 0
+          ? await nativeRecentProjects.importRecentProjects(legacyProjects)
+          : await nativeRecentProjects.listRecentProjects();
+      if (revision === syncRevision) applyNativeResult(projects, set);
     } catch {
-      // corrupted data — keep empty
+      // Browser-only development has no Tauri backend; keep the legacy copy.
     }
   },
 });

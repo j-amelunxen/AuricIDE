@@ -1,7 +1,9 @@
 import type { StateCreator } from 'zustand';
+import * as nativeStarredProjects from '../tauri/starredProjects';
 
 const STORAGE_KEY = 'auric-starred-projects';
-const MAX_STARRED = 12;
+const MAX_STARRED = 50;
+let syncRevision = 0;
 
 /**
  * A project the user pinned for one-click switching. Unlike {@link RecentProject},
@@ -22,7 +24,26 @@ export interface StarredProjectsSlice {
   removeStarredProject: (path: string) => void;
   toggleStarredProject: (path: string) => void;
   isProjectStarred: (path: string) => boolean;
-  loadStarredProjects: () => void;
+  loadStarredProjects: () => Promise<void>;
+}
+
+function loadLegacyProjects(): StarredProject[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function applyNativeResult(
+  projects: StarredProject[],
+  set: (state: Partial<StarredProjectsSlice>) => void
+) {
+  set({ starredProjects: projects });
+  persist(projects);
 }
 
 function persist(projects: StarredProject[]) {
@@ -49,12 +70,30 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
     const updated = [...existing, { path, name, starredAt: Date.now() }];
     set({ starredProjects: updated });
     persist(updated);
+    const revision = ++syncRevision;
+    void nativeStarredProjects
+      .addStarredProject(path)
+      .then((projects) => {
+        if (revision === syncRevision) applyNativeResult(projects, set);
+      })
+      .catch(() => {
+        /* Browser-only development uses localStorage. */
+      });
   },
 
   removeStarredProject: (path) => {
     const updated = get().starredProjects.filter((p) => p.path !== path);
     set({ starredProjects: updated });
     persist(updated);
+    const revision = ++syncRevision;
+    void nativeStarredProjects
+      .removeStarredProject(path)
+      .then((projects) => {
+        if (revision === syncRevision) applyNativeResult(projects, set);
+      })
+      .catch(() => {
+        /* Browser-only development uses localStorage. */
+      });
   },
 
   toggleStarredProject: (path) => {
@@ -67,15 +106,18 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
 
   isProjectStarred: (path) => get().starredProjects.some((p) => p.path === path),
 
-  loadStarredProjects: () => {
+  loadStarredProjects: async () => {
+    const revision = ++syncRevision;
+    const legacyProjects = loadLegacyProjects();
+    if (legacyProjects.length > 0) set({ starredProjects: legacyProjects });
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as StarredProject[];
-        set({ starredProjects: parsed });
-      }
+      const projects =
+        legacyProjects.length > 0
+          ? await nativeStarredProjects.importStarredProjects(legacyProjects)
+          : await nativeStarredProjects.listStarredProjects();
+      if (revision === syncRevision) applyNativeResult(projects, set);
     } catch {
-      // corrupted data — keep empty
+      // Browser-only development has no Tauri backend; keep the legacy copy.
     }
   },
 });
