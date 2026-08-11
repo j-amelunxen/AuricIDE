@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { ConductorPulse } from '../goals/ConductorPulse';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface HeadingBreadcrumb {
   title: string;
@@ -68,12 +69,11 @@ export function Header({
                   className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-300"
                 >
                   {i > 0 && (
-                    <span
+                    <AuricIcon
+                      name="chevron_right"
                       aria-hidden="true"
-                      className="opacity-30 material-symbols-outlined text-[10px]"
-                    >
-                      chevron_right
-                    </span>
+                      className="opacity-30 text-[10px]"
+                    />
                   )}
                   <span
                     className={`${i === breadcrumbs.length - 1 ? 'text-primary-light drop-shadow-[0_0_8px_rgba(var(--primary-light-rgb),0.3)]' : 'hover:text-foreground transition-colors'}`}
@@ -91,21 +91,18 @@ export function Header({
             data-testid="heading-breadcrumbs"
             className="flex items-center gap-1.5 text-xs font-medium text-foreground-muted pl-[3.75rem]"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-[10px] opacity-50">
-              description
-            </span>
+            <AuricIcon name="description" aria-hidden="true" className="text-[10px] opacity-50" />
             {headingBreadcrumbs.map((crumb, i) => (
               <span
                 key={i}
                 className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-300"
               >
                 {i > 0 && (
-                  <span
+                  <AuricIcon
+                    name="chevron_right"
                     aria-hidden="true"
-                    className="opacity-30 material-symbols-outlined text-[10px]"
-                  >
-                    chevron_right
-                  </span>
+                    className="opacity-30 text-[10px]"
+                  />
                 )}
                 <button
                   onClick={() => onHeadingBreadcrumbClick?.(crumb.lineNumber)}
@@ -126,12 +123,11 @@ export function Header({
           onClick={onCommandPalette}
           className="group flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 px-3 py-1.5 text-xs text-foreground-muted transition-[background-color,border-color,color,box-shadow] duration-150 hover:border-primary/30 hover:bg-white/10 hover:text-foreground hover:shadow-[0_0_15px_rgba(var(--primary-rgb),0.15)] active:scale-[0.98]"
         >
-          <span
+          <AuricIcon
+            name="search"
             aria-hidden="true"
-            className="material-symbols-outlined text-sm opacity-70 group-hover:opacity-100"
-          >
-            search
-          </span>
+            className="text-sm opacity-70 group-hover:opacity-100"
+          />
           <span className="font-medium">Find Agent...</span>
           <kbd className="ml-2 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 font-mono text-[9px] text-foreground-muted group-hover:text-foreground">
             ⌘K
@@ -160,9 +156,7 @@ export function Header({
             title="Configure an LLM provider in Settings"
             className="flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium text-orange-400 backdrop-blur-sm"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
-              warning
-            </span>
+            <AuricIcon name="warning" aria-hidden="true" className="text-[12px]" />
             LLM not configured
           </div>
         )}

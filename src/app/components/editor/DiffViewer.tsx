@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface DiffLine {
   type: 'added' | 'removed' | 'context' | 'header';
@@ -123,7 +124,7 @@ export function DiffViewer({ diff, fileName }: DiffViewerProps) {
   return (
     <div data-testid="diff-viewer" className="flex h-full flex-col overflow-hidden bg-editor-bg">
       <div className="flex items-center gap-2 border-b border-border-dark px-4 py-2">
-        <span className="material-symbols-outlined text-sm text-primary-light">difference</span>
+        <AuricIcon name="difference" className="text-sm text-primary-light" />
         <span className="text-xs font-medium text-foreground">{fileName}</span>
         <button
           data-testid="diff-view-toggle"
@@ -131,9 +132,10 @@ export function DiffViewer({ diff, fileName }: DiffViewerProps) {
           className="ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
           title={viewMode === 'unified' ? 'Switch to side-by-side' : 'Switch to unified'}
         >
-          <span className="material-symbols-outlined text-sm">
-            {viewMode === 'unified' ? 'view_column_2' : 'view_agenda'}
-          </span>
+          <AuricIcon
+            name={viewMode === 'unified' ? 'view_column_2' : 'view_agenda'}
+            className="text-sm"
+          />
           {viewMode === 'unified' ? 'Side-by-side' : 'Unified'}
         </button>
       </div>

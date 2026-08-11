@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import type { CoverageSummary, FileCoverage } from '@/lib/qa/coverageParser';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 type SortKey = 'lines' | 'statements' | 'functions' | 'branches' | 'name';
 
@@ -65,7 +66,7 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/8 bg-white/2 px-6 py-4">
           <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-xl text-primary">analytics</span>
+            <AuricIcon name="analytics" className="text-xl text-primary" />
             <h2
               id="coverage-modal-title"
               className="text-sm font-bold tracking-wide text-foreground"
@@ -81,7 +82,7 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
             onClick={onClose}
             className="rounded-lg p-1.5 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <AuricIcon name="close" className="text-[18px]" />
           </button>
         </div>
 
@@ -115,9 +116,10 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
         {/* Toolbar */}
         <div className="flex items-center gap-3 border-b border-white/8 bg-white/2 px-5 py-3">
           <div className="relative flex-1">
-            <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[14px] text-foreground-muted">
-              search
-            </span>
+            <AuricIcon
+              name="search"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[14px] text-foreground-muted"
+            />
             <input
               type="text"
               placeholder="Filter files..."
@@ -147,9 +149,10 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
         <div className="flex-1 overflow-y-auto px-4 py-3 custom-scrollbar">
           {sortedFiles.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center text-center">
-              <span className="material-symbols-outlined mb-2 text-2xl text-foreground-muted opacity-30">
-                search_off
-              </span>
+              <AuricIcon
+                name="search_off"
+                className="mb-2 text-2xl text-foreground-muted opacity-30"
+              />
               <p className="text-xs text-foreground-muted">No files match &ldquo;{filter}&rdquo;</p>
             </div>
           ) : (
@@ -195,9 +198,7 @@ function SortButton({
     >
       {label}
       {active && (
-        <span className="material-symbols-outlined text-[11px]">
-          {asc ? 'arrow_upward' : 'arrow_downward'}
-        </span>
+        <AuricIcon name={asc ? 'arrow_upward' : 'arrow_downward'} className="text-[11px]" />
       )}
     </button>
   );

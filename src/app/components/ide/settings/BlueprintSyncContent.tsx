@@ -4,6 +4,7 @@ import { useStore } from '@/lib/store';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
 import type { SyncStatus } from '@/lib/blueprints/serverSync';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 function SyncStatusBadge({ status, error }: { status: SyncStatus; error: string | null }) {
   if (status === 'idle') return null;
@@ -22,11 +23,10 @@ function SyncStatusBadge({ status, error }: { status: SyncStatus; error: string 
 
   return (
     <span className={`flex items-center gap-1 text-[10px] ${color}`} title={label}>
-      <span
-        className={`material-symbols-outlined text-[14px] ${status === 'syncing' ? 'animate-spin' : ''}`}
-      >
-        {icon}
-      </span>
+      <AuricIcon
+        name={icon}
+        className={`text-[14px] ${status === 'syncing' ? 'animate-spin' : ''}`}
+      />
       {label}
     </span>
   );

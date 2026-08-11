@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { ExcalidrawCanvas } from './ExcalidrawCanvas';
 import type { ExcalidrawSceneSummary } from '@/lib/excalidraw/types';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface ExcalidrawBrowserProps {
   /** Called after a scene was imported as spec so the file tree can refresh. */
@@ -157,9 +158,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
           <div className="flex items-center gap-3">
-            <span aria-hidden="true" className="material-symbols-outlined text-primary-light">
-              draw
-            </span>
+            <AuricIcon aria-hidden="true" name="draw" className="text-primary-light" />
             <h1 id="excalidraw-browser-title" className="text-sm font-bold text-foreground">
               Excalidraw+ Workspace
             </h1>
@@ -175,12 +174,11 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
                 disabled={syncingAll}
                 className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors disabled:opacity-50"
               >
-                <span
+                <AuricIcon
                   aria-hidden="true"
-                  className={`material-symbols-outlined text-sm ${syncingAll ? 'animate-spin' : ''}`}
-                >
-                  sync
-                </span>
+                  name="sync"
+                  className={`text-sm ${syncingAll ? 'animate-spin' : ''}`}
+                />
                 {syncingAll ? 'Syncing…' : 'Sync all specs'}
               </button>
             )}
@@ -189,9 +187,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
               onClick={() => setBrowserOpen(false)}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-base">
-                close
-              </span>
+              <AuricIcon aria-hidden="true" name="close" className="text-base" />
             </button>
           </div>
         </div>
@@ -199,12 +195,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
         {/* Body */}
         {notConfigured ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-3xl text-primary-light"
-            >
-              key
-            </span>
+            <AuricIcon aria-hidden="true" name="key" className="text-3xl text-primary-light" />
             <p className="text-sm font-bold text-foreground">No Excalidraw+ API key configured</p>
             <p className="max-w-sm text-xs leading-relaxed text-foreground-muted">
               Create an API key in your Excalidraw+ workspace settings and add it under Settings →
@@ -252,7 +243,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
                       : 'text-foreground hover:bg-white/5'
                   }`}
                 >
-                  <span className="text-sm">{collection.emoji ?? '🗂️'}</span>
+                  <span className="text-sm">{collection.emoji ?? <AuricIcon name="folder" />}</span>
                   <span className="flex-1 truncate">{collection.name}</span>
                 </button>
               ))}
@@ -281,12 +272,11 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
                           data-testid={`excalidraw-scene-${scene.id}`}
                           className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5 hover:border-white/15 transition-colors"
                         >
-                          <span
+                          <AuricIcon
                             aria-hidden="true"
-                            className="material-symbols-outlined text-base text-primary-light opacity-70"
-                          >
-                            draw
-                          </span>
+                            name="draw"
+                            className="text-base text-primary-light opacity-70"
+                          />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <span className="truncate text-xs font-medium text-foreground">
@@ -334,12 +324,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
                               aria-label={`Delete local copy of ${scene.name}`}
                               className="flex h-6 w-6 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-red-500/15 hover:text-red-300"
                             >
-                              <span
-                                aria-hidden="true"
-                                className="material-symbols-outlined text-[13px]"
-                              >
-                                delete
-                              </span>
+                              <AuricIcon aria-hidden="true" name="delete" className="text-[13px]" />
                             </button>
                           )}
                         </div>

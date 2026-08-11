@@ -28,7 +28,8 @@ describe('TabBar', () => {
       { id: '/a.md', name: 'a.md' },
     ];
     render(<TabBar tabs={withIcon} activeTabId="/a.md" onSelect={() => {}} onClose={() => {}} />);
-    expect(screen.getByTestId('tab-icon-/data/scratches/scratch-1.md')).toHaveTextContent(
+    expect(screen.getByTestId('tab-icon-/data/scratches/scratch-1.md')).toHaveAttribute(
+      'data-icon',
       'sticky_note_2'
     );
     expect(screen.queryByTestId('tab-icon-/a.md')).not.toBeInTheDocument();

@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import { generateProjectIcon } from '@/lib/projectIcon';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 /** Hold-to-confirm threshold for unstarring — long enough to rule out an
  * accidental tap, short enough to still feel immediate once committed to. */
@@ -130,9 +131,7 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
             }}
           />
         </svg>
-        <span aria-hidden="true" className="material-symbols-outlined text-[11px]">
-          close
-        </span>
+        <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
       </button>
     </div>
   );
@@ -241,12 +240,11 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
               title="Star this project for quick access"
               className="group/star flex h-10 w-10 items-center justify-center rounded-xl border border-dashed border-white/15 text-foreground-muted transition-[background-color,border-color,color] duration-150 hover:border-primary/40 hover:bg-primary/5 hover:text-primary-light active:scale-[0.94]"
             >
-              <span
+              <AuricIcon
+                name="star"
                 aria-hidden="true"
-                className="material-symbols-outlined text-[18px] transition-transform duration-150 group-hover/star:scale-110"
-              >
-                star
-              </span>
+                className="text-[18px] transition-transform duration-150 group-hover/star:scale-110"
+              />
             </button>
             <span className="max-w-full truncate text-[10px] font-medium text-foreground-muted">
               {starredProjects.length === 0 ? 'Star this' : 'Add'}

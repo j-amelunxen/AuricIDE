@@ -3,6 +3,7 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { LinkGraphNodeData } from '@/lib/graph/linkGraphLayout';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 type LinkGraphNodeProps = NodeProps & { data: LinkGraphNodeData };
 
@@ -33,9 +34,10 @@ function LinkGraphNodeBase({ data }: LinkGraphNodeProps) {
       />
 
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-sm text-primary-light">
-          {isBroken ? 'broken_image' : 'description'}
-        </span>
+        <AuricIcon
+          name={isBroken ? 'broken_image' : 'description'}
+          className="text-sm text-primary-light"
+        />
         <span className="truncate max-w-[140px] font-medium">{label}</span>
       </div>
 
@@ -43,13 +45,13 @@ function LinkGraphNodeBase({ data }: LinkGraphNodeProps) {
         <div className="flex items-center gap-2 mt-1 text-[10px] text-foreground-muted">
           {linkCount > 0 && (
             <span className="flex items-center gap-0.5">
-              <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
+              <AuricIcon name="arrow_forward" className="text-[10px]" />
               {linkCount}
             </span>
           )}
           {backlinkCount > 0 && (
             <span className="flex items-center gap-0.5">
-              <span className="material-symbols-outlined text-[10px]">arrow_back</span>
+              <AuricIcon name="arrow_back" className="text-[10px]" />
               {backlinkCount}
             </span>
           )}

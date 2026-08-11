@@ -44,6 +44,7 @@ import { MarkdownPreview } from './MarkdownPreview';
 import { detectAsciiArt } from '@/lib/ascii-art/detector';
 import { repairAsciiArt } from '@/lib/ascii-art/repair';
 import { SelectionMenu } from './SelectionMenu';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import {
   createEditorState,
   getLanguageExtension,
@@ -355,9 +356,7 @@ export function MarkdownEditor({
             title={showPreview ? 'Hide preview' : 'Show preview'}
             data-testid="preview-toggle"
           >
-            <span className="material-symbols-outlined text-sm">
-              {showPreview ? 'visibility_off' : 'visibility'}
-            </span>
+            <AuricIcon name={showPreview ? 'visibility_off' : 'visibility'} className="text-sm" />
             {showPreview ? 'Hide Preview' : 'Show Preview'}
           </button>
         </div>

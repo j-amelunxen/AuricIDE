@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ContextMenu } from '../ide/ContextMenu';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import type { GitFileStatus } from '@/lib/tauri/git';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 
@@ -72,7 +73,7 @@ function FileList({
             }}
             className={`flex items-center gap-2 px-3 py-1 text-xs text-foreground-muted hover:bg-primary/5 ${onFileClick ? 'cursor-pointer' : ''}`}
           >
-            <span className="material-symbols-outlined text-sm">description</span>
+            <AuricIcon name="description" className="text-sm" />
             <span className={`flex-1 truncate ${badge.className}`}>{file.path}</span>
             <span className={`text-[10px] font-bold ${badge.className}`}>{badge.label}</span>
           </div>
@@ -127,7 +128,7 @@ export function SourceControlPanel({
             title="Refresh"
             className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted hover:bg-primary/10 hover:text-primary transition-colors"
           >
-            <span className="material-symbols-outlined text-sm">refresh</span>
+            <AuricIcon name="refresh" className="text-sm" />
           </button>
         )}
       </div>
@@ -139,9 +140,7 @@ export function SourceControlPanel({
             data-testid="ticket-badge"
             className="mb-2 inline-flex items-center gap-1.5 rounded bg-primary/10 border border-primary/20 px-2 py-0.5"
           >
-            <span className="material-symbols-outlined text-primary-light text-xs">
-              confirmation_number
-            </span>
+            <AuricIcon name="confirmation_number" className="text-primary-light text-xs" />
             <span className="text-[11px] font-mono font-bold text-primary-light">
               {ticketPrefix}
             </span>

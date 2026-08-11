@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function CommandsContent() {
   const customSlashCommands = useStore((s) => s.customSlashCommands);
@@ -38,7 +39,7 @@ export function CommandsContent() {
                   onClick={() => removeCustomSlashCommand(cmd.trigger)}
                   className="text-foreground-muted hover:text-red-400 transition-colors p-1 opacity-0 group-hover:opacity-100"
                 >
-                  <span className="material-symbols-outlined text-[14px]">delete</span>
+                  <AuricIcon name="delete" className="text-[14px]" />
                 </button>
               </li>
             ))}

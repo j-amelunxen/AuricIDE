@@ -2,6 +2,7 @@
 
 import { useStore } from '@/lib/store';
 import type { PmContextItem } from '@/lib/tauri/pm';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface TicketContextEditorProps {
   context: PmContextItem[] | undefined;
@@ -67,7 +68,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
             onClick={handleAddSnippet}
             className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition"
           >
-            <span className="material-symbols-outlined text-[16px]">add</span>
+            <AuricIcon name="add" className="text-[16px]" />
             Add Snippet
           </button>
           <button
@@ -75,7 +76,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
             onClick={handleLinkFile}
             className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition"
           >
-            <span className="material-symbols-outlined text-[16px]">link</span>
+            <AuricIcon name="link" className="text-[16px]" />
             Link File
           </button>
         </div>
@@ -96,13 +97,16 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[16px] text-foreground-muted">
-                    {item.type === 'snippet'
-                      ? 'description'
-                      : item.type === 'canvas-node'
-                        ? 'dashboard'
-                        : 'insert_drive_file'}
-                  </span>
+                  <AuricIcon
+                    name={
+                      item.type === 'snippet'
+                        ? 'description'
+                        : item.type === 'canvas-node'
+                          ? 'dashboard'
+                          : 'insert_drive_file'
+                    }
+                    className="text-[16px] text-foreground-muted"
+                  />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted">
                     {item.type === 'canvas-node' ? 'Canvas Node' : item.type}
                   </span>
@@ -113,7 +117,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
                   onClick={() => handleRemoveItem(item.id)}
                   className="rounded p-1 text-foreground-muted opacity-0 hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 transition"
                 >
-                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                  <AuricIcon name="delete" className="text-[16px]" />
                 </button>
               </div>
 
@@ -126,9 +130,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
                 />
               ) : item.type === 'canvas-node' ? (
                 <div className="flex items-center gap-2 bg-black/20 border border-white/5 rounded px-2 py-1.5">
-                  <span className="material-symbols-outlined text-[14px] text-primary-light">
-                    dashboard
-                  </span>
+                  <AuricIcon name="dashboard" className="text-[14px] text-primary-light" />
                   <span className="flex-1 text-xs text-foreground font-mono truncate">
                     {item.value}
                   </span>
@@ -168,7 +170,7 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
                     }}
                     className="text-foreground-muted hover:text-foreground transition-colors"
                   >
-                    <span className="material-symbols-outlined text-[16px]">folder_open</span>
+                    <AuricIcon name="folder_open" className="text-[16px]" />
                   </button>
                 </div>
               )}

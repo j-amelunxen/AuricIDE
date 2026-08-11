@@ -2,6 +2,7 @@
 
 import { useAttribution } from '@/lib/settings/attribution';
 import { TruthsLight } from '../requirements/TruthsLight';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface StatusBarProps {
   branch?: string;
@@ -34,9 +35,7 @@ export function StatusBar({
       <div className="flex items-center gap-4">
         {branch && (
           <button className="flex items-center gap-1.5 hover:text-primary transition-colors">
-            <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
-              source
-            </span>
+            <AuricIcon name="source" aria-hidden="true" className="text-[12px]" />
             <span>{branch}</span>
           </button>
         )}
@@ -45,9 +44,7 @@ export function StatusBar({
             aria-label="Sync status"
             className="flex items-center gap-1.5 hover:text-foreground transition-colors"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-[12px] animate-spin">
-              sync
-            </span>
+            <AuricIcon name="sync" aria-hidden="true" className="text-[12px] animate-spin" />
           </button>
         )}
         {(errorCount > 0 || warningCount > 0) && (

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface TabItem {
   id: string;
@@ -85,12 +86,11 @@ export function TabBar({
               }`}
             >
               {tab.icon && (
-                <span
+                <AuricIcon
                   data-testid={`tab-icon-${tab.id}`}
-                  className="material-symbols-outlined flex-shrink-0 text-[13px] text-foreground-muted"
-                >
-                  {tab.icon}
-                </span>
+                  name={tab.icon}
+                  className="flex-shrink-0 text-[13px] text-foreground-muted"
+                />
               )}
               <span className="truncate">{tab.name}</span>
               {tab.isDirty && (
@@ -115,7 +115,7 @@ export function TabBar({
                 }}
                 className="ml-1 hidden rounded p-0.5 text-foreground-muted hover:bg-border-dark hover:text-foreground group-hover:block"
               >
-                <span className="material-symbols-outlined text-sm">close</span>
+                <AuricIcon name="close" className="text-sm" />
               </span>
             </button>
           );

@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import { writeFile } from '@/lib/tauri/fs';
 import { buildExcalidrawFileJson } from '@/lib/excalidraw/serialize';
 import { ExcalidrawCanvas } from './ExcalidrawCanvas';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -152,9 +153,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
     <div data-testid="excalidraw-viewer" className="flex h-full flex-col">
       {/* Slim toolbar */}
       <div className="flex h-9 flex-shrink-0 items-center gap-3 border-b border-white/5 bg-white/2 px-4">
-        <span aria-hidden="true" className="material-symbols-outlined text-sm text-primary-light">
-          draw
-        </span>
+        <AuricIcon aria-hidden="true" name="draw" className="text-sm text-primary-light" />
         <span className="text-xs font-medium text-foreground">{fileName}</span>
         <span
           data-testid="excalidraw-mode-badge"
@@ -184,12 +183,11 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
               disabled={syncing}
               className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-foreground transition-colors hover:bg-white/10 disabled:opacity-50"
             >
-              <span
+              <AuricIcon
                 aria-hidden="true"
-                className={`material-symbols-outlined text-[12px] ${syncing ? 'animate-spin' : ''}`}
-              >
-                sync
-              </span>
+                name="sync"
+                className={`text-[12px] ${syncing ? 'animate-spin' : ''}`}
+              />
               {syncing ? 'Syncing…' : 'Re-sync'}
             </button>
             <button
@@ -197,9 +195,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
               onClick={handleOpenInPlus}
               className="flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary-light transition-colors hover:bg-primary/20"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
-                open_in_new
-              </span>
+              <AuricIcon aria-hidden="true" name="open_in_new" className="text-[12px]" />
               Open in Excalidraw+
             </button>
             <div aria-hidden="true" className="h-3 w-[1px] bg-white/10" />
@@ -210,9 +206,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
               className="flex h-6 w-6 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
               aria-label="Unlink from Excalidraw+"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-                link_off
-              </span>
+              <AuricIcon aria-hidden="true" name="link_off" className="text-[13px]" />
             </button>
             <button
               data-testid="excalidraw-remove-local"
@@ -221,9 +215,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
               className="flex h-6 w-6 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-red-500/15 hover:text-red-300"
               aria-label="Delete local copy"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-                delete
-              </span>
+              <AuricIcon aria-hidden="true" name="delete" className="text-[13px]" />
             </button>
           </div>
         )}
@@ -245,9 +237,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
           data-testid="excalidraw-viewer-error"
           className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-3xl text-amber-400">
-            broken_image
-          </span>
+          <AuricIcon aria-hidden="true" name="broken_image" className="text-3xl text-amber-400" />
           <p className="text-sm font-bold text-foreground">
             This file is not a valid Excalidraw scene
           </p>

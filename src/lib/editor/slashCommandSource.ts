@@ -1,5 +1,6 @@
 import { Facet } from '@codemirror/state';
 import type { CompletionContext, CompletionResult, Completion } from '@codemirror/autocomplete';
+import { iconSvgMarkup } from '@/lib/icons/svgString';
 
 export type SlashCommandCategory = 'Heading' | 'Block' | 'Inline' | 'Diagram' | 'Meta' | 'Callout';
 
@@ -228,9 +229,10 @@ export const slashCommandRenderOption = {
 
     if (cmd.icon) {
       const icon = document.createElement('span');
-      icon.className = 'cm-slash-icon material-symbols-outlined';
+      icon.className = 'cm-slash-icon';
+      // The glyph is sized 1em, so font-size still controls it.
       icon.style.fontSize = '14px';
-      icon.textContent = cmd.icon;
+      icon.innerHTML = iconSvgMarkup(cmd.icon);
       wrapper.appendChild(icon);
     }
 

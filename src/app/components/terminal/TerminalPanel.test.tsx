@@ -58,7 +58,7 @@ describe('TerminalPanel', () => {
     const { container } = render(
       <TerminalPanel agents={testAgents} extraTerminals={[{ id: 'x', label: 'shell', cwd: '/' }]} />
     );
-    const icons = container.querySelectorAll('.material-symbols-outlined');
+    const icons = container.querySelectorAll('[data-icon]');
     expect(icons.length).toBeGreaterThan(0);
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });

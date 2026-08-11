@@ -77,7 +77,6 @@
     "fastmcp": "^3.33.0",
     "fuzzysort": "^3.1.0",
     "js-yaml": "^4.1.1",
-    "material-symbols": "^0.45.5",
     "mermaid": "^11.12.2",
     "next": "16.1.6",
     "pdfjs-dist": "^5.5.207",

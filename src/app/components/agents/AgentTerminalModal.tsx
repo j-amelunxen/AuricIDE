@@ -13,6 +13,7 @@ import { isAgentLive } from '@/lib/agents/liveness';
 import { agentState, type AgentState } from '@/lib/agents/state';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const EMPTY_ERROR_LOGS: string[] = [];
 
@@ -349,7 +350,7 @@ function AgentTerminalDialog({
             <div
               className={`relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/5 bg-gradient-to-br ${isRunning ? 'from-primary/20 to-transparent' : 'from-white/5 to-transparent'}`}
             >
-              <span className="material-symbols-outlined text-lg text-foreground">terminal</span>
+              <AuricIcon name="terminal" className="text-lg text-foreground" />
               {isRunning && (
                 <span className="absolute bottom-0 right-0 h-2.5 w-2.5 translate-x-1/3 translate-y-1/3">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
@@ -390,7 +391,7 @@ function AgentTerminalDialog({
               title="Close"
               className="rounded-lg p-2 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-all"
             >
-              <span className="material-symbols-outlined text-lg">close</span>
+              <AuricIcon name="close" className="text-lg" />
             </button>
           </div>
         </div>
@@ -400,9 +401,7 @@ function AgentTerminalDialog({
             data-testid="terminal-error-digest"
             className="flex flex-shrink-0 items-center gap-2 border-b border-red-400/20 bg-red-500/5 px-5 py-2"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-sm text-red-400">
-              error
-            </span>
+            <AuricIcon name="error" aria-hidden="true" className="text-sm text-red-400" />
             <span className="truncate font-mono text-[11px] text-red-300">{errorDigest}</span>
           </div>
         )}

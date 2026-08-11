@@ -9,6 +9,7 @@ import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { deriveAgentName } from '@/lib/agents/naming';
 import { loadSpawnDefaults, saveSpawnDefaults } from '@/lib/agents/spawnDefaults';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface SpawnAgentDialogProps {
   isOpen: boolean;
@@ -33,12 +34,11 @@ export function SpawnAgentDialog(props: SpawnAgentDialogProps) {
 /** Dropdown affordance for `appearance-none` selects. */
 function SelectChevron() {
   return (
-    <span
+    <AuricIcon
+      name="expand_more"
       aria-hidden="true"
-      className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
-    >
-      expand_more
-    </span>
+      className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
+    />
   );
 }
 
@@ -220,7 +220,7 @@ function SpawnAgentDialogPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">rocket_launch</span>
+          <AuricIcon name="rocket_launch" className="text-primary" />
           <h2
             id="spawn-agent-title"
             className="text-sm font-bold tracking-tight text-foreground uppercase"

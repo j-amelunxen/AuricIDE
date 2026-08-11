@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { ProjectFileInfo } from '@/lib/tauri/fs';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface FileSelectorProps {
   files: ProjectFileInfo[];
@@ -71,7 +72,7 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
             Advanced File Selection
           </h2>
           <button onClick={onClose} className="text-foreground-muted hover:text-foreground">
-            <span className="material-symbols-outlined text-[20px]">close</span>
+            <AuricIcon name="close" className="text-[20px]" />
           </button>
         </div>
 
@@ -176,7 +177,7 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
             disabled={filtered.length === 0}
             className="flex items-center gap-2 bg-primary/20 hover:bg-primary/30 disabled:opacity-50 text-primary-light px-4 py-1.5 rounded-lg text-xs font-bold transition-all"
           >
-            <span className="material-symbols-outlined text-sm">content_paste</span>
+            <AuricIcon name="content_paste" className="text-sm" />
             Copy List to Clipboard
           </button>
         </div>

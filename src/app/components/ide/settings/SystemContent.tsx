@@ -4,6 +4,7 @@ import { useStore } from '@/lib/store';
 import { save, open, message, ask } from '@tauri-apps/plugin-dialog';
 import { exportDatabase, importDatabase } from '@/lib/tauri/db';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function SystemContent() {
   const rootPath = useStore((s) => s.rootPath);
@@ -73,9 +74,7 @@ export function SystemContent() {
             className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-primary/30 transition group text-left"
           >
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm text-primary group-hover:neon-glow">
-                download
-              </span>
+              <AuricIcon name="download" className="text-sm text-primary group-hover:neon-glow" />
               <span className="text-xs font-bold text-foreground">Export Database</span>
             </div>
             <p className="text-[9px] text-foreground-muted opacity-60">
@@ -88,7 +87,7 @@ export function SystemContent() {
             className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-red-500/30 transition group text-left"
           >
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm text-red-400">upload</span>
+              <AuricIcon name="upload" className="text-sm text-red-400" />
               <span className="text-xs font-bold text-foreground">Import Database</span>
             </div>
             <p className="text-[9px] text-foreground-muted opacity-60">
@@ -102,7 +101,7 @@ export function SystemContent() {
             className="flex flex-col items-start gap-2 p-3 rounded border border-white/5 bg-white/5 hover:bg-white/10 hover:border-red-500/30 transition group text-left"
           >
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm text-red-500">delete_sweep</span>
+              <AuricIcon name="delete_sweep" className="text-sm text-red-500" />
               <span className="text-xs font-bold text-foreground">Clear Ticket Database</span>
             </div>
             <p className="text-[9px] text-foreground-muted opacity-60">
@@ -114,7 +113,7 @@ export function SystemContent() {
 
       <section className="space-y-4 pt-6 border-t border-white/5">
         <div className="flex items-center gap-2 text-primary-light opacity-60">
-          <span className="material-symbols-outlined text-sm">info</span>
+          <AuricIcon name="info" className="text-sm" />
           <h3 className="text-[10px] font-black uppercase tracking-widest">System Info</h3>
         </div>
         <div className="space-y-1 pl-1">

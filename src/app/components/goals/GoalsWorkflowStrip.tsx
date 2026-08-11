@@ -1,5 +1,7 @@
 'use client';
 
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
+
 /** localStorage key marking the workflow strip as dismissed. */
 export const WORKFLOW_STRIP_DISMISSED_KEY = 'auric.goals.workflow-strip-dismissed';
 
@@ -37,12 +39,11 @@ export function GoalsWorkflowStrip({ onDismiss }: GoalsWorkflowStripProps) {
               </span>
             </span>
             {i < STEPS.length - 1 && (
-              <span
+              <AuricIcon
+                name="chevron_right"
                 aria-hidden
-                className="material-symbols-outlined text-xs text-foreground-muted/40"
-              >
-                chevron_right
-              </span>
+                className="text-xs text-foreground-muted/40"
+              />
             )}
           </li>
         ))}

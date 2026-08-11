@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface ImageViewerProps {
   src: string;
@@ -78,7 +79,7 @@ export function ImageViewer({ src, fileName }: ImageViewerProps) {
           className="p-1 hover:text-primary transition-colors"
           title="Zoom Out"
         >
-          <span className="material-symbols-outlined text-sm">remove_circle</span>
+          <AuricIcon name="remove_circle" className="text-sm" />
         </button>
         <span className="text-[10px] font-mono min-w-[40px] text-center">
           {Math.round(scale * 100)}%
@@ -88,7 +89,7 @@ export function ImageViewer({ src, fileName }: ImageViewerProps) {
           className="p-1 hover:text-primary transition-colors"
           title="Zoom In"
         >
-          <span className="material-symbols-outlined text-sm">add_circle</span>
+          <AuricIcon name="add_circle" className="text-sm" />
         </button>
         <div className="w-[1px] h-3 bg-white/10 mx-1" />
         <button
@@ -96,7 +97,7 @@ export function ImageViewer({ src, fileName }: ImageViewerProps) {
           className="p-1 hover:text-primary transition-colors"
           title="Reset View"
         >
-          <span className="material-symbols-outlined text-sm">restart_alt</span>
+          <AuricIcon name="restart_alt" className="text-sm" />
         </button>
       </div>
 

@@ -8,6 +8,7 @@ import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { BlueprintCreateModal } from './BlueprintCreateModal';
 import type { Blueprint } from '@/lib/tauri/blueprints';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import {
   COMPLEXITY_OPTIONS,
   COMPLEXITY_MAP,
@@ -139,9 +140,7 @@ function BlueprintsGalleryContent() {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-primary-light text-[20px]">
-              library_books
-            </span>
+            <AuricIcon name="library_books" className="text-primary-light text-[20px]" />
             <h2 id="blueprints-gallery-title" className="text-sm font-bold text-foreground">
               Blueprints
             </h2>
@@ -158,11 +157,10 @@ function BlueprintsGalleryContent() {
                 }
                 className={syncColor}
               >
-                <span
-                  className={`material-symbols-outlined text-[14px] ${blueprintSyncStatus === 'syncing' ? 'animate-spin' : ''}`}
-                >
-                  {syncIcon}
-                </span>
+                <AuricIcon
+                  name={syncIcon}
+                  className={`text-[14px] ${blueprintSyncStatus === 'syncing' ? 'animate-spin' : ''}`}
+                />
               </span>
             )}
           </div>
@@ -174,7 +172,7 @@ function BlueprintsGalleryContent() {
               }}
               className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/20 px-3 py-1.5 text-xs font-medium text-primary-light hover:bg-primary/25 transition-colors"
             >
-              <span className="material-symbols-outlined text-[14px]">add</span>
+              <AuricIcon name="add" className="text-[14px]" />
               New
             </button>
             <button
@@ -182,7 +180,7 @@ function BlueprintsGalleryContent() {
               className="rounded-lg p-1.5 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
               aria-label="Close blueprints gallery"
             >
-              <span className="material-symbols-outlined text-[18px]">close</span>
+              <AuricIcon name="close" className="text-[18px]" />
             </button>
           </div>
         </div>
@@ -194,9 +192,10 @@ function BlueprintsGalleryContent() {
             {/* Filters */}
             <div className="p-3 border-b border-white/5 flex flex-col gap-2.5 flex-shrink-0">
               <div className="relative">
-                <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[14px] text-foreground-muted pointer-events-none">
-                  search
-                </span>
+                <AuricIcon
+                  name="search"
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[14px] text-foreground-muted pointer-events-none"
+                />
                 <input
                   type="text"
                   value={search}
@@ -261,9 +260,10 @@ function BlueprintsGalleryContent() {
             <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
               {filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <span className="material-symbols-outlined mb-3 text-3xl text-foreground-muted opacity-40">
-                    library_books
-                  </span>
+                  <AuricIcon
+                    name="library_books"
+                    className="mb-3 text-3xl text-foreground-muted opacity-40"
+                  />
                   <p className="text-xs text-foreground-muted">
                     {blueprintsDraft.length === 0 ? 'No blueprints yet' : 'No results'}
                   </p>
@@ -359,21 +359,21 @@ function BlueprintsGalleryContent() {
                       className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
                       title="Open full reading view"
                     >
-                      <span className="material-symbols-outlined text-[14px]">open_in_full</span>
+                      <AuricIcon name="open_in_full" className="text-[14px]" />
                       Read
                     </button>
                     <button
                       onClick={() => handleEdit(selectedBlueprint)}
                       className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
                     >
-                      <span className="material-symbols-outlined text-[14px]">edit</span>
+                      <AuricIcon name="edit" className="text-[14px]" />
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(selectedBlueprint.id)}
                       className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-500/20 transition-colors"
                     >
-                      <span className="material-symbols-outlined text-[14px]">delete</span>
+                      <AuricIcon name="delete" className="text-[14px]" />
                       Delete
                     </button>
                   </div>
@@ -449,9 +449,7 @@ function BlueprintsGalleryContent() {
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center opacity-40">
-                <span className="material-symbols-outlined text-5xl text-foreground-muted mb-3">
-                  auto_stories
-                </span>
+                <AuricIcon name="auto_stories" className="text-5xl text-foreground-muted mb-3" />
                 <p className="text-sm text-foreground-muted">Select a blueprint to view details</p>
               </div>
             )}
@@ -504,14 +502,14 @@ function BlueprintReadingOverlay({ blueprint, onBack, onEdit }: BlueprintReading
             onClick={onBack}
             className="flex items-center gap-1.5 text-xs font-medium text-foreground-muted hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+            <AuricIcon name="arrow_back" className="text-[16px]" />
             Back to gallery
           </button>
           <button
             onClick={onEdit}
             className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-[14px]">edit</span>
+            <AuricIcon name="edit" className="text-[14px]" />
             Edit
           </button>
         </div>

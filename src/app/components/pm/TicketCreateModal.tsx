@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PmEpic, PmTicket, PmDependency, PmContextItem } from '@/lib/tauri/pm';
 import { InfoTooltip } from '../ui/InfoTooltip';
+import { AuricIcon } from '../ui/AuricIcon';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useLLM } from '@/lib/hooks/useLLM';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
@@ -210,7 +211,7 @@ function TicketCreateForm({
             aria-label="Close dialog"
             className="rounded-lg p-1 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <AuricIcon name="close" className="text-[18px]" />
           </button>
         </div>
 
@@ -396,7 +397,7 @@ function TicketCreateForm({
                   disabled={isLlmLoading}
                   className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition-all hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="material-symbols-outlined text-[14px]">lightbulb</span>
+                  <AuricIcon name="lightbulb" className="text-[14px]" />
                   Propose Dependencies
                 </button>
               </div>

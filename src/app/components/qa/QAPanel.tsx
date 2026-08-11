@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { CoverageModal } from './CoverageModal';
 import { CoverageHeatmapModal } from './CoverageHeatmapModal';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function QAPanel() {
   const {
@@ -51,9 +52,7 @@ export function QAPanel() {
   if (coverageStatus === 'not-found' || coverageStatus === 'error') {
     return (
       <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-        <span className="material-symbols-outlined mb-4 text-4xl text-foreground-muted opacity-50">
-          analytics
-        </span>
+        <AuricIcon name="analytics" className="mb-4 text-4xl text-foreground-muted opacity-50" />
         <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-foreground">
           No coverage information available
         </h3>
@@ -100,7 +99,7 @@ export function QAPanel() {
             className="rounded p-0.5 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
             title="Refresh coverage data"
           >
-            <span className="material-symbols-outlined text-[14px]">refresh</span>
+            <AuricIcon name="refresh" className="text-[14px]" />
           </button>
         </div>
 
@@ -116,7 +115,7 @@ export function QAPanel() {
           {/* File count + open modal */}
           <div className="flex flex-col items-center gap-3 rounded-xl border border-white/5 bg-white/2 p-4 text-center">
             <div className="flex items-center gap-2 text-foreground-muted">
-              <span className="material-symbols-outlined text-[16px]">description</span>
+              <AuricIcon name="description" className="text-[16px]" />
               <span className="text-xs">
                 <span className="font-bold text-foreground">{fileCoverage.length}</span> files
                 tracked
@@ -132,7 +131,7 @@ export function QAPanel() {
               onClick={() => setHeatmapOpen(true)}
               className="w-full mt-2 rounded-lg border border-primary/30 bg-black/20 px-4 py-2 text-xs font-bold text-primary-light transition hover:border-primary/50 hover:bg-primary/10 hover:shadow-[0_0_15px_rgba(var(--primary-rgb),0.2)] flex items-center justify-center gap-2"
             >
-              <span className="material-symbols-outlined text-[14px]">3d_rotation</span>
+              <AuricIcon name="3d_rotation" className="text-[14px]" />
               Show 3D Heatmap
             </button>
           </div>

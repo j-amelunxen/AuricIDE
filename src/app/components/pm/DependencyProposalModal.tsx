@@ -1,6 +1,7 @@
 'use client';
 
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface DependencySuggestion {
   id: string;
@@ -41,7 +42,7 @@ function DependencyProposalDialog({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-[20px]">lightbulb</span>
+            <AuricIcon name="lightbulb" className="text-primary text-[20px]" />
             <h3 id="dependency-proposal-title" className="text-sm font-semibold text-foreground">
               Proposed Dependencies
             </h3>
@@ -52,7 +53,7 @@ function DependencyProposalDialog({
             aria-label="Close dialog"
             className="rounded-lg p-1 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <AuricIcon name="close" className="text-[18px]" />
           </button>
         </div>
 
@@ -87,7 +88,7 @@ function DependencyProposalDialog({
                           : 'bg-transparent border-white/20 text-transparent'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-[14px] font-bold">check</span>
+                      <AuricIcon name="check" className="text-[14px] font-bold" />
                     </div>
                     <input
                       type="checkbox"
@@ -107,7 +108,7 @@ function DependencyProposalDialog({
             </div>
           ) : (
             <div className="py-8 flex flex-col items-center justify-center gap-3 text-foreground-muted">
-              <span className="material-symbols-outlined text-[48px] opacity-20">search_off</span>
+              <AuricIcon name="search_off" className="text-[48px] opacity-20" />
               <p className="text-sm">No potential dependencies found.</p>
             </div>
           )}

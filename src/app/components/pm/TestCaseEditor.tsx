@@ -1,6 +1,7 @@
 'use client';
 
 import type { PmTestCase } from '@/lib/tauri/pm';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface TestCaseEditorProps {
   testCases: PmTestCase[];
@@ -33,7 +34,7 @@ export function TestCaseEditor({ testCases, onAdd, onUpdate, onDelete }: TestCas
               onClick={() => onDelete(tc.id)}
               className="rounded-lg px-1.5 py-1 text-foreground-muted opacity-50 hover:opacity-100 hover:bg-white/10 transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px]">close</span>
+              <AuricIcon name="close" className="text-[16px]" />
             </button>
           </div>
           <textarea

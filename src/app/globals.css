@@ -116,6 +116,14 @@ body {
 }
 
 /* Custom Utilities */
+/* Auric Line icons: inline SVGs sized 1em, aligned like glyph text so they
+   drop into the slots the icon font used to fill. */
+.auric-icon {
+  display: inline-block;
+  vertical-align: -0.125em;
+  flex-shrink: 0;
+}
+
 @layer utilities {
   .glass {
     @apply bg-[rgba(10,10,16,0.6)] backdrop-blur-md border-b border-white/5;

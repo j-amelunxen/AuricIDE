@@ -2,6 +2,7 @@
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { getHeatStyles } from '@/lib/pm/heat';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function EpicNode({ data }: NodeProps & { data: { label: string; onSelect?: () => void } }) {
   return (
@@ -66,7 +67,7 @@ export function TicketNode({
               className={`text-[10px] px-1.5 py-0.5 rounded border font-bold flex items-center gap-0.5 ${heatStyles}`}
               title={`${data.heat} items depend on this ticket`}
             >
-              <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+              <AuricIcon name="local_fire_department" className="text-[10px]" />
               {data.heat}
             </div>
           )}
@@ -80,7 +81,7 @@ export function TicketNode({
             title="Start Agent"
             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/10 rounded flex items-center justify-center"
           >
-            <span className="material-symbols-outlined text-sm text-primary-light">smart_toy</span>
+            <AuricIcon name="smart_toy" className="text-sm text-primary-light" />
           </button>
         )}
       </div>

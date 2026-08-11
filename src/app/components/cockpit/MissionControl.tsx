@@ -5,6 +5,7 @@ import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/req
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { ConductorPanel } from '../goals/ConductorPanel';
 import { QuickAccess } from './QuickAccess';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const STALE_DAYS = 30;
 
@@ -25,12 +26,11 @@ function Station({ id, icon, label, value, hint, onClick }: StationProps) {
       title={hint}
       className="group flex w-40 flex-col items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.03] px-5 py-5 transition-[background-color,border-color,box-shadow] duration-150 hover:border-primary/30 hover:bg-primary/5 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.12)] active:scale-[0.98]"
     >
-      <span
+      <AuricIcon
+        name={icon}
         aria-hidden="true"
-        className="material-symbols-outlined text-xl text-primary-light opacity-80 group-hover:opacity-100"
-      >
-        {icon}
-      </span>
+        className="text-xl text-primary-light opacity-80 group-hover:opacity-100"
+      />
       <span className="font-display text-2xl font-black tabular-nums text-foreground">{value}</span>
       <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
         {label}
@@ -41,9 +41,11 @@ function Station({ id, icon, label, value, hint, onClick }: StationProps) {
 
 function StationArrow() {
   return (
-    <span aria-hidden="true" className="material-symbols-outlined text-lg text-foreground-muted/40">
-      arrow_forward
-    </span>
+    <AuricIcon
+      name="arrow_forward"
+      aria-hidden="true"
+      className="text-lg text-foreground-muted/40"
+    />
   );
 }
 
@@ -167,9 +169,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
         onClick={() => setExcalidrawBrowserOpen(true)}
         className="flex items-center gap-1.5 text-[11px] text-foreground-muted transition-colors hover:text-foreground"
       >
-        <span aria-hidden="true" className="material-symbols-outlined text-sm">
-          draw
-        </span>
+        <AuricIcon name="draw" aria-hidden="true" className="text-sm" />
         Import diagrams from Excalidraw+
       </button>
 
@@ -180,9 +180,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           onClick={openTruths}
           className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-2 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-sm">
-            warning
-          </span>
+          <AuricIcon name="warning" aria-hidden="true" className="text-sm" />
           {needProof} invariant{needProof === 1 ? '' : 's'} stale or unverified — review now
         </button>
       )}
@@ -207,9 +205,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
               onClick={() => setVideoImportDialogOpen(true)}
               className="flex items-center gap-2 rounded-xl border border-white/10 px-5 py-2.5 text-xs font-bold text-foreground transition-[background-color,border-color] duration-150 hover:border-white/20 hover:bg-white/5 active:scale-[0.98]"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-sm">
-                video_file
-              </span>
+              <AuricIcon name="video_file" aria-hidden="true" className="text-sm" />
               Import Video
             </button>
             <button

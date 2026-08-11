@@ -11,6 +11,7 @@ import {
 } from '@/lib/orchestration/graphBuilder';
 import { OrchestrationNode } from './OrchestrationNode';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const nodeTypes = { orchestration: OrchestrationNode };
 
@@ -99,7 +100,7 @@ function OrchestrationModalContent() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">
         <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-primary-light">graph_3</span>
+          <AuricIcon name="graph_3" className="text-primary-light" />
           <h1 id="orchestration-modal-title" className="text-sm font-bold text-foreground">
             Orchestration
           </h1>
@@ -116,19 +117,15 @@ function OrchestrationModalContent() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3 text-[9px] text-foreground-muted">
             <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[12px] text-primary-light">flag</span>
+              <AuricIcon name="flag" className="text-[12px] text-primary-light" />
               goal
             </span>
             <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[12px] text-sky-300">
-                confirmation_number
-              </span>
+              <AuricIcon name="confirmation_number" className="text-[12px] text-sky-300" />
               ticket
             </span>
             <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[12px] text-green-300">
-                smart_toy
-              </span>
+              <AuricIcon name="smart_toy" className="text-[12px] text-green-300" />
               agent
             </span>
           </div>
@@ -137,7 +134,7 @@ function OrchestrationModalContent() {
             onClick={handleClose}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-base">close</span>
+            <AuricIcon name="close" className="text-base" />
           </button>
         </div>
       </div>
@@ -146,9 +143,7 @@ function OrchestrationModalContent() {
       <div className="flex-1">
         {nodes.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <span className="material-symbols-outlined text-4xl text-foreground-muted/30">
-              graph_3
-            </span>
+            <AuricIcon name="graph_3" className="text-4xl text-foreground-muted/30" />
             <p className="text-xs text-foreground-muted">Nothing to orchestrate yet.</p>
             <p className="max-w-[300px] text-[10px] text-foreground-muted/70">
               Create goals, attach tickets, and launch agents. The live graph appears here.

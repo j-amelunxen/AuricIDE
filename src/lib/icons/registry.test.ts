@@ -23,6 +23,25 @@ describe('icon registry', () => {
     }
   });
 
+  it('non-path primitives stay inside the 24px grid', () => {
+    for (const [name, glyph] of Object.entries(ICON_GLYPHS)) {
+      for (const prim of glyph) {
+        const coords: number[] = [];
+        if (prim.kind === 'circle') {
+          coords.push(prim.cx - prim.r, prim.cx + prim.r, prim.cy - prim.r, prim.cy + prim.r);
+        } else if (prim.kind === 'rect') {
+          coords.push(prim.x, prim.x + prim.w, prim.y, prim.y + prim.h);
+        } else if (prim.kind === 'line') {
+          coords.push(prim.x1, prim.x2, prim.y1, prim.y2);
+        }
+        for (const v of coords) {
+          expect(v, `glyph "${name}" leaves the grid (${v})`).toBeGreaterThanOrEqual(0);
+          expect(v, `glyph "${name}" leaves the grid (${v})`).toBeLessThanOrEqual(24);
+        }
+      }
+    }
+  });
+
   it('glyph names are snake_case identifiers', () => {
     for (const name of Object.keys(ICON_GLYPHS)) {
       expect(name).toMatch(/^[a-z0-9]+(_[a-z0-9]+)*$/);

@@ -169,9 +169,9 @@ describe('AgentTerminalModal', () => {
   });
 
   it('renders the xterm container', () => {
-    render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+    const { container } = render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
     // The modal should have the terminal icon in the header
-    expect(screen.getByText('terminal')).toBeInTheDocument();
+    expect(container.querySelector('[data-icon="terminal"]')).toBeInTheDocument();
   });
 
   it('exposes an accessible dialog named after the agent', () => {

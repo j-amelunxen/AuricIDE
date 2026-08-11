@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import fuzzysort from 'fuzzysort';
 import type { PmDependency } from '@/lib/tauri/pm';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface DependencySelectorProps {
   dependencies: PmDependency[];
@@ -72,7 +73,7 @@ export function DependencySelector({
               onClick={() => onRemove(dep.id)}
               className="text-foreground-muted hover:text-foreground transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px]">close</span>
+              <AuricIcon name="close" className="text-[16px]" />
             </button>
           </span>
         ))}

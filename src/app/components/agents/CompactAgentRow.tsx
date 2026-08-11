@@ -10,6 +10,7 @@ import { formatAgentDuration } from '@/lib/agents/duration';
 import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { agentAttention } from '@/lib/agents/attention';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -169,9 +170,7 @@ export function CompactAgentRow({
           title={`Retry ${agent.name} with the same configuration`}
           className="flex-shrink-0 rounded p-0.5 text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-            replay
-          </span>
+          <AuricIcon name="replay" aria-hidden="true" className="text-[13px]" />
         </button>
       )}
       <button
@@ -181,9 +180,7 @@ export function CompactAgentRow({
         title={`${dismissLabel} ${agent.name}`}
         className="flex-shrink-0 rounded p-0.5 text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100 focus-visible:opacity-100"
       >
-        <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-          {dismissIcon}
-        </span>
+        <AuricIcon name={dismissIcon} aria-hidden="true" className="text-[13px]" />
       </button>
     </div>
   );

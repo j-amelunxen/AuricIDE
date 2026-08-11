@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import type { PmEpic, PmTicket } from '@/lib/tauri/pm';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface EpicSidebarProps {
   epics: PmEpic[];
@@ -43,7 +44,7 @@ export function EpicSidebar({
           onClick={onAddEpic}
           className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted/60 hover:bg-white/10 hover:text-foreground transition-colors"
         >
-          <span className="material-symbols-outlined text-[14px]">add</span>
+          <AuricIcon name="add" className="text-[14px]" />
         </button>
       </div>
 
@@ -101,7 +102,7 @@ export function EpicSidebar({
                 }}
                 className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-white/10 hover:text-foreground transition"
               >
-                <span className="material-symbols-outlined text-[13px]">edit</span>
+                <AuricIcon name="edit" className="text-[13px]" />
               </button>
 
               <button
@@ -113,7 +114,7 @@ export function EpicSidebar({
                 }}
                 className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-red-500/10 hover:text-red-400 transition"
               >
-                <span className="material-symbols-outlined text-[13px]">close</span>
+                <AuricIcon name="close" className="text-[13px]" />
               </button>
             </div>
           </div>

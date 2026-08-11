@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Blueprint } from '@/lib/tauri/blueprints';
 import { COMPLEXITY_OPTIONS, CATEGORY_OPTIONS } from '@/lib/blueprints/constants';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface BlueprintCreateModalProps {
   isOpen: boolean;
@@ -71,7 +72,7 @@ function BlueprintCreateForm({
             aria-label="Close dialog"
             className="rounded-lg p-1 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <AuricIcon name="close" className="text-[18px]" />
           </button>
         </div>
 

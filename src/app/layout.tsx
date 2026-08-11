@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
-import 'material-symbols/outlined.css';
 import './globals.css';
 import { CrashBoundary, GlobalErrorHandlers } from './components/CrashBoundary';
 

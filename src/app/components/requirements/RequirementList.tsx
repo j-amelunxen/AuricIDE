@@ -1,6 +1,7 @@
 'use client';
 
 import type { PmRequirement } from '@/lib/tauri/requirements';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface RequirementListProps {
   requirements: PmRequirement[];
@@ -60,12 +61,11 @@ export function RequirementList({
         data-testid="requirement-list-empty"
         className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
       >
-        <span
+        <AuricIcon
+          name="checklist"
           aria-hidden="true"
-          className="material-symbols-outlined text-2xl text-foreground-muted opacity-40"
-        >
-          checklist
-        </span>
+          className="text-2xl text-foreground-muted opacity-40"
+        />
         <p className="text-sm text-foreground-muted">
           {noneExist ? 'No requirements yet' : 'No requirements match the current filters'}
         </p>

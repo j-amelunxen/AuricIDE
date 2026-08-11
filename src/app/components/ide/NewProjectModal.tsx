@@ -9,6 +9,7 @@ import {
   type NewProjectOptions,
   type NewProjectTemplate,
 } from '@/lib/project/newProject';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export type { NewProjectOptions, NewProjectTemplate };
 
@@ -74,9 +75,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary-light text-[18px]">
-              create_new_folder
-            </span>
+            <AuricIcon name="create_new_folder" className="text-primary-light text-[18px]" />
             <h3 id="new-project-title" className="text-sm font-semibold text-foreground">
               New Project
             </h3>
@@ -87,7 +86,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
             aria-label="Close dialog"
             className="rounded-lg p-1 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <AuricIcon name="close" className="text-[18px]" />
           </button>
         </div>
 
@@ -131,7 +130,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
                 onClick={handleBrowse}
                 className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-foreground hover:bg-white/10 transition-colors"
               >
-                <span className="material-symbols-outlined text-[16px]">folder_open</span>
+                <AuricIcon name="folder_open" className="text-[16px]" />
                 Browse
               </button>
             </div>
@@ -155,7 +154,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
                       : 'border-white/10 text-foreground-muted hover:bg-white/5 hover:text-foreground'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[20px]">{opt.icon}</span>
+                  <AuricIcon name={opt.icon} className="text-[20px]" />
                   <span className="text-[11px] font-medium">{opt.label}</span>
                 </button>
               ))}

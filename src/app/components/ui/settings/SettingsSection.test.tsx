@@ -4,7 +4,7 @@ import { SettingsSection } from './SettingsSection';
 
 describe('SettingsSection', () => {
   it('renders title and children', () => {
-    render(
+    const { container } = render(
       <SettingsSection title="Test Section" icon="robot">
         <div data-testid="child">Child Content</div>
       </SettingsSection>
@@ -12,6 +12,6 @@ describe('SettingsSection', () => {
 
     expect(screen.getByText('Test Section')).toBeDefined();
     expect(screen.getByTestId('child')).toBeDefined();
-    expect(screen.getByText('robot')).toBeDefined(); // Material symbol icon
+    expect(container.querySelector('[data-icon="robot"]')).not.toBeNull();
   });
 });
