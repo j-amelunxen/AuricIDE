@@ -5,6 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import type { CoverageSummary, FileCoverage } from '@/lib/qa/coverageParser';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface HeatmapProps {
   isOpen: boolean;
@@ -149,7 +150,7 @@ function CoverageHeatmapContent({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/8 bg-white/2 px-6 py-4">
           <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-xl text-primary">3d_rotation</span>
+            <AuricIcon name="3d_rotation" className="text-xl text-primary" />
             <h2
               id="coverage-heatmap-title"
               className="text-sm font-bold tracking-wide text-foreground"
@@ -164,7 +165,7 @@ function CoverageHeatmapContent({
             onClick={onClose}
             className="rounded-lg p-1.5 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <AuricIcon name="close" className="text-[18px]" />
           </button>
         </div>
 
@@ -208,7 +209,7 @@ function CoverageHeatmapContent({
 
           {/* Controls hint */}
           <div className="absolute top-4 left-4 pointer-events-none flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 backdrop-blur-sm">
-            <span className="material-symbols-outlined text-[14px] text-white/50">touch_app</span>
+            <AuricIcon name="touch_app" className="text-[14px] text-white/50" />
             <span className="text-[10px] font-medium text-white/60">
               Drag to rotate • Scroll to zoom
             </span>
@@ -237,13 +238,11 @@ function CoverageHeatmapContent({
 
             <div className="border-t border-white/10 pt-3 space-y-2">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[14px] text-white/50">height</span>
+                <AuricIcon name="height" className="text-[14px] text-white/50" />
                 <span className="text-[10px] text-white/70">Building height = File size</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[14px] text-rose-500">
-                  local_fire_department
-                </span>
+                <AuricIcon name="local_fire_department" className="text-[14px] text-rose-500" />
                 <span className="text-[10px] text-rose-400">Red glow = High risk zone</span>
               </div>
             </div>

@@ -16,6 +16,7 @@ import { AGENT_COLORS, type AgentColor } from '@/lib/agents/colors';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { AgentCard } from './AgentCard';
 import { CompactAgentRow } from './CompactAgentRow';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface AgentsPanelProps {
   agents: AgentInfo[];
@@ -239,9 +240,7 @@ export function AgentsPanel({
               data-testid="agents-all-quiet"
               className="flex items-center gap-0.5 text-[10px] font-medium text-emerald-400/70"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
-                check
-              </span>
+              <AuricIcon name="check" aria-hidden="true" className="text-[12px]" />
               all quiet
             </span>
           )}
@@ -267,9 +266,7 @@ export function AgentsPanel({
               aria-label="Hide agents panel"
               className="group flex h-5 w-5 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-base">
-                right_panel_close
-              </span>
+              <AuricIcon name="right_panel_close" aria-hidden="true" className="text-base" />
             </button>
           )}
         </div>
@@ -358,14 +355,11 @@ export function AgentsPanel({
                       aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${repoName}`}
                       className="group/repo -ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-xs font-semibold text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
                     >
-                      <span
+                      <AuricIcon
+                        name="expand_more"
                         aria-hidden="true"
-                        className={`material-symbols-outlined text-sm transition-transform ${
-                          isCollapsed ? '-rotate-90' : ''
-                        }`}
-                      >
-                        expand_more
-                      </span>
+                        className={`text-sm transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+                      />
                       {repoName}
                       {isCollapsed && (
                         <span className="ml-0.5 rounded-full bg-white/5 px-1.5 text-[10px] tabular-nums">

@@ -14,6 +14,7 @@ import { useStore } from '@/lib/store';
 import { layoutLinkGraph } from '@/lib/graph/linkGraphLayout';
 import { LinkGraphNode } from './LinkGraphNode';
 import { accentColor } from '@/lib/theme/accent';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const nodeTypes: NodeTypes = {
   // XYFlow requires NodeTypes to accept generic node props
@@ -76,7 +77,7 @@ export function LinkGraphView({ onFileSelect, hideFullscreen }: LinkGraphViewPro
       {/* Search + Fullscreen toolbar */}
       <div className="absolute top-2 left-2 z-10 flex items-center gap-2">
         <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[rgba(10,10,16,0.9)] border border-white/10">
-          <span className="material-symbols-outlined text-sm text-foreground-muted">search</span>
+          <AuricIcon name="search" className="text-sm text-foreground-muted" />
           <input
             data-testid="link-graph-search"
             type="text"
@@ -92,9 +93,10 @@ export function LinkGraphView({ onFileSelect, hideFullscreen }: LinkGraphViewPro
             onClick={() => setIsFullscreen(!isFullscreen)}
             className="flowchart-expand-btn"
           >
-            <span className="material-symbols-outlined text-sm">
-              {isFullscreen ? 'close_fullscreen' : 'open_in_full'}
-            </span>
+            <AuricIcon
+              name={isFullscreen ? 'close_fullscreen' : 'open_in_full'}
+              className="text-sm"
+            />
             {isFullscreen ? 'Exit' : 'Expand'}
           </button>
         )}
@@ -110,9 +112,7 @@ export function LinkGraphView({ onFileSelect, hideFullscreen }: LinkGraphViewPro
       {nodes.length === 0 ? (
         <div className="flex h-full items-center justify-center text-foreground-muted text-sm">
           <div className="text-center">
-            <span className="material-symbols-outlined text-3xl text-foreground-muted/40 mb-2 block">
-              hub
-            </span>
+            <AuricIcon name="hub" className="text-3xl text-foreground-muted/40 mb-2 block" />
             <p>No wiki-links found</p>
             <p className="text-xs mt-1 opacity-60">Create [[links]] in your markdown files</p>
           </div>

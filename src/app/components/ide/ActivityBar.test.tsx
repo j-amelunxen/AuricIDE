@@ -60,7 +60,7 @@ describe('ActivityBar', () => {
     const { container } = render(
       <ActivityBar items={items} activeId="explorer" onSelect={() => {}} />
     );
-    const icons = container.querySelectorAll('.material-symbols-outlined');
+    const icons = container.querySelectorAll('[data-icon]');
     expect(icons.length).toBeGreaterThan(0);
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });

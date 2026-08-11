@@ -13,6 +13,7 @@ import { DependencyTreeView } from './DependencyTreeView';
 import { MetricsView } from './MetricsView';
 import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
 import { generateTicketPrompt } from '@/lib/pm/prompt';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const EMPTY: never[] = [];
 
@@ -281,9 +282,7 @@ function ProjectManagerDialog() {
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-white/[0.015] shrink-0">
           <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[15px] text-primary-light/40 select-none">
-              checklist
-            </span>
+            <AuricIcon name="checklist" className="text-[15px] text-primary-light/40 select-none" />
             <h2
               id="project-manager-title"
               className="text-sm font-semibold text-foreground tracking-tight"
@@ -340,9 +339,7 @@ function ProjectManagerDialog() {
                   : 'bg-white/5 text-foreground-muted border border-white/10 hover:bg-white/10 hover:text-foreground'
               }`}
             >
-              <span className="material-symbols-outlined text-[14px]">
-                {showArchived ? 'inventory_2' : 'archive'}
-              </span>
+              <AuricIcon name={showArchived ? 'inventory_2' : 'archive'} className="text-[14px]" />
               {showArchived ? 'Archive View' : 'Archive'}
             </button>
 
@@ -351,7 +348,7 @@ function ProjectManagerDialog() {
               onClick={() => setImportSpecDialogOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-white/5 text-foreground-muted border border-white/10 hover:bg-white/10 hover:text-foreground transition-all"
             >
-              <span className="material-symbols-outlined text-[14px]">description</span>
+              <AuricIcon name="description" className="text-[14px]" />
               Import Spec
             </button>
 
@@ -361,7 +358,7 @@ function ProjectManagerDialog() {
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all bg-white/5 text-foreground-muted border border-white/10 hover:bg-white/10 hover:text-foreground"
                 title="Move all 'Done' tickets to Archive"
               >
-                <span className="material-symbols-outlined text-[14px]">archive</span>
+                <AuricIcon name="archive" className="text-[14px]" />
                 Move Done to Archive
               </button>
             )}

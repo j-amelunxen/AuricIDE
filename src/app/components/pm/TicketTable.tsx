@@ -10,6 +10,7 @@ import {
   buildTicketStatusPriorityPowerOptions,
 } from './ticketContextMenu';
 import { calculateHeat, getHeatStyles } from '@/lib/pm/heat';
+import { AuricIcon } from '../ui/AuricIcon';
 
 interface TicketTableProps {
   tickets: PmTicket[];
@@ -228,7 +229,7 @@ export function TicketTable({
             data-testid="ticket-table-error"
             className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center"
           >
-            <span className="material-symbols-outlined text-[28px] text-red-400/60">error</span>
+            <AuricIcon name="error" className="text-[28px] text-red-400/60" />
             <p className="text-xs text-foreground">Tickets could not be read</p>
             <p className="max-w-[260px] text-[10px] text-foreground-muted">{loadError}</p>
           </div>
@@ -245,9 +246,7 @@ export function TicketTable({
 
         {sorted.length === 0 && !loadError && !loading && (
           <div className="flex flex-col items-center justify-center px-4 py-10 gap-2">
-            <span className="material-symbols-outlined text-[28px] text-foreground-muted/20">
-              inbox
-            </span>
+            <AuricIcon name="inbox" className="text-[28px] text-foreground-muted/20" />
             <p className="text-xs text-foreground-muted/50">No tickets</p>
           </div>
         )}
@@ -271,12 +270,11 @@ export function TicketTable({
             <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${statusDot[ticket.status]}`} />
 
             {/* Priority icon */}
-            <span
-              className="material-symbols-outlined text-[14px] text-foreground-muted/40 select-none"
+            <AuricIcon
+              name={priorityIcon[ticket.priority]}
+              className="text-[14px] text-foreground-muted/40 select-none"
               title={`Priority: ${priorityLabel[ticket.priority]}`}
-            >
-              {priorityIcon[ticket.priority]}
-            </span>
+            />
 
             {/* Name — direct child of row div so closest('div[class]') finds the row */}
             <span className="flex-1 text-xs text-foreground truncate" title={ticket.name}>
@@ -285,12 +283,11 @@ export function TicketTable({
 
             {/* Human Supervision Indicator */}
             {ticket.needsHumanSupervision && (
-              <span
-                className="material-symbols-outlined shrink-0 text-[14px] text-orange-300/60"
+              <AuricIcon
+                name="visibility"
+                className="shrink-0 text-[14px] text-orange-300/60"
                 title="Needs human supervision"
-              >
-                visibility
-              </span>
+              />
             )}
 
             {/* Model Power Badge */}
@@ -316,9 +313,7 @@ export function TicketTable({
                   )}`}
                   title={`${heat} items depend on this ticket`}
                 >
-                  <span className="material-symbols-outlined text-[10px]">
-                    local_fire_department
-                  </span>
+                  <AuricIcon name="local_fire_department" className="text-[10px]" />
                   {heat}
                 </span>
               );
@@ -332,7 +327,7 @@ export function TicketTable({
                 title="Spawn Agent"
                 className="opacity-0 group-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-primary/20 text-primary-light transition"
               >
-                <span className="material-symbols-outlined text-[14px]">smart_toy</span>
+                <AuricIcon name="smart_toy" className="text-[14px]" />
               </button>
               <span
                 className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusBadge[ticket.status]}`}

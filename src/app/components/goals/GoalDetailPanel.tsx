@@ -7,6 +7,7 @@ import type { PmRequirement } from '@/lib/tauri/requirements';
 import { getGoalSatisfaction, getGoalWorkflowStage, getRunsForGoal } from '@/lib/store/goalsSlice';
 import { useStore } from '@/lib/store';
 import { GOAL_STATUS_STYLES } from './GoalTree';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const WORKFLOW_STEP_LABELS = ['Define', 'Attach', 'Conduct', 'Achieved'] as const;
 
@@ -189,7 +190,7 @@ export function GoalDetailPanel({
                       }`}
                     >
                       {isDone && !isCurrent ? (
-                        <span className="material-symbols-outlined text-[11px]">check</span>
+                        <AuricIcon name="check" className="text-[11px]" />
                       ) : (
                         pos
                       )}
@@ -255,9 +256,7 @@ export function GoalDetailPanel({
               <ul className="space-y-1">
                 {satisfaction.blockers.slice(0, 6).map((b, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-[11px] text-foreground/80">
-                    <span className="material-symbols-outlined mt-px text-[12px] text-amber-400">
-                      block
-                    </span>
+                    <AuricIcon name="block" className="mt-px text-[12px] text-amber-400" />
                     {b}
                   </li>
                 ))}
@@ -279,7 +278,7 @@ export function GoalDetailPanel({
           onClick={() => onLaunchAgent(goal)}
           className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
         >
-          <span className="material-symbols-outlined text-sm">rocket_launch</span>
+          <AuricIcon name="rocket_launch" className="text-sm" />
           Launch agent
         </button>
         <button
@@ -287,7 +286,7 @@ export function GoalDetailPanel({
           onClick={() => onAddSubGoal(goal.id)}
           className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[11px] text-foreground hover:bg-white/10 transition-colors"
         >
-          <span className="material-symbols-outlined text-sm">account_tree</span>
+          <AuricIcon name="account_tree" className="text-sm" />
           Add sub-goal
         </button>
         <button
@@ -295,7 +294,7 @@ export function GoalDetailPanel({
           onClick={() => onDelete(goal.id)}
           className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-300 transition-colors"
         >
-          <span className="material-symbols-outlined text-sm">delete</span>
+          <AuricIcon name="delete" className="text-sm" />
         </button>
       </div>
 
@@ -347,9 +346,7 @@ export function GoalDetailPanel({
             onClick={() => setTicketPickerOpen((v) => !v)}
             className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium text-primary-light hover:bg-primary/10 transition-colors"
           >
-            <span className="material-symbols-outlined text-[12px]">
-              {ticketPickerOpen ? 'close' : 'add'}
-            </span>
+            <AuricIcon name={ticketPickerOpen ? 'close' : 'add'} className="text-[12px]" />
             {ticketPickerOpen ? 'Close' : 'Add'}
           </button>
         </div>
@@ -377,10 +374,10 @@ export function GoalDetailPanel({
                 <button
                   data-testid={`goal-ticket-unlink-${t.id}`}
                   onClick={() => onUnlinkTicket(t.id)}
-                  className="material-symbols-outlined text-[12px] text-foreground-muted opacity-60 hover:opacity-100 hover:text-red-300"
+                  className="text-[12px] text-foreground-muted opacity-60 hover:opacity-100 hover:text-red-300"
                   title="Unlink"
                 >
-                  close
+                  <AuricIcon name="close" />
                 </button>
               </li>
             ))}
@@ -430,10 +427,10 @@ export function GoalDetailPanel({
                     <button
                       data-testid={`goal-ticket-link-${t.id}`}
                       onClick={() => onLinkTicket(goal.id, t.id)}
-                      className="material-symbols-outlined shrink-0 text-[14px] text-primary-light hover:text-primary"
+                      className="shrink-0 text-[14px] text-primary-light hover:text-primary"
                       title="Add to this goal"
                     >
-                      add_circle
+                      <AuricIcon name="add_circle" />
                     </button>
                   </li>
                 ))
@@ -451,7 +448,7 @@ export function GoalDetailPanel({
             data-testid="goal-no-requirement-hint"
             className="mb-1.5 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-300/90"
           >
-            <span className="material-symbols-outlined mt-px text-[12px]">info</span>
+            <AuricIcon name="info" className="mt-px text-[12px]" />
             No requirement linked: this goal completes purely on agents exiting cleanly. Link a
             requirement to add a verified acceptance gate.
           </p>
@@ -471,10 +468,10 @@ export function GoalDetailPanel({
               <button
                 data-testid={`goal-req-unlink-${r.id}`}
                 onClick={() => onUnlinkRequirement(goal.id, r.id)}
-                className="material-symbols-outlined text-[10px] opacity-60 hover:opacity-100"
+                className="text-[10px] opacity-60 hover:opacity-100"
                 title="Unlink"
               >
-                close
+                <AuricIcon name="close" />
               </button>
             </span>
           ))}

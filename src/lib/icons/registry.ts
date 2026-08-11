@@ -1,6 +1,7 @@
 import { actionsGlyphs } from './glyphs/actions';
 import { coreGlyphs } from './glyphs/core';
 import { filesGlyphs } from './glyphs/files';
+import { futureGlyphs } from './glyphs/future';
 import { navigationGlyphs } from './glyphs/navigation';
 import { objectsGlyphs } from './glyphs/objects';
 import { statusGlyphs } from './glyphs/status';
@@ -14,6 +15,7 @@ import type { IconGlyph } from './types';
 export const ICON_GLYPHS: Record<string, IconGlyph> = {
   ...coreGlyphs,
   ...filesGlyphs,
+  ...futureGlyphs,
   ...navigationGlyphs,
   ...actionsGlyphs,
   ...objectsGlyphs,

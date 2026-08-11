@@ -12,6 +12,7 @@ import { ConductorPanel } from './ConductorPanel';
 import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflowStrip';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 /** Builds the launch prompt for a goal: explicit goalPrompt wins, else generated. */
 export function buildGoalLaunchPrompt(goal: PmGoal): string {
@@ -220,7 +221,7 @@ function GoalsModalContent() {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
           <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-primary-light">flag</span>
+            <AuricIcon name="flag" className="text-primary-light" />
             <h1 id="goals-modal-title" className="text-sm font-bold text-foreground">
               Goals
             </h1>
@@ -240,7 +241,7 @@ function GoalsModalContent() {
               aria-label="How goals work"
               className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
             >
-              <span className="material-symbols-outlined text-base">help</span>
+              <AuricIcon name="help" className="text-base" />
             </button>
             <button
               data-testid="goals-orchestration-btn"
@@ -248,7 +249,7 @@ function GoalsModalContent() {
               title="Live orchestration canvas"
               className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
             >
-              <span className="material-symbols-outlined text-sm">graph_3</span>
+              <AuricIcon name="graph_3" className="text-sm" />
               Orchestration
             </button>
             <button
@@ -257,7 +258,7 @@ function GoalsModalContent() {
               title="Every goal as a metro line"
               className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
             >
-              <span className="material-symbols-outlined text-sm">route</span>
+              <AuricIcon name="route" className="text-sm" />
               Goal Lines
             </button>
             <button
@@ -284,7 +285,7 @@ function GoalsModalContent() {
               onClick={handleClose}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
             >
-              <span className="material-symbols-outlined text-base">close</span>
+              <AuricIcon name="close" className="text-base" />
             </button>
           </div>
         </div>

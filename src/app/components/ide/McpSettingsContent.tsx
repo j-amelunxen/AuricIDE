@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useStore } from '@/lib/store';
 import { buildMcpConfig, initMcpJson } from '@/lib/settings/mcpConfig';
 import { SettingsToggle } from '../ui/settings/SettingsToggle';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 type InitFeedback = { kind: 'success' | 'error'; message: string } | null;
 
@@ -59,7 +60,7 @@ export function McpSettingsContent() {
     <div className="space-y-6">
       <section className="space-y-4">
         <div className="flex items-center gap-2 text-primary-light">
-          <span className="material-symbols-outlined text-sm">hub</span>
+          <AuricIcon name="hub" className="text-sm" />
           <h3 className="text-[10px] font-black uppercase tracking-widest">MCP Server</h3>
         </div>
 
@@ -103,7 +104,7 @@ export function McpSettingsContent() {
 
       <section className="space-y-4 pt-4 border-t border-white/5">
         <div className="flex items-center gap-2 text-primary-light">
-          <span className="material-symbols-outlined text-sm">code</span>
+          <AuricIcon name="code" className="text-sm" />
           <h3 className="text-[10px] font-black uppercase tracking-widest">Agent Configuration</h3>
         </div>
 
@@ -144,9 +145,7 @@ export function McpSettingsContent() {
               onClick={handleCopy}
               className="absolute top-2 right-2 rounded border border-white/10 bg-black/60 p-1 text-foreground-muted hover:text-foreground transition-colors"
             >
-              <span className="material-symbols-outlined text-[14px]">
-                {copied ? 'check' : 'content_copy'}
-              </span>
+              <AuricIcon name={copied ? 'check' : 'content_copy'} className="text-[14px]" />
             </button>
           </div>
         </div>

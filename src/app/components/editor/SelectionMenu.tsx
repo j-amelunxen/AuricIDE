@@ -1,5 +1,7 @@
 'use client';
 
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
+
 interface SelectionMenuProps {
   x: number;
   y: number;
@@ -27,7 +29,7 @@ export function SelectionMenu({
         onClick={() => onSpawnAgent(selection)}
         className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-primary hover:bg-primary/10 rounded transition-colors"
       >
-        <span className="material-symbols-outlined text-sm">bolt</span>
+        <AuricIcon name="bolt" className="text-sm" />
         SPAWN AGENT
       </button>
 
@@ -36,7 +38,7 @@ export function SelectionMenu({
           onClick={onFixAsciiArt}
           className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-accent hover:bg-accent/10 rounded transition-colors"
         >
-          <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+          <AuricIcon name="auto_fix_high" className="text-sm" />
           FIX ASCII-ART
         </button>
       )}

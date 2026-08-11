@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface PDFViewerProps {
   src: string; // base64-encoded PDF
@@ -120,7 +121,7 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
           className="p-1 hover:text-primary transition-colors"
           title="Zoom Out"
         >
-          <span className="material-symbols-outlined text-sm">remove_circle</span>
+          <AuricIcon name="remove_circle" className="text-sm" />
         </button>
         <span className="text-[10px] font-mono min-w-[40px] text-center">
           {Math.round(scale * 100)}%
@@ -130,14 +131,14 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
           className="p-1 hover:text-primary transition-colors"
           title="Zoom In"
         >
-          <span className="material-symbols-outlined text-sm">add_circle</span>
+          <AuricIcon name="add_circle" className="text-sm" />
         </button>
         <button
           onClick={handleReset}
           className="p-1 hover:text-primary transition-colors"
           title="Reset Zoom"
         >
-          <span className="material-symbols-outlined text-sm">restart_alt</span>
+          <AuricIcon name="restart_alt" className="text-sm" />
         </button>
 
         {numPages > 1 && (
@@ -150,7 +151,7 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
               className="p-1 hover:text-primary transition-colors disabled:opacity-30"
               title="Previous Page"
             >
-              <span className="material-symbols-outlined text-sm">chevron_left</span>
+              <AuricIcon name="chevron_left" className="text-sm" />
             </button>
             <span className="text-[10px] font-mono min-w-[50px] text-center">
               {currentPage} / {numPages}
@@ -161,7 +162,7 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
               className="p-1 hover:text-primary transition-colors disabled:opacity-30"
               title="Next Page"
             >
-              <span className="material-symbols-outlined text-sm">chevron_right</span>
+              <AuricIcon name="chevron_right" className="text-sm" />
             </button>
           </>
         )}

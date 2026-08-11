@@ -13,6 +13,7 @@ import { McpSettingsContent } from './McpSettingsContent';
 import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
 import { ExcalidrawContent } from './settings/ExcalidrawContent';
 import { VideoImportContent } from './settings/VideoImportContent';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -103,7 +104,7 @@ function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-sm">settings</span>
+            <AuricIcon name="settings" className="text-primary text-sm" />
             <h2
               id="settings-modal-title"
               className="text-sm font-bold tracking-tight text-foreground uppercase"
@@ -116,7 +117,7 @@ function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
             onClick={onClose}
             className="text-foreground-muted hover:text-foreground transition-colors rounded hover:bg-white/10 p-1"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <AuricIcon name="close" className="text-[18px]" />
           </button>
         </div>
 
@@ -137,7 +138,7 @@ function SettingsDialog({ onClose }: Pick<SettingsModalProps, 'onClose'>) {
                       : 'border-transparent text-foreground-muted hover:text-foreground hover:bg-white/5'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-sm">{cat.icon}</span>
+                  <AuricIcon name={cat.icon} className="text-sm" />
                   {cat.label}
                 </button>
               );

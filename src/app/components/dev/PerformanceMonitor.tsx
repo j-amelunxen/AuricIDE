@@ -5,6 +5,7 @@ import type { MemorySnapshot, StoreMetrics } from '@/lib/metrics/types';
 import { getMetricsCollector, destroyMetricsCollector } from '@/lib/metrics';
 import { MAX_TERMINAL_LOGS } from '@/lib/store/uiSlice';
 import { MAX_AGENT_LOGS, MAX_AGENT_LOG_BYTES } from '@/lib/store/agentSlice';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface TauriProcessEntry {
   label: string;
@@ -186,9 +187,7 @@ export function PerformanceMonitor() {
         className={`fixed bottom-1 right-1.5 z-[9999] flex h-6 items-center gap-1.5 px-2 rounded-md text-[11px] font-mono font-bold shadow-lg transition-[filter] hover:brightness-110 ${colorClass}`}
         title="Performance Monitor: click to expand"
       >
-        <span className="material-symbols-outlined text-sm" aria-hidden="true">
-          memory
-        </span>
+        <AuricIcon name="memory" className="text-sm" aria-hidden="true" />
         {badgeText}
         {processes.length > 1 && (
           <span className="ml-0.5 px-1 rounded-full bg-white/20 text-[10px]">
@@ -214,9 +213,7 @@ export function PerformanceMonitor() {
               aria-label="Close performance monitor"
               className="text-foreground-muted hover:text-foreground"
             >
-              <span className="material-symbols-outlined text-sm" aria-hidden="true">
-                close
-              </span>
+              <AuricIcon name="close" className="text-sm" aria-hidden="true" />
             </button>
           </div>
 

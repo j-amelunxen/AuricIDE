@@ -37,7 +37,6 @@ export type GlyphMap = Record<string, IconGlyph>;
 
 /** Shorthand builders keeping glyph files terse and uniform. */
 export const p = (d: string): IconPrimitive => ({ kind: 'path', d });
-export const pFill = (d: string): IconPrimitive => ({ kind: 'path', d, fill: true });
 export const c = (cx: number, cy: number, r: number): IconPrimitive => ({
   kind: 'circle',
   cx,
@@ -58,13 +57,14 @@ export const dot = (cx: number, cy: number, r = 2): IconPrimitive => ({
   r,
   accent: true,
 });
-export const r = (
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  rx = 1.5
-): IconPrimitive => ({ kind: 'rect', x, y, w, h, rx });
+export const r = (x: number, y: number, w: number, h: number, rx = 1.5): IconPrimitive => ({
+  kind: 'rect',
+  x,
+  y,
+  w,
+  h,
+  rx,
+});
 export const l = (x1: number, y1: number, x2: number, y2: number): IconPrimitive => ({
   kind: 'line',
   x1,

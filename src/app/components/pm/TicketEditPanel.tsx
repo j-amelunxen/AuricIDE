@@ -8,6 +8,7 @@ import { TicketContextEditor } from './TicketContextEditor';
 import { useStore } from '@/lib/store';
 import { generateTicketPrompt } from '@/lib/pm/prompt';
 import { InfoTooltip } from '../ui/InfoTooltip';
+import { AuricIcon } from '../ui/AuricIcon';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useLLM } from '@/lib/hooks/useLLM';
 import {
@@ -227,7 +228,7 @@ export function TicketEditPanel({
     <div className="flex h-full flex-col">
       {isBlocked && (
         <div className="flex items-center gap-2 bg-git-deleted/10 px-4 py-2 border-b border-git-deleted/20">
-          <span className="material-symbols-outlined text-[16px] text-git-deleted">warning</span>
+          <AuricIcon name="warning" className="text-[16px] text-git-deleted" />
           <span className="text-[11px] font-medium text-git-deleted">
             This ticket is blocked by unfinished dependencies.
           </span>
@@ -308,7 +309,7 @@ export function TicketEditPanel({
             onClick={handleSpawnAgent}
             className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary-light transition hover:bg-primary/20"
           >
-            <span className="material-symbols-outlined text-[16px]">smart_toy</span>
+            <AuricIcon name="smart_toy" className="text-[16px]" />
             Spawn Agent
           </button>
 
@@ -322,9 +323,7 @@ export function TicketEditPanel({
                 : 'bg-white/5 border-white/10 text-foreground-muted hover:bg-white/10 hover:text-foreground'
             }`}
           >
-            <span className="material-symbols-outlined text-[16px]">
-              {copied ? 'check' : 'content_copy'}
-            </span>
+            <AuricIcon name={copied ? 'check' : 'content_copy'} className="text-[16px]" />
             {copied ? 'Copied!' : 'Copy Prompt'}
           </button>
 
@@ -334,7 +333,7 @@ export function TicketEditPanel({
             onClick={() => onDeleteTicket(ticket.id)}
             className="rounded-lg p-1.5 text-foreground-muted opacity-50 hover:opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-colors"
           >
-            <span className="material-symbols-outlined text-[18px]">delete</span>
+            <AuricIcon name="delete" className="text-[18px]" />
           </button>
         </div>
       </div>
@@ -468,7 +467,7 @@ export function TicketEditPanel({
                 disabled={isLlmLoading}
                 className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span className="material-symbols-outlined text-[14px]">psychology</span>
+                <AuricIcon name="psychology" className="text-[14px]" />
                 Derive Test Cases
               </button>
             </div>
@@ -494,7 +493,7 @@ export function TicketEditPanel({
                 disabled={isLlmLoading}
                 className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light transition hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span className="material-symbols-outlined text-[14px]">lightbulb</span>
+                <AuricIcon name="lightbulb" className="text-[14px]" />
                 Propose Dependencies
               </button>
             </div>
@@ -543,7 +542,7 @@ export function TicketEditPanel({
                   }}
                   className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition flex items-center gap-1.5"
                 >
-                  <span className="material-symbols-outlined text-[16px]">folder_open</span>
+                  <AuricIcon name="folder_open" className="text-[16px]" />
                   Browse
                 </button>
               </div>
@@ -571,9 +570,10 @@ export function TicketEditPanel({
                     : 'bg-white/5 border-white/10 text-foreground-muted hover:bg-white/10'
                 }`}
               >
-                <span className="material-symbols-outlined text-[16px]">
-                  {ticket.needsHumanSupervision ? 'visibility' : 'visibility_off'}
-                </span>
+                <AuricIcon
+                  name={ticket.needsHumanSupervision ? 'visibility' : 'visibility_off'}
+                  className="text-[16px]"
+                />
                 {ticket.needsHumanSupervision ? 'Enabled' : 'Disabled'}
               </button>
               <p className="mt-1.5 text-[10px] text-foreground-muted">

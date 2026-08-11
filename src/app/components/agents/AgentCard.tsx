@@ -10,6 +10,7 @@ import { AGENT_STATE_LABEL, agentState, type AgentState } from '@/lib/agents/sta
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 import { stripAnsi } from '@/lib/terminal/ansi';
 import { scrollBehavior } from '@/lib/motion';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -241,9 +242,11 @@ export function AgentCard({
                   : 'from-white/5 to-transparent'
             }`}
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-lg text-foreground">
-              {viewMode === 'terminal' ? 'terminal' : 'smart_toy'}
-            </span>
+            <AuricIcon
+              name={viewMode === 'terminal' ? 'terminal' : 'smart_toy'}
+              aria-hidden="true"
+              className="text-lg text-foreground"
+            />
             {/* Anchored inside the tile rather than hanging half outside it,
                 where it read as a stray dot. It scans the list at a glance;
                 the chip carries the same state in words. */}
@@ -324,9 +327,7 @@ export function AgentCard({
               title="Rename agent"
               aria-label="Rename agent"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-sm">
-                edit
-              </span>
+              <AuricIcon name="edit" aria-hidden="true" className="text-sm" />
             </button>
           )}
           {onMinimize && (
@@ -339,9 +340,7 @@ export function AgentCard({
               title="Park agent — keeps it running, folds it to one line"
               aria-label="Park agent"
             >
-              <span aria-hidden="true" className="material-symbols-outlined text-sm">
-                keyboard_arrow_down
-              </span>
+              <AuricIcon name="keyboard_arrow_down" aria-hidden="true" className="text-sm" />
             </button>
           )}
           <button
@@ -350,9 +349,11 @@ export function AgentCard({
             title={viewMode === 'terminal' ? 'Show Status' : 'Show Terminal'}
             aria-label={viewMode === 'terminal' ? 'Show Status' : 'Show Terminal'}
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-sm">
-              {viewMode === 'terminal' ? 'analytics' : 'terminal'}
-            </span>
+            <AuricIcon
+              name={viewMode === 'terminal' ? 'analytics' : 'terminal'}
+              aria-hidden="true"
+              className="text-sm"
+            />
           </button>
           <button
             onClick={(e) => {
@@ -363,9 +364,7 @@ export function AgentCard({
             title="Terminate Agent"
             aria-label="Terminate Agent"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-sm">
-              power_settings_new
-            </span>
+            <AuricIcon name="power_settings_new" aria-hidden="true" className="text-sm" />
           </button>
         </div>
       </div>
@@ -434,9 +433,7 @@ export function AgentCard({
                 }}
                 className="flex items-center justify-center gap-1 rounded-lg border border-orange-400/25 bg-orange-400/5 px-2 py-1.5 text-[10px] font-medium text-orange-300 transition-colors hover:bg-orange-400/15"
               >
-                <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-                  notifications_active
-                </span>
+                <AuricIcon name="notifications_active" aria-hidden="true" className="text-[13px]" />
                 Nudge — send Enter
               </button>
             )}

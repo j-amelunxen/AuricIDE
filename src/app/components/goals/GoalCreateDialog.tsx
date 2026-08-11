@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface GoalCreateDialogProps {
   isOpen: boolean;
@@ -76,7 +77,7 @@ export function GoalCreateDialog({
         className="w-[520px] max-w-[92vw] rounded-2xl border border-white/10 bg-background-dark p-5 shadow-2xl"
       >
         <div className="mb-4 flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary-light">flag</span>
+          <AuricIcon name="flag" className="text-primary-light" />
           <h2 id="goal-create-dialog-title" className="text-sm font-bold text-foreground">
             {parentId ? 'New sub-goal' : 'New goal'}
           </h2>

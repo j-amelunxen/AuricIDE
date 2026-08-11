@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import fuzzysort from 'fuzzysort';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface FileSearchProps {
   files: string[];
@@ -102,7 +103,7 @@ function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearc
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 border-b border-white/5">
-          <span className="material-symbols-outlined text-foreground-muted">search</span>
+          <AuricIcon name="search" className="text-foreground-muted" />
           <input
             ref={inputRef}
             type="text"
@@ -140,11 +141,10 @@ function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearc
                       : 'hover:bg-white/5 border-l-2 border-transparent'
                   }`}
                 >
-                  <span
-                    className={`material-symbols-outlined text-lg ${isSelected ? 'text-primary' : 'text-foreground-muted'}`}
-                  >
-                    description
-                  </span>
+                  <AuricIcon
+                    name="description"
+                    className={`text-lg ${isSelected ? 'text-primary' : 'text-foreground-muted'}`}
+                  />
                   <div className="flex flex-col min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-4">
                       <span

@@ -12,8 +12,8 @@ const options: ContextMenuOption[] = [
 
 describe('ContextMenu', () => {
   it('names an item by its label alone', () => {
-    // Material Symbols are ligatures, so an unhidden icon puts its source text
-    // ("circle") into the item's accessible name.
+    // An icon that is not hidden from assistive tech would add its own name
+    // ("circle") to the item's accessible name.
     render(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} />);
     expect(screen.getByRole('menuitem', { name: 'Red' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Remove colour' })).toBeInTheDocument();
@@ -21,7 +21,7 @@ describe('ContextMenu', () => {
 
   it('hides icon glyphs from assistive technology', () => {
     const { container } = render(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} />);
-    const icons = container.querySelectorAll('.material-symbols-outlined');
+    const icons = container.querySelectorAll('[data-icon]');
     expect(icons.length).toBeGreaterThan(0);
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });

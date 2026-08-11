@@ -5,6 +5,7 @@ import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
 import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import { buildImportSpecPrompt } from '@/lib/pm/importSpecPrompt';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface ImportSpecDialogProps {
   isOpen: boolean;
@@ -21,12 +22,11 @@ export function ImportSpecDialog(props: ImportSpecDialogProps) {
 /** Dropdown affordance for `appearance-none` selects. */
 function SelectChevron() {
   return (
-    <span
+    <AuricIcon
+      name="expand_more"
       aria-hidden="true"
-      className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
-    >
-      expand_more
-    </span>
+      className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-base text-foreground-muted"
+    />
   );
 }
 
@@ -123,7 +123,7 @@ function ImportSpecDialogPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">description</span>
+          <AuricIcon name="description" className="text-primary" />
           <h2
             id="import-spec-title"
             className="text-sm font-bold tracking-tight text-foreground uppercase"

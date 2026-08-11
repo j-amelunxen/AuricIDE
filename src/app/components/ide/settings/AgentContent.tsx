@@ -7,6 +7,7 @@ import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { importProvider, listProviders } from '@/lib/tauri/providers';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function AgentContent() {
   const agentSettings = useStore((s) => s.agentSettings);
@@ -133,9 +134,7 @@ export function AgentContent() {
           data-testid="import-provider-button"
           className="mt-1 flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-bold text-primary-light transition-colors duration-150 hover:bg-primary/20 active:scale-[0.98]"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-            upload_file
-          </span>
+          <AuricIcon name="upload_file" aria-hidden="true" className="text-[16px]" />
           Import Provider…
         </button>
       </SettingsSection>

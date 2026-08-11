@@ -7,6 +7,7 @@ import { BlueprintCreateModal } from './BlueprintCreateModal';
 import type { Blueprint } from '@/lib/tauri/blueprints';
 import { CATEGORY_LABELS } from '@/lib/blueprints/constants';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function BlueprintsPanel() {
   const {
@@ -88,17 +89,18 @@ export function BlueprintsPanel() {
                         : 'text-foreground-muted'
                 }
               >
-                <span
-                  className={`material-symbols-outlined text-[12px] ${blueprintSyncStatus === 'syncing' ? 'animate-spin' : ''}`}
-                >
-                  {blueprintSyncStatus === 'syncing'
-                    ? 'sync'
-                    : blueprintSyncStatus === 'success'
-                      ? 'check_circle'
-                      : blueprintSyncStatus === 'error'
-                        ? 'error'
-                        : 'wifi_off'}
-                </span>
+                <AuricIcon
+                  name={
+                    blueprintSyncStatus === 'syncing'
+                      ? 'sync'
+                      : blueprintSyncStatus === 'success'
+                        ? 'check_circle'
+                        : blueprintSyncStatus === 'error'
+                          ? 'error'
+                          : 'wifi_off'
+                  }
+                  className={`text-[12px] ${blueprintSyncStatus === 'syncing' ? 'animate-spin' : ''}`}
+                />
               </span>
             )}
           </div>
@@ -107,7 +109,7 @@ export function BlueprintsPanel() {
             className="rounded p-0.5 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
             title="New blueprint"
           >
-            <span className="material-symbols-outlined text-[14px]">add</span>
+            <AuricIcon name="add" className="text-[14px]" />
           </button>
         </div>
 
@@ -115,9 +117,10 @@ export function BlueprintsPanel() {
         <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
           {blueprintsDraft.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <span className="material-symbols-outlined mb-3 text-3xl text-foreground-muted opacity-40">
-                library_books
-              </span>
+              <AuricIcon
+                name="library_books"
+                className="mb-3 text-3xl text-foreground-muted opacity-40"
+              />
               <p className="text-xs text-foreground-muted">No blueprints yet</p>
               <button
                 onClick={() => setBlueprintsModalOpen(true)}

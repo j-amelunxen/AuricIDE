@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface HtmlViewerProps {
   /** Raw HTML source of the file. */
@@ -23,12 +24,7 @@ export function HtmlViewer({ content, fileName }: HtmlViewerProps) {
     <div data-testid="html-viewer" className="flex h-full flex-col bg-editor-bg">
       <div className="flex items-center justify-between border-b border-white/5 px-4 py-2 glass">
         <div className="flex items-center gap-2 text-xs text-foreground-muted">
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-[16px] text-orange-600"
-          >
-            html
-          </span>
+          <AuricIcon aria-hidden="true" name="html" className="text-[16px] text-orange-600" />
           <span className="font-medium text-foreground">{fileName}</span>
         </div>
         <div

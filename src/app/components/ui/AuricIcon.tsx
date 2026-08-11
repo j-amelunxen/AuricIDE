@@ -23,7 +23,15 @@ function renderPrimitive(prim: IconPrimitive, key: number) {
       return <circle key={key} cx={prim.cx} cy={prim.cy} r={prim.r} {...props} />;
     case 'rect':
       return (
-        <rect key={key} x={prim.x} y={prim.y} width={prim.w} height={prim.h} rx={prim.rx} {...props} />
+        <rect
+          key={key}
+          x={prim.x}
+          y={prim.y}
+          width={prim.w}
+          height={prim.h}
+          rx={prim.rx}
+          {...props}
+        />
       );
     case 'line':
       return <line key={key} x1={prim.x1} y1={prim.y1} x2={prim.x2} y2={prim.y2} {...props} />;

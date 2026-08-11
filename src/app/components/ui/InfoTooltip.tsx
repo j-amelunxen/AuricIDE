@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface InfoTooltipProps {
   description: string;
@@ -18,7 +19,7 @@ export function InfoTooltip({ description, label }: InfoTooltipProps) {
         onMouseLeave={() => setIsVisible(false)}
         className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/20 bg-white/5 text-[9px] font-bold text-foreground-muted hover:bg-white/10 hover:text-foreground transition cursor-help select-none"
       >
-        {label || <span className="material-symbols-outlined text-[12px]">info</span>}
+        {label || <AuricIcon name="info" className="text-[12px]" />}
       </button>
 
       {isVisible && (

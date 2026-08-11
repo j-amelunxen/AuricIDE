@@ -108,7 +108,7 @@ describe('Header', () => {
         llmConfigured
       />
     );
-    const icons = container.querySelectorAll('.material-symbols-outlined');
+    const icons = container.querySelectorAll('[data-icon]');
     expect(icons.length).toBeGreaterThan(0);
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });
@@ -124,7 +124,7 @@ describe('Header', () => {
       />
     );
     const headingNav = screen.getByTestId('heading-breadcrumbs');
-    const chevrons = headingNav.querySelectorAll('.material-symbols-outlined');
+    const chevrons = headingNav.querySelectorAll('[data-icon]');
     // First icon is the document icon prefix, then one chevron separator between A and B
     expect(chevrons.length).toBeGreaterThanOrEqual(2);
   });

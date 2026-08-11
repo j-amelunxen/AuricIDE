@@ -134,7 +134,7 @@ describe('StatusBar', () => {
 
   it('hides icon glyphs from assistive technology', () => {
     const { container } = render(<StatusBar branch="main" syncStatus="syncing" />);
-    const icons = container.querySelectorAll('.material-symbols-outlined');
+    const icons = container.querySelectorAll('[data-icon]');
     expect(icons.length).toBeGreaterThan(0);
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });

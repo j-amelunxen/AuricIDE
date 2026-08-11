@@ -102,7 +102,7 @@ describe('AgentCard', () => {
 
   it('hides icon glyphs from assistive technology', () => {
     const { container } = render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
-    const icons = container.querySelectorAll('.material-symbols-outlined');
+    const icons = container.querySelectorAll('[data-icon]');
     expect(icons.length).toBeGreaterThan(0);
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
   });

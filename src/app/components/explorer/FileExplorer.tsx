@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface FileTreeNode {
   name: string;
@@ -186,17 +187,24 @@ function TreeNode({
         style={{ paddingLeft }}
       >
         {node.isDirectory && (
-          <span aria-hidden="true" className="material-symbols-outlined text-[14px] opacity-60">
-            {node.expanded ? 'expand_more' : 'chevron_right'}
-          </span>
+          <AuricIcon
+            aria-hidden="true"
+            name={node.expanded ? 'expand_more' : 'chevron_right'}
+            className="text-[14px] opacity-60"
+          />
         )}
 
-        <span
+        <AuricIcon
           aria-hidden="true"
-          className={`material-symbols-outlined text-[16px] ${node.isDirectory ? 'text-primary/30' : fileInfo?.color || 'text-foreground-muted'}`}
-        >
-          {node.isDirectory ? (node.expanded ? 'folder_open' : 'folder') : fileInfo?.icon}
-        </span>
+          name={
+            node.isDirectory
+              ? node.expanded
+                ? 'folder_open'
+                : 'folder'
+              : fileInfo?.icon || 'description'
+          }
+          className={`text-[16px] ${node.isDirectory ? 'text-primary/30' : fileInfo?.color || 'text-foreground-muted'}`}
+        />
 
         <span className="flex-1 truncate ml-0.5">{node.name}</span>
 
@@ -253,9 +261,7 @@ export function FileExplorer({
           title="Open Folder"
           aria-label="Open Folder"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-            create_new_folder
-          </span>
+          <AuricIcon aria-hidden="true" name="create_new_folder" className="text-[16px]" />
         </button>
         <button
           onClick={onNewFile}
@@ -263,9 +269,7 @@ export function FileExplorer({
           title="New File"
           aria-label="New File"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-            add_box
-          </span>
+          <AuricIcon aria-hidden="true" name="add_box" className="text-[16px]" />
         </button>
         <button
           onClick={onRefresh}
@@ -273,9 +277,7 @@ export function FileExplorer({
           title="Refresh"
           aria-label="Refresh"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-            refresh
-          </span>
+          <AuricIcon aria-hidden="true" name="refresh" className="text-[16px]" />
         </button>
       </div>
       <div

@@ -1,5 +1,6 @@
 'use client';
 
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import {
   ReactFlow,
   Background,
@@ -283,7 +284,7 @@ export function MermaidFlowchartView({ data, onDataChange }: MermaidFlowchartVie
                 onClick={() => setIsFullscreen(true)}
                 aria-label="Expand"
               >
-                {'⛶'} Expand
+                <AuricIcon name="open_in_full" /> Expand
               </button>
             </div>
           </Panel>

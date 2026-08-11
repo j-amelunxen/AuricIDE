@@ -6,6 +6,7 @@ import { sendToAgent } from '@/lib/tauri/agents';
 import { XtermTerminal } from './XtermTerminal';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export type TerminalTabId = 'terminal' | string;
 
@@ -97,20 +98,18 @@ export function TerminalPanel({
                 }`}
               >
                 {isAgent && (
-                  <span
+                  <AuricIcon
+                    name={isLive ? 'sensors' : 'smart_toy'}
                     aria-hidden="true"
-                    className={`material-symbols-outlined text-[14px] ${isLive ? 'text-primary animate-pulse' : 'text-primary/50'}`}
-                  >
-                    {isLive ? 'sensors' : 'smart_toy'}
-                  </span>
+                    className={`text-[14px] ${isLive ? 'text-primary animate-pulse' : 'text-primary/50'}`}
+                  />
                 )}
                 {isExtra && (
-                  <span
+                  <AuricIcon
+                    name="terminal"
                     aria-hidden="true"
-                    className="material-symbols-outlined text-[14px] text-green-400/70"
-                  >
-                    terminal
-                  </span>
+                    className="text-[14px] text-green-400/70"
+                  />
                 )}
                 <span>{getTabLabel(tabId)}</span>
                 {isLive && (

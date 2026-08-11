@@ -243,17 +243,43 @@ Ligatures and contextual alternates are enabled globally. Subpixel antialiasing 
 
 ---
 
-## 5. Iconography
+## 5. Iconography — the "Auric Line" Set
 
 ### Icon System
 
-**Material Symbols Outlined** — loaded from Google Fonts with full optical size range.
+AuricIDE ships its own inline-SVG icon set. There is no icon font and no
+third-party icon package: every glyph is data in
+`src/lib/icons/glyphs/*.ts`, rendered by the `AuricIcon` React component
+(`src/app/components/ui/AuricIcon.tsx`) or, for raw-DOM contexts like
+CodeMirror widgets, by `iconSvgMarkup()` (`src/lib/icons/svgString.ts`).
 
-```
-opsz: 20–48, wght: 100–700, FILL: 0–1, GRAD: -50–200
-```
+Names keep the Material Symbols ligature vocabulary (`folder`,
+`task_alt`, `smart_toy`, …) so call sites read naturally and swaps stay
+mechanical; `ICON_ALIASES` maps synonyms onto shared glyphs.
+
+### Drawing Style
+
+The set was derived from a Recraft-generated style study (see
+`docs/assets/icons/`) and is hand-authored for stroke consistency:
+
+| Rule             | Value                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Grid             | 24 × 24 viewBox, line work inside x/y ∈ [3, 21]                                                                     |
+| Stroke           | 1.5 px, `currentColor`, round caps and joins, no fill                                                               |
+| Geometry         | Few primitives; one continuous path beats many fragments                                                            |
+| Accent           | **At most one** small filled shape per glyph, `var(--primary)`                                                      |
+| Accent placement | The glyph's "live point": folder badge corner, search lens center, terminal cursor, route origin, robot antenna tip |
+| No accent        | Utility glyphs (arrows, chevrons, close) and status glyphs                                                          |
+| Status glyphs    | Inner mark fills `currentColor` — status color semantics (red error, amber warning) always beat brand color         |
+
+Because line work rides on `currentColor` and the accent on
+`var(--primary)`, every icon re-themes live when the user switches the
+accent color in Settings → Appearance. This only works inline — never
+load these SVGs via `<img>`.
 
 ### Size Conventions
+
+`AuricIcon` renders a 1em × 1em box, so font-size utilities size icons:
 
 | Context              | Size               |
 | -------------------- | ------------------ |
@@ -266,6 +292,41 @@ opsz: 20–48, wght: 100–700, FILL: 0–1, GRAD: -50–200
 - Default: `foreground-muted` (`#808090`) or `opacity-70`
 - Hover: `foreground` (`#e0e0e0`) or `opacity-100`
 - Active: `primary` (`#bc13fe`) or `primary-light` (`#d66aff`)
+- The accent primitive always follows `var(--primary)` on its own.
+
+### Adding New Glyphs
+
+1. Pick the family file in `src/lib/icons/glyphs/` (or `status.ts`).
+2. Compose the glyph from the builders in `src/lib/icons/types.ts`
+   (`p`, `c`, `r`, `l`, `dot`, `cFill`), following the table above.
+   `core.ts` holds the reference exemplars.
+3. Run `pnpm test:run src/lib/icons/registry.test.ts` — tests enforce
+   grid bounds, the one-accent rule, and naming.
+4. Check it visually at 14 px on `#050508` before shipping.
+
+### Generating Style Studies (Higgsfield CLI)
+
+For explorations and marketing-scale icon art, the original recipe:
+
+```bash
+higgsfield generate create recraft_v4_1 \
+  --prompt "Minimalist flat vector UI icon set for a dark futuristic IDE, \
+a clean 4x4 grid of 16 line icons, evenly spaced on a very dark background: \
+<motif list>. Ultra-thin uniform strokes, geometric shapes, rounded line \
+caps and joins, consistent sizing on a shared grid, light gray strokes with \
+exactly one small neon purple accent detail per icon, subtle sci-fi HUD \
+cockpit feel, no text, no labels, no borders, no glow" \
+  --model_type vector --resolution 1k --aspect_ratio 1:1 --wait
+```
+
+Known quirks: describe colors **verbally in the prompt** —
+combining a long prompt with the `--colors` param falsely trips the
+content filter; array params want a JSON literal (`--colors '["#bc13fe"]'`).
+`model_type: vector` returns a real SVG. To tokenize a generated sheet:
+strip the `<metadata>` C2PA blob, then map near-purple fills →
+`var(--primary)`, light grays → `currentColor`, dark cover shapes →
+`var(--background)`. Generated output is a style reference — production
+glyphs are hand-authored for uniform stroke weight.
 
 ---
 
@@ -564,4 +625,4 @@ Used for: Animated flowchart edges.
 
 ---
 
-_Last updated: 2026-02-18_
+_Last updated: 2026-08-11_

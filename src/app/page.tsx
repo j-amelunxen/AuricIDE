@@ -40,6 +40,7 @@ import { GoalsModal } from './components/goals/GoalsModal';
 import { OrchestrationModal } from './components/goals/OrchestrationModal';
 import { GoalLinesModal } from './components/goalLines/GoalLinesModal';
 import { NewProjectModal, type NewProjectOptions } from './components/ide/NewProjectModal';
+import { AuricIcon } from './components/ui/AuricIcon';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
@@ -146,7 +147,7 @@ export default function Home() {
                     onClick={handlers.handleCloseProject}
                     className="text-foreground-muted hover:text-foreground transition-colors rounded hover:bg-white/10 p-0.5"
                   >
-                    <span className="material-symbols-outlined text-[14px]">close</span>
+                    <AuricIcon name="close" className="text-[14px]" />
                   </button>
                 </div>
               )}
@@ -434,7 +435,7 @@ export default function Home() {
                       data-testid="new-project-button"
                       className="flex items-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm font-bold text-foreground transition-[background-color,border-color] duration-150 hover:bg-white/5 hover:border-white/20 active:scale-[0.98]"
                     >
-                      <span className="material-symbols-outlined text-[18px]">add</span>
+                      <AuricIcon name="add" className="text-[18px]" />
                       New
                     </button>
                   </div>
@@ -460,9 +461,7 @@ export default function Home() {
                                 onClick={() => handlers.handleOpenRecent(project.path)}
                                 className="flex-1 flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/5"
                               >
-                                <span className="material-symbols-outlined text-primary-light text-base">
-                                  folder
-                                </span>
+                                <AuricIcon name="folder" className="text-primary-light text-base" />
                                 <span className="text-sm font-medium text-foreground truncate">
                                   {project.name}
                                 </span>
@@ -484,14 +483,7 @@ export default function Home() {
                                     : 'opacity-0 group-hover:opacity-100 text-foreground-muted hover:text-foreground hover:bg-white/10'
                                 }`}
                               >
-                                <span
-                                  className="material-symbols-outlined text-[14px]"
-                                  style={
-                                    isStarred ? { fontVariationSettings: "'FILL' 1" } : undefined
-                                  }
-                                >
-                                  star
-                                </span>
+                                <AuricIcon name="star" className="text-[14px]" />
                               </button>
                               <button
                                 onClick={(e) => {
@@ -502,7 +494,7 @@ export default function Home() {
                                 data-testid={`remove-recent-${project.path}`}
                                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-foreground-muted hover:text-foreground transition-all mr-1"
                               >
-                                <span className="material-symbols-outlined text-[14px]">close</span>
+                                <AuricIcon name="close" className="text-[14px]" />
                               </button>
                             </li>
                           );
@@ -515,9 +507,10 @@ export default function Home() {
                       Tip of the Day
                     </h2>
                     <div className="flex items-start gap-3 rounded-xl bg-primary/5 border border-primary/10 px-4 py-3">
-                      <span className="material-symbols-outlined text-primary-light text-base mt-0.5">
-                        {handlers.dailyTip.icon}
-                      </span>
+                      <AuricIcon
+                        name={handlers.dailyTip.icon}
+                        className="text-primary-light text-base mt-0.5"
+                      />
                       <p className="text-[12px] text-foreground-muted leading-relaxed">
                         {handlers.dailyTip.text}
                       </p>

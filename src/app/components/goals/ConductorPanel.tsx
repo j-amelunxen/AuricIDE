@@ -8,6 +8,7 @@ import type {
   ConductorRunSummary,
 } from '@/lib/store/conductorSlice';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface ConductorPanelProps {
   running: boolean;
@@ -285,7 +286,7 @@ export function ConductorPanel({
             onClick={() => setLogExpanded((v) => !v)}
             className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
           >
-            <span className="material-symbols-outlined text-sm">receipt_long</span>
+            <AuricIcon name="receipt_long" className="text-sm" />
             Log ({decisions.length})
           </button>
           {running ? (
@@ -294,7 +295,7 @@ export function ConductorPanel({
               onClick={onStop}
               className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-red-500/15 border border-red-500/25 px-3 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/25 transition-colors"
             >
-              <span className="material-symbols-outlined text-sm">stop</span>
+              <AuricIcon name="stop" className="text-sm" />
               Stop
             </button>
           ) : (
@@ -309,7 +310,7 @@ export function ConductorPanel({
               }
               className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-green-500/15 border border-green-500/25 px-3 py-1 text-[11px] font-bold text-green-300 hover:bg-green-500/25 transition-colors disabled:opacity-40"
             >
-              <span className="material-symbols-outlined text-sm">play_arrow</span>
+              <AuricIcon name="play_arrow" className="text-sm" />
               Start
             </button>
           )}
@@ -327,7 +328,7 @@ export function ConductorPanel({
           </p>
           {pendingApprovals.map((ticket) => (
             <div key={ticket.id} className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm text-amber-400">pan_tool</span>
+              <AuricIcon name="pan_tool" className="text-sm text-amber-400" />
               <span className="flex-1 truncate text-[11px] text-foreground">{ticket.name}</span>
               <button
                 data-testid={`conductor-approve-${ticket.id}`}
@@ -361,9 +362,7 @@ export function ConductorPanel({
               const meta = DECISION_ICONS[d.action];
               return (
                 <div key={d.id} className="flex items-start gap-2 text-[10px]">
-                  <span className={`material-symbols-outlined text-[13px] ${meta.cls}`}>
-                    {meta.icon}
-                  </span>
+                  <AuricIcon name={meta.icon} className={`text-[13px] ${meta.cls}`} />
                   <span className="flex-1 text-foreground/80">{d.detail}</span>
                   <span className="tabular-nums text-foreground-muted/60">{d.timestamp}</span>
                 </div>

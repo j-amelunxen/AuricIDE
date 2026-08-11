@@ -12,6 +12,7 @@ import { GoalLineBoard } from './GoalLineBoard';
 import { ForYouQueue } from './ForYouQueue';
 import { PlannerPanel } from './PlannerPanel';
 import { ForkProposals } from './ForkProposals';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 /**
  * Goal Lines — every goal as a metro line: done work left, the front where
@@ -184,9 +185,7 @@ function GoalLinesModalContent() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">
         <div className="flex items-center gap-3">
-          <span aria-hidden="true" className="material-symbols-outlined text-primary-light">
-            route
-          </span>
+          <AuricIcon name="route" aria-hidden="true" className="text-primary-light" />
           <h1 id="goal-lines-modal-title" className="text-sm font-bold text-foreground">
             Goal Lines
           </h1>
@@ -208,9 +207,7 @@ function GoalLinesModalContent() {
           onClick={handleClose}
           className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-base">
-            close
-          </span>
+          <AuricIcon name="close" aria-hidden="true" className="text-base" />
         </button>
       </div>
 
@@ -218,12 +215,11 @@ function GoalLinesModalContent() {
       <div className="flex-1 overflow-y-auto p-6">
         {lines.length === 0 && notStarted.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <span
+            <AuricIcon
+              name="route"
               aria-hidden="true"
-              className="material-symbols-outlined text-4xl text-foreground-muted/30"
-            >
-              route
-            </span>
+              className="text-4xl text-foreground-muted/30"
+            />
             <p className="text-xs text-foreground-muted">No goal has work attached yet.</p>
             <p className="max-w-[320px] text-[10px] text-foreground-muted/70">
               Create a goal and attach tickets — each goal becomes a line here, with done work on

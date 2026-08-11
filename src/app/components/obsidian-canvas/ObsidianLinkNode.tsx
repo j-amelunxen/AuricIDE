@@ -1,5 +1,6 @@
 'use client';
 
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { getNodeBorderStyle, getNodeBorderColor } from './nodeStyles';
 import type { ObsidianColor } from '@/lib/obsidian-canvas/types';
@@ -24,7 +25,7 @@ export function ObsidianLinkNode({ data, selected }: NodeProps & { data: Obsidia
       <div className="px-3 py-2">
         <div className="flex items-center gap-2">
           <span data-testid="link-icon" className="text-base" aria-hidden="true">
-            🔗
+            <AuricIcon name="link" />
           </span>
           <p data-testid="link-url" className="text-sm text-blue-400 truncate" title={data.url}>
             {data.url}

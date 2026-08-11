@@ -3,6 +3,7 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { OrchestrationNodeData } from '@/lib/orchestration/graphBuilder';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const KIND_META: Record<
   OrchestrationNodeData['kind'],
@@ -42,7 +43,7 @@ function OrchestrationNodeInner({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} className="!bg-white/30 !border-0 !h-2 !w-2" />
       <div className="flex items-center gap-2">
-        <span className={`material-symbols-outlined text-base ${meta.iconCls}`}>{meta.icon}</span>
+        <AuricIcon name={meta.icon} className={`text-base ${meta.iconCls}`} />
         <span className="flex-1 truncate text-[11px] font-semibold text-foreground">{d.label}</span>
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOTS[d.status] ?? 'bg-gray-400'}`}

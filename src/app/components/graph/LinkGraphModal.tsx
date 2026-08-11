@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from 'react';
 import { LinkGraphView } from './LinkGraphView';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface LinkGraphModalProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ function LinkGraphDialog({ onClose, onFileSelect }: Omit<LinkGraphModalProps, 'i
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/2 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary neon-glow border border-primary/20">
-              <span className="material-symbols-outlined text-xl">hub</span>
+              <AuricIcon name="hub" className="text-xl" />
             </div>
             <div>
               <h2
@@ -66,7 +67,7 @@ function LinkGraphDialog({ onClose, onFileSelect }: Omit<LinkGraphModalProps, 'i
 
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-[10px] text-foreground-muted">
-              <span className="material-symbols-outlined text-xs">keyboard</span>
+              <AuricIcon name="keyboard" className="text-xs" />
               <span>
                 Press{' '}
                 <kbd className="px-1 py-0.5 rounded bg-white/10 text-primary-light font-mono">
@@ -80,7 +81,7 @@ function LinkGraphDialog({ onClose, onFileSelect }: Omit<LinkGraphModalProps, 'i
               title="Close"
               className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-all duration-300 hover:bg-white/5 hover:text-foreground border border-transparent hover:border-white/10"
             >
-              <span className="material-symbols-outlined text-xl group-hover:scale-110">close</span>
+              <AuricIcon name="close" className="text-xl group-hover:scale-110" />
             </button>
           </div>
         </div>

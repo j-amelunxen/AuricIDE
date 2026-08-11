@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type ScratchFile } from '@/lib/store/scratchSlice';
 import { ConfirmDialog } from './ConfirmDialog';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface ScratchPanelProps {
   scratches: ScratchFile[];
@@ -64,7 +65,7 @@ export function ScratchPanel({
             title="New scratch file"
             className="text-foreground-muted hover:text-foreground transition-colors rounded hover:bg-white/10 p-0.5"
           >
-            <span className="material-symbols-outlined text-[16px]">note_add</span>
+            <AuricIcon name="note_add" className="text-[16px]" />
           </button>
           <button
             onClick={() => setConfirmAll(true)}
@@ -73,16 +74,14 @@ export function ScratchPanel({
             title="Delete all scratch files"
             className="text-foreground-muted hover:text-foreground transition-colors rounded hover:bg-white/10 p-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
+            <AuricIcon name="delete_sweep" className="text-[16px]" />
           </button>
         </div>
       </div>
 
       {scratches.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <span className="material-symbols-outlined text-[28px] text-foreground-muted/60">
-            sticky_note_2
-          </span>
+          <AuricIcon name="sticky_note_2" className="text-[28px] text-foreground-muted/60" />
           <p className="text-xs text-foreground-muted">
             Throwaway Markdown notes, global across projects.
           </p>
@@ -111,9 +110,7 @@ export function ScratchPanel({
                   if (!isRenaming) onOpen(scratch.path);
                 }}
               >
-                <span className="material-symbols-outlined text-[15px] shrink-0">
-                  sticky_note_2
-                </span>
+                <AuricIcon name="sticky_note_2" className="text-[15px] shrink-0" />
                 {isRenaming ? (
                   <input
                     ref={renameInputRef}
@@ -145,7 +142,7 @@ export function ScratchPanel({
                       title="Rename"
                       className="text-foreground-muted hover:text-foreground transition-colors rounded hover:bg-white/10 p-0.5"
                     >
-                      <span className="material-symbols-outlined text-[13px]">edit</span>
+                      <AuricIcon name="edit" className="text-[13px]" />
                     </button>
                     <button
                       onClick={(e) => {
@@ -156,7 +153,7 @@ export function ScratchPanel({
                       title="Delete"
                       className="text-foreground-muted hover:text-foreground transition-colors rounded hover:bg-white/10 p-0.5"
                     >
-                      <span className="material-symbols-outlined text-[13px]">delete</span>
+                      <AuricIcon name="delete" className="text-[13px]" />
                     </button>
                   </div>
                 )}

@@ -19,6 +19,7 @@ import {
   type ProcessStationKind,
 } from '@/lib/videoImport/processExtraction';
 import { buildVideoImportCommit } from '@/lib/videoImport/commitImport';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 type DialogStage = 'select' | 'analyzing' | 'review' | 'saving';
 
@@ -252,9 +253,7 @@ function VideoImportDialogContent() {
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-center gap-3 border-b border-white/5 px-6 py-4">
-          <span aria-hidden="true" className="material-symbols-outlined text-lg text-primary-light">
-            video_file
-          </span>
+          <AuricIcon name="video_file" aria-hidden="true" className="text-lg text-primary-light" />
           <div>
             <h2 id="video-import-title" className="text-sm font-bold text-foreground">
               Import process from video
@@ -286,9 +285,7 @@ function VideoImportDialogContent() {
             aria-label="Close video import"
             className="ml-2 rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground disabled:opacity-30"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-lg">
-              close
-            </span>
+            <AuricIcon name="close" aria-hidden="true" className="text-lg" />
           </button>
         </header>
 
@@ -305,12 +302,11 @@ function VideoImportDialogContent() {
                       : 'border-white/15 bg-white/[0.015]'
                 }`}
               >
-                <span
+                <AuricIcon
+                  name={sourcePath ? 'movie' : 'upload_file'}
                   aria-hidden="true"
-                  className="material-symbols-outlined text-4xl text-foreground-muted/50"
-                >
-                  {sourcePath ? 'movie' : 'upload_file'}
-                </span>
+                  className="text-4xl text-foreground-muted/50"
+                />
                 <p className="mt-3 text-sm font-semibold text-foreground">
                   {sourcePath ? shortPath(sourcePath) : 'Drop a screen recording here'}
                 </p>
@@ -327,12 +323,11 @@ function VideoImportDialogContent() {
                 </button>
               </div>
               <div className="flex items-start gap-3 rounded-xl border border-white/5 bg-black/20 px-4 py-3">
-                <span
+                <AuricIcon
+                  name="lock"
                   aria-hidden="true"
-                  className="material-symbols-outlined text-base text-primary-light"
-                >
-                  lock
-                </span>
+                  className="text-base text-primary-light"
+                />
                 <div>
                   <p className="text-[11px] font-semibold text-foreground">
                     No source information is discarded
@@ -352,12 +347,11 @@ function VideoImportDialogContent() {
               className="flex min-h-80 flex-col items-center justify-center text-center"
               aria-live="polite"
             >
-              <span
+              <AuricIcon
+                name="progress_activity"
                 aria-hidden="true"
-                className="material-symbols-outlined animate-spin text-3xl text-primary-light"
-              >
-                progress_activity
-              </span>
+                className="animate-spin text-3xl text-primary-light"
+              />
               <p className="mt-4 text-sm font-semibold text-foreground">Analyzing the recording</p>
               <p className="mt-1 max-w-md text-[11px] leading-relaxed text-foreground-muted">
                 {progress}

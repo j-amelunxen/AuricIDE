@@ -1,5 +1,7 @@
 'use client';
 
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
+
 export interface ActivityItem {
   id: string;
   icon: string;
@@ -71,14 +73,13 @@ function ActivityButton({
           : `text-foreground-muted hover:bg-white/5 hover:text-foreground ${isTool ? 'opacity-70 hover:opacity-100' : ''}`
       }`}
     >
-      <span
+      <AuricIcon
+        name={iconMap[item.icon] || item.icon}
         aria-hidden="true"
-        className={`material-symbols-outlined transition-transform duration-150 ${
+        className={`transition-transform duration-150 ${
           isTool ? 'text-base' : 'text-xl'
         } ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}
-      >
-        {iconMap[item.icon] || item.icon}
-      </span>
+      />
 
       {/* Active Indicator Pips */}
       {isActive && (
@@ -151,12 +152,11 @@ export function ActivityBar({
             aria-label="Toggle Agents Panel"
             className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
           >
-            <span
+            <AuricIcon
+              name="smart_toy"
               aria-hidden="true"
-              className="material-symbols-outlined text-xl transition-transform duration-150 group-hover:scale-110"
-            >
-              smart_toy
-            </span>
+              className="text-xl transition-transform duration-150 group-hover:scale-110"
+            />
             <ActivityTooltip id="agents-toggle" label="Toggle Agents Panel" />
           </button>
         )}
@@ -165,12 +165,11 @@ export function ActivityBar({
           aria-label="Toggle Terminal (⌘J)"
           className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
         >
-          <span
+          <AuricIcon
+            name="terminal"
             aria-hidden="true"
-            className="material-symbols-outlined text-xl transition-transform duration-150 group-hover:scale-110"
-          >
-            terminal
-          </span>
+            className="text-xl transition-transform duration-150 group-hover:scale-110"
+          />
           <ActivityTooltip id="terminal" label="Toggle Terminal (⌘J)" />
         </button>
       </div>

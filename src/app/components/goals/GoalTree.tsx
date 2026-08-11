@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import type { PmGoal } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 import { getGoalChildren, getGoalProgress, getRootGoals } from '@/lib/store/goalsSlice';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export const GOAL_STATUS_STYLES: Record<string, { dot: string; label: string; text: string }> = {
   draft: { dot: 'bg-gray-400', label: 'Draft', text: 'text-gray-300' },
@@ -86,9 +87,9 @@ function GoalNode({
               e.stopPropagation();
               onToggle(goal.id);
             }}
-            className="material-symbols-outlined -ml-1 w-4 shrink-0 cursor-pointer text-sm text-foreground-muted hover:text-foreground"
+            className="-ml-1 w-4 shrink-0 cursor-pointer text-sm text-foreground-muted hover:text-foreground"
           >
-            {isCollapsed ? 'chevron_right' : 'expand_more'}
+            <AuricIcon name={isCollapsed ? 'chevron_right' : 'expand_more'} />
           </button>
         ) : (
           <span className="-ml-1 w-4 shrink-0" />
@@ -108,7 +109,7 @@ function GoalNode({
             title={`${agentCount} agent(s) running`}
             className="flex items-center gap-1 rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-bold text-primary-light"
           >
-            <span className="material-symbols-outlined text-[10px]">smart_toy</span>
+            <AuricIcon name="smart_toy" className="text-[10px]" />
             {agentCount}
           </span>
         )}
@@ -186,7 +187,7 @@ export function GoalTree({
         data-testid="goal-tree-error"
         className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
       >
-        <span className="material-symbols-outlined text-3xl text-red-400/60">error</span>
+        <AuricIcon name="error" className="text-3xl text-red-400/60" />
         <p className="text-xs font-medium text-foreground">Goals could not be read</p>
         <p className="max-w-[260px] text-[10px] leading-relaxed text-foreground-muted">
           {loadError}
@@ -212,7 +213,7 @@ export function GoalTree({
         data-testid="goal-tree-empty"
         className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center"
       >
-        <span className="material-symbols-outlined text-3xl text-foreground-muted/40">flag</span>
+        <AuricIcon name="flag" className="text-3xl text-foreground-muted/40" />
         <p className="text-xs font-medium text-foreground">No goals yet</p>
         <p className="max-w-[260px] text-[10px] leading-relaxed text-foreground-muted">
           A goal describes a target state the conductor can verify: tickets done, requirements

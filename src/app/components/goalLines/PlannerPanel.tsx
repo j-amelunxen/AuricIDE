@@ -20,6 +20,7 @@ import {
   type PlannerRevision,
 } from '@/lib/goals/planner/plannerDraft';
 import { GoalLineMap } from './GoalLineMap';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 function nowTimestamp(): string {
   return new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -187,9 +188,7 @@ export function PlannerPanel() {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 text-left"
       >
-        <span aria-hidden="true" className="material-symbols-outlined text-base text-primary-light">
-          alt_route
-        </span>
+        <AuricIcon name="alt_route" aria-hidden="true" className="text-base text-primary-light" />
         <span className="text-xs font-bold text-foreground">Plan a line</span>
         <span className="text-[10px] text-foreground-muted">dump → proposal → refine → start</span>
         <span aria-hidden="true" className="ml-auto font-mono text-[10px] text-foreground-muted">

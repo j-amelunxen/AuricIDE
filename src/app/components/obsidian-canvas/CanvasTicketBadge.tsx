@@ -1,5 +1,7 @@
 'use client';
 
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
+
 interface CanvasTicketBadgeProps {
   ticketId: string;
   onTicketClick?: (ticketId: string) => void;
@@ -19,7 +21,7 @@ export function CanvasTicketBadge({ ticketId, onTicketClick }: CanvasTicketBadge
         text-[9px] font-bold text-primary-light
         hover:bg-primary/30 transition shadow-sm"
     >
-      <span className="material-symbols-outlined text-[12px]">confirmation_number</span>
+      <AuricIcon name="confirmation_number" className="text-[12px]" />
       Ticket
     </button>
   );

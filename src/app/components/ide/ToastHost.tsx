@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import type { Toast } from '@/lib/store/toastSlice';
+import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const VARIANT_STYLES: Record<Toast['variant'], string> = {
   error: 'border-red-500/40 bg-red-500/10 text-red-200',
@@ -32,18 +33,14 @@ function ToastItem({ toast }: { toast: Toast }) {
       data-testid={`toast-${toast.variant}`}
       className={`pointer-events-auto flex items-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-medium shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200 ${VARIANT_STYLES[toast.variant]}`}
     >
-      <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-        {VARIANT_ICON[toast.variant]}
-      </span>
+      <AuricIcon name={VARIANT_ICON[toast.variant]} aria-hidden="true" className="text-[16px]" />
       <span className="max-w-xs">{toast.message}</span>
       <button
         onClick={() => dismissToast(toast.id)}
         aria-label="Dismiss notification"
         className="ml-1 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100"
       >
-        <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
-          close
-        </span>
+        <AuricIcon name="close" aria-hidden="true" className="text-[14px]" />
       </button>
     </div>
   );
