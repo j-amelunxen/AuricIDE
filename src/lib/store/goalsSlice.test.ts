@@ -277,6 +277,47 @@ describe('goalsSlice draft CRUD', () => {
     expect(store.getState().goalRequirementLinksDraft.length).toBe(0);
   });
 
+  it('resetGoalLine removes only direct stations and makes an active goal draft again', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal({ id: 'g1', status: 'active' }));
+    store.getState().addGoal(makeGoal({ id: 'child', parentId: 'g1' }));
+    const base = {
+      name: 'Step',
+      kind: 'normal' as const,
+      status: 'planned' as const,
+      evidenceKind: 'claim' as const,
+      predicate: { type: 'undefined' as const },
+      evidenceNote: '',
+      ticketId: null,
+      lane: 0,
+      sortOrder: 0,
+      lastCheckedAt: null,
+      doneAt: null,
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+    };
+    store.getState().addStation({ ...base, id: 'direct', goalId: 'g1' });
+    store.getState().addStation({ ...base, id: 'nested', goalId: 'child' });
+
+    store.getState().resetGoalLine('g1');
+
+    expect(store.getState().goalStationsDraft.map((station) => station.id)).toEqual(['nested']);
+    expect(store.getState().goalsDraft.find((goal) => goal.id === 'g1')?.status).toBe('draft');
+    expect(store.getState().goalsDraft.find((goal) => goal.id === 'child')).toBeTruthy();
+  });
+
+  it('resetGoalLine preserves achieved and archived goal statuses', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal({ id: 'done', status: 'achieved' }));
+    store.getState().addGoal(makeGoal({ id: 'old', status: 'archived' }));
+    store.getState().resetGoalLine('done');
+    store.getState().resetGoalLine('old');
+    expect(store.getState().goalsDraft.map((goal) => goal.status)).toEqual([
+      'achieved',
+      'archived',
+    ]);
+  });
+
   it('achieveGoal sets status and achievedAt', () => {
     const store = createTestStore();
     store.getState().addGoal(makeGoal());

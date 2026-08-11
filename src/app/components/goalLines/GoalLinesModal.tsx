@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
@@ -14,6 +14,114 @@ import { ForYouQueue } from './ForYouQueue';
 import { PlannerPanel } from './PlannerPanel';
 import { ForkProposals } from './ForkProposals';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import type { GoalLine } from '@/lib/goals/goalLinesLayout';
+import { GoalLineMap } from './GoalLineMap';
+
+function GoalLineDetail({
+  line,
+  agentsById,
+  onClose,
+}: {
+  line: GoalLine;
+  agentsById: Map<string, import('@/lib/tauri/agents').AgentInfo>;
+  onClose: () => void;
+}) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-[115] flex items-center justify-center bg-black/70 p-5"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="goal-line-detail-title"
+        data-testid="goal-line-detail"
+        className="flex max-h-[92vh] w-full max-w-[1500px] flex-col gap-6 overflow-y-auto rounded-2xl border border-white/10 bg-background-dark p-6 shadow-2xl"
+      >
+        <header className="flex items-center gap-3">
+          <h2 id="goal-line-detail-title" className="text-xl font-bold text-foreground">
+            {line.name}
+          </h2>
+          <button
+            aria-label="Close goal line detail"
+            onClick={onClose}
+            className="ml-auto rounded-lg p-2 text-foreground-muted hover:bg-white/10 hover:text-foreground"
+          >
+            <AuricIcon name="close" aria-hidden="true" />
+          </button>
+        </header>
+        <div className="min-h-52 rounded-xl bg-black/20 p-4">
+          <GoalLineMap line={line} agentsById={agentsById} big />
+        </div>
+        <ol className="grid gap-2 md:grid-cols-2">
+          {line.stations
+            .filter((s) => s.kind !== 'terminus')
+            .map((station) => (
+              <li key={station.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                <span className="font-semibold text-foreground">{station.label}</span>
+                {station.detail && (
+                  <p className="mt-1 font-mono text-[10px] text-foreground-muted">
+                    {station.detail}
+                  </p>
+                )}
+              </li>
+            ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+function GoalLinesDialog({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [onClose]);
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="goal-lines-modal-title"
+      data-testid="goal-lines-modal"
+      className="fixed inset-0 z-[105] flex flex-col bg-black/80 backdrop-blur-sm"
+    >
+      {children}
+    </div>
+  );
+}
+
+function RestoreLineFocus({ goalId }: { goalId: string | null }) {
+  useEffect(() => {
+    if (goalId)
+      document.querySelector<HTMLElement>(`[data-testid="goal-line-open-${goalId}"]`)?.focus();
+  }, [goalId]);
+  return null;
+}
 
 /**
  * Goal Lines — every goal as a metro line: done work left, the front where
@@ -28,7 +136,6 @@ export function GoalLinesModal() {
 }
 
 function GoalLinesModalContent() {
-  const dialogRef = useDialogA11y<HTMLDivElement>();
   const setGoalLinesOpen = useStore((s) => s.setGoalLinesOpen);
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
   const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
@@ -40,6 +147,9 @@ function GoalLinesModalContent() {
   const quickAddHumanStation = useStore((s) => s.quickAddHumanStation);
   const tickHumanStation = useStore((s) => s.tickHumanStation);
   const moveStationTo = useStore((s) => s.moveStationTo);
+  const resetGoalLine = useStore((s) => s.resetGoalLine);
+  const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
+  const [restoreGoalId, setRestoreGoalId] = useState<string | null>(null);
 
   const goalsDraft = useStore((s) => s.goalsDraft);
   const tickets = useStore((s) => s.pmDraftTickets);
@@ -78,7 +188,7 @@ function GoalLinesModalContent() {
       stations,
       runs,
       agents,
-      now: Date.now(),
+      now,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- agents is represented by agentSignature
     [
@@ -90,6 +200,7 @@ function GoalLinesModalContent() {
       stations,
       runs,
       agentSignature,
+      now,
     ]
   );
 
@@ -111,15 +222,7 @@ function GoalLinesModalContent() {
 
   const handleClose = useCallback(() => setGoalLinesOpen(false), [setGoalLinesOpen]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleClose]);
-
-  const openGoal = useCallback(
+  const openGoalEditor = useCallback(
     (goalId: string) => {
       setSelectedGoalId(goalId);
       setGoalsModalOpen(true);
@@ -127,6 +230,13 @@ function GoalLinesModalContent() {
     },
     [setSelectedGoalId, setGoalsModalOpen, setGoalLinesOpen]
   );
+
+  const openLine = useCallback((goalId: string) => setDetailGoalId(goalId), []);
+  const closeDetail = useCallback(() => {
+    const goalId = detailGoalId;
+    setRestoreGoalId(goalId);
+    setDetailGoalId(null);
+  }, [detailGoalId]);
 
   // Board mutations persist immediately — the board has no Save button, and
   // an edit that only lives in a draft would vanish with the window.
@@ -161,6 +271,15 @@ function GoalLinesModalContent() {
     void import('@/lib/evidence/engine').then((m) => m.checkStation(stationId));
   }, []);
 
+  const handleReset = useCallback(
+    (goalId: string) => {
+      resetGoalLine(goalId);
+      persist();
+      setDetailGoalId(null);
+    },
+    [persist, resetGoalLine]
+  );
+
   const handleQueueClick = useCallback(
     (item: ForYouItem) => {
       if (item.kind === 'agent' && !item.goalId) {
@@ -169,20 +288,23 @@ function GoalLinesModalContent() {
         return;
       }
       const goalId = item.kind === 'agent' ? item.goalId! : item.goalId;
-      if (goalId) openGoal(goalId);
+      if (goalId) openGoalEditor(goalId);
     },
-    [openGoal, setGoalLinesOpen]
+    [openGoalEditor, setGoalLinesOpen]
   );
 
+  if (detailGoalId) {
+    const detailLine = lines.find((line) => line.goalId === detailGoalId);
+    if (detailLine)
+      return createPortal(
+        <GoalLineDetail line={detailLine} agentsById={agentsById} onClose={closeDetail} />,
+        document.body
+      );
+  }
+
   return createPortal(
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="goal-lines-modal-title"
-      data-testid="goal-lines-modal"
-      className="fixed inset-0 z-[105] flex flex-col bg-black/80 backdrop-blur-sm"
-    >
+    <GoalLinesDialog onClose={handleClose}>
+      <RestoreLineFocus goalId={restoreGoalId} />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">
         <div className="flex items-center gap-3">
@@ -223,8 +345,8 @@ function GoalLinesModalContent() {
             />
             <p className="text-xs text-foreground-muted">No goal has work attached yet.</p>
             <p className="max-w-[320px] text-[10px] text-foreground-muted/70">
-              Create a goal and attach tickets. Each goal becomes a line here, with done work on
-              the left and the goal always on the right.
+              Create a goal and attach tickets. Each goal becomes a line here, with done work on the
+              left and the goal always on the right.
             </p>
             <button
               data-testid="goal-lines-open-goals"
@@ -250,17 +372,18 @@ function GoalLinesModalContent() {
               notStarted={notStarted}
               agentsById={agentsById}
               now={now}
-              onOpenGoal={openGoal}
+              onOpenGoal={openLine}
               onQuickAdd={handleQuickAdd}
               onTick={handleTick}
               onMove={handleMove}
               onVerify={handleVerify}
+              onReset={handleReset}
             />
             <GoalLineLegend />
           </div>
         )}
       </div>
-    </div>,
+    </GoalLinesDialog>,
     document.body
   );
 }

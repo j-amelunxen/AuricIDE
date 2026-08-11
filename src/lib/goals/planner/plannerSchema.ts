@@ -14,6 +14,8 @@ import type { StationPredicate, StationSourceContext } from '@/lib/tauri/goals';
  * event that produces a precise error, never a corrupted plan.
  */
 export interface PlannerStation {
+  /** Stable UI identity for an uncommitted draft; never becomes a station id. */
+  draftId?: string;
   name: string;
   kind: StationKind;
   evidenceKind: EvidenceKindValue;
