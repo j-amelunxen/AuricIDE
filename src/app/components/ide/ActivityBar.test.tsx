@@ -118,6 +118,9 @@ describe('ActivityBar', () => {
     ];
     render(<ActivityBar items={sectioned} activeId="cockpit" onSelect={() => {}} />);
     expect(screen.getByTestId('activity-section-separator')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('activity-item-settings').querySelector('[data-icon="settings"]')
+    ).toBeInTheDocument();
   });
 
   it('renders tool items visually smaller than primary destinations', () => {

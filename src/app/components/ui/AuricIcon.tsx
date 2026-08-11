@@ -6,7 +6,7 @@ const warned = new Set<string>();
 
 function primitiveProps(prim: IconPrimitive) {
   if ('accent' in prim && prim.accent) {
-    return { fill: 'var(--primary)', stroke: 'none' } as const;
+    return { fill: 'var(--primary)', fillOpacity: 0.55, stroke: 'none' } as const;
   }
   if ('fill' in prim && prim.fill) {
     return { fill: 'currentColor', stroke: 'none' } as const;
