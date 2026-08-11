@@ -42,7 +42,7 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 
 ---
 
-## Features (honest list)
+## Features
 
 **Goals & conductor**
 
