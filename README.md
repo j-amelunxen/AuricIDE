@@ -15,15 +15,15 @@ Desktop IDE (Tauri) for Markdown-heavy project work with AI agent orchestration.
 
 ## Why AuricIDE vs your IDE + AI plugins
 
-VS Code / JetBrains + Copilot / Cursor-style plugins are great for _editing with help_. AuricIDE is built for _running work until an outcome is true_.
+A regular IDE with AI plugins is great for _editing with help_. AuricIDE is built for _running work until an outcome is true_.
 
-| Your IDE + AI plugins                     | AuricIDE                                                                      |
-| ----------------------------------------- | ----------------------------------------------------------------------------- |
-| One chat / one agent in a sidebar         | A fleet of real CLI agents, scheduled and watched                             |
-| "Done" is whatever the model says         | Goals with checkable success criteria; conductor only stops when they hold    |
-| Tickets live in Jira/Linear, agents don't | Goals, tickets, requirements, deps are first-class and MCP-shared with agents |
-| Plugin = one vendor stack                 | Bring any CLI agent (OpenCode, Crush, …) via `dynamic-providers/`             |
-| Code-first workspace                      | Markdown-heavy project workspace: goals, canvases, docs, PM in one shell      |
+| Your IDE + AI plugins                             | AuricIDE                                                                      |
+| ------------------------------------------------- | ----------------------------------------------------------------------------- |
+| One chat / one agent in a sidebar                 | A fleet of real CLI agents, scheduled and watched                             |
+| "Done" is whatever the model says                 | Goals with checkable success criteria; conductor only stops when they hold    |
+| Tickets live in an external tracker, agents don't | Goals, tickets, requirements, deps are first-class and MCP-shared with agents |
+| Plugin = one vendor stack                         | Bring any CLI agent via `dynamic-providers/`                                  |
+| Code-first workspace                              | Markdown-heavy project workspace: goals, canvases, docs, PM in one shell      |
 
 You still write code. The difference is orchestration: define the outcome, hang work on it, let the conductor dispatch, and get blockers instead of vibes when it isn't satisfied yet.
 
@@ -53,7 +53,7 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 **Agents**
 
 - Real child processes over PTY (`portable-pty`), streamed output, real exit codes
-- Add whatever custom CLI agent provider you need (OpenCode, Crush, etc.) via JSON under `dynamic-providers/` (no recompile)
+- Add whatever custom CLI agent provider you need via JSON under `dynamic-providers/` (no recompile)
 - Repo grouping, kill one / kill all, image attach, per-project prompt history
 - Permission modes delegated to the underlying CLI flags
 
