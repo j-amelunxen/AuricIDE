@@ -7,18 +7,34 @@
 > [!WARNING]
 > **Alpha.** Breaking changes, missing features, rough edges. Don't put production work on this yet.
 
-Desktop IDE (Tauri) for Markdown-heavy project work with AI agent orchestration. You define a **goal** with checkable success criteria, hang **tickets** (and optionally requirements) off it, start the **conductor**, and it dispatches agents until the goal is actually satisfied — not until an agent says it is.
+Desktop IDE (Tauri) for Markdown-heavy project work with AI agent orchestration. You define a **goal** with checkable success criteria, hang **tickets** (and optionally requirements) off it, start the **conductor**, and it dispatches agents until the goal is actually satisfied, not until an agent says it is.
 
 ![Screenshot](public/screenshot.png)
 
 ---
 
+## Why AuricIDE vs your IDE + AI plugins
+
+VS Code / JetBrains + Copilot / Cursor-style plugins are great for _editing with help_. AuricIDE is built for _running work until an outcome is true_.
+
+| Your IDE + AI plugins                     | AuricIDE                                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| One chat / one agent in a sidebar         | A fleet of real CLI agents, scheduled and watched                             |
+| "Done" is whatever the model says         | Goals with checkable success criteria; conductor only stops when they hold    |
+| Tickets live in Jira/Linear, agents don't | Goals, tickets, requirements, deps are first-class and MCP-shared with agents |
+| Plugin = one vendor stack                 | Bring any CLI agent (OpenCode, Crush, …) via `dynamic-providers/`             |
+| Code-first workspace                      | Markdown-heavy project workspace: goals, canvases, docs, PM in one shell      |
+
+You still write code. The difference is orchestration: define the outcome, hang work on it, let the conductor dispatch, and get blockers instead of vibes when it isn't satisfied yet.
+
+---
+
 ## How the loop works
 
-1. **Goal** — desired outcome + `successCriteria`. Goals form a tree (`parentId`).
-2. **Work** — link tickets, attach requirements as gates, or let a planning agent call `decompose_goal` / `create_ticket`.
-3. **Conductor** — spawns agents for unblocked open tickets (priority + deps, concurrency cap, max 2 attempts). Tickets marked `needsHumanSupervision` wait for explicit approval.
-4. **Done** — `getGoalSatisfaction` requires: subtree tickets `done`, linked requirements `verified`, child goals `achieved`. Otherwise you get the blockers. Empty goals never auto-satisfy.
+1. **Goal**: desired outcome + `successCriteria`. Goals form a tree (`parentId`).
+2. **Work**: link tickets, attach requirements as gates, or let a planning agent call `decompose_goal` / `create_ticket`.
+3. **Conductor**: spawns agents for unblocked open tickets (priority + deps, concurrency cap, max 2 attempts). Tickets marked `needsHumanSupervision` wait for explicit approval.
+4. **Done**: `getGoalSatisfaction` requires: subtree tickets `done`, linked requirements `verified`, child goals `achieved`. Otherwise you get the blockers. Empty goals never auto-satisfy.
 
 Epics/tickets stay the backlog view; the goal link is the outcome view. Conductor decisions go into a timestamped log (`conductorDecisions`).
 
@@ -37,8 +53,7 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 **Agents**
 
 - Real child processes over PTY (`portable-pty`), streamed output, real exit codes
-- Built-in providers: Claude Code, Codex, Gemini, Grok, Crush/Kimi
-- Extra CLIs via JSON under `dynamic-providers/` (no recompile)
+- Add whatever custom CLI agent provider you need (OpenCode, Crush, etc.) via JSON under `dynamic-providers/` (no recompile)
 - Repo grouping, kill one / kill all, image attach, per-project prompt history
 - Permission modes delegated to the underlying CLI flags
 
@@ -49,7 +64,7 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 
 **PM**
 
-- Epics / tickets / deps — table, dependency graph (xyflow + dagre), metrics
+- Epics / tickets / deps: table, dependency graph (xyflow + dagre), metrics
 - Deps actually block conductor scheduling
 - Test cases per ticket feed into agent prompts
 
@@ -58,7 +73,7 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 - CodeMirror 6: Markdown-first, remark-lint, JSON/XML/YAML diagnostics
 - NLP highlighting aimed at actionable/factual bits (not rainbow POS tagging)
 - WikiLinks, Mermaid widgets (round-trip), mindmaps, Excalidraw embed
-- Workflow canvas stored as plain Markdown (`## Node:` …) — also Obsidian `.canvas`
+- Workflow canvas stored as plain Markdown (`## Node:` …); also Obsidian `.canvas`
 - ASCII box-drawing repair for mangled AI diagrams
 - Slash commands, blueprint templates
 
@@ -73,7 +88,7 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 
 - FastMCP server (`src/mcp/server.ts`) over the project SQLite DB
 - Goals, epics, tickets, requirements, tests, deps, blueprints, canvas, history
-- Same state as the UI/conductor — agents mutate the real project, not a side export
+- Same state as the UI/conductor: agents mutate the real project, not a side export
 
 ---
 
@@ -116,14 +131,14 @@ Or step by step:
 ./check_env.sh
 pnpm install
 pnpm tauri:dev        # full desktop app
-pnpm dev              # Next only — limited native features
+pnpm dev              # Next only: limited native features
 ```
 
 ---
 
 ## Tests & checks
 
-TDD is the house rule (see `CLAUDE.md`). Don't run `pnpm test` in CI/agents — watch mode hangs. Use `test:run`.
+TDD is the house rule (see `CLAUDE.md`). Don't run `pnpm test` in CI/agents: watch mode hangs. Use `test:run`.
 
 ```bash
 pnpm check:all        # lint, format, knip, jscpd, TS tests, cargo test, clippy, fmt, machete
