@@ -17,6 +17,8 @@ export interface GitSlice {
   isPushing: boolean;
   refreshGitStatus: (repoPath: string) => Promise<void>;
   stageFile: (repoPath: string, path: string) => Promise<void>;
+  /** Stages every changed file except the ignored ones, in one round trip. */
+  stageAll: (repoPath: string) => Promise<void>;
   unstageFile: (repoPath: string, path: string) => Promise<void>;
   commit: (repoPath: string) => Promise<string | null>;
   /** Pushes the current branch to origin. Rethrows so the caller can report. */
@@ -38,6 +40,17 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => ({
 
   stageFile: async (repoPath, path) => {
     await stageFiles(repoPath, [path]);
+    await get().refreshGitStatus(repoPath);
+  },
+
+  stageAll: async (repoPath) => {
+    // Ignored files are ignored on purpose — "all" means all the work, not
+    // everything git happens to have noticed.
+    const paths = get()
+      .fileStatuses.filter((s) => s.status !== 'ignored')
+      .map((s) => s.path);
+    if (paths.length === 0) return;
+    await stageFiles(repoPath, paths);
     await get().refreshGitStatus(repoPath);
   },
 

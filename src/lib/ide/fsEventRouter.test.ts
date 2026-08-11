@@ -85,3 +85,33 @@ describe('createFsEventRouter', () => {
     expect(onProjectDataChange).not.toHaveBeenCalled();
   });
 });
+
+describe('evidence lane', () => {
+  it('feeds non-db changes into both the tree and the evidence lane', () => {
+    vi.useFakeTimers();
+    const onTreeChange = vi.fn();
+    const onProjectDataChange = vi.fn();
+    const onEvidenceChange = vi.fn();
+    const router = createFsEventRouter({
+      onTreeChange,
+      onProjectDataChange,
+      onEvidenceChange,
+      treeDebounceMs: 300,
+      evidenceDebounceMs: 1000,
+    });
+
+    router.handle({ path: '/p/docs/readme.md', kind: 'modify' });
+    vi.advanceTimersByTime(300);
+    expect(onTreeChange).toHaveBeenCalledTimes(1);
+    expect(onEvidenceChange).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(700);
+    expect(onEvidenceChange).toHaveBeenCalledTimes(1);
+
+    // DB writes stay out of the evidence lane — data reloads own that path.
+    router.handle({ path: '/p/.auric/project.db-wal', kind: 'modify' });
+    vi.advanceTimersByTime(2000);
+    expect(onEvidenceChange).toHaveBeenCalledTimes(1);
+    router.dispose();
+    vi.useRealTimers();
+  });
+});

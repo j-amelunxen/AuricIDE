@@ -15,6 +15,10 @@ export function useConductorController() {
   const conductorGoalId = useStore((s) => s.conductorGoalId);
   const maxConcurrent = useStore((s) => s.conductorMaxConcurrent);
   const assignments = useStore((s) => s.conductorAssignments);
+  const reviewAssignments = useStore((s) => s.conductorReviewAssignments);
+  const requireReview = useStore((s) => s.conductorRequireReview);
+  const judgeForm = useStore((s) => s.conductorJudgeForm);
+  const judgeConfigured = useStore((s) => s.judgeLlmConfigured);
   const pendingApprovalIds = useStore((s) => s.conductorPendingApprovals);
   const decisions = useStore((s) => s.conductorDecisions);
   const lastRun = useStore((s) => s.conductorLastRun);
@@ -35,6 +39,8 @@ export function useConductorController() {
   const setConductorMaxConcurrent = useStore((s) => s.setConductorMaxConcurrent);
   const setConductorProviderId = useStore((s) => s.setConductorProviderId);
   const setConductorModel = useStore((s) => s.setConductorModel);
+  const setConductorRequireReview = useStore((s) => s.setConductorRequireReview);
+  const setConductorJudgeForm = useStore((s) => s.setConductorJudgeForm);
   const approveConductorTicket = useStore((s) => s.approveConductorTicket);
   const dismissConductorApproval = useStore((s) => s.dismissConductorApproval);
 
@@ -87,7 +93,8 @@ export function useConductorController() {
     running,
     scopeGoalName,
     maxConcurrent,
-    activeAgentCount: Object.keys(assignments).length,
+    // Implementers and reviewers share one budget, so both count as active.
+    activeAgentCount: Object.keys(assignments).length + Object.keys(reviewAssignments).length,
     pendingApprovals,
     decisions,
     lastRun,
@@ -97,11 +104,16 @@ export function useConductorController() {
     providers,
     providerId,
     model,
+    requireReview,
+    judgeForm,
+    judgeConfigured,
     onStart,
     onStop,
     onSetMaxConcurrent: setConductorMaxConcurrent,
     onSetProvider: setConductorProviderId,
     onSetModel: setConductorModel,
+    onSetRequireReview: setConductorRequireReview,
+    onSetJudgeForm: setConductorJudgeForm,
     onApprove,
     onDismiss: dismissConductorApproval,
   };

@@ -61,11 +61,23 @@ describe('openDatabase', () => {
     db.close();
   });
 
-  it('records all 13 migrations', () => {
+  it('records all 16 migrations (ids 1-13, 15-17; 14 is Rust-only)', () => {
     const dbPath = join(tempDir, 'test.db');
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(13);
+    expect(row.cnt).toBe(16);
+    const stationRow = db
+      .prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 15')
+      .get() as { cnt: number };
+    expect(stationRow.cnt).toBe(1);
+    const reviewsRow = db
+      .prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 16')
+      .get() as { cnt: number };
+    expect(reviewsRow.cnt).toBe(1);
+    const contextRow = db
+      .prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 17')
+      .get() as { cnt: number };
+    expect(contextRow.cnt).toBe(1);
     db.close();
   });
 
@@ -75,7 +87,7 @@ describe('openDatabase', () => {
     db1.close();
     const db2 = openDatabase(dbPath);
     const row = db2.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(13);
+    expect(row.cnt).toBe(16);
     db2.close();
   });
 
@@ -150,10 +162,10 @@ describe('openDatabase', () => {
     `);
     setup.close();
 
-    // Now open with our migrations — the JS side applies the missing #13 on top
+    // Now open with our migrations — the JS side applies the missing #13, #15, #16, #17 on top
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(13);
+    expect(row.cnt).toBe(16);
     db.close();
   });
 });

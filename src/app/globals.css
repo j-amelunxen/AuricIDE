@@ -263,7 +263,9 @@ textarea:focus-visible,
   /* Kill the perpetual glow oscillation and soft pulses outright. */
   .animate-pulse-soft,
   .cm-mermaid-loading,
-  .react-flow__edge.animated path {
+  .react-flow__edge.animated path,
+  .goal-line-flow,
+  .goal-line-pulse {
     animation: none !important;
   }
 }
@@ -830,4 +832,31 @@ textarea:focus-visible,
 
 .cm-lint-gutter .cm-gutterElement {
   padding: 0 3px;
+}
+
+/* --- Goal Lines metro map --- */
+/* Work flowing along a line: motion means compute is happening on this
+   segment; a still line is idle. Registered in the reduced-motion kill list. */
+@keyframes goal-line-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+.goal-line-flow {
+  animation: goal-line-flow 1.1s linear infinite;
+}
+
+/* The front station breathes while work stands there. */
+@keyframes goal-line-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.08;
+  }
+}
+.goal-line-pulse {
+  opacity: 0.25;
+  animation: goal-line-pulse 2.2s ease-in-out infinite;
 }

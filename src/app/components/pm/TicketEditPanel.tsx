@@ -43,6 +43,7 @@ interface TicketEditPanelProps {
 const statusOptions: { value: PmTicket['status']; label: string; className: string }[] = [
   { value: 'open', label: 'Open', className: 'bg-white/10 text-foreground-muted' },
   { value: 'in_progress', label: 'In Progress', className: 'bg-yellow-500/10 text-git-modified' },
+  { value: 'in_review', label: 'In Review', className: 'bg-indigo-500/10 text-indigo-300' },
   { value: 'done', label: 'Done', className: 'bg-green-500/10 text-git-added' },
   { value: 'archived', label: 'Archived', className: 'bg-purple-500/10 text-purple-400' },
 ];

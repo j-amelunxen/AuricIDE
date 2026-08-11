@@ -7,7 +7,10 @@ import type {
   PmGoal,
   PmGoalRequirementLink,
   PmGoalRun,
+  PmGoalStation,
 } from '../tauri/goals';
+import { insertHumanStation, moveStation } from '../goals/stationOrder';
+import { isVerifiedEvidence } from '../pm/enums';
 import {
   goalsLoad as ipcGoalsLoad,
   goalsSave as ipcGoalsSave,
@@ -73,14 +76,22 @@ export interface GoalSatisfaction {
 
 /**
  * A goal is satisfied when every ticket attached to it (and its subtree) is
- * done, every linked requirement is verified, and every direct child goal is
- * achieved. This is the machine-checkable core of "goal = desired world state".
+ * done, every linked requirement is verified, every station of its line is
+ * done, and every direct child goal is achieved. This is the
+ * machine-checkable core of "goal = desired world state".
+ *
+ * The `stations` parameter is REQUIRED on purpose: an open human station
+ * ("call the customer") that satisfaction cannot see would let the conductor
+ * auto-achieve a goal right past it. A silent default would compile at
+ * exactly the call site someone forgot. This function has an SQL twin in
+ * src/mcp/tools/goals.ts (evaluateGoal) — change both together.
  */
 export function getGoalSatisfaction(
   goals: PmGoal[],
   tickets: PmTicket[],
   requirements: PmRequirement[],
   links: PmGoalRequirementLink[],
+  stations: PmGoalStation[],
   goalId: string
 ): GoalSatisfaction {
   const blockers: string[] = [];
@@ -105,6 +116,17 @@ export function getGoalSatisfaction(
     }
   }
 
+  const scopedStations = stations.filter((s) => subtreeIds.has(s.goalId));
+  for (const station of scopedStations) {
+    if (station.status !== 'done') {
+      blockers.push(`Station "${station.name}" is ${station.status}`);
+    } else if (!isVerifiedEvidence(station.evidenceKind)) {
+      // Done, but only claimed — the judge (or a person) has to verify it
+      // before it counts. A bare claim blocks exactly like a pending station.
+      blockers.push(`Station "${station.name}" is claimed, not verified`);
+    }
+  }
+
   const children = getGoalChildren(goals, goalId);
   for (const child of children) {
     if (child.status !== 'achieved') {
@@ -114,7 +136,12 @@ export function getGoalSatisfaction(
 
   // A goal with nothing attached is vacuously "true" but not meaningfully
   // achieved — refuse to auto-satisfy it.
-  if (scopedTickets.length === 0 && linkedReqIds.size === 0 && children.length === 0) {
+  if (
+    scopedTickets.length === 0 &&
+    linkedReqIds.size === 0 &&
+    children.length === 0 &&
+    scopedStations.length === 0
+  ) {
     blockers.push('Goal has no tickets, requirements, or sub-goals — nothing to verify');
   }
 
@@ -140,10 +167,11 @@ export function getGoalWorkflowStage(
   tickets: PmTicket[],
   requirements: PmRequirement[],
   links: PmGoalRequirementLink[],
+  stations: PmGoalStation[],
   goalId: string
 ): GoalWorkflowStep {
   const goal = goals.find((g) => g.id === goalId);
-  const satisfaction = getGoalSatisfaction(goals, tickets, requirements, links, goalId);
+  const satisfaction = getGoalSatisfaction(goals, tickets, requirements, links, stations, goalId);
 
   if (goal?.status === 'achieved' || satisfaction.satisfied) {
     return {
@@ -171,8 +199,9 @@ export function getGoalWorkflowStage(
   const hasTickets = tickets.some((t) => !!t.goalId && subtreeIds.has(t.goalId));
   const hasLinks = links.some((l) => l.goalId === goalId);
   const hasChildren = getGoalChildren(goals, goalId).length > 0;
+  const hasStations = stations.some((s) => subtreeIds.has(s.goalId));
 
-  if (!hasTickets && !hasLinks && !hasChildren) {
+  if (!hasTickets && !hasLinks && !hasChildren && !hasStations) {
     return {
       stage: 'attach',
       index: 2,
@@ -211,16 +240,19 @@ export interface GoalsSlice {
   goals: PmGoal[];
   goalRuns: PmGoalRun[];
   goalRequirementLinks: PmGoalRequirementLink[];
+  goalStations: PmGoalStation[];
   // Draft state (local edits before save)
   goalsDraft: PmGoal[];
   goalRunsDraft: PmGoalRun[];
   goalRequirementLinksDraft: PmGoalRequirementLink[];
+  goalStationsDraft: PmGoalStation[];
   goalsDirty: boolean;
   currentGoalsProject: string | null;
   // UI state
   goalsModalOpen: boolean;
   selectedGoalId: string | null;
   orchestrationOpen: boolean;
+  goalLinesOpen: boolean;
   // Actions
   loadGoals: (projectPath: string) => Promise<void>;
   saveGoals: (projectPath: string) => Promise<void>;
@@ -234,10 +266,18 @@ export interface GoalsSlice {
   unlinkRequirementFromGoal: (goalId: string, requirementId: string) => void;
   recordGoalRun: (run: PmGoalRun) => void;
   completeGoalRun: (runId: string, outcome: GoalRunOutcome, summary?: string) => void;
+  addStation: (station: PmGoalStation) => void;
+  updateStation: (id: string, updates: Partial<PmGoalStation>) => void;
+  deleteStation: (id: string) => void;
+  /** A person ticks a human step off — the one evidence only they can give. */
+  tickHumanStation: (id: string, note?: string) => void;
+  moveStationTo: (goalId: string, stationId: string, toIndex: number) => void;
+  quickAddHumanStation: (goalId: string, name: string) => void;
   discardGoalChanges: () => void;
   setGoalsModalOpen: (open: boolean) => void;
   setSelectedGoalId: (id: string | null) => void;
   setOrchestrationOpen: (open: boolean) => void;
+  setGoalLinesOpen: (open: boolean) => void;
 }
 
 export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
@@ -246,14 +286,17 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   goalsLoadError: IDLE_LOAD_STATE.error,
   goalRuns: [],
   goalRequirementLinks: [],
+  goalStations: [],
   goalsDraft: [],
   goalRunsDraft: [],
   goalRequirementLinksDraft: [],
+  goalStationsDraft: [],
   goalsDirty: false,
   currentGoalsProject: null,
   goalsModalOpen: false,
   selectedGoalId: null,
   orchestrationOpen: false,
+  goalLinesOpen: false,
 
   loadGoals: (projectPath) =>
     trackLoad(
@@ -272,22 +315,34 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
             goalRunsDraft: state.goalRuns,
             goalRequirementLinks: state.requirementLinks,
             goalRequirementLinksDraft: state.requirementLinks,
+            goalStations: state.stations,
+            goalStationsDraft: state.stations,
             goalsDirty: false,
             currentGoalsProject: projectPath,
           });
         } else {
           // Dirty draft: keep local edits, but adopt rows created since the last
           // load (e.g. goals an MCP agent decomposed) so they are not invisible.
-          const { goals, goalsDraft, goalRuns, goalRunsDraft, goalRequirementLinksDraft } = get();
+          const {
+            goals,
+            goalsDraft,
+            goalRuns,
+            goalRunsDraft,
+            goalRequirementLinksDraft,
+            goalStations,
+            goalStationsDraft,
+          } = get();
           const knownGoalIds = new Set([...goals, ...goalsDraft].map((g) => g.id));
           const knownRunIds = new Set([...goalRuns, ...goalRunsDraft].map((r) => r.id));
           const knownLinkIds = new Set(
             [...get().goalRequirementLinks, ...goalRequirementLinksDraft].map((l) => l.id)
           );
+          const knownStationIds = new Set([...goalStations, ...goalStationsDraft].map((s) => s.id));
           set({
             goals: state.goals,
             goalRuns: state.goalRuns,
             goalRequirementLinks: state.requirementLinks,
+            goalStations: state.stations,
             goalsDraft: [...goalsDraft, ...state.goals.filter((g) => !knownGoalIds.has(g.id))],
             goalRunsDraft: [
               ...goalRunsDraft,
@@ -296,6 +351,10 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
             goalRequirementLinksDraft: [
               ...goalRequirementLinksDraft,
               ...state.requirementLinks.filter((l) => !knownLinkIds.has(l.id)),
+            ],
+            goalStationsDraft: [
+              ...goalStationsDraft,
+              ...state.stations.filter((s) => !knownStationIds.has(s.id)),
             ],
             currentGoalsProject: projectPath,
           });
@@ -310,9 +369,11 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         goals,
         goalRuns,
         goalRequirementLinks,
+        goalStations,
         goalsDraft,
         goalRunsDraft,
         goalRequirementLinksDraft,
+        goalStationsDraft,
       } = get();
 
       // Row-level sync: upsert the draft, delete only what the user deleted
@@ -320,15 +381,18 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       const draftGoalIds = new Set(goalsDraft.map((g) => g.id));
       const draftRunIds = new Set(goalRunsDraft.map((r) => r.id));
       const draftLinkIds = new Set(goalRequirementLinksDraft.map((l) => l.id));
+      const draftStationIds = new Set(goalStationsDraft.map((s) => s.id));
       await ipcGoalsSave(projectPath, {
         goals: goalsDraft,
         goalRuns: goalRunsDraft,
         requirementLinks: goalRequirementLinksDraft,
+        stations: goalStationsDraft,
         deletedGoalIds: goals.filter((g) => !draftGoalIds.has(g.id)).map((g) => g.id),
         deletedRunIds: goalRuns.filter((r) => !draftRunIds.has(r.id)).map((r) => r.id),
         deletedLinkIds: goalRequirementLinks
           .filter((l) => !draftLinkIds.has(l.id))
           .map((l) => l.id),
+        deletedStationIds: goalStations.filter((s) => !draftStationIds.has(s.id)).map((s) => s.id),
       });
 
       // Re-read and adopt rows MCP agents wrote concurrently. The draft was
@@ -343,6 +407,10 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         ...goalRequirementLinksDraft,
         ...loaded.requirementLinks.filter((l) => !draftLinkIds.has(l.id)),
       ];
+      const mergedStations = [
+        ...goalStationsDraft,
+        ...loaded.stations.filter((s) => !draftStationIds.has(s.id)),
+      ];
       set({
         goals: mergedGoals,
         goalsDraft: mergedGoals,
@@ -350,6 +418,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         goalRunsDraft: mergedRuns,
         goalRequirementLinks: mergedLinks,
         goalRequirementLinksDraft: mergedLinks,
+        goalStations: mergedStations,
+        goalStationsDraft: mergedStations,
         goalsDirty: false,
       });
     };
@@ -374,6 +444,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalRunsDraft: [],
       goalRequirementLinks: [],
       goalRequirementLinksDraft: [],
+      goalStations: [],
+      goalStationsDraft: [],
       goalsDirty: false,
     });
   },
@@ -386,6 +458,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalRunsDraft: [],
       goalRequirementLinks: [],
       goalRequirementLinksDraft: [],
+      goalStations: [],
+      goalStationsDraft: [],
       goalsDirty: false,
     }),
 
@@ -406,6 +480,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalsDraft: s.goalsDraft.filter((g) => !doomed.has(g.id)),
       goalRunsDraft: s.goalRunsDraft.filter((r) => !doomed.has(r.goalId)),
       goalRequirementLinksDraft: s.goalRequirementLinksDraft.filter((l) => !doomed.has(l.goalId)),
+      goalStationsDraft: s.goalStationsDraft.filter((st) => !doomed.has(st.goalId)),
       goalsDirty: true,
     }));
   },
@@ -466,16 +541,75 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
     })),
 
   discardGoalChanges: () => {
-    const { goals, goalRuns, goalRequirementLinks } = get();
+    const { goals, goalRuns, goalRequirementLinks, goalStations } = get();
     set({
       goalsDraft: goals,
       goalRunsDraft: goalRuns,
       goalRequirementLinksDraft: goalRequirementLinks,
+      goalStationsDraft: goalStations,
       goalsDirty: false,
     });
   },
 
+  addStation: (station) =>
+    set((s) => ({
+      goalStationsDraft: [...s.goalStationsDraft, station],
+      goalsDirty: true,
+    })),
+
+  updateStation: (id, updates) =>
+    set((s) => ({
+      goalStationsDraft: s.goalStationsDraft.map((st) =>
+        st.id === id ? { ...st, ...updates, updatedAt: nowTimestamp() } : st
+      ),
+      goalsDirty: true,
+    })),
+
+  deleteStation: (id) =>
+    set((s) => ({
+      goalStationsDraft: s.goalStationsDraft.filter((st) => st.id !== id),
+      goalsDirty: true,
+    })),
+
+  tickHumanStation: (id, note) => {
+    const ts = nowTimestamp();
+    set((s) => ({
+      goalStationsDraft: s.goalStationsDraft.map((st) =>
+        st.id === id
+          ? {
+              ...st,
+              status: 'done',
+              evidenceKind: 'human',
+              evidenceNote: note ?? 'ticked off by you',
+              doneAt: ts,
+              updatedAt: ts,
+            }
+          : st
+      ),
+      goalsDirty: true,
+    }));
+  },
+
+  moveStationTo: (goalId, stationId, toIndex) =>
+    set((s) => ({
+      goalStationsDraft: moveStation(s.goalStationsDraft, goalId, stationId, toIndex),
+      goalsDirty: true,
+    })),
+
+  quickAddHumanStation: (goalId, name) =>
+    set((s) => ({
+      goalStationsDraft: insertHumanStation(
+        s.goalStationsDraft,
+        goalId,
+        name,
+        crypto.randomUUID(),
+        nowTimestamp()
+      ),
+      goalsDirty: true,
+    })),
+
   setGoalsModalOpen: (open) => set({ goalsModalOpen: open }),
   setSelectedGoalId: (id) => set({ selectedGoalId: id }),
   setOrchestrationOpen: (open) => set({ orchestrationOpen: open }),
+  setGoalLinesOpen: (open) => set({ goalLinesOpen: open }),
 });

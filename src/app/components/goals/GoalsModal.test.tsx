@@ -73,6 +73,7 @@ const storeState = {
   goalsDraft: [makeGoal()],
   goalRunsDraft: [],
   goalRequirementLinksDraft: [],
+  goalStationsDraft: [],
   goalsDirty: false,
   selectedGoalId: null as string | null,
   rootPath: '/project',

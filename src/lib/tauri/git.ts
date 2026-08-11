@@ -44,3 +44,26 @@ export async function pushChanges(repoPath: string): Promise<void> {
 export async function discardChanges(repoPath: string, filePath: string): Promise<void> {
   await invoke('git_discard', { repoPath, filePath });
 }
+
+/** One commit as the evidence engine reads history. */
+export interface CommitInfo {
+  oid: string;
+  summary: string;
+  author: string;
+  /** UTC, `YYYY-MM-DD HH:MM:SS`. */
+  timestamp: string;
+  /** Repo-relative paths this commit changed. */
+  touched: string[];
+}
+
+/**
+ * History from HEAD, newest first, capped server-side at 200 commits.
+ * `sinceIso` cuts the walk; `pathPrefix` keeps only commits touching it.
+ */
+export async function gitLogSince(
+  repoPath: string,
+  sinceIso?: string,
+  pathPrefix?: string
+): Promise<CommitInfo[]> {
+  return await invoke<CommitInfo[]>('git_log_since', { repoPath, sinceIso, pathPrefix });
+}

@@ -32,6 +32,20 @@ AuricIDE is the answer: a native desktop environment where agents and humans col
 
 ---
 
+## The Oversight Tax
+
+Automating the coding doesn't automate the watching. The [oversight tax](https://software-architecture.ai/research/oversight-tax) research names the cost that's left over once agents do the work: a human still has to verify every step of a system that looks reliable, vigilance erodes the longer that goes on, and an "almost right" result forces a full re-check anyway.
+
+AuricIDE's conductor and agent fleet are built to design that cost out rather than ask users for more discipline:
+
+- **One attention signal.** Every agent is ranked by a single rule — error, then blocked-on-input, then stalled — so the user checks one badge instead of scanning every card for trouble.
+- **"All quiet" is a real state.** The fleet says explicitly when nothing needs a human, instead of leaving silence to be read as "probably fine."
+- **Verified done, not claimed done.** A goal only auto-achieves once every linked ticket is complete and every linked requirement is verified, with a full decision log behind it — so review is one bounded check on a record, not a live watch.
+- **Approval opt-in, not per-keystroke.** Human supervision is set per ticket and gates only there, instead of interrupting every tool call an agent makes.
+- **Three fleet shapes, not one pile.** Running, parked, and finished agents stay visually distinct, so a busy fleet never collapses into a column of identical cards to re-check by hand.
+
+---
+
 ## Key Features
 
 ### Markdown-First Editor with Semantic Highlighting

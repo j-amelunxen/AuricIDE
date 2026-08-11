@@ -94,12 +94,15 @@ export function useIDEState() {
   const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
   const importSpecDialogOpen = useStore((s) => s.importSpecDialogOpen);
   const setImportSpecDialogOpen = useStore((s) => s.setImportSpecDialogOpen);
+  const setVideoImportDialogOpen = useStore((s) => s.setVideoImportDialogOpen);
   const initialAgentTask = useStore((s) => s.initialAgentTask);
   const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
   const cliConnected = useStore((s) => s.cliConnected);
   const setCliConnected = useStore((s) => s.setCliConnected);
   const llmConfigured = useStore((s) => s.llmConfigured);
   const setLlmConfigured = useStore((s) => s.setLlmConfigured);
+  const judgeLlmConfigured = useStore((s) => s.judgeLlmConfigured);
+  const setJudgeLlmConfigured = useStore((s) => s.setJudgeLlmConfigured);
   const agentSettings = useStore((s) => s.agentSettings);
   const updateAgentSettings = useStore((s) => s.updateAgentSettings);
   const recentProjects = useStore((s) => s.recentProjects);
@@ -151,6 +154,11 @@ export function useIDEState() {
   const setSpawnAgentRepoPath = useStore((s) => s.setSpawnAgentRepoPath);
   const spawnAgentRepoPath = useStore((s) => s.spawnAgentRepoPath);
   const refreshGitStatus = useStore((s) => s.refreshGitStatus);
+  const scratchDir = useStore((s) => s.scratchDir);
+  const scratches = useStore((s) => s.scratches);
+  const scratchStatus = useStore((s) => s.scratchStatus);
+  const initScratches = useStore((s) => s.initScratches);
+  const refreshScratches = useStore((s) => s.refreshScratches);
 
   // Obsidian Canvas
   const ocNodes = useStore((s) => s.ocNodes);
@@ -294,12 +302,15 @@ export function useIDEState() {
     setSpawnDialogOpen,
     importSpecDialogOpen,
     setImportSpecDialogOpen,
+    setVideoImportDialogOpen,
     initialAgentTask,
     setInitialAgentTask,
     cliConnected,
     setCliConnected,
     llmConfigured,
     setLlmConfigured,
+    judgeLlmConfigured,
+    setJudgeLlmConfigured,
     agentSettings,
     updateAgentSettings,
     recentProjects,
@@ -345,6 +356,11 @@ export function useIDEState() {
     setSpawnAgentRepoPath,
     spawnAgentRepoPath,
     refreshGitStatus,
+    scratchDir,
+    scratches,
+    scratchStatus,
+    initScratches,
+    refreshScratches,
     defaultProvider,
     setDefaultProvider,
     projectFiles,

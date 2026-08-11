@@ -22,6 +22,18 @@ describe('TabBar', () => {
     expect(screen.getByTestId('tab-/a.md')).toHaveClass('border-t-2');
   });
 
+  it('shows an icon before the name when a tab declares one', () => {
+    const withIcon: TabItem[] = [
+      { id: '/data/scratches/scratch-1.md', name: 'scratch-1.md', icon: 'sticky_note_2' },
+      { id: '/a.md', name: 'a.md' },
+    ];
+    render(<TabBar tabs={withIcon} activeTabId="/a.md" onSelect={() => {}} onClose={() => {}} />);
+    expect(screen.getByTestId('tab-icon-/data/scratches/scratch-1.md')).toHaveTextContent(
+      'sticky_note_2'
+    );
+    expect(screen.queryByTestId('tab-icon-/a.md')).not.toBeInTheDocument();
+  });
+
   it('shows dirty indicator for unsaved tabs', () => {
     render(<TabBar tabs={tabs} activeTabId="/a.md" onSelect={() => {}} onClose={() => {}} />);
     expect(screen.getByTestId('dirty-/b.md')).toBeInTheDocument();

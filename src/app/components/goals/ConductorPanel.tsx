@@ -25,11 +25,19 @@ interface ConductorPanelProps {
   providers: ProviderInfo[];
   providerId: string | null;
   model: string | null;
+  /** Whether finished tickets pass an independent judge before done. */
+  requireReview: boolean;
+  /** Which judge form review uses. */
+  judgeForm: 'llm' | 'agent';
+  /** True when a separate judge model is configured (gates review). */
+  judgeConfigured: boolean;
   onStart: () => void;
   onStop: () => void;
   onSetMaxConcurrent: (n: number) => void;
   onSetProvider: (id: string | null) => void;
   onSetModel: (model: string | null) => void;
+  onSetRequireReview: (v: boolean) => void;
+  onSetJudgeForm: (form: 'llm' | 'agent') => void;
   onApprove: (ticketId: string) => void;
   onDismiss: (ticketId: string) => void;
 }
@@ -112,11 +120,16 @@ export function ConductorPanel({
   providers,
   providerId,
   model,
+  requireReview,
+  judgeForm,
+  judgeConfigured,
   onStart,
   onStop,
   onSetMaxConcurrent,
   onSetProvider,
   onSetModel,
+  onSetRequireReview,
+  onSetJudgeForm,
   onApprove,
   onDismiss,
 }: ConductorPanelProps) {
@@ -212,6 +225,45 @@ export function ConductorPanel({
               </select>
             </label>
           </>
+        )}
+
+        {/* Judge review: gated on a configured judge model. Off = the old
+            behavior (exit 0 = done). On = a finished ticket is reviewed first. */}
+        {!running && (
+          <label
+            className={`flex items-center gap-1.5 text-[11px] ${
+              judgeConfigured ? 'text-foreground-muted' : 'text-foreground-muted/40'
+            }`}
+            title={
+              judgeConfigured
+                ? 'Finished tickets pass an independent judge before counting as done.'
+                : 'Configure a Judge model in Settings → Judge to enable review.'
+            }
+          >
+            <input
+              data-testid="conductor-require-review"
+              type="checkbox"
+              checked={requireReview && judgeConfigured}
+              disabled={!judgeConfigured}
+              onChange={(e) => onSetRequireReview(e.target.checked)}
+              className="accent-primary"
+            />
+            Judge review
+          </label>
+        )}
+        {!running && requireReview && judgeConfigured && (
+          <label className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+            via
+            <select
+              data-testid="conductor-judge-form"
+              value={judgeForm}
+              onChange={(e) => onSetJudgeForm(e.target.value as 'llm' | 'agent')}
+              className={selectCls}
+            >
+              <option value="llm">LLM call</option>
+              <option value="agent">Review agent</option>
+            </select>
+          </label>
         )}
 
         <div className="ml-auto flex min-w-0 items-center gap-2">

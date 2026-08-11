@@ -25,6 +25,8 @@ import { BottomPanelTabs } from './components/ide/BottomPanelTabs';
 import { ProblemsPanel } from './components/problems/ProblemsPanel';
 import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
+import { ScratchPanel } from './components/scratch/ScratchPanel';
+import { isScratchPath } from '@/lib/scratch/naming';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
 import { QuickAccess } from './components/cockpit/QuickAccess';
@@ -36,6 +38,7 @@ import { TicketCreateModal } from './components/pm/TicketCreateModal';
 import { RequirementsModal } from './components/requirements/RequirementsModal';
 import { GoalsModal } from './components/goals/GoalsModal';
 import { OrchestrationModal } from './components/goals/OrchestrationModal';
+import { GoalLinesModal } from './components/goalLines/GoalLinesModal';
 import { NewProjectModal, type NewProjectOptions } from './components/ide/NewProjectModal';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
@@ -207,10 +210,33 @@ export default function Home() {
         return <ExtensionsPanel />;
       case 'qa':
         return <QAPanel />;
+      case 'scratches':
+        return (
+          <ScratchPanel
+            scratches={state.scratches}
+            activeTabId={state.activeTabId}
+            onCreate={() => void handlers.handleNewScratch()}
+            onOpen={handlers.handleFileSelect}
+            onRename={(path, newName) => void handlers.handleRenameScratch(path, newName)}
+            onDelete={(path) => void handlers.handleDeleteScratch(path)}
+            onDeleteAll={() => void handlers.handleCleanAllScratches()}
+            onRefresh={() => void state.refreshScratches()}
+          />
+        );
       default:
         return null;
     }
   }, [state, handlers]);
+
+  // Scratch tabs carry a marker icon; "is scratch" is derived from the path
+  // prefix, so the Tab model itself stays untouched.
+  const tabsWithIcons = useMemo(
+    () =>
+      state.openTabs.map((tab) =>
+        isScratchPath(tab.path, state.scratchDir) ? { ...tab, icon: 'sticky_note_2' } : tab
+      ),
+    [state.openTabs, state.scratchDir]
+  );
 
   return (
     <>
@@ -269,6 +295,7 @@ export default function Home() {
       />
       <GoalsModal />
       <OrchestrationModal />
+      <GoalLinesModal />
       <NewProjectModal
         isOpen={newProjectOpen}
         onCreate={handleCreateProject}
@@ -303,7 +330,7 @@ export default function Home() {
         centerContent={
           <div className="flex h-full flex-col">
             <MemoizedTabBar
-              tabs={state.openTabs}
+              tabs={tabsWithIcons}
               activeTabId={state.activeTabId}
               onSelect={state.setActiveTab}
               onClose={state.closeTab}

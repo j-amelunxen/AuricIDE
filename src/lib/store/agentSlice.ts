@@ -143,9 +143,12 @@ function willConductorRetry(state: AgentSlice, agentId: string): boolean {
   const cross = state as AgentSlice &
     Partial<{
       conductorAssignments: Record<string, string>;
+      conductorReviewAssignments: Record<string, string>;
       conductorFailedTickets: Record<string, number>;
     }>;
-  const entry = Object.entries(cross.conductorAssignments ?? {}).find(([, a]) => a === agentId);
+  const entry =
+    Object.entries(cross.conductorAssignments ?? {}).find(([, a]) => a === agentId) ??
+    Object.entries(cross.conductorReviewAssignments ?? {}).find(([, a]) => a === agentId);
   if (!entry) return false;
   return (cross.conductorFailedTickets?.[entry[0]] ?? 0) + 1 < MAX_TICKET_ATTEMPTS;
 }
@@ -308,11 +311,17 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     const conductor = get() as AgentSlice & {
       conductorAssignments?: Record<string, string>;
+      conductorReviewAssignments?: Record<string, string>;
       conductorHandleAgentKilled?: (agentId: string) => void;
     };
+    // A conductor agent is either an implementer OR a review agent. Missing the
+    // review map here would fall through to the manual-kill branch below and
+    // mark the reviewed ticket DONE — a silent false approval.
     const isConductorAgent =
-      !!conductor.conductorAssignments &&
-      Object.values(conductor.conductorAssignments).includes(agentId);
+      (!!conductor.conductorAssignments &&
+        Object.values(conductor.conductorAssignments).includes(agentId)) ||
+      (!!conductor.conductorReviewAssignments &&
+        Object.values(conductor.conductorReviewAssignments).includes(agentId));
 
     if (isConductorAgent) {
       // Killing conductor work is NOT success: the conductor reopens the

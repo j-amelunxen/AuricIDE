@@ -8,6 +8,14 @@ import { getGoalDescendants, getGoalSatisfaction } from './goalsSlice';
 import type { PmRequirement } from '../tauri/requirements';
 import type { ModelPower } from '../pm/enums';
 import { notifyConductor } from '../ide/conductorNotifications';
+import {
+  buildReviewAgentPrompt,
+  createJudgeBackend,
+  type AgentJudgeDeps,
+  type JudgeVerdict,
+} from '../conductor/judgeBackend';
+import { reopenStationForRetry } from '../evidence/verdict';
+import { pmLatestTicketReview } from '../tauri/reviews';
 
 export const MAX_TICKET_ATTEMPTS = 2;
 export const MAX_CONDUCTOR_DECISIONS = 200;
@@ -25,6 +33,7 @@ export interface ConductorDecision {
     | 'fail'
     | 'approval_needed'
     | 'approved'
+    | 'review_started'
     | 'goal_achieved';
   detail: string;
   ticketId?: string;
@@ -98,6 +107,8 @@ export interface ConductorPreflight {
   needsApproval: number;
   /** Tickets already being worked. */
   inProgress: number;
+  /** Tickets finished by an implementer, awaiting the judge's verdict. */
+  inReview: number;
   /** Open tickets that used up their attempts and will not be retried. */
   exhausted: number;
 }
@@ -124,12 +135,17 @@ export function getConductorPreflight(input: {
     blocked: 0,
     needsApproval: 0,
     inProgress: 0,
+    inReview: 0,
     exhausted: 0,
   };
 
   for (const ticket of scoped) {
     if (ticket.status === 'in_progress') {
       result.inProgress++;
+      continue;
+    }
+    if (ticket.status === 'in_review') {
+      result.inReview++;
       continue;
     }
     if (ticket.status !== 'open') continue;
@@ -244,11 +260,21 @@ export interface ConductorSlice {
   conductorRunStartedAt: string | null;
   /** Tickets marked done by the current run; reset on start. */
   conductorRunCompleted: number;
+  /** When true, a finished implementer ticket goes to review before done. */
+  conductorRequireReview: boolean;
+  /** Which judge form review uses: an inline LLM call or a spawned reviewer. */
+  conductorJudgeForm: 'llm' | 'agent';
+  /** ticketId -> reviewAgentId, or PENDING_REVIEW while an inline judge runs. */
+  conductorReviewAssignments: Record<string, string>;
+  /** ticketId -> epoch ms the review started, for the watchdog timeout. */
+  conductorReviewStartedAt: Record<string, number>;
   startConductor: (goalId: string | null) => void;
   stopConductor: (reason?: string) => void;
   setConductorMaxConcurrent: (n: number) => void;
   setConductorProviderId: (id: string | null) => void;
   setConductorModel: (model: string | null) => void;
+  setConductorRequireReview: (v: boolean) => void;
+  setConductorJudgeForm: (form: 'llm' | 'agent') => void;
   conductorTick: () => Promise<void>;
   approveConductorTicket: (ticketId: string) => Promise<void>;
   dismissConductorApproval: (ticketId: string) => void;
@@ -260,8 +286,13 @@ export interface ConductorSlice {
 /** Watchdog interval: recovers the loop from silent stalls (ms). */
 export const CONDUCTOR_HEARTBEAT_MS = 15_000;
 
+/** A review with no verdict past this is timed out into a rejection (ms). */
+export const REVIEW_TIMEOUT_MS = 10 * 60 * 1000;
+
 /** Placeholder assignment value while a spawn is in flight. */
 const PENDING_SPAWN = '__pending__';
+/** Marker for a ticket under inline (LLM) review — no spawned agent to track. */
+const PENDING_REVIEW = '__pending_review__';
 
 export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => {
   // Heartbeat lives in the creator closure — it is runtime state, not app state.
@@ -333,6 +364,184 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     }
   };
 
+  /**
+   * Store-side capabilities for the review-agent judge form, kept out of the
+   * store-free judgeBackend module. Spawns a reviewer (Codex/Grok via the
+   * conductor's provider) and reads the verdict it wrote after its start time.
+   */
+  const agentJudgeDeps = (): AgentJudgeDeps => {
+    const full = cross();
+    return {
+      spawnReviewAgent: async (input) => {
+        const agent = await full.spawnNewAgent?.({
+          name: `review:${input.ticket.name.slice(0, 40)}`,
+          model: get().conductorModel || modelForPower(undefined),
+          provider: get().conductorProviderId ?? undefined,
+          task: buildReviewAgentPrompt(input),
+          cwd: full.rootPath ?? undefined,
+          spawnedForReviewOfTicketId: input.ticket.id,
+          runSource: 'conductor',
+        });
+        if (!agent) throw new Error('Failed to spawn review agent');
+        return agent.id;
+      },
+      latestReview: async (ticketId) => {
+        const startedMs = get().conductorReviewStartedAt[ticketId];
+        const sinceIso = startedMs
+          ? new Date(startedMs).toISOString().replace('T', ' ').slice(0, 19)
+          : undefined;
+        const review = await pmLatestTicketReview(cross().rootPath ?? '', ticketId, sinceIso);
+        return review ? { pass: review.pass, reason: review.reason } : null;
+      },
+    };
+  };
+
+  /**
+   * Applies a judge verdict to a ticket under review: pass → done, reject →
+   * reopened as an attempt (the shared MAX_TICKET_ATTEMPTS ledger). Either way
+   * the ticket leaves the review maps and the loop is re-driven. The reason is
+   * recorded in the decision log so a rejection is never silent.
+   */
+  const applyVerdict = (ticketId: string, verdict: JudgeVerdict): void => {
+    const state = get();
+    const full = cross();
+    const { [ticketId]: _rev, ...restReview } = state.conductorReviewAssignments;
+    const { [ticketId]: _at, ...restStarted } = state.conductorReviewStartedAt;
+    if (verdict.pass) {
+      full.updateTicket?.(ticketId, { status: 'done' });
+      set((s: ConductorSlice) => ({
+        conductorReviewAssignments: restReview,
+        conductorReviewStartedAt: restStarted,
+        conductorRunCompleted: s.conductorRunCompleted + 1,
+      }));
+      addDecision({
+        action: 'complete',
+        detail: `Judge approved — ticket marked done`,
+        ticketId,
+      });
+    } else {
+      const fails = (state.conductorFailedTickets[ticketId] ?? 0) + 1;
+      full.updateTicket?.(ticketId, { status: 'open' });
+      set((s: ConductorSlice) => ({
+        conductorReviewAssignments: restReview,
+        conductorReviewStartedAt: restStarted,
+        conductorFailedTickets: { ...s.conductorFailedTickets, [ticketId]: fails },
+      }));
+      addDecision({
+        action: 'fail',
+        detail:
+          fails < MAX_TICKET_ATTEMPTS
+            ? `Judge rejected — requeued (attempt ${fails}/${MAX_TICKET_ATTEMPTS}): ${verdict.reason}`
+            : `Judge rejected — giving up after ${fails} attempts: ${verdict.reason}`,
+        ticketId,
+      });
+    }
+    void persist()
+      .then(() => get().conductorTick())
+      .catch(() => {});
+  };
+
+  /**
+   * Sends a finished implementer ticket to the judge. Moves it out of the
+   * assignments map into review (in_review), then starts the configured judge
+   * form: the LLM form resolves a verdict inline; the review-agent form (stage
+   * 5) delegates to a spawned reviewer. Any failure to even start the judge is
+   * a rejection, never a silent pass.
+   */
+  const startReview = async (ticketId: string, implementerAgentId: string): Promise<void> => {
+    const full = cross();
+    set((s: ConductorSlice) => {
+      const { [ticketId]: _gone, ...restAssign } = s.conductorAssignments;
+      return {
+        conductorAssignments: restAssign,
+        conductorReviewAssignments: {
+          ...s.conductorReviewAssignments,
+          [ticketId]: PENDING_REVIEW,
+        },
+        conductorReviewStartedAt: {
+          ...s.conductorReviewStartedAt,
+          [ticketId]: Date.now(),
+        },
+      };
+    });
+    full.updateTicket?.(ticketId, { status: 'in_review' });
+    addDecision({
+      action: 'review_started',
+      detail: 'Implementer finished — ticket sent to the judge',
+      ticketId,
+      agentId: implementerAgentId,
+    });
+
+    const ticket = (full.pmDraftTickets ?? []).find((t) => t.id === ticketId);
+    if (!ticket) {
+      applyVerdict(ticketId, { pass: false, reason: 'ticket vanished before review' });
+      return;
+    }
+    const goal = (full.goalsDraft ?? []).find(
+      (g) => g.id === (ticket.goalId ?? get().conductorGoalId ?? undefined)
+    );
+    const testCases = (full.pmDraftTestCases ?? []).filter((tc) => tc.ticketId === ticketId);
+
+    try {
+      const backend = createJudgeBackend(get().conductorJudgeForm, agentJudgeDeps());
+      const startRes = await backend.start({
+        ticket,
+        goal,
+        testCases,
+        projectPath: full.rootPath ?? '',
+      });
+      if (startRes.kind === 'verdict') {
+        applyVerdict(ticketId, startRes.verdict);
+      } else {
+        // Delegated to a spawned reviewer: record its real id. Persist so the
+        // in_review ticket survives; the verdict arrives when the agent exits.
+        set((s: ConductorSlice) => ({
+          conductorReviewAssignments: {
+            ...s.conductorReviewAssignments,
+            [ticketId]: startRes.reviewAgentId,
+          },
+        }));
+        void persist();
+      }
+    } catch (e) {
+      applyVerdict(ticketId, {
+        pass: false,
+        reason: `Judge could not run: ${(e as Error).message}`,
+      });
+    }
+  };
+
+  /**
+   * A spawned review agent (agent form) exited: collect the verdict it wrote,
+   * or treat a crash / no-verdict exit as a rejection. Never an approval by
+   * default — silence is not a pass.
+   */
+  const handleReviewAgentExit = async (
+    ticketId: string,
+    reviewAgentId: string,
+    status: AgentInfo['status']
+  ): Promise<void> => {
+    let verdict: JudgeVerdict | null = null;
+    try {
+      const backend = createJudgeBackend(get().conductorJudgeForm, agentJudgeDeps());
+      if (status === 'idle' && backend.collectVerdict) {
+        verdict = await backend.collectVerdict(reviewAgentId, ticketId);
+      }
+    } catch {
+      verdict = null;
+    }
+    applyVerdict(
+      ticketId,
+      verdict ?? {
+        pass: false,
+        reason:
+          status === 'error'
+            ? 'Review agent errored before submitting a verdict'
+            : 'Review agent exited without a verdict',
+      }
+    );
+  };
+
   return {
     conductorRunning: false,
     conductorGoalId: null,
@@ -347,6 +556,10 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorLastRun: null,
     conductorRunStartedAt: null,
     conductorRunCompleted: 0,
+    conductorRequireReview: false,
+    conductorJudgeForm: 'llm',
+    conductorReviewAssignments: {},
+    conductorReviewStartedAt: {},
 
     startConductor: (goalId) => {
       set({
@@ -357,6 +570,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         conductorApprovedTickets: [],
         conductorRunStartedAt: new Date().toISOString(),
         conductorRunCompleted: 0,
+        conductorReviewAssignments: {},
+        conductorReviewStartedAt: {},
       });
       addDecision({
         action: 'start',
@@ -388,7 +603,14 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       const runningAgentIds = Object.values(get().conductorAssignments).filter(
         (a) => a !== PENDING_SPAWN
       );
-      runningAgentIds.forEach((agentId) => void full.killRunningAgent?.(agentId));
+      // Review agents this run spawned must die too (the inline PENDING_REVIEW
+      // marker has no process to kill).
+      const runningReviewIds = Object.values(get().conductorReviewAssignments).filter(
+        (a) => a !== PENDING_REVIEW
+      );
+      [...runningAgentIds, ...runningReviewIds].forEach(
+        (agentId) => void full.killRunningAgent?.(agentId)
+      );
       addDecision({
         action: 'stop',
         detail:
@@ -405,6 +627,10 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
     setConductorModel: (model) => set({ conductorModel: model || null }),
 
+    setConductorRequireReview: (v) => set({ conductorRequireReview: v }),
+
+    setConductorJudgeForm: (form) => set({ conductorJudgeForm: form }),
+
     conductorTick: async () => {
       if (!get().conductorRunning) return;
       const full = cross();
@@ -413,8 +639,63 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       const goalId = get().conductorGoalId;
 
       const scoped = goalId ? filterTicketsForGoal(allTickets, goals, goalId) : allTickets;
+
+      // Watchdog: a review with no verdict past REVIEW_TIMEOUT_MS (a hung
+      // reviewer, a lost spawn) must not park a ticket in_review forever. Time
+      // it out into a rejection; kill a real reviewer, leave the inline marker.
+      const nowMs = Date.now();
+      for (const [reviewTicketId, startedAt] of Object.entries(get().conductorReviewStartedAt)) {
+        if (nowMs - startedAt > REVIEW_TIMEOUT_MS) {
+          const reviewer = get().conductorReviewAssignments[reviewTicketId];
+          // Reject FIRST so the ticket leaves the review map, THEN kill the
+          // process. Killing first would route through conductorHandleAgentKilled
+          // (the review-map membership check) and double-handle the same ticket.
+          applyVerdict(reviewTicketId, { pass: false, reason: 'Review timed out' });
+          if (reviewer && reviewer !== PENDING_REVIEW) void full.killRunningAgent?.(reviewer);
+        }
+      }
+
+      // A judge rejected a ticket-linked station claim (done+claim, with a
+      // lastCheckedAt stamp): the station half judged it, the conductor owns
+      // reopening the ticket so it is reworked — within the shared attempt
+      // ledger. A ticket in any non-done state is handled by the ticket judge;
+      // this catches the case where the ticket is already done.
+      if (goalId) {
+        const subtree = new Set<string>([
+          goalId,
+          ...getGoalDescendants(goals, goalId).map((g) => g.id),
+        ]);
+        for (const st of full.goalStationsDraft ?? []) {
+          if (
+            !st.ticketId ||
+            st.evidenceKind !== 'claim' ||
+            st.lastCheckedAt === null ||
+            !subtree.has(st.goalId)
+          ) {
+            continue;
+          }
+          const ticket = allTickets.find((t) => t.id === st.ticketId);
+          if (ticket?.status !== 'done') continue;
+          const fails = get().conductorFailedTickets[ticket.id] ?? 0;
+          if (fails >= MAX_TICKET_ATTEMPTS) continue;
+          full.updateTicket?.(ticket.id, { status: 'open' });
+          full.updateStation?.(st.id, reopenStationForRetry());
+          set((s: ConductorSlice) => ({
+            conductorFailedTickets: { ...s.conductorFailedTickets, [ticket.id]: fails + 1 },
+          }));
+          addDecision({
+            action: 'fail',
+            detail: `Station "${st.name}" rejected by the judge — ticket reopened`,
+            ticketId: ticket.id,
+          });
+        }
+      }
+
       const assignments = get().conductorAssignments;
-      const hasActiveAgents = Object.keys(assignments).length > 0;
+      // Both maps count: a run with only reviews in flight is still active and
+      // must not auto-achieve the goal.
+      const hasActiveAgents =
+        Object.keys(assignments).length + Object.keys(get().conductorReviewAssignments).length > 0;
 
       // Scope exhausted: no open/in-progress work left and no agents running →
       // machine-check the goal and close the loop.
@@ -422,7 +703,10 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         (t) =>
           (t.status === 'open' &&
             (get().conductorFailedTickets[t.id] ?? 0) < MAX_TICKET_ATTEMPTS) ||
-          t.status === 'in_progress'
+          t.status === 'in_progress' ||
+          // A ticket awaiting the judge is work in flight: it must not let the
+          // loop auto-achieve the goal before the verdict lands.
+          t.status === 'in_review'
       );
       if (!workLeft && !hasActiveAgents) {
         if (goalId) {
@@ -431,6 +715,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             allTickets,
             full.requirementsDraft ?? [],
             full.goalRequirementLinksDraft ?? [],
+            full.goalStationsDraft ?? [],
             goalId
           );
           const goalName = goals.find((g) => g.id === goalId)?.name ?? null;
@@ -469,7 +754,9 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         const state = get();
         if (!state.conductorRunning) break;
         const capacity =
-          state.conductorMaxConcurrent - Object.keys(state.conductorAssignments).length;
+          state.conductorMaxConcurrent -
+          Object.keys(state.conductorAssignments).length -
+          Object.keys(state.conductorReviewAssignments).length;
         if (capacity <= 0) break;
         if (state.conductorAssignments[ticket.id]) continue;
         if ((state.conductorFailedTickets[ticket.id] ?? 0) >= MAX_TICKET_ATTEMPTS) continue;
@@ -576,6 +863,16 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorHandleAgentStatus: (agentId, status) => {
       if (status !== 'idle' && status !== 'error') return;
       const state = get();
+      // A review agent finishing → collect its verdict (or a crash → reject).
+      // Checked before implementer assignments so a reviewer is never mistaken
+      // for an implementer completing its ticket.
+      const reviewEntry = Object.entries(state.conductorReviewAssignments).find(
+        ([, a]) => a === agentId
+      );
+      if (reviewEntry) {
+        void handleReviewAgentExit(reviewEntry[0], agentId, status);
+        return;
+      }
       const entry = Object.entries(state.conductorAssignments).find(([, a]) => a === agentId);
       if (!entry) return;
       const [ticketId] = entry;
@@ -585,6 +882,12 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       );
 
       if (status === 'idle') {
+        if (get().conductorRequireReview) {
+          // Exit 0 is a CLAIM, not a completion: an independent judge signs it
+          // off before the ticket is done. startReview owns persist + re-tick.
+          void startReview(ticketId, agentId);
+          return;
+        }
         full.updateTicket?.(ticketId, { status: 'done' });
         set((s: ConductorSlice) => ({
           conductorAssignments: remaining,
@@ -623,10 +926,42 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
     conductorHandleAgentKilled: (agentId) => {
       const state = get();
+      const full = cross();
+
+      // A killed REVIEW agent: the verdict was aborted. Reopen the ticket and
+      // take it out of this run, exactly like a killed implementer — never let
+      // it read as an approval.
+      const reviewEntry = Object.entries(state.conductorReviewAssignments).find(
+        ([, a]) => a === agentId
+      );
+      if (reviewEntry) {
+        const [ticketId] = reviewEntry;
+        const { [ticketId]: _rev, ...restReview } = state.conductorReviewAssignments;
+        const { [ticketId]: _at, ...restStarted } = state.conductorReviewStartedAt;
+        full.updateTicket?.(ticketId, { status: 'open' });
+        set({
+          conductorReviewAssignments: restReview,
+          conductorReviewStartedAt: restStarted,
+          conductorFailedTickets: {
+            ...state.conductorFailedTickets,
+            [ticketId]: MAX_TICKET_ATTEMPTS,
+          },
+        });
+        addDecision({
+          action: 'fail',
+          detail: 'Review agent killed by user — ticket reopened and excluded from this run',
+          ticketId,
+          agentId,
+        });
+        void persist()
+          .then(() => get().conductorTick())
+          .catch(() => {});
+        return;
+      }
+
       const entry = Object.entries(state.conductorAssignments).find(([, a]) => a === agentId);
       if (!entry) return;
       const [ticketId] = entry;
-      const full = cross();
       const remaining = Object.fromEntries(
         Object.entries(state.conductorAssignments).filter(([t]) => t !== ticketId)
       );

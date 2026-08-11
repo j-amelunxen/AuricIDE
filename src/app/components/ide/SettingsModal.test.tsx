@@ -100,6 +100,7 @@ describe('SettingsModal – Category Navigation', () => {
     expect(screen.getByTestId('settings-nav-editor')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-appearance')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-system')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-nav-video-import')).toBeInTheDocument();
   });
 
   it('Agent is active by default', () => {

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { isVerifiedEvidence } from '../../lib/pm/enums';
 import { resolveGoalId, resolveRequirementId, resolveTicketId } from './resolve';
 
 export interface GoalRow {
@@ -353,6 +354,25 @@ export function evaluateGoal(
     }
   }
 
+  // SQL twin of getGoalSatisfaction (src/lib/store/goalsSlice.ts) — the two
+  // must stay in lockstep, or the UI and agents calling evaluate_goal will
+  // disagree about whether a goal is done. Stations are part of the check:
+  // an open human station must block auto-achievement here exactly as in TS.
+  const stations = db
+    .prepare(
+      `SELECT name, status, evidence_kind FROM pm_goal_stations WHERE goal_id IN (${placeholders})`
+    )
+    .all(...subtree) as { name: string; status: string; evidence_kind: string }[];
+  for (const s of stations) {
+    if (s.status !== 'done') {
+      blockers.push(`Station "${s.name}" is ${s.status}`);
+    } else if (!isVerifiedEvidence(s.evidence_kind)) {
+      // Lockstep twin of getGoalSatisfaction: a claimed-but-unverified station
+      // blocks exactly like a pending one until the judge promotes it.
+      blockers.push(`Station "${s.name}" is claimed, not verified`);
+    }
+  }
+
   const children = db
     .prepare('SELECT name, status FROM pm_goals WHERE parent_id = ?')
     .all(goalId) as { name: string; status: string }[];
@@ -364,7 +384,7 @@ export function evaluateGoal(
 
   // A goal with nothing attached is vacuously "true" but not meaningfully
   // achieved — refuse to report it as satisfied.
-  if (tickets.length === 0 && reqs.length === 0 && children.length === 0) {
+  if (tickets.length === 0 && reqs.length === 0 && children.length === 0 && stations.length === 0) {
     blockers.push('Goal has no tickets, requirements, or sub-goals — nothing to verify');
   }
 

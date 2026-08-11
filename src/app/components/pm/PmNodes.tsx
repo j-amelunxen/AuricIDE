@@ -96,6 +96,8 @@ function getStatusColor(status: string) {
       return 'text-gray-400 border-gray-400/30 bg-gray-400/5';
     case 'in_progress':
       return 'text-blue-400 border-blue-400/30 bg-blue-400/5';
+    case 'in_review':
+      return 'text-indigo-300 border-indigo-400/30 bg-indigo-400/5';
     case 'done':
       return 'text-green-400 border-green-400/30 bg-green-400/5';
     case 'archived':

@@ -19,10 +19,12 @@ import {
   openFolderDialog,
   readDirectory,
   createDirectory,
+  deleteFile,
   listAllFiles,
   movePath,
   type FileEntry,
 } from '@/lib/tauri/fs';
+import { nextScratchName } from '@/lib/scratch/naming';
 import { appendGitignoreEntry, toGitignoreEntry } from '@/lib/git/gitignore';
 import { newItemParentDir } from '@/lib/explorer/newItemTarget';
 import {
@@ -47,6 +49,35 @@ function revealInFileManagerLabel(): string {
   if (platform.includes('Mac')) return 'Reveal in Finder';
   if (platform.includes('Win')) return 'Reveal in File Explorer';
   return 'Show in File Manager';
+}
+
+/**
+ * Commands that belong to a focused surface rather than to the application.
+ * The palette can name them — that is how a user discovers the shortcut — but
+ * it cannot perform them, because the editor and the canvas own the selection
+ * they act on.
+ *
+ * They get an honest refusal instead of a shrug. A command that quietly does
+ * nothing is worse than one that says where it lives: the palette closes, the
+ * menu item flashes, and an external driver reads it as success.
+ */
+export const CONTEXT_BOUND_COMMANDS: Record<string, string> = {
+  'agent.kill-all': 'Kill All lives in the Agents panel, per repository — it asks before it acts.',
+  'canvas.toggle': 'Open a canvas file first; this switches the view of the active canvas.',
+  'canvas.fit': 'Open a canvas file first; this fits the active canvas to the screen.',
+  'markdown.rename-heading': 'Put the cursor on a heading in the editor, then press F2.',
+  'markdown.find-references': 'Put the cursor on an entity in the editor, then press Alt+F7.',
+  'markdown.extract-section': 'Put the cursor in the section you want to extract, in the editor.',
+};
+
+function contextBoundAction(id: string): () => void {
+  const hint = CONTEXT_BOUND_COMMANDS[id];
+  if (!hint) {
+    // Not wired and not declared context-bound. Guarded by a test, so this is
+    // a developer mistake, not a user-facing state — say so rather than hide it.
+    return () => useStore.getState().showToast(`Command "${id}" has no action.`, 'error');
+  }
+  return () => useStore.getState().showToast(hint, 'info');
 }
 
 export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
@@ -389,6 +420,81 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       if (!state.activeTabId) return;
       state.markDirty(state.activeTabId, true);
       autosave.schedule(state.activeTabId, newContent);
+    },
+    [state, autosave]
+  );
+
+  // Scratch files are global (app-data dir) and deliberately independent of
+  // any open project — none of these handlers guards on rootPath. Every
+  // mutation refreshes the list because no file watcher covers the scratch dir.
+  const handleNewScratch = useCallback(async () => {
+    let dir = useStore.getState().scratchDir;
+    if (!dir) {
+      await useStore.getState().initScratches();
+      dir = useStore.getState().scratchDir;
+    }
+    if (!dir) {
+      useStore.getState().showToast('Could not resolve the scratch directory', 'error');
+      return;
+    }
+    const name = nextScratchName(useStore.getState().scratches.map((s) => s.name));
+    const path = `${dir}/${name}`;
+    await writeFile(path, '');
+    await useStore.getState().refreshScratches();
+    handleFileSelect(path);
+  }, [handleFileSelect]);
+
+  const handleDeleteScratch = useCallback(
+    async (path: string) => {
+      // Flush first — a debounced autosave landing after the delete would
+      // recreate the file.
+      await autosave.flush();
+      state.closeTab(path);
+      await deleteFile(path);
+      await useStore.getState().refreshScratches();
+      useStore.getState().showToast('Scratch deleted', 'success');
+    },
+    [state, autosave]
+  );
+
+  const handleCleanAllScratches = useCallback(async () => {
+    const scratches = useStore.getState().scratches;
+    if (scratches.length === 0) return;
+    await autosave.flush();
+    for (const s of scratches) state.closeTab(s.path);
+    for (const s of scratches) await deleteFile(s.path);
+    await useStore.getState().refreshScratches();
+    useStore
+      .getState()
+      .showToast(
+        `Deleted ${scratches.length} scratch file${scratches.length === 1 ? '' : 's'}`,
+        'success'
+      );
+  }, [state, autosave]);
+
+  const handleRenameScratch = useCallback(
+    async (oldPath: string, newName: string) => {
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed.includes('/')) return;
+      const finalName = trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`;
+      const dir = oldPath.slice(0, oldPath.lastIndexOf('/'));
+      const newPath = `${dir}/${finalName}`;
+      if (newPath === oldPath) return;
+      if (useStore.getState().scratches.some((s) => s.path === newPath)) {
+        useStore.getState().showToast(`"${finalName}" already exists`, 'error');
+        return;
+      }
+      await autosave.flush();
+      try {
+        await movePath(oldPath, newPath);
+      } catch (err) {
+        useStore
+          .getState()
+          .showToast(typeof err === 'string' ? err : `Could not rename "${finalName}"`, 'error');
+        return;
+      }
+      state.renamePath(oldPath, newPath);
+      await useStore.getState().refreshScratches();
     },
     [state, autosave]
   );
@@ -942,6 +1048,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         useStore.getState().setGoalsModalOpen(true);
         return;
       }
+      if (id === 'goal-lines') {
+        // Data loads happen on the modal's own mount effect.
+        useStore.getState().setGoalLinesOpen(true);
+        return;
+      }
       state.setActiveActivity(id);
     },
     [state]
@@ -1096,8 +1207,15 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'file.search': () => state.setFileSearchOpen(true),
       'file.advanced-selection': () => state.setFileSelectorOpen(true),
       'file.save': handleSave,
+      'file.new-scratch': () => void handleNewScratch(),
       'file.import-spec': () => state.setImportSpecDialogOpen(true),
+      'file.import-video': () => state.setVideoImportDialogOpen(true),
       'git.commit': handleCommit,
+      'git.stage-all': () => {
+        const store = useStore.getState();
+        if (!store.rootPath) return;
+        void store.stageAll(store.rootPath);
+      },
       'git.show-changes': () => state.setActiveActivity('source-control'),
       'agent.deploy': () => state.setSpawnDialogOpen(true),
       'agent.ascii-art': () => {
@@ -1116,6 +1234,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         state.setActiveActivity('cockpit');
       },
       'view.goals': () => useStore.getState().setGoalsModalOpen(true),
+      'view.goal-lines': () => useStore.getState().setGoalLinesOpen(true),
       'excalidraw.new': () => void handleNewDiagram(),
       'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
       'excalidraw.sync-all': () => {
@@ -1131,13 +1250,32 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         });
       },
     }),
-    [state, handleNewFile, handleNewDiagram, handleOpenFolder, handleSave, handleCommit]
+    [
+      state,
+      handleNewFile,
+      handleNewDiagram,
+      handleOpenFolder,
+      handleSave,
+      handleCommit,
+      handleNewScratch,
+    ]
   );
 
   const commands = useMemo(
-    () => defaultCommands.map((cmd) => ({ ...cmd, action: commandActions[cmd.id] ?? (() => {}) })),
+    () =>
+      defaultCommands.map((cmd) => ({
+        ...cmd,
+        action: commandActions[cmd.id] ?? contextBoundAction(cmd.id),
+      })),
     [commandActions]
   );
+
+  /**
+   * The commands the palette can perform right here. Everything else is
+   * context-bound and only explains itself. The native menu reads this to
+   * decide what to grey out, so a caller can see *why* it cannot act.
+   */
+  const performableCommandIds = useMemo(() => Object.keys(commandActions), [commandActions]);
 
   const handleCommandExecute = useCallback(
     (commandId: string) => {
@@ -1248,6 +1386,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleNewProject,
     handleSave,
     handleEditorChange,
+    handleNewScratch,
+    handleDeleteScratch,
+    handleCleanAllScratches,
+    handleRenameScratch,
     handleSelectionSpawn,
     handleSpawnNewAgent,
     handleKillAgent,
@@ -1275,6 +1417,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleProblemsClick,
     contextMenuOptions,
     commands,
+    performableCommandIds,
     handleCommandExecute,
     itemsWithBadge,
     dailyTip,

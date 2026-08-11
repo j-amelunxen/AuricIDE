@@ -7,6 +7,8 @@ export interface TabItem {
   id: string;
   name: string;
   isDirty?: boolean;
+  /** Material symbol shown before the name (e.g. scratch tabs). */
+  icon?: string;
 }
 
 interface TabBarProps {
@@ -82,6 +84,14 @@ export function TabBar({
                   : 'text-foreground-muted hover:text-foreground'
               }`}
             >
+              {tab.icon && (
+                <span
+                  data-testid={`tab-icon-${tab.id}`}
+                  className="material-symbols-outlined flex-shrink-0 text-[13px] text-foreground-muted"
+                >
+                  {tab.icon}
+                </span>
+              )}
               <span className="truncate">{tab.name}</span>
               {tab.isDirty && (
                 <span

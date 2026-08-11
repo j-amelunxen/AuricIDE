@@ -212,12 +212,44 @@ pub struct PmGoalRequirementLink {
     pub created_at: String,
 }
 
+/// One step of a goal's line. The stored status is only done|planned|fog:
+/// "front" is derived by the layout, never persisted, so no writer (UI, MCP,
+/// planner commit) has to maintain an exactly-one-front invariant. The
+/// `predicate` crosses IPC as a JSON string (the appliesTo pattern).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PmGoalStation {
+    pub id: String,
+    pub goal_id: String,
+    pub name: String,
+    pub kind: String,
+    pub status: String,
+    pub evidence_kind: String,
+    pub predicate: String,
+    pub evidence_note: String,
+    #[serde(default = "default_station_source_context")]
+    pub source_context: String,
+    pub ticket_id: Option<String>,
+    pub lane: i32,
+    pub sort_order: i32,
+    pub last_checked_at: Option<String>,
+    pub done_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+fn default_station_source_context() -> String {
+    "null".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct GoalsState {
     pub goals: Vec<PmGoal>,
     pub goal_runs: Vec<PmGoalRun>,
     pub requirement_links: Vec<PmGoalRequirementLink>,
+    #[serde(default)]
+    pub stations: Vec<PmGoalStation>,
 }
 
 /// Row-level sync payload: upserts + explicit deletions. Unlike a replace-all
@@ -230,15 +262,29 @@ pub struct GoalsSyncPayload {
     pub goal_runs: Vec<PmGoalRun>,
     pub requirement_links: Vec<PmGoalRequirementLink>,
     #[serde(default)]
+    pub stations: Vec<PmGoalStation>,
+    #[serde(default)]
     pub deleted_goal_ids: Vec<String>,
     #[serde(default)]
     pub deleted_run_ids: Vec<String>,
     #[serde(default)]
     pub deleted_link_ids: Vec<String>,
+    #[serde(default)]
+    pub deleted_station_ids: Vec<String>,
 }
 
 /// How many spawn prompts the per-project history retains; older rows are pruned.
 pub const AGENT_PROMPT_HISTORY_CAP: usize = 100;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketReview {
+    pub ticket_id: String,
+    pub pass: bool,
+    pub reason: String,
+    pub reviewer: String,
+    pub created_at: String,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -562,6 +608,58 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         CREATE INDEX idx_agent_prompt_history_created ON agent_prompt_history(created_at);",
     )?;
 
+    apply_migration(
+        conn,
+        15,
+        "create_pm_goal_stations",
+        // Stations are the steps of a goal's line. `status` stores only
+        // done|planned|fog — "front" is derived, so no writer has to maintain
+        // an exactly-one-front invariant. `predicate` is JSON-in-TEXT (house
+        // pattern, like pm_tickets.context). `lane` is reserved for branch
+        // rendering and stays 0 for now.
+        "CREATE TABLE pm_goal_stations (
+            id              TEXT PRIMARY KEY,
+            goal_id         TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+            name            TEXT NOT NULL,
+            kind            TEXT NOT NULL DEFAULT 'normal',
+            status          TEXT NOT NULL DEFAULT 'planned',
+            evidence_kind   TEXT NOT NULL DEFAULT 'claim',
+            predicate       TEXT NOT NULL DEFAULT '{\"type\":\"undefined\"}',
+            evidence_note   TEXT NOT NULL DEFAULT '',
+            ticket_id       TEXT REFERENCES pm_tickets(id) ON DELETE SET NULL,
+            lane            INTEGER NOT NULL DEFAULT 0,
+            sort_order      INTEGER NOT NULL DEFAULT 0,
+            last_checked_at TEXT,
+            done_at         TEXT,
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_goal_stations_goal ON pm_goal_stations(goal_id);",
+    )?;
+
+    apply_migration(
+        conn,
+        16,
+        "create_pm_ticket_reviews",
+        // Keep in sync with src/mcp/db.ts migration 16.
+        "CREATE TABLE pm_ticket_reviews (
+            id          TEXT PRIMARY KEY,
+            ticket_id   TEXT NOT NULL REFERENCES pm_tickets(id) ON DELETE CASCADE,
+            verdict     INTEGER NOT NULL,
+            reason      TEXT NOT NULL,
+            reviewer    TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_ticket_reviews_ticket ON pm_ticket_reviews(ticket_id);",
+    )?;
+
+    apply_migration(
+        conn,
+        17,
+        "add_goal_station_source_context",
+        "ALTER TABLE pm_goal_stations ADD COLUMN source_context TEXT NOT NULL DEFAULT 'null';",
+    )?;
+
     Ok(())
 }
 
@@ -641,6 +739,53 @@ pub fn agent_prompt_history_list_impl(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to read agent prompt history rows: {}", e))
+}
+
+/// Returns the newest review conductor a review agent recorded for `ticket_id`,
+/// optionally restricted to reviews created at or after `since_iso`. `None`
+/// when no matching row exists — the conductor reads that as "no verdict yet".
+pub fn pm_latest_ticket_review_impl(
+    conn: &Connection,
+    ticket_id: &str,
+    since_iso: Option<&str>,
+) -> Result<Option<TicketReview>, String> {
+    let map_row = |row: &rusqlite::Row| -> rusqlite::Result<TicketReview> {
+        let verdict: i64 = row.get(1)?;
+        Ok(TicketReview {
+            ticket_id: row.get(0)?,
+            pass: verdict != 0,
+            reason: row.get(2)?,
+            reviewer: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    };
+
+    let result = match since_iso {
+        Some(since) => conn.query_row(
+            "SELECT ticket_id, verdict, reason, reviewer, created_at
+             FROM pm_ticket_reviews
+             WHERE ticket_id = ?1 AND created_at >= ?2
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT 1",
+            params![ticket_id, since],
+            map_row,
+        ),
+        None => conn.query_row(
+            "SELECT ticket_id, verdict, reason, reviewer, created_at
+             FROM pm_ticket_reviews
+             WHERE ticket_id = ?1
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT 1",
+            params![ticket_id],
+            map_row,
+        ),
+    };
+
+    match result {
+        Ok(review) => Ok(Some(review)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to query ticket review: {}", e)),
+    }
 }
 
 pub fn init_db(project_path: &str) -> Result<Connection, String> {
@@ -1272,6 +1417,10 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
             )
             .map_err(|e| format!("Failed to delete goal requirement link: {}", e))?;
         }
+        for id in &payload.deleted_station_ids {
+            conn.execute("DELETE FROM pm_goal_stations WHERE id = ?1", params![id])
+                .map_err(|e| format!("Failed to delete goal station: {}", e))?;
+        }
 
         for goal in &payload.goals {
             conn.execute(
@@ -1342,6 +1491,43 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
                 params![link.id, link.goal_id, link.requirement_id, link.created_at],
             )
             .map_err(|e| format!("Failed to upsert goal requirement link: {}", e))?;
+        }
+
+        for station in &payload.stations {
+            conn.execute(
+                "INSERT INTO pm_goal_stations (id, goal_id, name, kind, status, \
+                 evidence_kind, predicate, evidence_note, source_context, ticket_id, lane, sort_order, \
+                 last_checked_at, done_at, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16) \
+                 ON CONFLICT(id) DO UPDATE SET \
+                 goal_id = excluded.goal_id, name = excluded.name, kind = excluded.kind, \
+                 status = excluded.status, evidence_kind = excluded.evidence_kind, \
+                 predicate = excluded.predicate, evidence_note = excluded.evidence_note, \
+                 source_context = excluded.source_context, \
+                 ticket_id = excluded.ticket_id, lane = excluded.lane, \
+                 sort_order = excluded.sort_order, \
+                 last_checked_at = excluded.last_checked_at, done_at = excluded.done_at, \
+                 updated_at = excluded.updated_at",
+                params![
+                    station.id,
+                    station.goal_id,
+                    station.name,
+                    station.kind,
+                    station.status,
+                    station.evidence_kind,
+                    station.predicate,
+                    station.evidence_note,
+                    station.source_context,
+                    station.ticket_id,
+                    station.lane,
+                    station.sort_order,
+                    station.last_checked_at,
+                    station.done_at,
+                    station.created_at,
+                    station.updated_at
+                ],
+            )
+            .map_err(|e| format!("Failed to upsert goal station: {}", e))?;
         }
 
         Ok(())
@@ -1425,16 +1611,51 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
         .filter_map(|r| r.ok())
         .collect();
 
+    let mut station_stmt = conn
+        .prepare(
+            "SELECT id, goal_id, name, kind, status, evidence_kind, predicate, \
+             evidence_note, source_context, ticket_id, lane, sort_order, last_checked_at, done_at, \
+             created_at, updated_at \
+             FROM pm_goal_stations ORDER BY goal_id, sort_order, created_at",
+        )
+        .map_err(|e| format!("Failed to prepare goal stations query: {}", e))?;
+    let stations: Vec<PmGoalStation> = station_stmt
+        .query_map([], |row| {
+            Ok(PmGoalStation {
+                id: row.get(0)?,
+                goal_id: row.get(1)?,
+                name: row.get(2)?,
+                kind: row.get(3)?,
+                status: row.get(4)?,
+                evidence_kind: row.get(5)?,
+                predicate: row.get(6)?,
+                evidence_note: row.get(7)?,
+                source_context: row.get(8)?,
+                ticket_id: row.get(9)?,
+                lane: row.get(10)?,
+                sort_order: row.get(11)?,
+                last_checked_at: row.get(12)?,
+                done_at: row.get(13)?,
+                created_at: row.get(14)?,
+                updated_at: row.get(15)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query goal stations: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
     Ok(GoalsState {
         goals,
         goal_runs,
         requirement_links,
+        stations,
     })
 }
 
 pub fn goals_clear_impl(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
-        "DELETE FROM pm_goal_requirement_links;
+        "DELETE FROM pm_goal_stations;
+         DELETE FROM pm_goal_requirement_links;
          DELETE FROM pm_goal_runs;
          DELETE FROM pm_goals;",
     )
@@ -1489,7 +1710,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 14);
+        assert_eq!(count, 17);
 
         // kv_store table should exist
         let table_exists: bool = conn
@@ -1511,7 +1732,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 14);
+        assert_eq!(count, 17);
     }
 
     #[test]
@@ -1529,7 +1750,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 14);
+        assert_eq!(count, 17);
     }
 
     #[test]
@@ -1636,6 +1857,8 @@ mod tests {
             "pm_goals",
             "pm_goal_runs",
             "pm_goal_requirement_links",
+            "pm_goal_stations",
+            "pm_ticket_reviews",
         ];
         for table in &tables {
             let exists: bool = conn
@@ -1654,7 +1877,7 @@ mod tests {
         let migration_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 14);
+        assert_eq!(migration_count, 17);
     }
 
     fn make_test_payload() -> PmSavePayload {
@@ -2303,6 +2526,124 @@ mod tests {
         }
     }
 
+    fn make_test_station(id: &str, goal_id: &str, sort_order: i32) -> PmGoalStation {
+        PmGoalStation {
+            id: id.to_string(),
+            goal_id: goal_id.to_string(),
+            name: "A station".to_string(),
+            kind: "normal".to_string(),
+            status: "planned".to_string(),
+            evidence_kind: "claim".to_string(),
+            predicate: "{\"type\":\"undefined\"}".to_string(),
+            evidence_note: "".to_string(),
+            source_context: "null".to_string(),
+            ticket_id: None,
+            lane: 0,
+            sort_order,
+            last_checked_at: None,
+            done_at: None,
+            created_at: "2026-01-01 00:00:00".to_string(),
+            updated_at: "2026-01-01 00:00:00".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_goal_stations_roundtrip_ordered_by_sort_order() {
+        let conn = setup_in_memory_db();
+        let mut payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        let mut second = make_test_station("s2", "g1", 1);
+        second.name = "Call the customer".to_string();
+        second.kind = "human".to_string();
+        second.evidence_kind = "human".to_string();
+        second.predicate = "{\"type\":\"human\"}".to_string();
+        second.source_context =
+            "{\"importId\":\"video-1\",\"notes\":[\"Client approval\"]}".to_string();
+        payload.stations = vec![second, make_test_station("s1", "g1", 0)];
+
+        goals_sync_impl(&conn, &payload).unwrap();
+        let state = goals_load_impl(&conn).unwrap();
+
+        assert_eq!(state.stations.len(), 2);
+        assert_eq!(state.stations[0].id, "s1");
+        assert_eq!(state.stations[1].id, "s2");
+        assert_eq!(state.stations[1].name, "Call the customer");
+        assert_eq!(state.stations[1].kind, "human");
+        assert_eq!(state.stations[1].predicate, "{\"type\":\"human\"}");
+        assert!(state.stations[1].source_context.contains("video-1"));
+    }
+
+    #[test]
+    fn test_goal_stations_upsert_updates_existing_row() {
+        let conn = setup_in_memory_db();
+        let mut payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        payload.stations = vec![make_test_station("s1", "g1", 0)];
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        let mut updated = make_test_station("s1", "g1", 3);
+        updated.status = "done".to_string();
+        updated.evidence_kind = "human".to_string();
+        updated.done_at = Some("2026-01-02 00:00:00".to_string());
+        payload.stations = vec![updated];
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        let state = goals_load_impl(&conn).unwrap();
+        assert_eq!(state.stations.len(), 1);
+        assert_eq!(state.stations[0].status, "done");
+        assert_eq!(state.stations[0].evidence_kind, "human");
+        assert_eq!(state.stations[0].sort_order, 3);
+        assert_eq!(
+            state.stations[0].done_at,
+            Some("2026-01-02 00:00:00".to_string())
+        );
+    }
+
+    #[test]
+    fn test_deleted_station_ids_remove_only_listed_rows() {
+        let conn = setup_in_memory_db();
+        let mut payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        payload.stations = vec![
+            make_test_station("s1", "g1", 0),
+            make_test_station("s2", "g1", 1),
+        ];
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        payload.stations = vec![];
+        payload.deleted_station_ids = vec!["s1".to_string()];
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        let state = goals_load_impl(&conn).unwrap();
+        assert_eq!(state.stations.len(), 1);
+        assert_eq!(state.stations[0].id, "s2");
+    }
+
+    #[test]
+    fn test_deleting_a_goal_cascades_to_its_stations() {
+        let conn = setup_in_memory_db();
+        let mut payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        payload.stations = vec![make_test_station("s1", "g1", 0)];
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        payload.stations = vec![];
+        payload.goals = vec![];
+        payload.deleted_goal_ids = vec!["g1".to_string()];
+        goals_sync_impl(&conn, &payload).unwrap();
+
+        let state = goals_load_impl(&conn).unwrap();
+        assert_eq!(state.goals.len(), 0);
+        assert_eq!(state.stations.len(), 0);
+    }
+
+    #[test]
+    fn test_goals_clear_also_clears_stations() {
+        let conn = setup_in_memory_db();
+        let mut payload = sync_payload(vec![make_test_goal("g1", None)], vec![], vec![]);
+        payload.stations = vec![make_test_station("s1", "g1", 0)];
+        goals_sync_impl(&conn, &payload).unwrap();
+        goals_clear_impl(&conn).unwrap();
+        let state = goals_load_impl(&conn).unwrap();
+        assert_eq!(state.stations.len(), 0);
+    }
+
     #[test]
     fn test_goals_save_and_load_roundtrip() {
         let conn = setup_in_memory_db();
@@ -2556,5 +2897,88 @@ mod tests {
         agent_prompt_history_add_impl(&conn, &make_history_entry("h1", "   ")).unwrap();
         let entries = agent_prompt_history_list_impl(&conn, None).unwrap();
         assert!(entries.is_empty());
+    }
+
+    fn seed_ticket(conn: &Connection, ticket_id: &str) {
+        conn.execute(
+            "INSERT INTO pm_epics (id, name) VALUES ('epic-1', 'Epic') \
+             ON CONFLICT(id) DO NOTHING",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO pm_tickets (id, epic_id, name) VALUES (?1, 'epic-1', 'Ticket')",
+            params![ticket_id],
+        )
+        .unwrap();
+    }
+
+    fn insert_review(
+        conn: &Connection,
+        ticket_id: &str,
+        pass: bool,
+        reason: &str,
+        created_at: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO pm_ticket_reviews (id, ticket_id, verdict, reason, reviewer, created_at)
+             VALUES (hex(randomblob(16)), ?1, ?2, ?3, 'review-agent', ?4)",
+            params![ticket_id, pass as i64, reason, created_at],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_pm_latest_ticket_review_returns_newest_row() {
+        let conn = setup_in_memory_db();
+        seed_ticket(&conn, "t1");
+        insert_review(&conn, "t1", false, "missing tests", "2026-01-01 00:00:00");
+        insert_review(&conn, "t1", true, "looks good", "2026-01-02 00:00:00");
+
+        let review = pm_latest_ticket_review_impl(&conn, "t1", None)
+            .unwrap()
+            .unwrap();
+        assert!(review.pass);
+        assert_eq!(review.reason, "looks good");
+        assert_eq!(review.reviewer, "review-agent");
+        assert_eq!(review.ticket_id, "t1");
+    }
+
+    #[test]
+    fn test_pm_latest_ticket_review_since_filter_excludes_older_rows() {
+        let conn = setup_in_memory_db();
+        seed_ticket(&conn, "t1");
+        insert_review(&conn, "t1", true, "before the retry", "2026-01-01 00:00:00");
+
+        // Nothing was written at/after the retry timestamp yet.
+        let review =
+            pm_latest_ticket_review_impl(&conn, "t1", Some("2026-01-02 00:00:00")).unwrap();
+        assert!(review.is_none());
+
+        insert_review(&conn, "t1", false, "after the retry", "2026-01-03 00:00:00");
+        let review = pm_latest_ticket_review_impl(&conn, "t1", Some("2026-01-02 00:00:00"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(review.reason, "after the retry");
+    }
+
+    #[test]
+    fn test_pm_latest_ticket_review_returns_none_when_no_reviews_exist() {
+        let conn = setup_in_memory_db();
+        seed_ticket(&conn, "t1");
+
+        let review = pm_latest_ticket_review_impl(&conn, "t1", None).unwrap();
+        assert!(review.is_none());
+    }
+
+    #[test]
+    fn test_pm_latest_ticket_review_scopes_by_ticket_id() {
+        let conn = setup_in_memory_db();
+        seed_ticket(&conn, "t1");
+        seed_ticket(&conn, "t2");
+        insert_review(&conn, "t2", true, "for t2 only", "2026-01-01 00:00:00");
+
+        let review = pm_latest_ticket_review_impl(&conn, "t1", None).unwrap();
+        assert!(review.is_none());
     }
 }

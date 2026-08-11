@@ -15,6 +15,7 @@ import type { StoreState } from './index';
 import type { PmDependency, PmTicket } from '../tauri/pm';
 import type { PmGoal } from '../tauri/goals';
 import { spawnAgent } from '../tauri/agents';
+import { createJudgeBackend } from '../conductor/judgeBackend';
 
 let agentCounter = 0;
 
@@ -47,6 +48,8 @@ vi.mock('../tauri/pm', () => ({
   pmSave: vi.fn(async () => undefined),
   pmClear: vi.fn(async () => undefined),
 }));
+
+vi.mock('../conductor/judgeBackend', () => ({ createJudgeBackend: vi.fn() }));
 
 vi.mock('../tauri/db', () => ({
   initProjectDb: vi.fn(async () => undefined),
@@ -120,6 +123,7 @@ describe('getConductorPreflight', () => {
       blocked: 0,
       needsApproval: 0,
       inProgress: 0,
+      inReview: 0,
       exhausted: 0,
     });
   });
@@ -161,6 +165,11 @@ describe('getConductorPreflight', () => {
   it('counts in-progress tickets separately', () => {
     const result = preflight([makeTicket({ id: 'a', status: 'in_progress' })]);
     expect(result).toMatchObject({ ready: 0, inProgress: 1 });
+  });
+
+  it('counts tickets awaiting the judge as in_review, never ready', () => {
+    const result = preflight([makeTicket({ id: 'a', status: 'in_review' })]);
+    expect(result).toMatchObject({ ready: 0, inProgress: 0, inReview: 1 });
   });
 
   it('ignores done and archived tickets', () => {
@@ -217,6 +226,14 @@ describe('conductor pure helpers', () => {
     ];
     const result = getUnblockedOpenTickets(tickets, [], tickets);
     expect(result.map((t) => t.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('getUnblockedOpenTickets never re-picks an in_review ticket', () => {
+    const tickets = [
+      makeTicket({ id: 'a', status: 'in_review' }),
+      makeTicket({ id: 'b', status: 'open' }),
+    ];
+    expect(getUnblockedOpenTickets(tickets, [], tickets).map((t) => t.id)).toEqual(['b']);
   });
 
   it('getUnblockedOpenTickets excludes tickets with unfinished dependencies', () => {
@@ -527,6 +544,41 @@ describe('conductorSlice', () => {
     expect(stopDecision?.detail).toContain('Sub-goal');
   });
 
+  it('does not auto-achieve past an open human station', async () => {
+    store.setState({
+      goalsDraft: [makeGoal({ id: 'g1', status: 'in_progress' })],
+      pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })],
+      goalStationsDraft: [
+        {
+          id: 's1',
+          goalId: 'g1',
+          name: 'Call the customer',
+          kind: 'human',
+          status: 'planned',
+          evidenceKind: 'human',
+          predicate: { type: 'human' },
+          evidenceNote: '',
+          ticketId: null,
+          lane: 0,
+          sortOrder: 0,
+          lastCheckedAt: null,
+          doneAt: null,
+          createdAt: '2026-01-01 00:00:00',
+          updatedAt: '2026-01-01 00:00:00',
+        },
+      ],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+
+    // All tickets are done, but the human step is not — the goal must NOT
+    // auto-achieve past "call the customer".
+    expect(store.getState().goalsDraft[0].status).not.toBe('achieved');
+    expect(store.getState().conductorRunning).toBe(false);
+    const stopDecision = store.getState().conductorDecisions.find((d) => d.action === 'stop');
+    expect(stopDecision?.detail).toContain('Call the customer');
+  });
+
   it('refuses to auto-achieve an empty goal (vacuous satisfaction guard)', async () => {
     store.setState({
       goalsDraft: [makeGoal({ id: 'g1', status: 'in_progress' })],
@@ -801,5 +853,255 @@ describe('conductorSlice', () => {
       await store.getState().conductorTick();
       expect(store.getState().conductorLastRun?.completed).toBe(0);
     });
+  });
+});
+
+describe('conductor judge review gate', () => {
+  let store: StoreApi<StoreState>;
+
+  const flush = () => new Promise((r) => setTimeout(r, 20));
+
+  const mockVerdict = (verdict: { pass: boolean; reason: string }) => {
+    vi.mocked(createJudgeBackend).mockReturnValue({
+      form: 'llm',
+      start: vi.fn(async () => ({ kind: 'verdict' as const, verdict })),
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentCounter = 0;
+    // @ts-expect-error - Partial store for testing
+    store = createStore<StoreState>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createGoalsSlice(...a),
+      ...createPmSlice(...a),
+      ...createConductorSlice(...a),
+    }));
+  });
+
+  async function runToIdle(requireReview: boolean): Promise<string> {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+      conductorRequireReview: requireReview,
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    return store.getState().conductorAssignments['t1'];
+  }
+
+  it('with review OFF, a finished ticket goes straight to done (regression)', async () => {
+    const agentId = await runToIdle(false);
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).toBe('done');
+    expect(vi.mocked(createJudgeBackend)).not.toHaveBeenCalled();
+  });
+
+  it('with review ON and a passing judge: in_progress → in_review → done', async () => {
+    mockVerdict({ pass: true, reason: 'criteria met' });
+    const agentId = await runToIdle(true);
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).toBe('in_progress');
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).toBe('done');
+    expect(store.getState().conductorRunCompleted).toBe(1);
+    expect(store.getState().conductorReviewAssignments).toEqual({});
+  });
+
+  it('with review ON and a rejecting judge: reopened as an attempt with the reason', async () => {
+    mockVerdict({ pass: false, reason: 'not actually done' });
+    const agentId = await runToIdle(true);
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    // Reopened counts as an attempt (the shared ledger); the reason is logged.
+    // The loop then respawns for the retry, so the status is no longer 'done'.
+    expect(store.getState().conductorFailedTickets['t1']).toBe(1);
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).not.toBe('done');
+    expect(
+      store.getState().conductorDecisions.some((d) => d.detail.includes('not actually done'))
+    ).toBe(true);
+    expect(store.getState().conductorReviewAssignments).toEqual({});
+  });
+
+  it('a judge that cannot even start rejects the ticket (never a silent pass)', async () => {
+    vi.mocked(createJudgeBackend).mockImplementation(() => {
+      throw new Error('no judge configured');
+    });
+    const agentId = await runToIdle(true);
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    // A judge that cannot start is a rejection: the ticket is reopened as an
+    // attempt, never marked done.
+    expect(store.getState().conductorFailedTickets['t1']).toBe(1);
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).not.toBe('done');
+  });
+
+  it('two rejections exhaust the ticket and it is not re-picked', async () => {
+    mockVerdict({ pass: false, reason: 'still wrong' });
+    // First attempt.
+    let agentId = await runToIdle(true);
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    expect(store.getState().conductorFailedTickets['t1']).toBe(1);
+    // The reopen re-drove the tick, which respawned for the second attempt.
+    agentId = store.getState().conductorAssignments['t1'];
+    expect(agentId).toBeTruthy();
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    expect(store.getState().conductorFailedTickets['t1']).toBe(MAX_TICKET_ATTEMPTS);
+    // Exhausted: never spawned again.
+    expect(store.getState().conductorAssignments['t1']).toBeUndefined();
+  });
+
+  it('agent form: implementer done → reviewer spawned → verdict collected → done', async () => {
+    vi.mocked(createJudgeBackend).mockReturnValue({
+      form: 'agent',
+      start: vi.fn(async () => ({ kind: 'delegated' as const, reviewAgentId: 'rev-1' })),
+      collectVerdict: vi.fn(async () => ({ pass: true, reason: 'approved' })),
+    });
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+      conductorRequireReview: true,
+      conductorJudgeForm: 'agent',
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    const implId = store.getState().conductorAssignments['t1'];
+    store.getState().conductorHandleAgentStatus(implId, 'idle');
+    await flush();
+    // Delegated to the spawned reviewer; ticket sits in review.
+    expect(store.getState().conductorReviewAssignments['t1']).toBe('rev-1');
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).toBe('in_review');
+    // The reviewer exits → its verdict is collected → ticket done.
+    store.getState().conductorHandleAgentStatus('rev-1', 'idle');
+    await flush();
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).toBe('done');
+  });
+
+  it('agent form: a reviewer that exits with no verdict is treated as a rejection', async () => {
+    vi.mocked(createJudgeBackend).mockReturnValue({
+      form: 'agent',
+      start: vi.fn(async () => ({ kind: 'delegated' as const, reviewAgentId: 'rev-1' })),
+      collectVerdict: vi.fn(async () => null), // no row written
+    });
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+      conductorRequireReview: true,
+      conductorJudgeForm: 'agent',
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    const implId = store.getState().conductorAssignments['t1'];
+    store.getState().conductorHandleAgentStatus(implId, 'idle');
+    await flush();
+    store.getState().conductorHandleAgentStatus('rev-1', 'idle');
+    await flush();
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).not.toBe('done');
+    expect(store.getState().conductorFailedTickets['t1']).toBe(1);
+  });
+
+  it('killing a review agent reopens the ticket — never marks it done (false-approval trap)', async () => {
+    // A real review agent (agent form) whose kill must NOT fall through to the
+    // manual-kill branch that would mark spawnedByTicketId done.
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1', status: 'in_review' })],
+      agents: [
+        {
+          id: 'rev-1',
+          name: 'reviewer',
+          model: 'opus',
+          provider: 'claude',
+          status: 'running',
+          currentTask: 'review t1',
+          startedAt: 1000,
+          spawnedByTicketId: 't1',
+        },
+      ],
+      conductorRunning: true,
+      conductorReviewAssignments: { t1: 'rev-1' },
+      conductorReviewStartedAt: { t1: 1000 },
+    });
+    await store.getState().killRunningAgent('rev-1');
+    await flush();
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).not.toBe('done');
+    expect(store.getState().conductorReviewAssignments['t1']).toBeUndefined();
+  });
+
+  it('reopens a done ticket whose linked station-claim the judge rejected (bounded)', async () => {
+    const station = {
+      id: 's1',
+      goalId: 'g1',
+      name: 'Build parser',
+      kind: 'normal' as const,
+      status: 'done' as const,
+      evidenceKind: 'claim' as const,
+      predicate: { type: 'undefined' as const },
+      evidenceNote: 'rejected: vague',
+      ticketId: 't1',
+      lane: 0,
+      sortOrder: 0,
+      lastCheckedAt: '2026-01-01 00:00:00', // a judge ruled and rejected it
+      doneAt: '2026-01-01 00:00:00',
+      createdAt: '',
+      updatedAt: '',
+    };
+    store.setState({
+      goalsDraft: [makeGoal({ id: 'g1' })],
+      pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })],
+      goalStationsDraft: [station],
+      conductorRunning: true,
+      conductorGoalId: 'g1',
+    });
+    await store.getState().conductorTick();
+    await flush();
+    expect(store.getState().conductorFailedTickets['t1']).toBe(1);
+    const st = store.getState().goalStationsDraft.find((s) => s.id === 's1');
+    expect(st?.status).toBe('planned'); // reset for rework
+    expect(st?.lastCheckedAt).toBeNull(); // a re-claim will be judged anew
+  });
+
+  it('times out a review with no verdict into a rejection, once', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1', status: 'in_review' })],
+      agents: [
+        {
+          id: 'rev-1',
+          name: 'reviewer',
+          model: 'opus',
+          provider: 'claude',
+          status: 'running',
+          currentTask: '',
+          startedAt: 1000,
+          spawnedForReviewOfTicketId: 't1',
+        },
+      ],
+      conductorRunning: true,
+      conductorReviewAssignments: { t1: 'rev-1' },
+      conductorReviewStartedAt: { t1: 1000 }, // ancient → past REVIEW_TIMEOUT_MS
+    });
+    await store.getState().conductorTick();
+    await flush();
+    expect(store.getState().conductorReviewAssignments['t1']).toBeUndefined();
+    // Timed out = one rejection attempt, not a double-count.
+    expect(store.getState().conductorFailedTickets['t1']).toBe(1);
+  });
+
+  it('a review in flight counts toward capacity and keeps the run active', async () => {
+    // A judge whose verdict never resolves keeps the ticket in review.
+    vi.mocked(createJudgeBackend).mockReturnValue({
+      form: 'llm',
+      start: vi.fn(() => new Promise(() => {})), // never resolves
+    });
+    const agentId = await runToIdle(true);
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).toBe('in_review');
+    expect(store.getState().conductorReviewAssignments['t1']).toBeTruthy();
+    // The implementer slot was freed but the review holds the budget.
+    expect(store.getState().conductorAssignments['t1']).toBeUndefined();
   });
 });

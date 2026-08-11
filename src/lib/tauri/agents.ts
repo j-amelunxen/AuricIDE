@@ -28,6 +28,10 @@ export interface AgentInfo {
   repoPath?: string;
   spawnedByTicketId?: string;
   spawnedByGoalId?: string;
+  /** Set when this agent was spawned to REVIEW a ticket (conductor judge, agent
+   * form). Frontend-only provenance, distinct from spawnedByTicketId so a
+   * reviewer is never mistaken for the implementer of the ticket. */
+  spawnedForReviewOfTicketId?: string;
 }
 
 export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan' | 'auto' | 'default';
@@ -48,6 +52,8 @@ export interface AgentConfig {
   spawnedByGoalId?: string;
   /** Frontend-only provenance hint for goal runs; ignored by the Rust backend. */
   runSource?: 'ui' | 'conductor';
+  /** Frontend-only: the ticket this agent was spawned to review. */
+  spawnedForReviewOfTicketId?: string;
 }
 
 /** One remembered agent start prompt in the per-project history (capped at 100). */

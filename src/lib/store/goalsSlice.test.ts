@@ -11,12 +11,13 @@ import {
   getRunsForGoal,
   getGoalWorkflowStage,
 } from './goalsSlice';
+import { VERIFIED_EVIDENCE_KINDS, isVerifiedEvidence } from '../pm/enums';
 import type { GoalsState, PmGoal, PmGoalRun } from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
 import type { PmRequirement } from '../tauri/requirements';
 
 const mockGoalsLoad = vi.fn<(...args: unknown[]) => Promise<GoalsState>>(() =>
-  Promise.resolve({ goals: [], goalRuns: [], requirementLinks: [] })
+  Promise.resolve({ goals: [], goalRuns: [], requirementLinks: [], stations: [] })
 );
 const mockGoalsSave = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockGoalsClear = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
@@ -167,14 +168,14 @@ describe('goalsSlice progress + satisfaction', () => {
     const requirements = [makeRequirement({ id: 'r1', status: 'verified' })];
     const links = [{ id: 'l1', goalId: 'g1', requirementId: 'r1', createdAt: '' }];
 
-    const result = getGoalSatisfaction(goals, tickets, requirements, links, 'g1');
+    const result = getGoalSatisfaction(goals, tickets, requirements, links, [], 'g1');
     expect(result.satisfied).toBe(true);
     expect(result.blockers).toEqual([]);
   });
 
   it('getGoalSatisfaction refuses vacuous satisfaction for empty goals', () => {
     const goals = [makeGoal({ id: 'g1' })];
-    const result = getGoalSatisfaction(goals, [], [], [], 'g1');
+    const result = getGoalSatisfaction(goals, [], [], [], [], 'g1');
     expect(result.satisfied).toBe(false);
     expect(result.blockers.join(' ')).toContain('nothing to verify');
   });
@@ -188,7 +189,7 @@ describe('goalsSlice progress + satisfaction', () => {
     const requirements = [makeRequirement({ id: 'r1', status: 'active', reqId: 'REQ-01' })];
     const links = [{ id: 'l1', goalId: 'g1', requirementId: 'r1', createdAt: '' }];
 
-    const result = getGoalSatisfaction(goals, tickets, requirements, links, 'g1');
+    const result = getGoalSatisfaction(goals, tickets, requirements, links, [], 'g1');
     expect(result.satisfied).toBe(false);
     expect(result.blockers.length).toBe(3);
     expect(result.blockers.join(' ')).toContain('Open work');
@@ -298,6 +299,7 @@ describe('goalsSlice persistence', () => {
       goals: [makeGoal()],
       goalRuns: [makeRun()],
       requirementLinks: [],
+      stations: [],
     });
     const store = createTestStore();
     await store.getState().loadGoals('/project');
@@ -315,6 +317,7 @@ describe('goalsSlice persistence', () => {
       goals: [makeGoal({ id: 'mcp-created' })],
       goalRuns: [makeRun({ id: 'mcp-run', goalId: 'mcp-created' })],
       requirementLinks: [],
+      stations: [],
     });
     await store.getState().loadGoals('/project');
     // Local unsaved edit survives AND the MCP-created rows become visible
@@ -337,6 +340,7 @@ describe('goalsSlice persistence', () => {
       goals: [makeGoal({ id: 'keep' }), makeGoal({ id: 'doomed' })],
       goalRuns: [],
       requirementLinks: [],
+      stations: [],
     });
     const store = createTestStore();
     await store.getState().loadGoals('/project');
@@ -359,6 +363,7 @@ describe('goalsSlice persistence', () => {
       goals: [makeGoal({ id: 'local' }), makeGoal({ id: 'mcp-subgoal', parentId: 'local' })],
       goalRuns: [],
       requirementLinks: [],
+      stations: [],
     });
     await store.getState().saveGoals('/project');
 
@@ -382,14 +387,14 @@ describe('getGoalWorkflowStage', () => {
 
   it('is "define" while the goal has no success criteria', () => {
     const goal = makeGoal({ successCriteria: '' });
-    const step = getGoalWorkflowStage([goal], [], noReqs, [], goal.id);
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], [], goal.id);
     expect(step.stage).toBe('define');
     expect(step.index).toBe(1);
   });
 
   it('is "attach" when criteria exist but nothing is attached', () => {
     const goal = makeGoal();
-    const step = getGoalWorkflowStage([goal], [], noReqs, [], goal.id);
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], [], goal.id);
     expect(step.stage).toBe('attach');
     expect(step.index).toBe(2);
   });
@@ -397,7 +402,7 @@ describe('getGoalWorkflowStage', () => {
   it('is "execute" while attached tickets are not all done', () => {
     const goal = makeGoal();
     const tickets = [makeTicket({ goalId: goal.id, status: 'open' })];
-    const step = getGoalWorkflowStage([goal], tickets, noReqs, [], goal.id);
+    const step = getGoalWorkflowStage([goal], tickets, noReqs, [], [], goal.id);
     expect(step.stage).toBe('execute');
     expect(step.index).toBe(3);
   });
@@ -406,21 +411,21 @@ describe('getGoalWorkflowStage', () => {
     const parent = makeGoal({ id: 'p' });
     const child = makeGoal({ id: 'c', parentId: 'p' });
     const tickets = [makeTicket({ goalId: 'c', status: 'open' })];
-    const step = getGoalWorkflowStage([parent, child], tickets, noReqs, [], 'p');
+    const step = getGoalWorkflowStage([parent, child], tickets, noReqs, [], [], 'p');
     expect(step.stage).toBe('execute');
   });
 
   it('is "done" once the satisfaction check passes', () => {
     const goal = makeGoal();
     const tickets = [makeTicket({ goalId: goal.id, status: 'done' })];
-    const step = getGoalWorkflowStage([goal], tickets, noReqs, [], goal.id);
+    const step = getGoalWorkflowStage([goal], tickets, noReqs, [], [], goal.id);
     expect(step.stage).toBe('done');
     expect(step.index).toBe(4);
   });
 
   it('is "done" for an achieved goal regardless of attachments', () => {
     const goal = makeGoal({ status: 'achieved', successCriteria: '' });
-    const step = getGoalWorkflowStage([goal], [], noReqs, [], goal.id);
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], [], goal.id);
     expect(step.stage).toBe('done');
   });
 
@@ -431,7 +436,218 @@ describe('getGoalWorkflowStage', () => {
     const links = [
       { id: 'l1', goalId: goal.id, requirementId: req.id, createdAt: '2026-01-01 00:00:00' },
     ];
-    const step = getGoalWorkflowStage([goal], tickets, [req], links, goal.id);
+    const step = getGoalWorkflowStage([goal], tickets, [req], links, [], goal.id);
     expect(step.stage).toBe('execute');
+  });
+});
+
+describe('goal lines view state', () => {
+  it('is closed by default and toggles via its setter', () => {
+    const store = createTestStore();
+    expect(store.getState().goalLinesOpen).toBe(false);
+    store.getState().setGoalLinesOpen(true);
+    expect(store.getState().goalLinesOpen).toBe(true);
+    store.getState().setGoalLinesOpen(false);
+    expect(store.getState().goalLinesOpen).toBe(false);
+  });
+});
+
+describe('goal stations in the draft double-buffer', () => {
+  const stationFixture = (overrides: Record<string, unknown> = {}) => ({
+    id: 's1',
+    goalId: 'g1',
+    name: 'A step',
+    kind: 'normal' as const,
+    status: 'planned' as const,
+    evidenceKind: 'claim' as const,
+    predicate: { type: 'undefined' as const },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: '2026-01-01 00:00:00',
+    updatedAt: '2026-01-01 00:00:00',
+    ...overrides,
+  });
+
+  it('quickAddHumanStation appends a human step and marks dirty', () => {
+    const store = createTestStore();
+    store.getState().quickAddHumanStation('g1', 'Call the customer');
+    const drafts = store.getState().goalStationsDraft;
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].name).toBe('Call the customer');
+    expect(drafts[0].kind).toBe('human');
+    expect(drafts[0].predicate).toEqual({ type: 'human' });
+    expect(store.getState().goalsDirty).toBe(true);
+    expect(store.getState().goalStations).toHaveLength(0);
+  });
+
+  it('tickHumanStation stamps done with human evidence', () => {
+    const store = createTestStore();
+    store.getState().addStation(stationFixture({ kind: 'human', evidenceKind: 'human' }));
+    store.getState().tickHumanStation('s1', 'spoke to them');
+    const station = store.getState().goalStationsDraft[0];
+    expect(station.status).toBe('done');
+    expect(station.evidenceKind).toBe('human');
+    expect(station.evidenceNote).toBe('spoke to them');
+    expect(station.doneAt).not.toBeNull();
+  });
+
+  it('moveStationTo clamps so pending work never precedes done work', () => {
+    const store = createTestStore();
+    store.getState().addStation(stationFixture({ id: 'd1', status: 'done', sortOrder: 0 }));
+    store.getState().addStation(stationFixture({ id: 'p1', sortOrder: 1 }));
+    store.getState().addStation(stationFixture({ id: 'p2', sortOrder: 2 }));
+    store.getState().moveStationTo('g1', 'p2', 0);
+    const order = [...store.getState().goalStationsDraft]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => s.id);
+    expect(order).toEqual(['d1', 'p2', 'p1']);
+  });
+
+  it('deleteGoal cascades to the goal stations in the draft', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal());
+    store.getState().addStation(stationFixture());
+    store.getState().deleteGoal('g1');
+    expect(store.getState().goalStationsDraft).toHaveLength(0);
+  });
+
+  it('loadGoals adopts MCP-written stations into a dirty draft', async () => {
+    const store = createTestStore();
+    // Make the draft dirty for the current project first.
+    await store.getState().loadGoals('/p');
+    store.getState().addStation(stationFixture({ id: 'local' }));
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [stationFixture({ id: 'from-mcp' }) as never],
+    });
+    await store.getState().loadGoals('/p');
+    const ids = store.getState().goalStationsDraft.map((s) => s.id);
+    expect(ids).toContain('local');
+    expect(ids).toContain('from-mcp');
+  });
+
+  it('saveGoals reports locally deleted stations and merges concurrent rows', async () => {
+    const store = createTestStore();
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [stationFixture({ id: 'persisted' }) as never],
+    });
+    await store.getState().loadGoals('/p');
+    store.getState().deleteStation('persisted');
+    await store.getState().saveGoals('/p');
+    const payload = mockGoalsSave.mock.calls.at(-1)![1] as {
+      deletedStationIds: string[];
+    };
+    expect(payload.deletedStationIds).toEqual(['persisted']);
+    expect(store.getState().goalsDirty).toBe(false);
+  });
+});
+
+// The LOCKSTEP FIXTURE: identical scenario asserted on the SQL side in
+// src/mcp/__tests__/goals.test.ts. If either implementation changes without
+// the other, one of the two tests fails.
+describe('lockstep: an open human station blocks satisfaction', () => {
+  it('even when all tickets are done', () => {
+    const goal = makeGoal({ id: 'g1', name: 'Ship the offer' });
+    const tickets = [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })];
+    const stations = [
+      {
+        id: 's1',
+        goalId: 'g1',
+        name: 'Call the customer',
+        kind: 'human' as const,
+        status: 'planned' as const,
+        evidenceKind: 'human' as const,
+        predicate: { type: 'human' as const },
+        evidenceNote: '',
+        ticketId: null,
+        lane: 0,
+        sortOrder: 0,
+        lastCheckedAt: null,
+        doneAt: null,
+        createdAt: '2026-01-01 00:00:00',
+        updatedAt: '2026-01-01 00:00:00',
+      },
+    ];
+    const result = getGoalSatisfaction([goal], tickets, [], [], stations, 'g1');
+    expect(result.satisfied).toBe(false);
+    expect(result.blockers).toContain('Station "Call the customer" is planned');
+
+    // Ticked off → satisfied: stations alone also defeat the vacuous-goal rule.
+    const done = [{ ...stations[0], status: 'done' as const }];
+    expect(getGoalSatisfaction([goal], tickets, [], [], done, 'g1').satisfied).toBe(true);
+  });
+});
+
+// LOCKSTEP FIXTURE (twin in src/mcp/__tests__/goals.test.ts): a station an
+// agent only CLAIMED done must not satisfy — the judge has to promote it.
+describe('lockstep: a claimed station blocks satisfaction until verified', () => {
+  const claimStation = (overrides: Record<string, unknown> = {}) => ({
+    id: 's1',
+    goalId: 'g1',
+    name: 'Build the parser',
+    kind: 'normal' as const,
+    status: 'done' as const,
+    evidenceKind: 'claim' as const,
+    predicate: { type: 'undefined' as const },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: '2026-01-01 00:00:00',
+    createdAt: '2026-01-01 00:00:00',
+    updatedAt: '2026-01-01 00:00:00',
+    ...overrides,
+  });
+
+  it('a done+claim station blocks with a "claimed, not verified" blocker', () => {
+    const goal = makeGoal({ id: 'g1', name: 'Ship it' });
+    const result = getGoalSatisfaction([goal], [], [], [], [claimStation()], 'g1');
+    expect(result.satisfied).toBe(false);
+    expect(result.blockers).toContain('Station "Build the parser" is claimed, not verified');
+  });
+
+  it('the same station satisfies once verified (judged / proof / human)', () => {
+    const goal = makeGoal({ id: 'g1', name: 'Ship it' });
+    for (const evidenceKind of ['judged', 'proof', 'human'] as const) {
+      const result = getGoalSatisfaction(
+        [goal],
+        [],
+        [],
+        [],
+        [claimStation({ evidenceKind })],
+        'g1'
+      );
+      expect(result.satisfied).toBe(true);
+    }
+  });
+});
+
+describe('a ticket in review blocks satisfaction', () => {
+  it('an in_review ticket is not done, so the goal is not satisfied', () => {
+    const goal = makeGoal({ id: 'g1', name: 'Ship it' });
+    const tickets = [makeTicket({ id: 't1', goalId: 'g1', status: 'in_review' })];
+    const result = getGoalSatisfaction([goal], tickets, [], [], [], 'g1');
+    expect(result.satisfied).toBe(false);
+    expect(result.blockers.some((b) => b.includes('in_review'))).toBe(true);
+  });
+});
+
+describe('VERIFIED_EVIDENCE_KINDS — the shared satisfaction rule', () => {
+  it('excludes claim, so a bare claim can never satisfy', () => {
+    expect(VERIFIED_EVIDENCE_KINDS).not.toContain('claim');
+    expect(isVerifiedEvidence('claim')).toBe(false);
+    expect(isVerifiedEvidence('judged')).toBe(true);
+    expect(isVerifiedEvidence('proof')).toBe(true);
+    expect(isVerifiedEvidence('human')).toBe(true);
   });
 });
