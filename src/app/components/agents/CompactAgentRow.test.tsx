@@ -80,6 +80,15 @@ describe('CompactAgentRow – retry', () => {
     expect(onRetry).toHaveBeenCalledWith('agent-1');
   });
 
+  it('uses the derived name for retry and dismiss labels', () => {
+    renderRow(
+      { name: '/...', currentTask: 'Select audience', status: 'error' },
+      { onRetry: vi.fn() }
+    );
+    expect(screen.getByRole('button', { name: 'Retry Select audience' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Terminate Select audience' })).toBeInTheDocument();
+  });
+
   it('offers no retry on an agent that did not fail', () => {
     renderRow({ status: 'idle' }, { onRetry: vi.fn() });
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
@@ -197,6 +206,14 @@ describe('CompactAgentRow – error digest', () => {
 });
 
 describe('CompactAgentRow', () => {
+  it('uses a readable derived name while retaining the real identity in its tooltip', () => {
+    renderRow({ name: '/...', currentTask: 'Select audience' });
+    const button = screen.getByRole('button', { name: 'Restore Select audience' });
+    expect(button).toHaveTextContent('Select audience');
+    expect(button).toHaveAttribute('title', expect.stringContaining('/...'));
+    expect(button).toHaveAttribute('title', expect.stringContaining('agent-1'));
+  });
+
   it('names the agent and activates it on click', async () => {
     const user = userEvent.setup();
     const onActivate = vi.fn();
@@ -229,7 +246,7 @@ describe('CompactAgentRow', () => {
     renderRow();
     expect(screen.getByRole('button', { name: 'Restore Writer' })).toHaveAttribute(
       'title',
-      'Writer — Writing documentation'
+      expect.stringContaining('Writing documentation')
     );
   });
 
@@ -237,7 +254,7 @@ describe('CompactAgentRow', () => {
     renderRow({ currentActivity: 'Editing setup.ts' });
     expect(screen.getByRole('button', { name: 'Restore Writer' })).toHaveAttribute(
       'title',
-      'Writer — Editing setup.ts'
+      expect.stringContaining('Editing setup.ts')
     );
   });
 

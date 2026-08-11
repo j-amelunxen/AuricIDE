@@ -13,7 +13,7 @@ import {
 } from './conductorSlice';
 import type { StoreState } from './index';
 import type { PmDependency, PmTicket } from '../tauri/pm';
-import type { PmGoal } from '../tauri/goals';
+import type { PmGoal, PmGoalStation } from '../tauri/goals';
 import { spawnAgent } from '../tauri/agents';
 import { createJudgeBackend, type JudgeInput, type JudgeStart } from '../conductor/judgeBackend';
 
@@ -96,6 +96,27 @@ function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
   };
 }
 
+function makeStation(overrides: Partial<PmGoalStation> = {}): PmGoalStation {
+  return {
+    id: 's1',
+    goalId: 'g1',
+    name: 'Build it',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: 't1',
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
 describe('getConductorPreflight', () => {
   function preflight(
     tickets: PmTicket[],
@@ -119,6 +140,8 @@ describe('getConductorPreflight', () => {
 
   it('reports nothing for an empty backlog', () => {
     expect(preflight([])).toEqual({
+      total: 0,
+      done: 0,
       ready: 0,
       blocked: 0,
       needsApproval: 0,
@@ -126,6 +149,12 @@ describe('getConductorPreflight', () => {
       inReview: 0,
       exhausted: 0,
     });
+  });
+
+  it('reports total and completed tickets for actionable empty-state copy', () => {
+    expect(
+      preflight([makeTicket({ status: 'done' }), makeTicket({ status: 'in_review' })])
+    ).toMatchObject({ total: 2, done: 1, inReview: 1 });
   });
 
   it('counts unblocked open tickets as ready', () => {
@@ -905,6 +934,29 @@ describe('conductor judge review gate', () => {
     expect(vi.mocked(createJudgeBackend)).not.toHaveBeenCalled();
   });
 
+  it('marks a linked non-human checkpoint claimed when an implementer finishes without review', async () => {
+    const agentId = await runToIdle(false);
+    store.setState({ goalStationsDraft: [makeStation()] });
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    const station = store.getState().goalStationsDraft[0];
+    expect(station).toMatchObject({ status: 'done', evidenceKind: 'claim' });
+    expect(station.evidenceNote).toMatch(/ticket.*completed/i);
+    expect(station.doneAt).not.toBeNull();
+  });
+
+  it('never auto-ticks a linked human checkpoint', async () => {
+    const agentId = await runToIdle(false);
+    store.setState({
+      goalStationsDraft: [
+        makeStation({ kind: 'human', evidenceKind: 'human', predicate: { type: 'human' } }),
+      ],
+    });
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    expect(store.getState().goalStationsDraft[0].status).toBe('planned');
+  });
+
   it('with review ON and a passing judge: in_progress → in_review → done', async () => {
     mockVerdict({ pass: true, reason: 'criteria met' });
     const agentId = await runToIdle(true);
@@ -914,6 +966,18 @@ describe('conductor judge review gate', () => {
     expect(store.getState().pmDraftTickets.find((t) => t.id === 't1')?.status).toBe('done');
     expect(store.getState().conductorRunCompleted).toBe(1);
     expect(store.getState().conductorReviewAssignments).toEqual({});
+  });
+
+  it('records a passing judge verdict as judged evidence on the linked checkpoint', async () => {
+    mockVerdict({ pass: true, reason: 'criteria met' });
+    const agentId = await runToIdle(true);
+    store.setState({ goalStationsDraft: [makeStation()] });
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    const station = store.getState().goalStationsDraft[0];
+    expect(station).toMatchObject({ status: 'done', evidenceKind: 'judged' });
+    expect(station.evidenceNote).toContain('criteria met');
+    expect(station.lastCheckedAt).not.toBeNull();
   });
 
   it('with review ON and a rejecting judge: reopened as an attempt with the reason', async () => {
@@ -929,6 +993,15 @@ describe('conductor judge review gate', () => {
       store.getState().conductorDecisions.some((d) => d.detail.includes('not actually done'))
     ).toBe(true);
     expect(store.getState().conductorReviewAssignments).toEqual({});
+  });
+
+  it('does not complete the linked checkpoint when the judge rejects', async () => {
+    mockVerdict({ pass: false, reason: 'not done' });
+    const agentId = await runToIdle(true);
+    store.setState({ goalStationsDraft: [makeStation()] });
+    store.getState().conductorHandleAgentStatus(agentId, 'idle');
+    await flush();
+    expect(store.getState().goalStationsDraft[0].status).toBe('planned');
   });
 
   it('a judge that cannot even start rejects the ticket (never a silent pass)', async () => {

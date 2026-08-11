@@ -40,6 +40,15 @@ describe('ticket MCP tools', () => {
       expect(row.goal_id).toBe(goal.id);
     });
 
+    it('persists human supervision when requested at creation', () => {
+      const ticket = createTicket(db, {
+        epicId: 'e1',
+        name: 'Approve launch',
+        needsHumanSupervision: true,
+      });
+      expect(ticket.needs_human_supervision).toBe(1);
+    });
+
     it('increments sort_order per epic', () => {
       const first = createTicket(db, { epicId: 'e1', name: 'First' });
       const second = createTicket(db, { epicId: 'e1', name: 'Second' });

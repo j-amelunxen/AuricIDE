@@ -89,6 +89,8 @@ describe('useConductorController', () => {
     useStore.setState({
       rootPath: '/tmp/project',
       selectedGoalId: 'g7',
+      goalsDraft: [{ id: 'g7', name: 'Goal' } as PmGoal],
+      pmDraftTickets: [makeTicket({ goalId: 'g7' })],
       startConductor,
       conductorTick,
     });
@@ -97,6 +99,15 @@ describe('useConductorController', () => {
     act(() => result.current.onStart());
     expect(startConductor).toHaveBeenCalledWith('g7');
     expect(conductorTick).toHaveBeenCalled();
+  });
+
+  it('cannot start an open project until tickets exist, but allows all-done verification', () => {
+    useStore.setState({ rootPath: '/tmp/project' });
+    const { result, rerender } = renderHook(() => useConductorController());
+    expect(result.current.canStart).toBe(false);
+    act(() => useStore.setState({ pmDraftTickets: [makeTicket({ status: 'done' })] }));
+    rerender();
+    expect(result.current.canStart).toBe(true);
   });
 
   it('delegates approvals and stop to the slice actions', () => {

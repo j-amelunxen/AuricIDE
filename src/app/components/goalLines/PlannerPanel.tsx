@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { llmCall } from '@/lib/tauri/llm';
 import { getRootGoals } from '@/lib/store/goalsSlice';
@@ -76,7 +76,7 @@ function withDraftIds(graph: PlannerGraph): PlannerGraph {
 }
 
 function stationProblem(station: PlannerStation): string | null {
-  if (!station.name.trim()) return 'Every station needs a name.';
+  if (!station.name.trim()) return 'Every checkpoint needs a name.';
   if (
     station.kind === 'human' &&
     (station.evidenceKind !== 'human' || station.predicate.type !== 'human')
@@ -86,7 +86,7 @@ function stationProblem(station: PlannerStation): string | null {
     station.kind !== 'human' &&
     (station.evidenceKind === 'human' || station.predicate.type === 'human')
   )
-    return `“${station.name}” has human evidence but is not a human station.`;
+    return `“${station.name}” has human evidence but is not a human checkpoint.`;
   if (evidenceForPredicate(station.predicate.type) !== station.evidenceKind)
     return `“${station.name}” evidence does not match its check.`;
   if (station.predicate.type === 'file_exists' && !station.predicate.glob.trim())
@@ -112,7 +112,7 @@ function nowTimestamp(): string {
 
 /**
  * The draft phase: dump what's in your head, see the proposed line, refine
- * it round by round, then start it. Nothing reaches the board until you say
+ * it round by round, then save it. Nothing reaches the board until you say
  * go — the draft lives in its own kv namespace and survives a restart.
  */
 export function PlannerPanel() {
@@ -121,8 +121,12 @@ export function PlannerPanel() {
   const goalsDraft = useStore((s) => s.goalsDraft);
   const goalStationsDraft = useStore((s) => s.goalStationsDraft);
   const addStation = useStore((s) => s.addStation);
+  const deleteStation = useStore((s) => s.deleteStation);
   const updateGoal = useStore((s) => s.updateGoal);
   const saveGoals = useStore((s) => s.saveGoals);
+  const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
+  const setGoalLinesOpen = useStore((s) => s.setGoalLinesOpen);
+  const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
   const llmConfigured = useStore((s) => s.llmConfigured);
 
   const [open, setOpen] = useState(false);
@@ -130,6 +134,8 @@ export function PlannerPanel() {
   const [dump, setDump] = useState('');
   const [refine, setRefine] = useState('');
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [graph, setGraph] = useState<PlannerGraph | null>(null);
   const [revisions, setRevisions] = useState<PlannerRevision[]>([]);
@@ -147,7 +153,10 @@ export function PlannerPanel() {
       ),
     [goalsDraft, plannedGoalIds]
   );
-  const goal = plannableGoals.find((g) => g.id === goalId) ?? null;
+  const goal =
+    (saving ? goalsDraft.find((candidate) => candidate.id === goalId) : undefined) ??
+    plannableGoals.find((candidate) => candidate.id === goalId) ??
+    null;
 
   // Selecting a goal resumes its persisted draft, if one exists.
   useEffect(() => {
@@ -240,17 +249,48 @@ export function PlannerPanel() {
     reset();
   }, [rootPath, goalId, reset]);
 
-  const start = useCallback(() => {
-    if (!goal || !graph || !rootPath || graph.stations.some(stationProblem)) return;
+  const start = useCallback(async () => {
+    if (savingRef.current || !goal || !graph || !rootPath || graph.stations.some(stationProblem))
+      return;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    const priorStatus = goal.status;
     const stations = planToStations(graph, goal.id, () => crypto.randomUUID(), nowTimestamp());
     for (const station of stations) addStation(station);
     if (goal.status === 'draft') updateGoal(goal.id, { status: 'active' });
-    void saveGoals(rootPath);
+    try {
+      await saveGoals(rootPath);
+    } catch (cause) {
+      for (const station of stations) deleteStation(station.id);
+      if (priorStatus === 'draft') updateGoal(goal.id, { status: priorStatus });
+      setError(`Could not save line: ${(cause as Error).message}. Please try again.`);
+      savingRef.current = false;
+      setSaving(false);
+      return;
+    }
     void deletePlannerDraft(rootPath, goal.id);
+    setSelectedGoalId(goal.id);
+    setGoalLinesOpen(false);
+    setGoalsModalOpen(true);
     reset();
     setGoalId('');
+    savingRef.current = false;
+    setSaving(false);
     setOpen(false);
-  }, [goal, graph, rootPath, addStation, updateGoal, saveGoals, reset]);
+  }, [
+    goal,
+    graph,
+    rootPath,
+    addStation,
+    deleteStation,
+    updateGoal,
+    saveGoals,
+    reset,
+    setSelectedGoalId,
+    setGoalLinesOpen,
+    setGoalsModalOpen,
+  ]);
 
   // The preview IS the commit result: same conversion, deterministic ids.
   const previewLine = useMemo(() => {
@@ -286,7 +326,7 @@ export function PlannerPanel() {
       >
         <AuricIcon name="alt_route" aria-hidden="true" className="text-base text-primary-light" />
         <span className="text-xs font-bold text-foreground">Plan a line</span>
-        <span className="text-[10px] text-foreground-muted">dump → proposal → refine → start</span>
+        <span className="text-[10px] text-foreground-muted">dump → proposal → refine → save</span>
         <span aria-hidden="true" className="ml-auto font-mono text-[10px] text-foreground-muted">
           {open ? '▾' : '▸'}
         </span>
@@ -356,26 +396,29 @@ export function PlannerPanel() {
                   draft · v{revisions.length + 1}
                 </span>
                 <span className="text-[10px] text-foreground-muted">
-                  {graph.stations.length} stations · not started yet
+                  {graph.stations.length} checkpoints · not saved yet
                 </span>
               </div>
               <div data-testid="planner-preview" className="rounded-xl bg-black/20 px-2 py-1">
                 <GoalLineMap line={previewLine} agentsById={new Map()} />
+                <p className="px-2 pb-2 text-[10px] text-foreground-muted">
+                  Saving this line saves checkpoints. Executable tickets are created next.
+                </p>
               </div>
 
-              <div className="flex flex-col gap-2" aria-label="Edit draft stations">
+              <div className="flex flex-col gap-2" aria-label="Edit draft checkpoints">
                 {graph.stations.map((station, index) => (
                   <fieldset
                     key={station.draftId}
                     className="rounded-xl border border-white/5 bg-black/20 p-2"
                   >
                     <legend className="px-1 font-mono text-[9px] text-foreground-muted">
-                      station {index + 1}
+                      checkpoint {index + 1}
                     </legend>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-4">
                       <input
                         data-testid={`planner-station-name-${index}`}
-                        aria-label={`Station ${index + 1} name`}
+                        aria-label={`Checkpoint ${index + 1} name`}
                         aria-invalid={station.name.trim() ? undefined : true}
                         aria-describedby={station.name.trim() ? undefined : 'planner-validation'}
                         value={station.name}
@@ -390,7 +433,7 @@ export function PlannerPanel() {
                       />
                       <select
                         data-testid={`planner-station-kind-${index}`}
-                        aria-label={`Station ${index + 1} kind`}
+                        aria-label={`Checkpoint ${index + 1} kind`}
                         value={station.kind}
                         onChange={(e) =>
                           editGraph((g) => ({
@@ -423,7 +466,7 @@ export function PlannerPanel() {
                       </select>
                       <select
                         data-testid={`planner-station-evidence-${index}`}
-                        aria-label={`Station ${index + 1} evidence`}
+                        aria-label={`Checkpoint ${index + 1} evidence`}
                         value={station.evidenceKind}
                         disabled={station.kind === 'human'}
                         onChange={(e) =>
@@ -447,7 +490,7 @@ export function PlannerPanel() {
                       </select>
                       <select
                         data-testid={`planner-station-predicate-${index}`}
-                        aria-label={`Station ${index + 1} predicate`}
+                        aria-label={`Checkpoint ${index + 1} predicate`}
                         value={station.predicate.type}
                         disabled={station.kind === 'human'}
                         onChange={(e) => {
@@ -479,7 +522,7 @@ export function PlannerPanel() {
                         station.predicate.type === 'judged') && (
                         <input
                           data-testid={`planner-station-predicate-value-${index}`}
-                          aria-label={`Station ${index + 1} predicate value`}
+                          aria-label={`Checkpoint ${index + 1} predicate value`}
                           aria-invalid={predicateValueProblem(station) ? true : undefined}
                           aria-describedby={
                             predicateValueProblem(station) ? 'planner-validation' : undefined
@@ -530,7 +573,7 @@ export function PlannerPanel() {
                       <div className="ml-auto flex gap-1">
                         <button
                           data-testid={`planner-station-up-${index}`}
-                          aria-label={`Move station ${index + 1} earlier`}
+                          aria-label={`Move checkpoint ${index + 1} earlier`}
                           disabled={index === 0}
                           className="min-h-6 min-w-6 rounded focus-visible:ring-2 focus-visible:ring-primary/70"
                           onClick={() =>
@@ -546,7 +589,7 @@ export function PlannerPanel() {
                         </button>
                         <button
                           data-testid={`planner-station-down-${index}`}
-                          aria-label={`Move station ${index + 1} later`}
+                          aria-label={`Move checkpoint ${index + 1} later`}
                           disabled={index === graph.stations.length - 1}
                           className="min-h-6 min-w-6 rounded focus-visible:ring-2 focus-visible:ring-primary/70"
                           onClick={() =>
@@ -562,7 +605,7 @@ export function PlannerPanel() {
                         </button>
                         <button
                           data-testid={`planner-station-remove-${index}`}
-                          aria-label={`Remove station ${index + 1}`}
+                          aria-label={`Remove checkpoint ${index + 1}`}
                           disabled={graph.stations.length === 1}
                           className="min-h-6 min-w-6 rounded focus-visible:ring-2 focus-visible:ring-primary/70"
                           onClick={() =>
@@ -585,7 +628,7 @@ export function PlannerPanel() {
                         ...g.stations,
                         {
                           draftId: crypto.randomUUID(),
-                          name: 'New station',
+                          name: 'New checkpoint',
                           kind: 'normal',
                           evidenceKind: 'claim',
                           predicate: { type: 'undefined' },
@@ -595,7 +638,7 @@ export function PlannerPanel() {
                   }
                   className="min-h-6 self-start rounded-lg px-2 py-1 text-[10px] text-foreground-muted hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-primary/70"
                 >
-                  + Add station
+                  + Add checkpoint
                 </button>
               </div>
 
@@ -648,11 +691,11 @@ export function PlannerPanel() {
                 </button>
                 <button
                   data-testid="planner-start"
-                  onClick={start}
-                  disabled={!!validation}
+                  onClick={() => void start()}
+                  disabled={!!validation || saving}
                   className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary-light transition-colors hover:bg-primary/20"
                 >
-                  Start this line
+                  {saving ? 'Saving…' : 'Save line'}
                 </button>
               </div>
               {validation && (

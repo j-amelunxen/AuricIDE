@@ -187,7 +187,7 @@ export function GoalLineCard({
             onClick={() => setStationsOpen((v) => !v)}
             className="font-mono text-[9px] uppercase tracking-[0.16em] text-foreground-muted/60 transition-colors hover:text-foreground-muted"
           >
-            {stationsOpen ? '▾' : '▸'} stations ({rows.length})
+            {stationsOpen ? '▾' : '▸'} checkpoints ({rows.length})
           </button>
           {stationsOpen && (
             <div className="mt-1 flex flex-col">
@@ -374,7 +374,7 @@ export function GoalLineCard({
               }
             }}
           >
-            Remove all stations? The goal remains as a draft.
+            Remove all checkpoints? The goal remains as a draft.
             <button
               data-testid={`goal-line-reset-confirm-${line.goalId}`}
               onClick={() => onReset(line.goalId)}

@@ -182,6 +182,59 @@ describe('AgentCard', () => {
 });
 
 describe('AgentCard – naming', () => {
+  it('derives a readable heading while keeping the real identity in the tooltip', () => {
+    render(
+      <AgentCard
+        agent={{
+          ...runningAgent,
+          name: '/…',
+          currentTask: '/goal\n# Goal: Count records (goalId: goal-123)',
+        }}
+        onKill={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: 'Count records' })).toHaveAttribute(
+      'title',
+      expect.stringContaining('/…')
+    );
+  });
+
+  it('does not repeat a raw goal prompt after deriving its heading from that prompt', () => {
+    render(
+      <AgentCard
+        agent={{
+          ...runningAgent,
+          name: '/…',
+          currentTask: '/goal\n# Goal: Count records (goalId: goal-123)',
+        }}
+        onKill={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: 'Count records' })).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-task-context')).not.toBeInTheDocument();
+  });
+
+  it('places textual state in the metadata row instead of beside the heading', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-metadata')).toContainElement(
+      screen.getByTestId('agent-state')
+    );
+  });
+
+  it('keeps the duration separator grouped with the duration', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    const durationGroup = screen.getByTestId('agent-duration-group');
+    expect(durationGroup).toContainElement(screen.getByTestId('agent-runtime'));
+    expect(durationGroup).toHaveTextContent('·');
+  });
+
+  it('renders task context without a nested border or background panel', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-task-context')).not.toHaveClass('border', 'bg-black/20');
+  });
+
   it('has no rename affordance when renaming is not offered', () => {
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /rename/i })).not.toBeInTheDocument();
@@ -507,6 +560,11 @@ describe('AgentCard – nudging a stalled agent', () => {
   it('offers a nudge once the agent reads as stalled', () => {
     render(<AgentCard agent={stalled} onKill={vi.fn()} />);
     expect(screen.getByRole('button', { name: /nudge/i })).toBeInTheDocument();
+  });
+
+  it('keeps the nudge compact and left aligned', () => {
+    render(<AgentCard agent={stalled} onKill={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /nudge/i })).toHaveClass('self-start');
   });
 
   it('sends a bare Enter to the PTY — the commonest unstick', async () => {

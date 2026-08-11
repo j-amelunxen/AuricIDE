@@ -63,6 +63,9 @@ function seed(goal: PmGoal): void {
     goalsDraft: [goal],
     goalStationsDraft: [],
     goalsDirty: false,
+    selectedGoalId: null,
+    goalLinesOpen: true,
+    goalsModalOpen: false,
     llmConfigured: true,
     saveGoals: vi.fn(async () => {}),
   });
@@ -225,12 +228,17 @@ describe('PlannerPanel', () => {
     await waitFor(() => expect(screen.getByText(/v3: Second reprompt/)).toBeTruthy());
   });
 
-  it('"Start this line" commits stations, activates the goal, and clears the draft', async () => {
+  it('"Save line" commits checkpoints and explains that tickets are created next', async () => {
     const goal = makeGoal({ status: 'draft' });
     seed(goal);
     mockLlmCall.mockResolvedValueOnce({ content: GRAPH_RESPONSE });
     render(<PlannerPanel />);
     await proposeDraft(goal);
+
+    expect(screen.getByTestId('planner-start')).toHaveTextContent('Save line');
+    expect(screen.getByTestId('planner-preview')).toHaveTextContent(
+      /saves checkpoints.*tickets.*next/i
+    );
 
     fireEvent.click(screen.getByTestId('planner-start'));
 
@@ -239,9 +247,52 @@ describe('PlannerPanel', () => {
     expect(state.goalStationsDraft[1].kind).toBe('human');
     expect(state.goalsDraft[0].status).toBe('active');
     expect(state.saveGoals).toHaveBeenCalled();
+    await waitFor(() => expect(useStore.getState().selectedGoalId).toBe(goal.id));
+    expect(useStore.getState().goalLinesOpen).toBe(false);
+    expect(useStore.getState().goalsModalOpen).toBe(true);
     await waitFor(() =>
       expect(mockDbDelete).toHaveBeenCalledWith('/tmp/demo-project', 'goal_line_planner', goal.id)
     );
+  });
+
+  it('ignores a second Save line click while persistence is in flight', async () => {
+    const goal = makeGoal({ status: 'draft' });
+    let resolveSave!: () => void;
+    const saveGoals = vi.fn(() => new Promise<void>((resolve) => (resolveSave = resolve)));
+    seed(goal);
+    useStore.setState({ saveGoals });
+    mockLlmCall.mockResolvedValueOnce({ content: GRAPH_RESPONSE });
+    render(<PlannerPanel />);
+    await proposeDraft(goal);
+
+    fireEvent.click(screen.getByTestId('planner-start'));
+    fireEvent.click(screen.getByTestId('planner-start'));
+
+    expect(saveGoals).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('planner-start')).toBeDisabled();
+    expect(screen.getByTestId('planner-start')).toHaveTextContent('Saving…');
+    resolveSave();
+    await waitFor(() => expect(useStore.getState().goalsModalOpen).toBe(true));
+  });
+
+  it('rolls back added checkpoints and goal status when Save line fails', async () => {
+    const goal = makeGoal({ status: 'draft' });
+    seed(goal);
+    useStore.setState({ saveGoals: vi.fn(async () => Promise.reject(new Error('disk full'))) });
+    mockLlmCall.mockResolvedValueOnce({ content: GRAPH_RESPONSE });
+    render(<PlannerPanel />);
+    await proposeDraft(goal);
+
+    fireEvent.click(screen.getByTestId('planner-start'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('planner-error')).toHaveTextContent(/disk full/i)
+    );
+    expect(useStore.getState().goalStationsDraft).toHaveLength(0);
+    expect(useStore.getState().goalsDraft[0].status).toBe('draft');
+    expect(screen.getByTestId('planner-preview')).toBeInTheDocument();
+    expect(useStore.getState().goalsModalOpen).toBe(false);
+    expect(mockDbDelete).not.toHaveBeenCalled();
   });
 
   it('resumes a persisted draft when the goal is selected', async () => {

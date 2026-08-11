@@ -6,7 +6,7 @@ describe('GoalLineLegend', () => {
   it('shows each station mark as a short labeled swatch', () => {
     render(<GoalLineLegend />);
     const legend = screen.getByTestId('goal-line-legend');
-    expect(legend.getAttribute('aria-label')).toBe('Station legend');
+    expect(legend.getAttribute('aria-label')).toBe('Checkpoint legend');
     for (const label of [
       'proven',
       'front',

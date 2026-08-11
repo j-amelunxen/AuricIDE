@@ -100,7 +100,13 @@ export function useConductorController() {
     lastRun,
     preflight,
     selectedGoalName,
-    canStart: rootPath !== null,
+    canStart: rootPath !== null && preflight.total > 0,
+    startDisabledReason:
+      rootPath === null
+        ? 'Open a project first'
+        : preflight.total === 0
+          ? 'No tickets yet - create work first'
+          : undefined,
     providers,
     providerId,
     model,

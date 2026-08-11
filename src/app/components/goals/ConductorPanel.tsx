@@ -19,6 +19,7 @@ interface ConductorPanelProps {
   decisions: ConductorDecision[];
   lastRun: ConductorRunSummary | null;
   canStart: boolean;
+  startDisabledReason?: string;
   /** What a run would find right now — shown before starting. */
   preflight?: ConductorPreflight;
   /** Goal a run would be scoped to; null = all tickets. */
@@ -96,11 +97,16 @@ function preflightLabel(preflight: ConductorPreflight, selectedGoalName: string 
   if (preflight.blocked > 0) held.push(`${preflight.blocked} blocked`);
   if (preflight.needsApproval > 0) held.push(`${preflight.needsApproval} need approval`);
   if (preflight.inProgress > 0) held.push(`${preflight.inProgress} in progress`);
+  if (preflight.inReview > 0) held.push(`${preflight.inReview} in review`);
   if (preflight.exhausted > 0) held.push(`${preflight.exhausted} out of attempts`);
 
   if (preflight.ready === 0 && preflight.inProgress === 0) {
     const nothing = selectedGoalName
-      ? 'nothing to work; will verify the goal'
+      ? preflight.total === 0
+        ? 'No tickets yet - create work first'
+        : preflight.done === preflight.total
+          ? 'All tickets complete - checking open conditions'
+          : 'No runnable tickets right now'
       : 'no open tickets in scope';
     return held.length > 0 ? `${nothing} · ${held.join(' · ')}` : nothing;
   }
@@ -117,6 +123,7 @@ export function ConductorPanel({
   decisions,
   lastRun,
   canStart,
+  startDisabledReason,
   preflight,
   selectedGoalName = null,
   providers,
@@ -273,9 +280,11 @@ export function ConductorPanel({
               button. One line, always: squeezed by the bar it truncates with
               the full sentence in the tooltip — a one-word-per-line column
               reads as a broken layout, not as information. */}
-          {!running && canStart && preflight && (
+          {!running && preflight && (canStart || startDisabledReason?.includes('tickets')) && (
             <span
               data-testid="conductor-preflight"
+              role="status"
+              aria-live="polite"
               title={preflightLabel(preflight, selectedGoalName)}
               className="min-w-0 truncate text-[10px] text-foreground-muted tabular-nums"
             >
@@ -307,7 +316,7 @@ export function ConductorPanel({
               title={
                 canStart
                   ? 'Autonomously work all unblocked tickets in scope'
-                  : 'Open a project first'
+                  : (startDisabledReason ?? 'Open a project first')
               }
               className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-green-500/15 border border-green-500/25 px-3 py-1 text-[11px] font-bold text-green-300 hover:bg-green-500/25 transition-colors disabled:opacity-40"
             >

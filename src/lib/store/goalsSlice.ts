@@ -238,8 +238,13 @@ export function getGoalWorkflowStage(
 ): GoalWorkflowStep {
   const goal = goals.find((g) => g.id === goalId);
   const satisfaction = getGoalSatisfaction(goals, tickets, requirements, links, stations, goalId);
+  const subtreeIds = new Set<string>([
+    goalId,
+    ...getGoalDescendants(goals, goalId).map((g) => g.id),
+  ]);
+  const hasTickets = tickets.some((t) => !!t.goalId && subtreeIds.has(t.goalId));
 
-  if (goal?.status === 'achieved' || satisfaction.satisfied) {
+  if (goal?.status === 'achieved' || (hasTickets && satisfaction.satisfied)) {
     return {
       stage: 'done',
       index: 4,
@@ -258,20 +263,15 @@ export function getGoalWorkflowStage(
     };
   }
 
-  const subtreeIds = new Set<string>([
-    goalId,
-    ...getGoalDescendants(goals, goalId).map((g) => g.id),
-  ]);
-  const hasTickets = tickets.some((t) => !!t.goalId && subtreeIds.has(t.goalId));
-  const hasLinks = links.some((l) => l.goalId === goalId);
-  const hasChildren = getGoalChildren(goals, goalId).length > 0;
   const hasStations = stations.some((s) => subtreeIds.has(s.goalId));
 
-  if (!hasTickets && !hasLinks && !hasChildren && !hasStations) {
+  if (!hasTickets) {
     return {
       stage: 'attach',
       index: 2,
-      hint: 'Link tickets or run a planning agent.',
+      hint: hasStations
+        ? 'The plan is saved. Create tickets for its executable work.'
+        : 'Plan the checkpoints, then create executable tickets.',
     };
   }
 

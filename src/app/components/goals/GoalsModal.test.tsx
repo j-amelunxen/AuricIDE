@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalsModal, buildGoalLaunchPrompt } from './GoalsModal';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 
 const mocks = {
@@ -94,8 +94,10 @@ vi.mock('@/lib/store', () => ({
 }));
 
 describe('buildGoalLaunchPrompt', () => {
-  it('prefers the explicit goal prompt', () => {
-    expect(buildGoalLaunchPrompt(makeGoal({ goalPrompt: 'Custom prompt' }))).toBe('Custom prompt');
+  it('preserves an explicit goal prompt and appends the ticket-creation contract', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal({ goalPrompt: 'Custom prompt' }));
+    expect(prompt).toContain('Custom prompt');
+    expect(prompt).toContain('create_ticket');
   });
 
   it('generates a prompt from name, description and criteria', () => {
@@ -121,9 +123,65 @@ describe('buildGoalLaunchPrompt', () => {
     expect(prompt.startsWith('/goal\n\n')).toBe(true);
   });
 
-  it('does not inject /goal into an explicit goal prompt', () => {
+  it('still invokes /goal for an explicit goal prompt', () => {
     const prompt = buildGoalLaunchPrompt(makeGoal({ goalPrompt: 'Custom prompt' }));
-    expect(prompt).toBe('Custom prompt');
+    expect(prompt.startsWith('/goal\n\n')).toBe(true);
+  });
+
+  it('includes the saved line in order and asks for executable and supervised tickets', () => {
+    const stations: PmGoalStation[] = [
+      {
+        id: 's1',
+        goalId: 'g1',
+        name: 'Implement API',
+        kind: 'normal',
+        status: 'planned',
+        evidenceKind: 'claim',
+        predicate: { type: 'undefined' },
+        evidenceNote: '',
+        ticketId: null,
+        lane: 0,
+        sortOrder: 0,
+        lastCheckedAt: null,
+        doneAt: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 's2',
+        goalId: 'g1',
+        name: 'Approve launch',
+        kind: 'human',
+        status: 'planned',
+        evidenceKind: 'human',
+        predicate: { type: 'human' },
+        evidenceNote: '',
+        ticketId: null,
+        lane: 0,
+        sortOrder: 1,
+        lastCheckedAt: null,
+        doneAt: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+
+    const prompt = buildGoalLaunchPrompt(makeGoal(), stations);
+
+    expect(prompt).toContain('## Saved line');
+    expect(prompt.indexOf('1. Implement API (stationId: s1)')).toBeLessThan(
+      prompt.indexOf('2. Approve launch (stationId: s2, human)')
+    );
+    expect(prompt).toMatch(/create_ticket.*goalId.*g1/i);
+    expect(prompt).toMatch(/human.*needsHumanSupervision|needsHumanSupervision.*human/i);
+    expect(prompt).toMatch(/update_station.*stationId.*ticketId/i);
+    expect(prompt).toMatch(/list_epics[\s\S]*create_epic[\s\S]*epicId[\s\S]*create_ticket/i);
+  });
+
+  it('keeps explicit prompt content when stations exist', () => {
+    expect(buildGoalLaunchPrompt(makeGoal({ goalPrompt: 'Custom prompt' }), [])).toContain(
+      'Custom prompt'
+    );
   });
 });
 

@@ -40,15 +40,7 @@ function Dot({
 }) {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" className="overflow-visible">
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={2}
-        opacity={opacity}
-      />
+      <circle cx={cx} cy={cy} r={r} fill={fill} stroke={stroke} strokeWidth={2} opacity={opacity} />
     </svg>
   );
 }
@@ -63,7 +55,7 @@ export function GoalLineLegend() {
       data-testid="goal-line-legend"
       className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/5 pt-3"
       role="group"
-      aria-label="Station legend"
+      aria-label="Checkpoint legend"
     >
       <ul className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5">
         <Swatch label="proven">

@@ -7,6 +7,7 @@ import {
   markStationDone,
   reorderStation,
   resolveStationId,
+  updateStation,
 } from '../tools/stations';
 import { createTestDb } from '../db';
 
@@ -119,6 +120,19 @@ describe('station tools', () => {
     const s = createStation(db, { goalId, name: 'Only' });
     expect(resolveStationId(db, s.id.slice(0, 8))).toBe(s.id);
     expect(() => resolveStationId(db, 'nope-')).toThrow(/not found/);
+  });
+
+  it('links a resolved ticket when updating a station', () => {
+    db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('e1', 'Epic');
+    db.prepare('INSERT INTO pm_tickets (id, epic_id, name) VALUES (?, ?, ?)').run(
+      'ticket-123',
+      'e1',
+      'Build it'
+    );
+    const station = createStation(db, { goalId, name: 'Build' });
+
+    expect(updateStation(db, station.id, { ticketId: 'ticket' }).ticket_id).toBe('ticket-123');
+    expect(() => updateStation(db, station.id, { ticketId: 'missing' })).toThrow(/no tickets/i);
   });
 
   it('deleting the goal cascades to its stations', () => {

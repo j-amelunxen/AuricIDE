@@ -217,6 +217,8 @@ describe('ConductorPanel', () => {
 
 describe('ConductorPanel preflight', () => {
   const preflight = {
+    total: 0,
+    done: 0,
     ready: 0,
     blocked: 0,
     needsApproval: 0,
@@ -248,11 +250,42 @@ describe('ConductorPanel preflight', () => {
     expect(readout).not.toHaveTextContent('approval');
   });
 
-  it('says a scoped run with no work left will verify the goal', () => {
+  it('says a scoped goal with no tickets needs work first', () => {
     renderPanel({ preflight, selectedGoalName: 'Ship v1' });
     expect(screen.getByTestId('conductor-preflight')).toHaveTextContent(
-      'nothing to work; will verify the goal'
+      'No tickets yet - create work first'
     );
+  });
+
+  it('checks open conditions when every scoped ticket is complete', () => {
+    renderPanel({ preflight: { ...preflight, total: 3, done: 3 }, selectedGoalName: 'Ship v1' });
+    expect(screen.getByTestId('conductor-preflight')).toHaveTextContent(
+      'All tickets complete - checking open conditions'
+    );
+  });
+
+  it('disables Start with an accessible reason when there are no tickets', () => {
+    renderPanel({
+      preflight,
+      canStart: false,
+      startDisabledReason: 'No tickets yet - create work first',
+    });
+    expect(screen.getByTestId('conductor-start-btn')).toBeDisabled();
+    expect(screen.getByTestId('conductor-start-btn')).toHaveAttribute(
+      'title',
+      expect.stringMatching(/create work first/i)
+    );
+  });
+
+  it('announces changing preflight information politely', () => {
+    renderPanel({ preflight: { ...preflight, total: 1, ready: 1 } });
+    expect(screen.getByTestId('conductor-preflight')).toHaveAttribute('role', 'status');
+    expect(screen.getByTestId('conductor-preflight')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('includes reviews in held work', () => {
+    renderPanel({ preflight: { ...preflight, total: 1, inReview: 1 } });
+    expect(screen.getByTestId('conductor-preflight')).toHaveTextContent('1 in review');
   });
 
   it('says an unscoped run with no work left has nothing to do', () => {

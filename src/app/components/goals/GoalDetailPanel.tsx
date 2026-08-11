@@ -14,7 +14,7 @@ import { useStore } from '@/lib/store';
 import { GOAL_STATUS_STYLES } from './GoalTree';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
-const WORKFLOW_STEP_LABELS = ['Define', 'Attach', 'Conduct', 'Achieved'] as const;
+const WORKFLOW_STEP_LABELS = ['Define', 'Plan & create work', 'Run', 'Achieved'] as const;
 
 const RUN_OUTCOME_STYLES: Record<string, string> = {
   running: 'bg-amber-500/20 text-amber-300',
@@ -88,6 +88,11 @@ export function GoalDetailPanel({
     () => (goal ? tickets.filter((t) => t.goalId === goal.id) : []),
     [goal, tickets]
   );
+  const subtreeHasTickets = useMemo(() => {
+    if (!goal) return false;
+    const ids = new Set([goal.id, ...getGoalDescendants(goals, goal.id).map((item) => item.id)]);
+    return tickets.some((ticket) => !!ticket.goalId && ids.has(ticket.goalId));
+  }, [goal, goals, tickets]);
 
   const goalRuns = useMemo(() => (goal ? getRunsForGoal(runs, goal.id) : []), [goal, runs]);
 
@@ -194,7 +199,7 @@ export function GoalDetailPanel({
           data-testid="goal-workflow-stepper"
           className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5"
         >
-          <ol className="flex items-center">
+          <ol className="flex flex-wrap items-center gap-y-2">
             {WORKFLOW_STEP_LABELS.map((label, i) => {
               const pos = i + 1;
               const isCurrent = pos === workflowStep.index;
@@ -278,12 +283,15 @@ export function GoalDetailPanel({
           ) : (
             <>
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-foreground-muted">
-                Blockers ({satisfaction.blockers.length})
+                Open conditions ({satisfaction.blockers.length})
               </p>
               <ul className="space-y-1">
                 {satisfaction.blockers.slice(0, 6).map((b, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-[11px] text-foreground/80">
-                    <AuricIcon name="block" className="mt-px text-[12px] text-amber-400" />
+                    <AuricIcon
+                      name="radio_button_unchecked"
+                      className="mt-px text-[12px] text-foreground-muted"
+                    />
                     {b}
                   </li>
                 ))}
@@ -299,30 +307,37 @@ export function GoalDetailPanel({
       )}
 
       {/* Actions */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          data-testid="goal-launch-agent-btn"
-          onClick={() => onLaunchAgent(goal)}
-          className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
-        >
-          <AuricIcon name="rocket_launch" className="text-sm" />
-          Launch agent
-        </button>
-        <button
-          data-testid="goal-add-subgoal-btn"
-          onClick={() => onAddSubGoal(goal.id)}
-          className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[11px] text-foreground hover:bg-white/10 transition-colors"
-        >
-          <AuricIcon name="account_tree" className="text-sm" />
-          Add sub-goal
-        </button>
-        <button
-          data-testid="goal-delete-btn"
-          onClick={() => onDelete(goal.id)}
-          className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-300 transition-colors"
-        >
-          <AuricIcon name="delete" className="text-sm" />
-        </button>
+      <div>
+        {!subtreeHasTickets && (
+          <p className="mb-2 text-[10px] text-foreground-muted">
+            The conductor runs tickets, not checkpoints. Create executable work first.
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <button
+            data-testid="goal-launch-agent-btn"
+            onClick={() => onLaunchAgent(goal)}
+            className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
+          >
+            <AuricIcon name="rocket_launch" className="text-sm" />
+            {subtreeHasTickets ? 'Add work with agent' : 'Create tickets with agent'}
+          </button>
+          <button
+            data-testid="goal-add-subgoal-btn"
+            onClick={() => onAddSubGoal(goal.id)}
+            className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[11px] text-foreground hover:bg-white/10 transition-colors"
+          >
+            <AuricIcon name="account_tree" className="text-sm" />
+            Add sub-goal
+          </button>
+          <button
+            data-testid="goal-delete-btn"
+            onClick={() => onDelete(goal.id)}
+            className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-red-400/70 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+          >
+            <AuricIcon name="delete" className="text-sm" />
+          </button>
+        </div>
       </div>
 
       {/* Description */}

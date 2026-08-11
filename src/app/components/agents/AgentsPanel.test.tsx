@@ -92,7 +92,7 @@ describe('AgentsPanel', () => {
         onKillRepo={vi.fn()}
       />
     );
-    expect(screen.getByText('Kill All')).toBeInTheDocument();
+    expect(screen.getByText('Stop all')).toBeInTheDocument();
   });
 
   it('Kill All calls onKillRepo with repo path', async () => {
@@ -109,7 +109,7 @@ describe('AgentsPanel', () => {
     );
     // Killing running agents now asks first (see "destructive actions" below).
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await user.click(screen.getByText('Kill All'));
+    await user.click(screen.getByText('Stop all'));
     expect(onKillRepo).toHaveBeenCalledWith('/repo-a');
     confirmSpy.mockRestore();
   });
@@ -219,6 +219,32 @@ describe('AgentsPanel', () => {
   });
 });
 
+describe('AgentsPanel compact card boundaries', () => {
+  it('does not add a second rounded or ring boundary around an AgentCard', () => {
+    const { container } = render(
+      <AgentsPanel agents={[agents[0]]} onSpawn={vi.fn()} onKill={vi.fn()} />
+    );
+    const card = container.querySelector('.glass-card');
+    expect(card?.parentElement).not.toHaveClass('rounded');
+    expect(card?.parentElement?.className).not.toContain('ring-');
+  });
+
+  it('labels the bulk park action with its count', () => {
+    render(
+      <AgentsPanel
+        agents={[
+          { ...agents[0], id: 'a1', lastActivityAt: Date.now() },
+          { ...agents[0], id: 'a2', lastActivityAt: Date.now() },
+        ]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onToggleMinimize={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Park 2' })).toBeInTheDocument();
+  });
+});
+
 describe('AgentsPanel destructive actions', () => {
   const repoAgents: AgentInfo[] = [
     { ...agents[0], id: 'a1', status: 'running', repoPath: '/work/api' },
@@ -234,7 +260,7 @@ describe('AgentsPanel destructive actions', () => {
     render(
       <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
     );
-    await user.click(screen.getByRole('button', { name: /kill all/i }));
+    await user.click(screen.getByRole('button', { name: /stop all/i }));
 
     expect(confirmSpy).toHaveBeenCalled();
     expect(onKillRepo).not.toHaveBeenCalled();
@@ -248,7 +274,7 @@ describe('AgentsPanel destructive actions', () => {
     render(
       <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={vi.fn()} />
     );
-    await user.click(screen.getByRole('button', { name: /kill all/i }));
+    await user.click(screen.getByRole('button', { name: /stop all/i }));
 
     const message = confirmSpy.mock.calls[0][0] as string;
     expect(message).toContain('2');
@@ -264,7 +290,7 @@ describe('AgentsPanel destructive actions', () => {
     render(
       <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
     );
-    await user.click(screen.getByRole('button', { name: /kill all/i }));
+    await user.click(screen.getByRole('button', { name: /stop all/i }));
 
     expect(onKillRepo).toHaveBeenCalledWith('/work/api');
     confirmSpy.mockRestore();
@@ -493,7 +519,7 @@ describe('AgentsPanel – park the healthy fleet', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /park working/i }));
+    await user.click(screen.getByRole('button', { name: 'Park 2' }));
     // What stays on cards afterwards is exactly what needs a human.
     expect(onToggleMinimize).toHaveBeenCalledWith('h1', true);
     expect(onToggleMinimize).toHaveBeenCalledWith('h2', true);
@@ -1106,7 +1132,7 @@ describe('AgentsPanel – collapsible repo groups', () => {
         onToggleRepoCollapsed={vi.fn()}
       />
     );
-    expect(screen.getByText('Kill All')).toBeInTheDocument();
+    expect(screen.getByText('Stop all')).toBeInTheDocument();
   });
 });
 

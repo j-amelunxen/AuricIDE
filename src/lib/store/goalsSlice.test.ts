@@ -481,6 +481,58 @@ describe('getGoalWorkflowStage', () => {
     expect(step.index).toBe(3);
   });
 
+  it('keeps a saved station-only line in planning until executable tickets exist', () => {
+    const goal = makeGoal();
+    const stations = [
+      {
+        id: 's1',
+        goalId: goal.id,
+        name: 'Implement the workflow',
+        kind: 'normal' as const,
+        status: 'planned' as const,
+        evidenceKind: 'claim' as const,
+        predicate: { type: 'undefined' as const },
+        evidenceNote: '',
+        ticketId: null,
+        lane: 0,
+        sortOrder: 0,
+        lastCheckedAt: null,
+        doneAt: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], stations, goal.id);
+
+    expect(step.stage).toBe('attach');
+    expect(step.index).toBe(2);
+    expect(step.hint).toMatch(/plan is saved.*create tickets/i);
+  });
+
+  it('does not skip to achieved when checkpoints pass without executable tickets', () => {
+    const goal = makeGoal();
+    const station = {
+      id: 's1',
+      goalId: goal.id,
+      name: 'Checkpoint',
+      kind: 'human' as const,
+      status: 'done' as const,
+      evidenceKind: 'human' as const,
+      predicate: { type: 'human' as const },
+      evidenceNote: '',
+      ticketId: null,
+      lane: 0,
+      sortOrder: 0,
+      lastCheckedAt: '',
+      doneAt: '',
+      createdAt: '',
+      updatedAt: '',
+    };
+
+    expect(getGoalWorkflowStage([goal], [], noReqs, [], [station], goal.id).stage).toBe('attach');
+  });
+
   it('counts tickets on descendant goals as attached work', () => {
     const parent = makeGoal({ id: 'p' });
     const child = makeGoal({ id: 'c', parentId: 'p' });
