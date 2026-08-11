@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { getScratchDir } from './scratch';
 
-const invokeMock = vi.fn((cmd: string) => {
+const invokeMock = vi.fn((cmd: string, _args?: Record<string, unknown>) => {
   if (cmd === 'get_scratch_dir') {
     return Promise.resolve('/app-data/scratches');
   }

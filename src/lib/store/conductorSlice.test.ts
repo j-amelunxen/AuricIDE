@@ -15,7 +15,7 @@ import type { StoreState } from './index';
 import type { PmDependency, PmTicket } from '../tauri/pm';
 import type { PmGoal } from '../tauri/goals';
 import { spawnAgent } from '../tauri/agents';
-import { createJudgeBackend } from '../conductor/judgeBackend';
+import { createJudgeBackend, type JudgeInput, type JudgeStart } from '../conductor/judgeBackend';
 
 let agentCounter = 0;
 
@@ -136,8 +136,14 @@ describe('getConductorPreflight', () => {
   it('counts tickets waiting on an unfinished dependency as blocked', () => {
     const result = preflight([makeTicket({ id: 'a' }), makeTicket({ id: 'b' })], {
       dependencies: [
-        { id: 'd1', sourceId: 'b', targetId: 'a', targetType: 'ticket', kind: 'blocks' },
-      ] as PmDependency[],
+        {
+          id: 'd1',
+          sourceType: 'ticket',
+          sourceId: 'b',
+          targetId: 'a',
+          targetType: 'ticket',
+        },
+      ],
     });
     expect(result).toMatchObject({ ready: 1, blocked: 1 });
   });
@@ -204,12 +210,12 @@ describe('getConductorPreflight', () => {
         dependencies: [
           {
             id: 'd1',
+            sourceType: 'ticket',
             sourceId: 'inside',
             targetId: 'outside',
             targetType: 'ticket',
-            kind: 'blocks',
           },
-        ] as PmDependency[],
+        ],
       }
     );
     expect(result).toMatchObject({ ready: 0, blocked: 1 });
@@ -590,7 +596,7 @@ describe('conductorSlice', () => {
     expect(store.getState().goalsDraft[0].status).not.toBe('achieved');
     expect(store.getState().conductorRunning).toBe(false);
     const stopDecision = store.getState().conductorDecisions.find((d) => d.action === 'stop');
-    expect(stopDecision?.detail).toContain('nothing to verify');
+    expect(stopDecision?.detail).toContain('Add work before running the conductor');
   });
 
   it('terminates all-tickets mode when no work is left', async () => {
@@ -1094,7 +1100,7 @@ describe('conductor judge review gate', () => {
     // A judge whose verdict never resolves keeps the ticket in review.
     vi.mocked(createJudgeBackend).mockReturnValue({
       form: 'llm',
-      start: vi.fn(() => new Promise(() => {})), // never resolves
+      start: vi.fn((_input: JudgeInput) => new Promise<JudgeStart>(() => {})), // never resolves
     });
     const agentId = await runToIdle(true);
     store.getState().conductorHandleAgentStatus(agentId, 'idle');

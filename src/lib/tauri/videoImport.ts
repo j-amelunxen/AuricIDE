@@ -46,7 +46,3 @@ export async function saveVideoProcessAnalysis(
     processJson: JSON.stringify(process, null, 2),
   });
 }
-
-export async function clearVideoImport(importId: string): Promise<void> {
-  await invoke('video_import_clear', { importId });
-}

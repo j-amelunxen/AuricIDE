@@ -12,6 +12,7 @@ import { ConductorPanel } from './ConductorPanel';
 import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflowStrip';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
+import { planGoalMove, type GoalDropPosition } from '@/lib/store/goalsSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 /** Builds the launch prompt for a goal: explicit goalPrompt wins, else generated. */
@@ -176,6 +177,15 @@ function GoalsModalContent() {
     setCreateOpen(true);
   }, []);
 
+  const handleMoveGoal = useCallback(
+    (draggedId: string, targetId: string, position: GoalDropPosition) => {
+      for (const update of planGoalMove(goalsDraft, draggedId, targetId, position)) {
+        updateGoal(update.id, { parentId: update.parentId, sortOrder: update.sortOrder });
+      }
+    },
+    [goalsDraft, updateGoal]
+  );
+
   const handleLinkTicket = useCallback(
     (goalId: string, ticketId: string) => {
       updateTicket(ticketId, { goalId });
@@ -300,6 +310,7 @@ function GoalsModalContent() {
               tickets={tickets}
               selectedId={selectedGoalId}
               onSelect={setSelectedGoalId}
+              onMoveGoal={handleMoveGoal}
               activeAgentsByGoal={activeAgentsByGoal}
               loading={goalsLoading}
               loadError={goalsLoadError}

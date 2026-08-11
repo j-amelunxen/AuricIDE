@@ -10,6 +10,7 @@ import {
   getGoalSatisfaction,
   getRunsForGoal,
   getGoalWorkflowStage,
+  planGoalMove,
 } from './goalsSlice';
 import { VERIFIED_EVIDENCE_KINDS, isVerifiedEvidence } from '../pm/enums';
 import type { GoalsState, PmGoal, PmGoalRun } from '../tauri/goals';
@@ -143,6 +144,36 @@ describe('goalsSlice tree helpers', () => {
     // Must terminate and not blow the stack
     expect(getGoalDescendants(cyclic, 'a').map((g) => g.id)).toEqual(['b']);
   });
+
+  it('plans reparenting a goal inside another goal', () => {
+    const moveGoals = [
+      makeGoal({ id: 'root', sortOrder: 0 }),
+      makeGoal({ id: 'old-parent', parentId: 'root', sortOrder: 0 }),
+      makeGoal({ id: 'dragged', parentId: 'old-parent', sortOrder: 0 }),
+    ];
+
+    expect(planGoalMove(moveGoals, 'dragged', 'root', 'inside')).toContainEqual({
+      id: 'dragged',
+      parentId: 'root',
+      sortOrder: 1,
+    });
+  });
+
+  it('plans sibling insertion and rejects cyclic moves', () => {
+    const moveGoals = [
+      makeGoal({ id: 'root' }),
+      makeGoal({ id: 'first', parentId: 'root', sortOrder: 0 }),
+      makeGoal({ id: 'second', parentId: 'root', sortOrder: 1 }),
+      makeGoal({ id: 'child', parentId: 'first', sortOrder: 0 }),
+    ];
+
+    expect(planGoalMove(moveGoals, 'second', 'first', 'before')).toContainEqual({
+      id: 'second',
+      parentId: 'root',
+      sortOrder: 0,
+    });
+    expect(planGoalMove(moveGoals, 'first', 'child', 'inside')).toEqual([]);
+  });
 });
 
 describe('goalsSlice progress + satisfaction', () => {
@@ -177,7 +208,9 @@ describe('goalsSlice progress + satisfaction', () => {
     const goals = [makeGoal({ id: 'g1' })];
     const result = getGoalSatisfaction(goals, [], [], [], [], 'g1');
     expect(result.satisfied).toBe(false);
-    expect(result.blockers.join(' ')).toContain('nothing to verify');
+    expect(result.blockers).toEqual([
+      'This goal has no attached tickets, linked requirements, child goals, or goal-line stations. Add work before running the conductor.',
+    ]);
   });
 
   it('getGoalSatisfaction lists precise blockers', () => {

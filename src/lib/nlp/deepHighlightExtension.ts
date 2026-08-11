@@ -1,5 +1,5 @@
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
-import { StateEffect, StateField } from '@codemirror/state';
+import { StateEffect, StateField, type Extension } from '@codemirror/state';
 import type { Range } from '@codemirror/state';
 import type { NerEntity, ClassifyResult } from './deepAnalysisWorker';
 import { DeepWorkerClient } from './deepWorkerClient';
@@ -244,4 +244,10 @@ export class DeepAnalysisPlugin {
 
 const deepAnalysisPlugin = ViewPlugin.fromClass(DeepAnalysisPlugin);
 
-export const deepHighlightExtension = [deepNerField, deepIntentField, deepAnalysisPlugin];
+// CodeMirror's ViewPlugin type permits a nullable internal extension while the
+// public Extension union does not. The runtime value is a valid extension.
+export const deepHighlightExtension: Extension = [
+  deepNerField,
+  deepIntentField,
+  deepAnalysisPlugin as unknown as Extension,
+];

@@ -83,6 +83,7 @@ const DECISION_ICONS: Record<ConductorDecision['action'], { icon: string; cls: s
   fail: { icon: 'error', cls: 'text-red-400' },
   approval_needed: { icon: 'pan_tool', cls: 'text-amber-400' },
   approved: { icon: 'thumb_up', cls: 'text-sky-400' },
+  review_started: { icon: 'rate_review', cls: 'text-violet-300' },
   goal_achieved: { icon: 'military_tech', cls: 'text-green-300' },
 };
 

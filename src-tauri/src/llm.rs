@@ -92,6 +92,52 @@ fn openai_messages(messages: &[LlmMessage]) -> serde_json::Value {
     )
 }
 
+fn is_mistral_provider(base_url: &str, model: &str) -> bool {
+    let base_url = base_url.to_ascii_lowercase();
+    let model = model.to_ascii_lowercase();
+
+    base_url.contains("mistral.ai")
+        || model.starts_with("mistralai/")
+        || [
+            "mistral",
+            "ministral",
+            "magistral",
+            "codestral",
+            "devstral",
+            "pixtral",
+        ]
+        .iter()
+        .any(|family| model.contains(family))
+}
+
+fn openai_request_body(
+    request: &LlmRequest,
+    base_url: &str,
+    model: &str,
+    reasoning_enabled: bool,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": openai_messages(&request.messages),
+    });
+
+    // `reasoning` is an OpenRouter extension, not part of the OpenAI-compatible
+    // contract. Mistral rejects unknown request fields with HTTP 422, so omit it
+    // for Mistral models/endpoints and whenever reasoning is disabled.
+    if reasoning_enabled && !is_mistral_provider(base_url, model) {
+        body["reasoning"] = serde_json::json!({ "enabled": true });
+    }
+
+    if let Some(t) = request.temperature {
+        body["temperature"] = serde_json::Value::from(t);
+    }
+    if let Some(m) = request.max_tokens {
+        body["max_tokens"] = serde_json::Value::from(m);
+    }
+
+    body
+}
+
 pub async fn llm_call_impl(
     request: LlmRequest,
     db_state: State<'_, DatabaseState>,
@@ -131,20 +177,7 @@ pub async fn llm_call_impl(
         format!("{}/chat/completions", base_url_trimmed)
     };
 
-    let mut body = serde_json::json!({
-        "model": model,
-        "messages": openai_messages(&request.messages),
-        "reasoning": {
-            "enabled": reasoning_enabled
-        }
-    });
-
-    if let Some(t) = request.temperature {
-        body["temperature"] = serde_json::Value::from(t);
-    }
-    if let Some(m) = request.max_tokens {
-        body["max_tokens"] = serde_json::Value::from(m);
-    }
+    let body = openai_request_body(&request, &base_url, &model, reasoning_enabled);
 
     // 3. Execute request
     let response = client
@@ -183,7 +216,24 @@ pub async fn llm_call_impl(
 
 #[cfg(test)]
 mod tests {
-    use super::{openai_messages, settings_namespace, LlmContentPart, LlmMessage};
+    use super::{
+        is_mistral_provider, openai_messages, openai_request_body, settings_namespace,
+        LlmContentPart, LlmMessage, LlmRequest,
+    };
+
+    fn request(role: Option<&str>) -> LlmRequest {
+        LlmRequest {
+            messages: vec![LlmMessage {
+                role: "user".to_string(),
+                content: "Say pong".to_string(),
+                parts: vec![],
+            }],
+            temperature: Some(0.2),
+            max_tokens: Some(10),
+            project_path: "/project".to_string(),
+            role: role.map(str::to_string),
+        }
+    }
 
     #[test]
     fn role_maps_to_a_fixed_namespace() {
@@ -208,5 +258,58 @@ mod tests {
             messages[0]["content"][1]["image_url"]["url"],
             "data:image/jpeg;base64,eA=="
         );
+    }
+
+    #[test]
+    fn recognizes_direct_and_openrouter_mistral_models() {
+        assert!(is_mistral_provider(
+            "https://api.mistral.ai/v1",
+            "mistral-small-latest"
+        ));
+        assert!(is_mistral_provider(
+            "https://openrouter.ai/api/v1",
+            "mistralai/mistral-small-3.2-24b-instruct"
+        ));
+        assert!(is_mistral_provider(
+            "http://localhost:11434/v1",
+            "codestral-latest"
+        ));
+        assert!(!is_mistral_provider(
+            "https://openrouter.ai/api/v1",
+            "moonshotai/kimi-k2-thinking"
+        ));
+    }
+
+    #[test]
+    fn omits_reasoning_extension_for_mistral_for_default_and_judge_requests() {
+        for role in [None, Some("judge")] {
+            let body = openai_request_body(
+                &request(role),
+                "https://api.mistral.ai/v1",
+                "mistral-small-latest",
+                true,
+            );
+            assert!(body.get("reasoning").is_none());
+            assert_eq!(body["max_tokens"], 10);
+        }
+    }
+
+    #[test]
+    fn only_sends_reasoning_extension_when_enabled() {
+        let enabled = openai_request_body(
+            &request(None),
+            "https://openrouter.ai/api/v1",
+            "moonshotai/kimi-k2-thinking",
+            true,
+        );
+        assert_eq!(enabled["reasoning"]["enabled"], true);
+
+        let disabled = openai_request_body(
+            &request(None),
+            "https://openrouter.ai/api/v1",
+            "moonshotai/kimi-k2-thinking",
+            false,
+        );
+        assert!(disabled.get("reasoning").is_none());
     }
 }

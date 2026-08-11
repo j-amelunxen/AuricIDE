@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
+import type { SetStateAction } from 'react';
 import { CONTEXT_BOUND_COMMANDS, useIDEHandlers } from './useIDEHandlers';
 import { defaultCommands } from '@/lib/commands/registry';
 
@@ -970,8 +971,8 @@ describe('useIDEHandlers', () => {
       get editorContent() {
         return buffer;
       },
-      setEditorContent: (content: string) => {
-        buffer = content;
+      setEditorContent: (content: SetStateAction<string>) => {
+        buffer = typeof content === 'function' ? content(buffer) : content;
       },
       markDirty: vi.fn(),
       updateFileInIndex: vi.fn(),

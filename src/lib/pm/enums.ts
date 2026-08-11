@@ -94,4 +94,3 @@ export const STATION_PREDICATE_TYPES = [
   'git_touches',
   'judged',
 ] as const;
-export type StationPredicateType = (typeof STATION_PREDICATE_TYPES)[number];

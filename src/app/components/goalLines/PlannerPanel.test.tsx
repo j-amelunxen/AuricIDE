@@ -6,17 +6,22 @@ import { PlannerPanel } from './PlannerPanel';
 
 const mockLlmCall = vi.fn<(...a: unknown[]) => Promise<{ content: string }>>();
 vi.mock('@/lib/tauri/llm', () => ({
-  llmCall: (...a: unknown[]) => mockLlmCall(...a),
+  llmCall: (request: unknown) => mockLlmCall(request),
 }));
 
 const mockDbGet = vi.fn<(...a: unknown[]) => Promise<string | null>>(async () => null);
-const mockDbSet = vi.fn(async () => {});
-const mockDbDelete = vi.fn(async () => true);
+const mockDbSet = vi.fn(
+  async (_projectPath: string, _namespace: string, _key: string, _value: string) => {}
+);
+const mockDbDelete = vi.fn(async (_projectPath: string, _namespace: string, _key: string) => true);
 vi.mock('@/lib/tauri/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  dbGet: (...a: unknown[]) => mockDbGet(...a),
-  dbSet: (...a: unknown[]) => mockDbSet(...a),
-  dbDelete: (...a: unknown[]) => mockDbDelete(...a),
+  dbGet: (projectPath: string, namespace: string, key: string) =>
+    mockDbGet(projectPath, namespace, key),
+  dbSet: (projectPath: string, namespace: string, key: string, value: string) =>
+    mockDbSet(projectPath, namespace, key, value),
+  dbDelete: (projectPath: string, namespace: string, key: string) =>
+    mockDbDelete(projectPath, namespace, key),
 }));
 
 const TS = '2026-01-10 10:00:00';

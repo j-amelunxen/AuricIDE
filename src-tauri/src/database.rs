@@ -1999,7 +1999,7 @@ mod tests {
 
         // Verify not empty
         let state_before = pm_load_impl(&conn).unwrap();
-        assert!(state_before.epics.len() > 0);
+        assert!(!state_before.epics.is_empty());
 
         pm_clear_impl(&conn).unwrap();
 

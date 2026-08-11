@@ -8,15 +8,20 @@ import { ForkProposals } from './ForkProposals';
 const mockGitLogSince = vi.fn<(...a: unknown[]) => Promise<CommitInfo[]>>(async () => []);
 vi.mock('@/lib/tauri/git', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  gitLogSince: (...a: unknown[]) => mockGitLogSince(...a),
+  gitLogSince: (repoPath: string, sinceIso?: string, pathPrefix?: string) =>
+    mockGitLogSince(repoPath, sinceIso, pathPrefix),
 }));
 
 const mockDbGet = vi.fn<(...a: unknown[]) => Promise<string | null>>(async () => null);
-const mockDbSet = vi.fn(async () => {});
+const mockDbSet = vi.fn(
+  async (_projectPath: string, _namespace: string, _key: string, _value: string) => {}
+);
 vi.mock('@/lib/tauri/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  dbGet: (...a: unknown[]) => mockDbGet(...a),
-  dbSet: (...a: unknown[]) => mockDbSet(...a),
+  dbGet: (projectPath: string, namespace: string, key: string) =>
+    mockDbGet(projectPath, namespace, key),
+  dbSet: (projectPath: string, namespace: string, key: string, value: string) =>
+    mockDbSet(projectPath, namespace, key, value),
 }));
 
 const TS = '2026-01-10 10:00:00';
