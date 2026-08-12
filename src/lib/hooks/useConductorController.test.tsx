@@ -4,6 +4,18 @@ import { useConductorController } from './useConductorController';
 import { useStore } from '@/lib/store';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmGoal } from '@/lib/tauri/goals';
+import type { AgentInfo } from '@/lib/tauri/agents';
+
+function makeAgent(overrides: Partial<AgentInfo> & Pick<AgentInfo, 'id'>): AgentInfo {
+  return {
+    name: 'Agent',
+    status: 'running',
+    model: 'sonnet',
+    provider: 'claude',
+    startedAt: Date.now(),
+    ...overrides,
+  };
+}
 
 function makeTicket(overrides: Partial<PmTicket>): PmTicket {
   return {
@@ -34,8 +46,10 @@ describe('useConductorController', () => {
       conductorModel: null,
       pmDraftTickets: [],
       goalsDraft: [],
+      conductorReviewAssignments: {},
       selectedGoalId: null,
       rootPath: null,
+      agents: [],
     });
   });
 
@@ -58,6 +72,38 @@ describe('useConductorController', () => {
     useStore.setState({ conductorAssignments: { t1: 'a1', t2: 'a2' } });
     const { result } = renderHook(() => useConductorController());
     expect(result.current.activeAgentCount).toBe(2);
+  });
+
+  it('counts implementers and reviewers as agents a stop would kill', () => {
+    useStore.setState({
+      conductorAssignments: { t1: 'a1', t2: '__pending__' },
+      conductorReviewAssignments: { t3: 'a3' },
+      agents: [makeAgent({ id: 'a1' }), makeAgent({ id: 'a3' }), makeAgent({ id: 'other' })],
+    });
+    const { result } = renderHook(() => useConductorController());
+    expect(result.current.runningAgentCount).toBe(2);
+  });
+
+  it('leaves agents that already stopped out of the stop cost', () => {
+    useStore.setState({
+      conductorAssignments: { t1: 'a1', t2: 'a2' },
+      agents: [makeAgent({ id: 'a1' }), makeAgent({ id: 'a2', status: 'idle' })],
+    });
+    const { result } = renderHook(() => useConductorController());
+    expect(result.current.runningAgentCount).toBe(1);
+  });
+
+  it('survives a store where the conductor maps do not exist yet', () => {
+    // A freshly opened project (or any surface that renders before the
+    // conductor slice is populated) has no assignment maps at all. Reading
+    // them unguarded throws inside render and takes the whole modal down.
+    useStore.setState({
+      conductorAssignments: undefined as unknown as Record<string, string>,
+      conductorReviewAssignments: undefined as unknown as Record<string, string>,
+    });
+    const { result } = renderHook(() => useConductorController());
+    expect(result.current.activeAgentCount).toBe(0);
+    expect(result.current.runningAgentCount).toBe(0);
   });
 
   it('resolves pending approval ids to ticket objects', () => {

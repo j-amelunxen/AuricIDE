@@ -348,6 +348,27 @@ export interface GoalsSlice {
   setGoalLinesOpen: (open: boolean) => void;
 }
 
+/**
+ * Drop the goal link from every ticket that pointed at one of the deleted
+ * goals (cross-slice, optional — the goals slice runs without PM in tests).
+ * Tickets carry the link on their own side and save through `savePmData`, so a
+ * ticket left pointing at a deleted goal would keep claiming that link while
+ * dropping out of the subtree walk `getGoalSatisfaction` does. `updateTicket`
+ * owns the PM dirty flag, so routing through it keeps the change persistable.
+ */
+function clearGoalLinkOnTickets(state: GoalsSlice, deletedGoalIds: Set<string>): void {
+  const pm = state as GoalsSlice & {
+    pmDraftTickets?: PmTicket[];
+    updateTicket?: (id: string, updates: Partial<PmTicket>) => void;
+  };
+  if (!pm.pmDraftTickets || !pm.updateTicket) return;
+  for (const ticket of pm.pmDraftTickets) {
+    if (ticket.goalId && deletedGoalIds.has(ticket.goalId)) {
+      pm.updateTicket(ticket.id, { goalId: null });
+    }
+  }
+}
+
 export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   goals: [],
   goalsLoading: IDLE_LOAD_STATE.loading,
@@ -551,6 +572,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalStationsDraft: s.goalStationsDraft.filter((st) => !doomed.has(st.goalId)),
       goalsDirty: true,
     }));
+    clearGoalLinkOnTickets(get(), doomed);
   },
 
   achieveGoal: (id) => {

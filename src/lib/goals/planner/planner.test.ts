@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyPlannerOps } from './applyPlannerOps';
-import { extractJson, parsePlannerGraph, parsePlannerOps } from './plannerSchema';
+import {
+  extractJson,
+  parsePlannerGraph,
+  parsePlannerOps,
+  parseStoredPredicate,
+  parseStoredPredicateJson,
+} from './plannerSchema';
 import { planToStations } from './commitPlan';
 import { deletePlannerDraft, loadPlannerDraft, savePlannerDraft } from './plannerDraft';
 
@@ -70,6 +76,47 @@ describe('plannerSchema', () => {
       ],
     });
     expect(() => parsePlannerGraph(bad)).toThrow(/file_exists requires a glob/);
+  });
+
+  describe('parseStoredPredicate (read path)', () => {
+    it('keeps a fully specified machine predicate', () => {
+      expect(parseStoredPredicate({ type: 'file_exists', glob: 'docs/x.md' })).toEqual({
+        type: 'file_exists',
+        glob: 'docs/x.md',
+      });
+      expect(
+        parseStoredPredicate({ type: 'git_touches', pathPrefix: 'src/', sinceIso: '2026-01-01' })
+      ).toEqual({ type: 'git_touches', pathPrefix: 'src/', sinceIso: '2026-01-01' });
+    });
+
+    it('degrades incomplete predicates instead of casting them into the union', () => {
+      expect(parseStoredPredicate({ type: 'file_exists' })).toEqual({ type: 'undefined' });
+      expect(parseStoredPredicate({ type: 'git_touches' })).toEqual({ type: 'undefined' });
+      expect(parseStoredPredicate({ type: 'ticket_done' })).toEqual({ type: 'undefined' });
+      expect(parseStoredPredicate({ type: 'requirement_verified' })).toEqual({ type: 'undefined' });
+      expect(parseStoredPredicate({ type: 'judged' })).toEqual({ type: 'undefined' });
+    });
+
+    it('degrades tautological file_exists globs that would match every path', () => {
+      expect(parseStoredPredicate({ type: 'file_exists', glob: '**' })).toEqual({
+        type: 'undefined',
+      });
+      expect(parseStoredPredicate({ type: 'file_exists', glob: '*/*' })).toEqual({
+        type: 'undefined',
+      });
+    });
+
+    it('degrades unknown types and non-objects', () => {
+      expect(parseStoredPredicate({ type: 'telepathy' })).toEqual({ type: 'undefined' });
+      expect(parseStoredPredicate(null)).toEqual({ type: 'undefined' });
+      expect(parseStoredPredicate('file_exists')).toEqual({ type: 'undefined' });
+    });
+
+    it('parses a stored JSON string and degrades corrupt JSON', () => {
+      expect(parseStoredPredicateJson('{"type":"human"}')).toEqual({ type: 'human' });
+      expect(parseStoredPredicateJson('{"type":"file_exists"}')).toEqual({ type: 'undefined' });
+      expect(parseStoredPredicateJson('not json')).toEqual({ type: 'undefined' });
+    });
   });
 
   it('repairs an evidenceKind that repeats its fully specified predicate type', () => {

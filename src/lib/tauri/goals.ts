@@ -47,6 +47,7 @@ export interface PmGoalRequirementLink {
 }
 
 import type { EvidenceKindValue, StationKind, StationStoredStatus } from '@/lib/pm/enums';
+import { parseStoredPredicateJson } from '@/lib/goals/planner/plannerSchema';
 
 /**
  * What would prove a station done. `undefined` is the honest placeholder for
@@ -111,16 +112,9 @@ export type PmGoalStationWire = Omit<PmGoalStation, 'predicate' | 'sourceContext
 };
 
 export function parseStationRow(row: PmGoalStationWire): PmGoalStation {
-  let predicate: StationPredicate = { type: 'undefined' };
-  try {
-    const parsed: unknown = JSON.parse(row.predicate);
-    if (parsed && typeof parsed === 'object' && 'type' in parsed) {
-      predicate = parsed as StationPredicate;
-    }
-  } catch {
-    // A corrupt predicate degrades to "check to be defined" instead of
-    // taking the whole board down; the station stays visibly unproven.
-  }
+  // Same field rules as the write/planner boundary — incomplete stored
+  // predicates degrade to "undefined" rather than being cast into the union.
+  const predicate = parseStoredPredicateJson(row.predicate);
   let sourceContext: StationSourceContext | undefined;
   try {
     const parsed: unknown = row.sourceContext ? JSON.parse(row.sourceContext) : undefined;
