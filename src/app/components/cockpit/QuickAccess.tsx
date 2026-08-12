@@ -2,8 +2,13 @@
 
 import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { generateProjectIcon } from '@/lib/projectIcon';
-import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import {
+  quickAccessSkills,
+  type QuickAccessSkill,
+  type StarredProject,
+} from '@/lib/store/starredProjectsSlice';
+import { ProjectTileFace } from './ProjectTileFace';
+import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
@@ -12,6 +17,12 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 const HOLD_MS = 550;
 /** How long the tile's exit animation plays before it actually leaves the store. */
 const EXIT_MS = 180;
+
+/**
+ * Past this many, a right-click menu stops being a shortcut and starts being
+ * a list. The rest stay one click away in the settings dialog.
+ */
+const MAX_MENU_SKILLS = 8;
 
 const RING_RADIUS = 9;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -25,7 +36,7 @@ interface ProjectTileProps {
 }
 
 function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: ProjectTileProps) {
-  const icon = generateProjectIcon(project.path);
+  const label = active ? `${project.name} (current)` : `Switch to ${project.name}`;
   const [holding, setHolding] = useState(false);
   const [removing, setRemoving] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,17 +75,17 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
         data-active={active}
         onClick={onSwitch}
         onContextMenu={onContextMenu}
-        title={active ? `${project.name} (current)` : `Switch to ${project.name}`}
-        className={`relative flex h-10 w-10 items-center justify-center rounded-xl text-[13px] font-black text-white/95 shadow-sm transition-[transform,box-shadow] duration-150 active:scale-[0.94] ${
+        title={label}
+        // A glyph or emoji tile has no text content of its own, so the name
+        // has to be stated rather than left to the title attribute.
+        aria-label={label}
+        className={`relative flex h-10 w-10 items-center justify-center rounded-xl shadow-sm transition-[transform,box-shadow] duration-150 active:scale-[0.94] ${
           active
             ? 'ring-2 ring-primary/70 ring-offset-2 ring-offset-background'
             : 'ring-1 ring-white/10 hover:ring-white/25 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.18)]'
         }`}
-        style={{
-          backgroundImage: `linear-gradient(135deg, ${icon.gradientFrom}, ${icon.gradientTo})`,
-        }}
       >
-        {icon.initials}
+        <ProjectTileFace path={project.path} icon={project.icon} />
       </button>
       <span
         title={project.name}
@@ -161,30 +172,102 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
   const setSpawnAgentGoalId = useStore((s) => s.setSpawnAgentGoalId);
   const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
+  const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
+  const showToast = useStore((s) => s.showToast);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(
     null
   );
+  // Local, not a uiSlice flag: page.tsx renders either the welcome branch or
+  // the IDE branch, so the two QuickAccess instances never coexist, and only
+  // this component opens the dialog.
+  const [settingsPath, setSettingsPath] = useState<string | null>(null);
+
+  // Resolved from the store rather than captured, so the dialog keeps editing
+  // the live record if it changes underneath.
+  const settingsProject = settingsPath
+    ? starredProjects.find((p) => p.path === settingsPath)
+    : undefined;
+
+  const menuProject = contextMenu
+    ? starredProjects.find((p) => p.path === contextMenu.path)
+    : undefined;
+  const menuSkills = menuProject ? quickAccessSkills(menuProject) : [];
+  const shownSkills = menuSkills.slice(0, MAX_MENU_SKILLS);
+
+  /**
+   * The one path into the spawn dialog. Everything a previous entry point may
+   * have left behind is cleared explicitly — a skill launched in repo B must
+   * not inherit repo A's ticket, goal or preset.
+   */
+  const launchSkill = (path: string, skill?: QuickAccessSkill) => {
+    setSpawnAgentTicketId(null);
+    setSpawnAgentGoalId(null);
+    setInitialAgentTask(skill?.prompt ?? '');
+    setSpawnAgentPreset(
+      skill?.providerId
+        ? {
+            providerId: skill.providerId,
+            model: skill.model,
+            permissionMode: skill.permissionMode,
+          }
+        : null
+    );
+    setSpawnAgentRepoPath(path);
+    setSpawnDialogOpen(true);
+  };
 
   const menuOptions: ContextMenuOption[] = contextMenu
     ? [
+        ...(shownSkills.length > 0
+          ? ([
+              { type: 'header', label: 'Skills' },
+              ...shownSkills.map((skill) => ({
+                label: skill.label,
+                icon: 'auto_awesome',
+                action: () => launchSkill(contextMenu.path, skill),
+              })),
+              ...(menuSkills.length > shownSkills.length
+                ? [
+                    {
+                      label: `${menuSkills.length - shownSkills.length} more…`,
+                      icon: 'toc',
+                      action: () => setSettingsPath(contextMenu.path),
+                    },
+                  ]
+                : []),
+              { type: 'separator' },
+            ] as ContextMenuOption[])
+          : []),
         {
           label: 'Start Agent',
           icon: 'bolt',
-          action: () => {
-            setSpawnAgentTicketId(null);
-            setSpawnAgentGoalId(null);
-            setInitialAgentTask('');
-            setSpawnAgentRepoPath(contextMenu.path);
-            setSpawnDialogOpen(true);
-          },
+          action: () => launchSkill(contextMenu.path),
         },
         {
           label: 'Copy Working Directory',
           icon: 'content_copy',
           action: () => {
-            navigator.clipboard.writeText(contextMenu.path);
+            // Held before ContextMenu's onClose nulls the menu state.
+            const path = contextMenu.path;
+            // ContextMenu invokes actions synchronously, and an insecure
+            // context has no navigator.clipboard at all — reaching for it
+            // unguarded throws inside the click handler.
+            if (!navigator.clipboard?.writeText) {
+              showToast('Clipboard is unavailable in this context', 'error');
+              return;
+            }
+            void navigator.clipboard
+              .writeText(path)
+              .then(() => showToast('Working directory copied', 'success'))
+              .catch(() => showToast('Could not copy working directory', 'error'));
           },
+        },
+        { type: 'separator' },
+        {
+          label: 'Quick Access Settings',
+          icon: 'settings',
+          action: () => setSettingsPath(contextMenu.path),
         },
       ]
     : [];
@@ -260,6 +343,12 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           y={contextMenu.y}
           options={menuOptions}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+      {settingsProject && (
+        <QuickAccessSettingsDialog
+          project={settingsProject}
+          onClose={() => setSettingsPath(null)}
         />
       )}
     </div>
