@@ -8,6 +8,7 @@ import { SettingsInput } from '../../ui/settings/SettingsInput';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { importProvider, listProviders } from '@/lib/tauri/providers';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { SkillDiscoveryContent } from './SkillDiscoveryContent';
 
 export function AgentContent() {
   const agentSettings = useStore((s) => s.agentSettings);
@@ -138,6 +139,8 @@ export function AgentContent() {
           Import Provider…
         </button>
       </SettingsSection>
+
+      <SkillDiscoveryContent />
     </div>
   );
 }
