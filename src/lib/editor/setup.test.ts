@@ -95,6 +95,9 @@ vi.mock('@/lib/editor/yamlLintExtension', () => ({
   yamlLintExtension: ['yaml-lint-ext'],
   currentFilePathFacetYaml: { of: () => [] },
 }));
+vi.mock('@/lib/editor/gitGutterExtension', () => ({
+  createGitGutter: (changes: unknown[]) => ['git-gutter-ext', changes],
+}));
 vi.mock('@codemirror/autocomplete', () => ({
   autocompletion: () => [],
   completionKeymap: [],

@@ -68,6 +68,16 @@ export const actionsGlyphs: GlyphMap = {
     l(8.1, 16.4, 5.6, 18.9),
     dot(12.5, 11.9, 1.5),
   ],
+  // A verdict being handed back: a comment bubble whose content is the mark.
+  // The star is the accent, because the rating is what the eye is here for.
+  rate_review: [
+    p('M20.5 6.5v8a2 2 0 0 1-2 2H12l-4 4v-4H5.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2Z'),
+    {
+      kind: 'path',
+      d: 'M12 7.1 13 9.23 15.33 9.52 13.62 11.13 14.06 13.43 12 12.3 9.94 13.43 10.38 11.13 8.67 9.52 11 9.23Z',
+      accent: true,
+    },
+  ],
 
   // ── craft ────────────────────────────────────────────────────
   auto_fix_high: [

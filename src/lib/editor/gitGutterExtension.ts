@@ -67,3 +67,56 @@ export const gitGutterExtension: Extension = gutter({
 export function createGitGutter(changes: LineChange[]): Extension[] {
   return [gitChanges.of(changes), gitGutterExtension];
 }
+
+/** Structural subset of DiffViewer's DiffLine — avoids a lib -> app import. */
+export interface DiffLineLike {
+  type: 'added' | 'removed' | 'context' | 'header';
+  newLineNo: number | null;
+}
+
+/**
+ * Turns a parsed unified diff into per-line gutter markers. A removed/added
+ * run is a single edit: lines pair up 1:1 as modifications, any surplus
+ * added lines are pure additions, and a surplus of removed lines with no
+ * added counterpart is a pure deletion — anchored to the next surviving
+ * line in the new file, since there's no line of its own to mark.
+ */
+export function diffToLineChanges(diffLines: DiffLineLike[]): LineChange[] {
+  const changes: LineChange[] = [];
+  let i = 0;
+  let lastNewLine = 0;
+
+  while (i < diffLines.length) {
+    const cur = diffLines[i];
+    if (cur.type !== 'removed' && cur.type !== 'added') {
+      if (cur.newLineNo !== null) lastNewLine = cur.newLineNo;
+      i++;
+      continue;
+    }
+
+    const removed: DiffLineLike[] = [];
+    const added: DiffLineLike[] = [];
+    while (
+      i < diffLines.length &&
+      (diffLines[i].type === 'removed' || diffLines[i].type === 'added')
+    ) {
+      (diffLines[i].type === 'removed' ? removed : added).push(diffLines[i]);
+      i++;
+    }
+
+    const pairCount = Math.min(removed.length, added.length);
+    added.forEach((l, idx) => {
+      if (l.newLineNo !== null) {
+        changes.push({ line: l.newLineNo, type: idx < pairCount ? 'modified' : 'added' });
+        lastNewLine = l.newLineNo;
+      }
+    });
+
+    if (removed.length > added.length) {
+      const anchor = diffLines[i]?.newLineNo ?? lastNewLine + 1;
+      changes.push({ line: anchor, type: 'deleted' });
+    }
+  }
+
+  return changes;
+}
