@@ -16,7 +16,12 @@ export function useMenuCommands(onCommand: (commandId: string) => void, rootPath
   // would either resubscribe constantly or freeze the first closure — a menu
   // item that acts on state the user has since left behind.
   const handler = useRef(onCommand);
-  handler.current = onCommand;
+  // Written after paint rather than during render: a menu command always
+  // arrives from an event, long after effects for that render have run, so
+  // the ref is current by the time it is read.
+  useEffect(() => {
+    handler.current = onCommand;
+  });
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

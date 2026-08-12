@@ -1,7 +1,7 @@
 'use client';
 
 import mermaid from 'mermaid';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface MermaidPreviewProps {
   code: string;
@@ -10,44 +10,53 @@ export interface MermaidPreviewProps {
 let idCounter = 0;
 
 export function MermaidPreview({ code }: MermaidPreviewProps): React.JSX.Element {
-  const [svg, setSvg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // One state for one answer, tagged with the code it answers. Deriving the
+  // three display values from it means the effect never sets state on the way
+  // in — and a slow render of an older diagram can no longer land on top of a
+  // newer one, which the previous three separate flags allowed.
+  const [rendered, setRendered] = useState<{
+    code: string;
+    svg: string | null;
+    error: string | null;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const renderDiagram = useCallback(async (mermaidCode: string) => {
-    setLoading(true);
-    setError(null);
-    setSvg(null);
-
-    try {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: 'dark',
-        themeVariables: {
-          darkMode: true,
-          background: '#0c1219',
-          primaryColor: '#137fec',
-          primaryTextColor: '#e2e8f0',
-          lineColor: '#2a3b4d',
-          secondaryColor: '#151e29',
-        },
-      });
-
-      const id = `mermaid-diagram-${idCounter++}`;
-      const result = await mermaid.render(id, mermaidCode);
-      setSvg(result.svg);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to render diagram';
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const isCurrent = rendered?.code === code;
+  const loading = !isCurrent;
+  const svg = isCurrent ? rendered.svg : null;
+  const error = isCurrent ? rendered.error : null;
 
   useEffect(() => {
-    renderDiagram(code);
-  }, [code, renderDiagram]);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'dark',
+          themeVariables: {
+            darkMode: true,
+            background: '#0c1219',
+            primaryColor: '#137fec',
+            primaryTextColor: '#e2e8f0',
+            lineColor: '#2a3b4d',
+            secondaryColor: '#151e29',
+          },
+        });
+
+        const id = `mermaid-diagram-${idCounter++}`;
+        const result = await mermaid.render(id, code);
+        if (!cancelled) setRendered({ code, svg: result.svg, error: null });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to render diagram';
+        if (!cancelled) setRendered({ code, svg: null, error: message });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
 
   return (
     <div

@@ -108,14 +108,19 @@ function SpawnAgentDialogPanel({
       });
   }, []);
 
-  useEffect(() => {
+  // Adjusted while rendering rather than in an effect: opening the dialog is a
+  // reset of this render, so the previous launch's instruction never paints
+  // before being replaced.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
     if (isOpen) {
       setTask(initialTask);
       setRepoPath(initialRepoPath);
       setGoalId(initialGoalId ?? '');
       setHistoryIndex(-1);
     }
-  }, [isOpen, initialTask, initialRepoPath, initialGoalId]);
+  }
 
   // The instruction is what the user came here to write — start there, with the
   // caret behind any prefilled text so a handed-over prompt can just be extended.

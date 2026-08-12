@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef, type MouseEvent } from 'react';
+import { useState, useMemo, useCallback, useEffect, type MouseEvent } from 'react';
 import { useStore } from '@/lib/store';
 import { createAutosave } from '@/lib/editor/autosave';
 import { useConfirm } from '@/lib/hooks/useConfirm';
@@ -101,19 +101,36 @@ function contextBoundAction(id: string): () => void {
   return () => useStore.getState().showToast(hint, 'info');
 }
 
+/**
+ * Widens the tree nodes the watcher returns into the shape the panel renders.
+ * Module scope on purpose: it closes over nothing, and a recursive function
+ * cannot refer to itself from inside its own declaration.
+ */
+function toFileTreeNodes(nodes: FileNode[]): FileTreeNode[] {
+  return nodes.map((n) => ({
+    ...n,
+    children: n.children ? toFileTreeNodes(n.children) : undefined,
+  }));
+}
+
+/**
+ * The tip of the day, picked once when the module loads. The previous
+ * useMemo(…, []) was just as fixed for the life of the app, but reached for
+ * the clock during render to say so.
+ */
+const DAILY_TIP = (() => {
+  const dayOfYear = Math.floor(
+    (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
+  );
+  return TIPS[dayOfYear % TIPS.length];
+})();
+
 export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const [clipboard, setClipboard] = useState<{ path: string; isDirectory: boolean } | null>(null);
   // Deliberately not window.confirm: in the Tauri webview it shows its dialog
   // without pausing the script, so a delete gated on it ran unasked. The page
   // renders `confirmDialog` for these questions to appear at all.
   const { confirm, confirmDialog } = useConfirm();
-
-  const toFileTreeNodes = useCallback((nodes: FileNode[]): FileTreeNode[] => {
-    return nodes.map((n) => ({
-      ...n,
-      children: n.children ? toFileTreeNodes(n.children) : undefined,
-    }));
-  }, []);
 
   const handleRefresh = useCallback(
     async (dir?: string, isRoot?: boolean): Promise<FileEntry[] | undefined> => {
@@ -475,9 +492,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   // Editing autosaves, but a write per keystroke races itself: two writes of
   // the same file can land out of order and undo what was just typed. The
   // queue debounces the burst and keeps writes serialized per file.
-  const autosaveRef = useRef<ReturnType<typeof createAutosave> | null>(null);
-  if (autosaveRef.current === null) {
-    autosaveRef.current = createAutosave({
+  const [autosave] = useState<ReturnType<typeof createAutosave>>(() =>
+    createAutosave({
       write: writeFile,
       onSaved: (path, content) => {
         const store = useStore.getState();
@@ -493,9 +509,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             'error'
           );
       },
-    });
-  }
-  const autosave = autosaveRef.current;
+    })
+  );
 
   // A window closing mid-debounce would drop the last few hundred milliseconds
   // of typing.
@@ -1523,12 +1538,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [scBadge, openTicketsCount, state.notificationsUnreadCount]
   );
 
-  const dailyTip = useMemo(() => {
-    const dayOfYear = Math.floor(
-      (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
-    );
-    return TIPS[dayOfYear % TIPS.length];
-  }, []);
+  const dailyTip = DAILY_TIP;
 
   const breadcrumbs = useMemo(() => {
     if (!state.activeTabId) return ['AuricIDE'];
