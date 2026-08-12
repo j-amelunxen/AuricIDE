@@ -8,8 +8,13 @@ mod mcp;
 mod memory_report;
 #[cfg(target_os = "macos")]
 mod menu;
+mod notifications;
+mod project_icons;
+mod project_skills;
 mod providers;
 mod recent_projects;
+mod schedules;
+mod themes;
 mod utf8_stream;
 mod video_import;
 
@@ -524,6 +529,91 @@ async fn list_all_files(root_path: String) -> Result<Vec<String>, String> {
         .collect();
 
     Ok(entries)
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct SearchMatch {
+    path: String,
+    line: usize,
+    column: usize,
+    line_text: String,
+}
+
+const SEARCH_MAX_RESULTS: usize = 500;
+/// Long lines (minified JS, single-line JSON) would otherwise dwarf the payload.
+const SEARCH_LINE_TEXT_CAP: usize = 300;
+
+/// Plain substring search across every text file under `root_path`, skipping
+/// the same dirs `list_all_files`/`get_project_files_info` skip. Files that
+/// aren't valid UTF-8 (binaries) are silently skipped rather than failing
+/// the whole search — one unreadable file shouldn't block the rest.
+pub fn search_in_files_impl(
+    root_path: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: usize,
+) -> Result<Vec<SearchMatch>, String> {
+    let root = Path::new(root_path);
+    if !root.is_dir() {
+        return Err("Invalid root path".to_string());
+    }
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let needle = if case_sensitive {
+        query.to_string()
+    } else {
+        query.to_lowercase()
+    };
+
+    let mut results = Vec::new();
+    'walk: for entry in WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            name != ".git" && name != "node_modules" && name != "target" && name != ".auric"
+        })
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+
+        for (idx, line) in content.lines().enumerate() {
+            let haystack = if case_sensitive {
+                line.to_string()
+            } else {
+                line.to_lowercase()
+            };
+            if let Some(byte_col) = haystack.find(&needle) {
+                let column = haystack[..byte_col].chars().count() + 1;
+                let line_text: String = line.chars().take(SEARCH_LINE_TEXT_CAP).collect();
+                results.push(SearchMatch {
+                    path: path.to_string_lossy().to_string(),
+                    line: idx + 1,
+                    column,
+                    line_text,
+                });
+                if results.len() >= max_results {
+                    break 'walk;
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+async fn search_in_files(
+    root_path: String,
+    query: String,
+    case_sensitive: bool,
+) -> Result<Vec<SearchMatch>, String> {
+    search_in_files_impl(&root_path, &query, case_sensitive, SEARCH_MAX_RESULTS)
 }
 
 #[tauri::command]
@@ -1506,6 +1596,21 @@ fn import_provider(
     state.import_provider(&json)
 }
 
+/// Discover user-supplied Theme JSON files (validation is frontend-side).
+#[tauri::command]
+fn list_themes(app: tauri::AppHandle) -> Vec<themes::ThemeFile> {
+    themes::scan_themes(Some(&app))
+}
+
+/// Persist a Theme JSON under app_data/themes/{id}.json.
+#[tauri::command]
+fn import_theme(
+    json: String,
+    app: tauri::AppHandle,
+) -> Result<themes::ThemeFile, String> {
+    themes::import_theme_file(&json, Some(&app))
+}
+
 #[tauri::command]
 fn get_prompt_template(
     provider_id: Option<String>,
@@ -1784,6 +1889,158 @@ fn blueprints_clear(
     database::blueprints_clear_impl(conn)
 }
 
+// --- Notification inbox -----------------------------------------------------
+// One global inbox across every project, so a message from a repo you are not
+// currently looking at is still waiting when you come back.
+
+#[tauri::command]
+fn notifications_dispatch(
+    payload: notifications::NotificationInput,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<notifications::Notification, String> {
+    let mut conn = state.conn.lock().unwrap();
+    notifications::dispatch_impl(&mut conn, &payload)
+}
+
+#[tauri::command]
+fn notifications_list(
+    since_id: Option<i64>,
+    limit: Option<usize>,
+    project_path: Option<String>,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<Vec<notifications::Notification>, String> {
+    let conn = state.conn.lock().unwrap();
+    notifications::list_impl(&conn, since_id, limit, project_path.as_deref())
+}
+
+#[tauri::command]
+fn notifications_mark_read(
+    uids: Vec<String>,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    notifications::mark_read_impl(&conn, &uids)
+}
+
+#[tauri::command]
+fn notifications_mark_all_read(
+    project_path: Option<String>,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    notifications::mark_all_read_impl(&conn, project_path.as_deref())
+}
+
+#[tauri::command]
+fn notifications_answer(
+    uid: String,
+    answer: String,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    notifications::answer_impl(&conn, &uid, &answer)
+}
+
+#[tauri::command]
+fn notifications_unread_count(
+    project_path: Option<String>,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<i64, String> {
+    let conn = state.conn.lock().unwrap();
+    notifications::unread_count_impl(&conn, project_path.as_deref())
+}
+
+#[tauri::command]
+fn notifications_clear(
+    project_path: Option<String>,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    notifications::clear_impl(&conn, project_path.as_deref())
+}
+
+/// How often the runner looks. A schedule has no event to be driven by, so
+/// this poll *is* the mechanism, not a watchdog over one.
+const SCHEDULE_TICK_SECS: u64 = 30;
+
+/// Starts the schedule runner.
+///
+/// The first pass happens immediately, and that pass is the catch-up: anything
+/// that came due while the app was closed is noticed here, before the UI has
+/// even finished loading. Deliberately in the backend rather than the frontend
+/// for exactly that reason — a missed reminder must not depend on which panel
+/// happens to get mounted.
+fn spawn_schedule_runner(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        {
+            let state = app.state::<notifications::NotificationsState>();
+            let mut conn = match state.conn.lock() {
+                Ok(conn) => conn,
+                Err(_) => break,
+            };
+            match schedules::run_due_impl(&mut conn, chrono::Utc::now()) {
+                Ok(fired) if fired > 0 => {
+                    drop(conn);
+                    let _ = app.emit("notifications-changed", ());
+                }
+                Ok(_) => {}
+                Err(error) => eprintln!("Schedule runner failed: {error}"),
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(SCHEDULE_TICK_SECS));
+    });
+}
+
+// --- Schedules ---------------------------------------------------------------
+// Reminders that survive the app being closed. They only ever raise a
+// notification; starting the work is always a human pressing a button.
+
+#[tauri::command]
+fn schedules_list(
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<Vec<schedules::Schedule>, String> {
+    let conn = state.conn.lock().unwrap();
+    schedules::list_impl(&conn)
+}
+
+#[tauri::command]
+fn schedules_upsert(
+    schedule: schedules::Schedule,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<schedules::Schedule, String> {
+    let conn = state.conn.lock().unwrap();
+    schedules::upsert_impl(&conn, &schedule)
+}
+
+#[tauri::command]
+fn schedules_delete(
+    id: String,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    schedules::delete_impl(&conn, &id)
+}
+
+#[tauri::command]
+fn schedules_set_enabled(
+    id: String,
+    enabled: bool,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    schedules::set_enabled_impl(&conn, &id, enabled)
+}
+
+/// The next few occurrences, for the editor. A schedule you only discover is
+/// wrong three weeks later is a trap, so the form shows its own future.
+#[tauri::command]
+fn schedules_preview(
+    schedule: schedules::Schedule,
+    count: Option<usize>,
+) -> Result<Vec<String>, String> {
+    schedules::preview_impl(&schedule, chrono::Utc::now(), count.unwrap_or(3))
+}
+
 #[tauri::command]
 fn requirements_save(
     project_path: String,
@@ -1932,10 +2189,25 @@ fn read_crash_log(filename: String, app: tauri::AppHandle) -> Result<String, Str
 async fn start_mcp(
     project_path: String,
     state: tauri::State<'_, mcp::McpServerState>,
+    app: tauri::AppHandle,
 ) -> Result<mcp::McpStatusInfo, String> {
     // Resolve before taking the lock — the std MutexGuard must not live
     // across an await point.
-    let shell_env = agents::cached_login_shell_env().await;
+    let mut shell_env = agents::cached_login_shell_env().await.to_vec();
+
+    // Tells the MCP server where the shared inbox is, so an agent's `notify`
+    // reaches the same list the app shows. Without it the notify tools are not
+    // registered at all — an agent must be able to trust that a tool it can see
+    // actually reaches someone.
+    if let Ok(dir) = app.path().app_data_dir() {
+        shell_env.push((
+            "AURIC_NOTIFICATIONS_DB".to_string(),
+            notifications::db_path_in(&dir)
+                .to_string_lossy()
+                .to_string(),
+        ));
+    }
+    shell_env.push(("AURIC_PROJECT_ROOT".to_string(), project_path.clone()));
 
     let mut guard = state.process.lock().unwrap();
     if guard.is_some() {
@@ -1953,7 +2225,7 @@ async fn start_mcp(
         .join("server.ts");
     let script_path_str = script_path.to_string_lossy().to_string();
 
-    let child = mcp::start_mcp_server(&db_path_str, &script_path_str, shell_env)?;
+    let child = mcp::start_mcp_server(&db_path_str, &script_path_str, &shell_env)?;
     let pid = child.id();
     *guard = Some(child);
 
@@ -2009,6 +2281,33 @@ pub fn run() {
             app.manage(recent_projects::RecentProjectsState::initialize(
                 recent_projects_path,
             ));
+            // The notification inbox is app-global, not per project: agents run
+            // in several repos at once here, and a message must still be waiting
+            // when you come back to the project it came from.
+            let notifications_db =
+                notifications::db_path_in(&app.path().app_data_dir().map_err(|e| e.to_string())?);
+            match notifications::init_db(&notifications_db) {
+                Ok(conn) => {
+                    let handle = app.handle().clone();
+                    let watcher = notifications::watch_inbox(&notifications_db, move || {
+                        let _ = handle.emit("notifications-changed", ());
+                    })
+                    .map_err(|error| {
+                        eprintln!("Notification inbox watcher unavailable: {error}");
+                        error
+                    })
+                    .ok();
+                    app.manage(notifications::NotificationsState {
+                        conn: std::sync::Mutex::new(conn),
+                        watcher: std::sync::Mutex::new(watcher),
+                    });
+                    spawn_schedule_runner(app.handle().clone());
+                }
+                // A missing inbox must not stop the IDE from opening. The
+                // commands then fail loudly per call instead.
+                Err(error) => eprintln!("Notification inbox unavailable: {error}"),
+            }
+
             let starred_projects_path = app
                 .path()
                 .app_data_dir()
@@ -2063,6 +2362,7 @@ pub fn run() {
             exists,
             list_all_files,
             get_project_files_info,
+            search_in_files,
             read_file,
             read_file_base64,
             write_file,
@@ -2098,6 +2398,8 @@ pub fn run() {
             discard_interrupted_agent,
             list_providers,
             import_provider,
+            list_themes,
+            import_theme,
             get_prompt_template,
             get_system_memory,
             init_project_db,
@@ -2121,6 +2423,18 @@ pub fn run() {
             requirements_save,
             requirements_load,
             requirements_clear,
+            notifications_dispatch,
+            notifications_list,
+            notifications_mark_read,
+            notifications_mark_all_read,
+            notifications_answer,
+            notifications_unread_count,
+            notifications_clear,
+            schedules_list,
+            schedules_upsert,
+            schedules_delete,
+            schedules_set_enabled,
+            schedules_preview,
             goals_save,
             goals_load,
             goals_clear,
@@ -2146,6 +2460,9 @@ pub fn run() {
             recent_projects::starred_projects_import,
             recent_projects::starred_projects_add,
             recent_projects::starred_projects_remove,
+            recent_projects::starred_projects_update_settings,
+            project_skills::project_skills_list,
+            project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,
             video_import::video_import_local_status,
             video_import::video_import_install_local,
@@ -2956,5 +3273,97 @@ mod tests {
 
         git_discard_impl(repo_path, "added.txt").unwrap();
         assert!(!dir.path().join("added.txt").exists());
+    }
+
+    fn search_dir(files: &[(&str, &str)]) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        for (name, content) in files {
+            let path = dir.path().join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, content).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn search_finds_a_match_with_one_based_line_and_column() {
+        let dir = search_dir(&[("note.md", "first line\nsecond needle line\n")]);
+        let results =
+            search_in_files_impl(dir.path().to_str().unwrap(), "needle", true, 500).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].line, 2);
+        assert_eq!(results[0].column, 8);
+        assert_eq!(results[0].line_text, "second needle line");
+    }
+
+    #[test]
+    fn search_collects_matches_across_multiple_files() {
+        let dir = search_dir(&[("a.md", "hit here"), ("b.md", "and hit here too")]);
+        let results = search_in_files_impl(dir.path().to_str().unwrap(), "hit", true, 500).unwrap();
+        let paths: Vec<&str> = results.iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(results.len(), 2);
+        assert!(paths.iter().any(|p| p.ends_with("a.md")));
+        assert!(paths.iter().any(|p| p.ends_with("b.md")));
+    }
+
+    #[test]
+    fn search_is_case_insensitive_by_default() {
+        let dir = search_dir(&[("a.md", "Needle here")]);
+        let results =
+            search_in_files_impl(dir.path().to_str().unwrap(), "needle", false, 500).unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn search_case_sensitive_excludes_different_casing() {
+        let dir = search_dir(&[("a.md", "Needle here")]);
+        let results =
+            search_in_files_impl(dir.path().to_str().unwrap(), "needle", true, 500).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_skips_git_and_node_modules_directories() {
+        let dir = search_dir(&[
+            (".git/config", "needle"),
+            ("node_modules/pkg/index.js", "needle"),
+            ("src/real.md", "needle"),
+        ]);
+        let results =
+            search_in_files_impl(dir.path().to_str().unwrap(), "needle", true, 500).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].path.ends_with("real.md"));
+    }
+
+    #[test]
+    fn search_returns_empty_for_an_empty_query() {
+        let dir = search_dir(&[("a.md", "anything")]);
+        let results = search_in_files_impl(dir.path().to_str().unwrap(), "", true, 500).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_stops_at_max_results() {
+        let files: Vec<(String, String)> = (0..10)
+            .map(|i| (format!("f{i}.md"), "needle".to_string()))
+            .collect();
+        let file_refs: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(n, c)| (n.as_str(), c.as_str()))
+            .collect();
+        let dir = search_dir(&file_refs);
+        let results =
+            search_in_files_impl(dir.path().to_str().unwrap(), "needle", true, 3).unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn search_errors_on_a_root_that_is_not_a_directory() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("nope");
+        let err = search_in_files_impl(missing.to_str().unwrap(), "needle", true, 500).unwrap_err();
+        assert!(err.contains("Invalid root path"));
     }
 }

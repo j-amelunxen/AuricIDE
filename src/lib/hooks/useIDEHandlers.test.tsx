@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { SetStateAction } from 'react';
 import { CONTEXT_BOUND_COMMANDS, useIDEHandlers } from './useIDEHandlers';
 import { defaultCommands } from '@/lib/commands/registry';
@@ -41,17 +42,19 @@ const mockShowToast = vi.fn();
 const mockSaveGoals = vi.fn();
 let mockFileTree: unknown[] = [];
 let mockActiveTabId: string | null = null;
+let mockFileStatuses: { path: string; status: string }[] = [];
 let mockScratchDir: string | null = null;
 let mockScratches: { name: string; path: string }[] = [];
 const mockInitScratches = vi.fn(async () => {});
 const mockRefreshScratches = vi.fn(async () => {});
+const mockGetBacklinksFor = vi.fn((_name: string) => [] as string[]);
 vi.mock('@/lib/store', () => ({
   useStore: {
     getState: () => ({
       refreshGitStatus: mockRefreshGitStatus,
       stageAll: mockStageAll,
       rootPath: '/p',
-      fileStatuses: [],
+      fileStatuses: mockFileStatuses,
       activeTabId: mockActiveTabId,
       fileTree: mockFileTree,
       saveGoals: mockSaveGoals,
@@ -62,6 +65,7 @@ vi.mock('@/lib/store', () => ({
       scratches: mockScratches,
       initScratches: mockInitScratches,
       refreshScratches: mockRefreshScratches,
+      getBacklinksFor: mockGetBacklinksFor,
     }),
   },
 }));
@@ -93,6 +97,8 @@ describe('useIDEHandlers', () => {
     setAllFiles: vi.fn(),
     selectFile: vi.fn(),
     openTab: vi.fn(),
+    setScrollToLine: vi.fn(),
+    setFindInFilesOpen: vi.fn(),
     setEditorContent: vi.fn(),
     setImageData: vi.fn(),
     setPdfData: vi.fn(),
@@ -105,6 +111,7 @@ describe('useIDEHandlers', () => {
     getDiagnosticCounts: () => ({ errors: 0, warnings: 0 }),
     agents: [],
     contextMenu: null,
+    setContextMenu: vi.fn(),
     newItemModal: null,
     setNewItemModal: vi.fn(),
     renameDialog: null as { path: string; oldName: string; isDirectory: boolean } | null,
@@ -112,6 +119,10 @@ describe('useIDEHandlers', () => {
     renamePath: vi.fn(),
     showToast: vi.fn(),
     selectedPath: null as string | null,
+    selectedPaths: [] as string[],
+    setSelectedPaths: vi.fn(),
+    selectionAnchor: null as string | null,
+    setSelectionAnchor: vi.fn(),
     setFileTicketCreate: vi.fn(),
     spawnNewAgent: vi.fn(async () => ({ id: 'a1', provider: 'claude' })),
     setSpawnDialogOpen: vi.fn(),
@@ -144,9 +155,13 @@ describe('useIDEHandlers', () => {
     mockState.newItemModal = null;
     mockState.renameDialog = null;
     mockState.selectedPath = null;
+    mockState.selectedPaths = [];
+    mockState.selectionAnchor = null;
     mockFileTree = [];
     mockActiveTabId = null;
+    mockFileStatuses = [];
     mockState.branchInfo = null;
+    mockGetBacklinksFor.mockImplementation(() => []);
     mockState.agentSettings = {
       dangerouslyIgnorePermissions: false,
       autoAcceptEdits: false,
@@ -498,6 +513,263 @@ describe('useIDEHandlers', () => {
     });
   });
 
+  describe('git status on lazy folder expand', () => {
+    it('attaches gitStatus to children loaded by expanding a folder', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [
+        { path: 'docs/ignored.log', status: 'ignored' },
+        { path: 'docs/notes.md', status: 'modified' },
+      ];
+      mockReadDirectory.mockResolvedValue([
+        { name: 'ignored.log', path: '/p/docs/ignored.log', isDirectory: false },
+        { name: 'notes.md', path: '/p/docs/notes.md', isDirectory: false },
+      ]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleToggleDir('/p/docs');
+
+      expect(mockState.setDirectoryChildren).toHaveBeenCalledWith('/p/docs', [
+        expect.objectContaining({ path: '/p/docs/ignored.log', gitStatus: 'ignored' }),
+        expect.objectContaining({ path: '/p/docs/notes.md', gitStatus: 'modified' }),
+      ]);
+    });
+
+    it('leaves gitStatus undefined for untouched children', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockReadDirectory.mockResolvedValue([
+        { name: 'clean.md', path: '/p/docs/clean.md', isDirectory: false },
+      ]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleToggleDir('/p/docs');
+
+      expect(mockState.setDirectoryChildren).toHaveBeenCalledWith('/p/docs', [
+        expect.objectContaining({ path: '/p/docs/clean.md', gitStatus: undefined }),
+      ]);
+    });
+  });
+
+  describe('root-area context menu', () => {
+    it('opens a context menu targeting the project root', () => {
+      mockState.rootPath = '/p';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      const event = { clientX: 10, clientY: 20, preventDefault: vi.fn() } as unknown as Parameters<
+        typeof result.current.handleRootContextMenu
+      >[0];
+
+      result.current.handleRootContextMenu(event);
+
+      expect(mockState.setContextMenu).toHaveBeenCalledWith({
+        x: 10,
+        y: 20,
+        node: { path: '/p', name: '', isDirectory: true },
+      });
+    });
+
+    it('does nothing without an open project', () => {
+      mockState.rootPath = null;
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      const event = { clientX: 0, clientY: 0, preventDefault: vi.fn() } as unknown as Parameters<
+        typeof result.current.handleRootContextMenu
+      >[0];
+
+      result.current.handleRootContextMenu(event);
+
+      expect(mockState.setContextMenu).not.toHaveBeenCalled();
+    });
+
+    it('omits Rename and Delete for the root context', () => {
+      mockState.rootPath = '/p';
+      mockState.contextMenu = { x: 0, y: 0, node: { path: '/p', name: '', isDirectory: true } };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const labels = result.current.contextMenuOptions
+        .filter((o) => 'label' in o)
+        .map((o) => (o as { label: string }).label);
+      expect(labels).not.toContain('Rename');
+      expect(labels).not.toContain('Delete');
+      expect(labels).toContain('New File');
+    });
+  });
+
+  describe('multi-select', () => {
+    it('handleFocusNode replaces the selection with a single node', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleFocusNode('/p/notes.md');
+
+      expect(mockState.selectFile).toHaveBeenCalledWith('/p/notes.md');
+      expect(mockState.setSelectedPaths).toHaveBeenCalledWith(['/p/notes.md']);
+      expect(mockState.setSelectionAnchor).toHaveBeenCalledWith('/p/notes.md');
+    });
+
+    it('handleToggleSelect adds an unselected path to the selection', () => {
+      mockState.selectedPaths = ['/p/a.md'];
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleToggleSelect('/p/b.md');
+
+      expect(mockState.setSelectedPaths).toHaveBeenCalledWith(['/p/a.md', '/p/b.md']);
+    });
+
+    it('handleToggleSelect removes an already-selected path', () => {
+      mockState.selectedPaths = ['/p/a.md', '/p/b.md'];
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleToggleSelect('/p/a.md');
+
+      expect(mockState.setSelectedPaths).toHaveBeenCalledWith(['/p/b.md']);
+    });
+
+    it('handleRangeSelect sets the full resolved range and the new primary', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleRangeSelect(['/p/a.md', '/p/b.md', '/p/c.md'], '/p/c.md');
+
+      expect(mockState.setSelectedPaths).toHaveBeenCalledWith(['/p/a.md', '/p/b.md', '/p/c.md']);
+      expect(mockState.selectFile).toHaveBeenCalledWith('/p/c.md');
+    });
+
+    it('handleClearSelection collapses back to just the primary selection', () => {
+      mockState.selectedPath = '/p/a.md';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleClearSelection();
+
+      expect(mockState.setSelectedPaths).toHaveBeenCalledWith(['/p/a.md']);
+    });
+
+    it('shows a narrowed menu with a bulk Delete when right-clicking within a multi-selection', () => {
+      mockState.rootPath = '/p';
+      mockState.selectedPaths = ['/p/a.md', '/p/b.md'];
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'a.md', path: '/p/a.md', isDirectory: false },
+      };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const labels = result.current.contextMenuOptions
+        .filter((o) => 'label' in o)
+        .map((o) => (o as { label: string }).label);
+      expect(labels).toContain('Delete 2 Items');
+      expect(labels).toContain('Copy 2 Paths');
+      expect(labels).not.toContain('Rename');
+    });
+
+    it('does not narrow the menu when right-clicking outside the multi-selection', () => {
+      mockState.rootPath = '/p';
+      mockState.selectedPaths = ['/p/a.md', '/p/b.md'];
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'c.md', path: '/p/c.md', isDirectory: false },
+      };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const labels = result.current.contextMenuOptions
+        .filter((o) => 'label' in o)
+        .map((o) => (o as { label: string }).label);
+      expect(labels).toContain('Rename');
+      expect(labels).not.toContain('Delete 2 Items');
+    });
+
+    /**
+     * The question is asked in-app, so the dialog has to be on screen for the
+     * answer to exist at all. window.confirm cannot stand in for this: inside
+     * the Tauri webview it never suspended the script, and the delete went
+     * through before the user had answered.
+     */
+    function DeleteHarness({ paths }: { paths: string[] }) {
+      const handlers = useIDEHandlers(mockState);
+      return (
+        <div>
+          <button onClick={() => void handlers.handleDeleteSelection(paths)}>Delete</button>
+          {handlers.confirmDialog}
+        </div>
+      );
+    }
+
+    it('deletes every path in a bulk selection after a single confirm', async () => {
+      const user = userEvent.setup();
+      mockReadDirectory.mockResolvedValue([]);
+      render(<DeleteHarness paths={['/p/a.md', '/p/b.md']} />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      await waitFor(() => expect(mockDeleteFile).toHaveBeenCalledTimes(2));
+      expect(mockDeleteFile).toHaveBeenCalledWith('/p/a.md');
+      expect(mockDeleteFile).toHaveBeenCalledWith('/p/b.md');
+      expect(mockState.setSelectedPaths).toHaveBeenCalledWith([]);
+    });
+
+    it('asks once for the whole selection', async () => {
+      const user = userEvent.setup();
+      mockReadDirectory.mockResolvedValue([]);
+      render(<DeleteHarness paths={['/p/a.md', '/p/b.md']} />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+      expect(await screen.findAllByRole('dialog')).toHaveLength(1);
+      expect((await screen.findByRole('dialog')).textContent).toContain('2 items');
+    });
+
+    it('warns in the confirm dialog when another file still links to the one being deleted', async () => {
+      const user = userEvent.setup();
+      mockReadDirectory.mockResolvedValue([]);
+      mockGetBacklinksFor.mockImplementation((name: string) =>
+        name === 'note.md' ? ['/p/hub.md'] : []
+      );
+      render(<DeleteHarness paths={['/p/note.md']} />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog.textContent).toContain('Referenced by 1 file: hub.md.');
+    });
+
+    it('does not mention backlinks when nothing references the deleted file', async () => {
+      const user = userEvent.setup();
+      mockReadDirectory.mockResolvedValue([]);
+      render(<DeleteHarness paths={['/p/note.md']} />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog.textContent).not.toContain('Referenced by');
+    });
+
+    it('deletes nothing while the question is still open', async () => {
+      const user = userEvent.setup();
+      render(<DeleteHarness paths={['/p/a.md']} />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(mockDeleteFile).not.toHaveBeenCalled();
+    });
+
+    it('deletes nothing when the confirm is declined', async () => {
+      const user = userEvent.setup();
+      render(<DeleteHarness paths={['/p/a.md']} />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(mockDeleteFile).not.toHaveBeenCalled();
+    });
+  });
+
   describe('reveal in file manager (context menu)', () => {
     it('offers a reveal option for files that opens the OS file manager', async () => {
       mockState.rootPath = '/p';
@@ -611,6 +883,59 @@ describe('useIDEHandlers', () => {
       await result.current.handleRenameConfirm('renamed.md');
 
       expect(mockMovePath).not.toHaveBeenCalled();
+    });
+
+    it('rewrites wiki-links in files that reference the renamed file', async () => {
+      mockState.rootPath = '/p';
+      mockState.renameDialog = { path: '/p/notes.md', oldName: 'notes.md', isDirectory: false };
+      mockGetBacklinksFor.mockImplementation((name: string) =>
+        name === 'notes.md' ? ['/p/hub.md'] : []
+      );
+      mockReadFile.mockResolvedValue('See [[Notes]] for details.');
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameConfirm('renamed.md');
+
+      expect(mockGetBacklinksFor).toHaveBeenCalledWith('notes.md');
+      expect(mockReadFile).toHaveBeenCalledWith('/p/hub.md');
+      expect(mockWriteFile).toHaveBeenCalledWith('/p/hub.md', 'See [[renamed]] for details.');
+      expect(mockUpdateFileInIndex).toHaveBeenCalledWith(
+        '/p/hub.md',
+        'See [[renamed]] for details.'
+      );
+    });
+
+    it('updates the live editor when the referencing file is the open tab', async () => {
+      mockState.rootPath = '/p';
+      mockState.renameDialog = { path: '/p/notes.md', oldName: 'notes.md', isDirectory: false };
+      mockGetBacklinksFor.mockImplementation((name: string) =>
+        name === 'notes.md' ? ['/p/hub.md'] : []
+      );
+      mockReadFile.mockResolvedValue('[[Notes]]');
+      mockReadDirectory.mockResolvedValue([]);
+      const openTabState = { ...mockState, activeTabId: '/p/hub.md' };
+
+      const { result } = renderHook(() => useIDEHandlers(openTabState));
+
+      await result.current.handleRenameConfirm('renamed.md');
+
+      expect(mockState.setEditorContent).toHaveBeenCalledWith('[[renamed]]');
+    });
+
+    it('does not rewrite links when renaming a directory', async () => {
+      mockState.rootPath = '/p';
+      mockState.renameDialog = { path: '/p/folder', oldName: 'folder', isDirectory: true };
+      mockGetBacklinksFor.mockImplementation(() => ['/p/hub.md']);
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRenameConfirm('renamed-folder');
+
+      expect(mockGetBacklinksFor).not.toHaveBeenCalled();
+      expect(mockReadFile).not.toHaveBeenCalled();
     });
   });
 
@@ -1184,6 +1509,51 @@ describe('useIDEHandlers', () => {
       result.current.commands.find((c) => c.id === 'git.stage-all')!.action();
 
       expect(mockStageAll).toHaveBeenCalledWith('/p');
+    });
+
+    it('opens Find in Files when a project is open', () => {
+      mockState.rootPath = '/p';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'file.find-in-files')!.action();
+
+      expect(mockState.setFindInFilesOpen).toHaveBeenCalledWith(true);
+    });
+
+    it('does not open Find in Files without a project', () => {
+      mockState.rootPath = null;
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'file.find-in-files')!.action();
+
+      expect(mockState.setFindInFilesOpen).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleFindInFilesNavigate', () => {
+    it('opens the file and jumps to the line when it is not already the active tab', async () => {
+      mockActiveTabId = null;
+      mockReadFile.mockResolvedValue('some content');
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleFindInFilesNavigate('/p/other.md', 7);
+
+      expect(mockState.openTab).toHaveBeenCalledWith(
+        expect.objectContaining({ path: '/p/other.md' })
+      );
+      expect(mockReadFile).toHaveBeenCalledWith('/p/other.md');
+      expect(mockState.setScrollToLine).toHaveBeenCalledWith(7);
+    });
+
+    it('jumps straight to the line without reloading when the file is already open', async () => {
+      mockActiveTabId = '/p/notes.md';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleFindInFilesNavigate('/p/notes.md', 3);
+
+      expect(mockState.openTab).not.toHaveBeenCalled();
+      expect(mockReadFile).not.toHaveBeenCalled();
+      expect(mockState.setScrollToLine).toHaveBeenCalledWith(3);
     });
   });
 });

@@ -262,6 +262,7 @@ mod tests {
             vec![
                 "excalidraw.new",
                 "excalidraw.sync-all",
+                "file.find-in-files",
                 "file.import-video",
                 "file.new",
                 "git.commit",

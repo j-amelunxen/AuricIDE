@@ -25,6 +25,8 @@ import { createToastSlice, type ToastSlice } from './toastSlice';
 import { createExcalidrawSlice, type ExcalidrawSlice } from './excalidrawSlice';
 import { createCommandUsageSlice, type CommandUsageSlice } from './commandUsageSlice';
 import { createScratchSlice, type ScratchSlice } from './scratchSlice';
+import { createNotificationsSlice, type NotificationsSlice } from './notificationsSlice';
+import { createSchedulesSlice, type SchedulesSlice } from './schedulesSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -51,7 +53,9 @@ export type StoreState = FileTreeSlice &
   ToastSlice &
   ExcalidrawSlice &
   CommandUsageSlice &
-  ScratchSlice;
+  ScratchSlice &
+  NotificationsSlice &
+  SchedulesSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -80,6 +84,8 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createCommandUsageSlice(...a),
   ...createExcalidrawSlice(...a),
   ...createScratchSlice(...a),
+  ...createNotificationsSlice(...a),
+  ...createSchedulesSlice(...a),
 }));
 
 // Dev-only: expose the store for debugging and browser-mode testing.

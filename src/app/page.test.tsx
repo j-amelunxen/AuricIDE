@@ -69,6 +69,20 @@ vi.mock('@/lib/tauri/fs', () => ({
   copyFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/lib/tauri/recentProjects', () => ({
+  listRecentProjects: vi.fn().mockResolvedValue([]),
+  importRecentProjects: vi.fn().mockResolvedValue([]),
+  addRecentProject: vi.fn().mockResolvedValue([]),
+  removeRecentProject: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('@/lib/tauri/starredProjects', () => ({
+  listStarredProjects: vi.fn().mockResolvedValue([]),
+  importStarredProjects: vi.fn().mockResolvedValue([]),
+  addStarredProject: vi.fn().mockResolvedValue([]),
+  removeStarredProject: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/lib/tauri/git', () => ({
   getGitStatus: vi.fn().mockResolvedValue([]),
   getBranchInfo: vi.fn().mockResolvedValue({ name: 'main', ahead: 0, behind: 0 }),
@@ -219,6 +233,10 @@ vi.mock('@/lib/editor/wikiLinkHoverExtension', () => ({
 
 vi.mock('@/lib/editor/markdownFoldExtension', () => ({
   markdownFoldExtension: [],
+}));
+
+vi.mock('@/lib/editor/gitGutterExtension', () => ({
+  createGitGutter: () => [],
 }));
 
 vi.mock('@/lib/editor/slashCommandSource', () => ({
