@@ -3,8 +3,8 @@ import type { FastMCP } from 'fastmcp';
 import type Database from 'better-sqlite3';
 import { assertOneOf, STATION_KINDS } from '../../lib/pm/enums';
 import { moveStation, orderedStations } from '../../lib/goals/stationOrder';
-import { parsePredicate } from '../../lib/goals/planner/plannerSchema';
-import type { PmGoalStation, StationPredicate } from '../../lib/tauri/goals';
+import { parsePredicate, parseStoredPredicateJson } from '../../lib/goals/planner/plannerSchema';
+import type { PmGoalStation } from '../../lib/tauri/goals';
 import { resolveGoalId, resolveTicketId } from './resolve';
 
 export interface StationRow {
@@ -61,27 +61,11 @@ function parsePredicateParam(raw: string | undefined): string {
   } catch {
     throw new Error(`predicate must be valid JSON, received: ${raw.slice(0, 80)}`);
   }
-  // The same strict, field-by-field validation the planner uses. An
-  // allowlisted `type` is not enough: a git_touches without a pathPrefix or a
-  // file_exists without a glob used to slip through here and then match the
-  // whole repo, laundering a claim into machine "proof".
+  // Same field-by-field validation as the planner (type + required fields +
+  // no tautological file_exists globs). Incomplete predicates used to slip
+  // through and launder a claim into machine "proof".
   const predicate = parsePredicate('predicate', parsed);
-  assertSpecificGlob(predicate);
   return JSON.stringify(predicate);
-}
-
-/** A file_exists glob must name something concrete. A pattern made only of
- * wildcards and slashes matches every path, which is the exact shape that
- * turns an agent claim into a passing machine check. */
-function assertSpecificGlob(predicate: StationPredicate): void {
-  if (predicate.type === 'file_exists') {
-    const literal = predicate.glob.replace(/[*?/]/g, '');
-    if (literal.length === 0) {
-      throw new Error(
-        `predicate.glob "${predicate.glob}" matches every path — name a concrete file or directory.`
-      );
-    }
-  }
 }
 
 /** The stored predicate's type, degrading a corrupt row to "undefined" rather
@@ -110,13 +94,8 @@ function sourceContextOf(raw: string): PmGoalStation['sourceContext'] | undefine
 }
 
 /** StationRow (snake_case, predicate as string) → the shared domain shape. */
-function rowToDomain(row: StationRow): PmGoalStation {
-  let predicate: StationPredicate = { type: 'undefined' };
-  try {
-    predicate = JSON.parse(row.predicate) as StationPredicate;
-  } catch {
-    // corrupt predicate degrades to "check to be defined"
-  }
+export function stationRowToDomain(row: StationRow): PmGoalStation {
+  const predicate = parseStoredPredicateJson(row.predicate);
   const sourceContext = sourceContextOf(row.source_context);
   return {
     id: row.id,
@@ -231,7 +210,7 @@ export function reorderStation(
   if (!station) throw new Error(`Station '${stationId}' not found`);
   // The reorder invariants live in stationOrder (shared with the frontend):
   // done work stays put, the terminus is not a row and cannot move.
-  const domain = listStations(db, station.goal_id).map(rowToDomain);
+  const domain = listStations(db, station.goal_id).map(stationRowToDomain);
   const moved = moveStation(domain, station.goal_id, stationId, toIndex);
   const update = db.prepare(
     'UPDATE pm_goal_stations SET sort_order = ?, updated_at = ? WHERE id = ?'

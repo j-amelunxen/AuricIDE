@@ -6,6 +6,7 @@ import {
   getStaleRequirements,
   getUnverifiedRequirements,
   getTestLinksForRequirement,
+  parseAppliesTo,
 } from './requirementsSlice';
 import type {
   PmRequirement,
@@ -142,6 +143,36 @@ describe('requirementsSlice', () => {
     expect(store.getState().requirementsDirty).toBe(true);
   });
 
+  it('deleteRequirement sweeps the deleted requirement test links', () => {
+    const store = createTestStore();
+    store.getState().addRequirement(makeRequirement({ id: 'r1' }));
+    store.setState({ requirementTestLinksDraft: [makeTestLink('r1', 'tc1')] });
+
+    store.getState().deleteRequirement('r1');
+
+    expect(store.getState().requirementTestLinksDraft).toHaveLength(0);
+  });
+
+  it('deleteRequirement keeps test links of other requirements', () => {
+    const store = createTestStore();
+    store.getState().addRequirement(makeRequirement({ id: 'r1' }));
+    store.getState().addRequirement(makeRequirement({ id: 'r2', reqId: 'REQ-02' }));
+    store.setState({
+      requirementTestLinksDraft: [
+        makeTestLink('r1', 'tc1'),
+        makeTestLink('r2', 'tc1'),
+        makeTestLink('r2', 'tc2'),
+      ],
+    });
+
+    store.getState().deleteRequirement('r1');
+
+    expect(store.getState().requirementTestLinksDraft.map((l) => l.requirementId)).toEqual([
+      'r2',
+      'r2',
+    ]);
+  });
+
   // --- Load / Save / Discard ---
 
   it('loadRequirements populates both persisted and draft', async () => {
@@ -156,6 +187,44 @@ describe('requirementsSlice', () => {
     expect(store.getState().requirementsDraft).toHaveLength(1);
     expect(store.getState().requirementsDirty).toBe(false);
     expect(store.getState().currentRequirementsProject).toBe('/project');
+  });
+
+  it('loadRequirements parses appliesTo JSON strings and survives corrupt rows', async () => {
+    const good = makeRequirement({
+      id: 'good',
+      appliesTo: JSON.stringify(['src/auth/']) as unknown as string[],
+    });
+    const corrupt = makeRequirement({
+      id: 'bad',
+      appliesTo: '{not-json' as unknown as string[],
+    });
+    mockRequirementsLoad.mockResolvedValueOnce({
+      requirements: [good, corrupt],
+      testLinks: [],
+    });
+
+    const store = createTestStore();
+    await store.getState().loadRequirements('/project');
+
+    expect(store.getState().requirements).toHaveLength(2);
+    expect(store.getState().requirements.find((r) => r.id === 'good')?.appliesTo).toEqual([
+      'src/auth/',
+    ]);
+    expect(store.getState().requirements.find((r) => r.id === 'bad')?.appliesTo).toEqual([]);
+  });
+
+  describe('parseAppliesTo', () => {
+    it('keeps string arrays and parses JSON string arrays', () => {
+      expect(parseAppliesTo(['a', 'b'])).toEqual(['a', 'b']);
+      expect(parseAppliesTo('["src/x"]')).toEqual(['src/x']);
+    });
+
+    it('drops non-strings and corrupt input without throwing', () => {
+      expect(parseAppliesTo(['ok', 1, null] as unknown)).toEqual(['ok']);
+      expect(parseAppliesTo('{bad')).toEqual([]);
+      expect(parseAppliesTo(null)).toEqual([]);
+      expect(parseAppliesTo({ path: 'x' })).toEqual([]);
+    });
   });
 
   it('loadRequirements preserves dirty draft when reloading the same project', async () => {

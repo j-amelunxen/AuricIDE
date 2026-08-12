@@ -22,12 +22,35 @@ function assertTicketExists(db: Database.Database, ticketId: string): void {
   if (!row) throw new Error(`Ticket not found: ${ticketId}`);
 }
 
+function isContextItem(value: unknown): value is ContextItem {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === 'string' &&
+    item.id.length > 0 &&
+    (item.type === 'snippet' || item.type === 'file') &&
+    typeof item.value === 'string'
+  );
+}
+
+/** Parse stored ticket context; corrupt or partial rows become a filtered list. */
+export function parseContextItems(raw: string | null | undefined): ContextItem[] {
+  if (raw == null || raw === '') return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isContextItem);
+  } catch {
+    return [];
+  }
+}
+
 function readContext(db: Database.Database, ticketId: string): ContextItem[] {
   const row = db.prepare('SELECT context FROM pm_tickets WHERE id = ?').get(ticketId) as
     | { context: string }
     | undefined;
   if (!row) throw new Error(`Ticket not found: ${ticketId}`);
-  return JSON.parse(row.context) as ContextItem[];
+  return parseContextItems(row.context);
 }
 
 function writeContext(db: Database.Database, ticketId: string, items: ContextItem[]): void {

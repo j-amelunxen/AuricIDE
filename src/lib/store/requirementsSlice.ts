@@ -13,7 +13,28 @@ import {
 } from '../tauri/requirements';
 import { initProjectDb } from '../tauri/db';
 
-// --- Pure selector helpers ---
+// --- Pure helpers ---
+
+/**
+ * Wire format for appliesTo is either a string[] (domain) or a JSON string
+ * (Rust/SQLite). Corrupt values become [] so one bad row cannot kill a load.
+ */
+export function parseAppliesTo(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string');
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === 'string');
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 export function getStaleRequirements(
   requirements: PmRequirement[],
@@ -110,8 +131,7 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
         // Rust stores applies_to as a JSON string — parse it into a real array
         const requirements = state.requirements.map((r) => ({
           ...r,
-          appliesTo:
-            typeof r.appliesTo === 'string' ? JSON.parse(r.appliesTo) : (r.appliesTo ?? []),
+          appliesTo: parseAppliesTo(r.appliesTo),
         }));
         const { requirementsDirty, currentRequirementsProject } = get();
         const isNewProject = currentRequirementsProject !== projectPath;
@@ -188,6 +208,9 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
   deleteRequirement: (id) =>
     set((s) => ({
       requirementsDraft: s.requirementsDraft.filter((r) => r.id !== id),
+      // Links are persisted wholesale on save — one left behind would point at
+      // a requirement row that no longer exists.
+      requirementTestLinksDraft: s.requirementTestLinksDraft.filter((l) => l.requirementId !== id),
       requirementsDirty: true,
     })),
 

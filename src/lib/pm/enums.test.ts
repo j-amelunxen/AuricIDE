@@ -14,8 +14,11 @@ import {
  * a schema change, so it has to be deliberate rather than incidental.
  */
 describe('project state vocabulary', () => {
+  // 'in_review' is the state the conductor hands a ticket to the judge in:
+  // the implementer is finished, the sign-off is not. Dropping it would make
+  // work in review look either still-running or already satisfied.
   it('pins the ticket statuses the conductor loop depends on', () => {
-    expect([...TICKET_STATUSES]).toEqual(['open', 'in_progress', 'done', 'archived']);
+    expect([...TICKET_STATUSES]).toEqual(['open', 'in_progress', 'in_review', 'done', 'archived']);
   });
 
   it('pins the priority ladder', () => {

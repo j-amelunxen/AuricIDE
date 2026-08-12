@@ -47,6 +47,29 @@ describe('context tools', () => {
       expect(items).toHaveLength(1);
       expect(items[0]).toEqual({ id: 'c1', type: 'snippet', value: 'console.log("hello")' });
     });
+
+    it('returns empty when stored context is corrupt JSON', () => {
+      db.prepare('UPDATE pm_tickets SET context = ? WHERE id = ?').run('not-json{', ticketId);
+      expect(getTicketContext(db, ticketId)).toEqual([]);
+    });
+
+    it('filters out malformed context entries and keeps valid ones', () => {
+      db.prepare('UPDATE pm_tickets SET context = ? WHERE id = ?').run(
+        JSON.stringify([
+          { id: 'c1', type: 'snippet', value: 'ok' },
+          { id: 'c2', type: 'telepathy', value: 'nope' },
+          { type: 'file', value: 'missing-id' },
+          null,
+          { id: 'c3', type: 'file', value: 'src/x.ts' },
+        ]),
+        ticketId
+      );
+
+      expect(getTicketContext(db, ticketId)).toEqual([
+        { id: 'c1', type: 'snippet', value: 'ok' },
+        { id: 'c3', type: 'file', value: 'src/x.ts' },
+      ]);
+    });
   });
 
   // --- addContextItem ---
