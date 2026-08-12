@@ -21,6 +21,7 @@ export function useIDEActions(
 ) {
   const lastShiftTime = useRef<number>(0);
   const fsRouterRef = useRef<FsEventRouter | null>(null);
+
   const handleRefreshRef = useRef(handlers.handleRefresh);
 
   // The viewer content always follows the active tab (tab click, tab close, …)
@@ -41,6 +42,9 @@ export function useIDEActions(
     state.loadStarredProjects();
     state.loadRecentCommands();
     state.loadCustomSlashCommands();
+    // Before the interrupted agents load below: that pass reconciles the
+    // restored chains against the agents that actually came back.
+    state.loadSkillCombos();
     state.loadBlueprintServerUrl();
     // Resolve the global scratch dir up front so scratch tabs can be
     // identified (icon, panel) before the panel is first opened.
@@ -86,7 +90,10 @@ export function useIDEActions(
   // File watcher — events split into two debounce lanes: regular file changes
   // refresh the tree; project DB writes (MCP server, external agents) reload
   // the PM/requirements/goals data behind Mission Control's counts.
-  if (!fsRouterRef.current) {
+  // Built exactly once, in an effect rather than during render: recreating it
+  // would drop the pending debounce timers, and the callbacks read everything
+  // they need through refs and the store rather than this render's scope.
+  useEffect(() => {
     fsRouterRef.current = createFsEventRouter({
       onTreeChange: () => void handleRefreshRef.current(),
       onProjectDataChange: () => {
@@ -109,7 +116,7 @@ export function useIDEActions(
         });
       },
     });
-  }
+  }, []);
 
   // Cancel pending refreshes on unmount and on rootPath change (prevents stale refresh from prior project)
   useEffect(() => {
@@ -216,7 +223,11 @@ export function useIDEActions(
   // The listener reads the freshest values through a ref instead and is
   // registered exactly once.
   const latest = useRef({ state, handlers });
-  latest.current = { state, handlers };
+  // After paint, not during render: the listener below only reads this from a
+  // keyboard event, which cannot arrive before this render's effects have run.
+  useEffect(() => {
+    latest.current = { state, handlers };
+  });
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const { state, handlers } = latest.current;

@@ -224,6 +224,123 @@ describe('skillComboSlice', () => {
 });
 
 /**
+ * A chain outlives any one agent, so it has to outlive the app too — quitting
+ * mid-chain used to drop the plan with no trace, while the agent itself was
+ * carefully persisted as interrupted.
+ */
+describe('skill combo persistence', () => {
+  const interrupted = (id: string) => ({
+    id,
+    name: 'Draft and polish · Draft',
+    model: 'opus',
+    provider: 'claude',
+    task: '/draft',
+    dangerouslyIgnorePermissions: false,
+    autoAcceptEdits: false,
+    headless: false,
+    startedAt: 1,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    useStore.setState({
+      agents: [],
+      agentLogs: {},
+      agentLogMeta: {},
+      agentSpawnConfigs: {},
+      comboRuns: [],
+      interruptedAgents: [],
+      providers: [claude, grok],
+      starredProjects: [],
+      toasts: [],
+    });
+  });
+
+  it('remembers a chain that was still running', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const running = useStore.getState().comboRuns;
+
+    // The app restarts: memory is gone, storage is not.
+    useStore.setState({ comboRuns: [] });
+    useStore.getState().loadSkillCombos();
+
+    expect(useStore.getState().comboRuns).toEqual(running);
+  });
+
+  it('forgets a chain once it has run out of steps', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    for (let i = 0; i < 3; i++) {
+      await useStore.getState().killRunningAgent(useStore.getState().agents[0].id);
+    }
+
+    useStore.setState({ comboRuns: [] });
+    useStore.getState().loadSkillCombos();
+
+    expect(useStore.getState().comboRuns).toHaveLength(0);
+  });
+
+  it('forgets a chain the user cancelled', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    useStore.getState().cancelSkillCombo(useStore.getState().comboRuns[0].id);
+
+    useStore.setState({ comboRuns: [] });
+    useStore.getState().loadSkillCombos();
+
+    expect(useStore.getState().comboRuns).toHaveLength(0);
+  });
+
+  it('picks the chain back up when its interrupted agent is resumed', async () => {
+    // Resuming spawns a new process with a new id, so the run has to follow it
+    // or the chain would point at a corpse.
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const oldId = useStore.getState().agents[0].id;
+    useStore.setState({ agents: [], interruptedAgents: [interrupted(oldId)] });
+
+    await useStore.getState().resumeInterruptedAgent(oldId);
+
+    expect(useStore.getState().comboRuns[0]?.currentAgentId).toBe('x');
+    expect(useStore.getState().comboRuns[0]?.currentIndex).toBe(0);
+  });
+
+  it('drops the chain when the user discards its interrupted agent', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const oldId = useStore.getState().agents[0].id;
+    useStore.setState({ agents: [], interruptedAgents: [interrupted(oldId)] });
+
+    await useStore.getState().discardInterruptedAgent(oldId);
+
+    expect(useStore.getState().comboRuns).toHaveLength(0);
+  });
+
+  it('drops a restored chain whose agent did not come back, and says so', async () => {
+    // A step that had already finished is not persisted as interrupted, so its
+    // chain can never advance again. Keeping it would show progress that can
+    // no longer move.
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    useStore.setState({ agents: [] });
+
+    await useStore.getState().loadInterruptedAgents();
+
+    expect(useStore.getState().comboRuns).toHaveLength(0);
+    const messages = useStore.getState().toasts.map((t) => t.message);
+    expect(messages.some((m) => /Draft and polish/.test(m) && /restart/i.test(m))).toBe(true);
+  });
+
+  it('leaves a chain alone when its agent is back among the interrupted', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const oldId = useStore.getState().agents[0].id;
+    const { listInterruptedAgents } = await import('../tauri/agents');
+    vi.mocked(listInterruptedAgents).mockResolvedValueOnce([interrupted(oldId)]);
+    useStore.setState({ agents: [] });
+
+    await useStore.getState().loadInterruptedAgents();
+
+    expect(useStore.getState().comboRuns).toHaveLength(1);
+  });
+});
+
+/**
  * Each step is a fresh process with no memory of the one before it — no CLI in
  * the registry can resume another session, and a chain may switch harness
  * between steps. What carries is the previous session's terminal tail, pasted
@@ -303,6 +420,49 @@ describe('skill combo handoff', () => {
       '/a/website',
       expect.objectContaining({ prompt: 'tighten the wording' })
     );
+  });
+
+  it('stops the chain when the step failed instead of building on the wreckage', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    useStore.getState().updateAgentStatus(first.id, 'error');
+
+    useStore.getState().dismissFinishedAgent(first.id);
+
+    await vi.waitFor(() => {
+      expect(useStore.getState().comboRuns).toHaveLength(0);
+    });
+    expect(spawnAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why the chain stopped rather than just ending it', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    useStore.getState().updateAgentStatus(first.id, 'error');
+
+    useStore.getState().dismissFinishedAgent(first.id);
+
+    await vi.waitFor(() => {
+      const messages = useStore.getState().toasts.map((t) => t.message);
+      // Distinct from the generic "<agent> failed" toast the status change
+      // already raises — this one has to say the *chain* ended.
+      expect(messages.some((m) => /stopped/i.test(m) && /Draft and polish/.test(m))).toBe(true);
+    });
+  });
+
+  it('keeps the chain on the same step when a failure is retried', async () => {
+    // Retry is the recovery path: it rebinds the run to the replacement, so
+    // the chain must survive and must NOT jump forward a step.
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    useStore.getState().updateAgentStatus(first.id, 'error');
+
+    await useStore.getState().retryFailedAgent(first.id);
+
+    const [run] = useStore.getState().comboRuns;
+    expect(run).toBeDefined();
+    expect(run.currentIndex).toBe(0);
+    expect(vi.mocked(spawnAgent).mock.calls.at(-1)![0].task).toBe('/draft');
   });
 
   it('carries output between two different harnesses', async () => {
