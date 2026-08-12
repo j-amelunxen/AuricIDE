@@ -7,8 +7,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use walkdir::WalkDir;
 
+/// Additive fields do NOT bump this — `#[serde(default)]` already makes old
+/// files readable and new files are ignored field-wise by older builds. Bump it
+/// only for the first breaking change (a rename, a retype, a semantic shift),
+/// at which point the readers grow a `match` on it. Note it is shared with the
+/// recent-projects store, so a bump stamps both files.
 const STORE_VERSION: u32 = 1;
 const MAX_RECENT_PROJECTS: usize = 50;
+/// Kept separate from MAX_RECENT_PROJECTS even though both are 50: a dropped
+/// starred record now costs the user an icon and a list of launch presets.
+const MAX_STARRED_PROJECTS: usize = 50;
+const MAX_SKILLS_PER_PROJECT: usize = 20;
 const LEGACY_KEY: &str = "auric-recent-projects";
 const LEGACY_STARRED_KEY: &str = "auric-starred-projects";
 
@@ -20,12 +29,97 @@ pub struct RecentProject {
     pub opened_at: u64,
 }
 
+/// A user-chosen tile mark. The backend is storage, not policy: it never renders
+/// an icon, so `kind` stays an opaque string instead of a serde enum. An enum
+/// would make an unknown kind written by a newer build fail to deserialize — and
+/// here a single field error fails the WHOLE file, which quarantines it and
+/// costs the user every star. Forward compatibility beats Rust-side
+/// exhaustiveness. The frontend narrows this and falls back to generated
+/// initials for anything it does not recognise.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectIconOverride {
+    pub kind: String,
+    pub value: String,
+}
+
+/// A named launch preset for one project: a recurring task in two clicks.
+/// `permission_mode` is a String rather than an enum because the legal values
+/// come from the provider registry, and dynamic providers are importable at
+/// runtime — there is no closed set to encode.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickAccessSkill {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless: Option<bool>,
+}
+
+/// The per-project Quick Access settings, as one blob. They live INSIDE the
+/// starred record on purpose: unstarring a project drops its settings with it,
+/// which is the behaviour without any cleanup logic to get wrong.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StarredProjectSettings {
+    #[serde(default)]
+    pub icon: Option<ProjectIconOverride>,
+    #[serde(default)]
+    pub skills: Vec<QuickAccessSkill>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct StarredProject {
     pub path: String,
     pub name: String,
     pub starred_at: u64,
+    /// Absent = fall back to the generated initials tile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<ProjectIconOverride>,
+    /// Ordered — this IS the order the launch presets are offered in.
+    ///
+    /// `#[serde(default)]` is load-bearing, not decoration: a missing `Vec`
+    /// is a hard deserialize error (unlike a missing `Option`), that error
+    /// fails the whole file, and a failed file gets quarantined and rebuilt
+    /// from legacy scraping. Without this attribute, every existing user
+    /// loses every star on upgrade.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<QuickAccessSkill>,
+}
+
+impl StarredProject {
+    /// A later duplicate of the same path contributes only what the winner is
+    /// MISSING. Identity stays with the record that won; per-project settings
+    /// are never dropped just because two copies of one path met in a merge.
+    ///
+    /// This matters on the recovery path: after a quarantine the backend
+    /// rebuilds bare records from legacy scraping, and the frontend then sends
+    /// its localStorage copy — which still carries the icon and the skills.
+    /// First-wins would throw away the very thing being recovered.
+    fn absorb(&mut self, other: StarredProject) {
+        if self.icon.is_none() {
+            self.icon = other.icon;
+        }
+        // Whole-list fill, never an element-wise union: a union would
+        // resurrect skills the user deliberately deleted.
+        if self.skills.is_empty() {
+            self.skills = other.skills;
+        }
+        if self.name.trim().is_empty() {
+            self.name = other.name;
+        }
+        // "Pinned since" is the earliest claim, and it drives the sort.
+        self.starred_at = self.starred_at.min(other.starred_at);
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -205,21 +299,8 @@ pub fn starred_projects_add(
     if path.trim().is_empty() {
         return Err("Project path must not be empty".to_string());
     }
-    let name = Path::new(&path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(&path)
-        .to_string();
     let starred_at = chrono::Utc::now().timestamp_millis().max(0) as u64;
-    state.update(|projects| {
-        if !projects.iter().any(|project| project.path == path) {
-            projects.push(StarredProject {
-                path,
-                name,
-                starred_at,
-            });
-        }
-    })
+    state.update(|projects| push_starred_project(projects, path, starred_at))
 }
 
 #[tauri::command]
@@ -228,6 +309,33 @@ pub fn starred_projects_remove(
     state: tauri::State<'_, StarredProjectsState>,
 ) -> Result<Vec<StarredProject>, String> {
     state.update(|projects| projects.retain(|project| project.path != path))
+}
+
+/// One coarse command that replaces the whole settings blob. The store rewrites
+/// the entire file on every mutation anyway, so fine-grained set-icon /
+/// add-skill / reorder commands would buy zero I/O while quadrupling the IPC
+/// surface. Convenience belongs in the store slice, not on the wire.
+#[tauri::command]
+pub fn starred_projects_update_settings(
+    path: String,
+    settings: StarredProjectSettings,
+    state: tauri::State<'_, StarredProjectsState>,
+) -> Result<Vec<StarredProject>, String> {
+    if path.trim().is_empty() {
+        return Err("Project path must not be empty".to_string());
+    }
+    // `update` cannot return a value through the closure, so the not-found
+    // signal rides out on a captured flag rather than reshaping the state
+    // helper that the recent-projects side also depends on. The file is
+    // rewritten either way, which is harmless: nothing changed.
+    let mut found = false;
+    let projects = state.update(|projects| {
+        found = apply_starred_settings(projects, &path, settings);
+    })?;
+    if !found {
+        return Err(format!("Project is not starred: {path}"));
+    }
+    Ok(projects)
 }
 
 fn merge_projects(projects: Vec<RecentProject>) -> Vec<RecentProject> {
@@ -254,12 +362,18 @@ fn merge_projects(projects: Vec<RecentProject>) -> Vec<RecentProject> {
 }
 
 fn merge_starred_projects(projects: Vec<StarredProject>) -> Vec<StarredProject> {
+    use std::collections::hash_map::Entry;
     let mut by_path: HashMap<String, StarredProject> = HashMap::new();
     for project in projects
         .into_iter()
         .filter(|project| !project.path.trim().is_empty())
     {
-        by_path.entry(project.path.clone()).or_insert(project);
+        match by_path.entry(project.path.clone()) {
+            Entry::Vacant(slot) => {
+                slot.insert(project);
+            }
+            Entry::Occupied(mut slot) => slot.get_mut().absorb(project),
+        }
     }
     let mut merged: Vec<_> = by_path.into_values().collect();
     merged.sort_by(|a, b| {
@@ -267,8 +381,63 @@ fn merge_starred_projects(projects: Vec<StarredProject>) -> Vec<StarredProject> 
             .cmp(&b.starred_at)
             .then_with(|| a.path.cmp(&b.path))
     });
-    merged.truncate(MAX_RECENT_PROJECTS);
+    merged.truncate(MAX_STARRED_PROJECTS);
     merged
+}
+
+/// Trims, drops blanks, dedupes ids (first wins) and caps the list. The store
+/// file is rewritten in full on every star toggle, so an unbounded blob from
+/// the frontend is a size problem for every future write, not just this one.
+fn normalize_skills(skills: Vec<QuickAccessSkill>) -> Vec<QuickAccessSkill> {
+    let mut seen = std::collections::HashSet::new();
+    skills
+        .into_iter()
+        .map(|mut skill| {
+            skill.id = skill.id.trim().to_string();
+            skill.label = skill.label.trim().to_string();
+            skill
+        })
+        .filter(|skill| !skill.id.is_empty() && !skill.label.is_empty())
+        .filter(|skill| seen.insert(skill.id.clone()))
+        .take(MAX_SKILLS_PER_PROJECT)
+        .collect()
+}
+
+/// Replaces one project's settings blob. Returns false when the path is not
+/// starred — a settings write for an unstarred path means the UI is out of
+/// sync, and silently resurrecting a star would be the worse failure.
+fn apply_starred_settings(
+    projects: &mut [StarredProject],
+    path: &str,
+    settings: StarredProjectSettings,
+) -> bool {
+    let Some(target) = projects.iter_mut().find(|project| project.path == path) else {
+        return false;
+    };
+    target.icon = settings.icon;
+    target.skills = normalize_skills(settings.skills);
+    true
+}
+
+/// Idempotent by path: re-adding an already starred project is a no-op, so its
+/// settings survive. Extracted from the command so it can be tested without a
+/// `tauri::State`.
+fn push_starred_project(projects: &mut Vec<StarredProject>, path: String, starred_at: u64) {
+    if projects.iter().any(|project| project.path == path) {
+        return;
+    }
+    let name = Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&path)
+        .to_string();
+    projects.push(StarredProject {
+        path,
+        name,
+        starred_at,
+        icon: None,
+        skills: Vec::new(),
+    });
 }
 
 fn read_store(path: &Path) -> Result<Option<Vec<RecentProject>>, String> {
@@ -505,25 +674,31 @@ mod tests {
         );
     }
 
+    fn starred(path: &str, starred_at: u64) -> StarredProject {
+        StarredProject {
+            path: path.into(),
+            name: path.trim_start_matches('/').into(),
+            starred_at,
+            icon: None,
+            skills: Vec::new(),
+        }
+    }
+
+    fn skill(id: &str) -> QuickAccessSkill {
+        QuickAccessSkill {
+            id: id.into(),
+            label: id.into(),
+            prompt: format!("/{id}"),
+            provider_id: None,
+            model: None,
+            permission_mode: None,
+            headless: None,
+        }
+    }
+
     #[test]
     fn starred_merge_preserves_star_order_and_deduplicates() {
-        let projects = vec![
-            StarredProject {
-                path: "/b".into(),
-                name: "b".into(),
-                starred_at: 2,
-            },
-            StarredProject {
-                path: "/a".into(),
-                name: "a".into(),
-                starred_at: 1,
-            },
-            StarredProject {
-                path: "/a".into(),
-                name: "a-new".into(),
-                starred_at: 3,
-            },
-        ];
+        let projects = vec![starred("/b", 2), starred("/a", 1), starred("/a", 3)];
         let merged = merge_starred_projects(projects);
         assert_eq!(
             merged
@@ -532,5 +707,175 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["/a", "/b"]
         );
+    }
+
+    /// The guard against quarantining every existing user's stars on upgrade.
+    /// Deliberately a raw literal in the OLD shape — serializing a new struct
+    /// and reading it back would prove nothing about old files on disk.
+    #[test]
+    fn starred_store_reads_pre_settings_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("starred-projects.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"projects":[{"path":"/a","name":"a","starredAt":1}]}"#,
+        )
+        .unwrap();
+
+        let loaded = read_starred_store(&path).unwrap().unwrap();
+
+        assert_eq!(loaded, vec![starred("/a", 1)]);
+        assert!(loaded[0].icon.is_none());
+        assert!(loaded[0].skills.is_empty());
+    }
+
+    #[test]
+    fn starred_store_round_trips_icon_and_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("starred-projects.json");
+        let mut project = starred("/a", 1);
+        project.icon = Some(ProjectIconOverride {
+            kind: "glyph".into(),
+            value: "rocket_launch".into(),
+        });
+        project.skills = vec![QuickAccessSkill {
+            provider_id: Some("claude".into()),
+            model: Some("opus".into()),
+            permission_mode: Some("plan".into()),
+            headless: Some(true),
+            ..skill("blogartikel")
+        }];
+
+        write_starred_store_atomic(&path, std::slice::from_ref(&project)).unwrap();
+
+        assert_eq!(read_starred_store(&path).unwrap().unwrap(), vec![project]);
+    }
+
+    /// A newer build may write an icon kind this one has never heard of. It has
+    /// to survive the read, or the whole file is quarantined over one field.
+    #[test]
+    fn starred_store_survives_unknown_icon_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("starred-projects.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"projects":[{"path":"/a","name":"a","starredAt":1,
+               "icon":{"kind":"sticker","value":"x"}}]}"#,
+        )
+        .unwrap();
+
+        let loaded = read_starred_store(&path).unwrap().unwrap();
+
+        assert_eq!(loaded[0].icon.as_ref().unwrap().kind, "sticker");
+    }
+
+    /// The quarantine-recovery scenario: the backend rebuilt a bare record from
+    /// legacy scraping, the frontend then sends its localStorage copy carrying
+    /// the settings. First-wins would discard the recovery payload.
+    #[test]
+    fn merge_starred_absorbs_settings_from_a_bare_winner() {
+        let mut rich = starred("/a", 5);
+        rich.icon = Some(ProjectIconOverride {
+            kind: "emoji".into(),
+            value: "🚀".into(),
+        });
+        rich.skills = vec![skill("blogartikel")];
+
+        let merged = merge_starred_projects(vec![starred("/a", 1), rich]);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].icon.as_ref().unwrap().value, "🚀");
+        assert_eq!(merged[0].skills, vec![skill("blogartikel")]);
+        // Identity and "pinned since" stay with the earliest claim.
+        assert_eq!(merged[0].starred_at, 1);
+    }
+
+    #[test]
+    fn merge_starred_never_resurrects_deleted_skills() {
+        let mut current = starred("/a", 1);
+        current.skills = vec![skill("kept")];
+        let mut stale = starred("/a", 2);
+        stale.skills = vec![skill("kept"), skill("deleted"), skill("also-deleted")];
+
+        let merged = merge_starred_projects(vec![current, stale]);
+
+        assert_eq!(merged[0].skills, vec![skill("kept")]);
+    }
+
+    #[test]
+    fn apply_settings_updates_only_the_named_project() {
+        let mut projects = vec![starred("/a", 1), starred("/b", 2)];
+
+        let applied = apply_starred_settings(
+            &mut projects,
+            "/b",
+            StarredProjectSettings {
+                icon: Some(ProjectIconOverride {
+                    kind: "glyph".into(),
+                    value: "bolt".into(),
+                }),
+                skills: vec![skill("seo")],
+            },
+        );
+
+        assert!(applied);
+        assert_eq!(projects[0], starred("/a", 1));
+        assert_eq!(projects[1].icon.as_ref().unwrap().value, "bolt");
+        assert_eq!(projects[1].skills, vec![skill("seo")]);
+    }
+
+    #[test]
+    fn apply_settings_refuses_an_unstarred_path() {
+        let mut projects = vec![starred("/a", 1)];
+
+        let applied =
+            apply_starred_settings(&mut projects, "/nope", StarredProjectSettings::default());
+
+        assert!(!applied);
+        assert_eq!(projects, vec![starred("/a", 1)]);
+    }
+
+    /// Re-adding a starred path must stay a no-op — otherwise starring a
+    /// project you already configured would wipe its icon and skills.
+    #[test]
+    fn add_does_not_reset_existing_settings() {
+        let mut configured = starred("/a", 1);
+        configured.skills = vec![skill("blogartikel")];
+        let mut projects = vec![configured.clone()];
+
+        push_starred_project(&mut projects, "/a".into(), 999);
+
+        assert_eq!(projects, vec![configured]);
+    }
+
+    #[test]
+    fn normalize_skills_caps_dedupes_and_drops_blanks() {
+        let mut skills = vec![
+            skill("  keep  "),
+            QuickAccessSkill {
+                label: "   ".into(),
+                ..skill("blank-label")
+            },
+            QuickAccessSkill {
+                id: "  ".into(),
+                ..skill("blank-id")
+            },
+            QuickAccessSkill {
+                label: "duplicate".into(),
+                ..skill("keep")
+            },
+        ];
+        skills.extend((0..30).map(|i| skill(&format!("bulk-{i}"))));
+
+        let normalized = normalize_skills(skills);
+
+        assert_eq!(normalized.len(), MAX_SKILLS_PER_PROJECT);
+        assert_eq!(normalized[0].id, "keep");
+        assert_eq!(
+            normalized.iter().filter(|s| s.id == "keep").count(),
+            1,
+            "a duplicate id must not survive"
+        );
+        assert!(normalized.iter().all(|s| !s.label.trim().is_empty()));
     }
 }
