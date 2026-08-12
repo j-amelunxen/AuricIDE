@@ -21,8 +21,7 @@ export interface JudgeInput {
  * exits (built in stage 5). One abstraction, two verdict channels.
  */
 export type JudgeStart =
-  | { kind: 'verdict'; verdict: JudgeVerdict }
-  | { kind: 'delegated'; reviewAgentId: string };
+  { kind: 'verdict'; verdict: JudgeVerdict } | { kind: 'delegated'; reviewAgentId: string };
 
 export interface JudgeBackend {
   readonly form: 'llm' | 'agent';

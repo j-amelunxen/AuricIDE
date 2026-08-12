@@ -32,11 +32,7 @@ export function TruthsLight() {
       data-testid="truths-light"
       aria-label="Requirements verification status"
       onClick={handleClick}
-      title={
-        needProof > 0
-          ? `${needProof} stale/unverified · open Requirements`
-          : 'All verified'
-      }
+      title={needProof > 0 ? `${needProof} stale/unverified · open Requirements` : 'All verified'}
       className="flex items-center gap-1.5 hover:text-foreground transition-colors"
     >
       <span

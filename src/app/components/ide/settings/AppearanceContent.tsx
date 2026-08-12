@@ -69,11 +69,7 @@ export function AppearanceContent() {
           themes. Applies instantly and is remembered on this machine.
         </p>
 
-        <div
-          role="radiogroup"
-          aria-label="Theme"
-          className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-        >
+        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {builtins.map((option) => (
             <ThemeOption
               key={option.id}

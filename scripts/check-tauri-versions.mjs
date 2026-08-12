@@ -26,14 +26,16 @@ const errors = [];
 for (const [npmPackage, crate, compatibility] of pairs) {
   const declared = packageJson.dependencies?.[npmPackage];
   if (!/^\d+\.\d+\.\d+$/.test(declared ?? '')) {
-    errors.push(`${npmPackage} must use an exact version in package.json (found ${declared ?? 'missing'})`);
+    errors.push(
+      `${npmPackage} must use an exact version in package.json (found ${declared ?? 'missing'})`
+    );
     continue;
   }
 
   let installed;
   try {
     installed = JSON.parse(
-      readFileSync(new URL(`../node_modules/${npmPackage}/package.json`, import.meta.url), 'utf8'),
+      readFileSync(new URL(`../node_modules/${npmPackage}/package.json`, import.meta.url), 'utf8')
     ).version;
   } catch {
     errors.push(`${npmPackage}@${declared} is not installed; run pnpm install`);
@@ -44,7 +46,8 @@ for (const [npmPackage, crate, compatibility] of pairs) {
   if (installed !== declared) {
     errors.push(`${npmPackage}: declared ${declared}, installed ${installed}`);
   }
-  const compatible = compatibility === 'exact' ? installed === rust : majorMinor(installed) === majorMinor(rust);
+  const compatible =
+    compatibility === 'exact' ? installed === rust : majorMinor(installed) === majorMinor(rust);
   if (!compatible) {
     errors.push(`${npmPackage}@${installed} is incompatible with ${crate}@${rust}`);
   }
@@ -52,7 +55,9 @@ for (const [npmPackage, crate, compatibility] of pairs) {
 
 const cliVersion = packageJson.devDependencies?.['@tauri-apps/cli'];
 if (!/^\d+\.\d+\.\d+$/.test(cliVersion ?? '')) {
-  errors.push(`@tauri-apps/cli must use an exact version in package.json (found ${cliVersion ?? 'missing'})`);
+  errors.push(
+    `@tauri-apps/cli must use an exact version in package.json (found ${cliVersion ?? 'missing'})`
+  );
 }
 
 if (errors.length > 0) {

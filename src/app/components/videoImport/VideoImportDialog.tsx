@@ -449,8 +449,8 @@ function VideoImportDialogContent() {
                   <p className="text-[11px] font-semibold text-foreground">Source kept</p>
                   <p className="mt-0.5 text-[10px] leading-relaxed text-foreground-muted">
                     Transcript + frames under{' '}
-                    <span className="font-mono">.auric/video-imports</span>. Unassigned bits show
-                    in review.
+                    <span className="font-mono">.auric/video-imports</span>. Unassigned bits show in
+                    review.
                   </p>
                 </div>
               </div>

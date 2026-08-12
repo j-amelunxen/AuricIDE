@@ -8,8 +8,7 @@ export interface LlmMessage {
 }
 
 export type LlmContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image_url'; imageUrl: string };
+  { type: 'text'; text: string } | { type: 'image_url'; imageUrl: string };
 
 export interface LlmRequest {
   messages: LlmMessage[];
