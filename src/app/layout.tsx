@@ -25,11 +25,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className="dark">
       <head>
         <link rel="icon" href="/logo.svg" type="image/svg+xml" />
-        {/* Apply the saved accent before paint so there's no purple flash. */}
+        {/* Apply the saved theme before paint (snapshot bag, else data-accent). */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var a=localStorage.getItem('auric.accent');if(a)document.documentElement.setAttribute('data-accent',a)}catch(e){}",
+              "try{var r=document.documentElement;var s=localStorage.getItem('auric.theme.snapshot')||localStorage.getItem('auric.seeming.snapshot');if(s){var bag=JSON.parse(s);for(var k in bag){if(k.indexOf('--')===0&&typeof bag[k]==='string')r.style.setProperty(k,bag[k]);}}else{var a=localStorage.getItem('auric.theme')||localStorage.getItem('auric.seeming')||localStorage.getItem('auric.accent');if(a)r.setAttribute('data-accent',a);}}catch(e){}",
           }}
         />
       </head>

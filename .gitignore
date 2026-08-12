@@ -64,6 +64,9 @@ next-env.d.ts
 # Dynamic Providers
 dynamic-providers/*.json
 
+# Local themes (user-supplied). README + *.example stay tracked; JSON is local-only.
+themes/*.json
+
 # Excalidraw runtime assets (copied from node_modules on install)
 public/excalidraw-assets/
 

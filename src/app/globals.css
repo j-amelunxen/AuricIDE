@@ -12,6 +12,9 @@
   --color-primary: #bc13fe;
   --color-primary-light: #d66aff;
   --color-primary-foreground: #ffffff;
+  /* Optional second accent; defaults match primary so utilities stay safe. */
+  --color-secondary: #bc13fe;
+  --color-secondary-light: #d66aff;
 
   --color-border: #1f1f2e;
   --color-border-dark: #1f1f2e;
@@ -24,6 +27,10 @@
 
   --color-editor-bg: #0a0a10;
   --color-hover-bg: rgba(255, 255, 255, 0.05);
+
+  /* Glass chrome falls back to panel/surface; themes override via tokens. */
+  --color-glass: rgba(10, 10, 16, 0.6);
+  --color-glass-panel: rgba(12, 12, 18, 0.4);
 }
 
 :root {
@@ -36,9 +43,16 @@
   --primary-rgb: 188, 19, 254;
   --primary-light: #d66aff;
   --primary-light-rgb: 214, 106, 255;
+  --secondary: #bc13fe;
+  --secondary-rgb: 188, 19, 254;
+  --secondary-light: #d66aff;
+  --secondary-light-rgb: 214, 106, 255;
 
   --border-dark: #1f1f2e;
   --panel-bg: rgba(10, 10, 16, 0.7);
+  --editor-bg: #0a0a10;
+  --glass-bg: rgba(10, 10, 16, 0.6);
+  --glass-panel-bg: rgba(12, 12, 18, 0.4);
 
   --git-added: #2effa5;
   --git-modified: #ffce2e;
@@ -100,7 +114,11 @@
 }
 
 body {
-  background: radial-gradient(circle at top left, #12121a, #000000);
+  background: radial-gradient(
+    circle at top left,
+    var(--body-gradient-from, #12121a),
+    var(--body-gradient-to, #000000)
+  );
   color: var(--foreground);
   /* UI chrome uses the proportional display face; code/paths/terminal/metrics
      opt back into mono explicitly via `font-mono`. */
@@ -125,20 +143,19 @@ body {
 }
 
 @layer utilities {
+  /* Backgrounds read theme tokens so custom themes can go pure black. */
   .glass {
-    @apply bg-[rgba(10,10,16,0.6)] backdrop-blur-md border-b border-white/5;
+    background-color: var(--glass-bg, var(--panel-bg, rgba(10, 10, 16, 0.6)));
+    @apply backdrop-blur-md border-b border-white/5;
   }
 
   .glass-panel {
-    @apply bg-[rgba(12,12,18,0.4)] backdrop-blur-sm border-r border-white/5;
+    background-color: var(--glass-panel-bg, var(--panel-bg, rgba(12, 12, 18, 0.4)));
+    @apply backdrop-blur-sm border-r border-white/5;
   }
 
   .glass-card {
-    background: linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.03) 0%,
-      rgba(255, 255, 255, 0.01) 100%
-    );
+    background-color: var(--color-surface, var(--panel-bg, #0a0a10));
     @apply border border-white/5 backdrop-blur-sm shadow-lg;
   }
 
