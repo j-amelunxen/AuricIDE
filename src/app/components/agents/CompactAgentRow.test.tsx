@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 import { CompactAgentRow } from './CompactAgentRow';
@@ -286,5 +286,54 @@ describe('CompactAgentRow', () => {
     const { container } = renderRow();
     const decorations = container.querySelectorAll('[aria-hidden="true"]');
     expect(decorations.length).toBeGreaterThan(0);
+  });
+});
+
+describe('CompactAgentRow in a combo', () => {
+  afterEach(() => {
+    useStore.setState({ comboRuns: [] });
+  });
+
+  it('warns that dismissing a combo step launches the next one', () => {
+    // The row's dismiss button is a tidying-up gesture everywhere else. On a
+    // combo step it starts a fresh agent, and that must be legible before the
+    // click, not discovered after it.
+    useStore.setState({
+      comboRuns: [
+        {
+          id: 'r1',
+          comboId: 'c1',
+          label: 'Draft and polish',
+          projectPath: '/a/website',
+          steps: [
+            { id: 's1', label: 'Draft', prompt: '/draft' },
+            { id: 's2', label: 'Rewrite', prompt: '/rewrite' },
+          ],
+          currentIndex: 0,
+          currentAgentId: 'a1',
+        },
+      ],
+    });
+
+    render(
+      <CompactAgentRow
+        agent={{
+          id: 'a1',
+          name: 'Draft and polish · Draft',
+          model: 'opus',
+          provider: 'claude',
+          status: 'idle',
+          startedAt: 1000,
+        }}
+        activateLabel="Open"
+        onActivate={vi.fn()}
+        dismissLabel="Dismiss"
+        dismissIcon="close"
+        onDismiss={vi.fn()}
+      />
+    );
+
+    const dismiss = screen.getByRole('button', { name: /Dismiss/i });
+    expect(dismiss.getAttribute('title')).toMatch(/Rewrite/);
   });
 });

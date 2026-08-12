@@ -72,6 +72,23 @@ export function AgentCard({
   const { displayName, taskSummary } = agentDisplayIdentity(agent.name, agent.currentTask);
   const comboRun = useStore((s) => s.comboRuns.find((run) => run.currentAgentId === agent.id));
   const cancelSkillCombo = useStore((s) => s.cancelSkillCombo);
+  // In a chain the power button stops meaning "stop" and starts meaning "this
+  // step is done, run the next one". Saying which step that is turns a
+  // guess-and-find-out click into a decision.
+  const comboNextStep = comboRun ? comboRun.steps[comboRun.currentIndex + 1] : undefined;
+  const comboNextName = comboNextStep
+    ? comboNextStep.label || `step ${comboRun!.currentIndex + 2}`
+    : null;
+  const endLabel = !comboRun
+    ? 'Terminate Agent'
+    : comboNextName
+      ? `Finish step and start ${comboNextName}`
+      : 'Finish last step';
+  const endTitle = !comboRun
+    ? 'Terminate Agent'
+    : comboNextName
+      ? `Finish this step — starts “${comboNextName}” (${comboRun.currentIndex + 2} / ${comboRun.steps.length})`
+      : `Finish the last step of “${comboRun.label}”`;
 
   /**
    * One duration, chosen by state. While an agent is quiet, how long it has
@@ -368,30 +385,45 @@ export function AgentCard({
               className="text-sm"
             />
           </button>
+          {/* The chain's own controls, set apart from the card's: both of
+              these end something, and one of them starts a fresh agent. */}
           {comboRun && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                cancelSkillCombo(comboRun.id);
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-100 focus-visible:opacity-100"
-              title="Cancel remaining combo steps"
-              aria-label="Cancel combo"
-            >
-              <AuricIcon name="block" aria-hidden="true" className="text-sm" />
-            </button>
+            <>
+              <span aria-hidden="true" className="mx-0.5 h-3.5 w-px flex-shrink-0 bg-white/10" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cancelSkillCombo(comboRun.id);
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted transition-all hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60"
+                title={`Cancel “${comboRun.label}” — this step keeps running`}
+                aria-label="Cancel combo"
+              >
+                <AuricIcon name="block" aria-hidden="true" className="text-sm" />
+              </button>
+            </>
           )}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onKill(agent.id);
             }}
-            className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60 group-hover:opacity-100 focus-visible:opacity-100"
-            title={comboRun ? 'End this step — next skill starts' : 'Terminate Agent'}
-            aria-label="Terminate Agent"
+            className={`flex h-6 w-6 items-center justify-center rounded transition-all focus-visible:ring-2 ${
+              comboRun
+                ? // Advancing a chain is the ordinary forward move, not a
+                  // destruction — and it must be readable without hovering.
+                  'text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/60'
+                : 'text-foreground-muted opacity-0 hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-red-400/60 group-hover:opacity-100 focus-visible:opacity-100'
+            }`}
+            title={endTitle}
+            aria-label={endLabel}
           >
-            <AuricIcon name="power_settings_new" aria-hidden="true" className="text-sm" />
+            <AuricIcon
+              name={comboRun ? 'skip_next' : 'power_settings_new'}
+              aria-hidden="true"
+              className="text-sm"
+            />
           </button>
         </div>
       </div>

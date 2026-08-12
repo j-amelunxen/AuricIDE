@@ -77,6 +77,14 @@ export function CompactAgentRow({
   // came back to check on. Fall back to the instruction before any output.
   const detail =
     errorDigest ?? ((agent.status === 'running' && agent.currentActivity) || agent.currentTask);
+  // Dismissing is tidying up everywhere else on this row. On a combo step it
+  // also launches the next agent, so the button has to say so.
+  const comboRun = useStore((s) => s.comboRuns.find((run) => run.currentAgentId === agent.id));
+  const comboNext = comboRun ? comboRun.steps[comboRun.currentIndex + 1] : undefined;
+  const comboNextName = comboNext
+    ? comboNext.label || `step ${comboRun!.currentIndex + 2}`
+    : undefined;
+
   const markerHex = agentColorHex(color);
   const markerLabel = agentColorLabel(color);
   const displayName = agentDisplayName(agent.name, agent.currentTask);
@@ -184,7 +192,11 @@ export function CompactAgentRow({
         type="button"
         onClick={() => onDismiss(agent.id)}
         aria-label={`${dismissLabel} ${displayName}`}
-        title={`${dismissLabel} ${agent.name}`}
+        title={
+          comboNextName
+            ? `${dismissLabel} ${agent.name} — starts “${comboNextName}”`
+            : `${dismissLabel} ${agent.name}`
+        }
         className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60 group-hover:opacity-100 focus-visible:opacity-100"
       >
         <AuricIcon name={dismissIcon} aria-hidden="true" className="text-[13px]" />
