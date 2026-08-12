@@ -2,6 +2,7 @@ import type { StateCreator } from 'zustand';
 import type { LogEntry } from '@/app/components/terminal/TerminalPanel';
 import type { ReferenceResult } from '@/lib/refactoring/findReferences';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
+import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
 
 export const MAX_TERMINAL_LOGS = 10_000;
 
@@ -20,10 +21,15 @@ export interface UISlice {
   commandPaletteOpen: boolean;
   fileSearchOpen: boolean;
   fileSelectorOpen: boolean;
+  findInFilesOpen: boolean;
   spawnDialogOpen: boolean;
   spawnAgentTicketId: string | null;
   spawnAgentGoalId: string | null;
   spawnAgentRepoPath: string | null;
+  /** Provider/model/permission pinned by the Quick Access skill that opened
+   * the dialog. Null for every other entry point. One field, not three: they
+   * always travel together and are always cleared together. */
+  spawnAgentPreset: SpawnPreset | null;
   initialAgentTask: string;
   cliConnected: boolean;
   llmConfigured: boolean;
@@ -47,10 +53,12 @@ export interface UISlice {
   setCommandPaletteOpen: (open: boolean) => void;
   setFileSearchOpen: (open: boolean) => void;
   setFileSelectorOpen: (open: boolean) => void;
+  setFindInFilesOpen: (open: boolean) => void;
   setSpawnDialogOpen: (open: boolean) => void;
   setSpawnAgentTicketId: (id: string | null) => void;
   setSpawnAgentGoalId: (id: string | null) => void;
   setSpawnAgentRepoPath: (path: string | null) => void;
+  setSpawnAgentPreset: (preset: SpawnPreset | null) => void;
   setInitialAgentTask: (task: string) => void;
   setCliConnected: (connected: boolean) => void;
   setLlmConfigured: (configured: boolean) => void;
@@ -67,10 +75,12 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   commandPaletteOpen: false,
   fileSearchOpen: false,
   fileSelectorOpen: false,
+  findInFilesOpen: false,
   spawnDialogOpen: false,
   spawnAgentTicketId: null,
   spawnAgentGoalId: null,
   spawnAgentRepoPath: null,
+  spawnAgentPreset: null,
   initialAgentTask: '',
   cliConnected: false,
   llmConfigured: false,
@@ -113,6 +123,8 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
 
   setFileSelectorOpen: (open) => set({ fileSelectorOpen: open }),
 
+  setFindInFilesOpen: (open) => set({ findInFilesOpen: open }),
+
   setSpawnDialogOpen: (open) => set({ spawnDialogOpen: open }),
 
   setSpawnAgentTicketId: (id) => set({ spawnAgentTicketId: id }),
@@ -120,6 +132,8 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   setSpawnAgentGoalId: (id) => set({ spawnAgentGoalId: id }),
 
   setSpawnAgentRepoPath: (path) => set({ spawnAgentRepoPath: path }),
+
+  setSpawnAgentPreset: (preset) => set({ spawnAgentPreset: preset }),
 
   setInitialAgentTask: (task) => set({ initialAgentTask: task }),
 

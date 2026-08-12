@@ -38,6 +38,46 @@ export function loadSpawnDefaults(): SpawnDefaults | null {
   }
 }
 
+/**
+ * The part of a launch a Quick Access skill may pin. `providerId` is the
+ * anchor: a model and a permission mode only mean something relative to one.
+ */
+export interface SpawnPreset {
+  providerId?: string;
+  model?: string;
+  permissionMode?: PermissionMode;
+}
+
+/**
+ * Folds a skill's preset onto the remembered defaults so the dialog's existing
+ * "apply once, but only what the provider still offers" pass validates both
+ * through one code path.
+ *
+ * A preset without a provider is ignored — there would be nothing to validate
+ * its model against. Fields the preset leaves open keep the user's last choice
+ * only when it belonged to the same provider; otherwise they become `''`, a
+ * deliberate sentinel that matches no model and no permission mode, so the
+ * dialog degrades to that provider's own defaults. Do not "fix" that to
+ * `undefined`: the membership checks compare values, and `''` is what makes a
+ * partial preset take the same path as a model the provider has retired.
+ */
+export function mergeSpawnPreset(
+  saved: SpawnDefaults | null,
+  preset?: SpawnPreset | null
+): SpawnDefaults | null {
+  if (!preset?.providerId) return saved;
+  const sameProvider = saved?.providerId === preset.providerId;
+  return {
+    providerId: preset.providerId,
+    model: preset.model ?? (sameProvider ? saved!.model : ''),
+    permissionMode:
+      preset.permissionMode ?? (sameProvider ? saved!.permissionMode : ('' as PermissionMode)),
+    // Never part of a preset: how closely you watch a run is a property of the
+    // moment, not of the task.
+    headless: saved?.headless ?? false,
+  };
+}
+
 export function saveSpawnDefaults(defaults: SpawnDefaults): void {
   if (typeof localStorage === 'undefined') return;
   try {
