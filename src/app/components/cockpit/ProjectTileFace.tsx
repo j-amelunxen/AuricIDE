@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { generateProjectIcon } from '@/lib/projectIcon';
 import { getCachedImageIcon, loadImageIcon } from '@/lib/quickAccess/imageIconCache';
+import { getCachedIconHue, loadIconHue } from '@/lib/quickAccess/iconHueCache';
+import { imageTileSurface, NEUTRAL_TILE_SURFACE } from '@/lib/quickAccess/iconColor';
 import { resolveTileIcon } from '@/lib/quickAccess/icon';
 import type { ProjectIconOverride } from '@/lib/store/starredProjectsSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -14,12 +16,22 @@ interface ProjectTileFaceProps {
 }
 
 /**
- * The 40×40 face of a Quick Access tile: the gradient generated from the path,
- * plus whichever mark the project carries.
+ * The 40×40 face of a Quick Access tile: a surface, plus whichever mark the
+ * project carries.
  *
- * The gradient stays generated even for a customized tile — the mark is the
- * user's, the family resemblance is the app's, and a row of tiles has to keep
- * reading as one set.
+ * For a glyph, an emoji or generated initials the surface stays generated from
+ * the path — those marks are drawn in the app's own white, so the tile behind
+ * them is the only thing distinguishing one project from the next, and the
+ * curated hue wheel keeps the row reading as one set.
+ *
+ * A favicon is the exception, because it arrives with a brand colour of its
+ * own. Pairing it with a hue keyed to the path is a coin toss that lands on a
+ * clash about as often as not, and a row of those reads as noise. So an image
+ * tile borrows the hue from the mark itself — the same hue, taken deep and
+ * quiet, never its complement. Two saturated colours at this size compete, and
+ * the mark has to win; underneath it the surface should read as the icon's own
+ * shadow. Saturation and lightness stay fixed across every hue, which is where
+ * the family resemblance moves to once the hue is no longer ours to choose.
  *
  * Shared with the settings dialog's live preview on purpose: "what you pick"
  * and "what you get" cannot drift apart if they are the same component.
@@ -34,11 +46,22 @@ export function ProjectTileFace({ path, icon, className = '' }: ProjectTileFaceP
     imagePath ? (getCachedImageIcon(imagePath) ?? null) : null
   );
 
+  // undefined = not sampled yet (keep the generated gradient rather than
+  // flashing a second colour), null = sampled and the mark has no hue.
+  const [iconHue, setIconHue] = useState<number | null | undefined>(() =>
+    imagePath ? getCachedIconHue(imagePath) : undefined
+  );
+
   useEffect(() => {
     if (!imagePath) return;
     let cancelled = false;
     void loadImageIcon(imagePath).then((loaded) => {
-      if (!cancelled) setDataUri(loaded);
+      if (cancelled) return;
+      setDataUri(loaded);
+      if (loaded === null) return;
+      void loadIconHue(imagePath, loaded).then((hue) => {
+        if (!cancelled) setIconHue(hue);
+      });
     });
     return () => {
       cancelled = true;
@@ -50,13 +73,25 @@ export function ProjectTileFace({ path, icon, className = '' }: ProjectTileFaceP
   const showImage = resolved.kind === 'image' && dataUri !== null;
   const initials = generateProjectIcon(path).initials;
 
+  // Only a mark that is actually on screen may colour the tile under it.
+  const derived = showImage && iconHue !== undefined;
+  const surface = !derived
+    ? { from: gradient.gradientFrom, to: gradient.gradientTo }
+    : iconHue === null
+      ? NEUTRAL_TILE_SURFACE
+      : imageTileSurface(iconHue);
+
   return (
     <span
       data-testid={`tile-face-${path}`}
       data-icon-kind={resolved.kind === 'image' && !showImage ? 'initials' : resolved.kind}
+      // Where the background came from. Read by tests, and the fastest way to
+      // tell a sampled surface from a fallback when a tile looks wrong.
+      data-surface={!derived ? 'generated' : iconHue === null ? 'neutral' : 'icon'}
+      data-surface-hue={derived && iconHue !== null ? String(Math.round(iconHue)) : undefined}
       className={`flex h-10 w-10 items-center justify-center rounded-xl text-[13px] font-black text-white/95 ${className}`}
       style={{
-        backgroundImage: `linear-gradient(135deg, ${gradient.gradientFrom}, ${gradient.gradientTo})`,
+        backgroundImage: `linear-gradient(135deg, ${surface.from}, ${surface.to})`,
       }}
     >
       {showImage ? (
