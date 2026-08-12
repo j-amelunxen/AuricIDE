@@ -1184,3 +1184,111 @@ describe('conductor judge review gate', () => {
     expect(store.getState().conductorAssignments['t1']).toBeUndefined();
   });
 });
+
+describe('conductor milestones in the notification inbox', () => {
+  let store: StoreApi<StoreState>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    agentCounter = 0;
+    const { createNotificationsSlice } = await import('./notificationsSlice');
+    // @ts-expect-error - Partial store for testing
+    store = createStore<StoreState>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createGoalsSlice(...a),
+      ...createPmSlice(...a),
+      ...createConductorSlice(...a),
+      ...createNotificationsSlice(...a),
+    }));
+  });
+
+  /**
+   * The dispatch is fire-and-forget and reaches the store only after the IPC
+   * layer's dynamic import settles, which is more than one tick — poll rather
+   * than guess a delay.
+   */
+  async function inboxSize(count: number) {
+    await vi.waitFor(() => {
+      expect(store.getState().notifications.length).toBe(count);
+    });
+  }
+
+  /** Nothing arrived, and stayed not arrived. */
+  async function inboxStaysEmpty() {
+    await new Promise((r) => setTimeout(r, 20));
+    expect(store.getState().notifications).toHaveLength(0);
+  }
+
+  it('records a pending approval and points at the ticket', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1', name: 'Deploy', needsHumanSupervision: true })],
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    await inboxSize(1);
+
+    const [entry] = store.getState().notifications;
+    expect(entry.title).toContain('Deploy');
+    expect(entry.severity).toBe('warn');
+    expect(entry.refKind).toBe('ticket');
+    expect(entry.refId).toBe('t1');
+    // A pointer to where the decision is made, not a second Approve button —
+    // two places to approve could disagree about what is still pending.
+    expect(entry.actions).toEqual([
+      {
+        id: 'open',
+        label: 'Zur Freigabe',
+        kind: 'open',
+        target: { type: 'ticket', ticketId: 't1' },
+      },
+    ]);
+  });
+
+  it('keeps one entry per parked ticket across ticks', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1', name: 'Deploy', needsHumanSupervision: true })],
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    await store.getState().conductorTick();
+    await inboxSize(1);
+
+    // Settled, and still one — a second tick must not add a duplicate.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(store.getState().notifications).toHaveLength(1);
+  });
+
+  it('records a blocked goal with its blockers', async () => {
+    store.setState({
+      goalsDraft: [makeGoal({ id: 'g1', name: 'Ship v1', status: 'in_progress' })],
+      pmDraftTickets: [],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    await inboxSize(1);
+
+    const entry = store.getState().notifications.find((n) => n.title.includes('blockiert'));
+    expect(entry).toBeTruthy();
+    expect(entry?.refKind).toBe('goal');
+    expect(entry?.body).toBeTruthy();
+  });
+
+  it('records a finished run', async () => {
+    store.setState({ pmDraftTickets: [] });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    await inboxSize(1);
+
+    expect(store.getState().notifications.some((n) => n.title.includes('beendet'))).toBe(true);
+  });
+
+  // The conductor is about to retry by itself; an entry now would be an alarm
+  // for something the system is still handling.
+  it('records nothing while a ticket is simply being worked', async () => {
+    store.setState({ pmDraftTickets: [makeTicket({ id: 't1', name: 'Build' })] });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+
+    await inboxStaysEmpty();
+  });
+});
