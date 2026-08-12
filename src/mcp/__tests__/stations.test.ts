@@ -7,6 +7,7 @@ import {
   markStationDone,
   reorderStation,
   resolveStationId,
+  stationRowToDomain,
   updateStation,
 } from '../tools/stations';
 import { createTestDb } from '../db';
@@ -104,6 +105,19 @@ describe('station tools', () => {
     expect(() =>
       createStation(db, { goalId, name: 'X', predicate: '{"type":"file_exists","glob":"**"}' })
     ).toThrow(/glob/i);
+  });
+
+  it('degrades corrupt stored predicates when mapping a row to the domain shape', () => {
+    const s = createStation(db, { goalId, name: 'Legacy' });
+    db.prepare('UPDATE pm_goal_stations SET predicate = ? WHERE id = ?').run(
+      '{"type":"file_exists"}',
+      s.id
+    );
+    const row = listStations(db, goalId)[0];
+    // Raw storage is untouched — read path must not rewrite the DB.
+    expect(JSON.parse(row.predicate)).toEqual({ type: 'file_exists' });
+    // Domain shape degrades incomplete predicates so they cannot become machine proof.
+    expect(stationRowToDomain(row).predicate).toEqual({ type: 'undefined' });
   });
 
   it('reorder clamps so pending work never precedes done work', () => {
