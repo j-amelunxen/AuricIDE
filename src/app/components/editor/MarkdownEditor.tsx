@@ -37,6 +37,7 @@ import {
 import { jsonLintExtension, currentFilePathFacetJson } from '@/lib/editor/jsonLintExtension';
 import { xmlLintExtension, currentFilePathFacetXml } from '@/lib/editor/xmlLintExtension';
 import { yamlLintExtension, currentFilePathFacetYaml } from '@/lib/editor/yamlLintExtension';
+import { createGitGutter, diffToLineChanges } from '@/lib/editor/gitGutterExtension';
 import { findAllReferences } from '@/lib/refactoring/findReferences';
 import { RenameHeadingDialog } from '@/app/components/refactoring/RenameHeadingDialog';
 import { ExtractSectionDialog } from '@/app/components/refactoring/ExtractSectionDialog';
@@ -146,6 +147,7 @@ export function MarkdownEditor({
     findReferences: new Compartment(),
     lint: new Compartment(),
     slashCmds: new Compartment(),
+    gitGutter: new Compartment(),
   });
 
   useEffect(() => {
@@ -265,6 +267,49 @@ export function MarkdownEditor({
       ],
     });
   }, [filePath, projectFiles]);
+
+  // Diffs against HEAD, so a freshly opened tab reflects the file as last
+  // saved — not live keystrokes. Re-fetches on file switch; a manual
+  // git-status refresh elsewhere in the app catches up the rest.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const rootPath = useStore.getState().rootPath;
+    if (!rootPath || !filePath) {
+      view.dispatch({ effects: compartments.current.gitGutter.reconfigure(createGitGutter([])) });
+      return;
+    }
+    const relativePath = filePath.startsWith(`${rootPath}/`)
+      ? filePath.slice(rootPath.length + 1)
+      : filePath;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [{ getGitDiff }, { parseDiff }] = await Promise.all([
+          import('@/lib/tauri/git'),
+          import('@/app/components/editor/DiffViewer'),
+        ]);
+        const diff = await getGitDiff(rootPath, relativePath);
+        const changes = diffToLineChanges(parseDiff(diff));
+        if (!cancelled && viewRef.current) {
+          viewRef.current.dispatch({
+            effects: compartments.current.gitGutter.reconfigure(createGitGutter(changes)),
+          });
+        }
+      } catch {
+        if (!cancelled && viewRef.current) {
+          viewRef.current.dispatch({
+            effects: compartments.current.gitGutter.reconfigure(createGitGutter([])),
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filePath]);
 
   useEffect(() => {
     if (viewRef.current && content !== viewRef.current.state.doc.toString()) {

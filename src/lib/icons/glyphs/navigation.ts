@@ -18,6 +18,9 @@ export const navigationGlyphs: GlyphMap = {
   remove_circle: [c(12, 12, 8.25), l(8, 12, 16, 12)],
   remove: [l(5, 12, 19, 12)],
   circle: [c(12, 12, 8.25)],
+  // The bare ring the plus, minus and check are drawn inside — an unticked
+  // choice, and the bullet an open condition gets in a list.
+  radio_button_unchecked: [c(12, 12, 8.25)],
 
   // ── window & panel controls ──────────────────────────────────
   close_fullscreen: [p('M20 4l-6 6'), p('M18.5 10H14V5.5'), p('M4 20l6-6'), p('M5.5 14H10v4.5')],

@@ -6,8 +6,10 @@ import {
   gitChanges,
   gitGutterExtension,
   createGitGutter,
+  diffToLineChanges,
   type LineChange,
   type LineChangeType,
+  type DiffLineLike,
 } from './gitGutterExtension';
 
 describe('gitGutterExtension', () => {
@@ -118,6 +120,98 @@ describe('gitGutterExtension', () => {
       const extensions = createGitGutter(changes);
       expect(extensions).toBeDefined();
       expect(Array.isArray(extensions)).toBe(true);
+    });
+  });
+
+  describe('diffToLineChanges', () => {
+    const line = (type: DiffLineLike['type'], newLineNo: number | null = null): DiffLineLike => ({
+      type,
+      newLineNo,
+    });
+
+    it('marks pure additions as added', () => {
+      const diff: DiffLineLike[] = [line('header'), line('added', 5), line('added', 6)];
+      expect(diffToLineChanges(diff)).toEqual([
+        { line: 5, type: 'added' },
+        { line: 6, type: 'added' },
+      ]);
+    });
+
+    it('pairs equal-count removed/added runs as modified', () => {
+      const diff: DiffLineLike[] = [
+        line('context', 1),
+        line('removed'),
+        line('removed'),
+        line('added', 2),
+        line('added', 3),
+        line('context', 4),
+      ];
+      expect(diffToLineChanges(diff)).toEqual([
+        { line: 2, type: 'modified' },
+        { line: 3, type: 'modified' },
+      ]);
+    });
+
+    it('treats extra added lines beyond the removed count as added', () => {
+      const diff: DiffLineLike[] = [
+        line('removed'),
+        line('added', 10),
+        line('added', 11),
+        line('added', 12),
+      ];
+      expect(diffToLineChanges(diff)).toEqual([
+        { line: 10, type: 'modified' },
+        { line: 11, type: 'added' },
+        { line: 12, type: 'added' },
+      ]);
+    });
+
+    it('anchors a pure deletion to the next line in the new file', () => {
+      const diff: DiffLineLike[] = [
+        line('context', 4),
+        line('removed'),
+        line('removed'),
+        line('context', 5),
+      ];
+      expect(diffToLineChanges(diff)).toEqual([{ line: 5, type: 'deleted' }]);
+    });
+
+    it('anchors a deletion at end-of-file to the last added line + 1', () => {
+      const diff: DiffLineLike[] = [
+        line('context', 5),
+        line('added', 9),
+        line('context', 10),
+        line('removed'),
+        line('removed'),
+      ];
+      expect(diffToLineChanges(diff)).toEqual([
+        { line: 9, type: 'added' },
+        { line: 11, type: 'deleted' },
+      ]);
+    });
+
+    it('falls back to line 1 for a deletion with nothing before or after it', () => {
+      const diff: DiffLineLike[] = [line('removed')];
+      expect(diffToLineChanges(diff)).toEqual([{ line: 1, type: 'deleted' }]);
+    });
+
+    it('handles multiple change blocks separated by context lines', () => {
+      const diff: DiffLineLike[] = [
+        line('context', 1),
+        line('added', 2),
+        line('context', 3),
+        line('removed'),
+        line('context', 4),
+      ];
+      expect(diffToLineChanges(diff)).toEqual([
+        { line: 2, type: 'added' },
+        { line: 4, type: 'deleted' },
+      ]);
+    });
+
+    it('returns an empty array for a diff with no changes', () => {
+      const diff: DiffLineLike[] = [line('context', 1), line('header')];
+      expect(diffToLineChanges(diff)).toEqual([]);
     });
   });
 });

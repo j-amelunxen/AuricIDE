@@ -60,6 +60,7 @@ import {
 import { jsonLintExtension, currentFilePathFacetJson } from '@/lib/editor/jsonLintExtension';
 import { xmlLintExtension, currentFilePathFacetXml } from '@/lib/editor/xmlLintExtension';
 import { yamlLintExtension, currentFilePathFacetYaml } from '@/lib/editor/yamlLintExtension';
+import { createGitGutter } from '@/lib/editor/gitGutterExtension';
 import { useStore } from '@/lib/store';
 
 export type EditorCompartments = Record<string, Compartment>;
@@ -235,6 +236,7 @@ export function createEditorState({
     ),
     compartments.findReferences.of(isMarkdown ? showReferencesFacet.of(() => {}) : []),
     compartments.lint.of(buildLintExtension(getLintableFileType(filePath), filePath, store)),
+    compartments.gitGutter.of(createGitGutter([])),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([

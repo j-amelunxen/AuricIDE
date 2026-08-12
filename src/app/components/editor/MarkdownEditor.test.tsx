@@ -144,6 +144,29 @@ vi.mock('@/lib/editor/yamlLintExtension', () => ({
   currentFilePathFacetYaml: { of: () => [] },
 }));
 
+const mockGetGitDiff = vi.hoisted(() => vi.fn().mockResolvedValue(''));
+vi.mock('@/lib/tauri/git', () => ({
+  getGitDiff: mockGetGitDiff,
+}));
+
+vi.mock('@/app/components/editor/DiffViewer', () => ({
+  parseDiff: (raw: string) =>
+    raw ? [{ type: 'added' as const, content: raw, oldLineNo: null, newLineNo: 1 }] : [],
+}));
+
+const mockGitGutterReconfigure = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/editor/gitGutterExtension', () => ({
+  createGitGutter: (changes: unknown[]) => {
+    mockGitGutterReconfigure(changes);
+    return ['git-gutter-ext', changes];
+  },
+  diffToLineChanges: (lines: unknown[]) => lines.map((_l, i) => ({ line: i + 1, type: 'added' })),
+}));
+
+const mockStoreState = vi.hoisted(() => ({
+  rootPath: null as string | null,
+}));
+
 vi.mock('@/lib/store', () => ({
   useStore: Object.assign(() => ({}), {
     getState: () => ({
@@ -154,6 +177,7 @@ vi.mock('@/lib/store', () => ({
       lintConfig: { enabled: true, disabledRules: new Set() },
       enableDeepNlp: false,
       setDiagnostics: () => {},
+      rootPath: mockStoreState.rootPath,
     }),
     subscribe: () => () => {},
   }),
@@ -265,6 +289,8 @@ vi.mock('@codemirror/search', () => ({
 describe('MarkdownEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockStoreState.rootPath = null;
+    mockGetGitDiff.mockResolvedValue('');
   });
 
   it('renders the editor container', () => {
@@ -307,5 +333,42 @@ describe('MarkdownEditor', () => {
       expect(fn2).toHaveBeenCalled();
     });
     expect(fn1).not.toHaveBeenCalled();
+  });
+
+  describe('git gutter', () => {
+    it('does not fetch a diff without a project root', async () => {
+      render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+      await vi.waitFor(() => {
+        expect(mockGitGutterReconfigure).toHaveBeenCalledWith([]);
+      });
+      expect(mockGetGitDiff).not.toHaveBeenCalled();
+    });
+
+    it('fetches the diff for the open file relative to the project root and applies it', async () => {
+      mockStoreState.rootPath = '/proj';
+      mockGetGitDiff.mockResolvedValue('some diff');
+
+      render(
+        <MarkdownEditor content="# Hello" filePath="/proj/notes/note.md" onChange={vi.fn()} />
+      );
+
+      await vi.waitFor(() => {
+        expect(mockGetGitDiff).toHaveBeenCalledWith('/proj', 'notes/note.md');
+      });
+      await vi.waitFor(() => {
+        expect(mockGitGutterReconfigure).toHaveBeenCalledWith([{ line: 1, type: 'added' }]);
+      });
+    });
+
+    it('clears the gutter when fetching the diff fails', async () => {
+      mockStoreState.rootPath = '/proj';
+      mockGetGitDiff.mockRejectedValue(new Error('not a git repo'));
+
+      render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+
+      await vi.waitFor(() => {
+        expect(mockGitGutterReconfigure).toHaveBeenCalledWith([]);
+      });
+    });
   });
 });
