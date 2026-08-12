@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { spawnAgent } from '../tauri/agents';
+import { recordAgentPromptHistory, spawnAgent } from '../tauri/agents';
 import { useStore } from './index';
 import type { QuickAccessCombo } from './starredProjectsSlice';
 import { FALLBACK_CRUSH_PROVIDER } from '../tauri/providers';
@@ -220,5 +220,102 @@ describe('skillComboSlice', () => {
         model: FALLBACK_CRUSH_PROVIDER.defaultModel,
       })
     );
+  });
+});
+
+/**
+ * Each step is a fresh process with no memory of the one before it — no CLI in
+ * the registry can resume another session, and a chain may switch harness
+ * between steps. What carries is the previous session's terminal tail, pasted
+ * into the next step's instruction.
+ */
+describe('skill combo handoff', () => {
+  const lastTask = () => vi.mocked(spawnAgent).mock.calls.at(-1)![0].task;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useStore.setState({
+      agents: [],
+      agentLogs: {},
+      agentLogMeta: {},
+      agentSpawnConfigs: {},
+      comboRuns: [],
+      providers: [claude, grok],
+      starredProjects: [],
+      toasts: [],
+      rootPath: '/a/website',
+    });
+  });
+
+  it('starts the first step with its prompt alone — nothing came before it', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    expect(lastTask()).toBe('/draft');
+  });
+
+  it("carries the killed step's output into the next step's instruction", async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    useStore.getState().appendAgentLog(first.id, 'Wrote draft.md, 42 lines\n');
+
+    await useStore.getState().killRunningAgent(first.id);
+
+    const task = lastTask();
+    // The step's own prompt still leads, or a leading slash would stop being
+    // a command.
+    expect(task.startsWith('tighten the wording')).toBe(true);
+    expect(task).toContain('Wrote draft.md, 42 lines');
+    expect(task).toContain('Draft');
+  });
+
+  it('carries output on the dismiss path too — review first is the normal route', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    useStore.getState().appendAgentLog(first.id, 'Draft complete.\n');
+    useStore.getState().updateAgentStatus(first.id, 'idle');
+
+    useStore.getState().dismissFinishedAgent(first.id);
+
+    await vi.waitFor(() => {
+      expect(lastTask()).toContain('Draft complete.');
+    });
+  });
+
+  it('hands over a plain prompt when the step produced nothing worth carrying', async () => {
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    useStore.getState().appendAgentLog(first.id, 'esc to interrupt\n');
+
+    await useStore.getState().killRunningAgent(first.id);
+
+    expect(lastTask()).toBe('tighten the wording');
+  });
+
+  it('remembers the step prompt in history, not the handoff dump', async () => {
+    // Recall in the spawn dialog is a list of things a person typed. A 2000
+    // character terminal tail in there would bury every real entry.
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    useStore.getState().appendAgentLog(first.id, 'Wrote draft.md\n');
+
+    await useStore.getState().killRunningAgent(first.id);
+
+    expect(recordAgentPromptHistory).toHaveBeenLastCalledWith(
+      '/a/website',
+      expect.objectContaining({ prompt: 'tighten the wording' })
+    );
+  });
+
+  it('carries output between two different harnesses', async () => {
+    // Step one runs on Claude, step two on Grok. Nothing about the handoff
+    // may depend on which CLI wrote the output.
+    await useStore.getState().startSkillCombo('/a/website', blogWrite);
+    const first = useStore.getState().agents[0];
+    expect(first.provider).toBe('claude');
+    useStore.getState().appendAgentLog(first.id, '⏺ Wrote src/draft.md\n');
+
+    await useStore.getState().killRunningAgent(first.id);
+
+    expect(vi.mocked(spawnAgent).mock.calls.at(-1)![0].provider).toBe('grok');
+    expect(lastTask()).toContain('⏺ Wrote src/draft.md');
   });
 });

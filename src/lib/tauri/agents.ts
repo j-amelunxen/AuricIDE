@@ -52,6 +52,13 @@ export interface AgentConfig {
   spawnedByGoalId?: string;
   /** Frontend-only provenance hint for goal runs; ignored by the Rust backend. */
   runSource?: 'ui' | 'conductor';
+  /**
+   * What to remember in the project's prompt history instead of `task`.
+   * Frontend-only. A combo step's task carries the previous session's output
+   * appended to it; recall is a list of things a person typed, and a terminal
+   * tail in there would bury every real entry.
+   */
+  historyPrompt?: string;
   /** Frontend-only: the ticket this agent was spawned to review. */
   spawnedForReviewOfTicketId?: string;
 }
