@@ -1,14 +1,26 @@
 /**
- * Accent (primary-color) theming.
+ * Accent (primary-color) theming — compatibility facade over Theme.
  *
- * The whole design system drives its primary color off CSS custom properties
- * (`--color-primary`, `--primary`, `--primary-rgb`, …). Switching the accent is
- * therefore just a matter of stamping `data-accent="<id>"` on <html>; the
- * matching `:root[data-accent='…']` block in globals.css overrides those
- * variables and every `*-primary` utility, `neon-glow`, and the focus ring
- * re-tint live. The choice is persisted to localStorage and re-applied before
- * paint by a tiny boot script in layout.tsx (so there is no purple flash).
+ * New code should prefer `@/lib/theme/catalog/*`. This module keeps the
+ * historical API (`ACCENTS`, `saveAccent`, `applyAccent`, …) working so
+ * existing callers and tests stay green.
+ *
+ * Under the hood, selecting an accent applies the matching built-in Theme
+ * (CSS variables via setProperty + data-accent for the CSS fallback blocks).
  */
+
+import {
+  BUILTIN_THEMES,
+  DEFAULT_THEME_ID,
+  getBuiltinTheme,
+} from './catalog/builtins';
+import { applyTheme } from './catalog/apply';
+import {
+  ACCENT_STORAGE_KEY as STORAGE_KEY,
+  readStoredThemeId,
+  writeStoredThemeId,
+} from './catalog/storage';
+import { selectTheme } from './catalog/controller';
 
 export interface Accent {
   /** Stable id, also the value of the `data-accent` attribute. */
@@ -20,18 +32,15 @@ export interface Accent {
 }
 
 /** Purple stays the default and matches the base `:root` values in globals.css. */
-export const DEFAULT_ACCENT_ID = 'purple';
+export const DEFAULT_ACCENT_ID = DEFAULT_THEME_ID;
 
-export const ACCENTS: Accent[] = [
-  { id: 'purple', label: 'Auric Purple', swatch: '#bc13fe' },
-  { id: 'blue', label: 'Electric Blue', swatch: '#2f6bff' },
-  { id: 'cyan', label: 'Cyan Pulse', swatch: '#13d5fe' },
-  { id: 'emerald', label: 'Emerald', swatch: '#13fe9b' },
-  { id: 'amber', label: 'Amber', swatch: '#ffb020' },
-  { id: 'pink', label: 'Magenta', swatch: '#ff3ba7' },
-];
+export const ACCENTS: Accent[] = BUILTIN_THEMES.map((t) => ({
+  id: t.id,
+  label: t.name,
+  swatch: t.swatch,
+}));
 
-export const ACCENT_STORAGE_KEY = 'auric.accent';
+export const ACCENT_STORAGE_KEY = STORAGE_KEY;
 
 export function isAccentId(value: unknown): value is string {
   return typeof value === 'string' && ACCENTS.some((accent) => accent.id === value);
@@ -39,31 +48,24 @@ export function isAccentId(value: unknown): value is string {
 
 /** Reads the persisted accent, falling back to the default on absent/invalid. */
 export function loadAccent(): string {
-  try {
-    const stored = localStorage.getItem(ACCENT_STORAGE_KEY);
-    return isAccentId(stored) ? stored : DEFAULT_ACCENT_ID;
-  } catch {
-    return DEFAULT_ACCENT_ID;
-  }
+  const stored = readStoredThemeId();
+  return isAccentId(stored) ? stored : DEFAULT_ACCENT_ID;
 }
 
 /** Stamps the accent onto <html> so the CSS variable overrides take effect. */
 export function applyAccent(id: string): void {
-  const accent = isAccentId(id) ? id : DEFAULT_ACCENT_ID;
-  if (typeof document !== 'undefined') {
-    document.documentElement.dataset.accent = accent;
-  }
+  const theme = getBuiltinTheme(isAccentId(id) ? id : DEFAULT_ACCENT_ID);
+  if (theme) applyTheme(theme);
 }
 
 /** Persists and applies the accent. Unknown ids are ignored (no-op). */
 export function saveAccent(id: string): void {
   if (!isAccentId(id)) return;
-  try {
-    localStorage.setItem(ACCENT_STORAGE_KEY, id);
-  } catch {
-    // Persistence is best-effort; still apply for the current session.
+  // Prefer the controller so custom registry state stays consistent when present.
+  if (!selectTheme(id)) {
+    applyAccent(id);
+    writeStoredThemeId(id);
   }
-  applyAccent(id);
 }
 
 /** Fallbacks match the base (purple) `:root` values in globals.css. */

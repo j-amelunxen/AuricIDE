@@ -10,16 +10,24 @@ import {
   loadAccent,
   saveAccent,
 } from './accent';
+import { clearThemeOverrides } from './catalog/apply';
+import { resetThemeForTests } from './catalog/controller';
 
 describe('accent theme', () => {
   beforeEach(() => {
     localStorage.clear();
+    clearThemeOverrides();
+    resetThemeForTests();
     delete document.documentElement.dataset.accent;
+    delete document.documentElement.dataset.auricTheme;
   });
 
   afterEach(() => {
     localStorage.clear();
+    clearThemeOverrides();
+    resetThemeForTests();
     delete document.documentElement.dataset.accent;
+    delete document.documentElement.dataset.auricTheme;
   });
 
   it('includes purple as the default and a blue option', () => {
@@ -57,6 +65,7 @@ describe('accent theme', () => {
   it('saveAccent persists and applies a valid accent', () => {
     saveAccent('cyan');
     expect(localStorage.getItem(ACCENT_STORAGE_KEY)).toBe('cyan');
+    expect(localStorage.getItem('auric.theme')).toBe('cyan');
     expect(document.documentElement.dataset.accent).toBe('cyan');
     expect(loadAccent()).toBe('cyan');
   });

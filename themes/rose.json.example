@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "rose",
+  "name": "Rose",
+  "description": "Example custom theme — copy to rose.json to load.",
+  "swatch": "#ff4d6d",
+  "tokens": {
+    "primary": "#ff4d6d",
+    "primaryLight": "#ff8fa3"
+  }
+}
