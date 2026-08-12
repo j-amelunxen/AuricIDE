@@ -10,7 +10,6 @@ import { THEME_STORAGE_KEY } from '@/lib/theme/catalog/storage';
 
 vi.mock('@/lib/tauri/themes', () => ({
   listThemes: vi.fn(async () => []),
-  importTheme: vi.fn(),
 }));
 
 describe('AppearanceContent — theme picker', () => {

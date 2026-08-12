@@ -74,5 +74,3 @@ export const QUICK_ACCESS_GLYPHS = [
   'history',
   'local_fire_department',
 ] as const;
-
-export type QuickAccessGlyph = (typeof QUICK_ACCESS_GLYPHS)[number];

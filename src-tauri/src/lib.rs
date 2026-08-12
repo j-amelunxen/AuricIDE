@@ -1602,15 +1602,6 @@ fn list_themes(app: tauri::AppHandle) -> Vec<themes::ThemeFile> {
     themes::scan_themes(Some(&app))
 }
 
-/// Persist a Theme JSON under app_data/themes/{id}.json.
-#[tauri::command]
-fn import_theme(
-    json: String,
-    app: tauri::AppHandle,
-) -> Result<themes::ThemeFile, String> {
-    themes::import_theme_file(&json, Some(&app))
-}
-
 #[tauri::command]
 fn get_prompt_template(
     provider_id: Option<String>,
@@ -2399,7 +2390,6 @@ pub fn run() {
             list_providers,
             import_provider,
             list_themes,
-            import_theme,
             get_prompt_template,
             get_system_memory,
             init_project_db,
