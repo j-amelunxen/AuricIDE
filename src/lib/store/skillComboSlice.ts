@@ -11,6 +11,14 @@ import type { QuickAccessCombo, QuickAccessSkill } from './starredProjectsSlice'
 
 export type { SkillComboRun } from '../quickAccess/combo';
 
+/** How the step that just ended left the world. */
+export interface EndedStep {
+  /** Everything that session printed, for the handoff. */
+  logs?: string[];
+  /** It stopped in error — its successor's instruction assumes work it never did. */
+  failed?: boolean;
+}
+
 /** What the finished step leaves to the one after it. */
 interface StepHandoff {
   /** The previous session's cleaned terminal tail, or null on the first step. */
@@ -25,11 +33,21 @@ export interface SkillComboSlice {
   cancelSkillCombo: (runId: string) => void;
   cancelSkillCombosForAgents: (agentIds: string[]) => void;
   rebindSkillComboAgent: (fromAgentId: string, toAgentId: string) => void;
+  /** Restores the chains that were still open when the app last quit. */
+  loadSkillCombos: () => void;
+  /**
+   * After a restart, drop the chains whose agent did not come back. A step
+   * that had already finished is not persisted as interrupted, so its chain
+   * can never advance again — showing it would claim progress that cannot move.
+   */
+  reconcileSkillCombos: (reachableAgentIds: string[]) => void;
   /**
    * The current step ended and the human is done with it — start the next one,
-   * carrying `endedLogs` (that session's raw output) into its instruction.
+   * carrying that session's raw output into its instruction. A step that
+   * `failed` ends the chain instead: the next prompt was written for a world
+   * the failed step was supposed to create.
    */
-  skillComboHandleAgentEnded: (agentId: string, endedLogs?: string[]) => Promise<void>;
+  skillComboHandleAgentEnded: (agentId: string, ended?: EndedStep) => Promise<void>;
   comboStepForAgent: (agentId: string) => ComboStepView | null;
 }
 
@@ -84,107 +102,175 @@ async function spawnStep(
 /** The first step inherits nothing — there is no session before it. */
 const NO_HANDOFF: StepHandoff = { context: null, fromLabel: '' };
 
-export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) => ({
-  comboRuns: [],
+const STORAGE_KEY = 'auric-skill-combo-runs';
 
-  startSkillCombo: async (projectPath, combo) => {
-    const steps = combo.steps.filter((step) => step.prompt.trim().length > 0);
-    if (steps.length === 0) return;
+function persist(runs: SkillComboRun[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(runs));
+  } catch {
+    // Storage full or unavailable. Surviving a restart is a convenience; it
+    // must never take a running chain down with it.
+  }
+}
 
-    const existing = get().comboRuns.find(
-      (run) => run.comboId === combo.id && run.projectPath === projectPath
+function restore(): SkillComboRun[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (run): run is SkillComboRun =>
+        !!run &&
+        typeof run === 'object' &&
+        typeof (run as SkillComboRun).id === 'string' &&
+        Array.isArray((run as SkillComboRun).steps)
     );
-    if (existing) {
-      const toaster = get() as ComboHost;
-      toaster.showToast?.(`${combo.label} is already running`, 'info');
-      return;
-    }
+  } catch {
+    return [];
+  }
+}
 
-    const run: SkillComboRun = {
-      id: crypto.randomUUID(),
-      comboId: combo.id,
-      label: combo.label,
-      projectPath,
-      steps,
-      currentIndex: 0,
-      currentAgentId: null,
-    };
-    set({ comboRuns: [...get().comboRuns, run] });
+export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) => {
+  /**
+   * The only way comboRuns changes. A chain spans agent lifetimes and now app
+   * lifetimes too, so writing it and remembering it are the same act — a path
+   * that set state without persisting would resurrect a stale chain later.
+   */
+  const commit = (runs: SkillComboRun[]) => {
+    set({ comboRuns: runs });
+    persist(runs);
+  };
 
-    try {
-      const agentId = await spawnStep(get as () => ComboHost, run, 0, NO_HANDOFF);
-      if (!agentId) {
-        set({ comboRuns: get().comboRuns.filter((r) => r.id !== run.id) });
+  return {
+    comboRuns: [],
+
+    startSkillCombo: async (projectPath, combo) => {
+      const steps = combo.steps.filter((step) => step.prompt.trim().length > 0);
+      if (steps.length === 0) return;
+
+      const existing = get().comboRuns.find(
+        (run) => run.comboId === combo.id && run.projectPath === projectPath
+      );
+      if (existing) {
+        const toaster = get() as ComboHost;
+        toaster.showToast?.(`${combo.label} is already running`, 'info');
         return;
       }
-      set({
-        comboRuns: get().comboRuns.map((r) =>
-          r.id === run.id ? { ...r, currentAgentId: agentId } : r
-        ),
-      });
-    } catch {
-      set({ comboRuns: get().comboRuns.filter((r) => r.id !== run.id) });
+
+      const run: SkillComboRun = {
+        id: crypto.randomUUID(),
+        comboId: combo.id,
+        label: combo.label,
+        projectPath,
+        steps,
+        currentIndex: 0,
+        currentAgentId: null,
+      };
+      commit([...get().comboRuns, run]);
+
+      try {
+        const agentId = await spawnStep(get as () => ComboHost, run, 0, NO_HANDOFF);
+        if (!agentId) {
+          commit(get().comboRuns.filter((r) => r.id !== run.id));
+          return;
+        }
+        commit(
+          get().comboRuns.map((r) => (r.id === run.id ? { ...r, currentAgentId: agentId } : r))
+        );
+      } catch {
+        commit(get().comboRuns.filter((r) => r.id !== run.id));
+        const toaster = get() as ComboHost;
+        toaster.showToast?.(`Could not start ${combo.label}`, 'error');
+      }
+    },
+
+    cancelSkillCombo: (runId) => {
+      commit(get().comboRuns.filter((run) => run.id !== runId));
+    },
+
+    cancelSkillCombosForAgents: (agentIds) => {
+      const gone = new Set(agentIds);
+      commit(get().comboRuns.filter((run) => !run.currentAgentId || !gone.has(run.currentAgentId)));
+    },
+
+    rebindSkillComboAgent: (fromAgentId, toAgentId) => {
+      commit(
+        get().comboRuns.map((run) =>
+          run.currentAgentId === fromAgentId ? { ...run, currentAgentId: toAgentId } : run
+        )
+      );
+    },
+
+    loadSkillCombos: () => {
+      const restored = restore();
+      if (restored.length > 0) set({ comboRuns: restored });
+    },
+
+    reconcileSkillCombos: (reachableAgentIds) => {
+      const reachable = new Set(reachableAgentIds);
+      const runs = get().comboRuns;
+      const kept = runs.filter((run) => !!run.currentAgentId && reachable.has(run.currentAgentId));
+      if (kept.length === runs.length) return;
+
+      commit(kept);
+      const lost = runs.filter((run) => !kept.includes(run));
       const toaster = get() as ComboHost;
-      toaster.showToast?.(`Could not start ${combo.label}`, 'error');
-    }
-  },
+      toaster.showToast?.(
+        `${lost.map((run) => run.label).join(', ')} did not survive the restart`,
+        'info'
+      );
+    },
 
-  cancelSkillCombo: (runId) => {
-    set({ comboRuns: get().comboRuns.filter((run) => run.id !== runId) });
-  },
+    skillComboHandleAgentEnded: async (agentId, ended = {}) => {
+      const run = get().comboRuns.find((candidate) => candidate.currentAgentId === agentId);
+      if (!run) return;
 
-  cancelSkillCombosForAgents: (agentIds) => {
-    const gone = new Set(agentIds);
-    set({
-      comboRuns: get().comboRuns.filter(
-        (run) => !run.currentAgentId || !gone.has(run.currentAgentId)
-      ),
-    });
-  },
+      const stepLabel = run.steps[run.currentIndex]?.label ?? '';
 
-  rebindSkillComboAgent: (fromAgentId, toAgentId) => {
-    set({
-      comboRuns: get().comboRuns.map((run) =>
-        run.currentAgentId === fromAgentId ? { ...run, currentAgentId: toAgentId } : run
-      ),
-    });
-  },
-
-  skillComboHandleAgentEnded: async (agentId, endedLogs = []) => {
-    const run = get().comboRuns.find((candidate) => candidate.currentAgentId === agentId);
-    if (!run) return;
-
-    const nextIndex = run.currentIndex + 1;
-    if (nextIndex >= run.steps.length) {
-      set({ comboRuns: get().comboRuns.filter((r) => r.id !== run.id) });
-      return;
-    }
-
-    // No CLI in the registry can resume another session, and a chain may
-    // switch harness between steps. What the finished step actually leaves
-    // behind is the text it printed — so that is what travels.
-    const handoff: StepHandoff = {
-      context: deriveHandoffContext(endedLogs),
-      fromLabel: run.steps[run.currentIndex]?.label ?? '',
-    };
-
-    try {
-      const nextAgentId = await spawnStep(get as () => ComboHost, run, nextIndex, handoff);
-      if (!nextAgentId) {
-        set({ comboRuns: get().comboRuns.filter((r) => r.id !== run.id) });
+      // Every later prompt was written for a world the failed step was supposed
+      // to leave behind. Running them anyway spends real tokens building on
+      // something that is not there. Retry is the way back: it rebinds the run
+      // to the replacement before dismissing, so it never reaches this branch.
+      if (ended.failed) {
+        commit(get().comboRuns.filter((r) => r.id !== run.id));
+        const toaster = get() as ComboHost;
+        toaster.showToast?.(`${run.label} stopped — the step “${stepLabel}” failed`, 'error');
         return;
       }
-      set({
-        comboRuns: get().comboRuns.map((r) =>
-          r.id === run.id ? { ...r, currentIndex: nextIndex, currentAgentId: nextAgentId } : r
-        ),
-      });
-    } catch {
-      set({ comboRuns: get().comboRuns.filter((r) => r.id !== run.id) });
-      const toaster = get() as ComboHost;
-      toaster.showToast?.(`Could not start the next step of ${run.label}`, 'error');
-    }
-  },
 
-  comboStepForAgent: (agentId) => lookupComboStep(get().comboRuns, agentId),
-});
+      const nextIndex = run.currentIndex + 1;
+      if (nextIndex >= run.steps.length) {
+        commit(get().comboRuns.filter((r) => r.id !== run.id));
+        return;
+      }
+
+      // No CLI in the registry can resume another session, and a chain may
+      // switch harness between steps. What the finished step actually leaves
+      // behind is the text it printed — so that is what travels.
+      const handoff: StepHandoff = {
+        context: deriveHandoffContext(ended.logs ?? []),
+        fromLabel: stepLabel,
+      };
+
+      try {
+        const nextAgentId = await spawnStep(get as () => ComboHost, run, nextIndex, handoff);
+        if (!nextAgentId) {
+          commit(get().comboRuns.filter((r) => r.id !== run.id));
+          return;
+        }
+        commit(
+          get().comboRuns.map((r) =>
+            r.id === run.id ? { ...r, currentIndex: nextIndex, currentAgentId: nextAgentId } : r
+          )
+        );
+      } catch {
+        commit(get().comboRuns.filter((r) => r.id !== run.id));
+        const toaster = get() as ComboHost;
+        toaster.showToast?.(`Could not start the next step of ${run.label}`, 'error');
+      }
+    },
+
+    comboStepForAgent: (agentId) => lookupComboStep(get().comboRuns, agentId),
+  };
+};

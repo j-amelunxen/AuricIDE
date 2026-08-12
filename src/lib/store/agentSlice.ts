@@ -23,6 +23,7 @@ import { MAX_TICKET_ATTEMPTS } from './conductorSlice';
 import type { GoalsSlice } from './goalsSlice';
 import type { NotificationInput } from '../tauri/notifications';
 import type { PmGoalRun } from '../tauri/goals';
+import type { EndedStep } from './skillComboSlice';
 
 export const MAX_AGENT_LOGS = 5_000;
 // Chunks can be up to 16KB PTY batches, so a count cap alone still allows
@@ -370,9 +371,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     // starts here. Awaited so a test (and a user who immediately looks) sees
     // the successor already in the fleet.
     const combo = get() as AgentSlice & {
-      skillComboHandleAgentEnded?: (agentId: string, endedLogs: string[]) => Promise<void>;
+      skillComboHandleAgentEnded?: (agentId: string, ended: EndedStep) => Promise<void>;
     };
-    await combo.skillComboHandleAgentEnded?.(agentId, endedLogs);
+    await combo.skillComboHandleAgentEnded?.(agentId, {
+      logs: endedLogs,
+      failed: agent?.status === 'error',
+    });
   },
 
   renameRunningAgent: async (agentId, name) => {
@@ -418,9 +422,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     // Dismissing a finished combo step is "I'm done reviewing" — start the next.
     const combo = get() as AgentSlice & {
-      skillComboHandleAgentEnded?: (agentId: string, endedLogs: string[]) => Promise<void>;
+      skillComboHandleAgentEnded?: (agentId: string, ended: EndedStep) => Promise<void>;
     };
-    void combo.skillComboHandleAgentEnded?.(agentId, endedLogs);
+    void combo.skillComboHandleAgentEnded?.(agentId, {
+      logs: endedLogs,
+      failed: agent.status === 'error',
+    });
   },
 
   updateAgentStatus: (agentId, status) => {
@@ -592,6 +599,15 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     try {
       const interrupted = await listInterruptedAgents();
       set({ interruptedAgents: interrupted });
+      // A restored chain is only alive if the agent it points at came back
+      // with the app — either still running, or waiting to be resumed.
+      const combo = get() as AgentSlice & {
+        reconcileSkillCombos?: (reachableAgentIds: string[]) => void;
+      };
+      combo.reconcileSkillCombos?.([
+        ...interrupted.map((a) => a.id),
+        ...get().agents.map((a) => a.id),
+      ]);
     } catch {
       // Browser/test mode — no Tauri backend, nothing to restore
     }
@@ -630,6 +646,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
           }
         : {}),
     });
+    // Resuming spawns a new process under a new id. A combo waiting on the old
+    // one has to follow it across, or the chain points at a corpse.
+    const comboResume = get() as AgentSlice & {
+      rebindSkillComboAgent?: (fromAgentId: string, toAgentId: string) => void;
+    };
+    comboResume.rebindSkillComboAgent?.(agentId, agent.id);
     return agent;
   },
 
@@ -640,6 +662,11 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       // Already gone on the backend — removing it locally is still correct
     }
     set({ interruptedAgents: get().interruptedAgents.filter((a) => a.id !== agentId) });
+    // Throwing away the step throws away the chain that was waiting on it.
+    const combo = get() as AgentSlice & {
+      cancelSkillCombosForAgents?: (agentIds: string[]) => void;
+    };
+    combo.cancelSkillCombosForAgents?.([agentId]);
   },
 
   killAgentsForRepoPath: async (repoPath) => {
