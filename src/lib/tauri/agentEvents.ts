@@ -1,3 +1,5 @@
+import { subscribeToTauriEvent } from './subscribe';
+
 export interface AgentOutputEvent {
   agentId: string;
   stream: 'stdout' | 'stderr';
@@ -13,51 +15,8 @@ export interface AgentStatusEvent {
   repoPath?: string;
 }
 
-function subscribeToAgentEvent<T>(
-  eventName: string,
-  callback: (payload: T) => void,
-  unavailableWarning: string
-): () => void {
-  let disposed = false;
-  let unlisten: (() => void) | null = null;
-
-  import('@tauri-apps/api/event')
-    .then(({ listen }) => {
-      if (disposed) return;
-      listen<T>(eventName, (event) => {
-        callback(event.payload);
-      }).then((fn) => {
-        if (disposed) {
-          try {
-            fn();
-          } catch {
-            /* already unregistered */
-          }
-        } else {
-          unlisten = fn;
-        }
-      });
-    })
-    .catch(() => {
-      console.warn(unavailableWarning);
-    });
-
-  return () => {
-    if (disposed) return;
-    disposed = true;
-    if (unlisten) {
-      try {
-        unlisten();
-      } catch {
-        // Listener may already have been unregistered by Tauri
-      }
-      unlisten = null;
-    }
-  };
-}
-
 export function onAgentOutput(callback: (event: AgentOutputEvent) => void): () => void {
-  return subscribeToAgentEvent(
+  return subscribeToTauriEvent(
     'agent-output',
     callback,
     '[Browser mode] Agent output listener not available'
@@ -65,7 +24,7 @@ export function onAgentOutput(callback: (event: AgentOutputEvent) => void): () =
 }
 
 export function onAgentStatus(callback: (event: AgentStatusEvent) => void): () => void {
-  return subscribeToAgentEvent(
+  return subscribeToTauriEvent(
     'agent-status',
     callback,
     '[Browser mode] Agent status listener not available'
