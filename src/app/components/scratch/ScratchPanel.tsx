@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { type ScratchFile } from '@/lib/store/scratchSlice';
-import { ConfirmDialog } from './ConfirmDialog';
+import { ConfirmDialog } from '@/app/components/ui/ConfirmDialog';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface ScratchPanelProps {

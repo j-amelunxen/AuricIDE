@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { writeFile } from '@/lib/tauri/fs';
 import { buildExcalidrawFileJson } from '@/lib/excalidraw/serialize';
 import { ExcalidrawCanvas } from './ExcalidrawCanvas';
@@ -52,6 +53,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
   const removeSpecFile = useStore((s) => s.removeSpecFile);
   const closeTab = useStore((s) => s.closeTab);
   const showToast = useStore((s) => s.showToast);
+  const { confirm, confirmDialog } = useConfirm();
   const [syncing, setSyncing] = useState(false);
 
   const relPath =
@@ -121,13 +123,12 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
 
   const handleRemoveLocal = async () => {
     if (!rootPath || !link) return;
-    if (
-      !confirm(
-        `Delete local copy "${fileName}"? Scene stays on Excalidraw+.`
-      )
-    ) {
-      return;
-    }
+    const go = await confirm({
+      title: 'Delete local copy?',
+      message: `Delete local copy "${fileName}"? Scene stays on Excalidraw+.`,
+      confirmLabel: 'Delete',
+    });
+    if (!go) return;
     try {
       await removeSpecFile(rootPath, relPath);
       showToast(`Deleted local "${link.sceneName}" · still on Excalidraw+`, 'success');
@@ -158,9 +159,7 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
         <span
           data-testid="excalidraw-mode-badge"
           title={
-            editable
-              ? 'Local · edits save to this file'
-              : 'Linked to Excalidraw+ · edit there'
+            editable ? 'Local · edits save to this file' : 'Linked to Excalidraw+ · edit there'
           }
           className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-wider ${
             editable ? 'bg-primary/10 text-primary-light' : 'bg-white/5 text-foreground-muted'
@@ -247,6 +246,8 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
           </p>
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }

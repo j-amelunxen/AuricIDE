@@ -1,8 +1,25 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
 import { AgentsPanel } from './AgentsPanel';
+
+type User = ReturnType<typeof userEvent.setup>;
+
+/**
+ * Answers the panel's own confirmation dialog. The panel deliberately does not
+ * use window.confirm: inside the Tauri webview that call does not suspend the
+ * script, so the kill went through before the user had answered.
+ */
+async function answer(user: User, button: string) {
+  const dialog = await screen.findByRole('dialog');
+  await user.click(within(dialog).getByRole('button', { name: button }));
+}
+
+/** The question the panel is currently asking, as the user reads it. */
+async function question() {
+  return (await screen.findByRole('dialog')).textContent ?? '';
+}
 
 const agents: AgentInfo[] = [
   {
@@ -59,14 +76,13 @@ describe('AgentsPanel', () => {
   it('kill button on card calls onKill with agent id', async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
-    // Ending a running agent asks first (see "killing a single agent" below).
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={onKill} />);
 
     const killButtons = screen.getAllByTitle('Terminate Agent');
     await user.click(killButtons[0]);
+    // Ending a running agent asks first (see "killing a single agent" below).
+    await answer(user, 'Stop');
     expect(onKill).toHaveBeenCalledWith('agent-1');
-    confirmSpy.mockRestore();
   });
 
   it('groups agents by repo path', () => {
@@ -107,11 +123,10 @@ describe('AgentsPanel', () => {
         onKillRepo={onKillRepo}
       />
     );
-    // Killing running agents now asks first (see "destructive actions" below).
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(screen.getByText('Stop all'));
+    // Killing running agents asks first (see "destructive actions" below).
+    await answer(user, 'Stop all');
     expect(onKillRepo).toHaveBeenCalledWith('/repo-a');
-    confirmSpy.mockRestore();
   });
 
   it('renders a collapse button when onCollapse is provided', () => {
@@ -255,45 +270,56 @@ describe('AgentsPanel destructive actions', () => {
   it('asks before killing every agent of a repo', async () => {
     const user = userEvent.setup();
     const onKillRepo = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     render(
       <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
     );
     await user.click(screen.getByRole('button', { name: /stop all/i }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    // The question is on screen and nothing has died yet — the part the
+    // browser's confirm() could not deliver inside the webview.
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(onKillRepo).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
+  });
+
+  it('leaves the agents alone when the question is declined', async () => {
+    const user = userEvent.setup();
+    const onKillRepo = vi.fn();
+
+    render(
+      <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
+    );
+    await user.click(screen.getByRole('button', { name: /stop all/i }));
+    await answer(user, 'Cancel');
+
+    expect(onKillRepo).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('says how much work the kill would end', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     render(
       <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={vi.fn()} />
     );
     await user.click(screen.getByRole('button', { name: /stop all/i }));
 
-    const message = confirmSpy.mock.calls[0][0] as string;
+    const message = await question();
     expect(message).toContain('2');
     expect(message).toContain('api');
-    confirmSpy.mockRestore();
   });
 
   it('kills the repo once confirmed', async () => {
     const user = userEvent.setup();
     const onKillRepo = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(
       <AgentsPanel agents={repoAgents} onSpawn={vi.fn()} onKill={vi.fn()} onKillRepo={onKillRepo} />
     );
     await user.click(screen.getByRole('button', { name: /stop all/i }));
+    await answer(user, 'Stop all');
 
     expect(onKillRepo).toHaveBeenCalledWith('/work/api');
-    confirmSpy.mockRestore();
   });
 });
 
@@ -945,43 +971,50 @@ describe('AgentsPanel – killing a single agent', () => {
   it('asks before ending a running agent', async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={onKill} />);
     await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    // Question up, agent untouched. window.confirm could not hold this line in
+    // the Tauri webview — it kept running and the kill went through unasked.
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(onKill).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
+  });
+
+  it('spares the agent when the question is declined', async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn();
+
+    render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={onKill} />);
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+    await answer(user, 'Cancel');
+
+    expect(onKill).not.toHaveBeenCalled();
   });
 
   it('names the agent in the question', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
 
-    expect(confirmSpy.mock.calls[0][0]).toContain('Writer');
-    confirmSpy.mockRestore();
+    expect(await question()).toContain('Writer');
   });
 
   it('kills once confirmed', async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<AgentsPanel agents={[working]} onSpawn={vi.fn()} onKill={onKill} />);
     await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+    await answer(user, 'Stop');
 
     expect(onKill).toHaveBeenCalledWith('a1');
-    confirmSpy.mockRestore();
   });
 
   it('asks before ending a parked agent too', async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     render(
       <AgentsPanel
@@ -994,15 +1027,13 @@ describe('AgentsPanel – killing a single agent', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Terminate Writer' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(onKill).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it('does not ask about an agent that has already stopped', async () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const stopped: AgentInfo = { ...working, status: 'idle' };
 
     render(
@@ -1017,9 +1048,8 @@ describe('AgentsPanel – killing a single agent', () => {
     await user.click(screen.getByRole('button', { name: 'Terminate Writer' }));
 
     // There is no work left to lose, so a question would just be friction.
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(onKill).toHaveBeenCalledWith('a1');
-    confirmSpy.mockRestore();
   });
 });
 

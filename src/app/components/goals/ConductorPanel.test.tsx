@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ConductorPanel, formatRunDuration } from './ConductorPanel';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { ConductorRunSummary } from '@/lib/store/conductorSlice';
@@ -39,6 +39,7 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     scopeGoalName: null,
     maxConcurrent: 2,
     activeAgentCount: 0,
+    runningAgentCount: 0,
     pendingApprovals: [] as PmTicket[],
     decisions: [],
     lastRun: null as ConductorRunSummary | null,
@@ -196,6 +197,52 @@ describe('ConductorPanel', () => {
 
     it('never goes negative on clock skew', () => {
       expect(formatRunDuration('2026-01-01T10:00:10.000Z', '2026-01-01T10:00:00.000Z')).toBe('0s');
+    });
+  });
+
+  describe('stopping a run with agents in flight', () => {
+    it('asks before killing anything', async () => {
+      const props = renderPanel({ running: true, runningAgentCount: 3 });
+      fireEvent.click(screen.getByTestId('conductor-stop-btn'));
+
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent('Stop 3 running agents?');
+      expect(dialog).toHaveTextContent('Their work in progress is lost.');
+      // The question is the gate: nothing dies until it is answered.
+      expect(props.onStop).not.toHaveBeenCalled();
+    });
+
+    it('stops once the user confirms', async () => {
+      const props = renderPanel({ running: true, runningAgentCount: 2 });
+      fireEvent.click(screen.getByTestId('conductor-stop-btn'));
+
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Stop' }));
+      await waitFor(() => expect(props.onStop).toHaveBeenCalledTimes(1));
+    });
+
+    it('leaves the run alone when the user cancels', async () => {
+      const props = renderPanel({ running: true, runningAgentCount: 2 });
+      fireEvent.click(screen.getByTestId('conductor-stop-btn'));
+
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(props.onStop).not.toHaveBeenCalled();
+    });
+
+    it('counts a single agent in the singular', async () => {
+      renderPanel({ running: true, runningAgentCount: 1 });
+      fireEvent.click(screen.getByTestId('conductor-stop-btn'));
+      expect(await screen.findByRole('dialog')).toHaveTextContent('Stop 1 running agent?');
+    });
+
+    it('stops without a question when nothing is running', async () => {
+      // Nothing to lose — a prompt here would be friction, not a safeguard.
+      const props = renderPanel({ running: true, runningAgentCount: 0 });
+      fireEvent.click(screen.getByTestId('conductor-stop-btn'));
+      await waitFor(() => expect(props.onStop).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
 

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ContextMenu } from '../ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import type { GitFileStatus } from '@/lib/tauri/git';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 
@@ -50,6 +51,37 @@ function FileList({
     null
   );
 
+  // Asked in-app and awaited. The browser's confirm() does not suspend the
+  // script inside the Tauri webview, so the file would already be gone by the
+  // time the user reads the question.
+  const { confirm, confirmDialog } = useConfirm();
+
+  /**
+   * Discard is the only action here git cannot take back, and its menu item
+   * appears directly under the cursor after a right-click. What it costs
+   * depends on whether git has a copy: for a file that was never committed
+   * there is nothing behind it, so discarding is a plain deletion — say that
+   * instead of the softer "changes are lost".
+   */
+  const confirmDiscard = async (file: GitFileStatus) => {
+    const neverCommitted = file.status === 'untracked' || file.status === 'added';
+    const go = await confirm(
+      neverCommitted
+        ? {
+            title: 'Delete this file?',
+            message: `${file.path} has never been committed, so git has no copy of it. Discarding deletes it from disk and it cannot be recovered.`,
+            confirmLabel: 'Delete',
+          }
+        : {
+            title: 'Discard changes?',
+            message: `Discard your changes to ${file.path}? It is restored to the last commit and the uncommitted changes are gone for good.`,
+            confirmLabel: 'Discard',
+          }
+    );
+    if (!go) return;
+    onDiscardFile?.(file.path);
+  };
+
   return (
     <div data-testid={testId}>
       {files.map((file) => {
@@ -88,12 +120,16 @@ function FileList({
               label: 'Discard Changes',
               icon: 'undo',
               danger: true,
-              action: () => onDiscardFile(contextMenu.path),
+              action: () => {
+                const file = files.find((f) => f.path === contextMenu.path);
+                if (file) void confirmDiscard(file);
+              },
             },
           ]}
           onClose={() => setContextMenu(null)}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

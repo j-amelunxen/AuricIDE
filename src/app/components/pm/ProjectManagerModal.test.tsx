@@ -1,9 +1,25 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
+// Stands in for the real panel, but keeps the one wire this file tests: the
+// delete button the panel renders and the handler the modal hands it.
 vi.mock('./TicketEditPanel', () => ({
-  TicketEditPanel: () => <div data-testid="mock-ticket-edit-panel">TicketEditPanel</div>,
+  TicketEditPanel: ({
+    ticket,
+    onDeleteTicket,
+  }: {
+    ticket: { id: string } | null;
+    onDeleteTicket: (id: string) => void;
+  }) => (
+    <div data-testid="mock-ticket-edit-panel">
+      {ticket && (
+        <button type="button" aria-label="Delete ticket" onClick={() => onDeleteTicket(ticket.id)}>
+          Delete ticket
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 import { ProjectManagerModal } from './ProjectManagerModal';
@@ -53,6 +69,11 @@ describe('ProjectManagerModal', () => {
     vi.clearAllMocks();
     mockStore.pmModalOpen = false;
     mockStore.pmDirty = false;
+    mockStore.pmDraftEpics = [];
+    mockStore.pmDraftTickets = [];
+    mockStore.pmDraftTestCases = [];
+    mockStore.pmSelectedEpicId = null;
+    mockStore.pmSelectedTicketId = null;
   });
 
   it('renders nothing when pmModalOpen is false', () => {
@@ -138,6 +159,41 @@ describe('ProjectManagerModal', () => {
     expect(mockStore.setPmModalOpen).toHaveBeenCalledWith(false);
   });
 
+  it('discards unsaved changes only after the question is answered', async () => {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDirty = true;
+    render(<ProjectManagerModal />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByText('Cancel'));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+    expect(mockStore.discardPmChanges).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() => {
+      expect(mockStore.discardPmChanges).toHaveBeenCalled();
+      expect(mockStore.setPmModalOpen).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('keeps unsaved changes when the discard is declined', async () => {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDirty = true;
+    render(<ProjectManagerModal />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByText('Cancel'));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).not.toBeInTheDocument()
+    );
+    expect(mockStore.discardPmChanges).not.toHaveBeenCalled();
+    expect(mockStore.setPmModalOpen).not.toHaveBeenCalledWith(false);
+  });
+
   it('saves on Cmd+S when dirty', async () => {
     mockStore.pmModalOpen = true;
     mockStore.pmDirty = true;
@@ -198,6 +254,192 @@ describe('ProjectManagerModal', () => {
 
     expect(mockStore.updateTicket).toHaveBeenCalledWith('tk-1', { status: 'in_progress' });
     expect(mockStore.savePmData).toHaveBeenCalledWith('/test/project');
+  });
+
+  // --- Destructive deletes ---
+
+  function seedEpicWithTickets(ticketCount: number, testCasesPerTicket = 0) {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDraftEpics = [
+      {
+        id: 'ep-1',
+        name: 'Checkout',
+        description: '',
+        sortOrder: 0,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+    const tickets = Array.from({ length: ticketCount }, (_, i) => ({
+      id: `tk-${i}`,
+      name: `Ticket ${i}`,
+      status: 'open',
+      epicId: 'ep-1',
+      description: '',
+      createdAt: '',
+      updatedAt: '',
+    }));
+    mockStore.pmDraftTickets = tickets;
+    mockStore.pmDraftTestCases = tickets.flatMap((t) =>
+      Array.from({ length: testCasesPerTicket }, (_, j) => ({
+        id: `${t.id}-tc-${j}`,
+        ticketId: t.id,
+        title: 'tc',
+        body: '',
+        sortOrder: j,
+        createdAt: '',
+        updatedAt: '',
+      }))
+    );
+  }
+
+  describe('deleting an epic', () => {
+    it('does not delete the epic while the confirmation is still open', async () => {
+      seedEpicWithTickets(2);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete epic ep-1'));
+
+      await screen.findByRole('dialog', { name: 'Delete this epic?' });
+      expect(mockStore.deleteEpic).not.toHaveBeenCalled();
+    });
+
+    it('names the cascade — how many tickets and test cases go with the epic', async () => {
+      seedEpicWithTickets(12, 2);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete epic ep-1'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this epic?' });
+
+      expect(dialog.textContent).toContain('12 tickets');
+      expect(dialog.textContent).toContain('24 test cases');
+    });
+
+    it('uses singular wording for a single ticket and a single test case', async () => {
+      seedEpicWithTickets(1, 1);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete epic ep-1'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this epic?' });
+
+      expect(dialog.textContent).toContain('its 1 ticket,');
+      expect(dialog.textContent).toContain('1 test case.');
+    });
+
+    it('reads plainly when the epic has no tickets at all', async () => {
+      seedEpicWithTickets(0);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete epic ep-1'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this epic?' });
+
+      expect(dialog.textContent).toContain('This deletes the epic. It has no tickets.');
+    });
+
+    it('deletes the epic once the delete is confirmed', async () => {
+      seedEpicWithTickets(2);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete epic ep-1'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this epic?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      await waitFor(() => expect(mockStore.deleteEpic).toHaveBeenCalledWith('ep-1'));
+    });
+
+    it('keeps the epic when the delete is declined', async () => {
+      seedEpicWithTickets(2);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete epic ep-1'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this epic?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Delete this epic?' })).not.toBeInTheDocument()
+      );
+      expect(mockStore.deleteEpic).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleting a ticket', () => {
+    function seedSelectedTicket(testCaseCount: number) {
+      seedEpicWithTickets(1, testCaseCount);
+      mockStore.pmSelectedTicketId = 'tk-0';
+    }
+
+    it('does not delete the ticket while the confirmation is still open', async () => {
+      seedSelectedTicket(3);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete ticket'));
+
+      await screen.findByRole('dialog', { name: 'Delete this ticket?' });
+      expect(mockStore.deleteTicket).not.toHaveBeenCalled();
+      expect(mockStore.setPmSelectedTicketId).not.toHaveBeenCalledWith(null);
+    });
+
+    it('names the test cases that go with the ticket', async () => {
+      seedSelectedTicket(3);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete ticket'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this ticket?' });
+
+      expect(dialog.textContent).toContain('3 test cases');
+    });
+
+    it('reads plainly when the ticket has no test cases', async () => {
+      seedSelectedTicket(0);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete ticket'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this ticket?' });
+
+      expect(dialog.textContent).toContain('This deletes the ticket. It has no test cases.');
+    });
+
+    it('deletes the ticket and clears the selection once confirmed', async () => {
+      seedSelectedTicket(3);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete ticket'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this ticket?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      await waitFor(() => {
+        expect(mockStore.deleteTicket).toHaveBeenCalledWith('tk-0');
+        expect(mockStore.setPmSelectedTicketId).toHaveBeenCalledWith(null);
+      });
+    });
+
+    it('keeps the ticket when the delete is declined', async () => {
+      seedSelectedTicket(3);
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Delete ticket'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this ticket?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('dialog', { name: 'Delete this ticket?' })
+        ).not.toBeInTheDocument()
+      );
+      expect(mockStore.deleteTicket).not.toHaveBeenCalled();
+      expect(mockStore.setPmSelectedTicketId).not.toHaveBeenCalledWith(null);
+    });
   });
 
   // --- Polling (refreshPmData) ---

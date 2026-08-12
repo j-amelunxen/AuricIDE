@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RequirementsModal } from './RequirementsModal';
 import type { PmRequirement } from '@/lib/tauri/requirements';
@@ -145,6 +145,57 @@ describe('RequirementsModal', () => {
     expect(mockSetRequirementsModalOpen).toHaveBeenCalledWith(false);
   });
 
+  it('discards unsaved changes only after the question is answered', async () => {
+    storeState.requirementsModalOpen = true;
+    storeState.requirementsDirty = true;
+    const user = userEvent.setup();
+    render(<RequirementsModal />);
+
+    await user.click(screen.getByTestId('requirements-close-btn'));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+    expect(mockDiscardRequirementChanges).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() => {
+      expect(mockDiscardRequirementChanges).toHaveBeenCalled();
+      expect(mockSetRequirementsModalOpen).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('keeps unsaved changes when the discard is declined', async () => {
+    storeState.requirementsModalOpen = true;
+    storeState.requirementsDirty = true;
+    const user = userEvent.setup();
+    render(<RequirementsModal />);
+
+    await user.click(screen.getByTestId('requirements-close-btn'));
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).not.toBeInTheDocument()
+    );
+    expect(mockDiscardRequirementChanges).not.toHaveBeenCalled();
+    expect(mockSetRequirementsModalOpen).not.toHaveBeenCalled();
+  });
+
+  it('lets Escape cancel the discard question instead of re-asking it', async () => {
+    storeState.requirementsModalOpen = true;
+    storeState.requirementsDirty = true;
+    const user = userEvent.setup();
+    render(<RequirementsModal />);
+
+    await user.click(screen.getByTestId('requirements-close-btn'));
+    await screen.findByRole('dialog', { name: 'Discard changes?' });
+    await user.keyboard('{Escape}');
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).not.toBeInTheDocument()
+    );
+    expect(mockDiscardRequirementChanges).not.toHaveBeenCalled();
+  });
+
   it('selects a requirement when row clicked', async () => {
     storeState.requirementsModalOpen = true;
     storeState.requirementsDraft = [makeRequirement()];
@@ -232,15 +283,65 @@ describe('RequirementsModal', () => {
     expect(mockSaveRequirements).toHaveBeenCalledWith('/project');
   });
 
-  it('Delete flow: deleting selected requirement clears selection', async () => {
-    storeState.requirementsModalOpen = true;
-    storeState.requirementsDraft = [makeRequirement({ id: 'r1', reqId: 'REQ-01' })];
-    storeState.selectedRequirementId = 'r1';
-    const user = userEvent.setup();
-    render(<RequirementsModal />);
-    await user.click(screen.getByTestId('detail-delete-btn'));
-    expect(mockDeleteRequirement).toHaveBeenCalledWith('r1');
-    expect(mockSetSelectedRequirementId).toHaveBeenCalledWith(null);
+  describe('deleting a requirement', () => {
+    beforeEach(() => {
+      storeState.requirementsModalOpen = true;
+      storeState.requirementsDraft = [makeRequirement({ id: 'r1', reqId: 'REQ-01' })];
+      storeState.selectedRequirementId = 'r1';
+    });
+
+    it('does not delete the requirement while the confirmation is still open', async () => {
+      const user = userEvent.setup();
+      render(<RequirementsModal />);
+
+      await user.click(screen.getByTestId('detail-delete-btn'));
+
+      await screen.findByRole('dialog', { name: 'Delete this requirement?' });
+      expect(mockDeleteRequirement).not.toHaveBeenCalled();
+      expect(mockSetSelectedRequirementId).not.toHaveBeenCalledWith(null);
+    });
+
+    it('names the requirement and says the verification history goes too', async () => {
+      const user = userEvent.setup();
+      render(<RequirementsModal />);
+
+      await user.click(screen.getByTestId('detail-delete-btn'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this requirement?' });
+
+      expect(dialog.textContent).toContain('REQ-01');
+      expect(dialog.textContent).toContain('verification history');
+    });
+
+    it('Delete flow: deleting selected requirement clears selection once confirmed', async () => {
+      const user = userEvent.setup();
+      render(<RequirementsModal />);
+
+      await user.click(screen.getByTestId('detail-delete-btn'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this requirement?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      await waitFor(() => {
+        expect(mockDeleteRequirement).toHaveBeenCalledWith('r1');
+        expect(mockSetSelectedRequirementId).toHaveBeenCalledWith(null);
+      });
+    });
+
+    it('keeps the requirement when the delete is declined', async () => {
+      const user = userEvent.setup();
+      render(<RequirementsModal />);
+
+      await user.click(screen.getByTestId('detail-delete-btn'));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this requirement?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('dialog', { name: 'Delete this requirement?' })
+        ).not.toBeInTheDocument()
+      );
+      expect(mockDeleteRequirement).not.toHaveBeenCalled();
+      expect(mockSetSelectedRequirementId).not.toHaveBeenCalledWith(null);
+    });
   });
 
   it('Type filter shows only matching requirements', () => {
