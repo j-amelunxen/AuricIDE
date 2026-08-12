@@ -11,6 +11,7 @@ import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
+import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
 import { type useIDEState } from './useIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
 
@@ -30,6 +31,9 @@ export function useIDEActions(
 
   // The native menu runs commands through the same dispatch as the palette
   useMenuCommands(handlers.handleCommandExecute, state.rootPath);
+
+  // The inbox spans projects, so it is not keyed on rootPath like the rest here
+  useNotificationInbox();
 
   // On mount: load recent projects and custom slash commands from localStorage
   useEffect(() => {
@@ -231,6 +235,9 @@ export function useIDEActions(
       } else if (mod && e.shiftKey && e.key === 'F') {
         e.preventDefault();
         state.setFileSelectorOpen(true);
+      } else if (mod && e.shiftKey && e.key === 'H') {
+        e.preventDefault();
+        state.setFindInFilesOpen(true);
       } else if (mod && !e.shiftKey && e.key === 'n') {
         e.preventDefault();
         void handlers.handleNewScratch();

@@ -7,6 +7,7 @@ import { NewItemModal } from '@/app/components/explorer/NewItemModal';
 import { RenameItemModal } from '@/app/components/explorer/RenameItemModal';
 import { FileSearch } from '@/app/components/ide/FileSearch';
 import { FileSelector } from '@/app/components/ide/FileSelector';
+import { FindInFilesModal } from '@/app/components/ide/FindInFilesModal';
 import { SettingsModal } from '@/app/components/ide/SettingsModal';
 import { ProjectManagerModal } from '@/app/components/pm/ProjectManagerModal';
 import { SpawnAgentDialog } from '@/app/components/agents/SpawnAgentDialog';
@@ -21,6 +22,7 @@ import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
 import { type AgentInfo, type AgentConfig } from '@/lib/tauri/agents';
 import { type Command } from '@/lib/commands/registry';
+import { type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import { VideoImportDialog } from '@/app/components/videoImport/VideoImportDialog';
 
 interface IDEOverlaysProps {
@@ -35,6 +37,8 @@ interface IDEOverlaysProps {
   setSpawnAgentGoalId: (id: string | null) => void;
   spawnAgentRepoPath: string | null;
   setSpawnAgentRepoPath: (path: string | null) => void;
+  spawnAgentPreset: SpawnPreset | null;
+  setSpawnAgentPreset: (preset: SpawnPreset | null) => void;
   handleSpawnNewAgent: (config: AgentConfig) => Promise<void>;
   rootPath: string | null;
   recentProjects: { name: string; path: string }[];
@@ -77,6 +81,10 @@ interface IDEOverlaysProps {
   fileSearchOpen: boolean;
   setFileSearchOpen: (open: boolean) => void;
 
+  findInFilesOpen: boolean;
+  setFindInFilesOpen: (open: boolean) => void;
+  handleFindInFilesNavigate: (path: string, line: number) => void;
+
   projectFilesInfo: ProjectFileInfo[];
   fileSelectorOpen: boolean;
   setFileSelectorOpen: (open: boolean) => void;
@@ -95,6 +103,8 @@ export function IDEOverlays({
   setSpawnAgentGoalId,
   spawnAgentRepoPath,
   setSpawnAgentRepoPath,
+  spawnAgentPreset,
+  setSpawnAgentPreset,
   handleSpawnNewAgent,
   rootPath,
   recentProjects,
@@ -126,6 +136,9 @@ export function IDEOverlays({
   projectFiles,
   fileSearchOpen,
   setFileSearchOpen,
+  findInFilesOpen,
+  setFindInFilesOpen,
+  handleFindInFilesNavigate,
   projectFilesInfo,
   fileSelectorOpen,
   setFileSelectorOpen,
@@ -137,11 +150,20 @@ export function IDEOverlays({
   const promptHistory = useStore((s) => s.promptHistory);
   const loadPromptHistory = useStore((s) => s.loadPromptHistory);
 
+  // One source of truth: the repo the dialog targets and the repo whose prompt
+  // history it recalls have to be the same path. Quick Access and ticket
+  // launches both aim at a repo that is not the open project, and offering
+  // prompts from a project the agent will never run in is worse than none.
+  const spawnRepoPath = spawnAgentRepoPath || ticketCwd || rootPath || '';
+
   // Refresh on every open: the dialog is reachable from many entry points and
-  // an agent may have been started from any of them since the last look.
+  // an agent may have been started from any of them since the last look. No
+  // truthiness guard on the path — loadPromptHistory clears the list for an
+  // empty one, which is exactly right on the welcome screen.
   useEffect(() => {
-    if (spawnDialogOpen && rootPath) void loadPromptHistory(rootPath);
-  }, [spawnDialogOpen, rootPath, loadPromptHistory]);
+    if (!spawnDialogOpen) return;
+    void loadPromptHistory(spawnRepoPath);
+  }, [spawnDialogOpen, spawnRepoPath, loadPromptHistory]);
 
   return (
     <>
@@ -153,11 +175,13 @@ export function IDEOverlays({
           setSpawnAgentTicketId(null);
           setSpawnAgentGoalId(null);
           setSpawnAgentRepoPath(null);
+          setSpawnAgentPreset(null);
         }}
         onSpawn={handleSpawnNewAgent}
         initialTask={initialAgentTask}
         spawnedByTicketId={spawnAgentTicketId}
-        initialRepoPath={spawnAgentRepoPath || ticketCwd || rootPath || ''}
+        initialRepoPath={spawnRepoPath}
+        presetDefaults={spawnAgentPreset}
         recentPaths={recentProjects.map((p) => p.path)}
         goals={goalsDraft}
         initialGoalId={spawnAgentGoalId}
@@ -237,6 +261,12 @@ export function IDEOverlays({
         files={projectFilesInfo}
         isOpen={fileSelectorOpen}
         onClose={() => setFileSelectorOpen(false)}
+        rootPath={rootPath}
+      />
+      <FindInFilesModal
+        isOpen={findInFilesOpen}
+        onClose={() => setFindInFilesOpen(false)}
+        onNavigate={handleFindInFilesNavigate}
         rootPath={rootPath}
       />
       <PerformanceMonitor />

@@ -21,6 +21,7 @@ describe('activityItems — the rail leads with the loop', () => {
   it('demotes viewers and toolboxes to the tools section', () => {
     const tools = activityItems.filter((i) => i.section === 'tools').map((i) => i.id);
     expect(tools).toEqual([
+      'notifications',
       'outline',
       'scratches',
       'graph',

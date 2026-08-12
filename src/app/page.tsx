@@ -26,6 +26,7 @@ import { ProblemsPanel } from './components/problems/ProblemsPanel';
 import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
 import { ScratchPanel } from './components/scratch/ScratchPanel';
+import { NotificationsSidebar } from './components/notifications/NotificationsSidebar';
 import { isScratchPath } from '@/lib/scratch/naming';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
@@ -155,12 +156,21 @@ export default function Home() {
             <MemoizedFileExplorer
               tree={handlers.toFileTreeNodes(state.fileTree)}
               selectedPath={state.selectedPath}
+              selectedPaths={state.selectedPaths}
+              selectionAnchor={state.selectionAnchor}
               onSelectFile={handlers.handleFileSelect}
               onToggleDir={handlers.handleToggleDir}
+              onFocusNode={handlers.handleFocusNode}
+              onToggleSelect={handlers.handleToggleSelect}
+              onRangeSelect={handlers.handleRangeSelect}
+              onClearSelection={handlers.handleClearSelection}
+              onDeleteSelection={handlers.handleDeleteSelection}
+              onRenameRequest={handlers.handleRenameRequest}
               onNewFile={handlers.handleNewFile}
               onRefresh={handlers.handleRefresh}
               onOpenFolder={handlers.handleOpenFolder}
               onContextMenu={handlers.handleContextMenu}
+              onRootContextMenu={handlers.handleRootContextMenu}
               onMoveNode={handlers.handleMoveNode}
               rootPath={state.rootPath}
             />
@@ -224,6 +234,10 @@ export default function Home() {
             onRefresh={() => void state.refreshScratches()}
           />
         );
+      case 'notifications':
+        // Self-contained: it reads the store itself and owns the 1-second
+        // clock, so the rest of the IDE does not re-render with it.
+        return <NotificationsSidebar onRunCommand={handlers.handleCommandExecute} />;
       default:
         return null;
     }
@@ -588,6 +602,7 @@ export default function Home() {
           />
         }
       />
+      {handlers.confirmDialog}
     </>
   );
 }

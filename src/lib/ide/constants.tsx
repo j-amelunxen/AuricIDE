@@ -15,6 +15,16 @@ export const activityItems: ActivityItem[] = [
   { id: 'project-mgmt', icon: 'task_alt', label: 'Plan' },
   { id: 'requirements', icon: 'checklist', label: 'Requirements' },
   { id: 'goal-lines', icon: 'route', label: 'Goal Lines' },
+  // Not primary: the top of the rail states the goal loop, and the inbox cuts
+  // across it rather than being a step in it. Its badge shows here either way,
+  // which is what actually brings you to it.
+  {
+    id: 'notifications',
+    icon: 'notifications',
+    label: 'Notifications',
+    badge: 0,
+    section: 'tools',
+  },
   { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools' },
   { id: 'scratches', icon: 'sticky_note_2', label: 'Scratches', section: 'tools' },
   { id: 'graph', icon: 'hub', label: 'Link Graph', section: 'tools' },

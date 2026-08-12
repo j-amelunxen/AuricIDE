@@ -90,6 +90,8 @@ export function useIDEState() {
   const setFileSearchOpen = useStore((s) => s.setFileSearchOpen);
   const fileSelectorOpen = useStore((s) => s.fileSelectorOpen);
   const setFileSelectorOpen = useStore((s) => s.setFileSelectorOpen);
+  const findInFilesOpen = useStore((s) => s.findInFilesOpen);
+  const setFindInFilesOpen = useStore((s) => s.setFindInFilesOpen);
   const spawnDialogOpen = useStore((s) => s.spawnDialogOpen);
   const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
   const importSpecDialogOpen = useStore((s) => s.importSpecDialogOpen);
@@ -153,9 +155,12 @@ export function useIDEState() {
   const spawnAgentGoalId = useStore((s) => s.spawnAgentGoalId);
   const setSpawnAgentRepoPath = useStore((s) => s.setSpawnAgentRepoPath);
   const spawnAgentRepoPath = useStore((s) => s.spawnAgentRepoPath);
+  const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
+  const spawnAgentPreset = useStore((s) => s.spawnAgentPreset);
   const refreshGitStatus = useStore((s) => s.refreshGitStatus);
   const scratchDir = useStore((s) => s.scratchDir);
   const scratches = useStore((s) => s.scratches);
+  const notificationsUnreadCount = useStore((s) => s.notificationsUnreadCount);
   const scratchStatus = useStore((s) => s.scratchStatus);
   const initScratches = useStore((s) => s.initScratches);
   const refreshScratches = useStore((s) => s.refreshScratches);
@@ -190,6 +195,11 @@ export function useIDEState() {
     oldName: string;
     isDirectory: boolean;
   } | null>(null);
+  // Explorer multi-select: `selectedPaths` is the full selection set,
+  // `selectionAnchor` is where the last plain/ctrl click landed — the pivot
+  // shift-range selection measures from.
+  const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
+  const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
   const [extraTerminals, setExtraTerminals] = useState<ExtraTerminal[]>([]);
   const [diagramDialogFolder, setDiagramDialogFolder] = useState<string | null>(null);
   const canvasTicketCreate = useStore((s) => s.canvasTicketCreate);
@@ -298,6 +308,8 @@ export function useIDEState() {
     setFileSearchOpen,
     fileSelectorOpen,
     setFileSelectorOpen,
+    findInFilesOpen,
+    setFindInFilesOpen,
     spawnDialogOpen,
     setSpawnDialogOpen,
     importSpecDialogOpen,
@@ -355,9 +367,12 @@ export function useIDEState() {
     spawnAgentGoalId,
     setSpawnAgentRepoPath,
     spawnAgentRepoPath,
+    setSpawnAgentPreset,
+    spawnAgentPreset,
     refreshGitStatus,
     scratchDir,
     scratches,
+    notificationsUnreadCount,
     scratchStatus,
     initScratches,
     refreshScratches,
@@ -373,6 +388,10 @@ export function useIDEState() {
     setNewItemModal,
     renameDialog,
     setRenameDialog,
+    selectedPaths,
+    setSelectedPaths,
+    selectionAnchor,
+    setSelectionAnchor,
     extraTerminals,
     setExtraTerminals,
     diagramDialogFolder,

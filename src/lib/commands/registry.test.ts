@@ -202,6 +202,7 @@ describe('the command manifest as the menu contract', () => {
     expect(gated.sort()).toEqual([
       'excalidraw.new',
       'excalidraw.sync-all',
+      'file.find-in-files',
       'file.import-video',
       'file.new',
       'git.commit',

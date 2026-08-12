@@ -3,9 +3,11 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type MouseEvent } from 'react';
 import { useStore } from '@/lib/store';
 import { createAutosave } from '@/lib/editor/autosave';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { TIPS, activityItems } from '../ide/constants';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { type FileNode } from '@/lib/store/fileTreeSlice';
+import type { GitFileStatus } from '@/lib/tauri/git';
 import { serializeMindmap, type MindmapNode } from '@/lib/mindmap/mindmapParser';
 import { type WorkflowNode, serializeWorkflow } from '@/lib/canvas/markdownParser';
 import { serializeObsidianCanvas } from '@/lib/obsidian-canvas/canvasParser';
@@ -35,6 +37,9 @@ import {
 import { type AgentConfig } from '@/lib/tauri/agents';
 import { revealInFileManager } from '@/lib/tauri/opener';
 import { extractTicket } from '@/lib/git/branchTicket';
+import { computeBacklinkWarning } from '@/lib/refactoring/backlinkWarning';
+import { computeFileRenameChanges } from '@/lib/refactoring/renameFile';
+import { applyChangesToContent } from '@/lib/refactoring/applyRenameChanges';
 import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
 import { emptyExcalidrawSceneJson } from '@/lib/excalidraw/serialize';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -70,6 +75,22 @@ export const CONTEXT_BOUND_COMMANDS: Record<string, string> = {
   'markdown.extract-section': 'Put the cursor in the section you want to extract, in the editor.',
 };
 
+/** Maps a git-status entry's raw status string onto the tree's narrower badge set. */
+function resolveGitStatus(relativePath: string, statuses: GitFileStatus[]): FileNode['gitStatus'] {
+  const entry = statuses.find((s) => s.path === relativePath);
+  if (!entry) return undefined;
+  if (entry.status === 'untracked' || entry.status === 'added') return 'added';
+  if (entry.status === 'modified') return 'modified';
+  if (entry.status === 'deleted') return 'deleted';
+  if (entry.status === 'ignored') return 'ignored';
+  return undefined;
+}
+
+function relativeToRoot(path: string, rootPath: string): string {
+  const root = rootPath.endsWith('/') ? rootPath : rootPath + '/';
+  return path.replace(root, '');
+}
+
 function contextBoundAction(id: string): () => void {
   const hint = CONTEXT_BOUND_COMMANDS[id];
   if (!hint) {
@@ -82,6 +103,10 @@ function contextBoundAction(id: string): () => void {
 
 export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const [clipboard, setClipboard] = useState<{ path: string; isDirectory: boolean } | null>(null);
+  // Deliberately not window.confirm: in the Tauri webview it shows its dialog
+  // without pausing the script, so a delete gated on it ran unasked. The page
+  // renders `confirmDialog` for these questions to appear at all.
+  const { confirm, confirmDialog } = useConfirm();
 
   const toFileTreeNodes = useCallback((nodes: FileNode[]): FileTreeNode[] => {
     return nodes.map((n) => ({
@@ -112,16 +137,6 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         const currentTree = useStore.getState().fileTree ?? [];
         const existingByPath = new Map<string, FileNode>(currentTree.map((n) => [n.path, n]));
         const tree: FileNode[] = entries.map((e) => {
-          const relativePath = e.path.replace(path.endsWith('/') ? path : path + '/', '');
-          const statusEntry = statuses.find((s) => s.path === relativePath);
-          let gitStatus: FileNode['gitStatus'] = undefined;
-          if (statusEntry) {
-            if (statusEntry.status === 'untracked' || statusEntry.status === 'added')
-              gitStatus = 'added';
-            else if (statusEntry.status === 'modified') gitStatus = 'modified';
-            else if (statusEntry.status === 'deleted') gitStatus = 'deleted';
-            else if (statusEntry.status === 'ignored') gitStatus = 'ignored';
-          }
           const existing = existingByPath.get(e.path);
           return {
             name: e.name,
@@ -129,19 +144,27 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             isDirectory: e.isDirectory,
             expanded: existing?.expanded ?? false,
             children: existing?.children ?? (e.isDirectory ? [] : undefined),
-            gitStatus,
+            gitStatus: resolveGitStatus(relativeToRoot(e.path, path), statuses),
           };
         });
         state.setFileTree(tree);
         return entries;
       } else {
         const entries = await readDirectory(path);
+        // Lazy-loaded children need the same git-status treatment as the root
+        // tree gets, or a freshly expanded folder shows every file as
+        // untouched — including ones `.gitignore` already dims at the root.
+        const rootPath = state.rootPath;
+        const statuses = useStore.getState().fileStatuses;
         const children: FileNode[] = entries.map((e) => ({
           name: e.name,
           path: e.path,
           isDirectory: e.isDirectory,
           expanded: false,
           children: e.isDirectory ? [] : undefined,
+          gitStatus: rootPath
+            ? resolveGitStatus(relativeToRoot(e.path, rootPath), statuses)
+            : undefined,
         }));
         state.setDirectoryChildren(path, children);
         return entries;
@@ -153,6 +176,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const handleCloseProject = useCallback(() => {
     state.closeProject();
     state.closeAllTabs();
+    state.setSelectedPaths([]);
+    state.setSelectionAnchor(null);
     state.clearLinkIndex();
     state.clearHeadingIndex();
     state.clearEntityIndex();
@@ -217,6 +242,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const handleFileSelect = useCallback(
     async (path: string) => {
       state.selectFile(path);
+      state.setSelectedPaths([path]);
+      state.setSelectionAnchor(path);
       // Activating the tab is all it takes — the activeTabId effect loads the
       // content (and skips redundant reloads when the tab is already active).
       state.openTab({ id: path, path, name: path.split('/').pop() ?? path });
@@ -224,13 +251,83 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state]
   );
 
+  /** Opens a Find-in-Files result: switch to the tab, then jump to its line. */
+  const handleFindInFilesNavigate = useCallback(
+    async (path: string, line: number) => {
+      if (useStore.getState().activeTabId !== path) {
+        await handleFileSelect(path);
+        await loadTabContent(path);
+      }
+      state.setScrollToLine(line);
+    },
+    [state, handleFileSelect, loadTabContent]
+  );
+
+  /** Pure selection — no tab open. What arrow-key navigation should do. */
+  const handleFocusNode = useCallback(
+    (path: string) => {
+      state.selectFile(path);
+      state.setSelectedPaths([path]);
+      state.setSelectionAnchor(path);
+    },
+    [state]
+  );
+
+  const handleToggleSelect = useCallback(
+    (path: string) => {
+      const current =
+        state.selectedPaths.length > 0
+          ? state.selectedPaths
+          : state.selectedPath
+            ? [state.selectedPath]
+            : [];
+      const next = current.includes(path) ? current.filter((p) => p !== path) : [...current, path];
+      state.setSelectedPaths(next);
+      state.selectFile(path);
+      state.setSelectionAnchor(path);
+    },
+    [state]
+  );
+
+  const handleRangeSelect = useCallback(
+    (paths: string[], newPrimary: string) => {
+      state.setSelectedPaths(paths);
+      state.selectFile(newPrimary);
+      // Anchor stays put — repeated shift-clicks keep measuring from the
+      // same pivot, matching Finder/VS Code.
+    },
+    [state]
+  );
+
+  const handleClearSelection = useCallback(() => {
+    state.setSelectedPaths(state.selectedPath ? [state.selectedPath] : []);
+  }, [state]);
+
   const handleToggleDir = useCallback(
     async (path: string) => {
       // Selecting the folder (not just expanding it) is what makes it the
-      // target for "New File"/"New Folder" from the toolbar.
+      // target for "New File"/"New Folder" from the toolbar. A plain click
+      // always replaces whatever multi-selection came before it.
       state.selectFile(path);
+      state.setSelectedPaths([path]);
+      state.setSelectionAnchor(path);
       state.toggleExpand(path);
-      const children = await readDirectory(path);
+      const entries = await readDirectory(path);
+      // Lazy-loaded children need the same git-status treatment as the root
+      // tree gets, or a freshly expanded folder shows every file as
+      // untouched — including ones `.gitignore` already dims at the root.
+      const rootPath = state.rootPath;
+      const statuses = useStore.getState().fileStatuses;
+      const children: FileNode[] = entries.map((e) => ({
+        name: e.name,
+        path: e.path,
+        isDirectory: e.isDirectory,
+        expanded: false,
+        children: e.isDirectory ? [] : undefined,
+        gitStatus: rootPath
+          ? resolveGitStatus(relativeToRoot(e.path, rootPath), statuses)
+          : undefined,
+      }));
       state.setDirectoryChildren(path, children);
     },
     [state]
@@ -903,9 +1000,35 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state]
   );
 
+  /** Right-click on the empty area below the tree — targets the project root. */
+  const handleRootContextMenu = useCallback(
+    (e: MouseEvent) => {
+      const rootPath = state.rootPath;
+      if (!rootPath) return;
+      e.preventDefault();
+      state.setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        node: { path: rootPath, name: '', isDirectory: true },
+      });
+    },
+    [state]
+  );
+
   const handleCopyPath = useCallback((path: string) => {
     navigator.clipboard.writeText(path);
   }, []);
+
+  const handleCopyPaths = useCallback((paths: string[]) => {
+    navigator.clipboard.writeText(paths.join('\n'));
+  }, []);
+
+  const handleRenameRequest = useCallback(
+    (node: FileTreeNode) => {
+      state.setRenameDialog({ path: node.path, oldName: node.name, isDirectory: node.isDirectory });
+    },
+    [state]
+  );
 
   const handleRevealInFileManager = useCallback((path: string) => {
     revealInFileManager(path);
@@ -928,6 +1051,48 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         state.showToast(message, 'error');
         return;
       }
+
+      // Keep [[wiki-links]] pointing at the file we just moved. Directories
+      // don't map to a single wiki-link target, so only files get this.
+      if (
+        !dialog.isDirectory &&
+        (dialog.oldName.endsWith('.md') || dialog.oldName.endsWith('.markdown'))
+      ) {
+        const store = useStore.getState();
+        const referencingPaths = store
+          .getBacklinksFor(dialog.oldName)
+          .filter((p) => p !== dialog.path);
+        if (referencingPaths.length > 0) {
+          try {
+            const referencingFiles = new Map<string, string>();
+            for (const p of referencingPaths) {
+              try {
+                referencingFiles.set(p, await readFile(p));
+              } catch {
+                // Unreadable — leave its links stale rather than fail the rename.
+              }
+            }
+            const changes = computeFileRenameChanges(dialog.oldName, newName, referencingFiles);
+            const byFile = new Map<string, typeof changes>();
+            for (const change of changes) {
+              const list = byFile.get(change.filePath) ?? [];
+              list.push(change);
+              byFile.set(change.filePath, list);
+            }
+            for (const [fp, fileChanges] of byFile) {
+              const original = referencingFiles.get(fp) ?? '';
+              const updated = applyChangesToContent(original, fileChanges);
+              await writeFile(fp, updated);
+              store.updateFileInIndex(fp, updated);
+              if (state.activeTabId === fp) state.setEditorContent(updated);
+            }
+          } catch {
+            // Best-effort: the move already succeeded; don't fail the rename
+            // over a link-rewrite problem.
+          }
+        }
+      }
+
       state.renamePath(dialog.path, destination);
       if (state.selectedPath === dialog.path || state.selectedPath?.startsWith(dialog.path + '/')) {
         state.selectFile(state.selectedPath.replace(dialog.path, destination));
@@ -968,15 +1133,28 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state, handleRefresh]
   );
 
-  const handleDelete = useCallback(
-    async (node: FileTreeNode) => {
-      if (confirm(`Are you sure you want to delete ${node.name}?`)) {
-        const { deleteFile } = await import('@/lib/tauri/fs');
-        await deleteFile(node.path);
-        handleRefresh();
-      }
+  /** Handles both a single delete and a bulk multi-select delete — one confirm either way. */
+  const handleDeleteSelection = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) return;
+      const label =
+        paths.length === 1 ? (paths[0].split('/').pop() ?? paths[0]) : `${paths.length} items`;
+      const backlinkWarning = computeBacklinkWarning(paths, useStore.getState().getBacklinksFor);
+      const message = backlinkWarning
+        ? `This removes ${label} permanently. ${backlinkWarning}`
+        : `This removes ${label} permanently.`;
+      const go = await confirm({
+        title: paths.length === 1 ? 'Delete this file?' : 'Delete these items?',
+        message,
+        confirmLabel: 'Delete',
+      });
+      if (!go) return;
+      const { deleteFile } = await import('@/lib/tauri/fs');
+      await Promise.all(paths.map((p) => deleteFile(p)));
+      state.setSelectedPaths([]);
+      await handleRefresh();
     },
-    [handleRefresh]
+    [state, handleRefresh, confirm]
   );
 
   const handlePaste = useCallback(
@@ -1081,7 +1259,13 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const contextMenuOptions = useMemo<ContextMenuOption[]>(() => {
     if (!state.contextMenu) return [];
     const { node } = state.contextMenu;
+    // Synthetic node from handleRootContextMenu — the empty-area right-click
+    // below the tree. It's a real folder (the project root) but has no
+    // parent, so rename/delete/gitignore don't make sense for it.
+    const isRootContext = node.path === state.rootPath && node.name === '';
+    const isMultiTarget = state.selectedPaths.length > 1 && state.selectedPaths.includes(node.path);
     const parentDir = node.isDirectory ? node.path : node.path.split('/').slice(0, -1).join('/');
+
     const options: ContextMenuOption[] = [
       {
         label: 'New Folder',
@@ -1098,28 +1282,52 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         icon: 'draw',
         action: () => handleNewDiagram(parentDir),
       },
-      {
-        label: 'Copy',
-        icon: 'content_copy',
-        action: () => setClipboard({ path: node.path, isDirectory: node.isDirectory }),
-      },
-      { label: 'Copy Absolute Path', icon: 'link', action: () => handleCopyPath(node.path) },
-      {
-        label: revealInFileManagerLabel(),
-        icon: 'folder_open',
-        action: () => handleRevealInFileManager(node.path),
-      },
-      {
-        label: node.isDirectory ? 'Start Agent with Folder' : 'Start Agent with File',
-        icon: 'bolt',
-        action: () => {
-          state.setInitialAgentTask(
-            `Analyze and work with this ${node.isDirectory ? 'directory' : 'file'}: ${node.path}`
-          );
-          state.setSpawnDialogOpen(true);
-        },
-      },
     ];
+
+    // A multi-selection gets a narrow menu of the ops that make sense across
+    // a set, same as Finder collapsing to "N items" — everything else below
+    // (Rename, gitignore, Reveal…) is only meaningful for one target.
+    if (isMultiTarget) {
+      options.push({ type: 'separator' });
+      options.push({
+        label: `Copy ${state.selectedPaths.length} Paths`,
+        icon: 'content_copy',
+        action: () => handleCopyPaths(state.selectedPaths),
+      });
+      options.push({
+        label: `Delete ${state.selectedPaths.length} Items`,
+        icon: 'delete',
+        action: () => handleDeleteSelection(state.selectedPaths),
+        danger: true,
+      });
+      return options;
+    }
+
+    options.push({
+      label: 'Copy',
+      icon: 'content_copy',
+      action: () => setClipboard({ path: node.path, isDirectory: node.isDirectory }),
+    });
+    options.push({
+      label: 'Copy Absolute Path',
+      icon: 'link',
+      action: () => handleCopyPath(node.path),
+    });
+    options.push({
+      label: revealInFileManagerLabel(),
+      icon: 'folder_open',
+      action: () => handleRevealInFileManager(node.path),
+    });
+    options.push({
+      label: node.isDirectory ? 'Start Agent with Folder' : 'Start Agent with File',
+      icon: 'bolt',
+      action: () => {
+        state.setInitialAgentTask(
+          `Analyze and work with this ${node.isDirectory ? 'directory' : 'file'}: ${node.path}`
+        );
+        state.setSpawnDialogOpen(true);
+      },
+    });
 
     if (node.isDirectory && clipboard) {
       options.push({ label: 'Paste', icon: 'content_paste', action: () => handlePaste(node.path) });
@@ -1154,44 +1362,43 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       });
     }
 
-    // Only offer it for objects inside the project — and never for the
-    // .gitignore itself, which would ignore the rules file.
-    if (
-      toGitignoreEntry(state.rootPath, node.path, node.isDirectory) &&
-      node.name !== '.gitignore'
-    ) {
+    if (!isRootContext) {
+      // Only offer it for objects inside the project — and never for the
+      // .gitignore itself, which would ignore the rules file.
+      if (
+        toGitignoreEntry(state.rootPath, node.path, node.isDirectory) &&
+        node.name !== '.gitignore'
+      ) {
+        options.push({
+          label: 'Add to .gitignore',
+          icon: 'block',
+          action: () => handleAddToGitignore(node),
+        });
+      }
+
       options.push({
-        label: 'Add to .gitignore',
-        icon: 'block',
-        action: () => handleAddToGitignore(node),
+        label: 'Rename',
+        icon: 'edit',
+        action: () => handleRenameRequest(node),
+      });
+
+      options.push({
+        label: 'Delete',
+        icon: 'delete',
+        action: () => handleDeleteSelection([node.path]),
+        danger: true,
       });
     }
-
-    options.push({
-      label: 'Rename',
-      icon: 'edit',
-      action: () =>
-        state.setRenameDialog({
-          path: node.path,
-          oldName: node.name,
-          isDirectory: node.isDirectory,
-        }),
-    });
-
-    options.push({
-      label: 'Delete',
-      icon: 'delete',
-      action: () => handleDelete(node),
-      danger: true,
-    });
 
     return options;
   }, [
     state,
     clipboard,
     handleCopyPath,
+    handleCopyPaths,
     handleRevealInFileManager,
-    handleDelete,
+    handleDeleteSelection,
+    handleRenameRequest,
     handlePaste,
     handleOpenTerminalHere,
     handleNewDiagram,
@@ -1206,6 +1413,9 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'file.open-folder': handleOpenFolder,
       'file.search': () => state.setFileSearchOpen(true),
       'file.advanced-selection': () => state.setFileSelectorOpen(true),
+      'file.find-in-files': () => {
+        if (state.rootPath) state.setFindInFilesOpen(true);
+      },
       'file.save': handleSave,
       'file.new-scratch': () => void handleNewScratch(),
       'file.import-spec': () => state.setImportSpecDialogOpen(true),
@@ -1235,6 +1445,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       },
       'view.goals': () => useStore.getState().setGoalsModalOpen(true),
       'view.goal-lines': () => useStore.getState().setGoalLinesOpen(true),
+      'view.notifications': () => state.setActiveActivity('notifications'),
       'excalidraw.new': () => void handleNewDiagram(),
       'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
       'excalidraw.sync-all': () => {
@@ -1299,9 +1510,17 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           return { ...item, badge: scBadge > 0 ? scBadge : undefined };
         if (item.id === 'project-mgmt')
           return { ...item, badge: openTicketsCount > 0 ? openTicketsCount : undefined };
+        // Unread across every project, never narrowed by the panel's filters —
+        // and deliberately not summed with the agents panel's attention count,
+        // which answers a different question.
+        if (item.id === 'notifications')
+          return {
+            ...item,
+            badge: state.notificationsUnreadCount > 0 ? state.notificationsUnreadCount : undefined,
+          };
         return item;
       }),
-    [scBadge, openTicketsCount]
+    [scBadge, openTicketsCount, state.notificationsUnreadCount]
   );
 
   const dailyTip = useMemo(() => {
@@ -1376,6 +1595,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleCloseProject,
     loadTabContent,
     handleFileSelect,
+    handleFindInFilesNavigate,
     handleToggleDir,
     handleNewFile,
     handleNewSpec,
@@ -1406,10 +1626,16 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleDiscardFile,
     handleDiffFileClick,
     handleContextMenu,
+    handleRootContextMenu,
     handleCopyPath,
     handleRenameConfirm,
     handleAddToGitignore,
-    handleDelete,
+    handleDeleteSelection,
+    handleRenameRequest,
+    handleFocusNode,
+    handleToggleSelect,
+    handleRangeSelect,
+    handleClearSelection,
     handlePaste,
     handleCreateNewItem,
     handleActivitySelect,
@@ -1447,5 +1673,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     isObsidianCanvas,
     isExcalidrawTab,
     isHtmlTab,
+    /** Render this once in the page — the handlers above ask their questions here. */
+    confirmDialog,
   };
 }

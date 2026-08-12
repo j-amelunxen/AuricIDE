@@ -317,7 +317,12 @@ pub fn ensure_auric_dir(project_path: &str) -> Result<PathBuf, String> {
 /// it. Each migration's SQL runs via `execute_batch`, so multi-statement bodies
 /// are supported. Idempotent: a migration whose id is already in `_migrations`
 /// is skipped.
-fn apply_migration(conn: &Connection, id: i64, name: &str, sql: &str) -> Result<(), String> {
+pub(crate) fn apply_migration(
+    conn: &Connection,
+    id: i64,
+    name: &str,
+    sql: &str,
+) -> Result<(), String> {
     let applied: bool = conn
         .query_row(
             "SELECT COUNT(*) > 0 FROM _migrations WHERE id = ?1",

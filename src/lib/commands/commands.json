@@ -30,6 +30,13 @@
       "category": "file",
       "shortcut": "⌘⌥F"
     },
+    {
+      "id": "file.find-in-files",
+      "label": "Find in Files",
+      "category": "file",
+      "requiresProject": true,
+      "shortcut": "⌘⇧H"
+    },
     { "id": "file.save", "label": "Save", "category": "file", "shortcut": "⌘S" },
     { "id": "file.new-scratch", "label": "New Scratch File", "category": "file", "shortcut": "⌘N" },
     { "id": "file.import-spec", "label": "Import Project Spec", "category": "file" },
@@ -92,6 +99,7 @@
     { "id": "view.cockpit", "label": "Open Mission Control", "category": "view" },
     { "id": "view.goals", "label": "Open Goals & Orchestration", "category": "view" },
     { "id": "view.goal-lines", "label": "Open Goal Lines", "category": "view" },
+    { "id": "view.notifications", "label": "Open Notifications", "category": "view" },
     { "id": "excalidraw.browse", "label": "Excalidraw+: Browse Workspace", "category": "view" },
     {
       "id": "markdown.rename-heading",

@@ -25,6 +25,7 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `File > Open Folder` | `file.open-folder` | — | no |
 | `File > Search Files Everywhere` | `file.search` | `Shift Shift` | no |
 | `File > Advanced File Selection (Filter/Copy)` | `file.advanced-selection` | `⌘⌥F` | no |
+| `File > Find in Files` | `file.find-in-files` | `⌘⇧H` | yes |
 | `File > Save` | `file.save` | `⌘S` | no |
 | `File > New Scratch File` | `file.new-scratch` | `⌘N` | no |
 | `File > Import Project Spec` | `file.import-spec` | — | no |
@@ -47,6 +48,7 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `View > Open Mission Control` | `view.cockpit` | — | no |
 | `View > Open Goals & Orchestration` | `view.goals` | — | no |
 | `View > Open Goal Lines` | `view.goal-lines` | — | no |
+| `View > Open Notifications` | `view.notifications` | — | no |
 | `View > Excalidraw+: Browse Workspace` | `excalidraw.browse` | — | no |
 | `Markdown > Rename Heading` | `markdown.rename-heading` | `F2` | no |
 | `Markdown > Find All References` | `markdown.find-references` | `Alt+F7` | no |
