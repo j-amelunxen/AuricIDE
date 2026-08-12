@@ -11,13 +11,7 @@ import { isAgentLive } from './liveness';
  * show both at once. These five states each mean exactly one thing.
  */
 export type AgentState =
-  | 'working'
-  | 'waiting'
-  | 'needs-input'
-  | 'stalled'
-  | 'done'
-  | 'error'
-  | 'queued';
+  'working' | 'waiting' | 'needs-input' | 'stalled' | 'done' | 'error' | 'queued';
 
 export function agentState(agent: AgentInfo, now: number): AgentState {
   switch (agent.status) {

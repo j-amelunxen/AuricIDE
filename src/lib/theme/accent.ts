@@ -9,11 +9,7 @@
  * (CSS variables via setProperty + data-accent for the CSS fallback blocks).
  */
 
-import {
-  BUILTIN_THEMES,
-  DEFAULT_THEME_ID,
-  getBuiltinTheme,
-} from './catalog/builtins';
+import { BUILTIN_THEMES, DEFAULT_THEME_ID, getBuiltinTheme } from './catalog/builtins';
 import { applyTheme } from './catalog/apply';
 import {
   ACCENT_STORAGE_KEY as STORAGE_KEY,

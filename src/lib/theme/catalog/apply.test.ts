@@ -25,9 +25,7 @@ describe('applyTheme', () => {
     expect(document.documentElement.dataset.auricTheme).toBe('blue');
     expect(document.documentElement.dataset.accent).toBe('blue');
     expect(document.documentElement.style.getPropertyValue('--primary')).toBe('#2f6bff');
-    expect(document.documentElement.style.getPropertyValue('--primary-rgb')).toBe(
-      '47, 107, 255'
-    );
+    expect(document.documentElement.style.getPropertyValue('--primary-rgb')).toBe('47, 107, 255');
   });
 
   it('clears data-accent for custom themes', () => {

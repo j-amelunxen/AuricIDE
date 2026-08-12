@@ -18,8 +18,7 @@ function now(): string {
 
 function getReview(db: Database.Database, id: string): TicketReviewRow | undefined {
   return db.prepare('SELECT * FROM pm_ticket_reviews WHERE id = ?').get(id) as
-    | TicketReviewRow
-    | undefined;
+    TicketReviewRow | undefined;
 }
 
 /**

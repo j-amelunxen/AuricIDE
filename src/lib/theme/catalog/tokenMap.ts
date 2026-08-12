@@ -15,11 +15,7 @@ export const TOKEN_CSS_PROPS: Record<keyof ThemeTokens, readonly string[]> = {
   backgroundSecondary: ['--background-secondary', '--color-background-secondary'],
   surface: ['--color-surface'],
   foreground: ['--foreground', '--color-foreground'],
-  foregroundMuted: [
-    '--foreground-muted',
-    '--color-foreground-muted',
-    '--color-muted-foreground',
-  ],
+  foregroundMuted: ['--foreground-muted', '--color-foreground-muted', '--color-muted-foreground'],
   border: ['--border-dark', '--color-border', '--color-border-dark'],
   panelBg: ['--panel-bg', '--color-panel-bg'],
   editorBg: ['--editor-bg', '--color-editor-bg'],

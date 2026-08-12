@@ -63,8 +63,7 @@ export function listRequirements(
 export function getRequirement(db: Database.Database, id: string): RequirementRow | null {
   return (
     (db.prepare('SELECT * FROM pm_requirements WHERE id = ?').get(id) as
-      | RequirementRow
-      | undefined) ?? null
+      RequirementRow | undefined) ?? null
   );
 }
 

@@ -43,9 +43,11 @@ describe('parseStationRow', () => {
   });
 
   it('degrades tautological globs and corrupt JSON', () => {
-    expect(parseStationRow(wire({ predicate: '{"type":"file_exists","glob":"**"}' })).predicate).toEqual(
-      { type: 'undefined' }
-    );
-    expect(parseStationRow(wire({ predicate: 'not-json' })).predicate).toEqual({ type: 'undefined' });
+    expect(
+      parseStationRow(wire({ predicate: '{"type":"file_exists","glob":"**"}' })).predicate
+    ).toEqual({ type: 'undefined' });
+    expect(parseStationRow(wire({ predicate: 'not-json' })).predicate).toEqual({
+      type: 'undefined',
+    });
   });
 });

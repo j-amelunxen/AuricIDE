@@ -33,10 +33,7 @@ export interface ObsidianGroupNode extends ObsidianNodeBase {
 }
 
 export type ObsidianNode =
-  | ObsidianTextNode
-  | ObsidianFileNode
-  | ObsidianLinkNode
-  | ObsidianGroupNode;
+  ObsidianTextNode | ObsidianFileNode | ObsidianLinkNode | ObsidianGroupNode;
 
 export interface ObsidianEdge {
   id: string;

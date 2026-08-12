@@ -8,9 +8,7 @@ import { buildRegistryFromFiles, builtinRegistry, type RegistryLoadResult } from
 export async function loadThemeRegistry(): Promise<RegistryLoadResult> {
   try {
     const files = await listThemes();
-    return buildRegistryFromFiles(
-      files.map((f) => ({ path: f.path, content: f.content }))
-    );
+    return buildRegistryFromFiles(files.map((f) => ({ path: f.path, content: f.content })));
   } catch {
     return builtinRegistry();
   }

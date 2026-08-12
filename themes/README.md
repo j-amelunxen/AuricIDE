@@ -55,31 +55,31 @@ Auric Neon shell.
 
 ## Schema (v1)
 
-| Field | Required | Notes |
-|-------|----------|--------|
-| `schemaVersion` | yes | Currently `1` |
-| `id` | yes | kebab-case `[a-z0-9-]`, unique, not a built-in id |
-| `name` | yes | Label in the picker |
-| `swatch` | yes | CSS colour for the picker dot |
-| `tokens.primary` | yes | Primary / neon colour (selection, borders, badges wash) |
-| `tokens.primaryLight` | no | **Same hue family** as primary — badge text, light accents on primary washes |
-| `tokens.secondary` | no | Optional second accent (e.g. pride pink). Not used for badge-on-primary text |
-| `tokens.secondaryLight` | no | Lighter secondary |
-| `tokens.background` | no | App background |
-| `tokens.backgroundSecondary` | no | Secondary surface |
-| `tokens.surface` | no | Cards / panels |
-| `tokens.foreground` | no | Main text |
-| `tokens.foregroundMuted` | no | Secondary text |
-| `tokens.border` | no | Borders |
-| `tokens.panelBg` | no | Side panels / chrome (`bg-panel-bg`) — use solid `#000` for true black |
-| `tokens.editorBg` | no | Editor / main canvas (`bg-editor-bg`) |
-| `tokens.glassBg` | no | Header/toolbar `.glass` strips |
-| `tokens.glassPanelBg` | no | Side `.glass-panel` chrome |
-| `tokens.hoverBg` | no | Hover wash |
-| `tokens.muted` | no | Muted fill |
-| `tokens.gitAdded` / `gitModified` / `gitDeleted` | no | Git gutter colours |
-| `tokens.bodyGradientFrom` / `bodyGradientTo` | no | Body radial gradient |
-| `description` / `author` | no | Metadata only |
+| Field                                            | Required | Notes                                                                        |
+| ------------------------------------------------ | -------- | ---------------------------------------------------------------------------- |
+| `schemaVersion`                                  | yes      | Currently `1`                                                                |
+| `id`                                             | yes      | kebab-case `[a-z0-9-]`, unique, not a built-in id                            |
+| `name`                                           | yes      | Label in the picker                                                          |
+| `swatch`                                         | yes      | CSS colour for the picker dot                                                |
+| `tokens.primary`                                 | yes      | Primary / neon colour (selection, borders, badges wash)                      |
+| `tokens.primaryLight`                            | no       | **Same hue family** as primary — badge text, light accents on primary washes |
+| `tokens.secondary`                               | no       | Optional second accent (e.g. pride pink). Not used for badge-on-primary text |
+| `tokens.secondaryLight`                          | no       | Lighter secondary                                                            |
+| `tokens.background`                              | no       | App background                                                               |
+| `tokens.backgroundSecondary`                     | no       | Secondary surface                                                            |
+| `tokens.surface`                                 | no       | Cards / panels                                                               |
+| `tokens.foreground`                              | no       | Main text                                                                    |
+| `tokens.foregroundMuted`                         | no       | Secondary text                                                               |
+| `tokens.border`                                  | no       | Borders                                                                      |
+| `tokens.panelBg`                                 | no       | Side panels / chrome (`bg-panel-bg`) — use solid `#000` for true black       |
+| `tokens.editorBg`                                | no       | Editor / main canvas (`bg-editor-bg`)                                        |
+| `tokens.glassBg`                                 | no       | Header/toolbar `.glass` strips                                               |
+| `tokens.glassPanelBg`                            | no       | Side `.glass-panel` chrome                                                   |
+| `tokens.hoverBg`                                 | no       | Hover wash                                                                   |
+| `tokens.muted`                                   | no       | Muted fill                                                                   |
+| `tokens.gitAdded` / `gitModified` / `gitDeleted` | no       | Git gutter colours                                                           |
+| `tokens.bodyGradientFrom` / `bodyGradientTo`     | no       | Body radial gradient                                                         |
+| `description` / `author`                         | no       | Metadata only                                                                |
 
 Hex colours (`#rgb`, `#rrggbb`) also drive `--primary-rgb` / `--primary-light-rgb`
 for glow utilities. Invalid files are skipped; the app keeps running.

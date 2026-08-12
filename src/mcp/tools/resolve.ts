@@ -69,8 +69,7 @@ export function resolveRequirementId(db: Database.Database, idOrReqId: string): 
   // First try as req_id (e.g. "REQ-AUTH-01")
   if (/^REQ-/i.test(idOrReqId)) {
     const row = db.prepare('SELECT id FROM pm_requirements WHERE req_id = ?').get(idOrReqId) as
-      | { id: string }
-      | undefined;
+      { id: string } | undefined;
     if (row) return row.id;
     // Try case-insensitive prefix match
     const rows = db
