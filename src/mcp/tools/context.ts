@@ -35,7 +35,9 @@ function isContextItem(value: unknown): value is ContextItem {
 
 /** Parse stored ticket context; corrupt or partial rows become a filtered list. */
 export function parseContextItems(raw: string | null | undefined): ContextItem[] {
-  if (raw == null || raw === '') return [];
+  // Covers null, undefined and the empty string alike — the stored column is
+  // all three at different times.
+  if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -47,8 +49,7 @@ export function parseContextItems(raw: string | null | undefined): ContextItem[]
 
 function readContext(db: Database.Database, ticketId: string): ContextItem[] {
   const row = db.prepare('SELECT context FROM pm_tickets WHERE id = ?').get(ticketId) as
-    | { context: string }
-    | undefined;
+    { context: string } | undefined;
   if (!row) throw new Error(`Ticket not found: ${ticketId}`);
   return parseContextItems(row.context);
 }

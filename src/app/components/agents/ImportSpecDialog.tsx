@@ -65,10 +65,15 @@ function ImportSpecDialogPanel({
       });
   }, []);
 
-  useEffect(() => {
+  // Adjusting state while rendering, rather than in an effect: React re-runs
+  // this render before touching the DOM, so the fields never paint with the
+  // old provider's model and no second render reaches the screen.
+  const [lastProviderId, setLastProviderId] = useState(currentProvider.id);
+  if (lastProviderId !== currentProvider.id) {
+    setLastProviderId(currentProvider.id);
     setModel(currentProvider.defaultModel);
     setPermissionMode(currentProvider.defaultPermissionMode as PermissionMode);
-  }, [currentProvider]);
+  }
 
   useEffect(() => {
     if (!isOpen) return;
@@ -79,13 +84,17 @@ function ImportSpecDialogPanel({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
+  // Same reasoning: a fresh dialog is a reset of this render, not a follow-up
+  // render after the stale text has already been shown.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
     if (isOpen) {
       setSpecText('');
       setIsLoading(false);
       setError(null);
     }
-  }, [isOpen]);
+  }
 
   const handleImport = async () => {
     const prompt = buildImportSpecPrompt(specText);

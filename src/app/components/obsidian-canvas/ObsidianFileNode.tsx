@@ -27,28 +27,32 @@ export function ObsidianFileNode({ data, selected }: NodeProps & { data: Obsidia
   const containerStyle = getNodeBorderStyle(data.color, selected);
   const fileName = basename(data.file);
 
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!!data.loadFileContent);
-  const [error, setError] = useState(false);
+  // One state tagged with the file it belongs to. "Still loading" is then the
+  // absence of an answer for *this* file rather than a flag the effect has to
+  // raise on its way in — which also stops a slow read of the previous file
+  // from landing on the new one.
+  const [loaded, setLoaded] = useState<{
+    file: string;
+    content: string | null;
+    error: boolean;
+  } | null>(null);
+
+  const isCurrent = loaded?.file === data.file;
+  const loading = !!data.loadFileContent && !isCurrent;
+  const content = isCurrent ? loaded.content : null;
+  const error = isCurrent ? loaded.error : false;
 
   useEffect(() => {
     if (!data.loadFileContent) return;
     let cancelled = false;
-    setLoading(true);
-    setError(false);
+    const file = data.file;
     data
-      .loadFileContent(data.file)
+      .loadFileContent(file)
       .then((text) => {
-        if (!cancelled) {
-          setContent(text);
-          setLoading(false);
-        }
+        if (!cancelled) setLoaded({ file, content: text, error: false });
       })
       .catch(() => {
-        if (!cancelled) {
-          setError(true);
-          setLoading(false);
-        }
+        if (!cancelled) setLoaded({ file, content: null, error: true });
       });
     return () => {
       cancelled = true;
