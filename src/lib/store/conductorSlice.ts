@@ -8,6 +8,7 @@ import { getGoalDescendants, getGoalSatisfaction } from './goalsSlice';
 import type { PmRequirement } from '../tauri/requirements';
 import type { ModelPower } from '../pm/enums';
 import { notifyConductor } from '../ide/conductorNotifications';
+import type { NotificationInput } from '../tauri/notifications';
 import {
   buildReviewAgentPrompt,
   createJudgeBackend,
@@ -331,6 +332,26 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
   const cross = (): Partial<CrossSlices> & Partial<AgentSlice> & Partial<GoalsSlice> =>
     get() as unknown as Partial<CrossSlices> & Partial<AgentSlice> & Partial<GoalsSlice>;
+
+  /**
+   * Mirrors a conductor milestone into the inbox.
+   *
+   * `notifyConductor` is the interruption — an OS banner, and only while the
+   * window is unfocused. This is the record that is still there when you come
+   * back, across every project. Neither replaces the decision log, which is
+   * the run's own transcript and lives and dies with the run.
+   *
+   * Note what these entries deliberately are *not*: an approval gate here is
+   * a pointer, not a second pair of Approve/Skip buttons. The queue in
+   * `ConductorPanel` stays the one place that decision is made, so the two
+   * surfaces cannot drift into disagreeing about what is still pending.
+   */
+  const notifyInbox = (input: Omit<NotificationInput, 'source'>): void => {
+    const inbox = get() as ConductorSlice & {
+      dispatchNotification?: (input: NotificationInput) => Promise<unknown>;
+    };
+    void inbox.dispatchNotification?.({ source: 'system', origin: 'Conductor', ...input });
+  };
 
   // Seals the run's outcome into conductorLastRun. `failed` is derived from
   // the attempt ledger (tickets that exhausted MAX_TICKET_ATTEMPTS), not from
@@ -754,6 +775,22 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             halt();
             finishRun('goal_achieved', goalName, []);
             void notifyConductor('goal_achieved', goalName ?? goalId);
+            notifyInbox({
+              severity: 'success',
+              title: `Ziel erreicht: ${goalName ?? goalId}`,
+              body: 'Alle Tickets fertig, alle Anforderungen verifiziert.',
+              refKind: 'goal',
+              refId: goalId,
+              dedupeKey: `goal:${goalId}:achieved`,
+              actions: [
+                {
+                  id: 'open',
+                  label: 'Ziel öffnen',
+                  kind: 'open',
+                  target: { type: 'goal', goalId },
+                },
+              ],
+            });
           } else {
             halt();
             addDecision({
@@ -762,12 +799,33 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             });
             finishRun('goal_blocked', goalName, satisfaction.blockers);
             void notifyConductor('goal_blocked', satisfaction.blockers.join('; '));
+            notifyInbox({
+              severity: 'warn',
+              title: `Ziel blockiert: ${goalName ?? goalId}`,
+              body: satisfaction.blockers.join(' · '),
+              refKind: 'goal',
+              refId: goalId,
+              dedupeKey: `goal:${goalId}:blocked`,
+              actions: [
+                {
+                  id: 'open',
+                  label: 'Ziel öffnen',
+                  kind: 'open',
+                  target: { type: 'goal', goalId },
+                },
+              ],
+            });
           }
         } else {
           halt();
           addDecision({ action: 'stop', detail: 'All unblocked tickets processed' });
           finishRun('finished', null, []);
           void notifyConductor('run_finished', '');
+          notifyInbox({
+            severity: 'info',
+            title: 'Conductor-Lauf beendet',
+            body: 'Alle nicht blockierten Tickets abgearbeitet.',
+          });
         }
         await persist();
         return;
@@ -796,6 +854,24 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
               ticketId: ticket.id,
             });
             void notifyConductor('approval_needed', ticket.name);
+            // A pointer, not a second set of Approve/Skip buttons — see
+            // notifyInbox. The gate stays where the conductor draws it.
+            notifyInbox({
+              severity: 'warn',
+              title: `Freigabe nötig: ${ticket.name}`,
+              body: 'Der Conductor wartet auf deine Freigabe, bevor er startet.',
+              refKind: 'ticket',
+              refId: ticket.id,
+              dedupeKey: `ticket:${ticket.id}:approval`,
+              actions: [
+                {
+                  id: 'open',
+                  label: 'Zur Freigabe',
+                  kind: 'open',
+                  target: { type: 'ticket', ticketId: ticket.id },
+                },
+              ],
+            });
           }
           continue;
         }

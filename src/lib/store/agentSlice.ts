@@ -15,11 +15,13 @@ import {
 import { deriveAgentActivity } from '../agents/activity';
 import { detectAwaitingInput } from '../agents/awaitingInput';
 import type { AgentColor } from '../agents/colors';
+import { deriveErrorDigest } from '../agents/errorDigest';
 import { isFinishedAgent } from '../agents/fleet';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import { uniqueAgentName } from '../agents/naming';
 import { MAX_TICKET_ATTEMPTS } from './conductorSlice';
 import type { GoalsSlice } from './goalsSlice';
+import type { NotificationInput } from '../tauri/notifications';
 import type { PmGoalRun } from '../tauri/goals';
 
 export const MAX_AGENT_LOGS = 5_000;
@@ -123,10 +125,17 @@ function withoutColors(
   return Object.fromEntries(Object.entries(colors).filter(([id]) => !gone(id)));
 }
 
+/**
+ * Bucket for agents that carry no repo path. It is a label the panel groups
+ * under, never a path — anything matching on it has to test for the absence of
+ * a repoPath instead of comparing against this string.
+ */
+export const UNGROUPED_REPO_KEY = 'Unknown';
+
 export function groupAgentsByRepo(agents: AgentInfo[]): Record<string, AgentInfo[]> {
   const groups: Record<string, AgentInfo[]> = {};
   for (const agent of agents) {
-    const key = agent.repoPath ?? 'Unknown';
+    const key = agent.repoPath ?? UNGROUPED_REPO_KEY;
     if (!groups[key]) groups[key] = [];
     groups[key].push(agent);
   }
@@ -400,6 +409,30 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
           showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
         };
         toaster.showToast?.(`${failing.name} failed · see row output`, 'error');
+        // The toast is the alarm and it interrupts once; this is the record
+        // that survives looking away, and it carries the repo so a failure in
+        // a project you are not currently in is still findable. Same guards on
+        // purpose — one failure, one entry, and nothing at all while the
+        // conductor is about to retry by itself.
+        const inbox = get() as AgentSlice & {
+          dispatchNotification?: (input: NotificationInput) => Promise<unknown>;
+        };
+        void inbox.dispatchNotification?.({
+          source: 'system',
+          origin: failing.name,
+          severity: 'error',
+          title: `${failing.name} failed`,
+          body: deriveErrorDigest(get().agentLogs[agentId] ?? []),
+          projectPath: failing.repoPath ?? null,
+          projectName: failing.repoPath?.split('/').pop() ?? null,
+          refKind: 'agent',
+          refId: agentId,
+          // One row per failed run, so a duplicate stop event cannot stack.
+          dedupeKey: `agent:${agentId}:error`,
+          actions: [
+            { id: 'logs', label: 'Logs öffnen', kind: 'open', target: { type: 'agent', agentId } },
+          ],
+        });
       }
     }
     if (status === 'idle' || status === 'error') {
@@ -559,8 +592,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
                 task: interrupted.task,
                 cwd: interrupted.cwd ?? undefined,
                 permissionMode: (interrupted.permissionMode ?? undefined) as
-                  | AgentConfig['permissionMode']
-                  | undefined,
+                  AgentConfig['permissionMode'] | undefined,
                 dangerouslyIgnorePermissions: interrupted.dangerouslyIgnorePermissions,
                 autoAcceptEdits: interrupted.autoAcceptEdits,
                 provider: interrupted.provider,
@@ -585,9 +617,21 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   },
 
   killAgentsForRepoPath: async (repoPath) => {
-    await killAgentsForRepo(repoPath);
+    const ungrouped = repoPath === UNGROUPED_REPO_KEY;
+    const belongs = (a: AgentInfo) => (ungrouped ? !a.repoPath : a.repoPath === repoPath);
+    if (ungrouped) {
+      // The backend matches on a real repo path, so it would find none of these.
+      // End them one by one instead of reporting a kill that never happened.
+      await Promise.all(
+        get()
+          .agents.filter(belongs)
+          .map((a) => killAgent(a.id).catch(() => undefined))
+      );
+    } else {
+      await killAgentsForRepo(repoPath);
+    }
     const { agents, agentLogs, agentLogMeta, minimizedAgentIds } = get();
-    const killedIds = new Set(agents.filter((a) => a.repoPath === repoPath).map((a) => a.id));
+    const killedIds = new Set(agents.filter(belongs).map((a) => a.id));
     set({
       agents: agents.filter((a) => !killedIds.has(a.id)),
       agentLogs: Object.fromEntries(Object.entries(agentLogs).filter(([id]) => !killedIds.has(id))),

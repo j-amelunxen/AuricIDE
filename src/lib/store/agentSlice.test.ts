@@ -7,6 +7,7 @@ import {
   MAX_AGENT_LOGS,
   MAX_AGENT_LOG_BYTES,
   MAX_FINISHED_AGENTS,
+  UNGROUPED_REPO_KEY,
 } from './agentSlice';
 
 vi.mock('../tauri/agents', () => ({
@@ -221,6 +222,89 @@ describe('agentSlice', () => {
     // A duplicate stop signal must not stack a second toast.
     combined.getState().updateAgentStatus('mock-agent-1', 'error');
     expect(combined.getState().toasts).toHaveLength(1);
+  });
+
+  describe('the inbox record of a failure', () => {
+    async function withInbox() {
+      const { createNotificationsSlice } = await import('./notificationsSlice');
+      type Combined = AgentSlice & import('./notificationsSlice').NotificationsSlice;
+      const combined = createStore<Combined>()((...a) => ({
+        ...createAgentSlice(...a),
+        ...createNotificationsSlice(...a),
+      }));
+      await combined.getState().spawnNewAgent({
+        name: 'Writer',
+        model: 'claude-opus-4-6',
+        task: 'Write docs',
+      });
+      return combined;
+    }
+
+    // The toast interrupts; this is what is still there tomorrow. The record
+    // is the reason a failure in a repo you are not looking at is findable.
+    it('writes one entry naming the agent', async () => {
+      const combined = await withInbox();
+      combined.getState().updateAgentStatus('mock-agent-1', 'error');
+
+      await vi.waitFor(() => {
+        expect(combined.getState().notifications).toHaveLength(1);
+      });
+      const entry = combined.getState().notifications[0];
+      expect(entry.title).toContain('Writer');
+      expect(entry.severity).toBe('error');
+      expect(entry.refKind).toBe('agent');
+      expect(entry.refId).toBe('mock-agent-1');
+    });
+
+    it('offers a way back to the agent output', async () => {
+      const combined = await withInbox();
+      combined.getState().updateAgentStatus('mock-agent-1', 'error');
+
+      await vi.waitFor(() => {
+        expect(combined.getState().notifications).toHaveLength(1);
+      });
+      expect(combined.getState().notifications[0].actions).toEqual([
+        {
+          id: 'logs',
+          label: 'Logs öffnen',
+          kind: 'open',
+          target: { type: 'agent', agentId: 'mock-agent-1' },
+        },
+      ]);
+    });
+
+    it('does not stack on a duplicate stop signal', async () => {
+      const combined = await withInbox();
+      combined.getState().updateAgentStatus('mock-agent-1', 'error');
+      await vi.waitFor(() => expect(combined.getState().notifications).toHaveLength(1));
+
+      combined.getState().updateAgentStatus('mock-agent-1', 'error');
+      // Long enough for a second dispatch to have landed if one were made.
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(combined.getState().notifications).toHaveLength(1);
+    });
+
+    it('writes nothing while the conductor will retry the ticket itself', async () => {
+      const combined = await withInbox();
+      combined.setState({
+        conductorAssignments: { 'ticket-1': 'mock-agent-1' },
+        conductorFailedTickets: {},
+      } as never);
+
+      combined.getState().updateAgentStatus('mock-agent-1', 'error');
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(combined.getState().notifications).toHaveLength(0);
+    });
+
+    it('writes nothing for a clean finish', async () => {
+      const combined = await withInbox();
+      combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(combined.getState().notifications).toHaveLength(0);
+    });
   });
 
   it('stays silent while the conductor will retry the ticket itself', async () => {
@@ -453,6 +537,42 @@ describe('agentSlice', () => {
     await store.getState().killAgentsForRepoPath('/repo-a');
     expect(store.getState().agents).toHaveLength(1);
     expect(store.getState().agents[0].id).toBe('2');
+  });
+
+  it('killAgentsForRepoPath ends agents that carry no repo path', async () => {
+    const { killAgent, killAgentsForRepo } = await import('../tauri/agents');
+    vi.mocked(killAgent).mockClear();
+    vi.mocked(killAgentsForRepo).mockClear();
+    store.setState({
+      agents: [
+        {
+          id: '1',
+          name: 'A',
+          model: 'm',
+          provider: 'claude',
+          status: 'running' as const,
+          startedAt: 0,
+        },
+        {
+          id: '2',
+          name: 'B',
+          model: 'm',
+          provider: 'claude',
+          status: 'running' as const,
+          startedAt: 0,
+          repoPath: '/repo-b',
+        },
+      ],
+    });
+
+    // 'Unknown' is the bucket groupAgentsByRepo shows these under — a display
+    // key, never a path. Stop all on that group has to actually end them
+    // instead of matching a repo path nobody has.
+    await store.getState().killAgentsForRepoPath(UNGROUPED_REPO_KEY);
+
+    expect(store.getState().agents.map((a) => a.id)).toEqual(['2']);
+    expect(killAgent).toHaveBeenCalledWith('1');
+    expect(killAgentsForRepo).not.toHaveBeenCalled();
   });
 
   it('killAgentsForRepoPath drops logs and metadata of killed agents', async () => {
