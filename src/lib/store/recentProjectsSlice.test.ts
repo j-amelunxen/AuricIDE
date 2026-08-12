@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import { useStore } from './index';
 
 const mockStorage: Record<string, string> = {};
@@ -13,7 +13,14 @@ beforeEach(() => {
     removeItem: vi.fn((key: string) => {
       delete mockStorage[key];
     }),
+    clear: vi.fn(() => {
+      Object.keys(mockStorage).forEach((k) => delete mockStorage[k]);
+    }),
   });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('recentProjectsSlice', () => {
@@ -96,6 +103,20 @@ describe('recentProjectsSlice', () => {
     mockStorage['auric-recent-projects'] = 'not-json';
     useStore.getState().loadRecentProjects();
     expect(useStore.getState().recentProjects).toEqual([]);
+  });
+
+  it('keeps the list an array when the backend answers with nothing', async () => {
+    // The type says RecentProject[]; consumers call .length and .map on it
+    // without asking. A backend that answers null must not be able to turn
+    // that into a crash three components away.
+    mockStorage['auric-recent-projects'] = JSON.stringify([
+      { path: '/kept', name: 'kept', openedAt: 1000 },
+    ]);
+
+    await useStore.getState().loadRecentProjects();
+
+    expect(Array.isArray(useStore.getState().recentProjects)).toBe(true);
+    expect(useStore.getState().recentProjects[0]?.path).toBe('/kept');
   });
 
   it('derives the project name from the last path segment', () => {
