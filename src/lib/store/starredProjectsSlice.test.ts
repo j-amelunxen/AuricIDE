@@ -191,5 +191,46 @@ describe('starredProjectsSlice', () => {
       useStore.getState().addStarredProject('/a');
       expect(useStore.getState().starredProjects[0].skills).toBeUndefined();
     });
+
+    it('stores a skill combo against one project only', () => {
+      const combo = {
+        id: 'c1',
+        label: 'Draft and polish',
+        steps: [
+          { id: 's1', label: 'Finalize', prompt: '/sig-blog-finalize' },
+          { id: 's2', label: 'Rewrite', prompt: 'rewrite so it does not sound so shit' },
+        ],
+      };
+      useStore.getState().setStarredProjectCombos('/a', [combo]);
+      const [a, b] = useStore.getState().starredProjects;
+      expect(a.combos).toEqual([combo]);
+      expect(b.combos).toBeUndefined();
+    });
+
+    it('changes the combos without disturbing the icon or the skills', () => {
+      const combo = {
+        id: 'c1',
+        label: 'Draft and polish',
+        steps: [blogartikel, { id: 's2', label: 'Rewrite', prompt: '/rewrite' }],
+      };
+      useStore.getState().setStarredProjectIcon('/a', glyph);
+      useStore.getState().setStarredProjectSkills('/a', [blogartikel]);
+      useStore.getState().setStarredProjectCombos('/a', [combo]);
+      const [a] = useStore.getState().starredProjects;
+      expect(a.icon).toEqual(glyph);
+      expect(a.skills).toEqual([blogartikel]);
+      expect(a.combos).toEqual([combo]);
+    });
+
+    it('keeps combos when only the icon changes', () => {
+      const combo = {
+        id: 'c1',
+        label: 'Draft and polish',
+        steps: [blogartikel, { id: 's2', label: 'Rewrite', prompt: '/rewrite' }],
+      };
+      useStore.getState().setStarredProjectCombos('/a', [combo]);
+      useStore.getState().setStarredProjectIcon('/a', glyph);
+      expect(useStore.getState().starredProjects[0].combos).toEqual([combo]);
+    });
   });
 });

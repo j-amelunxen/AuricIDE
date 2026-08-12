@@ -44,9 +44,18 @@ export interface QuickAccessSkill {
   invocation?: string;
 }
 
+/** An ordered chain of launch presets. Ending one step starts the next. */
+export interface QuickAccessCombo {
+  id: string;
+  label: string;
+  steps: QuickAccessSkill[];
+}
+
 export interface StarredProjectSettings {
   icon?: ProjectIconOverride;
   skills: QuickAccessSkill[];
+  /** Absent on older callers — keep the record's existing list in that case. */
+  combos?: QuickAccessCombo[];
 }
 
 export interface StarredProject {
@@ -60,10 +69,19 @@ export interface StarredProject {
    * through {@link quickAccessSkills}, never as `project.skills.map(...)`.
    */
   skills?: QuickAccessSkill[];
+  /**
+   * Same as {@link skills}: older records have no key. Read through
+   * {@link quickAccessCombos}.
+   */
+  combos?: QuickAccessCombo[];
 }
 
 export function quickAccessSkills(project: StarredProject): QuickAccessSkill[] {
   return project.skills ?? [];
+}
+
+export function quickAccessCombos(project: StarredProject): QuickAccessCombo[] {
+  return project.combos ?? [];
 }
 
 /**
@@ -74,9 +92,7 @@ export function isRenderableIcon(icon: unknown): icon is ProjectIconOverride {
   if (typeof icon !== 'object' || icon === null) return false;
   const candidate = icon as { kind?: unknown; value?: unknown };
   return (
-    (candidate.kind === 'glyph' ||
-      candidate.kind === 'emoji' ||
-      candidate.kind === 'image') &&
+    (candidate.kind === 'glyph' || candidate.kind === 'emoji' || candidate.kind === 'image') &&
     typeof candidate.value === 'string' &&
     candidate.value.length > 0
   );
@@ -92,6 +108,7 @@ export interface StarredProjectsSlice {
   updateStarredProjectSettings: (path: string, settings: StarredProjectSettings) => void;
   setStarredProjectIcon: (path: string, icon: ProjectIconOverride | undefined) => void;
   setStarredProjectSkills: (path: string, skills: QuickAccessSkill[]) => void;
+  setStarredProjectCombos: (path: string, combos: QuickAccessCombo[]) => void;
 }
 
 function loadLegacyProjects(): StarredProject[] {
@@ -195,7 +212,14 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
     // mirrored into localStorage verbatim, so a reconstructed one would drop
     // any field a newer build added and this one does not know about.
     const updated = existing.map((p) =>
-      p.path === path ? { ...p, icon: settings.icon, skills: settings.skills } : p
+      p.path === path
+        ? {
+            ...p,
+            icon: settings.icon,
+            skills: settings.skills,
+            combos: settings.combos ?? p.combos,
+          }
+        : p
     );
     set({ starredProjects: updated });
     persist(updated);
@@ -213,13 +237,31 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
   setStarredProjectIcon: (path, icon) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, { icon, skills: quickAccessSkills(target) });
+    get().updateStarredProjectSettings(path, {
+      icon,
+      skills: quickAccessSkills(target),
+      combos: quickAccessCombos(target),
+    });
   },
 
   setStarredProjectSkills: (path, skills) => {
     const target = get().starredProjects.find((p) => p.path === path);
     if (!target) return;
-    get().updateStarredProjectSettings(path, { icon: target.icon, skills });
+    get().updateStarredProjectSettings(path, {
+      icon: target.icon,
+      skills,
+      combos: quickAccessCombos(target),
+    });
+  },
+
+  setStarredProjectCombos: (path, combos) => {
+    const target = get().starredProjects.find((p) => p.path === path);
+    if (!target) return;
+    get().updateStarredProjectSettings(path, {
+      icon: target.icon,
+      skills: quickAccessSkills(target),
+      combos,
+    });
   },
 
   loadStarredProjects: async () => {

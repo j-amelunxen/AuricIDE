@@ -302,6 +302,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       spawnedByGoalId: failed.spawnedByGoalId,
     };
     const replacement = await get().spawnNewAgent(config);
+    // A combo step's retry is the same step with a new agent — rebind before
+    // dismiss, or dismissing would start the next skill as well.
+    const combo = get() as AgentSlice & {
+      rebindSkillComboAgent?: (fromAgentId: string, toAgentId: string) => void;
+    };
+    combo.rebindSkillComboAgent?.(agentId, replacement.id);
     // The failed run is answered by its retry — it leaves the review pile.
     get().dismissFinishedAgent(agentId);
     return replacement;
@@ -355,6 +361,14 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => id !== agentId),
       agentColors: withoutColors(get().agentColors, (id) => id === agentId),
     });
+
+    // Ending this agent is ending this step, not the combo — the next skill
+    // starts here. Awaited so a test (and a user who immediately looks) sees
+    // the successor already in the fleet.
+    const combo = get() as AgentSlice & {
+      skillComboHandleAgentEnded?: (agentId: string) => Promise<void>;
+    };
+    await combo.skillComboHandleAgentEnded?.(agentId);
   },
 
   renameRunningAgent: async (agentId, name) => {
@@ -395,6 +409,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentColors: withoutColors(get().agentColors, (id) => id === agentId),
       reviewedAgentIds: get().reviewedAgentIds.filter((id) => id !== agentId),
     });
+
+    // Dismissing a finished combo step is "I'm done reviewing" — start the next.
+    const combo = get() as AgentSlice & {
+      skillComboHandleAgentEnded?: (agentId: string) => Promise<void>;
+    };
+    void combo.skillComboHandleAgentEnded?.(agentId);
   },
 
   updateAgentStatus: (agentId, status) => {
@@ -632,6 +652,10 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     }
     const { agents, agentLogs, agentLogMeta, minimizedAgentIds } = get();
     const killedIds = new Set(agents.filter(belongs).map((a) => a.id));
+    const combo = get() as AgentSlice & {
+      cancelSkillCombosForAgents?: (agentIds: string[]) => void;
+    };
+    combo.cancelSkillCombosForAgents?.([...killedIds]);
     set({
       agents: agents.filter((a) => !killedIds.has(a.id)),
       agentLogs: Object.fromEntries(Object.entries(agentLogs).filter(([id]) => !killedIds.has(id))),

@@ -18,6 +18,8 @@ const MAX_RECENT_PROJECTS: usize = 50;
 /// starred record now costs the user an icon and a list of launch presets.
 const MAX_STARRED_PROJECTS: usize = 50;
 const MAX_SKILLS_PER_PROJECT: usize = 20;
+const MAX_COMBOS_PER_PROJECT: usize = 20;
+const MAX_STEPS_PER_COMBO: usize = 8;
 const LEGACY_KEY: &str = "auric-recent-projects";
 const LEGACY_STARRED_KEY: &str = "auric-starred-projects";
 
@@ -64,6 +66,16 @@ pub struct QuickAccessSkill {
     pub headless: Option<bool>,
 }
 
+/// An ordered chain of launch presets. Ending one step starts the next.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickAccessCombo {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub steps: Vec<QuickAccessSkill>,
+}
+
 /// The per-project Quick Access settings, as one blob. They live INSIDE the
 /// starred record on purpose: unstarring a project drops its settings with it,
 /// which is the behaviour without any cleanup logic to get wrong.
@@ -74,6 +86,8 @@ pub struct StarredProjectSettings {
     pub icon: Option<ProjectIconOverride>,
     #[serde(default)]
     pub skills: Vec<QuickAccessSkill>,
+    #[serde(default)]
+    pub combos: Vec<QuickAccessCombo>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -94,6 +108,8 @@ pub struct StarredProject {
     /// loses every star on upgrade.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<QuickAccessSkill>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub combos: Vec<QuickAccessCombo>,
 }
 
 impl StarredProject {
@@ -113,6 +129,9 @@ impl StarredProject {
         // resurrect skills the user deliberately deleted.
         if self.skills.is_empty() {
             self.skills = other.skills;
+        }
+        if self.combos.is_empty() {
+            self.combos = other.combos;
         }
         if self.name.trim().is_empty() {
             self.name = other.name;
@@ -403,6 +422,25 @@ fn normalize_skills(skills: Vec<QuickAccessSkill>) -> Vec<QuickAccessSkill> {
         .collect()
 }
 
+fn normalize_combos(combos: Vec<QuickAccessCombo>) -> Vec<QuickAccessCombo> {
+    let mut seen = std::collections::HashSet::new();
+    combos
+        .into_iter()
+        .map(|mut combo| {
+            combo.id = combo.id.trim().to_string();
+            combo.label = combo.label.trim().to_string();
+            combo.steps = normalize_skills(combo.steps)
+                .into_iter()
+                .take(MAX_STEPS_PER_COMBO)
+                .collect();
+            combo
+        })
+        .filter(|combo| !combo.id.is_empty() && !combo.label.is_empty())
+        .filter(|combo| seen.insert(combo.id.clone()))
+        .take(MAX_COMBOS_PER_PROJECT)
+        .collect()
+}
+
 /// Replaces one project's settings blob. Returns false when the path is not
 /// starred — a settings write for an unstarred path means the UI is out of
 /// sync, and silently resurrecting a star would be the worse failure.
@@ -416,6 +454,7 @@ fn apply_starred_settings(
     };
     target.icon = settings.icon;
     target.skills = normalize_skills(settings.skills);
+    target.combos = normalize_combos(settings.combos);
     true
 }
 
@@ -437,6 +476,7 @@ fn push_starred_project(projects: &mut Vec<StarredProject>, path: String, starre
         starred_at,
         icon: None,
         skills: Vec::new(),
+        combos: Vec::new(),
     });
 }
 
@@ -681,6 +721,15 @@ mod tests {
             starred_at,
             icon: None,
             skills: Vec::new(),
+            combos: Vec::new(),
+        }
+    }
+
+    fn combo(id: &str, steps: Vec<QuickAccessSkill>) -> QuickAccessCombo {
+        QuickAccessCombo {
+            id: id.into(),
+            label: id.into(),
+            steps,
         }
     }
 
@@ -743,7 +792,7 @@ mod tests {
             model: Some("opus".into()),
             permission_mode: Some("plan".into()),
             headless: Some(true),
-            ..skill("blogartikel")
+            ..skill("changelog")
         }];
 
         write_starred_store_atomic(&path, std::slice::from_ref(&project)).unwrap();
@@ -779,13 +828,13 @@ mod tests {
             kind: "emoji".into(),
             value: "🚀".into(),
         });
-        rich.skills = vec![skill("blogartikel")];
+        rich.skills = vec![skill("changelog")];
 
         let merged = merge_starred_projects(vec![starred("/a", 1), rich]);
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].icon.as_ref().unwrap().value, "🚀");
-        assert_eq!(merged[0].skills, vec![skill("blogartikel")]);
+        assert_eq!(merged[0].skills, vec![skill("changelog")]);
         // Identity and "pinned since" stay with the earliest claim.
         assert_eq!(merged[0].starred_at, 1);
     }
@@ -815,6 +864,7 @@ mod tests {
                     value: "bolt".into(),
                 }),
                 skills: vec![skill("seo")],
+                combos: Vec::new(),
             },
         );
 
@@ -840,7 +890,7 @@ mod tests {
     #[test]
     fn add_does_not_reset_existing_settings() {
         let mut configured = starred("/a", 1);
-        configured.skills = vec![skill("blogartikel")];
+        configured.skills = vec![skill("changelog")];
         let mut projects = vec![configured.clone()];
 
         push_starred_project(&mut projects, "/a".into(), 999);
@@ -877,5 +927,71 @@ mod tests {
             "a duplicate id must not survive"
         );
         assert!(normalized.iter().all(|s| !s.label.trim().is_empty()));
+    }
+
+    #[test]
+    fn starred_store_round_trips_combos() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("starred-projects.json");
+        let mut project = starred("/a", 1);
+        project.combos = vec![combo(
+            "blog-write",
+            vec![skill("finalize"), skill("rewrite")],
+        )];
+
+        write_starred_store_atomic(&path, std::slice::from_ref(&project)).unwrap();
+
+        assert_eq!(read_starred_store(&path).unwrap().unwrap(), vec![project]);
+    }
+
+    #[test]
+    fn merge_starred_absorbs_combos_from_a_bare_winner() {
+        let mut rich = starred("/a", 5);
+        rich.combos = vec![combo(
+            "blog-write",
+            vec![skill("finalize"), skill("rewrite")],
+        )];
+
+        let merged = merge_starred_projects(vec![starred("/a", 1), rich]);
+
+        assert_eq!(merged[0].combos.len(), 1);
+        assert_eq!(merged[0].combos[0].id, "blog-write");
+        assert_eq!(merged[0].starred_at, 1);
+    }
+
+    #[test]
+    fn merge_starred_never_resurrects_deleted_combos() {
+        let mut current = starred("/a", 1);
+        current.combos = vec![combo("kept", vec![skill("a"), skill("b")])];
+        let mut stale = starred("/a", 2);
+        stale.combos = vec![
+            combo("kept", vec![skill("a"), skill("b")]),
+            combo("deleted", vec![skill("c"), skill("d")]),
+        ];
+
+        let merged = merge_starred_projects(vec![current, stale]);
+
+        assert_eq!(merged[0].combos.len(), 1);
+        assert_eq!(merged[0].combos[0].id, "kept");
+    }
+
+    #[test]
+    fn apply_settings_writes_combos() {
+        let mut projects = vec![starred("/a", 1)];
+
+        let applied = apply_starred_settings(
+            &mut projects,
+            "/a",
+            StarredProjectSettings {
+                combos: vec![combo(
+                    "blog-write",
+                    vec![skill("finalize"), skill("rewrite")],
+                )],
+                ..StarredProjectSettings::default()
+            },
+        );
+
+        assert!(applied);
+        assert_eq!(projects[0].combos[0].id, "blog-write");
     }
 }

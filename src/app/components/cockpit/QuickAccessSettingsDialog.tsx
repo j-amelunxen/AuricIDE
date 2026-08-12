@@ -10,13 +10,16 @@ import { FALLBACK_CRUSH_PROVIDER, listProviders, type ProviderInfo } from '@/lib
 import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
 import {
+  quickAccessCombos,
   quickAccessSkills,
   type ProjectIconOverride,
+  type QuickAccessCombo,
   type QuickAccessSkill,
   type StarredProject,
 } from '@/lib/store/starredProjectsSlice';
 import { QuickAccessIconPicker } from './QuickAccessIconPicker';
 import { QuickAccessSkillsEditor } from './QuickAccessSkillsEditor';
+import { QuickAccessCombosEditor } from './QuickAccessCombosEditor';
 
 interface QuickAccessSettingsDialogProps {
   project: StarredProject;
@@ -40,6 +43,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
 
   const [icon, setIcon] = useState<ProjectIconOverride | undefined>(project.icon);
   const [skills, setSkills] = useState<QuickAccessSkill[]>(quickAccessSkills(project));
+  const [combos, setCombos] = useState<QuickAccessCombo[]>(quickAccessCombos(project));
   const [announcement, setAnnouncement] = useState('');
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
@@ -73,9 +77,20 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
   }, [project.path]);
 
   const dirty =
-    JSON.stringify({ icon, skills }) !==
-    JSON.stringify({ icon: project.icon, skills: quickAccessSkills(project) });
-  const incomplete = skills.some((skill) => !skill.label.trim() || !skill.prompt.trim());
+    JSON.stringify({ icon, skills, combos }) !==
+    JSON.stringify({
+      icon: project.icon,
+      skills: quickAccessSkills(project),
+      combos: quickAccessCombos(project),
+    });
+  const incompleteSkill = skills.some((skill) => !skill.label.trim() || !skill.prompt.trim());
+  const incompleteCombo = combos.some(
+    (combo) =>
+      !combo.label.trim() ||
+      combo.steps.length < 2 ||
+      combo.steps.some((step) => !step.label.trim() || !step.prompt.trim())
+  );
+  const incomplete = incompleteSkill || incompleteCombo;
 
   const requestClose = () => (dirty ? setConfirmDiscard(true) : onClose());
 
@@ -87,6 +102,15 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
         ...skill,
         label: skill.label.trim(),
         prompt: skill.prompt.trim(),
+      })),
+      combos: combos.map((combo) => ({
+        ...combo,
+        label: combo.label.trim(),
+        steps: combo.steps.map((step) => ({
+          ...step,
+          label: step.label.trim(),
+          prompt: step.prompt.trim(),
+        })),
       })),
     });
     onClose();
@@ -142,12 +166,25 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
           onAnnounce={setAnnouncement}
         />
 
+        <QuickAccessCombosEditor
+          combos={combos}
+          providers={providers}
+          discovered={discovered}
+          discoveryReady={discoveryReady}
+          onChange={setCombos}
+          onAnnounce={setAnnouncement}
+        />
+
         <p role="status" aria-live="polite" className="sr-only">
           {announcement}
         </p>
 
         {incomplete && (
-          <p className="text-[10px] text-amber-400/80">Every skill needs a name and a prompt.</p>
+          <p className="text-[10px] text-amber-400/80">
+            {incompleteCombo
+              ? 'Every combo needs a name and at least two complete steps.'
+              : 'Every skill needs a name and a prompt.'}
+          </p>
         )}
 
         <footer className="flex justify-end gap-3 border-t border-white/5 pt-4">

@@ -12,6 +12,7 @@ import { agentAttention } from '@/lib/agents/attention';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { agentDisplayName } from '@/lib/agents/displayName';
+import { ComboProgressBadge } from './ComboProgressBadge';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -120,6 +121,7 @@ export function CompactAgentRow({
         }`}
       >
         {displayName}
+        <ComboProgressBadge agentId={agent.id} className="ml-1.5" />
         {errorDigest && (
           <span data-testid="agent-error-digest" className="ml-1.5 text-[10px] text-red-400/80">
             {errorDigest}

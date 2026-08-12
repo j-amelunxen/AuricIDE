@@ -12,6 +12,7 @@ import { stripAnsi } from '@/lib/terminal/ansi';
 import { scrollBehavior } from '@/lib/motion';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { agentDisplayIdentity } from '@/lib/agents/displayName';
+import { ComboProgressBadge } from './ComboProgressBadge';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -69,6 +70,8 @@ export function AgentCard({
   const markerHex = agentColorHex(color);
   const markerLabel = agentColorLabel(color);
   const { displayName, taskSummary } = agentDisplayIdentity(agent.name, agent.currentTask);
+  const comboRun = useStore((s) => s.comboRuns.find((run) => run.currentAgentId === agent.id));
+  const cancelSkillCombo = useStore((s) => s.cancelSkillCombo);
 
   /**
    * One duration, chosen by state. While an agent is quiet, how long it has
@@ -282,13 +285,16 @@ export function AgentCard({
             ) : (
               /* One line, always. The name is the loudest thing on the card
                  because it is what you are looking for. */
-              <h3
-                onDoubleClick={onRename ? startRename : undefined}
-                title={nameTooltip}
-                className="truncate font-display text-[13px] font-semibold leading-tight tracking-[-0.01em] text-foreground transition-colors group-hover:text-primary"
-              >
-                {displayName}
-              </h3>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <h3
+                  onDoubleClick={onRename ? startRename : undefined}
+                  title={nameTooltip}
+                  className="truncate font-display text-[13px] font-semibold leading-tight tracking-[-0.01em] text-foreground transition-colors group-hover:text-primary"
+                >
+                  {displayName}
+                </h3>
+                <ComboProgressBadge agentId={agent.id} />
+              </div>
             )}
             {/* One quiet line of context: which model, and the single duration
                 that matters in this state. Never two bare numbers. */}
@@ -362,13 +368,27 @@ export function AgentCard({
               className="text-sm"
             />
           </button>
+          {comboRun && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                cancelSkillCombo(comboRun.id);
+              }}
+              className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-100 focus-visible:opacity-100"
+              title="Cancel remaining combo steps"
+              aria-label="Cancel combo"
+            >
+              <AuricIcon name="block" aria-hidden="true" className="text-sm" />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onKill(agent.id);
             }}
             className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60 group-hover:opacity-100 focus-visible:opacity-100"
-            title="Terminate Agent"
+            title={comboRun ? 'End this step — next skill starts' : 'Terminate Agent'}
             aria-label="Terminate Agent"
           >
             <AuricIcon name="power_settings_new" aria-hidden="true" className="text-sm" />

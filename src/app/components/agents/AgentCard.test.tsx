@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { AgentCard } from './AgentCard';
+import { useStore } from '@/lib/store';
 
 // Mock useNow to return current time (avoids stale module-scope timestamps)
 vi.mock('@/lib/hooks/useNow', () => ({
@@ -44,9 +45,35 @@ const idleAgent: AgentInfo = {
 };
 
 describe('AgentCard', () => {
+  afterEach(() => {
+    useStore.setState({ comboRuns: [] });
+  });
+
   it('renders agent name', () => {
     render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
     expect(screen.getByText('Writer')).toBeInTheDocument();
+  });
+
+  it('marks a combo step as 1 / 3 on the card', () => {
+    useStore.setState({
+      comboRuns: [
+        {
+          id: 'r1',
+          comboId: 'c1',
+          label: 'Draft and polish',
+          projectPath: '/a/website',
+          steps: [
+            { id: 's1', label: 'Finalize', prompt: '/finalize' },
+            { id: 's2', label: 'Rewrite', prompt: '/rewrite' },
+            { id: 's3', label: 'Polish', prompt: '/polish' },
+          ],
+          currentIndex: 0,
+          currentAgentId: 'agent-1',
+        },
+      ],
+    });
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    expect(screen.getByTestId('combo-progress')).toHaveTextContent('1 / 3');
   });
 
   it('renders abbreviated model name', () => {

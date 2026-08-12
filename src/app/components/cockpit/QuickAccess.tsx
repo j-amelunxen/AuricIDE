@@ -3,10 +3,13 @@
 import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import {
+  quickAccessCombos,
   quickAccessSkills,
+  type QuickAccessCombo,
   type QuickAccessSkill,
   type StarredProject,
 } from '@/lib/store/starredProjectsSlice';
+import { comboMenuLabel } from '@/lib/quickAccess/combo';
 import { ProjectTileFace } from './ProjectTileFace';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -86,6 +89,15 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
         }`}
       >
         <ProjectTileFace path={project.path} icon={project.icon} />
+        {quickAccessCombos(project).length > 0 && (
+          <span
+            data-testid={`quick-access-combo-mark-${project.path}`}
+            aria-hidden="true"
+            className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold leading-none text-white shadow"
+          >
+            +
+          </span>
+        )}
       </button>
       <span
         title={project.name}
@@ -173,6 +185,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const setSpawnAgentGoalId = useStore((s) => s.setSpawnAgentGoalId);
   const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
   const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
+  const startSkillCombo = useStore((s) => s.startSkillCombo);
   const showToast = useStore((s) => s.showToast);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(
@@ -194,6 +207,8 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
     : undefined;
   const menuSkills = menuProject ? quickAccessSkills(menuProject) : [];
   const shownSkills = menuSkills.slice(0, MAX_MENU_SKILLS);
+  const menuCombos = menuProject ? quickAccessCombos(menuProject) : [];
+  const shownCombos = menuCombos.slice(0, MAX_MENU_SKILLS);
 
   /**
    * The one path into the spawn dialog. Everything a previous entry point may
@@ -217,8 +232,32 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
     setSpawnDialogOpen(true);
   };
 
+  const launchCombo = (path: string, combo: QuickAccessCombo) => {
+    void startSkillCombo(path, combo);
+  };
+
+  const overflowItem = (hidden: number): ContextMenuOption => ({
+    label: `${hidden} more…`,
+    icon: 'toc',
+    action: () => setSettingsPath(contextMenu!.path),
+  });
+
   const menuOptions: ContextMenuOption[] = contextMenu
     ? [
+        ...(shownCombos.length > 0
+          ? ([
+              { type: 'header', label: 'Combos' },
+              ...shownCombos.map((combo) => ({
+                label: comboMenuLabel(combo),
+                icon: 'account_tree',
+                action: () => launchCombo(contextMenu.path, combo),
+              })),
+              ...(menuCombos.length > shownCombos.length
+                ? [overflowItem(menuCombos.length - shownCombos.length)]
+                : []),
+              { type: 'separator' },
+            ] as ContextMenuOption[])
+          : []),
         ...(shownSkills.length > 0
           ? ([
               { type: 'header', label: 'Skills' },
@@ -228,13 +267,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
                 action: () => launchSkill(contextMenu.path, skill),
               })),
               ...(menuSkills.length > shownSkills.length
-                ? [
-                    {
-                      label: `${menuSkills.length - shownSkills.length} more…`,
-                      icon: 'toc',
-                      action: () => setSettingsPath(contextMenu.path),
-                    },
-                  ]
+                ? [overflowItem(menuSkills.length - shownSkills.length)]
                 : []),
               { type: 'separator' },
             ] as ContextMenuOption[])

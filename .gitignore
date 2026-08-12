@@ -81,3 +81,6 @@ workarounds/
 
 # pnpm local package store (cache, never commit)
 .pnpm-store/
+
+# Local commit-guard state — machine-specific, not repo content
+.commit-guard.json
