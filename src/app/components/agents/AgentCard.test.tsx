@@ -689,3 +689,86 @@ describe('AgentCard – marker colour', () => {
     expect(onContextMenu).toHaveBeenCalledWith(expect.anything(), 'agent-1');
   });
 });
+
+/**
+ * In a combo, the power button no longer means "stop" — it means "this step is
+ * done, run the next one". Two buttons that both end something, one of which
+ * quietly launches a fresh agent, have to be told apart before they are
+ * clicked, not after.
+ */
+describe('AgentCard combo controls', () => {
+  const runOn = (agentId: string, currentIndex: number) => ({
+    id: 'r1',
+    comboId: 'c1',
+    label: 'Draft and polish',
+    projectPath: '/a/website',
+    steps: [
+      { id: 's1', label: 'Draft', prompt: '/draft' },
+      { id: 's2', label: 'Rewrite', prompt: '/rewrite' },
+      { id: 's3', label: 'Polish', prompt: '/polish' },
+    ],
+    currentIndex,
+    currentAgentId: agentId,
+  });
+
+  afterEach(() => {
+    useStore.setState({ comboRuns: [] });
+  });
+
+  it('names the step the button will start, instead of saying "terminate"', () => {
+    useStore.setState({ comboRuns: [runOn('agent-1', 0)] });
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+
+    const advance = screen.getByRole('button', { name: /start Rewrite/i });
+    expect(advance).toBeInTheDocument();
+    expect(advance.getAttribute('title')).toMatch(/Rewrite/);
+    expect(screen.queryByRole('button', { name: 'Terminate Agent' })).toBeNull();
+  });
+
+  it('does not promise a next step on the last one', () => {
+    useStore.setState({ comboRuns: [runOn('agent-1', 2)] });
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: /last step/i })).toBeInTheDocument();
+  });
+
+  it('still kills the agent it ends', async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn();
+    useStore.setState({ comboRuns: [runOn('agent-1', 0)] });
+    render(<AgentCard agent={runningAgent} onKill={onKill} />);
+
+    await user.click(screen.getByRole('button', { name: /start Rewrite/i }));
+    expect(onKill).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('says that cancelling leaves the running step alone', () => {
+    // Cancel drops the chain; it does not stop the agent in front of you.
+    useStore.setState({ comboRuns: [runOn('agent-1', 0)] });
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+
+    const cancel = screen.getByRole('button', { name: 'Cancel combo' });
+    expect(cancel.getAttribute('title')).toMatch(/keeps running/i);
+  });
+
+  it('keeps both combo controls visible instead of waiting for a hover', () => {
+    // A control that decides whether a new agent launches must be readable
+    // before the pointer is already on the card.
+    useStore.setState({ comboRuns: [runOn('agent-1', 0)] });
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: /start Rewrite/i }).className).not.toContain(
+      'opacity-0'
+    );
+    expect(screen.getByRole('button', { name: 'Cancel combo' }).className).not.toContain(
+      'opacity-0'
+    );
+  });
+
+  it('leaves a plain agent’s terminate button exactly as it was', () => {
+    render(<AgentCard agent={runningAgent} onKill={vi.fn()} />);
+    const kill = screen.getByRole('button', { name: 'Terminate Agent' });
+    expect(kill.className).toContain('opacity-0');
+    expect(screen.queryByRole('button', { name: 'Cancel combo' })).toBeNull();
+  });
+});

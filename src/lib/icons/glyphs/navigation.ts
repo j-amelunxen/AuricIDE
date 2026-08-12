@@ -59,6 +59,9 @@ export const navigationGlyphs: GlyphMap = {
   // ── transport & progress (pure line work) ────────────────────
   undo: [p('M6.5 11h8a4.5 4.5 0 0 1 0 9H9'), p('M10 7.5L6.5 11l3.5 3.5')],
   play_arrow: [p('M8 5.5l11 6.5-11 6.5Z')],
+  // Same transport family as play, with the bar that says "and on to the
+  // next one" — the combo card's advance control.
+  skip_next: [p('M6 5.5l9.5 6.5L6 18.5Z'), l(18, 5.5, 18, 18.5)],
   stop: [r(5.5, 5.5, 13, 13, 2)],
   progress_activity: [p('M20.25 12a8.25 8.25 0 1 1-8.25-8.25')],
 };
