@@ -49,6 +49,14 @@ describe('uiSlice – agenticCommit settings', () => {
     expect(store.current.agentSettings.branchTicketPattern).toBe('([A-Z]+-\\d+)');
   });
 
+  it('defaults findInFilesOpen to false and toggles via its setter', () => {
+    expect(store.current.findInFilesOpen).toBe(false);
+    store.current.setFindInFilesOpen(true);
+    expect(store.current.findInFilesOpen).toBe(true);
+    store.current.setFindInFilesOpen(false);
+    expect(store.current.findInFilesOpen).toBe(false);
+  });
+
   it('preserves other settings when updating agentic fields', () => {
     expect(store.current.agentSettings.autoAcceptEdits).toBe(false);
     expect(store.current.agentSettings.dangerouslyIgnorePermissions).toBe(false);

@@ -8,7 +8,12 @@ import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { deriveAgentName } from '@/lib/agents/naming';
-import { loadSpawnDefaults, saveSpawnDefaults } from '@/lib/agents/spawnDefaults';
+import {
+  loadSpawnDefaults,
+  mergeSpawnPreset,
+  saveSpawnDefaults,
+  type SpawnPreset,
+} from '@/lib/agents/spawnDefaults';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface SpawnAgentDialogProps {
@@ -24,6 +29,13 @@ interface SpawnAgentDialogProps {
   initialGoalId?: string | null;
   /** Previously used start prompts, newest first — recalled with ArrowUp. */
   promptHistory?: string[];
+  /**
+   * Launch choices pinned by the Quick Access skill that opened the dialog.
+   * Takes precedence over the remembered defaults, but is validated the same
+   * way: a provider or model that no longer exists degrades to the provider's
+   * own defaults rather than breaking the launch.
+   */
+  presetDefaults?: SpawnPreset | null;
 }
 
 export function SpawnAgentDialog(props: SpawnAgentDialogProps) {
@@ -53,6 +65,7 @@ function SpawnAgentDialogPanel({
   goals = [],
   initialGoalId = null,
   promptHistory = [],
+  presetDefaults = null,
 }: SpawnAgentDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const taskRef = useRef<HTMLTextAreaElement>(null);
@@ -71,8 +84,10 @@ function SpawnAgentDialogPanel({
   // The last launch's choices, applied once when their provider becomes
   // current — four decisions per agent become zero for a same-as-last-time
   // fleet, while an explicit provider switch still resets to that
-  // provider's own defaults.
-  const savedDefaultsRef = useRef(loadSpawnDefaults());
+  // provider's own defaults. A skill's preset is folded in here so it goes
+  // through the same validate-against-the-current-offering pass; the panel
+  // remounts on every open, so the ref is re-evaluated per launch.
+  const savedDefaultsRef = useRef(mergeSpawnPreset(loadSpawnDefaults(), presetDefaults));
 
   const currentProvider = providers.find((p) => p.id === selectedProviderId) ?? providers[0];
 
@@ -139,12 +154,17 @@ function SpawnAgentDialogPanel({
     // Named after the instruction, so a fleet in one repo doesn't turn into a
     // column of identical labels. Editable afterwards from the agent card.
     const name = deriveAgentName(task, folderName || undefined);
-    saveSpawnDefaults({
-      providerId: selectedProviderId,
-      model,
-      permissionMode,
-      headless,
-    });
+    // A preset is the project's opinion about one recurring task, not the
+    // user's baseline. Letting it write the global memory would mean a skill
+    // pinned to `plan` quietly redefines every hand-written launch everywhere.
+    if (!presetDefaults) {
+      saveSpawnDefaults({
+        providerId: selectedProviderId,
+        model,
+        permissionMode,
+        headless,
+      });
+    }
     onSpawn({
       name,
       model,

@@ -84,6 +84,97 @@ describe('SpawnAgentDialog – remembered launch choices', () => {
   });
 });
 
+describe('SpawnAgentDialog – launch presets', () => {
+  const rememberCrushYolo = () =>
+    localStorage.setItem(
+      'auric.agent-spawn-defaults',
+      JSON.stringify({
+        providerId: DEFAULT_PROVIDER,
+        model: 'moonshotai/kimi-k2-thinking',
+        permissionMode: 'yolo',
+        headless: false,
+      })
+    );
+
+  it('applies the preset over the remembered choices', async () => {
+    rememberCrushYolo();
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        presetDefaults={{ providerId: DEFAULT_PROVIDER, model: DEFAULT_MODEL }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/model/i)).toHaveValue(DEFAULT_MODEL));
+  });
+
+  it('keeps the remembered choices for what the preset leaves open', async () => {
+    rememberCrushYolo();
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        presetDefaults={{ providerId: DEFAULT_PROVIDER }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/permission mode/i)).toHaveValue('yolo'));
+    expect(screen.getByLabelText(/model/i)).toHaveValue('moonshotai/kimi-k2-thinking');
+  });
+
+  it('degrades to the provider default when the preset names a retired model', async () => {
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        presetDefaults={{ providerId: DEFAULT_PROVIDER, model: 'no-longer-offered' }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/model/i)).toHaveValue(DEFAULT_MODEL));
+  });
+
+  it('degrades to clean defaults when the preset names an unknown provider', async () => {
+    rememberCrushYolo();
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        presetDefaults={{ providerId: 'retired-provider', model: 'whatever' }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/model/i)).toHaveValue(DEFAULT_MODEL));
+    expect(screen.getByLabelText(/permission mode/i)).toHaveValue(DEFAULT_PERMISSION_MODE);
+  });
+
+  // A project's opinion about one recurring task must not become the baseline
+  // for every hand-written launch everywhere.
+  it('does not rewrite the remembered defaults when launching from a preset', async () => {
+    const user = userEvent.setup();
+    rememberCrushYolo();
+    const before = localStorage.getItem('auric.agent-spawn-defaults');
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        presetDefaults={{ providerId: DEFAULT_PROVIDER, model: DEFAULT_MODEL }}
+      />
+    );
+
+    await user.type(screen.getByLabelText(/instruction/i), 'Write the post');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(localStorage.getItem('auric.agent-spawn-defaults')).toBe(before);
+  });
+});
+
 describe('SpawnAgentDialog', () => {
   it('renders nothing when isOpen is false', () => {
     const { container } = render(
@@ -112,9 +203,14 @@ describe('SpawnAgentDialog', () => {
   it('renders a dropdown chevron affordance next to the model select', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     const modelSelect = screen.getByLabelText(/model/i);
-    const chevron = modelSelect.parentElement?.querySelector('[aria-hidden="true"]');
+    // The select is `appearance-none`, so the chevron is the only thing saying
+    // "this opens". It has to sit in the select's own wrapper, be the downward
+    // chevron, actually draw (a missing glyph renders an empty box), and stay
+    // decorative — the select already carries the accessible name.
+    const chevron = modelSelect.parentElement?.querySelector('[data-icon="expand_more"]');
     expect(chevron).not.toBeNull();
-    expect(chevron).toHaveTextContent('expand_more');
+    expect(chevron!.querySelector('path, line, circle, rect')).not.toBeNull();
+    expect(chevron).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('deploy button is enabled even when task is empty', () => {
