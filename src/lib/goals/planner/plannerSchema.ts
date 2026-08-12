@@ -103,6 +103,7 @@ export function parsePredicate(field: string, raw: unknown): StationPredicate {
       if (typeof raw.glob !== 'string' || !raw.glob) {
         throw new Error(`Invalid ${field}: file_exists requires a glob string`);
       }
+      assertSpecificGlob(raw.glob, field);
       return { type, glob: raw.glob };
     case 'git_touches':
       if (typeof raw.pathPrefix !== 'string' || !raw.pathPrefix) {
@@ -120,6 +121,43 @@ export function parsePredicate(field: string, raw: unknown): StationPredicate {
       return { type, prompt: raw.prompt };
     default:
       return { type };
+  }
+}
+
+/**
+ * A file_exists glob must name something concrete. A pattern made only of
+ * wildcards and slashes matches every path — the exact shape that turns an
+ * agent claim into a passing machine check.
+ */
+export function assertSpecificGlob(glob: string, field = 'predicate'): void {
+  const literal = glob.replace(/[*?/]/g, '');
+  if (literal.length === 0) {
+    throw new Error(
+      `${field}.glob "${glob}" matches every path — name a concrete file or directory.`
+    );
+  }
+}
+
+/**
+ * Read-path counterpart to {@link parsePredicate}: never throws. Incomplete,
+ * unknown, or tautological predicates degrade to `{ type: 'undefined' }` so a
+ * corrupt stored row cannot launder into machine "proof". Write paths still
+ * use {@link parsePredicate} and reject bad input loudly.
+ */
+export function parseStoredPredicate(raw: unknown): StationPredicate {
+  try {
+    return parsePredicate('predicate', raw);
+  } catch {
+    return { type: 'undefined' };
+  }
+}
+
+/** Like {@link parseStoredPredicate}, but starts from a stored JSON string. */
+export function parseStoredPredicateJson(json: string): StationPredicate {
+  try {
+    return parseStoredPredicate(JSON.parse(json) as unknown);
+  } catch {
+    return { type: 'undefined' };
   }
 }
 

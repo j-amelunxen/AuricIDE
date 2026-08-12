@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalsModal, buildGoalLaunchPrompt } from './GoalsModal';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
@@ -32,6 +32,23 @@ const mocks = {
   approveConductorTicket: vi.fn(async () => undefined),
   dismissConductorApproval: vi.fn(),
 };
+
+type User = ReturnType<typeof userEvent.setup>;
+
+/**
+ * The question the modal is currently asking, addressed by its title so it is
+ * never confused with the Goals dialog it is asked from. The modal deliberately
+ * does not use window.confirm: inside the Tauri webview that call does not
+ * suspend the script, so the destructive act happened before the answer came.
+ */
+function question(title: string) {
+  return screen.findByRole('dialog', { name: title });
+}
+
+async function answer(user: User, title: string, button: string) {
+  const dialog = await question(title);
+  await user.click(within(dialog).getByRole('button', { name: button }));
+}
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
   return {
@@ -190,6 +207,7 @@ describe('GoalsModal', () => {
     vi.clearAllMocks();
     storeState.selectedGoalId = null;
     storeState.pmDraftTickets = [];
+    storeState.goalsDirty = false;
     localStorage.clear();
   });
 
@@ -282,6 +300,8 @@ describe('GoalsModal', () => {
 
   it('starts the conductor scoped to the selected goal', async () => {
     storeState.selectedGoalId = 'g1';
+    // Start stays disabled until the selected goal actually has work in scope.
+    storeState.pmDraftTickets = [makeTicket({ id: 't1', goalId: 'g1' })];
     const user = userEvent.setup();
     render(<GoalsModal />);
     await user.click(screen.getByTestId('conductor-start-btn'));
@@ -294,5 +314,94 @@ describe('GoalsModal', () => {
     render(<GoalsModal />);
     await user.click(screen.getByTestId('goals-orchestration-btn'));
     expect(mocks.setOrchestrationOpen).toHaveBeenCalledWith(true);
+  });
+
+  describe('closing with unsaved changes', () => {
+    it('closes straight away when nothing is unsaved', async () => {
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+      await user.click(screen.getByTestId('goals-close-btn'));
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+      expect(mocks.setGoalsModalOpen).toHaveBeenCalledWith(false);
+    });
+
+    it('asks before discarding unsaved changes and discards nothing while it asks', async () => {
+      storeState.goalsDirty = true;
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      await user.click(screen.getByTestId('goals-close-btn'));
+
+      // The whole point of the promise-based dialog: with the question still on
+      // screen, the edits are untouched and the modal has not closed.
+      expect((await question('Discard changes?')).textContent).toContain(
+        'Discard unsaved changes?'
+      );
+      expect(mocks.discardGoalChanges).not.toHaveBeenCalled();
+      expect(mocks.setGoalsModalOpen).not.toHaveBeenCalled();
+    });
+
+    it('discards and closes once the user confirms', async () => {
+      storeState.goalsDirty = true;
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      await user.click(screen.getByTestId('goals-close-btn'));
+      await answer(user, 'Discard changes?', 'Discard');
+
+      expect(mocks.discardGoalChanges).toHaveBeenCalled();
+      expect(mocks.setGoalsModalOpen).toHaveBeenCalledWith(false);
+    });
+
+    it('keeps the edits and the modal open when the user cancels', async () => {
+      storeState.goalsDirty = true;
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      await user.click(screen.getByTestId('goals-close-btn'));
+      await answer(user, 'Discard changes?', 'Cancel');
+
+      expect(mocks.discardGoalChanges).not.toHaveBeenCalled();
+      expect(mocks.setGoalsModalOpen).not.toHaveBeenCalled();
+      expect(screen.getByTestId('goals-modal')).toBeTruthy();
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).toBeNull();
+    });
+  });
+
+  describe('deleting a goal', () => {
+    it('asks before deleting and deletes nothing while it asks', async () => {
+      storeState.selectedGoalId = 'g1';
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      await user.click(screen.getByTestId('goal-delete-btn'));
+
+      expect((await question('Delete this goal?')).textContent).toContain('entire subtree');
+      expect(mocks.deleteGoal).not.toHaveBeenCalled();
+    });
+
+    it('deletes the goal once the user confirms', async () => {
+      storeState.selectedGoalId = 'g1';
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      await user.click(screen.getByTestId('goal-delete-btn'));
+      await answer(user, 'Delete this goal?', 'Delete');
+
+      expect(mocks.deleteGoal).toHaveBeenCalledWith('g1');
+      expect(mocks.setSelectedGoalId).toHaveBeenCalledWith(null);
+    });
+
+    it('keeps the goal when the user cancels', async () => {
+      storeState.selectedGoalId = 'g1';
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      await user.click(screen.getByTestId('goal-delete-btn'));
+      await answer(user, 'Delete this goal?', 'Cancel');
+
+      expect(mocks.deleteGoal).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog', { name: 'Delete this goal?' })).toBeNull();
+    });
   });
 });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { GoalTree } from './GoalTree';
 import { GoalDetailPanel } from './GoalDetailPanel';
@@ -101,6 +102,8 @@ function GoalsModalContent() {
   const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
   const setSpawnAgentGoalId = useStore((s) => s.setSpawnAgentGoalId);
 
+  const { confirm, confirmDialog } = useConfirm();
+
   const [createOpen, setCreateOpen] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [workflowStripVisible, setWorkflowStripVisible] = useState(
@@ -130,13 +133,18 @@ function GoalsModalContent() {
     }
   }, [goalsModalOpen, rootPath, loadGoals, loadPmData, loadRequirements]);
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback(async () => {
     if (goalsDirty) {
-      if (!confirm('Discard unsaved changes?')) return;
+      const go = await confirm({
+        title: 'Discard changes?',
+        message: 'Discard unsaved changes?',
+        confirmLabel: 'Discard',
+      });
+      if (!go) return;
       discardGoalChanges();
     }
     setGoalsModalOpen(false);
-  }, [goalsDirty, discardGoalChanges, setGoalsModalOpen]);
+  }, [goalsDirty, confirm, discardGoalChanges, setGoalsModalOpen]);
 
   // The store toasts on failure; swallow here so a failed save cannot surface
   // as an unhandled rejection instead of a message.
@@ -145,11 +153,15 @@ function GoalsModalContent() {
     await persistQuietly(saveGoals(rootPath));
   }, [rootPath, saveGoals]);
 
+  // Escape belongs to whatever is on top: the confirm dialog cancels itself,
+  // and this handler must not answer it by asking the same question again.
+  const confirmOpen = confirmDialog !== null;
+
   useEffect(() => {
     if (!goalsModalOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !createOpen) {
-        handleClose();
+      if (e.key === 'Escape' && !createOpen && !confirmOpen) {
+        void handleClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (goalsDirty) void handleSave();
@@ -157,7 +169,7 @@ function GoalsModalContent() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [goalsModalOpen, createOpen, handleClose, handleSave, goalsDirty]);
+  }, [goalsModalOpen, createOpen, confirmOpen, handleClose, handleSave, goalsDirty]);
 
   const selectedGoal = useMemo(
     () => goalsDraft.find((g) => g.id === selectedGoalId) ?? null,
@@ -184,12 +196,17 @@ function GoalsModalContent() {
   );
 
   const handleDelete = useCallback(
-    (id: string) => {
-      if (!confirm('Delete this goal and its entire subtree?')) return;
+    async (id: string) => {
+      const go = await confirm({
+        title: 'Delete this goal?',
+        message: 'Delete this goal and its entire subtree?',
+        confirmLabel: 'Delete',
+      });
+      if (!go) return;
       deleteGoal(id);
       if (selectedGoalId === id) setSelectedGoalId(null);
     },
-    [deleteGoal, selectedGoalId, setSelectedGoalId]
+    [confirm, deleteGoal, selectedGoalId, setSelectedGoalId]
   );
 
   const handleAddSubGoal = useCallback((parentId: string) => {
@@ -238,7 +255,7 @@ function GoalsModalContent() {
       data-testid="goals-modal"
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => {
-        if (e.target === e.currentTarget) handleClose();
+        if (e.target === e.currentTarget) void handleClose();
       }}
     >
       <div
@@ -312,7 +329,7 @@ function GoalsModalContent() {
             )}
             <button
               data-testid="goals-close-btn"
-              onClick={handleClose}
+              onClick={() => void handleClose()}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
             >
               <AuricIcon name="close" className="text-base" />
@@ -350,7 +367,7 @@ function GoalsModalContent() {
               requirementLinks={goalRequirementLinksDraft}
               runs={goalRunsDraft}
               onUpdate={updateGoal}
-              onDelete={handleDelete}
+              onDelete={(id) => void handleDelete(id)}
               onAchieve={achieveGoal}
               onAddSubGoal={handleAddSubGoal}
               onLaunchAgent={handleLaunchAgent}
@@ -376,6 +393,8 @@ function GoalsModalContent() {
           onClose={() => setCreateOpen(false)}
         />
       )}
+
+      {confirmDialog}
     </div>,
     document.body
   );

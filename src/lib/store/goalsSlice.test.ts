@@ -12,6 +12,7 @@ import {
   getGoalWorkflowStage,
   planGoalMove,
 } from './goalsSlice';
+import { createPmSlice, type PmSlice } from './pmSlice';
 import { VERIFIED_EVIDENCE_KINDS, isVerifiedEvidence } from '../pm/enums';
 import type { GoalsState, PmGoal, PmGoalRun } from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
@@ -36,6 +37,14 @@ vi.mock('../tauri/db', () => ({
 
 function createTestStore() {
   return create<GoalsSlice>()((...a) => ({ ...createGoalsSlice(...a) }));
+}
+
+/** Goals plus PM — tickets carry their goal link on their own side. */
+function createGoalsPmStore() {
+  return create<GoalsSlice & PmSlice>()((...a) => ({
+    ...createGoalsSlice(...a),
+    ...createPmSlice(...a),
+  }));
 }
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
@@ -275,6 +284,54 @@ describe('goalsSlice draft CRUD', () => {
     expect(store.getState().goalsDraft.map((g) => g.id)).toEqual(['g3']);
     expect(store.getState().goalRunsDraft.length).toBe(0);
     expect(store.getState().goalRequirementLinksDraft.length).toBe(0);
+  });
+
+  it('deleteGoal clears goalId on tickets across the whole deleted subtree', () => {
+    const store = createGoalsPmStore();
+    store.getState().addGoal(makeGoal({ id: 'g1' }));
+    store.getState().addGoal(makeGoal({ id: 'g2', parentId: 'g1' }));
+    store.setState({
+      pmDraftTickets: [
+        makeTicket({ id: 't-root', goalId: 'g1' }),
+        makeTicket({ id: 't-child', goalId: 'g2' }),
+      ],
+      pmDirty: false,
+    });
+
+    store.getState().deleteGoal('g1');
+
+    const tickets = store.getState().pmDraftTickets;
+    expect(tickets.find((t) => t.id === 't-root')?.goalId).toBeNull();
+    expect(tickets.find((t) => t.id === 't-child')?.goalId).toBeNull();
+    expect(store.getState().pmDirty).toBe(true);
+  });
+
+  it('deleteGoal leaves tickets of untouched goals linked', () => {
+    const store = createGoalsPmStore();
+    store.getState().addGoal(makeGoal({ id: 'g1' }));
+    store.getState().addGoal(makeGoal({ id: 'g3' }));
+    store.setState({
+      pmDraftTickets: [
+        makeTicket({ id: 't-doomed', goalId: 'g1' }),
+        makeTicket({ id: 't-other', goalId: 'g3' }),
+        makeTicket({ id: 't-loose', goalId: null }),
+      ],
+      pmDirty: false,
+    });
+
+    store.getState().deleteGoal('g1');
+
+    const tickets = store.getState().pmDraftTickets;
+    expect(tickets.find((t) => t.id === 't-other')?.goalId).toBe('g3');
+    expect(tickets.find((t) => t.id === 't-loose')?.goalId).toBeNull();
+    expect(tickets).toHaveLength(3);
+  });
+
+  it('deleteGoal without the PM slice still deletes the goal', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal({ id: 'g1' }));
+    store.getState().deleteGoal('g1');
+    expect(store.getState().goalsDraft).toHaveLength(0);
   });
 
   it('resetGoalLine removes only direct stations and makes an active goal draft again', () => {

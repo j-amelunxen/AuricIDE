@@ -32,6 +32,7 @@ export function useConductorController() {
   const failedTickets = useStore((s) => s.conductorFailedTickets);
   const approvedTickets = useStore((s) => s.conductorApprovedTickets);
   const rootPath = useStore((s) => s.rootPath);
+  const agents = useStore((s) => s.agents);
 
   const startConductor = useStore((s) => s.startConductor);
   const stopConductor = useStore((s) => s.stopConductor);
@@ -45,9 +46,22 @@ export function useConductorController() {
   const dismissConductorApproval = useStore((s) => s.dismissConductorApproval);
 
   const pendingApprovals = useMemo(
-    () => tickets.filter((t) => pendingApprovalIds.includes(t.id)),
+    () => (tickets ?? []).filter((t) => (pendingApprovalIds ?? []).includes(t.id)),
     [tickets, pendingApprovalIds]
   );
+
+  // What stopping would actually cost: the implementer and reviewer agents this
+  // run launched and that are still alive. Assignment slots held by a spawn in
+  // flight carry a placeholder rather than an agent id and so match nothing —
+  // which is right, there is no process behind them to lose.
+  const runningAgentCount = useMemo(() => {
+    // Defensive reads mirror conductorTick's: these maps may not exist yet.
+    const assigned = new Set([
+      ...Object.values(assignments ?? {}),
+      ...Object.values(reviewAssignments ?? {}),
+    ]);
+    return (agents ?? []).filter((a) => a.status === 'running' && assigned.has(a.id)).length;
+  }, [assignments, reviewAssignments, agents]);
 
   // Scoped to the SELECTED goal, not the running one: this answers "what would
   // happen if I pressed Start now".
@@ -74,7 +88,7 @@ export function useConductorController() {
 
   const scopeGoalName = useMemo(() => {
     if (!conductorGoalId) return null;
-    return goals.find((g) => g.id === conductorGoalId)?.name ?? null;
+    return (goals ?? []).find((g) => g.id === conductorGoalId)?.name ?? null;
   }, [conductorGoalId, goals]);
 
   const onStart = useCallback(() => {
@@ -94,7 +108,10 @@ export function useConductorController() {
     scopeGoalName,
     maxConcurrent,
     // Implementers and reviewers share one budget, so both count as active.
-    activeAgentCount: Object.keys(assignments).length + Object.keys(reviewAssignments).length,
+    // Same defensive read as runningAgentCount above: the maps may not exist yet.
+    activeAgentCount:
+      Object.keys(assignments ?? {}).length + Object.keys(reviewAssignments ?? {}).length,
+    runningAgentCount,
     pendingApprovals,
     decisions,
     lastRun,
