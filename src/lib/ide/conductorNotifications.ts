@@ -6,11 +6,10 @@
  * the same state), and a silent no-op in browser mode.
  */
 
+import { notifyOs } from '../notifications/os';
+
 export type ConductorNotificationEvent =
-  | 'approval_needed'
-  | 'goal_achieved'
-  | 'goal_blocked'
-  | 'run_finished';
+  'approval_needed' | 'goal_achieved' | 'goal_blocked' | 'run_finished';
 
 export interface ConductorNotificationContent {
   title: string;
@@ -49,19 +48,9 @@ export async function notifyConductor(
   event: ConductorNotificationEvent,
   detail: string
 ): Promise<void> {
-  // Focused window ⇒ the conductor panel is already telling the story.
-  if (typeof document !== 'undefined' && document.hasFocus()) return;
-
-  try {
-    const { isPermissionGranted, requestPermission, sendNotification } =
-      await import('@tauri-apps/plugin-notification');
-    let granted = await isPermissionGranted();
-    if (!granted) {
-      granted = (await requestPermission()) === 'granted';
-    }
-    if (!granted) return;
-    sendNotification(conductorNotificationContent(event, detail));
-  } catch {
-    // Browser mode / plugin unavailable — the in-app decision log still has it
-  }
+  // Focus suppression, permission handling and browser-mode safety all live in
+  // notifyOs now, so the conductor and the inbox cannot drift apart on when a
+  // banner is appropriate.
+  const { title, body } = conductorNotificationContent(event, detail);
+  await notifyOs(title, body);
 }
