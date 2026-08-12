@@ -1,11 +1,11 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QuickAccess } from './QuickAccess';
 import { useStore } from '@/lib/store';
 
 describe('QuickAccess', () => {
   beforeEach(() => {
-    useStore.setState({ starredProjects: [] });
+    useStore.setState({ starredProjects: [], toasts: [] });
   });
 
   it('renders a tile for each starred project, sorted alphabetically by name', () => {
@@ -253,8 +253,8 @@ describe('QuickAccess', () => {
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
-    it('copies the working directory path to the clipboard via "Copy Working Directory"', () => {
-      const writeText = vi.fn();
+    it('copies the working directory path to the clipboard via "Copy Working Directory"', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
       Object.assign(navigator, { clipboard: { writeText } });
       useStore.setState({
         starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
@@ -263,6 +263,224 @@ describe('QuickAccess', () => {
       fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
       fireEvent.click(screen.getByRole('menuitem', { name: /copy working directory/i }));
       expect(writeText).toHaveBeenCalledWith('/a/website');
+      await waitFor(() => expect(useStore.getState().toasts[0]?.variant).toBe('success'));
+    });
+
+    it('says so when the copy fails instead of looking like it worked', async () => {
+      Object.assign(navigator, {
+        clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+      });
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /copy working directory/i }));
+      await waitFor(() => expect(useStore.getState().toasts[0]?.variant).toBe('error'));
+    });
+
+    it('says so when there is no clipboard to copy into', () => {
+      // Insecure contexts (and jsdom) have no navigator.clipboard at all —
+      // reaching for it unguarded throws inside the click handler.
+      Object.assign(navigator, { clipboard: undefined });
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /copy working directory/i }));
+      expect(useStore.getState().toasts[0]?.variant).toBe('error');
+    });
+  });
+
+  describe('context menu — skills', () => {
+    const website = { path: '/a/website', name: 'website', starredAt: 1 };
+    const blogartikel = {
+      id: 's1',
+      label: 'Blogartikel',
+      prompt: '/blogartikel',
+      providerId: 'claude',
+      model: 'opus',
+      permissionMode: 'plan' as const,
+    };
+    const seo = { id: 's2', label: 'SEO-Check', prompt: '/seo-check' };
+
+    const openMenu = (path = '/a/website') =>
+      fireEvent.contextMenu(screen.getByTestId(`quick-access-tile-${path}`));
+
+    beforeEach(() => {
+      useStore.setState({
+        spawnDialogOpen: false,
+        spawnAgentRepoPath: null,
+        spawnAgentPreset: null,
+        initialAgentTask: '',
+      });
+    });
+
+    it('offers Quick Access Settings as the last entry', () => {
+      useStore.setState({ starredProjects: [website] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      const items = screen.getAllByRole('menuitem');
+      expect(items[items.length - 1]).toHaveTextContent(/quick access settings/i);
+    });
+
+    it('shows no skills section for a project that has none', () => {
+      useStore.setState({ starredProjects: [website] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      expect(screen.queryByText(/^skills$/i)).not.toBeInTheDocument();
+    });
+
+    it('lists the project skills above the built-in actions', () => {
+      useStore.setState({ starredProjects: [{ ...website, skills: [blogartikel, seo] }] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      const labels = screen.getAllByRole('menuitem').map((el) => el.textContent);
+      expect(labels.slice(0, 2)).toEqual(['Blogartikel', 'SEO-Check']);
+      expect(screen.getByText('Skills')).toBeInTheDocument();
+    });
+
+    it('scopes the skills to the tile that was right-clicked', () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1, skills: [seo] },
+          { ...website, skills: [blogartikel] },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu('/a/website');
+      expect(screen.getByRole('menuitem', { name: 'Blogartikel' })).toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'SEO-Check' })).not.toBeInTheDocument();
+    });
+
+    it('sends the overflow to the settings dialog rather than growing the menu', () => {
+      const many = Array.from({ length: 12 }, (_, i) => ({
+        id: `s${i}`,
+        label: `Skill ${i}`,
+        prompt: `/s${i}`,
+      }));
+      useStore.setState({ starredProjects: [{ ...website, skills: many }] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      expect(screen.getAllByRole('menuitem', { name: /^Skill \d+$/ })).toHaveLength(8);
+      expect(screen.getByRole('menuitem', { name: /4 more/i })).toBeInTheDocument();
+    });
+
+    it('prefills the agent dialog with the skill prompt and working directory', () => {
+      useStore.setState({ starredProjects: [{ ...website, skills: [blogartikel] }] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Blogartikel' }));
+      expect(useStore.getState().initialAgentTask).toBe('/blogartikel');
+      expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
+      expect(useStore.getState().spawnDialogOpen).toBe(true);
+    });
+
+    it("carries the skill's provider, model and permission mode as a preset", () => {
+      useStore.setState({ starredProjects: [{ ...website, skills: [blogartikel] }] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Blogartikel' }));
+      expect(useStore.getState().spawnAgentPreset).toEqual({
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'plan',
+      });
+    });
+
+    it('leaves the preset null for a skill that pins no provider', () => {
+      useStore.setState({ starredProjects: [{ ...website, skills: [seo] }] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'SEO-Check' }));
+      expect(useStore.getState().spawnAgentPreset).toBeNull();
+    });
+
+    // Plain Start Agent must not inherit whatever a skill launched last.
+    it('clears a stale preset when starting a plain agent', () => {
+      useStore.setState({
+        starredProjects: [website],
+        spawnAgentPreset: { providerId: 'claude', model: 'opus' },
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: /start agent/i }));
+      expect(useStore.getState().spawnAgentPreset).toBeNull();
+    });
+  });
+
+  describe('tile face', () => {
+    it('draws a chosen glyph instead of the initials', () => {
+      useStore.setState({
+        starredProjects: [
+          {
+            path: '/a/website',
+            name: 'website',
+            starredAt: 1,
+            icon: { kind: 'glyph', value: 'rocket_launch' },
+          },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const face = screen.getByTestId('tile-face-/a/website');
+      expect(face).toHaveAttribute('data-icon-kind', 'glyph');
+      expect(face.querySelector('[data-icon="rocket_launch"]')).toBeInTheDocument();
+    });
+
+    it('draws a chosen emoji', () => {
+      useStore.setState({
+        starredProjects: [
+          {
+            path: '/a/website',
+            name: 'website',
+            starredAt: 1,
+            icon: { kind: 'emoji', value: '🚀' },
+          },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const face = screen.getByTestId('tile-face-/a/website');
+      expect(face).toHaveAttribute('data-icon-kind', 'emoji');
+      expect(face).toHaveTextContent('🚀');
+    });
+
+    it('falls back to the generated initials when the glyph no longer exists', () => {
+      useStore.setState({
+        starredProjects: [
+          {
+            path: '/a/website',
+            name: 'website',
+            starredAt: 1,
+            icon: { kind: 'glyph', value: 'gone_from_the_registry' },
+          },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      expect(screen.getByTestId('tile-face-/a/website')).toHaveAttribute(
+        'data-icon-kind',
+        'initials'
+      );
+    });
+
+    it('keeps the generated gradient whatever the mark is', () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/website', name: 'website', starredAt: 1 },
+          {
+            path: '/a/website2',
+            name: 'website2',
+            starredAt: 2,
+            icon: { kind: 'emoji', value: '🚀' },
+          },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      // Same derivation, different paths — what matters is that a customized
+      // tile still gets a gradient at all.
+      expect(screen.getByTestId('tile-face-/a/website2').style.backgroundImage).toMatch(
+        /linear-gradient/
+      );
     });
   });
 
