@@ -15,6 +15,9 @@ export type ContextMenuOption =
       danger?: boolean;
     };
 
+/** How much of the viewport a menu may claim before it scrolls internally. */
+const MAX_MENU_VIEWPORT_FRACTION = 0.7;
+
 interface ContextMenuProps {
   x: number;
   y: number;
@@ -56,16 +59,20 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
   }, []);
 
   // Adjust position if menu goes off screen
-  const menuWidth = 160;
+  const menuWidth = 176; // matches w-44
   const itemHeight = 44;
-  const menuHeight = options.reduce((acc, opt) => {
+  const estimatedHeight = options.reduce((acc, opt) => {
     if (opt.type === 'separator') return acc + 9;
     if (opt.type === 'header') return acc + 24;
     return acc + itemHeight;
   }, 10);
+  // A menu taller than the panel scrolls, so clamp the estimate to what it can
+  // actually occupy — otherwise the keep-it-off-the-bottom-edge correction
+  // pushes a long menu clean off the top instead.
+  const menuHeight = Math.min(estimatedHeight, window.innerHeight * MAX_MENU_VIEWPORT_FRACTION);
 
-  const adjustedX = Math.min(x, window.innerWidth - menuWidth - 8);
-  const adjustedY = Math.min(y, window.innerHeight - menuHeight - 8);
+  const adjustedX = Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8));
+  const adjustedY = Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8));
 
   return (
     <div
@@ -75,7 +82,7 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
       className="fixed z-[200] w-44 overflow-hidden rounded-lg border border-white/10 bg-[#0a0a10]/95 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in duration-100"
       style={{ left: adjustedX, top: adjustedY }}
     >
-      <div className="py-1">
+      <div className="max-h-[70vh] overflow-y-auto py-1">
         {options.map((option, i) => {
           if (option.type === 'separator') {
             return <div key={i} role="separator" className="my-1 border-t border-white/5" />;
@@ -117,7 +124,11 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
                   style={option.iconColor ? { color: option.iconColor } : undefined}
                 />
               )}
-              <span className="font-medium">{option.label}</span>
+              {/* title, not a replacement label: the text content still wins
+                  as the accessible name, so a truncated skill stays findable. */}
+              <span className="min-w-0 flex-1 truncate font-medium" title={option.label}>
+                {option.label}
+              </span>
             </button>
           );
         })}

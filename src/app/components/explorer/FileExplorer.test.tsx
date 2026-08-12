@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { FileExplorer, type FileTreeNode } from './FileExplorer';
+import { FileExplorer, flattenVisibleTree, type FileTreeNode } from './FileExplorer';
 
 const mockTree: FileTreeNode[] = [
   {
@@ -350,5 +350,313 @@ describe('FileExplorer', () => {
     folder.dispatchEvent(event);
 
     expect(onMoveNode).not.toHaveBeenCalled();
+  });
+});
+
+describe('flattenVisibleTree', () => {
+  it('excludes children of collapsed directories', () => {
+    const flat = flattenVisibleTree(mockTree);
+    // src is expanded in mockTree, so its children are visible.
+    expect(flat.map((f) => f.path)).toEqual([
+      '/src',
+      '/src/main.ts',
+      '/src/utils.ts',
+      '/README.md',
+    ]);
+  });
+
+  it('omits a collapsed directory’s children entirely', () => {
+    const collapsedTree: FileTreeNode[] = [{ ...mockTree[0], expanded: false }, mockTree[1]];
+    const flat = flattenVisibleTree(collapsedTree);
+    expect(flat.map((f) => f.path)).toEqual(['/src', '/README.md']);
+  });
+});
+
+describe('FileExplorer — root-area context menu', () => {
+  it('calls onRootContextMenu when right-clicking the empty area', () => {
+    const onRootContextMenu = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onRootContextMenu={onRootContextMenu}
+      />
+    );
+    const zone = screen.getByTestId('file-explorer-root-dropzone');
+    const event = new Event('contextmenu', { bubbles: true, cancelable: true });
+    zone.dispatchEvent(event);
+    expect(onRootContextMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not bubble a row right-click into the root context menu', () => {
+    const onRootContextMenu = vi.fn();
+    const onContextMenu = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onRootContextMenu={onRootContextMenu}
+        onContextMenu={onContextMenu}
+      />
+    );
+    const row = screen.getByTestId('tree-item-/README.md');
+    const event = new Event('contextmenu', { bubbles: true, cancelable: true });
+    row.dispatchEvent(event);
+    expect(onContextMenu).toHaveBeenCalledTimes(1);
+    expect(onRootContextMenu).not.toHaveBeenCalled();
+  });
+});
+
+describe('FileExplorer — multi-select', () => {
+  it('highlights every path in selectedPaths', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/src/main.ts"
+        selectedPaths={['/src/main.ts', '/README.md']}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    expect(screen.getByTestId('tree-item-/src/main.ts')).toHaveClass('bg-primary/10');
+    expect(screen.getByTestId('tree-item-/README.md')).toHaveClass('bg-primary/10');
+    expect(screen.getByTestId('tree-item-/src/utils.ts')).not.toHaveClass('bg-primary/10');
+  });
+
+  it('marks only the primary selection with the left accent border', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/src/main.ts"
+        selectedPaths={['/src/main.ts', '/README.md']}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    expect(screen.getByTestId('tree-item-/src/main.ts')).toHaveClass('border-l-2');
+    expect(screen.getByTestId('tree-item-/README.md')).not.toHaveClass('border-l-2');
+  });
+
+  it('calls onToggleSelect on cmd/ctrl-click instead of onSelectFile', () => {
+    const onSelectFile = vi.fn();
+    const onToggleSelect = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={onSelectFile}
+        onToggleDir={() => {}}
+        onToggleSelect={onToggleSelect}
+      />
+    );
+    fireEvent.click(screen.getByTestId('tree-item-/README.md'), { metaKey: true });
+    expect(onToggleSelect).toHaveBeenCalledWith('/README.md');
+    expect(onSelectFile).not.toHaveBeenCalled();
+  });
+
+  it('calls onRangeSelect with the resolved range on shift-click', () => {
+    const onRangeSelect = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/src/main.ts"
+        selectionAnchor="/src/main.ts"
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onRangeSelect={onRangeSelect}
+      />
+    );
+    fireEvent.click(screen.getByTestId('tree-item-/README.md'), { shiftKey: true });
+    // Anchor is /src/main.ts, target is /README.md — everything between in
+    // visible order: main.ts, utils.ts, README.md.
+    expect(onRangeSelect).toHaveBeenCalledWith(
+      ['/src/main.ts', '/src/utils.ts', '/README.md'],
+      '/README.md'
+    );
+  });
+});
+
+describe('FileExplorer — keyboard navigation', () => {
+  it('ArrowDown moves focus to the next visible row via onFocusNode', async () => {
+    const onFocusNode = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/src"
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onFocusNode={onFocusNode}
+      />
+    );
+    screen.getByTestId('tree-item-/src').focus();
+    const user = userEvent.setup();
+    await user.keyboard('{ArrowDown}');
+    expect(onFocusNode).toHaveBeenCalledWith('/src/main.ts');
+  });
+
+  it('ArrowUp moves focus to the previous visible row', async () => {
+    const onFocusNode = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/src/utils.ts"
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onFocusNode={onFocusNode}
+      />
+    );
+    screen.getByTestId('tree-item-/src/utils.ts').focus();
+    const user = userEvent.setup();
+    await user.keyboard('{ArrowUp}');
+    expect(onFocusNode).toHaveBeenCalledWith('/src/main.ts');
+  });
+
+  it('Enter opens the selected file', async () => {
+    const onSelectFile = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/README.md"
+        onSelectFile={onSelectFile}
+        onToggleDir={() => {}}
+      />
+    );
+    screen.getByTestId('tree-item-/README.md').focus();
+    const user = userEvent.setup();
+    await user.keyboard('{Enter}');
+    expect(onSelectFile).toHaveBeenCalledWith('/README.md');
+  });
+
+  it('Enter toggles a directory instead of opening it', async () => {
+    const onToggleDir = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/src"
+        onSelectFile={() => {}}
+        onToggleDir={onToggleDir}
+      />
+    );
+    screen.getByTestId('tree-item-/src').focus();
+    const user = userEvent.setup();
+    await user.keyboard('{Enter}');
+    expect(onToggleDir).toHaveBeenCalledWith('/src');
+  });
+
+  it('F2 requests rename for the focused node', async () => {
+    const onRenameRequest = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/README.md"
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onRenameRequest={onRenameRequest}
+      />
+    );
+    screen.getByTestId('tree-item-/README.md').focus();
+    const user = userEvent.setup();
+    await user.keyboard('{F2}');
+    expect(onRenameRequest).toHaveBeenCalledWith(expect.objectContaining({ path: '/README.md' }));
+  });
+
+  it('Delete requests deletion of the whole multi-selection', async () => {
+    const onDeleteSelection = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/README.md"
+        selectedPaths={['/README.md', '/src/main.ts']}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onDeleteSelection={onDeleteSelection}
+      />
+    );
+    screen.getByTestId('tree-item-/README.md').focus();
+    const user = userEvent.setup();
+    await user.keyboard('{Delete}');
+    expect(onDeleteSelection).toHaveBeenCalledWith(['/README.md', '/src/main.ts']);
+  });
+
+  it('Escape clears a multi-selection', async () => {
+    const onClearSelection = vi.fn();
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath="/README.md"
+        selectedPaths={['/README.md', '/src/main.ts']}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onClearSelection={onClearSelection}
+      />
+    );
+    screen.getByTestId('tree-item-/README.md').focus();
+    const user = userEvent.setup();
+    await user.keyboard('{Escape}');
+    expect(onClearSelection).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FileExplorer — drag-and-drop polish', () => {
+  it('dims the row currently being dragged', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={() => {}}
+      />
+    );
+    const mdButton = screen.getByTestId('tree-item-/README.md');
+    fireEvent.dragStart(mdButton, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+
+    expect(mdButton).toHaveClass('opacity-40');
+  });
+
+  it('shows an invalid-drop indicator and dropEffect "none" for an illegal move', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={() => {}}
+      />
+    );
+    // Start dragging /src itself, then drag it over itself — an illegal move.
+    const srcButton = screen.getByTestId('tree-item-/src');
+    fireEvent.dragStart(srcButton, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+
+    const overData = { types: [] as string[], dropEffect: '' };
+    fireEvent.dragOver(srcButton, { dataTransfer: overData });
+
+    expect(srcButton).toHaveClass('cursor-not-allowed');
+    expect(overData.dropEffect).toBe('none');
+  });
+
+  it('shows a valid-drop indicator and dropEffect "move" for a legal move', () => {
+    render(
+      <FileExplorer
+        tree={mockTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+        onMoveNode={() => {}}
+      />
+    );
+    const mdButton = screen.getByTestId('tree-item-/README.md');
+    fireEvent.dragStart(mdButton, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+
+    const srcButton = screen.getByTestId('tree-item-/src');
+    const overData = { types: [] as string[], dropEffect: '' };
+    fireEvent.dragOver(srcButton, { dataTransfer: overData });
+
+    expect(srcButton).toHaveClass('ring-primary/60');
+    expect(overData.dropEffect).toBe('move');
   });
 });

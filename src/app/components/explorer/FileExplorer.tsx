@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface FileTreeNode {
@@ -33,15 +33,74 @@ export function isInvalidMove(source: string, destDir: string): boolean {
   return false;
 }
 
+export interface FlatTreeEntry {
+  path: string;
+  isDirectory: boolean;
+}
+
+/**
+ * Depth-first list of every currently *visible* row (children of collapsed
+ * directories excluded) in on-screen order. Shift-range selection and
+ * arrow-key navigation both walk this — it's what "next row" actually means.
+ */
+export function flattenVisibleTree(nodes: FileTreeNode[]): FlatTreeEntry[] {
+  const out: FlatTreeEntry[] = [];
+  for (const node of nodes) {
+    out.push({ path: node.path, isDirectory: node.isDirectory });
+    if (node.isDirectory && node.expanded && node.children?.length) {
+      out.push(...flattenVisibleTree(node.children));
+    }
+  }
+  return out;
+}
+
+function findNode(nodes: FileTreeNode[], path: string): FileTreeNode | undefined {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.children) {
+      const found = findNode(node.children, path);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+function computeRange(flat: FlatTreeEntry[], anchor: string | null, target: string): string[] {
+  const paths = flat.map((f) => f.path);
+  const anchorIndex = anchor ? paths.indexOf(anchor) : -1;
+  const targetIndex = paths.indexOf(target);
+  if (anchorIndex === -1 || targetIndex === -1) return [target];
+  const [start, end] =
+    anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+  return paths.slice(start, end + 1);
+}
+
+function focusRow(path: string): void {
+  document.querySelector<HTMLElement>(`[data-testid="tree-item-${path}"]`)?.focus();
+}
+
 interface FileExplorerProps {
   tree: FileTreeNode[];
   selectedPath: string | null;
+  /** Full multi-selection; falls back to `[selectedPath]` when omitted or empty. */
+  selectedPaths?: string[];
+  /** Anchor for shift-range selection — the node the last plain/ctrl click landed on. */
+  selectionAnchor?: string | null;
   onSelectFile: (path: string) => void;
   onToggleDir: (path: string) => void;
+  /** Moves the selection without opening a tab — what arrow-key navigation should do. */
+  onFocusNode?: (path: string) => void;
+  onToggleSelect?: (path: string) => void;
+  onRangeSelect?: (paths: string[], newPrimary: string) => void;
+  onClearSelection?: () => void;
+  onDeleteSelection?: (paths: string[]) => void;
+  onRenameRequest?: (node: FileTreeNode) => void;
   onNewFile?: () => void;
   onRefresh?: () => void;
   onOpenFolder?: () => void;
   onContextMenu?: (e: React.MouseEvent, node: FileTreeNode) => void;
+  /** Right-click on the empty area below the tree — targets the project root. */
+  onRootContextMenu?: (e: React.MouseEvent) => void;
   /** Move `sourcePath` into `destDir`. Enables drag-and-drop reordering. */
   onMoveNode?: (sourcePath: string, destDir: string) => void;
   /** Project root — enables dropping onto empty space to move an item to the root. */
@@ -100,42 +159,47 @@ function TreeNode({
   node,
   depth,
   selectedPath,
-  onSelectFile,
-  onToggleDir,
+  selectedPaths,
+  onNodeClick,
   onContextMenu,
   onMoveNode,
+  draggingPath,
+  onDragStateChange,
 }: {
   node: FileTreeNode;
   depth: number;
   selectedPath: string | null;
-  onSelectFile: (path: string) => void;
-  onToggleDir: (path: string) => void;
+  selectedPaths: string[];
+  onNodeClick: (node: FileTreeNode, e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent, node: FileTreeNode) => void;
   onMoveNode?: (sourcePath: string, destDir: string) => void;
+  draggingPath: string | null;
+  onDragStateChange: (path: string | null) => void;
 }) {
-  const isSelected = selectedPath === node.path;
+  const isSelected = selectedPaths.includes(node.path);
+  const isPrimary = selectedPath === node.path;
+  const isDraggingSelf = draggingPath === node.path;
   const isIgnored = node.gitStatus === 'ignored';
   const paddingLeft = `${12 + depth * 16}px`;
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isValidDropTarget, setIsValidDropTarget] = useState(true);
 
   const fileInfo = !node.isDirectory ? getFileIcon(node.name) : null;
   const isMarkdown = !node.isDirectory && /\.(md|markdown)$/i.test(node.name);
   const canDrop = node.isDirectory && !!onMoveNode;
 
-  const handleClick = () => {
-    if (node.isDirectory) {
-      onToggleDir(node.path);
-    } else {
-      onSelectFile(node.path);
-    }
-  };
-
   return (
     <>
       <button
         data-testid={`tree-item-${node.path}`}
-        onClick={handleClick}
-        onContextMenu={(e) => onContextMenu?.(e, node)}
+        onClick={(e) => onNodeClick(node, e)}
+        onContextMenu={(e) => {
+          // Stop here so the empty-area handler on the root dropzone (which
+          // bubbling would otherwise reach) doesn't overwrite this with the
+          // root context menu.
+          e.stopPropagation();
+          onContextMenu?.(e, node);
+        }}
         draggable
         onDragStart={(e) => {
           // Explorer-internal move payload (every node can be moved)…
@@ -147,7 +211,9 @@ function TreeNode({
           } else {
             e.dataTransfer.effectAllowed = 'move';
           }
+          onDragStateChange(node.path);
         }}
+        onDragEnd={() => onDragStateChange(null)}
         onDragOver={
           canDrop
             ? (e) => {
@@ -157,8 +223,10 @@ function TreeNode({
                 // the drop. The actual payload is validated on drop instead.
                 e.preventDefault();
                 e.stopPropagation(); // don't also light up the root dropzone
-                e.dataTransfer.dropEffect = 'move';
+                const valid = draggingPath ? !isInvalidMove(draggingPath, node.path) : true;
+                e.dataTransfer.dropEffect = valid ? 'move' : 'none';
                 setIsDropTarget(true);
+                setIsValidDropTarget(valid);
               }
             : undefined
         }
@@ -175,14 +243,18 @@ function TreeNode({
               }
             : undefined
         }
-        className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-colors hover:bg-white/5 ${
+        className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-all duration-150 ease-out hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
           isDropTarget
-            ? 'bg-primary/20 ring-1 ring-inset ring-primary/50 text-foreground'
-            : isSelected
-              ? 'bg-primary/10 border-l-2 border-primary text-foreground'
-              : isIgnored
-                ? 'text-foreground-muted opacity-40'
-                : 'text-foreground-muted hover:text-foreground'
+            ? isValidDropTarget
+              ? 'bg-primary/20 ring-2 ring-inset ring-primary/60 text-foreground'
+              : 'bg-red-500/10 ring-2 ring-inset ring-red-500/50 text-foreground cursor-not-allowed'
+            : isDraggingSelf
+              ? 'opacity-40'
+              : isSelected
+                ? `bg-primary/10 text-foreground ${isPrimary ? 'border-l-2 border-primary' : ''}`
+                : isIgnored
+                  ? 'text-foreground-muted opacity-40'
+                  : 'text-foreground-muted hover:text-foreground'
         }`}
         style={{ paddingLeft }}
       >
@@ -225,10 +297,12 @@ function TreeNode({
               node={child}
               depth={depth + 1}
               selectedPath={selectedPath}
-              onSelectFile={onSelectFile}
-              onToggleDir={onToggleDir}
+              selectedPaths={selectedPaths}
+              onNodeClick={onNodeClick}
               onContextMenu={onContextMenu}
               onMoveNode={onMoveNode}
+              draggingPath={draggingPath}
+              onDragStateChange={onDragStateChange}
             />
           ))}
         </div>
@@ -240,17 +314,146 @@ function TreeNode({
 export function FileExplorer({
   tree,
   selectedPath,
+  selectedPaths: selectedPathsProp,
+  selectionAnchor = null,
   onSelectFile,
   onToggleDir,
+  onFocusNode,
+  onToggleSelect,
+  onRangeSelect,
+  onClearSelection,
+  onDeleteSelection,
+  onRenameRequest,
   onNewFile,
   onRefresh,
   onOpenFolder,
   onContextMenu,
+  onRootContextMenu,
   onMoveNode,
   rootPath,
 }: FileExplorerProps) {
   const [isRootDropTarget, setIsRootDropTarget] = useState(false);
+  const [isRootDropValid, setIsRootDropValid] = useState(true);
+  const [draggingPath, setDraggingPath] = useState<string | null>(null);
   const canDropToRoot = !!onMoveNode && !!rootPath;
+
+  // Defensive fallback: any caller that forgets to keep `selectedPaths` in
+  // sync with `selectedPath` still gets a correctly highlighted single row.
+  const selectedPaths = useMemo(
+    () =>
+      selectedPathsProp && selectedPathsProp.length > 0
+        ? selectedPathsProp
+        : selectedPath
+          ? [selectedPath]
+          : [],
+    [selectedPathsProp, selectedPath]
+  );
+
+  const handleNodeClick = useCallback(
+    (node: FileTreeNode, e: React.MouseEvent) => {
+      if (e.shiftKey && onRangeSelect) {
+        e.preventDefault();
+        const flat = flattenVisibleTree(tree);
+        const range = computeRange(flat, selectionAnchor ?? selectedPath, node.path);
+        onRangeSelect(range, node.path);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && onToggleSelect) {
+        e.preventDefault();
+        onToggleSelect(node.path);
+        return;
+      }
+      if (node.isDirectory) {
+        onToggleDir(node.path);
+      } else {
+        onSelectFile(node.path);
+      }
+    },
+    [tree, selectionAnchor, selectedPath, onRangeSelect, onToggleSelect, onToggleDir, onSelectFile]
+  );
+
+  const handleTreeKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const flat = flattenVisibleTree(tree);
+      if (flat.length === 0) return;
+      const paths = flat.map((f) => f.path);
+      const currentIndex = selectedPath ? paths.indexOf(selectedPath) : -1;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = flat[Math.min(currentIndex + 1, flat.length - 1)] ?? flat[0];
+        onFocusNode?.(next.path);
+        focusRow(next.path);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = flat[Math.max(currentIndex - 1, 0)];
+        onFocusNode?.(prev.path);
+        focusRow(prev.path);
+      } else if (e.key === 'ArrowRight') {
+        if (currentIndex < 0) return;
+        const entry = flat[currentIndex];
+        const node = findNode(tree, entry.path);
+        if (!node?.isDirectory) return;
+        e.preventDefault();
+        if (!node.expanded) {
+          onToggleDir(entry.path);
+        } else {
+          const child = flat[currentIndex + 1];
+          if (child && child.path.startsWith(entry.path + '/')) {
+            onFocusNode?.(child.path);
+            focusRow(child.path);
+          }
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (currentIndex < 0) return;
+        const entry = flat[currentIndex];
+        const node = findNode(tree, entry.path);
+        e.preventDefault();
+        if (entry.isDirectory && node?.expanded) {
+          onToggleDir(entry.path);
+        } else {
+          const parent = flat.find((f) => f.path === parentDir(entry.path));
+          if (parent) {
+            onFocusNode?.(parent.path);
+            focusRow(parent.path);
+          }
+        }
+      } else if (e.key === 'Enter') {
+        if (currentIndex < 0) return;
+        e.preventDefault();
+        const entry = flat[currentIndex];
+        if (entry.isDirectory) onToggleDir(entry.path);
+        else onSelectFile(entry.path);
+      } else if (e.key === 'F2') {
+        if (currentIndex < 0 || !onRenameRequest) return;
+        const node = findNode(tree, flat[currentIndex].path);
+        if (node) {
+          e.preventDefault();
+          onRenameRequest(node);
+        }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (!onDeleteSelection) return;
+        const targets =
+          selectedPaths.length > 0 ? selectedPaths : selectedPath ? [selectedPath] : [];
+        if (targets.length === 0) return;
+        e.preventDefault();
+        onDeleteSelection(targets);
+      } else if (e.key === 'Escape') {
+        if (selectedPaths.length > 1) onClearSelection?.();
+      }
+    },
+    [
+      tree,
+      selectedPath,
+      selectedPaths,
+      onFocusNode,
+      onToggleDir,
+      onSelectFile,
+      onRenameRequest,
+      onDeleteSelection,
+      onClearSelection,
+    ]
+  );
 
   return (
     <div data-testid="file-explorer" className="flex flex-1 flex-col min-h-0">
@@ -283,15 +486,30 @@ export function FileExplorer({
       <div
         data-testid="file-explorer-root-dropzone"
         className={`py-1 flex-1 overflow-y-auto ${
-          isRootDropTarget ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''
+          isRootDropTarget
+            ? isRootDropValid
+              ? 'ring-1 ring-inset ring-primary/40 bg-primary/5'
+              : 'ring-1 ring-inset ring-red-500/40 bg-red-500/5 cursor-not-allowed'
+            : ''
         }`}
+        onKeyDown={handleTreeKeyDown}
+        onContextMenu={
+          onRootContextMenu
+            ? (e) => {
+                e.preventDefault();
+                onRootContextMenu(e);
+              }
+            : undefined
+        }
         onDragOver={
           canDropToRoot
             ? (e) => {
                 // Unconditional preventDefault (WebKit-safe — see TreeNode).
                 e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
+                const valid = draggingPath ? !isInvalidMove(draggingPath, rootPath!) : true;
+                e.dataTransfer.dropEffect = valid ? 'move' : 'none';
                 setIsRootDropTarget(true);
+                setIsRootDropValid(valid);
               }
             : undefined
         }
@@ -314,10 +532,12 @@ export function FileExplorer({
             node={node}
             depth={0}
             selectedPath={selectedPath}
-            onSelectFile={onSelectFile}
-            onToggleDir={onToggleDir}
+            selectedPaths={selectedPaths}
+            onNodeClick={handleNodeClick}
             onContextMenu={onContextMenu}
             onMoveNode={onMoveNode}
+            draggingPath={draggingPath}
+            onDragStateChange={setDraggingPath}
           />
         ))}
       </div>
