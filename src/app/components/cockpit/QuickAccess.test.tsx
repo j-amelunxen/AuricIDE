@@ -295,10 +295,10 @@ describe('QuickAccess', () => {
 
   describe('context menu — skills', () => {
     const website = { path: '/a/website', name: 'website', starredAt: 1 };
-    const blogartikel = {
+    const changelog = {
       id: 's1',
-      label: 'Blogartikel',
-      prompt: '/blogartikel',
+      label: 'Changelog',
+      prompt: '/changelog',
       providerId: 'claude',
       model: 'opus',
       permissionMode: 'plan' as const,
@@ -333,11 +333,11 @@ describe('QuickAccess', () => {
     });
 
     it('lists the project skills above the built-in actions', () => {
-      useStore.setState({ starredProjects: [{ ...website, skills: [blogartikel, seo] }] });
+      useStore.setState({ starredProjects: [{ ...website, skills: [changelog, seo] }] });
       render(<QuickAccess currentPath="/a/apps" />);
       openMenu();
       const labels = screen.getAllByRole('menuitem').map((el) => el.textContent);
-      expect(labels.slice(0, 2)).toEqual(['Blogartikel', 'SEO-Check']);
+      expect(labels.slice(0, 2)).toEqual(['Changelog', 'SEO-Check']);
       expect(screen.getByText('Skills')).toBeInTheDocument();
     });
 
@@ -345,12 +345,12 @@ describe('QuickAccess', () => {
       useStore.setState({
         starredProjects: [
           { path: '/a/apps', name: 'apps', starredAt: 1, skills: [seo] },
-          { ...website, skills: [blogartikel] },
+          { ...website, skills: [changelog] },
         ],
       });
       render(<QuickAccess currentPath="/a/apps" />);
       openMenu('/a/website');
-      expect(screen.getByRole('menuitem', { name: 'Blogartikel' })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Changelog' })).toBeInTheDocument();
       expect(screen.queryByRole('menuitem', { name: 'SEO-Check' })).not.toBeInTheDocument();
     });
 
@@ -368,20 +368,20 @@ describe('QuickAccess', () => {
     });
 
     it('prefills the agent dialog with the skill prompt and working directory', () => {
-      useStore.setState({ starredProjects: [{ ...website, skills: [blogartikel] }] });
+      useStore.setState({ starredProjects: [{ ...website, skills: [changelog] }] });
       render(<QuickAccess currentPath="/a/apps" />);
       openMenu();
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Blogartikel' }));
-      expect(useStore.getState().initialAgentTask).toBe('/blogartikel');
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Changelog' }));
+      expect(useStore.getState().initialAgentTask).toBe('/changelog');
       expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
       expect(useStore.getState().spawnDialogOpen).toBe(true);
     });
 
     it("carries the skill's provider, model and permission mode as a preset", () => {
-      useStore.setState({ starredProjects: [{ ...website, skills: [blogartikel] }] });
+      useStore.setState({ starredProjects: [{ ...website, skills: [changelog] }] });
       render(<QuickAccess currentPath="/a/apps" />);
       openMenu();
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Blogartikel' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Changelog' }));
       expect(useStore.getState().spawnAgentPreset).toEqual({
         providerId: 'claude',
         model: 'opus',
@@ -398,6 +398,48 @@ describe('QuickAccess', () => {
     });
 
     // Plain Start Agent must not inherit whatever a skill launched last.
+    it('lists combos above skills and marks them with a plus', () => {
+      const combo = {
+        id: 'c1',
+        label: 'Draft and polish',
+        steps: [
+          { id: 's1', label: 'Finalize', prompt: '/finalize' },
+          { id: 's2', label: 'Rewrite', prompt: '/rewrite' },
+        ],
+      };
+      useStore.setState({
+        starredProjects: [{ ...website, skills: [changelog], combos: [combo] }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      const labels = screen.getAllByRole('menuitem').map((el) => el.textContent);
+      expect(labels[0]).toBe('Draft and polish +');
+      expect(screen.getByText('Combos')).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Changelog' })).toBeInTheDocument();
+    });
+
+    it('starts a combo without opening the spawn dialog', () => {
+      const startSkillCombo = vi.fn();
+      const combo = {
+        id: 'c1',
+        label: 'Draft and polish',
+        steps: [
+          { id: 's1', label: 'Finalize', prompt: '/finalize' },
+          { id: 's2', label: 'Rewrite', prompt: '/rewrite' },
+        ],
+      };
+      useStore.setState({
+        starredProjects: [{ ...website, combos: [combo] }],
+        spawnDialogOpen: false,
+        startSkillCombo,
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      openMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Draft and polish +' }));
+      expect(startSkillCombo).toHaveBeenCalledWith('/a/website', combo);
+      expect(useStore.getState().spawnDialogOpen).toBe(false);
+    });
+
     it('clears a stale preset when starting a plain agent', () => {
       useStore.setState({
         starredProjects: [website],
@@ -426,6 +468,30 @@ describe('QuickAccess', () => {
       const face = screen.getByTestId('tile-face-/a/website');
       expect(face).toHaveAttribute('data-icon-kind', 'glyph');
       expect(face.querySelector('[data-icon="rocket_launch"]')).toBeInTheDocument();
+    });
+
+    it('marks a tile with a plus when the project has a combo', () => {
+      useStore.setState({
+        starredProjects: [
+          {
+            path: '/a/website',
+            name: 'website',
+            starredAt: 1,
+            combos: [
+              {
+                id: 'c1',
+                label: 'Draft and polish',
+                steps: [
+                  { id: 's1', label: 'Finalize', prompt: '/finalize' },
+                  { id: 's2', label: 'Rewrite', prompt: '/rewrite' },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      expect(screen.getByTestId('quick-access-combo-mark-/a/website')).toHaveTextContent('+');
     });
 
     it('draws a chosen emoji', () => {

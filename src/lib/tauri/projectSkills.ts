@@ -6,7 +6,7 @@ export type ProjectSkillSource = 'command' | 'skill';
 export type ProjectSkillScope = 'project' | 'user';
 
 export interface ProjectSkill {
-  /** What you type to invoke it, e.g. "/blogartikel" or "/frontend:component". */
+  /** What you type to invoke it, e.g. "/changelog" or "/frontend:component". */
   invocation: string;
   name: string;
   description: string | null;

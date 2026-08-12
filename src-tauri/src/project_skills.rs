@@ -50,7 +50,7 @@ pub enum ProjectSkillScope {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSkill {
-    /// What the user types, e.g. "/blogartikel" or "/frontend:component".
+    /// What the user types, e.g. "/changelog" or "/frontend:component".
     pub invocation: String,
     pub name: String,
     pub description: Option<String>,
@@ -370,11 +370,11 @@ mod tests {
         let path = dir.path().join("SKILL.md");
         write(
             &path,
-            "---\nname: blogartikel\ndescription: Writes a post\n---\nBody\n",
+            "---\nname: changelog\ndescription: Summarises recent changes\n---\nBody\n",
         );
         let front = parse_frontmatter(&path);
-        assert_eq!(front.name.as_deref(), Some("blogartikel"));
-        assert_eq!(front.description.as_deref(), Some("Writes a post"));
+        assert_eq!(front.name.as_deref(), Some("changelog"));
+        assert_eq!(front.description.as_deref(), Some("Summarises recent changes"));
     }
 
     #[test]
@@ -432,8 +432,8 @@ mod tests {
     fn lists_commands_and_skills() {
         let dir = tempfile::tempdir().unwrap();
         write(
-            &dir.path().join(".claude/commands/blogartikel.md"),
-            "---\nname: Blogartikel\n---\n",
+            &dir.path().join(".claude/commands/changelog.md"),
+            "---\nname: Changelog\n---\n",
         );
         write(
             &dir.path().join(".claude/skills/seo/SKILL.md"),
@@ -443,8 +443,8 @@ mod tests {
         let found = collect_from_root(dir.path(), &[claude_rule()], ProjectSkillScope::Project);
 
         assert_eq!(found.len(), 2);
-        assert_eq!(found[0].invocation, "/blogartikel");
-        assert_eq!(found[0].name, "Blogartikel");
+        assert_eq!(found[0].invocation, "/changelog");
+        assert_eq!(found[0].name, "Changelog");
         assert_eq!(found[1].invocation, "/seo");
         assert_eq!(found[1].name, "seo");
         assert_eq!(found[1].description.as_deref(), Some("SEO"));

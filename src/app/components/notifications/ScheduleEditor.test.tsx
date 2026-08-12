@@ -131,10 +131,10 @@ describe('ScheduleEditor', () => {
 
     it('uses the name as the notification title', () => {
       const props = renderEditor();
-      fireEvent.change(screen.getByTestId('schedule-name'), { target: { value: 'Blogpost' } });
+      fireEvent.change(screen.getByTestId('schedule-name'), { target: { value: 'Weekly digest' } });
 
       expect(payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).title).toBe(
-        'Blogpost'
+        'Weekly digest'
       );
     });
   });

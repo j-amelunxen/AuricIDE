@@ -27,6 +27,7 @@ import { createCommandUsageSlice, type CommandUsageSlice } from './commandUsageS
 import { createScratchSlice, type ScratchSlice } from './scratchSlice';
 import { createNotificationsSlice, type NotificationsSlice } from './notificationsSlice';
 import { createSchedulesSlice, type SchedulesSlice } from './schedulesSlice';
+import { createSkillComboSlice, type SkillComboSlice } from './skillComboSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -55,7 +56,8 @@ export type StoreState = FileTreeSlice &
   CommandUsageSlice &
   ScratchSlice &
   NotificationsSlice &
-  SchedulesSlice;
+  SchedulesSlice &
+  SkillComboSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -86,6 +88,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createScratchSlice(...a),
   ...createNotificationsSlice(...a),
   ...createSchedulesSlice(...a),
+  ...createSkillComboSlice(...a),
 }));
 
 // Dev-only: expose the store for debugging and browser-mode testing.

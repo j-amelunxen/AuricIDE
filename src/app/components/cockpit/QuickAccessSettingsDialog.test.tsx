@@ -60,12 +60,12 @@ vi.mock('@/lib/tauri/providers', async (importOriginal) => {
 const website: StarredProject = { path: '/a/website', name: 'website', starredAt: 1 };
 
 const discovery = (overrides: Partial<ProjectSkill>): ProjectSkill => ({
-  invocation: '/blogartikel',
-  name: 'Blogartikel',
-  description: 'Writes a post',
+  invocation: '/changelog',
+  name: 'Changelog',
+  description: 'Summarises recent changes',
   source: 'skill',
   scope: 'user',
-  path: '/home/u/.claude/skills/blogartikel/SKILL.md',
+  path: '/Users/dev/.claude/skills/changelog/SKILL.md',
   sourceId: 'claude',
   ...overrides,
 });
@@ -390,26 +390,96 @@ describe('QuickAccessSettingsDialog', () => {
     it('adopts a discovered skill with its invocation as the prompt', async () => {
       mockListProjectSkills.mockResolvedValue([discovery({})]);
       renderDialog();
-      fireEvent.click(await screen.findByRole('button', { name: 'Add Blogartikel' }));
-      expect(screen.getByLabelText('Skill 1 name')).toHaveValue('Blogartikel');
-      expect(screen.getByLabelText('Skill 1 prompt')).toHaveValue('/blogartikel');
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Changelog' }));
+      expect(screen.getByLabelText('Skill 1 name')).toHaveValue('Changelog');
+      expect(screen.getByLabelText('Skill 1 prompt')).toHaveValue('/changelog');
     });
 
     it('marks an already adopted entry as added', async () => {
       mockListProjectSkills.mockResolvedValue([discovery({})]);
       renderDialog({
         ...website,
-        skills: [
-          { id: 'a', label: 'Blogartikel', prompt: '/blogartikel', invocation: '/blogartikel' },
-        ],
+        skills: [{ id: 'a', label: 'Changelog', prompt: '/changelog', invocation: '/changelog' }],
       });
-      expect(await screen.findByRole('button', { name: /blogartikel added/i })).toBeDisabled();
+      expect(await screen.findByRole('button', { name: /changelog added/i })).toBeDisabled();
     });
 
     it('stays quiet when the discovery command is unavailable', async () => {
       mockListProjectSkills.mockResolvedValue([]);
       renderDialog();
       expect(await screen.findByText(/nothing found/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('completion', () => {
+    const type = (label: string, value: string) =>
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+    it('completes a prompt from the skills found on disk', async () => {
+      mockListProjectSkills.mockResolvedValue([discovery({})]);
+      renderDialog({ ...website, skills: [{ id: 'a', label: '', prompt: '' }] });
+      await screen.findByTestId('quick-access-discovery');
+
+      type('Skill 1 prompt', '/change');
+      expect(screen.getByRole('option', { name: /changelog/i })).toBeInTheDocument();
+    });
+
+    it('fills in the name of a picked skill when none was typed', async () => {
+      mockListProjectSkills.mockResolvedValue([discovery({})]);
+      renderDialog({ ...website, skills: [{ id: 'a', label: '', prompt: '' }] });
+      await screen.findByTestId('quick-access-discovery');
+
+      type('Skill 1 prompt', '/change');
+      fireEvent.mouseDown(screen.getByRole('option', { name: /changelog/i }));
+
+      expect(screen.getByLabelText('Skill 1 prompt')).toHaveValue('/changelog');
+      expect(screen.getByLabelText('Skill 1 name')).toHaveValue('Changelog');
+    });
+
+    it('never overwrites a name the user already chose', async () => {
+      mockListProjectSkills.mockResolvedValue([discovery({})]);
+      renderDialog({ ...website, skills: [{ id: 'a', label: 'My own name', prompt: '' }] });
+      await screen.findByTestId('quick-access-discovery');
+
+      type('Skill 1 prompt', '/change');
+      fireEvent.mouseDown(screen.getByRole('option', { name: /changelog/i }));
+
+      expect(screen.getByLabelText('Skill 1 name')).toHaveValue('My own name');
+    });
+
+    it('completes combo steps the same way', async () => {
+      mockListProjectSkills.mockResolvedValue([discovery({})]);
+      renderDialog({
+        ...website,
+        combos: [{ id: 'c1', label: 'Draft run', steps: [{ id: 's1', label: '', prompt: '' }] }],
+      });
+      await screen.findByTestId('quick-access-discovery');
+
+      type('Combo 1 step 1 prompt', '/change');
+      fireEvent.mouseDown(screen.getByRole('option', { name: /changelog/i }));
+
+      expect(screen.getByLabelText('Combo 1 step 1 prompt')).toHaveValue('/changelog');
+      expect(screen.getByLabelText('Combo 1 step 1 name')).toHaveValue('Changelog');
+    });
+
+    it('names combo steps apart from the loose skills, so no two fields share a label', () => {
+      renderDialog({
+        ...website,
+        skills: [{ id: 'a', label: 'Loose', prompt: '/a' }],
+        combos: [{ id: 'c1', label: 'Chain', steps: [{ id: 's1', label: 'Step', prompt: '/s' }] }],
+      });
+      expect(screen.getAllByLabelText('Skill 1 prompt')).toHaveLength(1);
+      expect(screen.getByLabelText('Combo 1 step 1 prompt')).toHaveValue('/s');
+    });
+
+    it('lists what is on disk once, not again inside every combo', async () => {
+      mockListProjectSkills.mockResolvedValue([discovery({})]);
+      renderDialog({
+        ...website,
+        combos: [{ id: 'c1', label: 'Chain', steps: [{ id: 's1', label: 'Step', prompt: '/s' }] }],
+      });
+      await screen.findByTestId('quick-access-discovery');
+      expect(screen.getAllByTestId('quick-access-discovery')).toHaveLength(1);
     });
   });
 
@@ -429,11 +499,14 @@ describe('QuickAccessSettingsDialog', () => {
     });
 
     it('trims what it saves', () => {
-      renderDialog({ ...website, skills: [{ id: 'a', label: '  Blog  ', prompt: '  /blog  ' }] });
+      renderDialog({
+        ...website,
+        skills: [{ id: 'a', label: '  Draft  ', prompt: '  /change  ' }],
+      });
       fireEvent.click(screen.getByTestId('quick-access-settings-save'));
       expect(useStore.getState().starredProjects[0].skills?.[0]).toMatchObject({
-        label: 'Blog',
-        prompt: '/blog',
+        label: 'Draft',
+        prompt: '/change',
       });
     });
 
@@ -442,6 +515,63 @@ describe('QuickAccessSettingsDialog', () => {
       fireEvent.click(screen.getByTestId('quick-access-add-skill'));
       expect(screen.getByTestId('quick-access-settings-save')).toBeDisabled();
       expect(screen.getByText(/every skill needs a name and a prompt/i)).toBeInTheDocument();
+    });
+
+    it('writes a combo on Save', () => {
+      renderDialog();
+      fireEvent.click(screen.getByTestId('quick-access-add-combo'));
+      fireEvent.change(screen.getByLabelText(/combo 1 name/i), {
+        target: { value: 'Draft and polish' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /add step/i }));
+      fireEvent.change(screen.getByLabelText('Combo 1 step 1 name'), {
+        target: { value: 'Draft' },
+      });
+      fireEvent.change(screen.getByLabelText('Combo 1 step 1 prompt'), {
+        target: { value: '/finalize' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /add step/i }));
+      fireEvent.change(screen.getByLabelText('Combo 1 step 2 name'), {
+        target: { value: 'Rewrite' },
+      });
+      fireEvent.change(screen.getByLabelText('Combo 1 step 2 prompt'), {
+        target: { value: '/rewrite' },
+      });
+      fireEvent.click(screen.getByTestId('quick-access-settings-save'));
+      const [saved] = useStore.getState().starredProjects[0].combos ?? [];
+      expect(saved.label).toBe('Draft and polish');
+      expect(saved.steps.map((step) => step.label)).toEqual(['Draft', 'Rewrite']);
+    });
+
+    it('refuses to save a combo without two complete steps', () => {
+      renderDialog();
+      fireEvent.click(screen.getByTestId('quick-access-add-combo'));
+      fireEvent.change(screen.getByLabelText(/combo 1 name/i), {
+        target: { value: 'Draft and polish' },
+      });
+      expect(screen.getByTestId('quick-access-settings-save')).toBeDisabled();
+      expect(
+        screen.getByText(/every combo needs a name and at least two complete steps/i)
+      ).toBeInTheDocument();
+    });
+
+    it('shows the plus preview of the combo steps', () => {
+      renderDialog({
+        ...website,
+        combos: [
+          {
+            id: 'c1',
+            label: 'Draft and polish',
+            steps: [
+              { id: 's1', label: 'Draft', prompt: '/finalize' },
+              { id: 's2', label: 'Rewrite', prompt: '/rewrite' },
+            ],
+          },
+        ],
+      });
+      expect(screen.getByTestId('quick-access-combo-preview-c1')).toHaveTextContent(
+        'Draft + Rewrite'
+      );
     });
 
     it('discards edits on Cancel', () => {

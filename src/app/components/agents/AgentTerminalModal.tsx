@@ -14,6 +14,7 @@ import { agentState, type AgentState } from '@/lib/agents/state';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { ComboProgressBadge } from './ComboProgressBadge';
 
 const EMPTY_ERROR_LOGS: string[] = [];
 
@@ -363,6 +364,7 @@ function AgentTerminalDialog({
                 <h2 id="agent-terminal-modal-title" className="text-sm font-bold text-foreground">
                   {agent.name}
                 </h2>
+                <ComboProgressBadge agentId={agent.id} />
                 <span
                   className={`text-[9px] font-black uppercase tracking-widest ${isRunning ? 'text-primary' : 'text-foreground-muted'}`}
                 >
