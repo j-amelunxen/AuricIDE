@@ -40,8 +40,7 @@ export function writeStoredThemeId(id: string): void {
 export function readSnapshot(): Record<string, string> | null {
   try {
     const raw =
-      localStorage.getItem(THEME_SNAPSHOT_KEY) ??
-      localStorage.getItem(LEGACY_SEEMING_SNAPSHOT_KEY);
+      localStorage.getItem(THEME_SNAPSHOT_KEY) ?? localStorage.getItem(LEGACY_SEEMING_SNAPSHOT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
@@ -60,14 +59,6 @@ export function readSnapshot(): Record<string, string> | null {
 export function writeSnapshot(bag: Record<string, string>): void {
   try {
     localStorage.setItem(THEME_SNAPSHOT_KEY, JSON.stringify(bag));
-  } catch {
-    // best-effort
-  }
-}
-
-export function clearSnapshot(): void {
-  try {
-    localStorage.removeItem(THEME_SNAPSHOT_KEY);
   } catch {
     // best-effort
   }

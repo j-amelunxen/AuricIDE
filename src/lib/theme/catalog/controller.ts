@@ -1,23 +1,14 @@
 import type { ThemeDefinition, ThemeMeta } from './types';
 import { applyTheme } from './apply';
 import { BUILTIN_IDS, DEFAULT_THEME_ID } from './builtins';
-import {
-  builtinRegistry,
-  findTheme,
-  listMeta,
-  type RegistryLoadResult,
-} from './registry';
+import { builtinRegistry, findTheme, listMeta, type RegistryLoadResult } from './registry';
 import { loadThemeRegistry } from './loadThemes';
-import {
-  resolveStoredThemeId,
-  writeStoredThemeId,
-} from './storage';
+import { resolveStoredThemeId, writeStoredThemeId } from './storage';
 
 export const THEME_CHANGE_EVENT = 'auric-theme-change';
 
 let registry: RegistryLoadResult = builtinRegistry();
 let selectedId: string = DEFAULT_THEME_ID;
-let hydrated = false;
 /** Bumps on every registry/selection change so useSyncExternalStore re-renders. */
 let generation = 0;
 
@@ -50,10 +41,6 @@ export function getThemeList(): ThemeMeta[] {
   return listMeta(registry.themes);
 }
 
-export function getThemeById(id: string): ThemeDefinition | undefined {
-  return resolveTheme(id);
-}
-
 export function getRegistrySkipped(): RegistryLoadResult['skipped'] {
   return registry.skipped;
 }
@@ -72,19 +59,6 @@ export function selectTheme(id: string): boolean {
 }
 
 /**
- * Re-apply the current selection from the registry (e.g. after custom reload).
- * Falls back to default if the stored id vanished.
- */
-export function reapplySelectedTheme(): void {
-  const id = resolveStoredThemeId(knownIds());
-  const theme = resolveTheme(id) ?? resolveTheme(DEFAULT_THEME_ID)!;
-  applyTheme(theme);
-  selectedId = theme.id;
-  writeStoredThemeId(theme.id);
-  notify();
-}
-
-/**
  * Load customs from disk, rebuild registry, re-apply selection.
  * Safe to call multiple times (Reload Themes).
  */
@@ -95,13 +69,8 @@ export async function hydrateThemes(): Promise<RegistryLoadResult> {
   applyTheme(theme);
   selectedId = theme.id;
   writeStoredThemeId(theme.id);
-  hydrated = true;
   notify();
   return registry;
-}
-
-export function isThemeHydrated(): boolean {
-  return hydrated;
 }
 
 /**
@@ -121,7 +90,6 @@ export function resetThemeForTests(themes?: ThemeDefinition[]): void {
     registry = builtinRegistry();
   }
   selectedId = DEFAULT_THEME_ID;
-  hydrated = false;
 }
 
 /** Inject a custom theme into the in-memory registry (tests / import preview). */

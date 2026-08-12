@@ -374,7 +374,10 @@ mod tests {
         );
         let front = parse_frontmatter(&path);
         assert_eq!(front.name.as_deref(), Some("changelog"));
-        assert_eq!(front.description.as_deref(), Some("Summarises recent changes"));
+        assert_eq!(
+            front.description.as_deref(),
+            Some("Summarises recent changes")
+        );
     }
 
     #[test]

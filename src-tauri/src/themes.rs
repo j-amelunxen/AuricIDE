@@ -68,69 +68,10 @@ fn search_paths(app: Option<&tauri::AppHandle>) -> Vec<PathBuf> {
     paths
 }
 
-/// Import dir for persisted themes (app_data/themes when available).
-pub fn import_dir(app: Option<&tauri::AppHandle>) -> Option<PathBuf> {
-    app.and_then(|a| a.path().app_data_dir().ok())
-        .map(|d| d.join("themes"))
-}
-
-/// Persist raw JSON under `{import_dir}/{id}.json`. Minimal structural check only
-/// (id present); full schema validation is TypeScript-side.
-pub fn import_theme_file(
-    json: &str,
-    app: Option<&tauri::AppHandle>,
-) -> Result<ThemeFile, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| format!("Invalid JSON: {}", e))?;
-    let id = value
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "Theme JSON is missing a non-empty \"id\"".to_string())?;
-
-    // Reserved built-in ids must not be overwritten on disk either.
-    const RESERVED: &[&str] = &["purple", "blue", "cyan", "emerald", "amber", "pink"];
-    if RESERVED.contains(&id) {
-        return Err(format!(
-            "\"{}\" is a built-in theme id and cannot be overwritten",
-            id
-        ));
-    }
-
-    let dir = import_dir(app).ok_or_else(|| "No app data directory available".to_string())?;
-    fs::create_dir_all(&dir).map_err(|e| format!("Could not create themes dir: {}", e))?;
-    let path = dir.join(format!("{}.json", id));
-    fs::write(&path, json).map_err(|e| format!("Could not save theme: {}", e))?;
-
-    Ok(ThemeFile {
-        path: path.to_string_lossy().to_string(),
-        content: json.to_string(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
-
-    #[test]
-    fn import_without_app_reports_missing_data_dir() {
-        let json = r##"{"schemaVersion":1,"id":"rose","name":"Rose","swatch":"#ff4d6d","tokens":{"primary":"#ff4d6d"}}"##;
-        let err = import_theme_file(json, None).unwrap_err();
-        assert!(
-            err.contains("app data") || err.contains("Invalid"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn reserved_builtin_ids_are_listed() {
-        let json = r##"{"schemaVersion":1,"id":"purple","name":"X","swatch":"#000","tokens":{"primary":"#000"}}"##;
-        let value: serde_json::Value = serde_json::from_str(json).unwrap();
-        let id = value.get("id").and_then(|v| v.as_str()).unwrap();
-        assert_eq!(id, "purple");
-    }
 
     #[test]
     fn writes_and_reads_theme_file() {

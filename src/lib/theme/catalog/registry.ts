@@ -1,5 +1,5 @@
 import type { ThemeDefinition, ThemeMeta } from './types';
-import { BUILTIN_IDS, BUILTIN_THEMES, DEFAULT_THEME_ID, getBuiltinTheme } from './builtins';
+import { BUILTIN_IDS, BUILTIN_THEMES, getBuiltinTheme } from './builtins';
 import { parseThemeJson } from './schema';
 
 export interface RegistryLoadResult {
@@ -96,13 +96,6 @@ export function listMeta(themes: ThemeDefinition[]): ThemeMeta[] {
   return themes.map(toMeta);
 }
 
-export function findTheme(
-  themes: ThemeDefinition[],
-  id: string
-): ThemeDefinition | undefined {
+export function findTheme(themes: ThemeDefinition[], id: string): ThemeDefinition | undefined {
   return themes.find((t) => t.id === id) ?? getBuiltinTheme(id);
-}
-
-export function defaultTheme(): ThemeDefinition {
-  return getBuiltinTheme(DEFAULT_THEME_ID)!;
 }
