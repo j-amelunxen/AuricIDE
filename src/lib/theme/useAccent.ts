@@ -2,15 +2,18 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 import { DEFAULT_ACCENT_ID, isAccentId, loadAccent, saveAccent } from './accent';
+import { THEME_CHANGE_EVENT } from './catalog/controller';
 
 const ACCENT_CHANGE_EVENT = 'auric-accent-change';
 
 function subscribe(callback: () => void): () => void {
   window.addEventListener('storage', callback);
   window.addEventListener(ACCENT_CHANGE_EVENT, callback);
+  window.addEventListener(THEME_CHANGE_EVENT, callback);
   return () => {
     window.removeEventListener('storage', callback);
     window.removeEventListener(ACCENT_CHANGE_EVENT, callback);
+    window.removeEventListener(THEME_CHANGE_EVENT, callback);
   };
 }
 
