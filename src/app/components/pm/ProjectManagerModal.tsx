@@ -4,6 +4,7 @@ import { useEffect, useCallback, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { EpicSidebar } from './EpicSidebar';
 import { TicketTable } from './TicketTable';
 import { TicketEditPanel } from './TicketEditPanel';
@@ -16,6 +17,11 @@ import { generateTicketPrompt } from '@/lib/pm/prompt';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const EMPTY: never[] = [];
+
+/** "1 ticket" / "3 tickets" — the count is the point, so it always leads. */
+function count(n: number, singular: string): string {
+  return `${n} ${singular}${n === 1 ? '' : 's'}`;
+}
 
 function ProjectManagerDialog() {
   const dialogRef = useDialogA11y<HTMLDivElement>();
@@ -56,6 +62,8 @@ function ProjectManagerDialog() {
   const setPmSelectedTicketId = useStore((s) => s.setPmSelectedTicketId);
   const archiveDoneTickets = useStore((s) => s.archiveDoneTickets);
 
+  const { confirm, confirmDialog } = useConfirm();
+
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const [editingEpic, setEditingEpic] = useState<PmEpic | null>(null);
   const [ticketCreateOpen, setTicketCreateOpen] = useState(false);
@@ -74,13 +82,18 @@ function ProjectManagerDialog() {
     return () => clearInterval(id);
   }, [pmModalOpen, rootPath, refreshPmData]);
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback(async () => {
     if (pmDirty) {
-      if (!confirm('Discard unsaved changes?')) return;
+      const go = await confirm({
+        title: 'Discard changes?',
+        message: 'Discard unsaved changes?',
+        confirmLabel: 'Discard',
+      });
+      if (!go) return;
       discardPmChanges();
     }
     setPmModalOpen(false);
-  }, [pmDirty, discardPmChanges, setPmModalOpen]);
+  }, [pmDirty, confirm, discardPmChanges, setPmModalOpen]);
 
   /** Resolves true when the work is persisted. The store already toasts on
    *  failure, so callers only need the verdict. */
@@ -99,11 +112,15 @@ function ProjectManagerDialog() {
     if (await handleSave()) setPmModalOpen(false);
   }, [handleSave, setPmModalOpen]);
 
+  // Escape belongs to whatever is on top: the confirm dialog cancels itself,
+  // and this handler must not answer it by asking the same question again.
+  const confirmOpen = confirmDialog !== null;
+
   useEffect(() => {
     if (!pmModalOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleClose();
+      if (e.key === 'Escape' && !confirmOpen) {
+        void handleClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (pmDirty) void handleSave();
@@ -111,7 +128,7 @@ function ProjectManagerDialog() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [pmModalOpen, handleClose, handleSave, pmDirty]);
+  }, [pmModalOpen, confirmOpen, handleClose, handleSave, pmDirty]);
 
   const filteredTickets = (
     selectedEpicId === null ? draftTickets : draftTickets.filter((t) => t.epicId === selectedEpicId)
@@ -256,6 +273,51 @@ function ProjectManagerDialog() {
     [handleEpicDialogSave]
   );
 
+  // Deleting an epic takes every ticket under it and every test case under
+  // those tickets with it, from a 20px icon that only exists on hover. The
+  // question has to state the size of that, or it is not a real question.
+  const handleDeleteEpic = useCallback(
+    async (id: string) => {
+      const ticketIds = draftTickets.filter((t) => t.epicId === id).map((t) => t.id);
+      const testCaseCount = draftTestCases.filter((tc) => ticketIds.includes(tc.ticketId)).length;
+
+      let message: string;
+      if (ticketIds.length === 0) {
+        message = 'This deletes the epic. It has no tickets.';
+      } else {
+        message = `This deletes the epic and its ${count(ticketIds.length, 'ticket')}`;
+        message += testCaseCount > 0 ? `, along with ${count(testCaseCount, 'test case')}.` : '.';
+      }
+
+      const go = await confirm({
+        title: 'Delete this epic?',
+        message,
+        confirmLabel: 'Delete',
+      });
+      if (!go) return;
+      deleteEpic(id);
+    },
+    [confirm, deleteEpic, draftTickets, draftTestCases]
+  );
+
+  const handleDeleteTicket = useCallback(
+    async (id: string) => {
+      const testCaseCount = draftTestCases.filter((tc) => tc.ticketId === id).length;
+      const go = await confirm({
+        title: 'Delete this ticket?',
+        message:
+          testCaseCount === 0
+            ? 'This deletes the ticket. It has no test cases.'
+            : `This deletes the ticket and its ${count(testCaseCount, 'test case')}.`,
+        confirmLabel: 'Delete',
+      });
+      if (!go) return;
+      deleteTicket(id);
+      setPmSelectedTicketId(null);
+    },
+    [confirm, deleteTicket, setPmSelectedTicketId, draftTestCases]
+  );
+
   const handleEditEpic = useCallback((epic: PmEpic) => {
     setEditingEpic(epic);
     setEpicDialogOpen(true);
@@ -270,7 +332,10 @@ function ProjectManagerDialog() {
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm" onClick={handleClose} />
+      <div
+        className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm"
+        onClick={() => void handleClose()}
+      />
 
       <div
         ref={dialogRef}
@@ -367,7 +432,7 @@ function ProjectManagerDialog() {
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={handleClose}
+              onClick={() => void handleClose()}
               className="rounded-lg px-3 py-1.5 text-xs text-foreground-muted hover:bg-white/5 transition-colors"
             >
               Cancel
@@ -418,7 +483,7 @@ function ProjectManagerDialog() {
                 onSelectEpic={setPmSelectedEpicId}
                 onAddEpic={handleAddEpic}
                 onEditEpic={handleEditEpic}
-                onDeleteEpic={deleteEpic}
+                onDeleteEpic={(id) => void handleDeleteEpic(id)}
               />
             </div>
 
@@ -456,10 +521,7 @@ function ProjectManagerDialog() {
                 }}
                 onSaveAndClose={handleSaveAndClose}
                 onCancel={() => setPmSelectedTicketId(null)}
-                onDeleteTicket={(id) => {
-                  deleteTicket(id);
-                  setPmSelectedTicketId(null);
-                }}
+                onDeleteTicket={(id) => void handleDeleteTicket(id)}
                 onMoveTicket={moveTicket}
                 onAddTestCase={handleAddTestCase}
                 onUpdateTestCase={updateTestCase}
@@ -493,6 +555,8 @@ function ProjectManagerDialog() {
         onSaveAndClose={handleTicketCreateAndClose}
         onClose={() => setTicketCreateOpen(false)}
       />
+
+      {confirmDialog}
     </>,
     document.body
   );

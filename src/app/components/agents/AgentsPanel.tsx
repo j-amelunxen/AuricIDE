@@ -1,7 +1,8 @@
 'use client';
 
 import type { AgentInfo } from '@/lib/tauri/agents';
-import { groupAgentsByRepo } from '@/lib/store/agentSlice';
+import { groupAgentsByRepo, UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import type { InterruptedAgent } from '@/lib/tauri/agents';
 import { useState } from 'react';
 import { useNow } from '@/lib/hooks/useNow';
@@ -160,19 +161,25 @@ export function AgentsPanel({
     ? active.filter((a) => a.status === 'running' && !needsAttention(a, now))
     : [];
 
+  // Asked in-app and awaited. The browser's confirm() keeps running the script
+  // inside the Tauri webview, which let a kill happen before the user answered.
+  const { confirm, confirmDialog } = useConfirm();
+
   /**
    * The terminate control sits a few pixels from the terminal toggle and only
    * appears on hover, so a mis-click is easy and costs everything the agent
    * has done so far. An agent that has already stopped has nothing left to
    * lose, so asking there would be friction for its own sake.
    */
-  const confirmKill = (agentId: string) => {
+  const confirmKill = async (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
-    if (
-      agent?.status === 'running' &&
-      !confirm(`Stop ${agent.name}? Its work in progress is lost.`)
-    ) {
-      return;
+    if (agent?.status === 'running') {
+      const go = await confirm({
+        title: 'Stop this agent?',
+        message: `Stop ${agent.name}? Its work in progress is lost.`,
+        confirmLabel: 'Stop',
+      });
+      if (!go) return;
     }
     onKill(agentId);
   };
@@ -181,17 +188,22 @@ export function AgentsPanel({
    * Killing a repo's agents throws away however much work they had done, and
    * the button sits one row above the cards. Name the cost before doing it.
    */
-  const confirmKillRepo = (repoPath: string) => {
+  const confirmKillRepo = async (repoPath: string) => {
     // Counted over every agent in the repo, parked ones included — Kill All
     // stops those too, so hiding them from the count would understate the loss.
     const running = agents.filter(
-      (a) => (a.repoPath ?? 'Unknown') === repoPath && a.status === 'running'
+      (a) => (a.repoPath ?? UNGROUPED_REPO_KEY) === repoPath && a.status === 'running'
     ).length;
     const repoName =
-      repoPath === 'Unknown' ? 'this group' : (repoPath.split('/').pop() ?? repoPath);
+      repoPath === UNGROUPED_REPO_KEY ? 'this group' : (repoPath.split('/').pop() ?? repoPath);
     const what = running === 1 ? '1 running agent' : `${running} running agents`;
-    if (running > 0 && !confirm(`Stop ${what} in ${repoName}? Their work in progress is lost.`)) {
-      return;
+    if (running > 0) {
+      const go = await confirm({
+        title: 'Stop all agents?',
+        message: `Stop ${what} in ${repoName}? Their work in progress is lost.`,
+        confirmLabel: 'Stop all',
+      });
+      if (!go) return;
     }
     onKillRepo?.(repoPath);
   };
@@ -280,7 +292,11 @@ export function AgentsPanel({
                 onActivate={(id) => onSelectAgent?.(id)}
                 dismissLabel={agent.status === 'error' ? 'Dismiss' : 'Terminate'}
                 dismissIcon={agent.status === 'error' ? 'close' : 'power_settings_new'}
-                onDismiss={agent.status === 'error' ? (id) => onDismissFinished?.(id) : confirmKill}
+                onDismiss={
+                  agent.status === 'error'
+                    ? (id) => onDismissFinished?.(id)
+                    : (id) => void confirmKill(id)
+                }
                 color={agentColors[agent.id]}
                 onContextMenu={onSetColor && openColorMenu}
                 onRetry={onRetryFailed}
@@ -377,7 +393,7 @@ export function AgentsPanel({
                   {onKillRepo && (
                     <button
                       type="button"
-                      onClick={() => confirmKillRepo(repoPath)}
+                      onClick={() => void confirmKillRepo(repoPath)}
                       aria-label={`Stop all agents in ${repoName}`}
                       className="min-h-6 rounded px-1.5 py-0.5 text-[10px] text-foreground-muted transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60"
                     >
@@ -395,7 +411,7 @@ export function AgentsPanel({
                     >
                       <AgentCard
                         agent={agent}
-                        onKill={confirmKill}
+                        onKill={(id) => void confirmKill(id)}
                         onSelect={onSelectAgent}
                         onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
                         onRename={onRename}
@@ -422,7 +438,7 @@ export function AgentsPanel({
                 onActivate={(id) => onToggleMinimize?.(id, false)}
                 dismissLabel="Terminate"
                 dismissIcon="power_settings_new"
-                onDismiss={confirmKill}
+                onDismiss={(id) => void confirmKill(id)}
                 color={agentColors[agent.id]}
                 onContextMenu={onSetColor && openColorMenu}
               />
@@ -494,6 +510,7 @@ export function AgentsPanel({
           onClose={() => setColorMenu(null)}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

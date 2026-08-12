@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ExcalidrawViewer } from './ExcalidrawViewer';
 import { useStore } from '@/lib/store';
 
@@ -213,29 +213,33 @@ describe('ExcalidrawViewer', () => {
   it('deletes the local copy after confirmation and closes the tab', async () => {
     const removeSpecFile = vi.fn(async () => {});
     const closeTab = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     useStore.setState({ removeSpecFile, closeTab, excalidrawSpecLinks: LINKED });
     render(<ExcalidrawViewer content={VALID_CONTENT} filePath={FILE} />);
 
     fireEvent.click(screen.getByTestId('excalidraw-remove-local'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(removeSpecFile).toHaveBeenCalledWith(PROJECT, 'specs/checkout-flow.excalidraw');
       expect(closeTab).toHaveBeenCalledWith(FILE);
     });
-    confirmSpy.mockRestore();
   });
 
   it('does not delete anything when the confirmation is declined', async () => {
     const removeSpecFile = vi.fn(async () => {});
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     useStore.setState({ removeSpecFile, excalidrawSpecLinks: LINKED });
     render(<ExcalidrawViewer content={VALID_CONTENT} filePath={FILE} />);
 
     fireEvent.click(screen.getByTestId('excalidraw-remove-local'));
-
+    const dialog = await screen.findByRole('dialog');
+    // Nothing may happen while the question is still open — that was the bug.
     expect(removeSpecFile).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(removeSpecFile).not.toHaveBeenCalled();
   });
 
   it('offers no unlink or delete for plain local files', () => {

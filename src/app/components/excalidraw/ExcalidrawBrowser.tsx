@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { ExcalidrawCanvas } from './ExcalidrawCanvas';
 import type { ExcalidrawSceneSummary } from '@/lib/excalidraw/types';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -64,6 +65,8 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
   const removeSpecFile = useStore((s) => s.removeSpecFile);
   const showToast = useStore((s) => s.showToast);
 
+  const { confirm, confirmDialog } = useConfirm();
+
   const [importing, setImporting] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
 
@@ -107,13 +110,12 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
   const handleRemoveLocal = async (scene: ExcalidrawSceneSummary) => {
     const relPath = relPathForScene(scene.id);
     if (!rootPath || !relPath) return;
-    if (
-      !confirm(
-        `Delete local copy of "${scene.name}" (${relPath})? Scene stays on Excalidraw+.`
-      )
-    ) {
-      return;
-    }
+    const go = await confirm({
+      title: 'Delete local copy?',
+      message: `Delete local copy of "${scene.name}" (${relPath})? Scene stays on Excalidraw+.`,
+      confirmLabel: 'Delete',
+    });
+    if (!go) return;
     try {
       await removeSpecFile(rootPath, relPath);
       showToast(`Deleted local "${scene.name}" · still on Excalidraw+`, 'success');
@@ -357,6 +359,8 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
           </div>
         )}
       </div>
+
+      {confirmDialog}
     </div>,
     document.body
   );

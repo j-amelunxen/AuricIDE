@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ExcalidrawBrowser } from './ExcalidrawBrowser';
 import { useStore } from '@/lib/store';
 import type { ExcalidrawSceneSummary } from '@/lib/excalidraw/types';
@@ -110,33 +110,58 @@ describe('ExcalidrawBrowser', () => {
     expect(screen.getByTestId('excalidraw-mark-spec-scn_checkout')).toHaveTextContent('Re-sync');
   });
 
+  const LINKED_CHECKOUT = {
+    'specs/checkout-flow.excalidraw': {
+      sceneId: 'scn_checkout',
+      collectionId: 'col_flows',
+      workspaceId: 'ws_1',
+      sceneName: 'Checkout Flow',
+      importedAt: '2026-07-01T00:00:00Z',
+    },
+  };
+
   it('removes the local copy of a linked scene after confirmation', async () => {
     const removeSpecFile = vi.fn(async () => {});
     const onImported = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     useStore.setState({
       removeSpecFile,
       excalidrawScenes: [makeScene()],
       excalidrawSelectedCollectionId: 'col_flows',
-      excalidrawSpecLinks: {
-        'specs/checkout-flow.excalidraw': {
-          sceneId: 'scn_checkout',
-          collectionId: 'col_flows',
-          workspaceId: 'ws_1',
-          sceneName: 'Checkout Flow',
-          importedAt: '2026-07-01T00:00:00Z',
-        },
-      },
+      excalidrawSpecLinks: LINKED_CHECKOUT,
     });
     render(<ExcalidrawBrowser onImported={onImported} />);
 
     fireEvent.click(screen.getByTestId('excalidraw-remove-local-scn_checkout'));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete local copy?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(removeSpecFile).toHaveBeenCalledWith(PROJECT, 'specs/checkout-flow.excalidraw');
       expect(onImported).toHaveBeenCalled();
     });
-    confirmSpy.mockRestore();
+  });
+
+  it('does not remove the local copy when the confirmation is declined', async () => {
+    const removeSpecFile = vi.fn(async () => {});
+    useStore.setState({
+      removeSpecFile,
+      excalidrawScenes: [makeScene()],
+      excalidrawSelectedCollectionId: 'col_flows',
+      excalidrawSpecLinks: LINKED_CHECKOUT,
+    });
+    render(<ExcalidrawBrowser />);
+
+    fireEvent.click(screen.getByTestId('excalidraw-remove-local-scn_checkout'));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete local copy?' });
+    // Nothing may happen while the question is still open — that was the bug.
+    expect(removeSpecFile).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Delete local copy?' })).not.toBeInTheDocument()
+    );
+    expect(removeSpecFile).not.toHaveBeenCalled();
   });
 
   it('offers no remove-local action for scenes that are not linked', () => {

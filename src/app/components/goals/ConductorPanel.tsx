@@ -9,12 +9,19 @@ import type {
 } from '@/lib/store/conductorSlice';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 
 interface ConductorPanelProps {
   running: boolean;
   scopeGoalName: string | null;
   maxConcurrent: number;
   activeAgentCount: number;
+  /**
+   * Agents Stop would actually kill — implementers and reviewers alike. Not the
+   * same as `activeAgentCount`, which also counts slots held by a spawn still
+   * in flight; those have no process to lose.
+   */
+  runningAgentCount: number;
   pendingApprovals: PmTicket[];
   decisions: ConductorDecision[];
   lastRun: ConductorRunSummary | null;
@@ -119,6 +126,7 @@ export function ConductorPanel({
   scopeGoalName,
   maxConcurrent,
   activeAgentCount,
+  runningAgentCount,
   pendingApprovals,
   decisions,
   lastRun,
@@ -143,10 +151,28 @@ export function ConductorPanel({
   onDismiss,
 }: ConductorPanelProps) {
   const [logExpanded, setLogExpanded] = useState(false);
+  const { confirm, confirmDialog } = useConfirm();
   const providerList = providers ?? [];
   const activeProvider = providerList.find((p) => p.id === providerId) ?? providerList[0];
   const selectCls =
     'rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-foreground outline-none focus:ring-1 focus:ring-primary/30';
+
+  // Stop kills every agent the run launched, so it asks first — but only while
+  // there is something to lose. With nothing running the question would be
+  // friction, not a safeguard.
+  const handleStop = async () => {
+    if (runningAgentCount > 0) {
+      const what =
+        runningAgentCount === 1 ? '1 running agent' : `${runningAgentCount} running agents`;
+      const go = await confirm({
+        title: 'Stop the conductor?',
+        message: `Stop ${what}? Their work in progress is lost.`,
+        confirmLabel: 'Stop',
+      });
+      if (!go) return;
+    }
+    onStop();
+  };
 
   return (
     <div data-testid="conductor-panel" className="border-t border-white/5 bg-black/20 px-4 py-2.5">
@@ -302,7 +328,7 @@ export function ConductorPanel({
           {running ? (
             <button
               data-testid="conductor-stop-btn"
-              onClick={onStop}
+              onClick={() => void handleStop()}
               className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-red-500/15 border border-red-500/25 px-3 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/25 transition-colors"
             >
               <AuricIcon name="stop" className="text-sm" />
@@ -381,6 +407,8 @@ export function ConductorPanel({
           )}
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SourceControlPanel, type SourceControlProps } from './SourceControlPanel';
@@ -260,14 +260,88 @@ describe('SourceControlPanel', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
-  it('calls onDiscardFile with the file path when Discard Changes is clicked', async () => {
+  it('asks before discarding and touches nothing while the question stands', async () => {
+    // Discarding is the one action in the panel git cannot undo. The menu item
+    // sits under the cursor right after a right-click, so the click that opens
+    // the menu must not be able to destroy anything on its own.
     const user = userEvent.setup();
     const onDiscardFile = vi.fn();
     render(<SourceControlPanel {...defaultProps} onDiscardFile={onDiscardFile} />);
 
     fireEvent.contextMenu(screen.getByText('README.md'));
     await user.click(screen.getByText('Discard Changes'));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(onDiscardFile).not.toHaveBeenCalled();
+  });
+
+  it('discards the file once the question is confirmed', async () => {
+    const user = userEvent.setup();
+    const onDiscardFile = vi.fn();
+    render(<SourceControlPanel {...defaultProps} onDiscardFile={onDiscardFile} />);
+
+    fireEvent.contextMenu(screen.getByText('README.md'));
+    await user.click(screen.getByText('Discard Changes'));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
     expect(onDiscardFile).toHaveBeenCalledWith('README.md');
+  });
+
+  it('keeps the file when the question is declined', async () => {
+    const user = userEvent.setup();
+    const onDiscardFile = vi.fn();
+    render(<SourceControlPanel {...defaultProps} onDiscardFile={onDiscardFile} />);
+
+    fireEvent.contextMenu(screen.getByText('README.md'));
+    await user.click(screen.getByText('Discard Changes'));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(onDiscardFile).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('says a tracked file loses its uncommitted changes', async () => {
+    const user = userEvent.setup();
+    render(<SourceControlPanel {...defaultProps} onDiscardFile={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByText('README.md'));
+    await user.click(screen.getByText('Discard Changes'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('README.md');
+    expect(dialog).toHaveTextContent(/uncommitted changes/i);
+    expect(dialog).toHaveTextContent(/last commit/i);
+  });
+
+  it('says an untracked file is deleted from disk, because git has no copy', async () => {
+    // For a file git has never seen there is nothing to restore from — the
+    // wording for a modified file would understate this by a lot.
+    const user = userEvent.setup();
+    render(<SourceControlPanel {...defaultProps} onDiscardFile={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByText('untracked-file.md'));
+    await user.click(screen.getByText('Discard Changes'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('untracked-file.md');
+    expect(dialog).toHaveTextContent(/delete/i);
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('warns about deletion for a newly added file too — discard removes it as well', async () => {
+    // Staged-new goes down the same path in the backend: reset, then remove the
+    // file. Nothing was ever committed, so there is no copy behind it either.
+    const user = userEvent.setup();
+    render(<SourceControlPanel {...defaultProps} onDiscardFile={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByText('new-file.md'));
+    await user.click(screen.getByText('Discard Changes'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent(/delete/i);
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
   });
 
   it('closes context menu after Discard Changes is clicked', async () => {

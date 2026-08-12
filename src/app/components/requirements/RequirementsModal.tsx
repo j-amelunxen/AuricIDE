@@ -4,6 +4,7 @@ import { useEffect, useCallback, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { RequirementFilterPanel } from './RequirementFilterPanel';
 import { RequirementList } from './RequirementList';
 import { RequirementDetailPanel } from './RequirementDetailPanel';
@@ -41,6 +42,8 @@ function RequirementsDialog() {
   const setFilterVerification = useStore((s) => s.setRequirementFilterVerification);
   const setSearchQuery = useStore((s) => s.setRequirementSearchQuery);
 
+  const { confirm, confirmDialog } = useConfirm();
+
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
@@ -49,13 +52,18 @@ function RequirementsDialog() {
     }
   }, [requirementsModalOpen, rootPath, loadRequirements]);
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback(async () => {
     if (requirementsDirty) {
-      if (!confirm('Discard unsaved changes?')) return;
+      const go = await confirm({
+        title: 'Discard changes?',
+        message: 'Discard unsaved changes?',
+        confirmLabel: 'Discard',
+      });
+      if (!go) return;
       discardRequirementChanges();
     }
     setRequirementsModalOpen(false);
-  }, [requirementsDirty, discardRequirementChanges, setRequirementsModalOpen]);
+  }, [requirementsDirty, confirm, discardRequirementChanges, setRequirementsModalOpen]);
 
   // The store toasts on failure; swallow here so a failed save cannot surface
   // as an unhandled rejection instead of a message.
@@ -64,11 +72,15 @@ function RequirementsDialog() {
     await persistQuietly(saveRequirements(rootPath));
   }, [rootPath, saveRequirements]);
 
+  // Escape belongs to whatever is on top: the confirm dialog cancels itself,
+  // and this handler must not answer it by asking the same question again.
+  const confirmOpen = confirmDialog !== null;
+
   useEffect(() => {
     if (!requirementsModalOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !createOpen) {
-        handleClose();
+      if (e.key === 'Escape' && !createOpen && !confirmOpen) {
+        void handleClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (requirementsDirty) void handleSave();
@@ -76,7 +88,7 @@ function RequirementsDialog() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [requirementsModalOpen, createOpen, handleClose, handleSave, requirementsDirty]);
+  }, [requirementsModalOpen, createOpen, confirmOpen, handleClose, handleSave, requirementsDirty]);
 
   const categories = useMemo(() => {
     const cats = new Set<string>();
@@ -139,12 +151,22 @@ function RequirementsDialog() {
     [addRequirement, saveRequirements, rootPath]
   );
 
+  // A requirement carries more than its text: its verification record and the
+  // test links that prove it. Name both, so the user is not told afterwards.
   const handleDelete = useCallback(
-    (id: string) => {
+    async (id: string) => {
+      const req = requirementsDraft.find((r) => r.id === id);
+      const subject = req ? req.reqId : 'this requirement';
+      const go = await confirm({
+        title: 'Delete this requirement?',
+        message: `This deletes ${subject}, its verification history and its links to test cases.`,
+        confirmLabel: 'Delete',
+      });
+      if (!go) return;
       deleteRequirement(id);
       if (selectedRequirementId === id) setSelectedRequirementId(null);
     },
-    [deleteRequirement, selectedRequirementId, setSelectedRequirementId]
+    [confirm, requirementsDraft, deleteRequirement, selectedRequirementId, setSelectedRequirementId]
   );
 
   if (!requirementsModalOpen) return null;
@@ -154,7 +176,7 @@ function RequirementsDialog() {
       data-testid="requirements-modal"
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => {
-        if (e.target === e.currentTarget) handleClose();
+        if (e.target === e.currentTarget) void handleClose();
       }}
     >
       <div
@@ -208,7 +230,7 @@ function RequirementsDialog() {
             )}
             <button
               data-testid="requirements-close-btn"
-              onClick={handleClose}
+              onClick={() => void handleClose()}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
             >
               <AuricIcon name="close" className="text-base" />
@@ -243,7 +265,7 @@ function RequirementsDialog() {
             <RequirementDetailPanel
               requirement={selectedRequirement}
               onUpdate={updateRequirement}
-              onDelete={handleDelete}
+              onDelete={(id) => void handleDelete(id)}
               onVerify={verifyRequirement}
             />
           </div>
@@ -256,6 +278,8 @@ function RequirementsDialog() {
         onSave={handleCreate}
         onClose={() => setCreateOpen(false)}
       />
+
+      {confirmDialog}
     </div>,
     document.body
   );
