@@ -247,10 +247,11 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     // Remember the start prompt in the project DB (last 100). Fire-and-forget:
     // history bookkeeping must never fail or delay the spawn itself.
     const { rootPath } = get() as AgentSlice & { rootPath?: string | null };
-    if (rootPath && config.task.trim()) {
+    const remembered = config.historyPrompt ?? config.task;
+    if (rootPath && remembered.trim()) {
       recordAgentPromptHistory(rootPath, {
         id: crypto.randomUUID(),
-        prompt: config.task,
+        prompt: remembered,
         agentName: name,
         model: config.model,
         provider: config.provider ?? agent.provider,
@@ -321,6 +322,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       // Agent may have already terminated naturally — Rust side already cleaned up
     }
     const { agentLogs, agentLogMeta } = get();
+    // Read before the removal below: if this was a combo step, its output is
+    // the only thing the next step inherits, and the state drops it here.
+    const endedLogs = agentLogs[agentId] ?? [];
     const { [agentId]: _, ...remainingLogs } = agentLogs;
     const { [agentId]: _meta, ...remainingMeta } = agentLogMeta;
 
@@ -366,9 +370,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     // starts here. Awaited so a test (and a user who immediately looks) sees
     // the successor already in the fleet.
     const combo = get() as AgentSlice & {
-      skillComboHandleAgentEnded?: (agentId: string) => Promise<void>;
+      skillComboHandleAgentEnded?: (agentId: string, endedLogs: string[]) => Promise<void>;
     };
-    await combo.skillComboHandleAgentEnded?.(agentId);
+    await combo.skillComboHandleAgentEnded?.(agentId, endedLogs);
   },
 
   renameRunningAgent: async (agentId, name) => {
@@ -397,6 +401,8 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     const agent = agents.find((a) => a.id === agentId);
     if (!agent || !isFinishedAgent(agent)) return;
 
+    // Read before the removal below — a combo step's successor inherits it.
+    const endedLogs = agentLogs[agentId] ?? [];
     const { [agentId]: _logs, ...remainingLogs } = agentLogs;
     const { [agentId]: _meta, ...remainingMeta } = agentLogMeta;
     const { [agentId]: _config, ...remainingConfigs } = get().agentSpawnConfigs;
@@ -412,9 +418,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     // Dismissing a finished combo step is "I'm done reviewing" — start the next.
     const combo = get() as AgentSlice & {
-      skillComboHandleAgentEnded?: (agentId: string) => Promise<void>;
+      skillComboHandleAgentEnded?: (agentId: string, endedLogs: string[]) => Promise<void>;
     };
-    void combo.skillComboHandleAgentEnded?.(agentId);
+    void combo.skillComboHandleAgentEnded?.(agentId, endedLogs);
   },
 
   updateAgentStatus: (agentId, status) => {

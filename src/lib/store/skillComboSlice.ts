@@ -6,9 +6,18 @@ import {
   type ComboStepView,
   type SkillComboRun,
 } from '../quickAccess/combo';
+import { composeStepTask, deriveHandoffContext } from '../agents/handoff';
 import type { QuickAccessCombo, QuickAccessSkill } from './starredProjectsSlice';
 
 export type { SkillComboRun } from '../quickAccess/combo';
+
+/** What the finished step leaves to the one after it. */
+interface StepHandoff {
+  /** The previous session's cleaned terminal tail, or null on the first step. */
+  context: string | null;
+  /** Which step it came from, so the receiving session can name its source. */
+  fromLabel: string;
+}
 
 export interface SkillComboSlice {
   comboRuns: SkillComboRun[];
@@ -16,7 +25,11 @@ export interface SkillComboSlice {
   cancelSkillCombo: (runId: string) => void;
   cancelSkillCombosForAgents: (agentIds: string[]) => void;
   rebindSkillComboAgent: (fromAgentId: string, toAgentId: string) => void;
-  skillComboHandleAgentEnded: (agentId: string) => Promise<void>;
+  /**
+   * The current step ended and the human is done with it — start the next one,
+   * carrying `endedLogs` (that session's raw output) into its instruction.
+   */
+  skillComboHandleAgentEnded: (agentId: string, endedLogs?: string[]) => Promise<void>;
   comboStepForAgent: (agentId: string) => ComboStepView | null;
 }
 
@@ -30,7 +43,8 @@ function resolveStepConfig(
   combo: { label: string },
   step: QuickAccessSkill,
   projectPath: string,
-  providers: ProviderInfo[]
+  providers: ProviderInfo[],
+  handoff: StepHandoff
 ): AgentConfig {
   const provider =
     (step.providerId ? providers.find((p) => p.id === step.providerId) : undefined) ??
@@ -40,7 +54,10 @@ function resolveStepConfig(
   return {
     name: `${combo.label} · ${step.label || folder || 'step'}`,
     model: step.model || provider.defaultModel,
-    task: step.prompt,
+    task: composeStepTask(step.prompt, handoff.context, handoff.fromLabel),
+    // Recall is a list of things a person typed — the handoff does not belong
+    // in it.
+    historyPrompt: step.prompt,
     cwd: projectPath,
     permissionMode: (step.permissionMode ?? provider.defaultPermissionMode) as PermissionMode,
     provider: provider.id,
@@ -50,7 +67,8 @@ function resolveStepConfig(
 async function spawnStep(
   get: () => ComboHost,
   run: SkillComboRun,
-  index: number
+  index: number,
+  handoff: StepHandoff
 ): Promise<string | null> {
   const host = get();
   if (!host.spawnNewAgent) return null;
@@ -58,10 +76,13 @@ async function spawnStep(
   if (!step) return null;
   const providers = host.providers?.length ? host.providers : [FALLBACK_CRUSH_PROVIDER];
   const agent = await host.spawnNewAgent(
-    resolveStepConfig({ label: run.label }, step, run.projectPath, providers)
+    resolveStepConfig({ label: run.label }, step, run.projectPath, providers, handoff)
   );
   return agent.id;
 }
+
+/** The first step inherits nothing — there is no session before it. */
+const NO_HANDOFF: StepHandoff = { context: null, fromLabel: '' };
 
 export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) => ({
   comboRuns: [],
@@ -91,7 +112,7 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
     set({ comboRuns: [...get().comboRuns, run] });
 
     try {
-      const agentId = await spawnStep(get as () => ComboHost, run, 0);
+      const agentId = await spawnStep(get as () => ComboHost, run, 0, NO_HANDOFF);
       if (!agentId) {
         set({ comboRuns: get().comboRuns.filter((r) => r.id !== run.id) });
         return;
@@ -129,7 +150,7 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
     });
   },
 
-  skillComboHandleAgentEnded: async (agentId) => {
+  skillComboHandleAgentEnded: async (agentId, endedLogs = []) => {
     const run = get().comboRuns.find((candidate) => candidate.currentAgentId === agentId);
     if (!run) return;
 
@@ -139,8 +160,16 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
       return;
     }
 
+    // No CLI in the registry can resume another session, and a chain may
+    // switch harness between steps. What the finished step actually leaves
+    // behind is the text it printed — so that is what travels.
+    const handoff: StepHandoff = {
+      context: deriveHandoffContext(endedLogs),
+      fromLabel: run.steps[run.currentIndex]?.label ?? '',
+    };
+
     try {
-      const nextAgentId = await spawnStep(get as () => ComboHost, run, nextIndex);
+      const nextAgentId = await spawnStep(get as () => ComboHost, run, nextIndex, handoff);
       if (!nextAgentId) {
         set({ comboRuns: get().comboRuns.filter((r) => r.id !== run.id) });
         return;
