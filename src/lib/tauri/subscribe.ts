@@ -19,7 +19,13 @@ export function subscribeToTauriEvent<T>(
   import('@tauri-apps/api/event')
     .then(({ listen }) => {
       if (disposed) return;
-      listen<T>(eventName, (event) => {
+      if (typeof listen !== 'function') {
+        console.warn(unavailableWarning);
+        return;
+      }
+      // Returned so a rejected `listen` is the same path as a failed import —
+      // otherwise the inner promise is nobody's and the Next overlay claims it.
+      return listen<T>(eventName, (event) => {
         callback(event.payload);
       }).then((fn) => {
         // The caller may have unsubscribed while `listen` was in flight;

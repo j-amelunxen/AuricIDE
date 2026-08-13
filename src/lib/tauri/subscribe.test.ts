@@ -82,6 +82,20 @@ describe('subscribeToTauriEvent', () => {
     expect(unlisten).toHaveBeenCalledTimes(1);
   });
 
+  it('warns instead of rejecting when listen itself rejects', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockListen.mockRejectedValueOnce(
+      new TypeError("Cannot read properties of undefined (reading 'transformCallback')")
+    );
+
+    subscribeToTauriEvent('demo-event', vi.fn(), 'unavailable');
+
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith('unavailable');
+    });
+    warn.mockRestore();
+  });
+
   it('survives an unlisten that throws', async () => {
     mockListen.mockResolvedValue(
       vi.fn(() => {
