@@ -26,6 +26,11 @@ export interface ExcalidrawCanvasProps {
   files: Record<string, unknown>;
   /** true (default) renders read-only; false enables the full editor. */
   viewMode?: boolean;
+  /**
+   * Identity of the open scene. Excalidraw's `initialData` is mount-only, so
+   * a new key remounts the editor when the caller switches files.
+   */
+  sceneKey?: string;
   /** Fires on every scene change while editing (elements, appState, files). */
   onSceneChange?: (
     elements: readonly unknown[],
@@ -40,6 +45,7 @@ export function ExcalidrawCanvas({
   appState,
   files,
   viewMode = true,
+  sceneKey,
   onSceneChange,
 }: ExcalidrawCanvasProps) {
   const initialData = {
@@ -52,6 +58,7 @@ export function ExcalidrawCanvas({
 
   return (
     <Excalidraw
+      key={sceneKey}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       initialData={initialData as any}
       viewModeEnabled={viewMode}

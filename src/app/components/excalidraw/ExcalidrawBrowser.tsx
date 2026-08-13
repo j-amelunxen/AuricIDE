@@ -347,6 +347,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
                   ) : (
                     parsedPreview && (
                       <ExcalidrawCanvas
+                        sceneKey={preview?.sceneId}
                         elements={parsedPreview.elements}
                         appState={parsedPreview.appState}
                         files={parsedPreview.files}
