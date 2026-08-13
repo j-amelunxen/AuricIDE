@@ -1,16 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { defaultCommands } from '@/lib/commands/registry';
-import { executeNotificationAction } from '@/lib/notifications/execute';
+import { executeNotificationAction, NotificationActionError } from '@/lib/notifications/execute';
+import {
+  presentNotificationActions,
+  type PresentedAction,
+  type RepoDirStatus,
+} from '@/lib/notifications/presentActions';
+import { openSkillSpawnDialog } from '@/lib/quickAccess/launchSkill';
+import { isDir } from '@/lib/tauri/fs';
 import {
   parseNotificationActions,
   type Notification,
   type NotificationAction,
 } from '@/lib/notifications/types';
+import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
+import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { schedulesPreview, type Schedule } from '@/lib/tauri/schedules';
 import { NotificationsPanel } from './NotificationsPanel';
 import { ScheduleEditor } from './ScheduleEditor';
@@ -22,6 +31,25 @@ export interface NotificationsSidebarProps {
 }
 
 const KNOWN_COMMAND_IDS = new Set(defaultCommands.map((command) => command.id));
+
+const isKnownCommandId = (id: string) => KNOWN_COMMAND_IDS.has(id);
+
+function repoPathsFromNotifications(notifications: Notification[]): string[] {
+  const paths = new Set<string>();
+  for (const notification of notifications) {
+    for (const action of parseNotificationActions(notification.actions, isKnownCommandId)) {
+      if (
+        (action.kind === 'run-skill' ||
+          action.kind === 'run-combo' ||
+          action.kind === 'spawn-agent') &&
+        action.repoPath
+      ) {
+        paths.add(action.repoPath);
+      }
+    }
+  }
+  return [...paths];
+}
 
 /**
  * Connects the inbox panel to the store.
@@ -40,6 +68,10 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
   const [editing, setEditing] = useState<{ schedule: Schedule | null } | null>(null);
   const [draft, setDraft] = useState<Schedule | null>(null);
   const [preview, setPreview] = useState<string[]>([]);
+  const [discoveredByPath, setDiscoveredByPath] = useState<{
+    path: string;
+    skills: ProjectSkill[];
+  } | null>(null);
 
   const rootPath = useStore((s) => s.rootPath);
   const schedules = useStore((s) => s.schedules);
@@ -63,12 +95,58 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
   const markAllNotificationsRead = useStore((s) => s.markAllNotificationsRead);
   const clearNotifications = useStore((s) => s.clearNotifications);
   const setNotificationsProjectFilter = useStore((s) => s.setNotificationsProjectFilter);
+  const starredProjects = useStore((s) => s.starredProjects);
+
+  const [repoDirStatus, setRepoDirStatus] = useState<Map<string, RepoDirStatus>>(new Map());
+  const probedPaths = useRef(new Set<string>());
+
+  const writeRepoDir = useCallback((path: string, ok: boolean) => {
+    setRepoDirStatus((prev) => {
+      const next = new Map(prev);
+      next.set(path, ok ? 'dir' : 'missing');
+      return next;
+    });
+  }, []);
 
   const parseActions = useCallback(
-    (notification: Notification) =>
-      parseNotificationActions(notification.actions, (id) => KNOWN_COMMAND_IDS.has(id)),
-    []
+    (notification: Notification): PresentedAction[] =>
+      presentNotificationActions(
+        parseNotificationActions(notification.actions, isKnownCommandId),
+        starredProjects,
+        repoDirStatus
+      ),
+    [starredProjects, repoDirStatus]
   );
+
+  // Probe each new repoPath once. Absent / in-flight reads as unknown (button
+  // stays enabled). 'dir' stays trusted until click-time execute; 'missing' is
+  // re-checked on window focus so a restored folder can re-enable.
+  useEffect(() => {
+    for (const path of repoPathsFromNotifications(notifications)) {
+      if (probedPaths.current.has(path)) continue;
+      probedPaths.current.add(path);
+      void isDir(path)
+        .then((ok) => writeRepoDir(path, ok))
+        .catch(() => {
+          // Stay 'unknown': click-time execute still gates a vanished folder.
+        });
+    }
+  }, [notifications, writeRepoDir]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      for (const [path, status] of repoDirStatus) {
+        if (status !== 'missing') continue;
+        void isDir(path)
+          .then((ok) => writeRepoDir(path, ok))
+          .catch(() => {
+            // Keep the last known 'missing'; the next focus can try again.
+          });
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [repoDirStatus, writeRepoDir]);
 
   const handleAction = useCallback(
     async (notification: Notification, action: NotificationAction) => {
@@ -88,6 +166,15 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
           action,
           {
             spawnAgent: (config) => store.spawnNewAgent(config),
+            openSpawnDialog: ({ task, repoPath, preset }) =>
+              openSkillSpawnDialog(store, repoPath, {
+                prompt: task,
+                providerId: preset?.providerId,
+                model: preset?.model,
+                permissionMode: preset?.permissionMode,
+              }),
+            startSkillCombo: (projectPath, combo) => store.startSkillCombo(projectPath, combo),
+            projectDirExists: (path) => isDir(path),
             openFile: (path) => {
               const name = path.split('/').pop() ?? path;
               store.openTab({ id: path, path, name });
@@ -108,10 +195,16 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
           },
           useStore.getState().rootPath ?? undefined
         );
-      } catch {
+      } catch (error) {
         // The decision stands; only the effect failed. Say so rather than
         // leaving the click looking like it did nothing.
-        store.showToast(`"${action.label}" konnte nicht ausgeführt werden`, 'error');
+        const message =
+          error instanceof NotificationActionError && error.code === 'missing-project'
+            ? 'Projektordner nicht gefunden'
+            : error instanceof NotificationActionError && error.code === 'empty-combo'
+              ? 'Combo hat keine gültigen Schritte'
+              : `"${action.label}" konnte nicht ausgeführt werden`;
+        store.showToast(message, 'error');
       }
     },
     [onRunCommand]
@@ -166,6 +259,30 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
   // next editor that opens.
   const visiblePreview = draft === null ? [] : preview;
 
+  const editorProjectPath =
+    editing === null
+      ? null
+      : (draft?.projectPath ?? editing.schedule?.projectPath ?? rootPath ?? null);
+
+  useEffect(() => {
+    if (editorProjectPath === null) return;
+    const path = editorProjectPath;
+    let cancelled = false;
+    void listProjectSkills(path, enabledSkillSources(loadSkillSources())).then((found) => {
+      if (!cancelled) setDiscoveredByPath({ path, skills: found });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editorProjectPath]);
+
+  // Only the catalogue for this path — a previous project's list must not sit
+  // in the picker while the next fetch is in flight.
+  const skillsForEditor =
+    editorProjectPath !== null && discoveredByPath?.path === editorProjectPath
+      ? discoveredByPath.skills
+      : [];
+
   return (
     <div className="flex h-full flex-col bg-panel-bg">
       <SchedulesSection
@@ -199,6 +316,8 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
           defaultProjectPath={rootPath}
           defaultProjectName={rootPath?.split('/').filter(Boolean).pop() ?? null}
           preview={visiblePreview}
+          starredProjects={starredProjects}
+          discoveredSkills={skillsForEditor}
           onDraftChange={setDraft}
           onSave={(next) => {
             void saveSchedule(next);

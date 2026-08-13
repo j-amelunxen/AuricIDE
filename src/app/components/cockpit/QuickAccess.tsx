@@ -10,6 +10,7 @@ import {
   type StarredProject,
 } from '@/lib/store/starredProjectsSlice';
 import { comboMenuLabel } from '@/lib/quickAccess/combo';
+import { openSkillSpawnDialog } from '@/lib/quickAccess/launchSkill';
 import { ProjectTileFace } from './ProjectTileFace';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -215,22 +216,19 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
    * have left behind is cleared explicitly — a skill launched in repo B must
    * not inherit repo A's ticket, goal or preset.
    */
-  const launchSkill = (path: string, skill?: QuickAccessSkill) => {
-    setSpawnAgentTicketId(null);
-    setSpawnAgentGoalId(null);
-    setInitialAgentTask(skill?.prompt ?? '');
-    setSpawnAgentPreset(
-      skill?.providerId
-        ? {
-            providerId: skill.providerId,
-            model: skill.model,
-            permissionMode: skill.permissionMode,
-          }
-        : null
+  const launchSkill = (path: string, skill?: QuickAccessSkill) =>
+    openSkillSpawnDialog(
+      {
+        setSpawnAgentTicketId,
+        setSpawnAgentGoalId,
+        setInitialAgentTask,
+        setSpawnAgentPreset,
+        setSpawnAgentRepoPath,
+        setSpawnDialogOpen,
+      },
+      path,
+      skill
     );
-    setSpawnAgentRepoPath(path);
-    setSpawnDialogOpen(true);
-  };
 
   const launchCombo = (path: string, combo: QuickAccessCombo) => {
     void startSkillCombo(path, combo);

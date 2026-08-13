@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { createTestNotificationsDb, getAnswer } from '../notificationsDb';
-import { registerNotificationTools } from './notifications';
+import { notifyActionSchema, registerNotificationTools } from './notifications';
 
 interface CapturedTool {
   name: string;
@@ -85,6 +85,52 @@ describe('notification MCP tools', () => {
       });
 
       expect(JSON.parse(row(uid as string).actions as string)).toHaveLength(1);
+    });
+  });
+
+  describe('the MCP action vocabulary', () => {
+    const runSkill = {
+      id: 'run',
+      label: 'Changelog starten',
+      kind: 'run-skill',
+      skillId: 'x',
+      skillLabel: 'Changelog',
+      prompt: '/changelog',
+      repoPath: '/repo',
+    };
+
+    const runCombo = {
+      id: 'run',
+      label: 'Blog-Write starten',
+      kind: 'run-combo',
+      comboId: 'x',
+      comboLabel: 'Blog-Write',
+      repoPath: '/repo',
+      steps: [{ id: 's1', label: 'Draft', prompt: '/draft' }],
+    };
+
+    // An agent that can mint a skill snapshot can also mint bypassPermissions.
+    // The schema is the privilege boundary; the frontend parser is not.
+    it('rejects a well-formed run-skill at the schema', () => {
+      expect(notifyActionSchema.safeParse(runSkill).success).toBe(false);
+    });
+
+    it('rejects a well-formed run-combo at the schema', () => {
+      expect(notifyActionSchema.safeParse(runCombo).success).toBe(false);
+    });
+
+    // captureTools calls execute directly, so this is not a Zod claim —
+    // it is the execute-side refuse that keeps a smuggled kind out of the inbox.
+    it('refuses notify when an action is run-skill and inserts no row', async () => {
+      await expect(call('notify', { title: 'x', actions: [runSkill] })).rejects.toThrow();
+
+      expect(db.prepare('SELECT * FROM notifications').all()).toHaveLength(0);
+    });
+
+    it('refuses notify when an action is run-combo and inserts no row', async () => {
+      await expect(call('notify', { title: 'x', actions: [runCombo] })).rejects.toThrow();
+
+      expect(db.prepare('SELECT * FROM notifications').all()).toHaveLength(0);
     });
   });
 

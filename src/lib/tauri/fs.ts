@@ -25,6 +25,11 @@ export async function exists(path: string): Promise<boolean> {
   return await invoke<boolean>('exists', { path });
 }
 
+/** True only when path is an existing directory, not a file. */
+export async function isDir(path: string): Promise<boolean> {
+  return await invoke<boolean>('is_dir', { path });
+}
+
 export async function readFile(path: string): Promise<string> {
   return await invoke<string>('read_file', { path });
 }

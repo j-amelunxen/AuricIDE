@@ -1,6 +1,7 @@
 import type { AgentConfig } from '@/lib/tauri/agents';
 import { deriveAgentName } from '@/lib/agents/naming';
-import { loadSpawnDefaults } from '@/lib/agents/spawnDefaults';
+import { loadSpawnDefaults, type SpawnPreset } from '@/lib/agents/spawnDefaults';
+import type { QuickAccessCombo } from '@/lib/store/starredProjectsSlice';
 import type { NotificationAction, NotificationOpenTarget } from './types';
 
 /**
@@ -14,11 +15,24 @@ import type { NotificationAction, NotificationOpenTarget } from './types';
  */
 export interface NotificationActionDeps {
   spawnAgent: (config: AgentConfig) => Promise<unknown>;
+  openSpawnDialog: (input: { task: string; repoPath: string; preset: SpawnPreset | null }) => void;
+  startSkillCombo: (projectPath: string, combo: QuickAccessCombo) => Promise<void>;
+  /** True only when path is an existing directory, not a file. */
+  projectDirExists: (path: string) => Promise<boolean>;
   openFile: (path: string, line?: number) => void;
   openTicket: (ticketId: string) => void;
   openGoal: (goalId: string) => void;
   openAgent: (agentId: string) => void;
   runCommand: (commandId: string) => void;
+}
+
+export class NotificationActionError extends Error {
+  constructor(
+    message: string,
+    readonly code: 'missing-project' | 'empty-combo'
+  ) {
+    super(message);
+  }
 }
 
 /** Model of last resort when nothing has been launched on this machine yet. */
@@ -97,5 +111,43 @@ export async function executeNotificationAction(
     case 'command':
       deps.runCommand(action.commandId);
       return;
+    case 'run-skill': {
+      if (!(await deps.projectDirExists(action.repoPath))) {
+        throw new NotificationActionError(
+          `Projektordner nicht gefunden: ${action.repoPath}`,
+          'missing-project'
+        );
+      }
+      deps.openSpawnDialog({
+        task: action.prompt,
+        repoPath: action.repoPath,
+        preset: action.providerId
+          ? {
+              providerId: action.providerId,
+              model: action.model,
+              permissionMode: action.permissionMode,
+            }
+          : null,
+      });
+      return;
+    }
+    case 'run-combo': {
+      if (!(await deps.projectDirExists(action.repoPath))) {
+        throw new NotificationActionError(
+          `Projektordner nicht gefunden: ${action.repoPath}`,
+          'missing-project'
+        );
+      }
+      const steps = action.steps.filter((step) => step.prompt.trim().length > 0);
+      if (steps.length === 0) {
+        throw new NotificationActionError('Combo hat keine gültigen Schritte', 'empty-combo');
+      }
+      await deps.startSkillCombo(action.repoPath, {
+        id: action.comboId,
+        label: action.comboLabel,
+        steps,
+      });
+      return;
+    }
   }
 }

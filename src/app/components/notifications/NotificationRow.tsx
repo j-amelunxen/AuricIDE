@@ -6,11 +6,12 @@ import {
   formatNotificationProject,
   severityTone,
 } from '@/lib/notifications/format';
+import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
 
 export interface NotificationRowProps {
   notification: Notification;
-  actions: NotificationAction[];
+  actions: PresentedAction[];
   now: number;
   onOpen: (uid: string) => void;
   onAction: (notification: Notification, action: NotificationAction) => void;
@@ -34,7 +35,8 @@ export function NotificationRow({
   const unread = notification.readAt === null;
   const settled = notification.kind === 'ask' && notification.answeredAt !== null;
   const chosen = settled
-    ? (actions.find((a) => a.id === notification.answer)?.label ?? notification.answer)
+    ? (actions.find((p) => p.action.id === notification.answer)?.action.label ??
+      notification.answer)
     : null;
 
   return (
@@ -105,14 +107,16 @@ export function NotificationRow({
       ) : (
         actions.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-2.5 pb-2.5 pl-[26px]">
-            {actions.map((action) => (
+            {actions.map((presented) => (
               <button
-                key={action.id}
-                data-testid={`notification-action-${notification.uid}-${action.id}`}
-                onClick={() => onAction(notification, action)}
-                className="rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/10"
+                key={presented.action.id}
+                data-testid={`notification-action-${notification.uid}-${presented.action.id}`}
+                disabled={presented.disabledReason !== undefined}
+                title={presented.disabledReason}
+                onClick={() => onAction(notification, presented.action)}
+                className="rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {action.label}
+                {presented.action.label}
               </button>
             ))}
           </div>

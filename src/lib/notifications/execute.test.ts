@@ -3,6 +3,7 @@ import { SPAWN_DEFAULTS_KEY } from '@/lib/agents/spawnDefaults';
 import {
   buildSpawnConfig,
   executeNotificationAction,
+  NotificationActionError,
   type NotificationActionDeps,
 } from './execute';
 import type { NotificationAction } from './types';
@@ -10,12 +11,61 @@ import type { NotificationAction } from './types';
 function makeDeps(): NotificationActionDeps {
   return {
     spawnAgent: vi.fn(async () => undefined),
+    openSpawnDialog: vi.fn(),
+    startSkillCombo: vi.fn(async () => undefined),
+    projectDirExists: vi.fn(async () => true),
     openFile: vi.fn(),
     openTicket: vi.fn(),
     openGoal: vi.fn(),
     openAgent: vi.fn(),
     runCommand: vi.fn(),
   };
+}
+
+function unusedDeps(deps: NotificationActionDeps) {
+  const { projectDirExists: _probe, ...rest } = deps;
+  return rest;
+}
+
+const runSkill: Extract<NotificationAction, { kind: 'run-skill' }> = {
+  id: 'run',
+  label: 'Changelog starten',
+  kind: 'run-skill',
+  skillId: 's1',
+  skillLabel: 'Changelog',
+  prompt: '/changelog',
+  repoPath: '/repo/sample',
+  providerId: 'claude',
+  model: 'opus',
+  permissionMode: 'plan',
+};
+
+const runCombo: Extract<NotificationAction, { kind: 'run-combo' }> = {
+  id: 'run',
+  label: 'Blog-Write starten',
+  kind: 'run-combo',
+  comboId: 'c1',
+  comboLabel: 'Blog-Write',
+  repoPath: '/repo/sample',
+  steps: [
+    { id: 's1', label: 'Draft', prompt: '/draft' },
+    { id: 's2', label: 'Polish', prompt: 'tighten the wording' },
+  ],
+};
+
+async function expectActionError(
+  run: Promise<void>,
+  code: NotificationActionError['code'],
+  message: string
+) {
+  const thrown = await run.then(
+    () => {
+      throw new Error('expected NotificationActionError');
+    },
+    (err: unknown) => err
+  );
+  expect(thrown).toBeInstanceOf(NotificationActionError);
+  expect(thrown).toMatchObject({ code, message });
 }
 
 const REMEMBERED = {
@@ -157,5 +207,129 @@ describe('executeNotificationAction', () => {
         deps
       )
     ).rejects.toThrow('no backend');
+  });
+
+  it('opens the spawn dialog for a run-skill action and does not spawn', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(runSkill, deps);
+
+    expect(deps.projectDirExists).toHaveBeenCalledWith('/repo/sample');
+    expect(deps.openSpawnDialog).toHaveBeenCalledWith({
+      task: '/changelog',
+      repoPath: '/repo/sample',
+      preset: {
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'plan',
+      },
+    });
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+    expect(deps.startSkillCombo).not.toHaveBeenCalled();
+  });
+
+  it('opens the spawn dialog with a null preset when the skill pins no provider', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(
+      { ...runSkill, providerId: undefined, model: undefined, permissionMode: undefined },
+      deps
+    );
+
+    expect(deps.openSpawnDialog).toHaveBeenCalledWith({
+      task: '/changelog',
+      repoPath: '/repo/sample',
+      preset: null,
+    });
+  });
+
+  it('throws missing-project when the run-skill folder is gone', async () => {
+    const deps = makeDeps();
+    deps.projectDirExists = vi.fn(async () => false);
+
+    await expectActionError(
+      executeNotificationAction({ ...runSkill, repoPath: '/gone' }, deps),
+      'missing-project',
+      'Projektordner nicht gefunden: /gone'
+    );
+
+    expect(deps.projectDirExists).toHaveBeenCalledWith('/gone');
+    for (const fn of Object.values(unusedDeps(deps))) {
+      expect(fn).not.toHaveBeenCalled();
+    }
+  });
+
+  it('treats a file path as missing for run-skill', async () => {
+    const deps = makeDeps();
+    deps.projectDirExists = vi.fn(async () => false);
+
+    await expectActionError(
+      executeNotificationAction({ ...runSkill, repoPath: '/repo/sample/README.md' }, deps),
+      'missing-project',
+      'Projektordner nicht gefunden: /repo/sample/README.md'
+    );
+
+    expect(deps.openSpawnDialog).not.toHaveBeenCalled();
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('starts a combo from the snapshot and does not spawn', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(runCombo, deps);
+
+    expect(deps.projectDirExists).toHaveBeenCalledWith('/repo/sample');
+    expect(deps.startSkillCombo).toHaveBeenCalledWith('/repo/sample', {
+      id: 'c1',
+      label: 'Blog-Write',
+      steps: runCombo.steps,
+    });
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+    expect(deps.openSpawnDialog).not.toHaveBeenCalled();
+  });
+
+  it('throws empty-combo when every step has an empty prompt', async () => {
+    const deps = makeDeps();
+
+    await expectActionError(
+      executeNotificationAction(
+        {
+          ...runCombo,
+          steps: [
+            { id: 's1', label: 'Draft', prompt: '' },
+            { id: 's2', label: 'Polish', prompt: '   ' },
+          ],
+        },
+        deps
+      ),
+      'empty-combo',
+      'Combo hat keine gültigen Schritte'
+    );
+
+    expect(deps.startSkillCombo).not.toHaveBeenCalled();
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('throws empty-combo when the snapshot lists no steps', async () => {
+    const deps = makeDeps();
+
+    await expectActionError(
+      executeNotificationAction({ ...runCombo, steps: [] }, deps),
+      'empty-combo',
+      'Combo hat keine gültigen Schritte'
+    );
+
+    expect(deps.startSkillCombo).not.toHaveBeenCalled();
+  });
+
+  it('throws missing-project when the run-combo folder is gone', async () => {
+    const deps = makeDeps();
+    deps.projectDirExists = vi.fn(async () => false);
+
+    await expectActionError(
+      executeNotificationAction({ ...runCombo, repoPath: '/gone' }, deps),
+      'missing-project',
+      'Projektordner nicht gefunden: /gone'
+    );
+
+    expect(deps.startSkillCombo).not.toHaveBeenCalled();
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
   });
 });

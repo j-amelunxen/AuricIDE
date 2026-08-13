@@ -58,6 +58,53 @@ describe('parseNotificationActions', () => {
       const action = { id: 'c', label: 'Commit', kind: 'command', commandId: 'git.commit' };
       expect(parse([action])).toEqual([action]);
     });
+
+    it('parses a run-skill action with only the required fields', () => {
+      const action = {
+        id: 'skill',
+        label: 'Changelog starten',
+        kind: 'run-skill',
+        skillId: 's1',
+        skillLabel: 'Changelog',
+        prompt: '/changelog',
+        repoPath: '/repo',
+      };
+      expect(parse([action])).toEqual([action]);
+    });
+
+    it('keeps the optional run-skill preset fields', () => {
+      const action = {
+        id: 'skill',
+        label: 'Changelog starten',
+        kind: 'run-skill',
+        skillId: 's1',
+        skillLabel: 'Changelog',
+        prompt: '/changelog',
+        repoPath: '/repo',
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+        invocation: '/changelog',
+      };
+      expect(parse([action])).toEqual([action]);
+    });
+
+    it.each([1, 8])('parses a run-combo action with %s step(s)', (count) => {
+      const action = {
+        id: 'combo',
+        label: 'Blog-Write starten',
+        kind: 'run-combo',
+        comboId: 'c1',
+        comboLabel: 'Blog-Write',
+        repoPath: '/repo',
+        steps: Array.from({ length: count }, (_, i) => ({
+          id: `s${i + 1}`,
+          label: `Step ${i + 1}`,
+          prompt: `/step-${i + 1}`,
+        })),
+      };
+      expect(parse([action])).toEqual([action]);
+    });
   });
 
   describe('drops what cannot be rendered or executed', () => {
@@ -78,6 +125,106 @@ describe('parseNotificationActions', () => {
       expect(parse([{ id: 'r', label: 'Start', kind: 'spawn-agent', task: '   ' }])).toEqual([]);
     });
 
+    it.each([
+      ['an empty prompt', { prompt: '   ', repoPath: '/repo' }],
+      ['a missing repoPath', { prompt: '/changelog' }],
+      ['an empty repoPath', { prompt: '/changelog', repoPath: '   ' }],
+    ])('drops a run-skill action with %s', (_label, extra) => {
+      expect(
+        parse([
+          {
+            id: 'skill',
+            label: 'Changelog starten',
+            kind: 'run-skill',
+            skillId: 's1',
+            skillLabel: 'Changelog',
+            ...extra,
+          },
+        ])
+      ).toEqual([]);
+    });
+
+    it.each([
+      ['empty steps', []],
+      ['a step with an empty prompt', [{ id: 's1', label: 'Draft', prompt: '   ' }]],
+      [
+        'nine steps',
+        Array.from({ length: 9 }, (_, i) => ({
+          id: `s${i}`,
+          label: `Step ${i}`,
+          prompt: `/step-${i}`,
+        })),
+      ],
+    ])('drops a run-combo action with %s', (_label, steps) => {
+      expect(
+        parse([
+          {
+            id: 'combo',
+            label: 'Blog-Write starten',
+            kind: 'run-combo',
+            comboId: 'c1',
+            comboLabel: 'Blog-Write',
+            repoPath: '/repo',
+            steps,
+          },
+        ])
+      ).toEqual([]);
+    });
+
+    it.each([
+      ['a missing repoPath', { steps: [{ id: 's1', label: 'Draft', prompt: '/draft' }] }],
+      [
+        'an empty repoPath',
+        { repoPath: '   ', steps: [{ id: 's1', label: 'Draft', prompt: '/draft' }] },
+      ],
+    ])('drops a run-combo action with %s', (_label, extra) => {
+      expect(
+        parse([
+          {
+            id: 'combo',
+            label: 'Blog-Write starten',
+            kind: 'run-combo',
+            comboId: 'c1',
+            comboLabel: 'Blog-Write',
+            ...extra,
+          },
+        ])
+      ).toEqual([]);
+    });
+
+    it('drops a run-combo whose step has an unknown permissionMode', () => {
+      expect(
+        parse([
+          {
+            id: 'combo',
+            label: 'Blog-Write starten',
+            kind: 'run-combo',
+            comboId: 'c1',
+            comboLabel: 'Blog-Write',
+            repoPath: '/repo',
+            steps: [{ id: 's1', label: 'Draft', prompt: '/draft', permissionMode: 'sudo' }],
+          },
+        ])
+      ).toEqual([]);
+    });
+
+    it('drops a run-skill action with an unknown permissionMode', () => {
+      expect(
+        parse([
+          {
+            id: 'skill',
+            label: 'Changelog starten',
+            kind: 'run-skill',
+            skillId: 's1',
+            skillLabel: 'Changelog',
+            prompt: '/changelog',
+            repoPath: '/repo',
+            permissionMode: 'sudo',
+          },
+        ])
+      ).toEqual([]);
+    });
+
     it('drops an open action with an unknown target type', () => {
       const action = { id: 'go', label: 'Öffnen', kind: 'open', target: { type: 'url', url: 'x' } };
       expect(parse([action])).toEqual([]);
@@ -87,6 +234,28 @@ describe('parseNotificationActions', () => {
     // notification is still worth acting on.
     it('keeps the valid siblings of a rejected action', () => {
       expect(parse([{ id: 'bad', kind: 'answer' }, answer])).toEqual([answer]);
+    });
+
+    it('keeps the valid siblings of a rejected run-skill or run-combo', () => {
+      const skill = {
+        id: 'skill',
+        label: 'Changelog starten',
+        kind: 'run-skill',
+        skillId: 's1',
+        skillLabel: 'Changelog',
+        prompt: '/changelog',
+        repoPath: '/repo',
+      };
+      const badCombo = {
+        id: 'combo',
+        label: 'Blog-Write starten',
+        kind: 'run-combo',
+        comboId: 'c1',
+        comboLabel: 'Blog-Write',
+        repoPath: '/repo',
+        steps: [],
+      };
+      expect(parse([badCombo, skill])).toEqual([skill]);
     });
 
     // Two buttons answering to the same id would make the recorded answer
