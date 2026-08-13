@@ -6,12 +6,13 @@ import {
   HOLD_OPEN_MS,
   WHEEL_SLOT_COUNT,
   assignSkillToSlot,
-  availableSkillsForSlot,
+  clearWheelSlot,
   createWheelMachine,
   normalizeWheelSlots,
   reduceWheel,
   skillMark,
   slotIndexAt,
+  wheelSlotChoices,
   wheelSlotPositions,
   type QuickAccessSkillRef,
 } from './wheel';
@@ -66,6 +67,26 @@ describe('assignSkillToSlot', () => {
     expect(moved[4]).toBe('research');
   });
 
+  it('swaps rather than evicts when a move lands on an occupied slot', () => {
+    let slots = assignSkillToSlot(emptySlots(), 0, 'research', known);
+    slots = assignSkillToSlot(slots, 4, 'changelog', known);
+    const swapped = assignSkillToSlot(slots, 4, 'research', known);
+    expect(swapped[4]).toBe('research');
+    expect(swapped[0]).toBe('changelog');
+  });
+
+  it('replaces the occupant when the skill comes from off the wheel', () => {
+    const start = assignSkillToSlot(emptySlots(), 2, 'changelog', known);
+    const replaced = assignSkillToSlot(start, 2, 'seo', known);
+    expect(replaced[2]).toBe('seo');
+    expect(replaced.filter((id) => id === 'changelog')).toHaveLength(0);
+  });
+
+  it('leaves the wheel as it was when a skill is dropped on its own slot', () => {
+    const start = assignSkillToSlot(emptySlots(), 3, 'seo', known);
+    expect(assignSkillToSlot(start, 3, 'seo', known)).toEqual(start);
+  });
+
   it('leaves other slots alone', () => {
     const start = assignSkillToSlot(emptySlots(), 1, 'changelog', known);
     const next = assignSkillToSlot(start, 3, 'seo', known);
@@ -74,25 +95,51 @@ describe('assignSkillToSlot', () => {
   });
 });
 
-describe('availableSkillsForSlot', () => {
+describe('clearWheelSlot', () => {
+  const known = ['research', 'changelog'];
+
+  it('empties the slot it is given', () => {
+    const start = assignSkillToSlot(emptySlots(), 2, 'research', known);
+    expect(clearWheelSlot(start, 2, known)[2]).toBeNull();
+  });
+
+  it('keeps every other slot where it was — index is muscle memory', () => {
+    let slots = assignSkillToSlot(emptySlots(), 1, 'research', known);
+    slots = assignSkillToSlot(slots, 4, 'changelog', known);
+    const cleared = clearWheelSlot(slots, 1, known);
+    expect(cleared[4]).toBe('changelog');
+    expect(cleared[1]).toBeNull();
+  });
+
+  it('refuses a slot index off the wheel', () => {
+    const start = assignSkillToSlot(emptySlots(), 0, 'research', known);
+    expect(clearWheelSlot(start, WHEEL_SLOT_COUNT, known)).toEqual(start);
+    expect(clearWheelSlot(start, -1, known)).toEqual(start);
+  });
+});
+
+describe('wheelSlotChoices', () => {
   const skills = [skill('research', 'Research'), skill('seo', 'SEO'), skill('ship', 'Ship')];
+  const known = ['research', 'seo', 'ship'];
 
-  it('offers every configured skill when the wheel is empty', () => {
-    expect(availableSkillsForSlot(skills, emptySlots(), 0).map((s) => s.id)).toEqual([
-      'research',
-      'seo',
-      'ship',
-    ]);
+  it('offers every configured skill as free when the wheel is empty', () => {
+    const choices = wheelSlotChoices(skills, emptySlots(), 0);
+    expect(choices.free.map((s) => s.id)).toEqual(['research', 'seo', 'ship']);
+    expect(choices.placed).toEqual([]);
   });
 
-  it('hides skills already sitting on other slots', () => {
-    const slots = assignSkillToSlot(emptySlots(), 2, 'seo', ['research', 'seo', 'ship']);
-    expect(availableSkillsForSlot(skills, slots, 0).map((s) => s.id)).toEqual(['research', 'ship']);
+  it('separates skills sitting on other slots so they can be moved here', () => {
+    const slots = assignSkillToSlot(emptySlots(), 2, 'seo', known);
+    const choices = wheelSlotChoices(skills, slots, 0);
+    expect(choices.free.map((s) => s.id)).toEqual(['research', 'ship']);
+    expect(choices.placed.map((s) => s.id)).toEqual(['seo']);
   });
 
-  it('still offers the skill that already occupies this slot', () => {
-    const slots = assignSkillToSlot(emptySlots(), 0, 'seo', ['research', 'seo', 'ship']);
-    expect(availableSkillsForSlot(skills, slots, 0).map((s) => s.id)).toContain('seo');
+  it('offers neither list the skill already on this slot', () => {
+    const slots = assignSkillToSlot(emptySlots(), 0, 'seo', known);
+    const choices = wheelSlotChoices(skills, slots, 0);
+    expect(choices.free.map((s) => s.id)).not.toContain('seo');
+    expect(choices.placed.map((s) => s.id)).not.toContain('seo');
   });
 });
 

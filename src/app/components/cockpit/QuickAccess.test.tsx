@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QuickAccess } from './QuickAccess';
 import { useStore } from '@/lib/store';
@@ -701,15 +701,123 @@ describe('QuickAccess', () => {
       expect(useStore.getState().spawnDialogOpen).not.toBe(true);
     });
 
-    it('opens a picker of unassigned skills from a plus slot', async () => {
+    it('assigns an unplaced skill from a plus slot', async () => {
       useStore.setState({ starredProjects: [websiteWithSkills] });
       render(<QuickAccess currentPath="/a/apps" />);
       await dwellOpen();
       fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
       expect(screen.getByRole('menuitem', { name: 'Research' })).toBeInTheDocument();
-      expect(screen.queryByRole('menuitem', { name: 'Changelog' })).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }));
       expect(useStore.getState().starredProjects[0].wheelSlots?.[0]).toBe('s2');
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[1]).toBe('s1');
+    });
+
+    it('offers a skill sitting on another slot as a move, apart from the free ones', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      expect(screen.getByText('Skills')).toBeInTheDocument();
+      expect(screen.getByText('Already on the wheel')).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Changelog' })).toBeInTheDocument();
+    });
+
+    it('moves a slotted skill to the slot whose plus was used', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Changelog' }));
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[0]).toBe('s1');
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[1]).toBeNull();
+    });
+
+    it('swaps two slots rather than dropping one when a move lands on a filled slot', async () => {
+      useStore.setState({
+        starredProjects: [
+          { ...websiteWithSkills, wheelSlots: ['s2', 's1', null, null, null, null] },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.contextMenu(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /replace with/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Changelog' }));
+      const slots = useStore.getState().starredProjects[0].wheelSlots;
+      expect(slots?.[0]).toBe('s1');
+      expect(slots?.[1]).toBe('s2');
+    });
+
+    it('takes a skill off the wheel from the slot right-click menu', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.contextMenu(screen.getByTestId('quick-access-wheel-slot-/a/website-1'));
+      // The menu names what it is about to act on — a slot mark alone is not
+      // enough to be sure which entry is being removed.
+      expect(within(screen.getByRole('menu')).getByText('Changelog')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('menuitem', { name: /take off the wheel/i }));
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[1]).toBeNull();
+      expect(useStore.getState().starredProjects[0].skills).toHaveLength(2);
+    });
+
+    it('lets the wheel close again once a slot menu is done with', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      // The menu is portalled, so reaching it already fired the tile's leave —
+      // and that one was swallowed to keep the wheel up while the menu was open.
+      fireEvent.contextMenu(screen.getByTestId('quick-access-wheel-slot-/a/website-1'));
+      fireEvent.pointerLeave(screen.getByTestId('quick-access-item-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /take off the wheel/i }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(screen.queryByTestId('quick-access-wheel-/a/website')).not.toBeInTheDocument();
+    });
+
+    it('reopens on a move over the tile after a menu closed it', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.contextMenu(screen.getByTestId('quick-access-wheel-slot-/a/website-1'));
+      fireEvent.pointerLeave(screen.getByTestId('quick-access-item-/a/website'));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(screen.queryByTestId('quick-access-wheel-/a/website')).not.toBeInTheDocument();
+      // No pointerEnter is coming: the pointer never left the tile's box.
+      fireEvent.pointerMove(screen.getByTestId('quick-access-item-/a/website'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      expect(screen.getByTestId('quick-access-wheel-/a/website')).toHaveAttribute(
+        'data-phase',
+        'open'
+      );
+    });
+
+    it('does not launch the skill that was right-clicked', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.contextMenu(screen.getByTestId('quick-access-wheel-slot-/a/website-1'));
+      expect(useStore.getState().spawnDialogOpen).toBe(false);
+    });
+
+    it('leaves an empty slot to its plus picker instead of a manage menu', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.contextMenu(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      expect(
+        screen.queryByRole('menuitem', { name: /take off the wheel/i })
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Research' })).toBeInTheDocument();
     });
 
     it('points at settings when no skills are configured yet', async () => {

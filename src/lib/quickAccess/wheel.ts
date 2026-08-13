@@ -161,6 +161,11 @@ export function normalizeWheelSlots(
   return slots;
 }
 
+/**
+ * Puts a skill on a slot. Coming from another slot it *swaps* with whatever
+ * sits there — a move must never cost the user the other entry. Coming from
+ * off the wheel it replaces, which is what "replace with…" asks for.
+ */
 export function assignSkillToSlot(
   slots: (string | null)[],
   index: number,
@@ -170,20 +175,52 @@ export function assignSkillToSlot(
   const known = new Set(knownSkillIds);
   if (!known.has(skillId)) return normalizeWheelSlots(slots, known);
   if (index < 0 || index >= WHEEL_SLOT_COUNT) return normalizeWheelSlots(slots, known);
-  const next = normalizeWheelSlots(slots, known).map((id) => (id === skillId ? null : id));
+  const next = normalizeWheelSlots(slots, known);
+  const from = next.indexOf(skillId);
+  if (from === index) return next;
+  if (from !== -1) next[from] = next[index];
   next[index] = skillId;
   return next;
 }
 
-export function availableSkillsForSlot<T extends QuickAccessSkillRef>(
+export function clearWheelSlot(
+  slots: (string | null)[],
+  index: number,
+  knownSkillIds: Iterable<string>
+): (string | null)[] {
+  const next = normalizeWheelSlots(slots, knownSkillIds);
+  if (index < 0 || index >= WHEEL_SLOT_COUNT) return next;
+  next[index] = null;
+  return next;
+}
+
+export interface WheelSlotChoices<T> {
+  /** Not on the wheel at all — picking one fills the slot. */
+  free: T[];
+  /** On another slot — picking one moves it here, swapping if this slot is taken. */
+  placed: T[];
+}
+
+/**
+ * What a slot can be set to. The entry already sitting on it appears in
+ * neither list: offering it would be a no-op dressed up as a choice.
+ */
+export function wheelSlotChoices<T extends QuickAccessSkillRef>(
   skills: T[],
   slots: (string | null)[],
   slotIndex: number
-): T[] {
-  const taken = new Set(
+): WheelSlotChoices<T> {
+  const elsewhere = new Set(
     slots.filter((id, index): id is string => id !== null && index !== slotIndex)
   );
-  return skills.filter((skill) => !taken.has(skill.id));
+  const here = slots[slotIndex] ?? null;
+  const choices: WheelSlotChoices<T> = { free: [], placed: [] };
+  for (const skill of skills) {
+    if (skill.id === here) continue;
+    if (elsewhere.has(skill.id)) choices.placed.push(skill);
+    else choices.free.push(skill);
+  }
+  return choices;
 }
 
 export function skillMark(label: string): string {
