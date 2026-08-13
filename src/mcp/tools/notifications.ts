@@ -23,7 +23,7 @@ import {
  * IDE could not already do.
  */
 
-const actionSchema = z.discriminatedUnion('kind', [
+export const notifyActionSchema = z.discriminatedUnion('kind', [
   z.object({
     id: z.string(),
     label: z.string(),
@@ -60,6 +60,20 @@ const actionSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+function parseNotifyActions(actions: unknown): z.infer<typeof notifyActionSchema>[] | undefined {
+  if (actions === undefined) return undefined;
+  if (!Array.isArray(actions)) {
+    throw new Error('Notification actions must be an array of known kinds');
+  }
+  return actions.map((action) => {
+    const parsed = notifyActionSchema.safeParse(action);
+    if (!parsed.success) {
+      throw new Error('Notification action is not in the closed MCP vocabulary');
+    }
+    return parsed.data;
+  });
+}
+
 export function registerNotificationTools(
   server: FastMCP,
   db: Database.Database,
@@ -80,10 +94,10 @@ export function registerNotificationTools(
         .describe('warn and error also raise an OS banner when the window is in the background'),
       origin: z.string().optional().describe('Who is speaking, e.g. your agent name'),
       actions: z
-        .array(actionSchema)
+        .array(notifyActionSchema)
         .optional()
         .describe(
-          'Buttons offered on the notification. Closed vocabulary; unknown kinds are dropped.'
+          'Buttons offered on the notification. Closed vocabulary; unknown kinds reject the call and write no row.'
         ),
       dedupeKey: z
         .string()
@@ -101,8 +115,10 @@ export function registerNotificationTools(
         .describe('UTC "YYYY-MM-DD HH:MM:SS"; the notification stops showing after this'),
     }),
     execute: async (args) => {
+      const actions = parseNotifyActions(args.actions);
       const stored = dispatchNotification(db, {
         ...args,
+        actions,
         source: 'agent',
         projectPath: args.projectPath ?? defaults.projectPath ?? null,
         projectName: args.projectPath ? null : (defaults.projectName ?? null),
@@ -144,6 +160,16 @@ export function registerNotificationTools(
         .describe('UTC "YYYY-MM-DD HH:MM:SS"; after this the answer comes back as "expired"'),
     }),
     execute: async (args) => {
+      // The action id is what gets recorded as the answer, so the caller's
+      // `value` becomes the id — that is what they will read back.
+      const actions = parseNotifyActions(
+        args.options.map((option) => ({
+          id: option.value,
+          label: option.label,
+          kind: 'answer',
+          value: option.value,
+        }))
+      );
       const stored = dispatchNotification(db, {
         title: args.title,
         body: args.body,
@@ -155,14 +181,7 @@ export function registerNotificationTools(
         kind: 'ask',
         projectPath: args.projectPath ?? defaults.projectPath ?? null,
         projectName: args.projectPath ? null : (defaults.projectName ?? null),
-        // The action id is what gets recorded as the answer, so the caller's
-        // `value` becomes the id — that is what they will read back.
-        actions: args.options.map((option) => ({
-          id: option.value,
-          label: option.label,
-          kind: 'answer',
-          value: option.value,
-        })),
+        actions,
       });
       return JSON.stringify({ uid: stored.uid });
     },
@@ -184,7 +203,8 @@ export function registerNotificationTools(
     name: 'schedule_create',
     description:
       'Set a recurring reminder for the human. It fires into their inbox with an optional ' +
-      '"start agent" button — it never starts anything on its own. AuricIDE does not run ' +
+      '"start agent" button — it never starts anything on its own. To attach a Quick Access ' +
+      'skill or combo, create the schedule in the Zeitpläne editor. AuricIDE does not run ' +
       'around the clock, so an occurrence missed while it was closed is caught up on the next ' +
       'start and shown as overdue.',
     parameters: z.object({

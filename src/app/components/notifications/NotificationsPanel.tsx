@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { formatNotificationProject } from '@/lib/notifications/format';
+import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
 import { NotificationRow } from './NotificationRow';
 
@@ -13,7 +14,7 @@ export interface NotificationsPanelProps {
   status: 'idle' | 'loading' | 'error';
   projectFilter: string | null;
   now: number;
-  parseActions: (notification: Notification) => NotificationAction[];
+  parseActions: (notification: Notification) => PresentedAction[];
   onOpen: (uid: string) => void;
   onAction: (notification: Notification, action: NotificationAction) => void;
   onSetProjectFilter: (projectPath: string | null) => void;

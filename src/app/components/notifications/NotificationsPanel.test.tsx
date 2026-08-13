@@ -40,7 +40,7 @@ function renderPanel(overrides: Partial<NotificationsPanelProps> = {}) {
     status: 'idle',
     projectFilter: null,
     now: NOW,
-    parseActions: (n) => (n.actions as NotificationAction[]) ?? [],
+    parseActions: (n) => ((n.actions as NotificationAction[]) ?? []).map((action) => ({ action })),
     onOpen: vi.fn(),
     onAction: vi.fn(),
     onSetProjectFilter: vi.fn(),
@@ -238,6 +238,27 @@ describe('NotificationRow', () => {
     fireEvent.click(screen.getByTestId(`notification-action-${row.uid}-run`));
 
     expect(props.onAction).toHaveBeenCalledWith(row, action);
+  });
+
+  it('disables an action that arrives with a disabledReason', () => {
+    const action: NotificationAction = {
+      id: 'run',
+      label: 'Changelog starten',
+      kind: 'run-skill',
+      skillId: 's1',
+      skillLabel: 'Changelog',
+      prompt: '/changelog',
+      repoPath: '/gone',
+    };
+    const row = makeNotification({ actions: [action] });
+    renderPanel({
+      notifications: [row],
+      parseActions: () => [{ action, disabledReason: 'Projektordner nicht gefunden' }],
+    });
+
+    const button = screen.getByTestId<HTMLButtonElement>(`notification-action-${row.uid}-run`);
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe('Projektordner nicht gefunden');
   });
 
   describe('a settled question', () => {

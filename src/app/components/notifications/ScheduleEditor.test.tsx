@@ -1,7 +1,116 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { NotificationAction } from '@/lib/notifications/types';
+import { comboPreview } from '@/lib/quickAccess/combo';
+import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { Schedule, SchedulePayload } from '@/lib/tauri/schedules';
+import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import { ScheduleEditor, type ScheduleEditorProps } from './ScheduleEditor';
+
+const runSkillAction: Extract<NotificationAction, { kind: 'run-skill' }> = {
+  id: 'run',
+  label: 'Changelog starten',
+  kind: 'run-skill',
+  skillId: 'skill-1',
+  skillLabel: 'Changelog',
+  prompt: '/changelog',
+  repoPath: '/repo/sample',
+  providerId: 'claude',
+  model: 'opus',
+  permissionMode: 'plan',
+  invocation: '/changelog',
+};
+
+const runComboAction: Extract<NotificationAction, { kind: 'run-combo' }> = {
+  id: 'run',
+  label: 'Blog-Write starten',
+  kind: 'run-combo',
+  comboId: 'c1',
+  comboLabel: 'Blog-Write',
+  repoPath: '/repo/sample',
+  steps: [
+    { id: 's1', label: 'Draft', prompt: '/draft' },
+    { id: 's2', label: 'Polish', prompt: 'tighten the wording' },
+  ],
+};
+
+const matchingStarred: StarredProject = {
+  path: '/repo/sample',
+  name: 'sample',
+  starredAt: 1,
+  skills: [
+    {
+      id: 'skill-1',
+      label: 'Changelog',
+      prompt: '/changelog',
+      providerId: 'claude',
+      model: 'opus',
+      permissionMode: 'plan',
+      invocation: '/changelog',
+    },
+  ],
+  combos: [
+    {
+      id: 'c1',
+      label: 'Blog-Write',
+      steps: [
+        { id: 's1', label: 'Draft', prompt: '/draft' },
+        { id: 's2', label: 'Polish', prompt: 'tighten the wording' },
+      ],
+    },
+  ],
+};
+
+const driftedStarred: StarredProject = {
+  path: '/repo/sample',
+  name: 'sample',
+  starredAt: 1,
+  skills: [
+    { id: 'skill-1', label: 'Changelog', prompt: '/changelog-v2', invocation: '/changelog' },
+  ],
+  combos: [],
+};
+
+const reviewSkill: ProjectSkill = {
+  invocation: '/review',
+  name: 'Review',
+  description: null,
+  source: 'skill',
+  scope: 'project',
+  path: '/repo/sample/.claude/skills/review/SKILL.md',
+  sourceId: 'claude',
+};
+
+function scheduleWith(
+  action: NotificationAction | undefined,
+  overrides: Partial<Schedule> = {}
+): Schedule {
+  return {
+    id: 's-skill',
+    name: 'Weekly changelog',
+    enabled: true,
+    projectPath: '/repo/sample',
+    projectName: 'sample',
+    specKind: 'cron',
+    cronExpr: '0 0 9 * * WED',
+    everyN: null,
+    everyUnit: null,
+    anchorAt: null,
+    timeOfDay: '09:00',
+    timezone: 'Europe/Berlin',
+    catchUp: 'coalesce',
+    payload: JSON.stringify({
+      title: 'Weekly changelog',
+      actions: action ? [action] : [],
+    }),
+    lastFiredAt: null,
+    lastCheckedAt: null,
+    nextDueAt: null,
+    createdAt: '2026-08-12 07:00:00',
+    updatedAt: '2026-08-12 07:00:00',
+    ...overrides,
+  };
+}
 
 function renderEditor(overrides: Partial<ScheduleEditorProps> = {}) {
   const props: ScheduleEditorProps = {
@@ -9,6 +118,8 @@ function renderEditor(overrides: Partial<ScheduleEditorProps> = {}) {
     defaultProjectPath: '/repo/sample',
     defaultProjectName: 'sample-project',
     preview: ['Mi 19.08.2026 09:00'],
+    starredProjects: [],
+    discoveredSkills: [],
     onDraftChange: vi.fn(),
     onSave: vi.fn(),
     onCancel: vi.fn(),
@@ -21,6 +132,10 @@ function renderEditor(overrides: Partial<ScheduleEditorProps> = {}) {
 /** The draft the form last produced. */
 function lastDraft(onDraftChange: ReturnType<typeof vi.fn>): Schedule {
   return onDraftChange.mock.calls.at(-1)![0] as Schedule;
+}
+
+function lastSaved(onSave: ScheduleEditorProps['onSave']): Schedule {
+  return (onSave as ReturnType<typeof vi.fn>).mock.calls[0][0] as Schedule;
 }
 
 function payloadOf(schedule: Schedule): SchedulePayload {
@@ -106,6 +221,7 @@ describe('ScheduleEditor', () => {
     // button, it never launches anything itself.
     it('turns the task into a spawn button, not an automatic launch', () => {
       const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
       fireEvent.change(screen.getByTestId('schedule-task'), {
         target: { value: 'Serverscan durchführen' },
       });
@@ -153,32 +269,32 @@ describe('ScheduleEditor', () => {
     });
   });
 
-  describe('editing an existing schedule', () => {
-    const existing: Schedule = {
-      id: 's1',
-      name: 'Security-Scan',
-      enabled: true,
-      projectPath: '/repo/sample',
-      projectName: 'sample-project',
-      specKind: 'every',
-      cronExpr: null,
-      everyN: 21,
-      everyUnit: 'day',
-      anchorAt: '2026-08-12 07:00:00',
-      timeOfDay: '09:00',
-      timezone: 'Europe/Berlin',
-      catchUp: 'all',
-      payload: JSON.stringify({
-        title: 'Security-Scan',
-        actions: [{ id: 'run', label: 'Agent starten', kind: 'spawn-agent', task: 'scan' }],
-      }),
-      lastFiredAt: null,
-      lastCheckedAt: null,
-      nextDueAt: '2026-09-02 07:00:00',
-      createdAt: '2026-08-12 07:00:00',
-      updatedAt: '2026-08-12 07:00:00',
-    };
+  const existing: Schedule = {
+    id: 's1',
+    name: 'Security-Scan',
+    enabled: true,
+    projectPath: '/repo/sample',
+    projectName: 'sample-project',
+    specKind: 'every',
+    cronExpr: null,
+    everyN: 21,
+    everyUnit: 'day',
+    anchorAt: '2026-08-12 07:00:00',
+    timeOfDay: '09:00',
+    timezone: 'Europe/Berlin',
+    catchUp: 'all',
+    payload: JSON.stringify({
+      title: 'Security-Scan',
+      actions: [{ id: 'run', label: 'Agent starten', kind: 'spawn-agent', task: 'scan' }],
+    }),
+    lastFiredAt: null,
+    lastCheckedAt: null,
+    nextDueAt: '2026-09-02 07:00:00',
+    createdAt: '2026-08-12 07:00:00',
+    updatedAt: '2026-08-12 07:00:00',
+  };
 
+  describe('editing an existing schedule', () => {
     it('fills the form from the stored schedule', () => {
       renderEditor({ schedule: existing });
 
@@ -208,6 +324,224 @@ describe('ScheduleEditor', () => {
       expect(props.onSave).toHaveBeenCalledWith(
         expect.objectContaining({ id: 's1', name: 'Security-Scan' })
       );
+    });
+
+    it('selects Freitext when the stored action is spawn-agent', () => {
+      renderEditor({ schedule: existing });
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-task').checked).toBe(true);
+    });
+  });
+
+  describe('skill, combo, and the project they belong to', () => {
+    it('rewrites the stored run-skill snapshot when saved without touching the chooser', () => {
+      const stored = scheduleWith(runSkillAction);
+      const props = renderEditor({ schedule: stored });
+      fireEvent.click(screen.getByTestId('schedule-save'));
+
+      expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toEqual(runSkillAction);
+    });
+
+    it('rewrites the stored run-combo snapshot including its steps', () => {
+      const stored = scheduleWith(runComboAction, { name: 'Blog-Write', id: 's-combo' });
+      const props = renderEditor({
+        schedule: stored,
+        starredProjects: [matchingStarred],
+      });
+      fireEvent.click(screen.getByTestId('schedule-save'));
+
+      expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toEqual(runComboAction);
+    });
+
+    it('keeps an unpinned skill selected as the stored snapshot', () => {
+      const orphan = { ...runSkillAction, skillId: 'gone-skill' };
+      const stored = scheduleWith(orphan);
+      const props = renderEditor({ schedule: stored, starredProjects: [matchingStarred] });
+
+      const select = screen.getByTestId<HTMLSelectElement>('schedule-skill-select');
+      expect(select.value).toBe('gone-skill');
+      expect(select.options[select.selectedIndex].textContent).toContain('(gespeichert)');
+
+      fireEvent.click(screen.getByTestId('schedule-save'));
+      expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toEqual(orphan);
+    });
+
+    it('keeps a project-A schedule aimed at A when the open project is B', () => {
+      const props = renderEditor({
+        schedule: existing,
+        defaultProjectPath: '/B',
+        defaultProjectName: 'B',
+      });
+
+      const draft = lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>);
+      expect(draft.projectPath).toBe('/repo/sample');
+      expect(payloadOf(draft).actions).toEqual([
+        {
+          id: 'run',
+          label: 'Agent starten',
+          kind: 'spawn-agent',
+          task: 'scan',
+          repoPath: '/repo/sample',
+        },
+      ]);
+    });
+
+    it('does not retarget an app-wide schedule onto the open project', () => {
+      const appWide: Schedule = {
+        ...existing,
+        projectPath: null,
+        projectName: null,
+      };
+      const props = renderEditor({
+        schedule: appWide,
+        defaultProjectPath: '/B',
+        defaultProjectName: 'B',
+      });
+
+      const draft = lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>);
+      expect(draft.projectPath).toBeNull();
+      expect(payloadOf(draft).actions).toEqual([
+        {
+          id: 'run',
+          label: 'Agent starten',
+          kind: 'spawn-agent',
+          task: 'scan',
+        },
+      ]);
+    });
+
+    it('disables Skill and Combo on an app-wide schedule', () => {
+      renderEditor({
+        schedule: { ...existing, projectPath: null, projectName: null },
+        defaultProjectPath: '/B',
+      });
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(true);
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-combo').disabled).toBe(true);
+      expect(screen.getByTestId('schedule-skill-combo-hint').textContent).toContain(
+        'Skill und Combo brauchen ein Projekt.'
+      );
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-none').disabled).toBe(false);
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-task').disabled).toBe(false);
+    });
+
+    it('cannot save a Skill choice with nothing selected', () => {
+      renderEditor();
+      fireEvent.change(screen.getByTestId('schedule-name'), { target: { value: 'Weekly' } });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+
+      expect(screen.getByTestId<HTMLButtonElement>('schedule-save').disabled).toBe(true);
+    });
+
+    it('cannot save a Combo choice with nothing selected', () => {
+      renderEditor();
+      fireEvent.change(screen.getByTestId('schedule-name'), { target: { value: 'Weekly' } });
+      fireEvent.click(screen.getByTestId('schedule-action-combo'));
+
+      expect(screen.getByTestId<HTMLButtonElement>('schedule-save').disabled).toBe(true);
+    });
+
+    it('treats Freitext with an empty task as Erinnerung', () => {
+      const props = renderEditor();
+      fireEvent.change(screen.getByTestId('schedule-name'), { target: { value: 'Weekly' } });
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+
+      expect(screen.getByTestId<HTMLButtonElement>('schedule-save').disabled).toBe(false);
+      expect(payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions).toEqual(
+        []
+      );
+    });
+
+    it('offers Snapshot aktualisieren when the live pin has drifted', () => {
+      const stored = scheduleWith(runSkillAction);
+      const props = renderEditor({
+        schedule: stored,
+        starredProjects: [driftedStarred],
+      });
+
+      expect(screen.getByTestId('schedule-snapshot-stale').textContent).toContain(
+        'Der angepinnte Skill hat sich geändert.'
+      );
+
+      fireEvent.click(screen.getByTestId('schedule-snapshot-refresh'));
+      expect(props.onSave).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('schedule-save'));
+      expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toEqual({
+        id: 'run',
+        label: 'Changelog starten',
+        kind: 'run-skill',
+        skillId: 'skill-1',
+        skillLabel: 'Changelog',
+        prompt: '/changelog-v2',
+        repoPath: '/repo/sample',
+        invocation: '/changelog',
+      });
+    });
+
+    it('replaces a discovered skillId with the live pin id on refresh', () => {
+      const discoveredSnapshot = {
+        ...runSkillAction,
+        skillId: 'discovered:/changelog',
+      };
+      const stored = scheduleWith(discoveredSnapshot);
+      const props = renderEditor({
+        schedule: stored,
+        starredProjects: [driftedStarred],
+      });
+
+      fireEvent.click(screen.getByTestId('schedule-snapshot-refresh'));
+      fireEvent.click(screen.getByTestId('schedule-save'));
+
+      expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toMatchObject({
+        skillId: 'skill-1',
+        prompt: '/changelog-v2',
+      });
+    });
+
+    it('snapshots a discovered skill without pinning it', () => {
+      const props = renderEditor({ discoveredSkills: [reviewSkill] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'discovered:/review' },
+      });
+
+      expect(payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions).toEqual(
+        [
+          {
+            id: 'run',
+            label: 'Review starten',
+            kind: 'run-skill',
+            skillId: 'discovered:/review',
+            skillLabel: 'Review',
+            prompt: '/review',
+            repoPath: '/repo/sample',
+            invocation: '/review',
+          },
+        ]
+      );
+    });
+
+    it('shows the combo step preview under the picker', () => {
+      renderEditor({
+        schedule: scheduleWith(runComboAction, { name: 'Blog-Write' }),
+        starredProjects: [matchingStarred],
+      });
+
+      expect(screen.getByTestId('schedule-combo-preview').textContent).toBe(
+        comboPreview({
+          id: runComboAction.comboId,
+          label: 'Blog-Write',
+          steps: runComboAction.steps,
+        })
+      );
+    });
+
+    it('tells you when the project has no Quick Access yet', () => {
+      renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      expect(
+        screen.getByText('Kein Quick Access für dieses Projekt — zuerst dort anpinnen.')
+      ).toBeTruthy();
     });
   });
 });

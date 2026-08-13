@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PermissionMode } from '@/lib/tauri/agents';
 
 /**
  * The notification bus: what happened, said once, kept until it is read.
@@ -44,6 +45,16 @@ export interface Notification {
   expiresAt: string | null;
 }
 
+export type SkillSnapshot = {
+  id: string;
+  label: string;
+  prompt: string;
+  providerId?: string;
+  model?: string;
+  permissionMode?: PermissionMode;
+  invocation?: string;
+};
+
 /**
  * What a notification may ask the app to do. Closed on purpose: a payload can
  * arrive from an MCP agent or straight from the database, so "run this string"
@@ -61,6 +72,28 @@ export type NotificationAction =
       goalId?: string;
       provider?: string;
       model?: string;
+    }
+  | {
+      id: string;
+      label: string;
+      kind: 'run-skill';
+      skillId: string;
+      skillLabel: string;
+      prompt: string;
+      repoPath: string;
+      providerId?: string;
+      model?: string;
+      permissionMode?: PermissionMode;
+      invocation?: string;
+    }
+  | {
+      id: string;
+      label: string;
+      kind: 'run-combo';
+      comboId: string;
+      comboLabel: string;
+      repoPath: string;
+      steps: SkillSnapshot[];
     }
   | { id: string; label: string; kind: 'open'; target: NotificationOpenTarget }
   | { id: string; label: string; kind: 'command'; commandId: string };
@@ -86,6 +119,24 @@ const openTargetSchema = z.discriminatedUnion('type', [
 
 const identity = { id: nonEmpty, label: nonEmpty };
 
+const permissionModeSchema = z.enum([
+  'bypassPermissions',
+  'acceptEdits',
+  'plan',
+  'auto',
+  'default',
+]);
+
+const skillSnapshotSchema = z.object({
+  id: nonEmpty,
+  label: nonEmpty,
+  prompt: nonEmpty,
+  providerId: z.string().optional(),
+  model: z.string().optional(),
+  permissionMode: permissionModeSchema.optional(),
+  invocation: z.string().optional(),
+});
+
 /**
  * Validates one action's shape. Command ids are checked separately, against
  * the live manifest — the schema cannot know them.
@@ -101,6 +152,26 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     goalId: z.string().optional(),
     provider: z.string().optional(),
     model: z.string().optional(),
+  }),
+  z.object({
+    ...identity,
+    kind: z.literal('run-skill'),
+    skillId: nonEmpty,
+    skillLabel: nonEmpty,
+    prompt: nonEmpty,
+    repoPath: nonEmpty,
+    providerId: z.string().optional(),
+    model: z.string().optional(),
+    permissionMode: permissionModeSchema.optional(),
+    invocation: z.string().optional(),
+  }),
+  z.object({
+    ...identity,
+    kind: z.literal('run-combo'),
+    comboId: nonEmpty,
+    comboLabel: nonEmpty,
+    repoPath: nonEmpty,
+    steps: z.array(skillSnapshotSchema).min(1).max(8),
   }),
   z.object({ ...identity, kind: z.literal('open'), target: openTargetSchema }),
   z.object({ ...identity, kind: z.literal('command'), commandId: nonEmpty }),

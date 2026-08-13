@@ -628,6 +628,11 @@ fn exists(path: &str) -> bool {
 }
 
 #[tauri::command]
+fn is_dir(path: &str) -> bool {
+    Path::new(path).is_dir()
+}
+
+#[tauri::command]
 fn read_file(path: &str) -> Result<String, String> {
     read_file_impl(path)
 }
@@ -2361,6 +2366,7 @@ pub fn run() {
             greet,
             read_directory,
             exists,
+            is_dir,
             list_all_files,
             get_project_files_info,
             search_in_files,
