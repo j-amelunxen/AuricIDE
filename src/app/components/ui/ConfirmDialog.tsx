@@ -33,7 +33,13 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Escape') {
+            // Callers often listen for Escape on window to close themselves.
+            // This question is in front of that listener — answering it must
+            // not also dismiss the thing that asked.
+            e.stopPropagation();
+            onCancel();
+          }
         }}
         className="bg-background-secondary border border-border-dark rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-3"
       >

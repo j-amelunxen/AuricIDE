@@ -149,6 +149,8 @@ export function IDEOverlays({
   const recentCommandIds = useStore((s) => s.recentCommandIds);
   const promptHistory = useStore((s) => s.promptHistory);
   const loadPromptHistory = useStore((s) => s.loadPromptHistory);
+  const killRunningAgent = useStore((s) => s.killRunningAgent);
+  const dismissFinishedAgent = useStore((s) => s.dismissFinishedAgent);
 
   // One source of truth: the repo the dialog targets and the repo whose prompt
   // history it recalls have to be the same path. Quick Access and ticket
@@ -206,6 +208,8 @@ export function IDEOverlays({
         onSwitchAgent={setFullscreenAgent}
         onClose={() => setFullscreenAgent(null)}
         onSelectionSpawn={handleSelectionSpawn}
+        onKill={killRunningAgent}
+        onDismiss={dismissFinishedAgent}
       />
       <LinkGraphModal
         isOpen={linkGraphModalOpen}
