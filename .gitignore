@@ -85,6 +85,9 @@ workarounds/
 # Local commit-guard state — machine-specific, not repo content
 .commit-guard.json
 
+# Exploratory QA runs — screenshots of a live app, written per session
+tmp/
+
 # Design reviews, drafts and QA checklists — local working material, not repo docs
 .design-review/
 docs/actionplan-overlay-flows.md
