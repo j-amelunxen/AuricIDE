@@ -173,6 +173,12 @@ describe('QuickAccess', () => {
     expect(screen.queryByTestId('quick-access-add-current')).not.toBeInTheDocument();
   });
 
+  it('tells the user to open a project then star it when Quick Access is empty', () => {
+    render(<QuickAccess currentPath={null} />);
+    expect(screen.getByText('Open a project, then star it.')).toBeInTheDocument();
+    expect(screen.queryByText(/star one from recent projects/i)).not.toBeInTheDocument();
+  });
+
   describe('context menu — Start Agent', () => {
     beforeEach(() => {
       useStore.setState({
@@ -547,6 +553,194 @@ describe('QuickAccess', () => {
       expect(screen.getByTestId('tile-face-/a/website2').style.backgroundImage).toMatch(
         /linear-gradient/
       );
+    });
+  });
+
+  describe('skill wheel', () => {
+    const changelog = { id: 's1', label: 'Changelog', prompt: '/changelog' };
+    const research = { id: 's2', label: 'Research', prompt: '/research' };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      useStore.setState({
+        spawnDialogOpen: false,
+        spawnAgentRepoPath: null,
+        spawnAgentPreset: null,
+        initialAgentTask: '',
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const websiteWithSkills = {
+      path: '/a/website',
+      name: 'website',
+      starredAt: 1,
+      skills: [changelog, research],
+      wheelSlots: [null, 's1', null, null, null, null] as (string | null)[],
+    };
+
+    async function dwellOpen(path = '/a/website') {
+      fireEvent.pointerEnter(screen.getByTestId(`quick-access-item-${path}`));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+    }
+
+    it('does not push the tile row down when a wheel opens', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const row = screen.getByTestId('quick-access-row');
+      const before = row.className;
+      await dwellOpen();
+      expect(screen.getByTestId('quick-access-wheel-/a/website')).toBeInTheDocument();
+      expect(row.className).toBe(before);
+      expect(row.className).not.toMatch(/pt-\d/);
+    });
+
+    it('shows dots at 200ms and the wheel at 300ms', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.pointerEnter(screen.getByTestId('quick-access-item-/a/website'));
+      expect(screen.queryByTestId('quick-access-wheel-/a/website')).not.toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(screen.getByTestId('quick-access-wheel-/a/website')).toHaveAttribute(
+        'data-phase',
+        'dots'
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      expect(screen.getByTestId('quick-access-wheel-/a/website')).toHaveAttribute(
+        'data-phase',
+        'open'
+      );
+    });
+
+    it('still switches the project on a short click', async () => {
+      const onSwitchProject = vi.fn();
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" onSwitchProject={onSwitchProject} />);
+      const tile = screen.getByTestId('quick-access-tile-/a/website');
+      fireEvent.pointerDown(tile, { button: 0 });
+      fireEvent.pointerUp(tile, { button: 0 });
+      fireEvent.click(tile);
+      expect(onSwitchProject).toHaveBeenCalledWith('/a/website');
+      expect(useStore.getState().spawnDialogOpen).toBe(false);
+    });
+
+    it('launches the slotted skill from a dwell click', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-1'));
+      expect(useStore.getState().initialAgentTask).toBe('/changelog');
+      expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
+      expect(useStore.getState().spawnDialogOpen).toBe(true);
+    });
+
+    it('offers whole combos on a plus slot, separate from skills', async () => {
+      useStore.setState({
+        starredProjects: [
+          {
+            path: '/a/website',
+            name: 'website',
+            starredAt: 1,
+            skills: [changelog],
+            combos: [
+              {
+                id: 'combo-1',
+                label: 'Write Blog Article',
+                steps: [changelog, research],
+              },
+            ],
+          },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      expect(screen.getByText('Combos')).toBeInTheDocument();
+      expect(screen.getByText('Skills')).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Write Blog Article +' })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Changelog' })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Research' })).toBeInTheDocument();
+    });
+
+    it('assigns a combo to a slot and launches it from the wheel', async () => {
+      const startSkillCombo = vi.fn();
+      const write = {
+        id: 'combo-1',
+        label: 'Write Blog Article',
+        steps: [changelog, research],
+      };
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1, combos: [write] }],
+        startSkillCombo,
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Write Blog Article +' }));
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[0]).toBe('combo:combo-1');
+
+      await dwellOpen();
+      expect(screen.getByTestId('quick-access-wheel-slot-/a/website-0')).toHaveAttribute(
+        'data-kind',
+        'combo'
+      );
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      expect(startSkillCombo).toHaveBeenCalledWith('/a/website', write);
+      expect(useStore.getState().spawnDialogOpen).not.toBe(true);
+    });
+
+    it('opens a picker of unassigned skills from a plus slot', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      expect(screen.getByRole('menuitem', { name: 'Research' })).toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'Changelog' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }));
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[0]).toBe('s2');
+    });
+
+    it('points at settings when no skills are configured yet', async () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      expect(screen.getByRole('menuitem', { name: /configure skills/i })).toBeInTheDocument();
+    });
+
+    it('opens the wheel on hold and launches on release over a slot', async () => {
+      const onSwitchProject = vi.fn();
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" onSwitchProject={onSwitchProject} />);
+      const tile = screen.getByTestId('quick-access-tile-/a/website');
+      fireEvent.pointerDown(tile, { button: 0 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(140);
+      });
+      expect(screen.getByTestId('quick-access-wheel-/a/website')).toHaveAttribute(
+        'data-mode',
+        'hold'
+      );
+      fireEvent.pointerMove(screen.getByTestId('quick-access-wheel-slot-/a/website-1'));
+      fireEvent.pointerUp(tile, { button: 0 });
+      expect(useStore.getState().spawnDialogOpen).toBe(true);
+      expect(useStore.getState().initialAgentTask).toBe('/changelog');
+      fireEvent.click(tile);
+      expect(onSwitchProject).not.toHaveBeenCalled();
     });
   });
 

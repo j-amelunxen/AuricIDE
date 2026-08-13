@@ -232,5 +232,29 @@ describe('starredProjectsSlice', () => {
       useStore.getState().setStarredProjectIcon('/a', glyph);
       expect(useStore.getState().starredProjects[0].combos).toEqual([combo]);
     });
+
+    it('pins a skill to a wheel slot without disturbing the skill list', () => {
+      useStore.getState().setStarredProjectSkills('/a', [blogartikel]);
+      useStore.getState().setStarredProjectWheelSlots('/a', [null, 's1']);
+      const [a] = useStore.getState().starredProjects;
+      expect(a.skills).toEqual([blogartikel]);
+      expect(a.wheelSlots?.[1]).toBe('s1');
+    });
+
+    it('clears a wheel slot whose skill was removed', () => {
+      useStore.getState().setStarredProjectSkills('/a', [blogartikel]);
+      useStore.getState().setStarredProjectWheelSlots('/a', ['s1']);
+      useStore.getState().setStarredProjectSkills('/a', []);
+      expect(useStore.getState().starredProjects[0].wheelSlots?.every((id) => id === null)).toBe(
+        true
+      );
+    });
+
+    it('keeps wheel slots when only the icon changes', () => {
+      useStore.getState().setStarredProjectSkills('/a', [blogartikel]);
+      useStore.getState().setStarredProjectWheelSlots('/a', ['s1']);
+      useStore.getState().setStarredProjectIcon('/a', glyph);
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[0]).toBe('s1');
+    });
   });
 });

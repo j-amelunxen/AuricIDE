@@ -1,18 +1,33 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import {
   quickAccessCombos,
   quickAccessSkills,
+  quickAccessWheelSlots,
   type QuickAccessCombo,
   type QuickAccessSkill,
   type StarredProject,
 } from '@/lib/store/starredProjectsSlice';
 import { comboMenuLabel } from '@/lib/quickAccess/combo';
+import {
+  launchEntriesForProject,
+  resolveWheelEntry,
+  wheelEntryLabel,
+  wheelKnownIds,
+  wheelSlotId,
+} from '@/lib/quickAccess/launchSkills';
 import { openSkillSpawnDialog } from '@/lib/quickAccess/launchSkill';
+import {
+  assignSkillToSlot,
+  availableSkillsForSlot,
+  normalizeWheelSlots,
+  slotIndexAt,
+} from '@/lib/quickAccess/wheel';
 import { ProjectTileFace } from './ProjectTileFace';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
+import { SkillWheel, useSkillWheel } from './SkillWheel';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
@@ -34,16 +49,50 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 interface ProjectTileProps {
   project: StarredProject;
   active: boolean;
+  wheelSuppressed: boolean;
   onSwitch: () => void;
   onUnstar: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onLaunchSkill: (skill: QuickAccessSkill) => void;
+  onLaunchCombo: (combo: QuickAccessCombo) => void;
+  onOpenSettings: () => void;
+  onWheelActivity: (active: boolean) => void;
 }
 
-function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: ProjectTileProps) {
+function ProjectTile({
+  project,
+  active,
+  wheelSuppressed,
+  onSwitch,
+  onUnstar,
+  onContextMenu,
+  onLaunchSkill,
+  onLaunchCombo,
+  onOpenSettings,
+  onWheelActivity,
+}: ProjectTileProps) {
   const label = active ? `${project.name} (current)` : `Switch to ${project.name}`;
   const [holding, setHolding] = useState(false);
   const [removing, setRemoving] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tileRef = useRef<HTMLButtonElement>(null);
+  const { machine, dispatch } = useSkillWheel(wheelSuppressed);
+  const updateStarredProjectSettings = useStore((s) => s.updateStarredProjectSettings);
+  const [picker, setPicker] = useState<{ slot: number; x: number; y: number } | null>(null);
+
+  const entries = launchEntriesForProject(project);
+  const knownIds = wheelKnownIds(project);
+  const slotIds = normalizeWheelSlots(quickAccessWheelSlots(project), knownIds);
+  const slotted = slotIds.map((id) => resolveWheelEntry(project, id));
+
+  const wheelLive = machine.phase !== 'idle' || machine.mode !== 'none';
+  const onWheelActivityRef = useRef(onWheelActivity);
+  useEffect(() => {
+    onWheelActivityRef.current = onWheelActivity;
+  }, [onWheelActivity]);
+  useEffect(() => {
+    onWheelActivityRef.current(wheelLive);
+  }, [wheelLive]);
 
   const startHold = () => {
     if (holdTimer.current || removing) return;
@@ -66,40 +115,166 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
     setHolding(false);
   };
 
+  const aimFromPointer = (event: React.PointerEvent) => {
+    const slotEl = (event.target as HTMLElement | null)?.closest?.('[data-wheel-slot]');
+    if (slotEl instanceof HTMLElement && slotEl.dataset.wheelSlot !== undefined) {
+      dispatch({ type: 'aim', slot: Number(slotEl.dataset.wheelSlot) });
+      return;
+    }
+    const origin = tileRef.current;
+    if (!origin) return;
+    const rect = origin.getBoundingClientRect();
+    dispatch({
+      type: 'aim',
+      slot: slotIndexAt(
+        event.clientX - (rect.left + rect.width / 2),
+        event.clientY - (rect.top + rect.height / 2)
+      ),
+    });
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    const action = dispatch({ type: 'up', now: event.timeStamp });
+    if (action.type === 'hold-release' && action.slot !== null) {
+      launchEntry(slotted[action.slot]);
+    }
+  };
+
+  const launchEntry = (entry: (typeof slotted)[number]) => {
+    if (!entry) return;
+    if (entry.kind === 'combo') onLaunchCombo(entry.combo);
+    else onLaunchSkill(entry.skill);
+  };
+
+  const pickerEntries = picker
+    ? availableSkillsForSlot(
+        entries.map((entry) => ({ id: wheelSlotId(entry), label: wheelEntryLabel(entry) })),
+        slotIds,
+        picker.slot
+      )
+        .map((available) => entries.find((entry) => wheelSlotId(entry) === available.id) ?? null)
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    : [];
+
+  const assignEntry = (entry: (typeof pickerEntries)[number]) => {
+    if (!picker) return;
+    updateStarredProjectSettings(project.path, {
+      icon: project.icon,
+      skills: quickAccessSkills(project),
+      combos: quickAccessCombos(project),
+      wheelSlots: assignSkillToSlot(slotIds, picker.slot, wheelSlotId(entry), knownIds),
+    });
+  };
+
+  const pickerMenuOptions = (): ContextMenuOption[] => {
+    if (pickerEntries.length === 0) {
+      return [
+        {
+          label: entries.length === 0 ? 'Configure skills…' : 'All skills are already on the wheel',
+          icon: 'settings',
+          action: () => {
+            if (entries.length === 0) onOpenSettings();
+          },
+        },
+      ];
+    }
+    const combos = pickerEntries.filter((entry) => entry.kind === 'combo');
+    const skills = pickerEntries.filter((entry) => entry.kind === 'skill');
+    const options: ContextMenuOption[] = [];
+    if (combos.length > 0) {
+      options.push({ type: 'header', label: 'Combos' });
+      for (const entry of combos) {
+        options.push({
+          label: wheelEntryLabel(entry),
+          icon: 'account_tree',
+          action: () => assignEntry(entry),
+        });
+      }
+    }
+    if (combos.length > 0 && skills.length > 0) {
+      options.push({ type: 'separator' });
+    }
+    if (skills.length > 0) {
+      options.push({ type: 'header', label: 'Skills' });
+      for (const entry of skills) {
+        options.push({
+          label: wheelEntryLabel(entry),
+          icon: 'auto_awesome',
+          action: () => assignEntry(entry),
+        });
+      }
+    }
+    return options;
+  };
+
   return (
     <div
       data-testid={`quick-access-item-${project.path}`}
+      onPointerEnter={(event) => dispatch({ type: 'enter', now: event.timeStamp })}
+      onPointerMove={(event) => {
+        if (machine.mode === 'hold' && machine.phase === 'open') aimFromPointer(event);
+      }}
+      onPointerLeave={(event) => {
+        if (picker) return;
+        dispatch({ type: 'leave', now: event.timeStamp });
+      }}
       className={`group/tile relative flex w-20 flex-col items-center gap-1.5 quick-access-tile-enter ${
         removing ? 'quick-access-tile-exit' : ''
-      }`}
+      } ${wheelLive ? 'z-20' : ''}`}
     >
-      <button
-        type="button"
-        data-testid={`quick-access-tile-${project.path}`}
-        data-active={active}
-        onClick={onSwitch}
-        onContextMenu={onContextMenu}
-        title={label}
-        // A glyph or emoji tile has no text content of its own, so the name
-        // has to be stated rather than left to the title attribute.
-        aria-label={label}
-        className={`relative flex h-10 w-10 items-center justify-center rounded-xl shadow-sm transition-[transform,box-shadow] duration-150 active:scale-[0.94] ${
-          active
-            ? 'ring-2 ring-primary/70 ring-offset-2 ring-offset-background'
-            : 'ring-1 ring-white/10 hover:ring-white/25 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.18)]'
-        }`}
-      >
-        <ProjectTileFace path={project.path} icon={project.icon} />
-        {quickAccessCombos(project).length > 0 && (
-          <span
-            data-testid={`quick-access-combo-mark-${project.path}`}
-            aria-hidden="true"
-            className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold leading-none text-white shadow"
-          >
-            +
-          </span>
-        )}
-      </button>
+      <div className="relative h-10 w-10">
+        <button
+          ref={tileRef}
+          type="button"
+          data-testid={`quick-access-tile-${project.path}`}
+          data-active={active}
+          onClick={() => {
+            if (machine.consumedClick) return;
+            onSwitch();
+          }}
+          onContextMenu={onContextMenu}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            dispatch({ type: 'down', now: event.timeStamp });
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (machine.mode === 'hold' && machine.phase === 'open') aimFromPointer(event);
+          }}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={() => dispatch({ type: 'cancel' })}
+          title={label}
+          // A glyph or emoji tile has no text content of its own, so the name
+          // has to be stated rather than left to the title attribute.
+          aria-label={label}
+          className={`relative flex h-10 w-10 items-center justify-center rounded-xl shadow-sm transition-[transform,box-shadow] duration-150 active:scale-[0.94] ${
+            active
+              ? 'ring-2 ring-primary/70 ring-offset-2 ring-offset-background'
+              : 'ring-1 ring-white/10 hover:ring-white/25 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.18)]'
+          }`}
+        >
+          <ProjectTileFace path={project.path} icon={project.icon} />
+          {quickAccessCombos(project).length > 0 && (
+            <span
+              data-testid={`quick-access-combo-mark-${project.path}`}
+              aria-hidden="true"
+              className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold leading-none text-white shadow"
+            >
+              +
+            </span>
+          )}
+        </button>
+        <SkillWheel
+          path={project.path}
+          phase={machine.phase}
+          mode={machine.mode}
+          armedSlot={machine.armedSlot}
+          slots={slotted}
+          onSlotClick={(index) => launchEntry(slotted[index])}
+          onPlusClick={(index, x, y) => setPicker({ slot: index, x, y })}
+        />
+      </div>
       <span
         title={project.name}
         className="max-w-full truncate text-[10px] font-medium text-foreground-muted"
@@ -128,9 +303,9 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
         }}
         title={holding ? 'Keep holding to remove…' : `Hold to remove ${project.name}`}
         aria-label={`Hold to remove ${project.name} from Quick Access`}
-        className={`absolute -right-0.5 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-background text-foreground-muted opacity-0 transition-[opacity,transform,color] duration-150 group-hover/tile:opacity-100 focus-visible:opacity-100 ${
-          holding ? 'scale-90 text-red-400' : 'hover:text-foreground'
-        }`}
+        className={`absolute -right-0.5 -top-1 z-40 flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-background text-foreground-muted opacity-0 transition-[opacity,transform,color] duration-150 focus-visible:opacity-100 ${
+          wheelLive ? 'pointer-events-none' : 'group-hover/tile:opacity-100'
+        } ${holding ? 'scale-90 text-red-400' : 'hover:text-foreground'}`}
       >
         <svg
           aria-hidden="true"
@@ -157,6 +332,14 @@ function ProjectTile({ project, active, onSwitch, onUnstar, onContextMenu }: Pro
         </svg>
         <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
       </button>
+      {picker && (
+        <ContextMenu
+          x={picker.x}
+          y={picker.y}
+          onClose={() => setPicker(null)}
+          options={pickerMenuOptions()}
+        />
+      )}
     </div>
   );
 }
@@ -170,11 +353,13 @@ export interface QuickAccessProps {
 
 /**
  * Quick Access — a stable grid of starred projects ("apps") in Mission Control,
- * for one-click switching between workspaces. Tiles are sorted alphabetically
- * by name — a predictable order that stays put across sessions (names change
- * far less often than recency), so muscle memory and spatial locality hold
- * without the row reshuffling. Unstarring requires a deliberate hold (not a
- * single tap) so a stray click can't silently drop a tile.
+ * for one-click switching between workspaces. Hovering a tile dwells into a
+ * radial skill wheel; holding the tile skips the dwell and releases onto a
+ * slot. Tiles are sorted alphabetically by name — a predictable order that
+ * stays put across sessions (names change far less often than recency), so
+ * muscle memory and spatial locality hold without the row reshuffling.
+ * Unstarring requires a deliberate hold (not a single tap) so a stray click
+ * can't drop a tile.
  */
 export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) {
   const starredProjects = useStore((s) => s.starredProjects);
@@ -196,6 +381,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   // the IDE branch, so the two QuickAccess instances never coexist, and only
   // this component opens the dialog.
   const [settingsPath, setSettingsPath] = useState<string | null>(null);
+  const [wheelPath, setWheelPath] = useState<string | null>(null);
 
   // Resolved from the store rather than captured, so the dialog keeps editing
   // the live record if it changes underneath.
@@ -326,17 +512,19 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           </span>
         )}
       </div>
-      <div className="flex flex-wrap items-start justify-center gap-x-2 gap-y-4">
+      <div
+        data-testid="quick-access-row"
+        className="flex flex-wrap items-start justify-center gap-x-2 gap-y-4 overflow-visible"
+      >
         {starredProjects.length === 0 && !canStarCurrent && (
-          <p className="text-[11px] text-foreground-muted/70">
-            No starred projects yet. Star one from Recent Projects.
-          </p>
+          <p className="text-[11px] text-foreground-muted/70">Open a project, then star it.</p>
         )}
         {sortedProjects.map((project) => (
           <ProjectTile
             key={project.path}
             project={project}
             active={project.path === currentPath}
+            wheelSuppressed={wheelPath !== null && wheelPath !== project.path}
             onSwitch={() => {
               if (project.path !== currentPath) onSwitchProject?.(project.path);
             }}
@@ -344,6 +532,15 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
             onContextMenu={(e) => {
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, path: project.path });
+            }}
+            onLaunchSkill={(skill) => launchSkill(project.path, skill)}
+            onLaunchCombo={(combo) => launchCombo(project.path, combo)}
+            onOpenSettings={() => setSettingsPath(project.path)}
+            onWheelActivity={(active) => {
+              setWheelPath((current) => {
+                if (active) return project.path;
+                return current === project.path ? null : current;
+              });
             }}
           />
         ))}
