@@ -55,7 +55,11 @@ export function useIDEActions(
   // On mount: check CLI connection status
   useEffect(() => {
     import('@/lib/tauri/agents').then((m) => {
-      m.checkCliStatus().then(state.setCliConnected);
+      m.checkCliStatus()
+        .then(state.setCliConnected)
+        .catch(() => {
+          state.setCliConnected(false);
+        });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
