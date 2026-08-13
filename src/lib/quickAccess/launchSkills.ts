@@ -19,8 +19,17 @@ export type WheelLaunchEntry =
  * made the plus look empty.
  */
 export function launchEntriesForProject(project: StarredProject): WheelLaunchEntry[] {
-  const pinned = quickAccessSkills(project);
-  const combos = quickAccessCombos(project);
+  return launchEntries(quickAccessSkills(project), quickAccessCombos(project));
+}
+
+/**
+ * The same list from loose skills and combos, for the settings dialog: it edits
+ * drafts that are not on the project record yet.
+ */
+export function launchEntries(
+  pinned: QuickAccessSkill[],
+  combos: QuickAccessCombo[]
+): WheelLaunchEntry[] {
   const seen = new Set<string>();
   const skills: QuickAccessSkill[] = [];
 

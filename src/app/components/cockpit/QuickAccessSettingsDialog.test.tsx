@@ -514,6 +514,56 @@ describe('QuickAccessSettingsDialog', () => {
       });
     });
 
+    it('writes the wheel arrangement on Save', () => {
+      renderDialog({
+        ...website,
+        skills: [
+          { id: 'a', label: 'Changelog', prompt: '/changelog' },
+          { id: 'b', label: 'Research', prompt: '/research' },
+        ],
+      });
+      fireEvent.click(screen.getByTestId('wheel-editor-slot-3'));
+      fireEvent.click(screen.getByTestId('wheel-editor-choice-b'));
+      expect(useStore.getState().starredProjects[0].wheelSlots).toBeUndefined();
+
+      fireEvent.click(screen.getByTestId('quick-access-settings-save'));
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[3]).toBe('b');
+    });
+
+    it('treats a wheel edit as unsaved work worth asking about', () => {
+      const onClose = renderDialog({
+        ...website,
+        skills: [{ id: 'a', label: 'Changelog', prompt: '/changelog' }],
+      });
+      fireEvent.click(screen.getByTestId('wheel-editor-slot-0'));
+      fireEvent.click(screen.getByTestId('wheel-editor-choice-a'));
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText(/discard changes/i)).toBeInTheDocument();
+    });
+
+    it('keeps a slot pointing at a skill that survived an edit', () => {
+      renderDialog({
+        ...website,
+        skills: [{ id: 'a', label: 'Changelog', prompt: '/changelog' }],
+        wheelSlots: [null, 'a', null, null, null, null],
+      });
+      fireEvent.click(screen.getByTestId('quick-access-settings-save'));
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[1]).toBe('a');
+    });
+
+    it('drops a slot whose skill was deleted in the same edit', () => {
+      renderDialog({
+        ...website,
+        skills: [{ id: 'a', label: 'Changelog', prompt: '/changelog' }],
+        wheelSlots: ['a', null, null, null, null, null],
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Changelog' }));
+      expect(screen.getByTestId('wheel-editor-slot-0')).toHaveAccessibleName(/empty/i);
+      fireEvent.click(screen.getByTestId('quick-access-settings-save'));
+      expect(useStore.getState().starredProjects[0].wheelSlots?.[0]).toBeNull();
+    });
+
     it('refuses to save a skill without a name or a prompt', () => {
       renderDialog();
       fireEvent.click(screen.getByTestId('quick-access-add-skill'));
