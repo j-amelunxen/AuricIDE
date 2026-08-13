@@ -463,7 +463,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
           // One row per failed run, so a duplicate stop event cannot stack.
           dedupeKey: `agent:${agentId}:error`,
           actions: [
-            { id: 'logs', label: 'Logs öffnen', kind: 'open', target: { type: 'agent', agentId } },
+            { id: 'logs', label: 'Open logs', kind: 'open', target: { type: 'agent', agentId } },
           ],
         });
       }

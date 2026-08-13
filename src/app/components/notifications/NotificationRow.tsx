@@ -60,7 +60,7 @@ export function NotificationRow({
             {unread && (
               <span
                 data-testid="notification-unread-dot"
-                aria-label="ungelesen"
+                aria-label="unread"
                 className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary"
               />
             )}

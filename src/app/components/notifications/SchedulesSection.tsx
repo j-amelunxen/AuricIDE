@@ -34,12 +34,13 @@ export function SchedulesSection({
     <div data-testid="schedules-section" className="border-b border-white/5">
       <div className="flex items-center justify-between px-3 py-2">
         <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
-          Zeitpläne
+          Schedules
         </h3>
         <button
           data-testid="schedule-create"
           onClick={onCreate}
-          title="Neuer Zeitplan"
+          title="New schedule"
+          aria-label="New schedule"
           className="rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
         >
           <AuricIcon name="add" className="text-sm" />
@@ -48,8 +49,7 @@ export function SchedulesSection({
 
       {schedules.length === 0 ? (
         <p data-testid="schedules-empty" className="px-3 pb-3 text-[11px] text-foreground-muted">
-          Keine Zeitpläne. Erinnerungen feuern nur, während AuricIDE läuft — verpasste werden beim
-          Start nachgeholt.
+          No schedules. Reminders only fire while AuricIDE is open — missed ones catch up on launch.
         </p>
       ) : (
         <ul className="space-y-1 px-2 pb-2">
@@ -65,7 +65,7 @@ export function SchedulesSection({
               <button
                 data-testid={`schedule-toggle-${schedule.id}`}
                 aria-pressed={schedule.enabled}
-                aria-label={schedule.enabled ? 'Zeitplan ausschalten' : 'Zeitplan einschalten'}
+                aria-label={schedule.enabled ? 'Turn schedule off' : 'Turn schedule on'}
                 onClick={() => onToggle(schedule, !schedule.enabled)}
                 className="flex-shrink-0 text-foreground-muted transition-colors hover:text-foreground"
               >
@@ -102,7 +102,7 @@ export function SchedulesSection({
 
               <button
                 data-testid={`schedule-delete-${schedule.id}`}
-                aria-label="Zeitplan löschen"
+                aria-label="Delete schedule"
                 onClick={() => onDelete(schedule)}
                 className="flex-shrink-0 rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-[#ff4a4a]"
               >

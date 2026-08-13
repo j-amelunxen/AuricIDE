@@ -248,7 +248,7 @@ describe('executeNotificationAction', () => {
     await expectActionError(
       executeNotificationAction({ ...runSkill, repoPath: '/gone' }, deps),
       'missing-project',
-      'Projektordner nicht gefunden: /gone'
+      'Project folder not found: /gone'
     );
 
     expect(deps.projectDirExists).toHaveBeenCalledWith('/gone');
@@ -264,7 +264,7 @@ describe('executeNotificationAction', () => {
     await expectActionError(
       executeNotificationAction({ ...runSkill, repoPath: '/repo/sample/README.md' }, deps),
       'missing-project',
-      'Projektordner nicht gefunden: /repo/sample/README.md'
+      'Project folder not found: /repo/sample/README.md'
     );
 
     expect(deps.openSpawnDialog).not.toHaveBeenCalled();
@@ -300,7 +300,7 @@ describe('executeNotificationAction', () => {
         deps
       ),
       'empty-combo',
-      'Combo hat keine gültigen Schritte'
+      'Combo has no valid steps'
     );
 
     expect(deps.startSkillCombo).not.toHaveBeenCalled();
@@ -313,7 +313,7 @@ describe('executeNotificationAction', () => {
     await expectActionError(
       executeNotificationAction({ ...runCombo, steps: [] }, deps),
       'empty-combo',
-      'Combo hat keine gültigen Schritte'
+      'Combo has no valid steps'
     );
 
     expect(deps.startSkillCombo).not.toHaveBeenCalled();
@@ -326,7 +326,7 @@ describe('executeNotificationAction', () => {
     await expectActionError(
       executeNotificationAction({ ...runCombo, repoPath: '/gone' }, deps),
       'missing-project',
-      'Projektordner nicht gefunden: /gone'
+      'Project folder not found: /gone'
     );
 
     expect(deps.startSkillCombo).not.toHaveBeenCalled();

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Schedule } from '@/lib/tauri/schedules';
-import { dailyCron, formatNextDue, formatScheduleRhythm, weeklyCron } from './scheduleFormat';
+import {
+  CATCH_UP_HINTS,
+  CATCH_UP_LABELS,
+  dailyCron,
+  formatNextDue,
+  formatScheduleRhythm,
+  WEEKDAY_OPTIONS,
+  weeklyCron,
+} from './scheduleFormat';
 
 function makeSchedule(overrides: Partial<Schedule> = {}): Schedule {
   return {
@@ -30,23 +38,23 @@ function makeSchedule(overrides: Partial<Schedule> = {}): Schedule {
 describe('formatScheduleRhythm', () => {
   describe('interval schedules', () => {
     it('names a multi-day interval with its time', () => {
-      expect(formatScheduleRhythm(makeSchedule())).toBe('alle 21 Tage · 09:00');
+      expect(formatScheduleRhythm(makeSchedule())).toBe('every 21 days · 09:00');
     });
 
     it('uses the singular for an interval of one', () => {
-      expect(formatScheduleRhythm(makeSchedule({ everyN: 1 }))).toBe('jeden Tag · 09:00');
+      expect(formatScheduleRhythm(makeSchedule({ everyN: 1 }))).toBe('every day · 09:00');
     });
 
     it('names a weekly interval', () => {
       expect(formatScheduleRhythm(makeSchedule({ everyN: 2, everyUnit: 'week' }))).toBe(
-        'alle 2 Wochen · 09:00'
+        'every 2 weeks · 09:00'
       );
     });
 
     // An hourly rhythm has no meaningful time of day.
     it('leaves the time off an hourly interval', () => {
       expect(formatScheduleRhythm(makeSchedule({ everyN: 6, everyUnit: 'hour' }))).toBe(
-        'alle 6 Stunden'
+        'every 6 hours'
       );
     });
   });
@@ -54,17 +62,17 @@ describe('formatScheduleRhythm', () => {
   describe('cron schedules', () => {
     it('spells out a weekday expression', () => {
       const schedule = makeSchedule({ specKind: 'cron', cronExpr: '0 0 17 * * WED' });
-      expect(formatScheduleRhythm(schedule)).toBe('Mittwoch · 17:00');
+      expect(formatScheduleRhythm(schedule)).toBe('Wednesday · 17:00');
     });
 
     it('lists several weekdays', () => {
       const schedule = makeSchedule({ specKind: 'cron', cronExpr: '0 30 8 * * MON,FRI' });
-      expect(formatScheduleRhythm(schedule)).toBe('Montag, Freitag · 08:30');
+      expect(formatScheduleRhythm(schedule)).toBe('Monday, Friday · 08:30');
     });
 
     it('names a daily expression', () => {
       const schedule = makeSchedule({ specKind: 'cron', cronExpr: '0 0 9 * * *' });
-      expect(formatScheduleRhythm(schedule)).toBe('täglich · 09:00');
+      expect(formatScheduleRhythm(schedule)).toBe('daily · 09:00');
     });
 
     // Better an honest raw expression than a confident wrong translation.
@@ -75,7 +83,7 @@ describe('formatScheduleRhythm', () => {
 
     it('says so when there is no expression at all', () => {
       const schedule = makeSchedule({ specKind: 'cron', cronExpr: null });
-      expect(formatScheduleRhythm(schedule)).toBe('kein Rhythmus');
+      expect(formatScheduleRhythm(schedule)).toBe('no rhythm');
     });
   });
 });
@@ -86,7 +94,7 @@ describe('formatNextDue', () => {
   it('says a disabled schedule is off', () => {
     expect(
       formatNextDue(makeSchedule({ enabled: false, nextDueAt: '2026-08-13 09:00:00' }), now)
-    ).toBe('aus');
+    ).toBe('off');
   });
 
   it.each([
@@ -100,16 +108,44 @@ describe('formatNextDue', () => {
   // The runner ticks every 30s, so a due-but-not-yet-run schedule really exists
   // for a moment — it must read as overdue, not as a stale future date.
   it('calls a past due time overdue', () => {
-    expect(formatNextDue(makeSchedule({ nextDueAt: '2026-08-12 09:00:00' }), now)).toBe(
-      'jetzt fällig'
-    );
+    expect(formatNextDue(makeSchedule({ nextDueAt: '2026-08-12 09:00:00' }), now)).toBe('due now');
   });
 
   it.each([
     ['no stored time', null],
     ['an unparseable time', 'garbage'],
   ])('says there is no date for %s', (_label, nextDueAt) => {
-    expect(formatNextDue(makeSchedule({ nextDueAt }), now)).toBe('kein Termin');
+    expect(formatNextDue(makeSchedule({ nextDueAt }), now)).toBe('no date');
+  });
+});
+
+describe('catch-up copy', () => {
+  it('names each mode in English', () => {
+    expect(CATCH_UP_LABELS).toEqual({
+      coalesce: 'Catch up once',
+      skip: 'Skip missed',
+      all: 'Every missed one',
+    });
+  });
+
+  it('explains what each mode does', () => {
+    expect(CATCH_UP_HINTS.coalesce).toBe('One notification that says how overdue it is.');
+    expect(CATCH_UP_HINTS.skip).toBe('Missed dates are done; it continues with the next one.');
+    expect(CATCH_UP_HINTS.all).toBe('Each missed date separately, capped at 10.');
+  });
+});
+
+describe('WEEKDAY_OPTIONS', () => {
+  it('labels weekdays in short English', () => {
+    expect(WEEKDAY_OPTIONS.map((day) => day.label)).toEqual([
+      'Mon',
+      'Tue',
+      'Wed',
+      'Thu',
+      'Fri',
+      'Sat',
+      'Sun',
+    ]);
   });
 });
 
@@ -142,6 +178,6 @@ describe('cron builders', () => {
 
   it('round-trips through the formatter', () => {
     const schedule = makeSchedule({ specKind: 'cron', cronExpr: weeklyCron(['WED'], '17:00') });
-    expect(formatScheduleRhythm(schedule)).toBe('Mittwoch · 17:00');
+    expect(formatScheduleRhythm(schedule)).toBe('Wednesday · 17:00');
   });
 });

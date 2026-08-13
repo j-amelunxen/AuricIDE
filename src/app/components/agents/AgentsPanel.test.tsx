@@ -69,7 +69,7 @@ describe('AgentsPanel', () => {
     const onSpawn = vi.fn();
     render(<AgentsPanel agents={agents} onSpawn={onSpawn} onKill={vi.fn()} />);
 
-    await user.click(screen.getByText('New Agent…'));
+    await user.click(screen.getByText('Start agent'));
     expect(onSpawn).toHaveBeenCalled();
   });
 
@@ -256,7 +256,7 @@ describe('AgentsPanel compact card boundaries', () => {
         onToggleMinimize={vi.fn()}
       />
     );
-    expect(screen.getByRole('button', { name: 'Park 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set aside 2' })).toBeInTheDocument();
   });
 });
 
@@ -545,7 +545,7 @@ describe('AgentsPanel – park the healthy fleet', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: 'Park 2' }));
+    await user.click(screen.getByRole('button', { name: 'Set aside 2' }));
     // What stays on cards afterwards is exactly what needs a human.
     expect(onToggleMinimize).toHaveBeenCalledWith('h1', true);
     expect(onToggleMinimize).toHaveBeenCalledWith('h2', true);
@@ -561,14 +561,14 @@ describe('AgentsPanel – park the healthy fleet', () => {
         onToggleMinimize={vi.fn()}
       />
     );
-    expect(screen.queryByRole('button', { name: /park working/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Set aside \d+$/ })).not.toBeInTheDocument();
   });
 
   it('does not offer the move when parking is unavailable', () => {
     render(
       <AgentsPanel agents={[healthy('h1'), healthy('h2')]} onSpawn={vi.fn()} onKill={vi.fn()} />
     );
-    expect(screen.queryByRole('button', { name: /park working/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Set aside \d+$/ })).not.toBeInTheDocument();
   });
 });
 
@@ -663,14 +663,14 @@ describe('AgentsPanel – folded groups and alarms', () => {
 });
 
 describe('AgentsPanel all-quiet signal', () => {
-  it('says idle while agents work and none needs a human', () => {
+  it('says all quiet while agents work and none needs a human', () => {
     // The absence of alarms is not the same as permission to look away —
     // an explicit all-clear is what lets the user stop polling.
     const calm: AgentInfo[] = [
       { ...agents[0], id: 'a1', status: 'running', lastActivityAt: Date.now() },
     ];
     render(<AgentsPanel agents={calm} onSpawn={vi.fn()} onKill={vi.fn()} />);
-    expect(screen.getByTestId('agents-all-quiet')).toHaveTextContent(/idle/i);
+    expect(screen.getByTestId('agents-all-quiet')).toHaveTextContent(/all quiet/i);
   });
 
   it('withdraws the all-clear the moment something needs attention', () => {
@@ -702,7 +702,7 @@ describe('AgentsPanel – parked agents', () => {
     // Only working agents get a card, and only cards can be parked.
     const working = agents.map((a) => ({ ...a, status: 'running' as const }));
     render(<AgentsPanel {...parkedProps} agents={working} onToggleMinimize={vi.fn()} />);
-    expect(screen.getAllByRole('button', { name: 'Park agent' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Set aside agent' })).toHaveLength(2);
   });
 
   it('parking an agent reports it upward', async () => {
@@ -710,7 +710,7 @@ describe('AgentsPanel – parked agents', () => {
     const onToggleMinimize = vi.fn();
     render(<AgentsPanel {...parkedProps} onToggleMinimize={onToggleMinimize} />);
 
-    await user.click(screen.getAllByRole('button', { name: 'Park agent' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Set aside agent' })[0]);
     expect(onToggleMinimize).toHaveBeenCalledWith('agent-1', true);
   });
 
@@ -735,7 +735,7 @@ describe('AgentsPanel – parked agents', () => {
       />
     );
     expect(screen.getByText('Reviewer')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Park agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Set aside agent' })).toBeInTheDocument();
   });
 
   it('restores a parked agent', async () => {
@@ -757,7 +757,7 @@ describe('AgentsPanel – parked agents', () => {
     render(
       <AgentsPanel {...parkedProps} minimizedAgentIds={['agent-1']} onToggleMinimize={vi.fn()} />
     );
-    expect(screen.getByTestId('parked-agents')).toHaveTextContent('Parked · 1');
+    expect(screen.getByTestId('parked-agents')).toHaveTextContent('Set aside · 1');
   });
 
   it('does not show a parked section when nothing is parked', () => {

@@ -33,7 +33,7 @@ export function formatNotificationAge(createdAt: string, now: number): string {
   // Clock skew between the database and the UI would otherwise read as a
   // negative age; "now" is the honest answer for anything not yet past.
   const seconds = Math.max(0, Math.floor((now - at.getTime()) / 1000));
-  if (seconds < 60) return 'jetzt';
+  if (seconds < 60) return 'now';
 
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;

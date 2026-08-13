@@ -110,7 +110,7 @@ export function DependencyTreeView({
     if (onSpawnAgent) {
       options.push({ type: 'separator' });
       options.push({
-        label: 'Spawn Agent',
+        label: 'Start agent',
         icon: 'smart_toy',
         action: () => onSpawnAgent(ticket.id),
       });

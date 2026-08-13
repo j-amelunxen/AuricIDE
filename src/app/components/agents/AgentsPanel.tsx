@@ -250,7 +250,7 @@ export function AgentsPanel({
               className="flex items-center gap-0.5 text-[10px] font-medium text-emerald-400/70"
             >
               <AuricIcon name="check" aria-hidden="true" className="text-[12px]" />
-              idle
+              all quiet
             </span>
           )}
         </h2>
@@ -259,10 +259,10 @@ export function AgentsPanel({
             <button
               type="button"
               onClick={() => parkableAgents.forEach((a) => onToggleMinimize?.(a.id, true))}
-              title="Park working (still running)"
+              title="Set aside working (still running)"
               className="rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
             >
-              Park {parkableAgents.length}
+              Set aside {parkableAgents.length}
             </button>
           )}
           {onCollapse && (
@@ -428,7 +428,7 @@ export function AgentsPanel({
         {parked.length > 0 && (
           <div data-testid="parked-agents" className="mt-1 flex flex-col gap-0.5">
             <span className="px-1.5 text-[10px] font-black uppercase tracking-widest text-foreground-muted/60">
-              Parked · {parked.length}
+              Set aside · {parked.length}
             </span>
             {parked.map((agent) => (
               <CompactAgentRow
@@ -498,7 +498,7 @@ export function AgentsPanel({
           onClick={onSpawn}
           className="w-full text-xs py-1.5 rounded bg-primary text-white hover:brightness-110 transition-[filter]"
         >
-          New Agent…
+          Start agent
         </button>
       </div>
 

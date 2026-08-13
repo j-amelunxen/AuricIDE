@@ -62,6 +62,12 @@ describe('provider IPC wrappers', () => {
       expect(FALLBACK_CRUSH_PROVIDER.permissionModes.length).toBe(2);
       expect(FALLBACK_CRUSH_PROVIDER.defaultModel).toBe('auto');
       expect(FALLBACK_CRUSH_PROVIDER.defaultPermissionMode).toBe('default');
+      expect(FALLBACK_CRUSH_PROVIDER.permissionModes).toContainEqual(
+        expect.objectContaining({
+          value: 'yolo',
+          label: 'Act without asking',
+        })
+      );
     });
   });
 });

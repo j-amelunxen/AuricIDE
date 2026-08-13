@@ -278,7 +278,7 @@ describe('notification MCP tools', () => {
         payload: string;
       };
       expect(JSON.parse(row.payload).actions).toEqual([
-        { id: 'run', label: 'Agent starten', kind: 'spawn-agent', task: 'Serverscan durchführen' },
+        { id: 'run', label: 'Start agent', kind: 'spawn-agent', task: 'Serverscan durchführen' },
       ]);
     });
 

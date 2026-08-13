@@ -37,7 +37,7 @@ export function ForYouQueue({ items, runningCount, onItemClick }: ForYouQueuePro
       </p>
       {items.length === 0 ? (
         <p data-testid="for-you-all-quiet" className="font-mono text-[11px] text-foreground-muted">
-          <span className="text-[#2effa5]/70">✓ idle</span> · {runningCount} running
+          <span className="text-[#2effa5]/70">All quiet</span> · {runningCount} running
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">
