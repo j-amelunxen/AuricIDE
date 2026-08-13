@@ -33,6 +33,7 @@ export const ICON_ALIASES: Record<string, string> = {
   auto_stories: 'menu_book',
   source: 'folder',
   insert_drive_file: 'draft',
+  verified: 'check_circle',
 };
 
 export function getGlyph(name: string): IconGlyph | null {

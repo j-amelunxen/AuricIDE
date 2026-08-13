@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { PersistChip } from '@/app/components/ui/PersistChip';
 import { EpicSidebar } from './EpicSidebar';
 import { TicketTable } from './TicketTable';
 import { TicketEditPanel } from './TicketEditPanel';
@@ -23,7 +25,11 @@ function count(n: number, singular: string): string {
   return `${n} ${singular}${n === 1 ? '' : 's'}`;
 }
 
-function ProjectManagerDialog() {
+export function TicketsPanel({ embedded = false }: { embedded?: boolean }) {
+  return <ProjectManagerDialog embedded={embedded} />;
+}
+
+function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const pmModalOpen = useStore((s) => s.pmModalOpen);
   const pmDirty = useStore((s) => s.pmDirty);
@@ -70,17 +76,19 @@ function ProjectManagerDialog() {
   const [viewMode, setViewMode] = useState<'list' | 'tree' | 'metrics'>('list');
   const [showArchived, setShowArchived] = useState(false);
 
-  useEffect(() => {
-    if (pmModalOpen && rootPath) {
-      loadPmData(rootPath);
-    }
-  }, [pmModalOpen, rootPath, loadPmData]);
+  const active = embedded || pmModalOpen;
 
   useEffect(() => {
-    if (!pmModalOpen || !rootPath) return;
+    if (active && rootPath) {
+      loadPmData(rootPath);
+    }
+  }, [active, rootPath, loadPmData]);
+
+  useEffect(() => {
+    if (!active || !rootPath) return;
     const id = setInterval(() => refreshPmData(rootPath), 30_000);
     return () => clearInterval(id);
-  }, [pmModalOpen, rootPath, refreshPmData]);
+  }, [active, rootPath, refreshPmData]);
 
   const handleClose = useCallback(async () => {
     if (pmDirty) {
@@ -88,6 +96,7 @@ function ProjectManagerDialog() {
         title: 'Discard changes?',
         message: 'Discard unsaved changes?',
         confirmLabel: 'Discard',
+        variant: 'discard',
       });
       if (!go) return;
       discardPmChanges();
@@ -112,23 +121,24 @@ function ProjectManagerDialog() {
     if (await handleSave()) setPmModalOpen(false);
   }, [handleSave, setPmModalOpen]);
 
-  // Escape belongs to whatever is on top: the confirm dialog cancels itself,
-  // and this handler must not answer it by asking the same question again.
-  const confirmOpen = confirmDialog !== null;
+  useOverlayLayer({
+    id: 'plan',
+    kind: 'tool',
+    active: !embedded && pmModalOpen,
+    onEscape: handleClose,
+  });
 
   useEffect(() => {
-    if (!pmModalOpen) return;
+    if (!active) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !confirmOpen) {
-        void handleClose();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (pmDirty) void handleSave();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [pmModalOpen, confirmOpen, handleClose, handleSave, pmDirty]);
+  }, [active, handleSave, pmDirty]);
 
   const filteredTickets = (
     selectedEpicId === null ? draftTickets : draftTickets.filter((t) => t.epicId === selectedEpicId)
@@ -328,21 +338,21 @@ function ProjectManagerDialog() {
     setEpicDialogOpen(true);
   }, []);
 
-  if (!pmModalOpen) return null;
+  if (!embedded && !pmModalOpen) return null;
 
-  return createPortal(
+  const frame = (
     <>
       <div
-        className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm"
-        onClick={() => void handleClose()}
-      />
-
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+        ref={embedded ? undefined : dialogRef}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : 'true'}
         aria-labelledby="project-manager-title"
-        className="fixed inset-3 z-[201] flex flex-col bg-[#09090f] border border-white/[0.08] rounded-2xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.8)]"
+        data-testid={embedded ? 'work-panel-tickets' : undefined}
+        className={
+          embedded
+            ? 'flex h-full w-full flex-col overflow-hidden bg-[#09090f]'
+            : 'fixed inset-3 z-[201] flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#09090f] shadow-[0_32px_80px_rgba(0,0,0,0.8)]'
+        }
       >
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-white/[0.015] shrink-0">
@@ -352,14 +362,9 @@ function ProjectManagerDialog() {
               id="project-manager-title"
               className="text-sm font-semibold text-foreground tracking-tight"
             >
-              Project Management
+              {embedded ? 'Tickets' : 'Project Management'}
             </h2>
-            {pmDirty && (
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-yellow-400/80 animate-pulse"
-                title="Unsaved changes"
-              />
-            )}
+            <PersistChip dirty={pmDirty} />
 
             <div className="h-4 w-px bg-white/10 mx-2" />
             <div className="flex bg-white/5 rounded-md p-0.5">
@@ -430,13 +435,15 @@ function ProjectManagerDialog() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => void handleClose()}
-              className="rounded-lg px-3 py-1.5 text-xs text-foreground-muted hover:bg-white/5 transition-colors"
-            >
-              Cancel
-            </button>
+            {!embedded && (
+              <button
+                type="button"
+                onClick={() => void handleClose()}
+                className="rounded-lg px-3 py-1.5 text-xs text-foreground-muted hover:bg-white/5 transition-colors"
+              >
+                Close
+              </button>
+            )}
             <button
               type="button"
               disabled={!pmDirty}
@@ -445,14 +452,16 @@ function ProjectManagerDialog() {
             >
               Save
             </button>
-            <button
-              type="button"
-              disabled={!pmDirty}
-              onClick={handleSaveAndClose}
-              className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-25 disabled:cursor-not-allowed hover:bg-primary/80 transition-all"
-            >
-              Save and Close
-            </button>
+            {!embedded && (
+              <button
+                type="button"
+                disabled={!pmDirty}
+                onClick={handleSaveAndClose}
+                className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-25 disabled:cursor-not-allowed hover:bg-primary/80 transition-all"
+              >
+                Save and Close
+              </button>
+            )}
           </div>
         </div>
 
@@ -519,7 +528,6 @@ function ProjectManagerDialog() {
                 onSave={async () => {
                   await handleSave();
                 }}
-                onSaveAndClose={handleSaveAndClose}
                 onCancel={() => setPmSelectedTicketId(null)}
                 onDeleteTicket={(id) => void handleDeleteTicket(id)}
                 onMoveTicket={moveTicket}
@@ -554,9 +562,25 @@ function ProjectManagerDialog() {
         onSave={handleTicketCreate}
         onSaveAndClose={handleTicketCreateAndClose}
         onClose={() => setTicketCreateOpen(false)}
+        onCreateEpic={() => {
+          setTicketCreateOpen(false);
+          handleAddEpic();
+        }}
       />
 
       {confirmDialog}
+    </>
+  );
+
+  if (embedded) return frame;
+
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[var(--z-tool)] bg-black/75 backdrop-blur-sm"
+        onClick={() => void handleClose()}
+      />
+      {frame}
     </>,
     document.body
   );

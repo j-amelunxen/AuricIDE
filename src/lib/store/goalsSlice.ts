@@ -319,6 +319,8 @@ export interface GoalsSlice {
   selectedGoalId: string | null;
   orchestrationOpen: boolean;
   goalLinesOpen: boolean;
+  /** True only when Goal Lines replaced Goals — Esc should then reopen Goals. */
+  goalLinesReturnToGoals: boolean;
   // Actions
   loadGoals: (projectPath: string) => Promise<void>;
   saveGoals: (projectPath: string) => Promise<void>;
@@ -345,7 +347,7 @@ export interface GoalsSlice {
   setGoalsModalOpen: (open: boolean) => void;
   setSelectedGoalId: (id: string | null) => void;
   setOrchestrationOpen: (open: boolean) => void;
-  setGoalLinesOpen: (open: boolean) => void;
+  setGoalLinesOpen: (open: boolean, opts?: { fromGoals?: boolean }) => void;
 }
 
 /**
@@ -386,6 +388,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   selectedGoalId: null,
   orchestrationOpen: false,
   goalLinesOpen: false,
+  goalLinesReturnToGoals: false,
 
   loadGoals: (projectPath) =>
     trackLoad(
@@ -714,5 +717,9 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   setGoalsModalOpen: (open) => set({ goalsModalOpen: open }),
   setSelectedGoalId: (id) => set({ selectedGoalId: id }),
   setOrchestrationOpen: (open) => set({ orchestrationOpen: open }),
-  setGoalLinesOpen: (open) => set({ goalLinesOpen: open }),
+  setGoalLinesOpen: (open, opts) =>
+    set({
+      goalLinesOpen: open,
+      goalLinesReturnToGoals: open ? Boolean(opts?.fromGoals) : false,
+    }),
 });

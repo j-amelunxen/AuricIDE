@@ -7,6 +7,7 @@ import { type MindmapData } from '@/lib/mindmap/mindmapParser';
 import { type AgentInfo } from '@/lib/tauri/agents';
 import { type BottomTab } from '@/app/components/ide/BottomPanelTabs';
 import { type ExtraTerminal } from '@/app/components/terminal/TerminalPanel';
+import { type SettingsCategory } from '@/app/components/ide/SettingsModal';
 
 export function useIDEState() {
   const [activeActivity, setActiveActivity] = useState('explorer');
@@ -23,8 +24,12 @@ export function useIDEState() {
   const [linkGraphModalOpen, setLinkGraphModalOpen] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>('terminal');
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsInitialCategory, setSettingsInitialCategory] = useState<
+    SettingsCategory | undefined
+  >(undefined);
 
   // Store Selectors
+  const workPlaceOpen = useStore((s) => s.workPlaceOpen);
   const rootPath = useStore((s) => s.rootPath);
   const setRootPath = useStore((s) => s.setRootPath);
   const fileTree = useStore((s) => s.fileTree);
@@ -220,6 +225,7 @@ export function useIDEState() {
   return {
     activeActivity,
     setActiveActivity,
+    workPlaceOpen,
     editorContent,
     setEditorContent,
     imageData,
@@ -246,6 +252,8 @@ export function useIDEState() {
     setBottomTab,
     settingsModalOpen,
     setSettingsModalOpen,
+    settingsInitialCategory,
+    setSettingsInitialCategory,
     rootPath,
     setRootPath,
     fileTree,

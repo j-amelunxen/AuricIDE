@@ -8,15 +8,26 @@ vi.mock('./TicketEditPanel', () => ({
   TicketEditPanel: ({
     ticket,
     onDeleteTicket,
+    onSave,
   }: {
     ticket: { id: string } | null;
     onDeleteTicket: (id: string) => void;
+    onSave?: () => void | Promise<void>;
   }) => (
     <div data-testid="mock-ticket-edit-panel">
       {ticket && (
-        <button type="button" aria-label="Delete ticket" onClick={() => onDeleteTicket(ticket.id)}>
-          Delete ticket
-        </button>
+        <>
+          <button
+            type="button"
+            aria-label="Delete ticket"
+            onClick={() => onDeleteTicket(ticket.id)}
+          >
+            Delete ticket
+          </button>
+          <button type="button" data-testid="ticket-panel-save" onClick={() => void onSave?.()}>
+            Save
+          </button>
+        </>
       )}
     </div>
   ),
@@ -58,10 +69,27 @@ const mockStore: Record<string, unknown> = {
   refreshPmData: vi.fn(),
   archiveDoneTickets: vi.fn(),
   setImportSpecDialogOpen: vi.fn(),
+  overlayStack: { layers: [] as { id: string; kind: string }[] },
+  pushOverlay: (entry: { id: string; kind: string }) => {
+    const stack = mockStore.overlayStack as { layers: { id: string; kind: string }[] };
+    if (stack.layers.some((layer) => layer.id === entry.id)) return;
+    mockStore.overlayStack = { layers: [...stack.layers, entry] };
+  },
+  removeOverlay: (id: string) => {
+    const stack = mockStore.overlayStack as { layers: { id: string }[] };
+    mockStore.overlayStack = { layers: stack.layers.filter((layer) => layer.id !== id) };
+  },
+  ownsEscape: (id: string) => {
+    const stack = mockStore.overlayStack as { layers: { id: string }[] };
+    return stack.layers.at(-1)?.id === id;
+  },
 };
 
 vi.mock('@/lib/store', () => ({
-  useStore: vi.fn((selector: (s: typeof mockStore) => unknown) => selector(mockStore)),
+  useStore: Object.assign(
+    vi.fn((selector: (s: typeof mockStore) => unknown) => selector(mockStore)),
+    { getState: () => mockStore }
+  ),
 }));
 
 describe('ProjectManagerModal', () => {
@@ -74,6 +102,7 @@ describe('ProjectManagerModal', () => {
     mockStore.pmDraftTestCases = [];
     mockStore.pmSelectedEpicId = null;
     mockStore.pmSelectedTicketId = null;
+    mockStore.overlayStack = { layers: [] };
   });
 
   it('renders nothing when pmModalOpen is false', () => {
@@ -99,15 +128,27 @@ describe('ProjectManagerModal', () => {
     expect(screen.getByText('Project Management')).toBeDefined();
   });
 
-  it('shows Save, Save and Close, Cancel, and + New Ticket buttons in header', () => {
+  it('shows Save, Save and Close, Close, and + New Ticket buttons in header', () => {
     mockStore.pmModalOpen = true;
     render(<ProjectManagerModal />);
-    expect(screen.getByText('Save')).toBeDefined();
-    expect(screen.getByText('Save and Close')).toBeDefined();
-    expect(screen.getByText('Cancel')).toBeDefined();
+    const header = screen.getByRole('dialog', { name: /project management/i });
+    expect(within(header).getByRole('button', { name: /^Save$/ })).toBeDefined();
+    expect(within(header).getByRole('button', { name: 'Save and Close' })).toBeDefined();
+    expect(within(header).getByRole('button', { name: /^Close$/ })).toBeDefined();
     // + New Ticket appears in header and in ticket list footer
     const newTicketBtns = screen.getAllByText('+ New Ticket');
     expect(newTicketBtns.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows the persist chip only while Plan is dirty', () => {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDirty = false;
+    const { rerender } = render(<ProjectManagerModal />);
+    expect(screen.queryByTestId('persist-chip')).toBeNull();
+
+    mockStore.pmDirty = true;
+    rerender(<ProjectManagerModal />);
+    expect(screen.getByTestId('persist-chip')).toHaveTextContent('Unsaved · ⌘S');
   });
 
   it('Save and Close button disabled when not dirty', () => {
@@ -150,13 +191,36 @@ describe('ProjectManagerModal', () => {
     expect(saveBtn?.disabled).toBe(true);
   });
 
-  it('calls setPmModalOpen(false) on cancel when not dirty', async () => {
+  it('calls setPmModalOpen(false) on Close when not dirty', async () => {
     mockStore.pmModalOpen = true;
     mockStore.pmDirty = false;
     render(<ProjectManagerModal />);
     const user = userEvent.setup();
-    await user.click(screen.getByText('Cancel'));
+    await user.click(screen.getByRole('button', { name: /^Close$/ }));
     expect(mockStore.setPmModalOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('ticket panel Save persists without closing Plan', async () => {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDirty = true;
+    mockStore.rootPath = '/test/project';
+    mockStore.pmDraftTickets = [
+      {
+        id: 'tk-1',
+        name: 'Test Ticket',
+        status: 'open',
+        epicId: 'e1',
+        description: '',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+    mockStore.pmSelectedTicketId = 'tk-1';
+    render(<ProjectManagerModal />);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ticket-panel-save'));
+    expect(mockStore.savePmData).toHaveBeenCalledWith('/test/project');
+    expect(mockStore.setPmModalOpen).not.toHaveBeenCalledWith(false);
   });
 
   it('discards unsaved changes only after the question is answered', async () => {
@@ -165,7 +229,7 @@ describe('ProjectManagerModal', () => {
     render(<ProjectManagerModal />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByText('Cancel'));
+    await user.click(screen.getByRole('button', { name: /^Close$/ }));
     const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
     expect(mockStore.discardPmChanges).not.toHaveBeenCalled();
 
@@ -183,7 +247,7 @@ describe('ProjectManagerModal', () => {
     render(<ProjectManagerModal />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByText('Cancel'));
+    await user.click(screen.getByRole('button', { name: /^Close$/ }));
     const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
@@ -247,9 +311,9 @@ describe('ProjectManagerModal', () => {
     render(<ProjectManagerModal />);
 
     // In a real scenario, TicketTable would call onUpdateTicket and onSave.
-    // Since we are mocking TicketEditPanel, let's see if we can find the Spawn Agent button.
+    // Since we are mocking TicketEditPanel, let's see if we can find the Start agent button.
     // Wait, TicketTable is NOT mocked.
-    const spawnBtn = screen.getByTitle('Spawn Agent');
+    const spawnBtn = screen.getByTitle('Start agent');
     await userEvent.click(spawnBtn);
 
     expect(mockStore.updateTicket).toHaveBeenCalledWith('tk-1', { status: 'in_progress' });
@@ -489,5 +553,55 @@ describe('ProjectManagerModal', () => {
       vi.advanceTimersByTime(60_000);
       expect(mockStore.refreshPmData).not.toHaveBeenCalled();
     });
+  });
+
+  // Escape belongs to the top layer. A nested create/edit dialog must take
+  // the key; Plan staying put is the whole point of this gate.
+  describe('Escape while a nested dialog is open', () => {
+    it('closes New Ticket and leaves Plan open', async () => {
+      mockStore.pmModalOpen = true;
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getAllByText('+ New Ticket')[0]);
+      expect(screen.getByRole('dialog', { name: /new ticket/i })).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+
+      expect(screen.queryByRole('dialog', { name: /new ticket/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: /project management/i })).toBeInTheDocument();
+      expect(mockStore.setPmModalOpen).not.toHaveBeenCalledWith(false);
+    });
+
+    it('closes New Epic and leaves Plan open', async () => {
+      mockStore.pmModalOpen = true;
+      render(<ProjectManagerModal />);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Add epic'));
+      expect(screen.getByRole('dialog', { name: /new epic/i })).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+
+      expect(screen.queryByRole('dialog', { name: /new epic/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: /project management/i })).toBeInTheDocument();
+      expect(mockStore.setPmModalOpen).not.toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('Create epic from New Ticket closes the ticket dialog and opens New Epic', async () => {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDraftEpics = [];
+    render(<ProjectManagerModal />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getAllByText('+ New Ticket')[0]);
+    expect(screen.getByRole('dialog', { name: /new ticket/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create epic' }));
+
+    expect(screen.queryByRole('dialog', { name: /new ticket/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /new epic/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /project management/i })).toBeInTheDocument();
   });
 });

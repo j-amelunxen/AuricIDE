@@ -44,10 +44,23 @@ const storeState = {
   setRequirementFilterStatus: mockSetFilterStatus,
   setRequirementFilterVerification: mockSetFilterVerification,
   setRequirementSearchQuery: mockSetSearchQuery,
+  overlayStack: { layers: [] as { id: string; kind: string }[] },
+  pushOverlay: (entry: { id: string; kind: string }) => {
+    if (storeState.overlayStack.layers.some((layer) => layer.id === entry.id)) return;
+    storeState.overlayStack = { layers: [...storeState.overlayStack.layers, entry] };
+  },
+  removeOverlay: (id: string) => {
+    storeState.overlayStack = {
+      layers: storeState.overlayStack.layers.filter((layer) => layer.id !== id),
+    };
+  },
+  ownsEscape: (id: string) => storeState.overlayStack.layers.at(-1)?.id === id,
 };
 
 vi.mock('@/lib/store', () => ({
-  useStore: (selector: (s: typeof storeState) => unknown) => selector(storeState),
+  useStore: Object.assign((selector: (s: typeof storeState) => unknown) => selector(storeState), {
+    getState: () => storeState,
+  }),
 }));
 
 function makeRequirement(overrides: Partial<PmRequirement> = {}): PmRequirement {
@@ -84,6 +97,7 @@ describe('RequirementsModal', () => {
     storeState.requirementFilterStatus = '';
     storeState.requirementFilterVerification = '';
     storeState.requirementSearchQuery = '';
+    storeState.overlayStack = { layers: [] };
   });
 
   it('renders nothing when closed', () => {
@@ -225,6 +239,51 @@ describe('RequirementsModal', () => {
     render(<RequirementsModal />);
     await user.click(screen.getByTestId('requirements-create-btn'));
     expect(screen.getByTestId('requirement-create-dialog')).toBeInTheDocument();
+  });
+
+  it('creates a requirement as a draft without persisting', async () => {
+    storeState.requirementsModalOpen = true;
+    const user = userEvent.setup();
+    render(<RequirementsModal />);
+    await user.click(screen.getByTestId('requirements-create-btn'));
+    await user.type(screen.getByTestId('create-title-input'), 'Session timeout');
+    await user.click(screen.getByTestId('create-save-btn'));
+    expect(mockAddRequirement).toHaveBeenCalled();
+    expect(mockSaveRequirements).not.toHaveBeenCalled();
+  });
+
+  it('Escape while creating closes only the create dialog', async () => {
+    storeState.requirementsModalOpen = true;
+    const user = userEvent.setup();
+    render(<RequirementsModal />);
+    await user.click(screen.getByTestId('requirements-create-btn'));
+    expect(screen.getByTestId('requirement-create-dialog')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByTestId('requirement-create-dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('requirements-modal')).toBeInTheDocument();
+    expect(mockSetRequirementsModalOpen).not.toHaveBeenCalled();
+  });
+
+  it('backdrop click while creating closes only the create dialog', async () => {
+    storeState.requirementsModalOpen = true;
+    const user = userEvent.setup();
+    render(<RequirementsModal />);
+    await user.click(screen.getByTestId('requirements-create-btn'));
+    expect(screen.getByTestId('requirement-create-dialog')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('requirement-create-dialog'));
+
+    expect(screen.queryByTestId('requirement-create-dialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('requirements-modal')).toBeInTheDocument();
+    expect(mockSetRequirementsModalOpen).not.toHaveBeenCalled();
+  });
+
+  it('names the close button so it is findable as Close', () => {
+    storeState.requirementsModalOpen = true;
+    render(<RequirementsModal />);
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
   });
 
   it('filters by search query', () => {
@@ -402,11 +461,16 @@ describe('RequirementsModal', () => {
     expect(screen.queryByTestId('requirement-row-REQ-03')).not.toBeInTheDocument();
   });
 
-  it('Dirty indicator shows "unsaved" badge', () => {
+  it('shows the persist chip only while Requirements is dirty', () => {
     storeState.requirementsModalOpen = true;
+    storeState.requirementsDirty = false;
+    const { rerender } = render(<RequirementsModal />);
+    expect(screen.queryByTestId('persist-chip')).toBeNull();
+
     storeState.requirementsDirty = true;
-    render(<RequirementsModal />);
-    expect(screen.getByText('unsaved')).toBeInTheDocument();
+    rerender(<RequirementsModal />);
+    expect(screen.getByTestId('persist-chip')).toHaveTextContent('Unsaved · ⌘S');
+    expect(screen.queryByText('unsaved')).not.toBeInTheDocument();
   });
 
   it('Total count shows correct number', () => {

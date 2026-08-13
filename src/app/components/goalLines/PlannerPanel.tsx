@@ -271,8 +271,12 @@ export function PlannerPanel() {
     }
     void deletePlannerDraft(rootPath, goal.id);
     setSelectedGoalId(goal.id);
-    setGoalLinesOpen(false);
-    setGoalsModalOpen(true);
+    if (useStore.getState().workPlaceOpen) {
+      useStore.getState().setWorkTab('goals');
+    } else {
+      setGoalLinesOpen(false);
+      setGoalsModalOpen(true);
+    }
     reset();
     setGoalId('');
     savingRef.current = false;

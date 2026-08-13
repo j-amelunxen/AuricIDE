@@ -184,11 +184,11 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
               const ticket = useStore.getState().pmDraftTickets.find((t) => t.id === ticketId);
               if (ticket) store.setPmSelectedEpicId(ticket.epicId);
               store.setPmSelectedTicketId(ticketId);
-              store.setPmModalOpen(true);
+              store.openWorkPlace('tickets');
             },
             openGoal: (goalId) => {
               store.setSelectedGoalId(goalId);
-              store.setGoalsModalOpen(true);
+              store.openWorkPlace('goals');
             },
             openAgent: (agentId) => store.selectAgent(agentId),
             runCommand: onRunCommand,
@@ -200,10 +200,10 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
         // leaving the click looking like it did nothing.
         const message =
           error instanceof NotificationActionError && error.code === 'missing-project'
-            ? 'Projektordner nicht gefunden'
+            ? 'Project folder not found'
             : error instanceof NotificationActionError && error.code === 'empty-combo'
-              ? 'Combo hat keine gültigen Schritte'
-              : `"${action.label}" konnte nicht ausgeführt werden`;
+              ? 'Combo has no valid steps'
+              : `"${action.label}" could not run`;
         store.showToast(message, 'error');
       }
     },
@@ -228,9 +228,9 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
   const confirmDelete = useCallback(
     async (schedule: Schedule) => {
       const go = await confirm({
-        title: 'Zeitplan löschen?',
-        message: `"${schedule.name}" wird nicht mehr erinnern. Bereits verschickte Meldungen bleiben.`,
-        confirmLabel: 'Löschen',
+        title: 'Delete this schedule?',
+        message: `"${schedule.name}" will no longer remind you. Notifications already sent stay.`,
+        confirmLabel: 'Delete',
       });
       if (go) await deleteSchedule(schedule.id);
     },

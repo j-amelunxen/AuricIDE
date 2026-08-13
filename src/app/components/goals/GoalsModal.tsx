@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { PersistChip } from '@/app/components/ui/PersistChip';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { GoalTree } from './GoalTree';
 import { GoalDetailPanel } from './GoalDetailPanel';
@@ -60,10 +62,10 @@ export function buildGoalLaunchPrompt(goal: PmGoal, stations: PmGoalStation[] = 
 export function GoalsModal() {
   const goalsModalOpen = useStore((s) => s.goalsModalOpen);
   if (!goalsModalOpen) return null;
-  return <GoalsModalContent />;
+  return <GoalsPanel />;
 }
 
-function GoalsModalContent() {
+export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const goalsModalOpen = useStore((s) => s.goalsModalOpen);
   const goalsDraft = useStore((s) => s.goalsDraft);
@@ -83,6 +85,7 @@ function GoalsModalContent() {
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
   const setOrchestrationOpen = useStore((s) => s.setOrchestrationOpen);
   const setGoalLinesOpen = useStore((s) => s.setGoalLinesOpen);
+  const setWorkTab = useStore((s) => s.setWorkTab);
   const loadGoals = useStore((s) => s.loadGoals);
   const goalsLoading = useStore((s) => s.goalsLoading);
   const goalsLoadError = useStore((s) => s.goalsLoadError);
@@ -125,13 +128,15 @@ function GoalsModalContent() {
     }
   }, [workflowStripVisible, dismissWorkflowStrip]);
 
+  const active = embedded || goalsModalOpen;
+
   useEffect(() => {
-    if (goalsModalOpen && rootPath) {
+    if (active && rootPath) {
       loadGoals(rootPath);
       loadPmData(rootPath);
       loadRequirements(rootPath);
     }
-  }, [goalsModalOpen, rootPath, loadGoals, loadPmData, loadRequirements]);
+  }, [active, rootPath, loadGoals, loadPmData, loadRequirements]);
 
   const handleClose = useCallback(async () => {
     if (goalsDirty) {
@@ -139,6 +144,7 @@ function GoalsModalContent() {
         title: 'Discard changes?',
         message: 'Discard unsaved changes?',
         confirmLabel: 'Discard',
+        variant: 'discard',
       });
       if (!go) return;
       discardGoalChanges();
@@ -153,23 +159,24 @@ function GoalsModalContent() {
     await persistQuietly(saveGoals(rootPath));
   }, [rootPath, saveGoals]);
 
-  // Escape belongs to whatever is on top: the confirm dialog cancels itself,
-  // and this handler must not answer it by asking the same question again.
-  const confirmOpen = confirmDialog !== null;
+  useOverlayLayer({
+    id: 'goals',
+    kind: 'tool',
+    active: !embedded && goalsModalOpen,
+    onEscape: handleClose,
+  });
 
   useEffect(() => {
-    if (!goalsModalOpen) return;
+    if (!active) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !createOpen && !confirmOpen) {
-        void handleClose();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (goalsDirty) void handleSave();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [goalsModalOpen, createOpen, confirmOpen, handleClose, handleSave, goalsDirty]);
+  }, [active, handleSave, goalsDirty]);
 
   const selectedGoal = useMemo(
     () => goalsDraft.find((g) => g.id === selectedGoalId) ?? null,
@@ -187,12 +194,11 @@ function GoalsModalContent() {
   }, [agents]);
 
   const handleCreate = useCallback(
-    async (goal: PmGoal) => {
+    (goal: PmGoal) => {
       addGoal(goal);
       setSelectedGoalId(goal.id);
-      if (rootPath) await persistQuietly(saveGoals(rootPath));
     },
-    [addGoal, setSelectedGoalId, rootPath, saveGoals]
+    [addGoal, setSelectedGoalId]
   );
 
   const handleDelete = useCallback(
@@ -250,20 +256,19 @@ function GoalsModalContent() {
     [goalStationsDraft, setInitialAgentTask, setSpawnAgentGoalId, setSpawnDialogOpen]
   );
 
-  return createPortal(
-    <div
-      data-testid="goals-modal"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) void handleClose();
-      }}
-    >
+  const body = (
+    <>
       <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+        ref={embedded ? undefined : dialogRef}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : 'true'}
         aria-labelledby="goals-modal-title"
-        className="flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl"
+        data-testid={embedded ? 'work-panel-goals' : 'goals-modal'}
+        className={
+          embedded
+            ? 'flex h-full w-full flex-col bg-background-dark'
+            : 'flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl'
+        }
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
@@ -273,11 +278,7 @@ function GoalsModalContent() {
               Goals
             </h1>
             <span className="text-[10px] text-foreground-muted">{goalsDraft.length} total</span>
-            {goalsDirty && (
-              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-                unsaved
-              </span>
-            )}
+            <PersistChip dirty={goalsDirty} />
           </div>
 
           <div className="flex items-center gap-2">
@@ -292,7 +293,10 @@ function GoalsModalContent() {
             </button>
             <button
               data-testid="goals-orchestration-btn"
-              onClick={() => setOrchestrationOpen(true)}
+              onClick={() => {
+                if (!embedded) setGoalsModalOpen(false);
+                setOrchestrationOpen(true);
+              }}
               title="Orchestration graph"
               className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
             >
@@ -301,7 +305,14 @@ function GoalsModalContent() {
             </button>
             <button
               data-testid="goals-goal-lines-btn"
-              onClick={() => setGoalLinesOpen(true)}
+              onClick={() => {
+                if (embedded) {
+                  setWorkTab('lines');
+                  return;
+                }
+                setGoalsModalOpen(false);
+                setGoalLinesOpen(true, { fromGoals: true });
+              }}
               title="Goal station map"
               className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
             >
@@ -327,13 +338,16 @@ function GoalsModalContent() {
                 Save
               </button>
             )}
-            <button
-              data-testid="goals-close-btn"
-              onClick={() => void handleClose()}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
-            >
-              <AuricIcon name="close" className="text-base" />
-            </button>
+            {!embedded && (
+              <button
+                data-testid="goals-close-btn"
+                aria-label="Close"
+                onClick={() => void handleClose()}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
+              >
+                <AuricIcon name="close" className="text-base" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -395,6 +409,19 @@ function GoalsModalContent() {
       )}
 
       {confirmDialog}
+    </>
+  );
+
+  if (embedded) return body;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) void handleClose();
+      }}
+    >
+      {body}
     </div>,
     document.body
   );

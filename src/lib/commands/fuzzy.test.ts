@@ -30,9 +30,9 @@ describe('fuzzyMatch', () => {
   });
 
   it('matches acronyms across word boundaries', () => {
-    const result = fuzzyMatch('Open Goals & Orchestration', 'ogo');
+    const result = fuzzyMatch('Open Goals Extra', 'oge');
     expect(result).not.toBeNull();
-    expect(result!.indices).toEqual([0, 5, 13]);
+    expect(result!.indices).toEqual([0, 5, 11]);
   });
 
   it('returns null when a character is missing', () => {
@@ -73,7 +73,7 @@ describe('fuzzyMatch', () => {
   });
 
   it('reports indices in ascending order', () => {
-    const result = fuzzyMatch('Deploy New Agent', 'dna')!;
+    const result = fuzzyMatch('Start Agent', 'sa')!;
     expect(result.indices).toEqual([...result.indices].sort((a, b) => a - b));
   });
 
@@ -89,8 +89,8 @@ describe('rankCommands', () => {
     cmd({ id: 'file.save', label: 'Save', category: 'file' }),
     cmd({ id: 'file.save-as', label: 'Save As', category: 'file' }),
     cmd({ id: 'git.commit', label: 'Commit Changes', category: 'git' }),
-    cmd({ id: 'view.goals', label: 'Open Goals & Orchestration', category: 'view' }),
-    cmd({ id: 'agent.deploy', label: 'Deploy New Agent', category: 'agent' }),
+    cmd({ id: 'view.goals', label: 'Open Goals', category: 'view' }),
+    cmd({ id: 'agent.deploy', label: 'Start Agent', category: 'agent' }),
   ];
 
   it('returns every command in original order for an empty query', () => {

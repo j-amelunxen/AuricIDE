@@ -24,7 +24,7 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `File > New File` | `file.new` | — | yes |
 | `File > Open Folder` | `file.open-folder` | — | no |
 | `File > Search Files Everywhere` | `file.search` | `Shift Shift` | no |
-| `File > Advanced File Selection (Filter/Copy)` | `file.advanced-selection` | `⌘⌥F` | no |
+| `File > Copy File List` | `file.advanced-selection` | `⌘⌥F` | no |
 | `File > Find in Files` | `file.find-in-files` | `⌘⇧H` | yes |
 | `File > Save` | `file.save` | `⌘S` | no |
 | `File > New Scratch File` | `file.new-scratch` | `⌘N` | no |
@@ -35,7 +35,7 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `Git > Commit Changes` | `git.commit` | — | yes |
 | `Git > Stage All Changes` | `git.stage-all` | — | yes |
 | `Git > Show Changes` | `git.show-changes` | — | no |
-| `Agent > Deploy New Agent` | `agent.deploy` | — | no |
+| `Agent > Start Agent` | `agent.deploy` | — | no |
 | `Agent > Generate ASCII Art` | `agent.ascii-art` | — | no |
 | `Agent > Kill All Agents` | `agent.kill-all` | — | no |
 | `Canvas > Toggle Canvas View` | `canvas.toggle` | — | no |
@@ -46,7 +46,9 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `View > Focus Source Control` | `view.focus-source-control` | `⌘⇧G` | no |
 | `View > Show Link Graph` | `view.link-graph` | — | no |
 | `View > Open Mission Control` | `view.cockpit` | — | no |
-| `View > Open Goals & Orchestration` | `view.goals` | — | no |
+| `View > Open Goals` | `view.goals` | — | no |
+| `View > Open Tickets` | `view.tickets` | — | no |
+| `View > Open Requirements` | `view.requirements` | — | no |
 | `View > Open Goal Lines` | `view.goal-lines` | — | no |
 | `View > Open Notifications` | `view.notifications` | — | no |
 | `View > Excalidraw+: Browse Workspace` | `excalidraw.browse` | — | no |
@@ -57,6 +59,6 @@ What AuricIDE can be told to do from outside, and how to address it.
 ## Example
 
 ```bash
-axbridge menu com.auricide.ide "Agent > Deploy New Agent"
+axbridge menu com.auricide.ide "Agent > Start Agent"
 axbridge wait com.auricide.ide --window-title "(1) AuricIDE"   # an agent needs a human
 ```

@@ -22,6 +22,40 @@ function createTestStore() {
   };
 }
 
+describe('uiSlice – Work place', () => {
+  let store: ReturnType<typeof createTestStore>;
+
+  beforeEach(() => {
+    store = createTestStore();
+  });
+
+  it('starts closed on the Goals tab', () => {
+    expect(store.current.workPlaceOpen).toBe(false);
+    expect(store.current.workTab).toBe('goals');
+  });
+
+  it('openWorkPlace opens the last tab when none is given', () => {
+    store.current.openWorkPlace();
+    expect(store.current.workPlaceOpen).toBe(true);
+    expect(store.current.workTab).toBe('goals');
+  });
+
+  it('openWorkPlace remembers the requested tab', () => {
+    store.current.openWorkPlace('tickets');
+    expect(store.current.workPlaceOpen).toBe(true);
+    expect(store.current.workTab).toBe('tickets');
+    store.current.closeWorkPlace();
+    expect(store.current.workPlaceOpen).toBe(false);
+    expect(store.current.workTab).toBe('tickets');
+  });
+
+  it('setWorkTab opens the place on that view', () => {
+    store.current.setWorkTab('lines');
+    expect(store.current.workPlaceOpen).toBe(true);
+    expect(store.current.workTab).toBe('lines');
+  });
+});
+
 describe('uiSlice – agenticCommit settings', () => {
   let store: ReturnType<typeof createTestStore>;
 

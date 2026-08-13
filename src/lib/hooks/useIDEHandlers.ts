@@ -268,6 +268,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       // Activating the tab is all it takes — the activeTabId effect loads the
       // content (and skips redundant reloads when the tab is already active).
       state.openTab({ id: path, path, name: path.split('/').pop() ?? path });
+      useStore.getState().closeWorkPlace();
     },
     [state]
   );
@@ -942,7 +943,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
     store.setPmSelectedEpicId(ticket.epicId);
     store.setPmSelectedTicketId(ticket.id);
-    store.setPmModalOpen(true);
+    store.openWorkPlace('tickets');
   }, []);
 
   const handleCommit = useCallback(async () => {
@@ -1214,13 +1215,25 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     (id: string) => {
       if (id === 'cockpit') {
         // Home: clear document focus so Mission Control takes the center.
+        useStore.getState().closeWorkPlace();
         state.setActiveTab(null);
         state.setActiveActivity('cockpit');
         return;
       }
-      if (id === 'project-mgmt') {
-        state.setPmModalOpen(true);
-        if (state.rootPath) state.loadPmData(state.rootPath);
+      if (id === 'work') {
+        useStore.getState().openWorkPlace();
+        return;
+      }
+      if (id === 'project-mgmt' || id === 'goals') {
+        useStore.getState().openWorkPlace(id === 'project-mgmt' ? 'tickets' : 'goals');
+        return;
+      }
+      if (id === 'requirements') {
+        useStore.getState().openWorkPlace('requirements');
+        return;
+      }
+      if (id === 'goal-lines') {
+        useStore.getState().openWorkPlace('lines');
         return;
       }
       if (id === 'settings') {
@@ -1236,20 +1249,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         if (state.rootPath) state.loadBlueprints(state.rootPath);
         return;
       }
-      if (id === 'requirements') {
-        state.setRequirementsModalOpen(true);
-        if (state.rootPath) state.loadRequirements(state.rootPath);
-        return;
-      }
-      if (id === 'goals') {
-        useStore.getState().setGoalsModalOpen(true);
-        return;
-      }
-      if (id === 'goal-lines') {
-        // Data loads happen on the modal's own mount effect.
-        useStore.getState().setGoalLinesOpen(true);
-        return;
-      }
+      useStore.getState().closeWorkPlace();
       state.setActiveActivity(id);
     },
     [state]
@@ -1459,11 +1459,14 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'view.focus-source-control': () => state.setActiveActivity('source-control'),
       'view.link-graph': () => state.setLinkGraphModalOpen(true),
       'view.cockpit': () => {
+        useStore.getState().closeWorkPlace();
         state.setActiveTab(null);
         state.setActiveActivity('cockpit');
       },
-      'view.goals': () => useStore.getState().setGoalsModalOpen(true),
-      'view.goal-lines': () => useStore.getState().setGoalLinesOpen(true),
+      'view.goals': () => useStore.getState().openWorkPlace('goals'),
+      'view.tickets': () => useStore.getState().openWorkPlace('tickets'),
+      'view.requirements': () => useStore.getState().openWorkPlace('requirements'),
+      'view.goal-lines': () => useStore.getState().openWorkPlace('lines'),
       'view.notifications': () => state.setActiveActivity('notifications'),
       'excalidraw.new': () => void handleNewDiagram(),
       'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
@@ -1527,7 +1530,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       activityItems.map((item) => {
         if (item.id === 'source-control')
           return { ...item, badge: scBadge > 0 ? scBadge : undefined };
-        if (item.id === 'project-mgmt')
+        if (item.id === 'work')
           return { ...item, badge: openTicketsCount > 0 ? openTicketsCount : undefined };
         // Unread across every project, never narrowed by the panel's filters —
         // and deliberately not summed with the agents panel's attention count,

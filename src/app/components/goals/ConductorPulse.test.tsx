@@ -9,7 +9,8 @@ describe('ConductorPulse', () => {
       conductorRunning: false,
       conductorAssignments: {},
       conductorPendingApprovals: [],
-      goalsModalOpen: false,
+      workPlaceOpen: false,
+      workTab: 'goals',
     });
   });
 
@@ -46,10 +47,11 @@ describe('ConductorPulse', () => {
     expect(screen.getByTestId('conductor-pulse')).toHaveTextContent('1 need you');
   });
 
-  it('opens Goals & Orchestration when clicked', () => {
+  it('opens Work → Goals when clicked', () => {
     render(<ConductorPulse />);
     fireEvent.click(screen.getByTestId('conductor-pulse'));
-    expect(useStore.getState().goalsModalOpen).toBe(true);
+    expect(useStore.getState().workPlaceOpen).toBe(true);
+    expect(useStore.getState().workTab).toBe('goals');
   });
 
   it('is reachable by an accessible label', () => {

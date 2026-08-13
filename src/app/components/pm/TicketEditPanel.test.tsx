@@ -31,6 +31,10 @@ vi.mock('@/lib/store', () => ({
       setSpawnAgentTicketId,
       rootPath: '/mock/root',
       pmDirty: true,
+      overlayStack: { layers: [] },
+      pushOverlay: () => undefined,
+      removeOverlay: () => undefined,
+      ownsEscape: () => false,
     }),
 }));
 
@@ -168,27 +172,35 @@ describe('TicketEditPanel', () => {
     expect(onDeleteTicket).toHaveBeenCalledWith('tk-1');
   });
 
-  it('calls onCancel when Cancel button is clicked', () => {
+  it('labels model power as Agent strength', () => {
+    render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} />);
+    expect(screen.getByText('Agent strength')).toBeInTheDocument();
+    expect(screen.queryByText('Model Power')).not.toBeInTheDocument();
+  });
+
+  it('calls onCancel when Deselect is clicked', () => {
     const onCancel = vi.fn();
     render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} onCancel={onCancel} />);
-    fireEvent.click(screen.getByText('Cancel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Deselect' }));
     expect(onCancel).toHaveBeenCalled();
   });
 
-  it('calls onSave when Save button is clicked', () => {
+  it('calls onSave when Save is clicked and does not close Plan', () => {
     const onSave = vi.fn();
-    render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} onSave={onSave} />);
-    fireEvent.click(screen.getByText('Save'));
-    expect(onSave).toHaveBeenCalled();
-  });
-
-  it('calls onSaveAndClose when Save and Close button is clicked', () => {
     const onSaveAndClose = vi.fn();
     render(
-      <TicketEditPanel {...defaultProps} ticket={makeTicket()} onSaveAndClose={onSaveAndClose} />
+      <TicketEditPanel
+        {...defaultProps}
+        ticket={makeTicket()}
+        onSave={onSave}
+        onSaveAndClose={onSaveAndClose}
+      />
     );
-    fireEvent.click(screen.getByText('Save and Close'));
-    expect(onSaveAndClose).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+    expect(onSave).toHaveBeenCalled();
+    expect(onSaveAndClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Save and Close' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
   });
 
   it('renders tab bar with Details, Context, Test Cases, Dependencies, Advanced', () => {
@@ -243,7 +255,7 @@ describe('TicketEditPanel', () => {
     expect(screen.getByText(/Updated:/)).toBeDefined();
   });
 
-  it('calls onUpdateTicket and onSave with in_progress status when Spawn Agent clicked', async () => {
+  it('calls onUpdateTicket and onSave with in_progress status when Start agent clicked', async () => {
     const onUpdateTicket = vi.fn();
     const onSave = vi.fn();
     render(
@@ -255,17 +267,17 @@ describe('TicketEditPanel', () => {
       />
     );
     await act(async () => {
-      fireEvent.click(screen.getByText('Spawn Agent'));
+      fireEvent.click(screen.getByText('Start agent'));
     });
     expect(onUpdateTicket).toHaveBeenCalledWith('tk-1', { status: 'in_progress' });
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('calls setInitialAgentTask with correct prompt when Spawn Agent clicked', async () => {
+  it('calls setInitialAgentTask with correct prompt when Start agent clicked', async () => {
     const ticket = makeTicket({ name: 'Spawn Test', description: 'Spawn Desc' });
     render(<TicketEditPanel {...defaultProps} ticket={ticket} />);
     await act(async () => {
-      fireEvent.click(screen.getByText('Spawn Agent'));
+      fireEvent.click(screen.getByText('Start agent'));
     });
 
     await vi.waitFor(() => {
@@ -413,7 +425,7 @@ describe('TicketEditPanel', () => {
     render(<TicketEditPanel {...defaultProps} ticket={ticket} />);
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Spawn Agent'));
+      fireEvent.click(screen.getByText('Start agent'));
     });
 
     await vi.waitFor(() => {
@@ -432,7 +444,7 @@ describe('TicketEditPanel', () => {
     render(<TicketEditPanel {...defaultProps} ticket={ticket} />);
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Spawn Agent'));
+      fireEvent.click(screen.getByText('Start agent'));
     });
 
     await vi.waitFor(() => {

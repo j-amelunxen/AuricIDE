@@ -84,7 +84,7 @@ lines.push(
   '## Example',
   '',
   '```bash',
-  'axbridge menu com.auricide.ide "Agent > Deploy New Agent"',
+  'axbridge menu com.auricide.ide "Agent > Start Agent"',
   'axbridge wait com.auricide.ide --window-title "(1) AuricIDE"   # an agent needs a human',
   '```',
   ''

@@ -50,27 +50,39 @@ let mockScratches: { name: string; path: string }[] = [];
 const mockInitScratches = vi.fn(async () => {});
 const mockRefreshScratches = vi.fn(async () => {});
 const mockGetBacklinksFor = vi.fn((_name: string) => [] as string[]);
-vi.mock('@/lib/store', () => ({
-  useStore: {
-    getState: () => ({
-      refreshGitStatus: mockRefreshGitStatus,
-      stageAll: mockStageAll,
-      rootPath: '/p',
-      fileStatuses: mockFileStatuses,
-      activeTabId: mockActiveTabId,
-      fileTree: mockFileTree,
-      saveGoals: mockSaveGoals,
-      markDirty: mockMarkDirty,
-      updateFileInIndex: mockUpdateFileInIndex,
-      showToast: mockShowToast,
-      scratchDir: mockScratchDir,
-      scratches: mockScratches,
-      initScratches: mockInitScratches,
-      refreshScratches: mockRefreshScratches,
-      getBacklinksFor: mockGetBacklinksFor,
-    }),
-  },
-}));
+vi.mock('@/lib/store', () => {
+  const getState = () => ({
+    refreshGitStatus: mockRefreshGitStatus,
+    stageAll: mockStageAll,
+    rootPath: '/p',
+    fileStatuses: mockFileStatuses,
+    activeTabId: mockActiveTabId,
+    fileTree: mockFileTree,
+    saveGoals: mockSaveGoals,
+    markDirty: mockMarkDirty,
+    updateFileInIndex: mockUpdateFileInIndex,
+    showToast: mockShowToast,
+    scratchDir: mockScratchDir,
+    scratches: mockScratches,
+    initScratches: mockInitScratches,
+    refreshScratches: mockRefreshScratches,
+    getBacklinksFor: mockGetBacklinksFor,
+    overlayStack: { layers: [] as { id: string; kind: string }[] },
+    pushOverlay: () => undefined,
+    removeOverlay: () => undefined,
+    ownsEscape: () => false,
+    closeWorkPlace: () => undefined,
+    openWorkPlace: () => undefined,
+  });
+  return {
+    useStore: Object.assign(
+      (selector: (s: ReturnType<typeof getState>) => unknown) => selector(getState()),
+      {
+        getState,
+      }
+    ),
+  };
+});
 
 describe('useIDEHandlers', () => {
   const mockState = {

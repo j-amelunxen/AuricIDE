@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { PersistChip } from '@/app/components/ui/PersistChip';
 import { useNow } from '@/lib/hooks/useNow';
 import { getRootGoals } from '@/lib/store/goalsSlice';
 import { buildGoalLines } from '@/lib/goals/goalLinesLayout';
@@ -27,19 +29,15 @@ function GoalLineDetail({
   onClose: () => void;
 }) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopImmediatePropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
-  }, [onClose]);
+  useOverlayLayer({
+    id: 'goal-line-detail',
+    kind: 'tool',
+    active: true,
+    onEscape: onClose,
+  });
   return (
     <div
-      className="fixed inset-0 z-[115] flex items-center justify-center bg-black/70 p-5"
+      className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center bg-black/70 p-5"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -94,13 +92,12 @@ function GoalLinesDialog({
   children: React.ReactNode;
 }) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
-  }, [onClose]);
+  useOverlayLayer({
+    id: 'goal-lines',
+    kind: 'tool',
+    active: true,
+    onEscape: onClose,
+  });
   return (
     <div
       ref={dialogRef}
@@ -108,7 +105,7 @@ function GoalLinesDialog({
       aria-modal="true"
       aria-labelledby="goal-lines-modal-title"
       data-testid="goal-lines-modal"
-      className="fixed inset-0 z-[105] flex flex-col bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex flex-col bg-black/80 backdrop-blur-sm"
     >
       {children}
     </div>
@@ -132,13 +129,15 @@ function RestoreLineFocus({ goalId }: { goalId: string | null }) {
 export function GoalLinesModal() {
   const goalLinesOpen = useStore((s) => s.goalLinesOpen);
   if (!goalLinesOpen) return null;
-  return <GoalLinesModalContent />;
+  return <GoalLinesPanel />;
 }
 
-function GoalLinesModalContent() {
+export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
   const setGoalLinesOpen = useStore((s) => s.setGoalLinesOpen);
+  const goalLinesReturnToGoals = useStore((s) => s.goalLinesReturnToGoals);
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
   const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
+  const setWorkTab = useStore((s) => s.setWorkTab);
   const rootPath = useStore((s) => s.rootPath);
   const loadGoals = useStore((s) => s.loadGoals);
   const loadPmData = useStore((s) => s.loadPmData);
@@ -220,15 +219,23 @@ function GoalLinesModalContent() {
   const runningCount = agents.filter((a) => a.status === 'running').length;
   const needYouCount = queue.length;
 
-  const handleClose = useCallback(() => setGoalLinesOpen(false), [setGoalLinesOpen]);
+  const handleClose = useCallback(() => {
+    const returnToGoals = goalLinesReturnToGoals;
+    setGoalLinesOpen(false);
+    if (returnToGoals) setGoalsModalOpen(true);
+  }, [goalLinesReturnToGoals, setGoalLinesOpen, setGoalsModalOpen]);
 
   const openGoalEditor = useCallback(
     (goalId: string) => {
       setSelectedGoalId(goalId);
+      if (embedded) {
+        setWorkTab('goals');
+        return;
+      }
       setGoalsModalOpen(true);
       setGoalLinesOpen(false);
     },
-    [setSelectedGoalId, setGoalsModalOpen, setGoalLinesOpen]
+    [embedded, setSelectedGoalId, setGoalsModalOpen, setGoalLinesOpen, setWorkTab]
   );
 
   const openLine = useCallback((goalId: string) => setDetailGoalId(goalId), []);
@@ -302,8 +309,11 @@ function GoalLinesModalContent() {
       );
   }
 
-  return createPortal(
-    <GoalLinesDialog onClose={handleClose}>
+  const inner = (
+    <div
+      data-testid={embedded ? 'work-panel-lines' : undefined}
+      className={embedded ? 'flex h-full flex-col bg-background-dark' : 'flex h-full flex-col'}
+    >
       <RestoreLineFocus goalId={restoreGoalId} />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">
@@ -312,6 +322,7 @@ function GoalLinesModalContent() {
           <h1 id="goal-lines-modal-title" className="text-sm font-bold text-foreground">
             Goal Lines
           </h1>
+          <PersistChip mode="autosaved" />
           <span className="text-[10px] text-foreground-muted tabular-nums">
             {lines.length} line{lines.length === 1 ? '' : 's'} · {runningCount} running agent
             {runningCount === 1 ? '' : 's'}
@@ -325,13 +336,16 @@ function GoalLinesModalContent() {
             </span>
           )}
         </div>
-        <button
-          data-testid="goal-lines-close-btn"
-          onClick={handleClose}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
-        >
-          <AuricIcon name="close" aria-hidden="true" className="text-base" />
-        </button>
+        {!embedded && (
+          <button
+            data-testid="goal-lines-close-btn"
+            aria-label="Close"
+            onClick={handleClose}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
+          >
+            <AuricIcon name="close" aria-hidden="true" className="text-base" />
+          </button>
+        )}
       </div>
 
       {/* Body */}
@@ -351,6 +365,10 @@ function GoalLinesModalContent() {
             <button
               data-testid="goal-lines-open-goals"
               onClick={() => {
+                if (embedded) {
+                  setWorkTab('goals');
+                  return;
+                }
                 setGoalsModalOpen(true);
                 setGoalLinesOpen(false);
               }}
@@ -383,7 +401,13 @@ function GoalLinesModalContent() {
           </div>
         )}
       </div>
-    </GoalLinesDialog>,
+    </div>
+  );
+
+  if (embedded) return inner;
+
+  return createPortal(
+    <GoalLinesDialog onClose={handleClose}>{inner}</GoalLinesDialog>,
     document.body
   );
 }

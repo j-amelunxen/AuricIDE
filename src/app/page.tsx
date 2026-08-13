@@ -32,22 +32,23 @@ import { isScratchPath } from '@/lib/scratch/naming';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
 import { QuickAccess } from './components/cockpit/QuickAccess';
+import { RecentProjects } from './components/cockpit/RecentProjects';
 import { ExcalidrawViewer } from './components/excalidraw/ExcalidrawViewer';
 import { ExcalidrawBrowser } from './components/excalidraw/ExcalidrawBrowser';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianColor, ObsidianNode } from '@/lib/obsidian-canvas/types';
 import { TicketCreateModal } from './components/pm/TicketCreateModal';
-import { RequirementsModal } from './components/requirements/RequirementsModal';
-import { GoalsModal } from './components/goals/GoalsModal';
 import { OrchestrationModal } from './components/goals/OrchestrationModal';
-import { GoalLinesModal } from './components/goalLines/GoalLinesModal';
+import { WorkView } from './components/work/WorkView';
 import { NewProjectModal, type NewProjectOptions } from './components/ide/NewProjectModal';
 import { AuricIcon } from './components/ui/AuricIcon';
 import { extractTicket } from '@/lib/git/branchTicket';
 import { useIDEState } from '@/lib/hooks/useIDEState';
+import { type SettingsCategory } from './components/ide/SettingsModal';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
 import { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
 import { useAttentionTitle } from '@/lib/hooks/useAttentionTitle';
+import { useStore } from '@/lib/store';
 import type { AgentInfo } from '@/lib/tauri/agents';
 
 // Memoized sub-components
@@ -304,14 +305,11 @@ export default function Home() {
         />
       )}
       <AttentionTitle agents={state.agents} reviewedAgentIds={state.reviewedAgentIds} />
-      <RequirementsModal />
       <ExcalidrawBrowser
         onImported={() => void handlers.handleRefresh()}
         onOpenSettings={() => state.setSettingsModalOpen(true)}
       />
-      <GoalsModal />
       <OrchestrationModal />
-      <GoalLinesModal />
       <NewProjectModal
         isOpen={newProjectOpen}
         onCreate={handleCreateProject}
@@ -331,12 +329,18 @@ export default function Home() {
             connectionLabel={state.cliConnected ? 'CLI connected' : 'CLI not detected'}
             llmConfigured={state.llmConfigured}
             onCommandPalette={() => state.setCommandPaletteOpen(true)}
+            onOpenSettings={(category) => {
+              if (category) {
+                state.setSettingsInitialCategory(category as SettingsCategory);
+              }
+              state.setSettingsModalOpen(true);
+            }}
           />
         }
         activityBar={
           <MemoizedActivityBar
             items={handlers.itemsWithBadge}
-            activeId={state.activeActivity}
+            activeId={state.workPlaceOpen ? 'work' : state.activeActivity}
             onSelect={handlers.handleActivitySelect}
             onTerminalToggle={() => state.setBottomCollapsed(!state.bottomCollapsed)}
             onAgentsToggle={() => state.setRightCollapsed(!state.rightCollapsed)}
@@ -347,14 +351,21 @@ export default function Home() {
           <div className="flex h-full flex-col">
             <MemoizedTabBar
               tabs={tabsWithIcons}
-              activeTabId={state.activeTabId}
-              onSelect={state.setActiveTab}
+              activeTabId={state.workPlaceOpen ? null : state.activeTabId}
+              onSelect={(id) => {
+                useStore.getState().closeWorkPlace();
+                state.setActiveTab(id);
+              }}
               onClose={state.closeTab}
               onCloseOthers={state.closeOtherTabs}
               onCloseAll={state.closeAllTabs}
               onCloseToRight={state.closeTabsToRight}
             />
-            {state.activeTabId ? (
+            {state.workPlaceOpen ? (
+              <div className="flex-1 overflow-hidden">
+                <WorkView />
+              </div>
+            ) : state.activeTabId ? (
               <div className="flex-1 overflow-hidden">
                 {handlers.isDiffTab && state.diffContent !== null ? (
                   <DiffViewer diff={state.diffContent} fileName={handlers.diffFilePath ?? ''} />
@@ -430,6 +441,7 @@ export default function Home() {
               <div className="flex-1 overflow-hidden">
                 <MissionControl
                   onCreateSpec={() => void handlers.handleNewSpec()}
+                  onOpenAgents={() => state.setRightCollapsed(false)}
                   onSwitchProject={(path) => handlers.handleOpenRecent(path)}
                 />
               </div>
@@ -459,69 +471,15 @@ export default function Home() {
                       New
                     </button>
                   </div>
+                  <div className="mt-8 mx-auto">
+                    <RecentProjects onOpenProject={(path) => handlers.handleOpenRecent(path)} />
+                  </div>
                   <div className="mt-8">
                     <QuickAccess
                       currentPath={null}
                       onSwitchProject={(path) => handlers.handleOpenRecent(path)}
                     />
                   </div>
-                  {state.recentProjects.length > 0 && (
-                    <div className="mt-8 w-80 mx-auto text-left" data-testid="recent-projects">
-                      <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted mb-3">
-                        Recent Projects
-                      </h2>
-                      <ul className="space-y-1">
-                        {state.recentProjects.map((project) => {
-                          const isStarred = state.starredProjects.some(
-                            (s) => s.path === project.path
-                          );
-                          return (
-                            <li key={project.path} className="group flex items-center">
-                              <button
-                                onClick={() => handlers.handleOpenRecent(project.path)}
-                                className="flex-1 flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/5"
-                              >
-                                <AuricIcon name="folder" className="text-primary-light text-base" />
-                                <span className="text-sm font-medium text-foreground truncate">
-                                  {project.name}
-                                </span>
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  state.toggleStarredProject(project.path);
-                                }}
-                                title={
-                                  isStarred
-                                    ? 'Unstar: remove from Quick Access'
-                                    : 'Star for Quick Access'
-                                }
-                                data-testid={`star-recent-${project.path}`}
-                                className={`p-1 rounded transition-all mr-0.5 ${
-                                  isStarred
-                                    ? 'text-primary-light opacity-100'
-                                    : 'opacity-0 group-hover:opacity-100 text-foreground-muted hover:text-foreground hover:bg-white/10'
-                                }`}
-                              >
-                                <AuricIcon name="star" className="text-[14px]" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  state.removeRecentProject(project.path);
-                                }}
-                                title="Remove from recent projects"
-                                data-testid={`remove-recent-${project.path}`}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-foreground-muted hover:text-foreground transition-all mr-1"
-                              >
-                                <AuricIcon name="close" className="text-[14px]" />
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )}
                   <div className="mt-10 w-80 mx-auto text-left" data-testid="tip-of-the-day">
                     <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted mb-3">
                       Tip of the Day

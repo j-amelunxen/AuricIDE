@@ -165,6 +165,13 @@ describe('defaultCommands', () => {
     expect(findRefs!.category).toBe('markdown');
     expect(findRefs!.shortcut).toBe('Alt+F7');
   });
+
+  it('labels agent.deploy as Start Agent without renaming the id', () => {
+    const cmd = defaultCommands.find((c) => c.id === 'agent.deploy');
+    expect(cmd).toBeDefined();
+    expect(cmd!.id).toBe('agent.deploy');
+    expect(cmd!.label).toBe('Start Agent');
+  });
 });
 
 // The same JSON file is embedded by the Rust side to build the native menu

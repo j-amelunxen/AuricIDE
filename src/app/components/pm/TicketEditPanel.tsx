@@ -89,7 +89,6 @@ export function TicketEditPanel({
   availableItems,
   onUpdateTicket,
   onSave,
-  onSaveAndClose,
   onCancel,
   onDeleteTicket,
   onMoveTicket,
@@ -279,10 +278,10 @@ export function TicketEditPanel({
             <button
               type="button"
               onClick={onCancel}
-              title="Close editor and discard local changes"
+              title="Deselect ticket"
               className="rounded-lg px-2 py-1.5 text-[10px] font-medium text-foreground-muted hover:bg-white/5 transition-colors"
             >
-              Cancel
+              Deselect
             </button>
             <button
               type="button"
@@ -291,14 +290,6 @@ export function TicketEditPanel({
               className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-[10px] font-medium text-foreground hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition"
             >
               Save
-            </button>
-            <button
-              type="button"
-              disabled={!pmDirty}
-              onClick={onSaveAndClose}
-              className="rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light hover:bg-primary/20 disabled:opacity-25 disabled:cursor-not-allowed transition"
-            >
-              Save and Close
             </button>
           </div>
 
@@ -310,7 +301,7 @@ export function TicketEditPanel({
             className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary-light transition hover:bg-primary/20"
           >
             <AuricIcon name="smart_toy" className="text-[16px]" />
-            Spawn Agent
+            Start agent
           </button>
 
           <button
@@ -392,7 +383,7 @@ export function TicketEditPanel({
 
             <div>
               <label className="mb-2 flex items-center text-xs text-foreground-muted">
-                Model Power
+                Agent strength
                 <InfoTooltip description={GUIDANCE.pm.modelPower} label="i" />
               </label>
               <div className="flex gap-2" data-testid="model-power-selector">

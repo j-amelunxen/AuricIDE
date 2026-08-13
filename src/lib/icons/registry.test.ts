@@ -6,6 +6,11 @@ describe('icon registry', () => {
     expect(getGlyph('folder')).toBeTruthy();
   });
 
+  it('aliases verified to check_circle', () => {
+    expect(getGlyph('verified')).toBeTruthy();
+    expect(getGlyph('verified')).toEqual(getGlyph('check_circle'));
+  });
+
   it('returns null for unknown names', () => {
     expect(getGlyph('definitely_not_an_icon')).toBeNull();
   });

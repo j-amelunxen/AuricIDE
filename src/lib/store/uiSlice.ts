@@ -3,6 +3,7 @@ import type { LogEntry } from '@/app/components/terminal/TerminalPanel';
 import type { ReferenceResult } from '@/lib/refactoring/findReferences';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
+import type { WorkTab } from '@/lib/work/tabs';
 
 export const MAX_TERMINAL_LOGS = 10_000;
 
@@ -44,6 +45,9 @@ export interface UISlice {
   referencesPanelQuery: string;
   referencesPanelResults: ReferenceResult[];
   providers: ProviderInfo[];
+  /** Center place: Goals / Tickets / Requirements / Lines. */
+  workPlaceOpen: boolean;
+  workTab: WorkTab;
 
   setImportSpecDialogOpen: (open: boolean) => void;
   setVideoImportDialogOpen: (open: boolean) => void;
@@ -67,6 +71,9 @@ export interface UISlice {
   updateAgentSettings: (settings: Partial<AgentSettings>) => void;
   setReferencesPanel: (open: boolean, query?: string, results?: ReferenceResult[]) => void;
   setProviders: (providers: ProviderInfo[]) => void;
+  openWorkPlace: (tab?: WorkTab) => void;
+  closeWorkPlace: () => void;
+  setWorkTab: (tab: WorkTab) => void;
 }
 
 export const createUISlice: StateCreator<UISlice> = (set) => ({
@@ -92,6 +99,8 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   referencesPanelQuery: '',
   referencesPanelResults: [],
   providers: [FALLBACK_CRUSH_PROVIDER],
+  workPlaceOpen: false,
+  workTab: 'goals',
   agentSettings: {
     dangerouslyIgnorePermissions: false,
     autoAcceptEdits: false,
@@ -160,4 +169,14 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
     }),
 
   setProviders: (providers) => set({ providers }),
+
+  openWorkPlace: (tab) =>
+    set((state) => ({
+      workPlaceOpen: true,
+      workTab: tab ?? state.workTab,
+    })),
+
+  closeWorkPlace: () => set({ workPlaceOpen: false }),
+
+  setWorkTab: (tab) => set({ workTab: tab, workPlaceOpen: true }),
 });
