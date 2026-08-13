@@ -47,4 +47,16 @@ describe('ConfirmDialog', () => {
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
+
+  it('keeps Escape from reaching window listeners behind it', () => {
+    // Callers such as the agent terminal listen for Escape on window to close
+    // themselves. If that listener also sees this key, the thing that asked
+    // the question disappears with the question.
+    const onWindowEscape = vi.fn();
+    window.addEventListener('keydown', onWindowEscape);
+    render(<ConfirmDialog {...baseProps} />);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onWindowEscape).not.toHaveBeenCalled();
+    window.removeEventListener('keydown', onWindowEscape);
+  });
 });

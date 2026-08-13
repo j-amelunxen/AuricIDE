@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AgentTerminalModal } from './AgentTerminalModal';
@@ -404,6 +404,244 @@ describe('AgentTerminalModal', () => {
       const live = [makeAgent({ id: 'agent-2', name: 'Reviewer', status: 'idle' })];
       render(<AgentTerminalModal agent={stale} agents={live} onClose={vi.fn()} />);
       expect(screen.getByText('idle')).toBeInTheDocument();
+    });
+
+    /**
+     * Answers the modal's own confirmation dialog. window.confirm is off-limits
+     * in the Tauri webview — it does not suspend the script.
+     */
+    async function answerStop(user: ReturnType<typeof userEvent.setup>, button: string) {
+      const dialog = await screen.findByRole('dialog', { name: 'Stop this agent?' });
+      await user.click(within(dialog).getByRole('button', { name: button }));
+    }
+
+    it('does not offer a close control when no end handlers are given', () => {
+      render(<AgentTerminalModal agent={working} agents={all} onClose={vi.fn()} />);
+      expect(screen.queryByRole('button', { name: /stop /i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /dismiss /i })).not.toBeInTheDocument();
+    });
+
+    it('names the close control after the act: stop a runner, dismiss a finished one', () => {
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={vi.fn()}
+          onDismiss={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+      expect(screen.getByRole('button', { name: 'Stop Writer' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Stop Reviewer' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Dismiss Fixer' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Dismiss Deployer' })).toBeInTheDocument();
+    });
+
+    it('asks before stopping a running agent, and does not stop until answered', async () => {
+      const user = userEvent.setup();
+      const onKill = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Writer' }));
+      expect(await screen.findByRole('dialog', { name: 'Stop this agent?' })).toHaveTextContent(
+        'Stop Writer? Its work in progress is lost.'
+      );
+      expect(onKill).not.toHaveBeenCalled();
+    });
+
+    it('stops the running agent once the question is confirmed', async () => {
+      const user = userEvent.setup();
+      const onKill = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Reviewer' }));
+      await answerStop(user, 'Stop');
+      expect(onKill).toHaveBeenCalledWith('agent-2');
+    });
+
+    it('leaves the agent running when the question is cancelled', async () => {
+      const user = userEvent.setup();
+      const onKill = vi.fn();
+      const onSwitchAgent = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onSwitchAgent={onSwitchAgent}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Writer' }));
+      await answerStop(user, 'Cancel');
+      expect(onKill).not.toHaveBeenCalled();
+      expect(onSwitchAgent).not.toHaveBeenCalled();
+    });
+
+    it('dismisses a finished agent without asking', async () => {
+      const user = userEvent.setup();
+      const onDismiss = vi.fn();
+      const onKill = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={onDismiss}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Dismiss Fixer' }));
+      expect(onDismiss).toHaveBeenCalledWith('agent-3');
+      expect(onKill).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog', { name: 'Stop this agent?' })).not.toBeInTheDocument();
+    });
+
+    it('does not switch tabs when the close control is clicked', async () => {
+      const user = userEvent.setup();
+      const onSwitchAgent = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={vi.fn()}
+          onDismiss={vi.fn()}
+          onSwitchAgent={onSwitchAgent}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Reviewer' }));
+      expect(onSwitchAgent).not.toHaveBeenCalled();
+    });
+
+    it('moves to a neighbour after stopping the agent on screen', async () => {
+      const user = userEvent.setup();
+      const onKill = vi.fn();
+      const onSwitchAgent = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onSwitchAgent={onSwitchAgent}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Writer' }));
+      await answerStop(user, 'Stop');
+      expect(onSwitchAgent).toHaveBeenCalledWith(waiting);
+      expect(onKill).toHaveBeenCalledWith('agent-1');
+      expect(onSwitchAgent.mock.invocationCallOrder[0]).toBeLessThan(
+        onKill.mock.invocationCallOrder[0]
+      );
+    });
+
+    it('closes the modal when the last tab is stopped', async () => {
+      const user = userEvent.setup();
+      const onKill = vi.fn();
+      const onSwitchAgent = vi.fn();
+      const onClose = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={[working]}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onSwitchAgent={onSwitchAgent}
+          onClose={onClose}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Writer' }));
+      await answerStop(user, 'Stop');
+      expect(onClose).toHaveBeenCalled();
+      expect(onKill).toHaveBeenCalledWith('agent-1');
+      expect(onSwitchAgent).not.toHaveBeenCalled();
+    });
+
+    it('cancels a queued agent without asking', async () => {
+      const user = userEvent.setup();
+      const queued = makeAgent({ id: 'agent-q', name: 'Queued', status: 'queued' });
+      const onKill = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={[working, queued]}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Queued' }));
+      expect(onKill).toHaveBeenCalledWith('agent-q');
+      expect(screen.queryByRole('dialog', { name: 'Stop this agent?' })).not.toBeInTheDocument();
+    });
+
+    it('middle-clicks a tab to start the same stop flow', async () => {
+      const onKill = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent(
+        screen.getByTestId('agent-tab-agent-1'),
+        new MouseEvent('auxclick', { button: 1, bubbles: true })
+      );
+      expect(await screen.findByRole('dialog', { name: 'Stop this agent?' })).toBeInTheDocument();
+      expect(onKill).not.toHaveBeenCalled();
+    });
+
+    it('keeps the terminal open when Escape answers the stop question', async () => {
+      const user = userEvent.setup();
+      const onKill = vi.fn();
+      const onClose = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={onKill}
+          onDismiss={vi.fn()}
+          onClose={onClose}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Writer' }));
+      expect(await screen.findByRole('dialog', { name: 'Stop this agent?' })).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog', { name: 'Stop this agent?' })).not.toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: /writer/i })).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onKill).not.toHaveBeenCalled();
     });
   });
 

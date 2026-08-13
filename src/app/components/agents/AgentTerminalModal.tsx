@@ -9,7 +9,9 @@ import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
+import { isFinishedAgent } from '@/lib/agents/fleet';
 import { agentState, type AgentState } from '@/lib/agents/state';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
@@ -283,6 +285,10 @@ interface AgentTerminalModalProps {
   onSwitchAgent?: (agent: AgentInfo) => void;
   onClose: () => void;
   onSelectionSpawn?: (selection: string) => void;
+  /** Stop a still-running (or queued) agent. Ending work asks first. */
+  onKill?: (agentId: string) => void;
+  /** Clear a stopped agent out of the tab strip. No prompt — nothing left to lose. */
+  onDismiss?: (agentId: string) => void;
 }
 
 export function AgentTerminalModal({
@@ -291,6 +297,8 @@ export function AgentTerminalModal({
   onSwitchAgent,
   onClose,
   onSelectionSpawn,
+  onKill,
+  onDismiss,
 }: AgentTerminalModalProps) {
   if (!agent) return null;
   // The opened agent is a snapshot; the agents list carries live status updates.
@@ -302,6 +310,8 @@ export function AgentTerminalModal({
       onSwitchAgent={onSwitchAgent}
       onClose={onClose}
       onSelectionSpawn={onSelectionSpawn}
+      onKill={onKill}
+      onDismiss={onDismiss}
     />
   );
 }
@@ -312,6 +322,17 @@ interface AgentTerminalDialogProps {
   onSwitchAgent?: (agent: AgentInfo) => void;
   onClose: () => void;
   onSelectionSpawn?: (selection: string) => void;
+  onKill?: (agentId: string) => void;
+  onDismiss?: (agentId: string) => void;
+}
+
+/** The tab to land on after one is closed — the next one, or the previous at the end. */
+function neighborAfterClose(agents: AgentInfo[], closingId: string): AgentInfo | null {
+  const idx = agents.findIndex((a) => a.id === closingId);
+  const remaining = agents.filter((a) => a.id !== closingId);
+  if (remaining.length === 0) return null;
+  if (idx < 0) return remaining[0];
+  return remaining[Math.min(idx, remaining.length - 1)];
 }
 
 function AgentTerminalDialog({
@@ -320,15 +341,50 @@ function AgentTerminalDialog({
   onSwitchAgent,
   onClose,
   onSelectionSpawn,
+  onKill,
+  onDismiss,
 }: AgentTerminalDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  const { confirm, confirmDialog } = useConfirm();
+  // The confirm dialog also handles Escape. A window listener that closed this
+  // modal on the same key would take the terminal with the question.
+  const confirmingRef = useRef(false);
 
-  // Close on Escape
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !confirmingRef.current) onClose();
     },
     [onClose]
+  );
+
+  const closeTab = useCallback(
+    async (target: AgentInfo) => {
+      const finished = isFinishedAgent(target);
+      if (finished ? !onDismiss : !onKill) return;
+
+      if (!finished && target.status === 'running') {
+        confirmingRef.current = true;
+        const go = await confirm({
+          title: 'Stop this agent?',
+          message: `Stop ${target.name}? Its work in progress is lost.`,
+          confirmLabel: 'Stop',
+        });
+        confirmingRef.current = false;
+        if (!go) return;
+      }
+
+      // Leave the dying tab before the process dies, so the screen does not
+      // sit on a snapshot of an agent that is already gone.
+      if (target.id === agent.id) {
+        const next = neighborAfterClose(agents ?? [], target.id);
+        if (next) onSwitchAgent?.(next);
+        else onClose();
+      }
+
+      if (finished) onDismiss?.(target.id);
+      else onKill?.(target.id);
+    },
+    [agent.id, agents, confirm, onClose, onDismiss, onKill, onSwitchAgent]
   );
 
   const now = useNow();
@@ -443,31 +499,63 @@ function AgentTerminalDialog({
               const isActive = a.id === agent.id;
               const state = agentState(a, now);
               const style = TAB_STATE_STYLES[state];
+              const finished = isFinishedAgent(a);
+              const canEnd = finished ? !!onDismiss : !!onKill;
+              const endLabel = finished ? `Dismiss ${a.name}` : `Stop ${a.name}`;
               return (
-                <button
+                <div
                   key={a.id}
-                  role="tab"
-                  aria-selected={isActive}
-                  data-testid={`agent-tab-${a.id}`}
-                  data-state={state}
-                  onClick={() => {
-                    if (!isActive) onSwitchAgent?.(a);
-                  }}
-                  className={`group flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all ${
+                  className={`group flex items-center rounded-lg border whitespace-nowrap transition-colors ${
                     isActive
                       ? 'border-primary/40 bg-primary/15 text-white'
                       : 'border-white/5 bg-white/[0.02] text-foreground-muted hover:bg-white/5 hover:text-foreground'
                   }`}
                 >
-                  <span
-                    aria-hidden="true"
-                    className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
-                  />
-                  <span className="max-w-[140px] truncate">{a.name}</span>
-                  <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
-                    {state}
-                  </span>
-                </button>
+                  <button
+                    role="tab"
+                    aria-selected={isActive}
+                    data-testid={`agent-tab-${a.id}`}
+                    data-state={state}
+                    onClick={() => {
+                      if (!isActive) onSwitchAgent?.(a);
+                    }}
+                    onMouseDown={(e) => {
+                      if (e.button === 1) e.preventDefault();
+                    }}
+                    onAuxClick={(e) => {
+                      if (e.button === 1) {
+                        e.preventDefault();
+                        void closeTab(a);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
+                    />
+                    <span className="max-w-[140px] truncate">{a.name}</span>
+                    <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
+                      {state}
+                    </span>
+                  </button>
+                  {canEnd && (
+                    <button
+                      type="button"
+                      data-testid={`agent-tab-close-${a.id}`}
+                      aria-label={endLabel}
+                      title={endLabel}
+                      onClick={() => void closeTab(a)}
+                      className={`mr-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[opacity,transform,color,background-color] hover:bg-red-500/15 hover:text-red-400 active:scale-[0.96] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                        isActive
+                          ? 'opacity-70'
+                          : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                      }`}
+                    >
+                      <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -478,6 +566,7 @@ function AgentTerminalDialog({
           <AgentXterm agentId={agent.id} onSelectionSpawn={onSelectionSpawn} />
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }
