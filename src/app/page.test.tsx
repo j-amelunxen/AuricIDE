@@ -30,6 +30,7 @@ vi.stubGlobal(
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue(null),
+  convertFileSrc: (path: string) => `asset://localhost${path}`,
 }));
 
 vi.mock('@/lib/tauri/db', () => ({

@@ -12,6 +12,7 @@ export function useIDEState() {
   const [activeActivity, setActiveActivity] = useState('explorer');
   const [editorContent, setEditorContent] = useState('');
   const [imageData, setImageData] = useState<string | null>(null);
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [pdfData, setPdfData] = useState<string | null>(null);
   const [mindmapData, setMindmapData] = useState<MindmapData | null>(null);
   const [diffContent, setDiffContent] = useState<string | null>(null);
@@ -223,6 +224,8 @@ export function useIDEState() {
     setEditorContent,
     imageData,
     setImageData,
+    videoSrc,
+    setVideoSrc,
     pdfData,
     setPdfData,
     mindmapData,

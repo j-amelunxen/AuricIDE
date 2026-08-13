@@ -9,6 +9,7 @@ import { FileExplorer } from './components/explorer/FileExplorer';
 import { TabBar } from './components/editor/TabBar';
 import { MarkdownEditor } from './components/editor/MarkdownEditor';
 import { ImageViewer } from './components/editor/ImageViewer';
+import { VideoViewer } from './components/editor/VideoViewer';
 import { PDFViewer } from './components/editor/PDFViewer';
 import { HtmlViewer } from './components/editor/HtmlViewer';
 import { SourceControlPanel } from './components/git/SourceControlPanel';
@@ -360,6 +361,11 @@ export default function Home() {
                 ) : state.imageData ? (
                   <ImageViewer
                     src={state.imageData}
+                    fileName={state.activeTabId.split('/').pop() || ''}
+                  />
+                ) : state.videoSrc ? (
+                  <VideoViewer
+                    src={state.videoSrc}
                     fileName={state.activeTabId.split('/').pop() || ''}
                   />
                 ) : state.pdfData ? (
