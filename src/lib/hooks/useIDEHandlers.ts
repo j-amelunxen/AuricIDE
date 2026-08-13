@@ -7,7 +7,7 @@ import { useConfirm } from '@/lib/hooks/useConfirm';
 import { TIPS, activityItems } from '../ide/constants';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { type FileNode } from '@/lib/store/fileTreeSlice';
-import type { GitFileStatus } from '@/lib/tauri/git';
+
 import { serializeMindmap, type MindmapNode } from '@/lib/mindmap/mindmapParser';
 import { type WorkflowNode, serializeWorkflow } from '@/lib/canvas/markdownParser';
 import { serializeObsidianCanvas } from '@/lib/obsidian-canvas/canvasParser';
@@ -29,6 +29,7 @@ import {
 import { nextScratchName } from '@/lib/scratch/naming';
 import { imageDataUri, localFileSrc, previewKind } from '@/lib/media/preview';
 import { appendGitignoreEntry, toGitignoreEntry } from '@/lib/git/gitignore';
+import { resolveGitStatus } from '@/lib/git/resolveGitStatus';
 import { newItemParentDir } from '@/lib/explorer/newItemTarget';
 import {
   joinProjectPath,
@@ -75,17 +76,6 @@ export const CONTEXT_BOUND_COMMANDS: Record<string, string> = {
   'markdown.find-references': 'Put the cursor on an entity in the editor, then press Alt+F7.',
   'markdown.extract-section': 'Put the cursor in the section you want to extract, in the editor.',
 };
-
-/** Maps a git-status entry's raw status string onto the tree's narrower badge set. */
-function resolveGitStatus(relativePath: string, statuses: GitFileStatus[]): FileNode['gitStatus'] {
-  const entry = statuses.find((s) => s.path === relativePath);
-  if (!entry) return undefined;
-  if (entry.status === 'untracked' || entry.status === 'added') return 'added';
-  if (entry.status === 'modified') return 'modified';
-  if (entry.status === 'deleted') return 'deleted';
-  if (entry.status === 'ignored') return 'ignored';
-  return undefined;
-}
 
 function relativeToRoot(path: string, rootPath: string): string {
   const root = rootPath.endsWith('/') ? rootPath : rootPath + '/';
