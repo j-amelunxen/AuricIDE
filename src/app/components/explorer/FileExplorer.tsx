@@ -142,7 +142,16 @@ function getFileIcon(name: string): { icon: string; color?: string } {
     case 'gif':
     case 'svg':
     case 'webp':
+    case 'bmp':
+    case 'ico':
+    case 'avif':
       return { icon: 'image', color: 'text-green-400' };
+    case 'mp4':
+    case 'webm':
+    case 'mov':
+    case 'm4v':
+    case 'ogv':
+      return { icon: 'video_file', color: 'text-purple-400' };
     case 'zip':
     case 'tar':
     case 'gz':

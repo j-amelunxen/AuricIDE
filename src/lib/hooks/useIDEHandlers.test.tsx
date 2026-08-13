@@ -9,6 +9,7 @@ import { defaultCommands } from '@/lib/commands/registry';
 const mockReadDirectory = vi.fn();
 const mockOpenFolderDialog = vi.fn();
 const mockReadFile = vi.fn();
+const mockReadFileBase64 = vi.fn();
 const mockWriteFile = vi.fn();
 const mockCreateDirectory = vi.fn();
 const mockListAllFiles = vi.fn();
@@ -20,6 +21,7 @@ vi.mock('@/lib/tauri/fs', () => ({
   readDirectory: (...args: unknown[]) => mockReadDirectory(...args),
   openFolderDialog: () => mockOpenFolderDialog(),
   readFile: (...args: unknown[]) => mockReadFile(...args),
+  readFileBase64: (...args: unknown[]) => mockReadFileBase64(...args),
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
   createDirectory: (...args: unknown[]) => mockCreateDirectory(...args),
   listAllFiles: (...args: unknown[]) => mockListAllFiles(...args),
@@ -101,6 +103,7 @@ describe('useIDEHandlers', () => {
     setFindInFilesOpen: vi.fn(),
     setEditorContent: vi.fn(),
     setImageData: vi.fn(),
+    setVideoSrc: vi.fn(),
     setPdfData: vi.fn(),
     setMindmapData: vi.fn(),
     setDiffContent: vi.fn(),
@@ -1284,6 +1287,46 @@ describe('useIDEHandlers', () => {
       await result.current.loadTabContent('/project/notes.md');
 
       expect(mockState.setEditorContent).not.toHaveBeenCalled();
+    });
+
+    it('loadTabContent wraps a png as a data URI the image viewer can paint', async () => {
+      mockActiveTabId = '/project/shot.png';
+      mockReadFileBase64.mockResolvedValue('iVBORw0KGgo');
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.loadTabContent('/project/shot.png');
+
+      expect(mockReadFileBase64).toHaveBeenCalledWith('/project/shot.png');
+      expect(mockState.setImageData).toHaveBeenCalledWith('data:image/png;base64,iVBORw0KGgo');
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it('loadTabContent wraps jpeg and gif with their real mime types', async () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      mockActiveTabId = '/project/photo.jpg';
+      mockReadFileBase64.mockResolvedValue('jpgbytes');
+      await result.current.loadTabContent('/project/photo.jpg');
+      expect(mockState.setImageData).toHaveBeenCalledWith('data:image/jpeg;base64,jpgbytes');
+
+      mockActiveTabId = '/project/anim.gif';
+      mockReadFileBase64.mockResolvedValue('gifbytes');
+      await result.current.loadTabContent('/project/anim.gif');
+      expect(mockState.setImageData).toHaveBeenCalledWith('data:image/gif;base64,gifbytes');
+    });
+
+    it('loadTabContent streams a video instead of reading it as text', async () => {
+      mockActiveTabId = '/project/clip.mp4';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.loadTabContent('/project/clip.mp4');
+
+      expect(mockState.setVideoSrc).toHaveBeenCalled();
+      const src = (mockState.setVideoSrc as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(typeof src).toBe('string');
+      expect(src).toContain('clip.mp4');
+      expect(mockReadFile).not.toHaveBeenCalled();
+      expect(mockState.setImageData).toHaveBeenCalledWith(null);
     });
   });
 

@@ -27,6 +27,7 @@ import {
   type FileEntry,
 } from '@/lib/tauri/fs';
 import { nextScratchName } from '@/lib/scratch/naming';
+import { imageDataUri, localFileSrc, previewKind } from '@/lib/media/preview';
 import { appendGitignoreEntry, toGitignoreEntry } from '@/lib/git/gitignore';
 import { newItemParentDir } from '@/lib/explorer/newItemTarget';
 import {
@@ -205,32 +206,44 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.setProjectFiles([]);
     state.setEditorContent('');
     state.setImageData(null);
+    state.setVideoSrc(null);
     state.setPdfData(null);
     state.setMindmapData(null);
     state.setDiffContent(null);
   }, [state]);
 
-  // Loads a tab's file into the viewer states (editor / image / pdf / mindmap /
-  // canvas). Driven by the activeTabId effect in useIDEActions — the single
-  // owner of content loading, so tab clicks and tab closes update the view
-  // exactly like tree clicks do.
+  // Loads a tab's file into the viewer states (editor / image / video / pdf /
+  // mindmap / canvas). Driven by the activeTabId effect in useIDEActions — the
+  // single owner of content loading, so tab clicks and tab closes update the
+  // view exactly like tree clicks do.
   const loadTabContent = useCallback(
     async (path: string) => {
-      const ext = path.split('.').pop()?.toLowerCase();
-      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext || '')) {
+      const kind = previewKind(path);
+      if (kind === 'image') {
         const data = await readFileBase64(path);
         // Guard: user may have switched tabs while the file was loading
         if (useStore.getState().activeTabId !== path) return;
-        state.setImageData(data);
+        state.setImageData(imageDataUri(data, path));
+        state.setVideoSrc(null);
         state.setPdfData(null);
         state.setEditorContent('');
         state.setMindmapData(null);
-      } else if (ext === 'pdf') {
+      } else if (kind === 'video') {
+        const src = await localFileSrc(path);
+        // Guard: user may have switched tabs while the file was loading
+        if (useStore.getState().activeTabId !== path) return;
+        state.setVideoSrc(src);
+        state.setImageData(null);
+        state.setPdfData(null);
+        state.setEditorContent('');
+        state.setMindmapData(null);
+      } else if (kind === 'pdf') {
         const data = await readFileBase64(path);
         // Guard: user may have switched tabs while the file was loading
         if (useStore.getState().activeTabId !== path) return;
         state.setPdfData(data);
         state.setImageData(null);
+        state.setVideoSrc(null);
         state.setEditorContent('');
         state.setMindmapData(null);
       } else {
@@ -239,6 +252,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         if (useStore.getState().activeTabId !== path) return;
         state.setEditorContent(content);
         state.setImageData(null);
+        state.setVideoSrc(null);
         state.setPdfData(null);
         if (path.endsWith('.mindmap.md')) {
           const { parseMindmapMarkdown } = await import('@/lib/mindmap/mindmapParser');
@@ -439,6 +453,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.setProjectFiles([]);
     state.setEditorContent('');
     state.setImageData(null);
+    state.setVideoSrc(null);
     state.setPdfData(null);
     state.setMindmapData(null);
     state.setDiffContent(null);
