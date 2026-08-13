@@ -21,10 +21,42 @@ pnpm test:e2e         # Playwright E2E
 pnpm lint             # ESLint
 pnpm format:check     # Prettier check
 pnpm tauri:dev        # Full desktop app (Rust + Next.js)
+pnpm build:production # Build the .app and install it to /Applications
 pnpm tauri:test       # Rust unit tests
 pnpm tauri:clippy     # Rust linter
 pnpm check:all        # Everything at once
 ```
+
+### The installed app vs. the dev build
+
+`pnpm build:production` (`scripts/build-production.sh`) produces the real macOS
+bundle and puts it in `/Applications`, so the IDE can live in the Dock instead
+of only starting through `pnpm tauri:dev`. Pass `--no-install` to keep the
+bundle in `src-tauri/target/release`, `--dmg` for a disk image, `--open` to
+launch it afterwards.
+
+Both builds are meant to be the same install, and that takes two things:
+
+- **Backend state already agrees.** Every store resolves from
+  `app_data_dir()`, which Tauri derives from the `identifier` in
+  `tauri.conf.json` — one string, both builds, so both land in
+  `~/Library/Application Support/com.auricide.ide`. The build script checks the
+  bundle it just produced really carries that identifier; a mismatch there is
+  what makes an app open looking like a fresh install.
+- **`localStorage` does not, so it is mirrored.** WebKit scopes it by data
+  store (`~/Library/WebKit/auric-ide` for the bare dev binary,
+  `~/Library/WebKit/<identifier>` for the bundle) and by page origin
+  (`http://localhost:41873` vs `tauri://localhost`). Neither is ours to align,
+  so `webview_prefs` (Rust) and `sharedPrefs.ts` (frontend) keep the values in
+  `webview-prefs.json` next to the other stores. `SharedPrefsGate` reconciles
+  before the first render, because the theme, the agent spawn defaults and the
+  skill sources are all read synchronously as their panels mount.
+
+The file is the source of truth once an origin has been seeded, absences
+included — otherwise a preference cleared in one build would be handed back by
+the other. The very first run seeds it from whichever webview store was written
+to most recently, so which build the user happens to open first does not decide
+whose settings survive.
 
 ### Running a Single Test
 

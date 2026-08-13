@@ -17,6 +17,7 @@ mod schedules;
 mod themes;
 mod utf8_stream;
 mod video_import;
+mod webview_prefs;
 
 use agents::AgentManagerState;
 use database::{
@@ -2299,6 +2300,15 @@ pub fn run() {
                 Err(error) => eprintln!("Notification inbox unavailable: {error}"),
             }
 
+            // The webview's own localStorage is scoped by data store and page
+            // origin, neither of which matches between the dev binary and the
+            // bundled app. Mirroring it here puts it on the same footing as
+            // everything else the backend keeps: one file, one identifier.
+            let webview_prefs_path = webview_prefs::prefs_path_in(
+                &app.path().app_data_dir().map_err(|e| e.to_string())?,
+            );
+            app.manage(webview_prefs::WebviewPrefsState::new(webview_prefs_path));
+
             let starred_projects_path = app
                 .path()
                 .app_data_dir()
@@ -2451,6 +2461,9 @@ pub fn run() {
             recent_projects::starred_projects_add,
             recent_projects::starred_projects_remove,
             recent_projects::starred_projects_update_settings,
+            webview_prefs::webview_prefs_sync,
+            webview_prefs::webview_prefs_set,
+            webview_prefs::webview_prefs_remove,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,

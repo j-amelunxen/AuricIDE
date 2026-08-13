@@ -1,7 +1,7 @@
 import type { ThemeDefinition } from './types';
 import { allManagedCssProps, buildCssBag } from './tokenMap';
 import { BUILTIN_IDS } from './builtins';
-import { writeSnapshot } from './storage';
+import { readSnapshot, readStoredThemeId, writeSnapshot } from './storage';
 
 /**
  * Apply a Theme to <html>:
@@ -39,6 +39,36 @@ export function applyTheme(theme: ThemeDefinition): void {
   }
 
   writeSnapshot(bag);
+}
+
+/**
+ * Re-run what the pre-paint boot script does, from whatever the snapshot holds
+ * now. The script in the document head fires before the shared preferences have
+ * been reconciled, so the first launch of a build whose origin never held them
+ * paints the default colours; this puts the user's theme back without waiting
+ * for the theme registry to load.
+ *
+ * It only reads — the snapshot stays exactly as `applyTheme` left it.
+ */
+export function applyStoredSnapshot(): void {
+  if (typeof document === 'undefined') return;
+
+  const bag = readSnapshot();
+  if (!bag) return;
+
+  const root = document.documentElement;
+  for (const [prop, value] of Object.entries(bag)) {
+    root.style.setProperty(prop, value);
+  }
+
+  const id = readStoredThemeId();
+  if (!id) return;
+  root.dataset.auricTheme = id;
+  if (BUILTIN_IDS.has(id)) {
+    root.dataset.accent = id;
+  } else {
+    delete root.dataset.accent;
+  }
 }
 
 /** Remove every CSS property this module might have set. */

@@ -656,7 +656,10 @@ fn read_legacy_starred_sqlite(path: &Path) -> Vec<StarredProject> {
     serde_json::from_str::<Vec<StarredProject>>(&decoded).unwrap_or_default()
 }
 
-fn decode_webkit_value(value: &[u8]) -> String {
+/// WebKit stores a `localStorage` value as UTF-16 when it wrote it that way and
+/// as plain UTF-8 otherwise, with no flag to say which. Shared with
+/// [`crate::webview_prefs`], which reads the same tables.
+pub(crate) fn decode_webkit_value(value: &[u8]) -> String {
     if value.starts_with(&[0xff, 0xfe]) || value.iter().skip(1).step_by(2).all(|byte| *byte == 0) {
         let offset = if value.starts_with(&[0xff, 0xfe]) {
             2
