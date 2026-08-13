@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
 import * as nativeStarredProjects from '../tauri/starredProjects';
 import type { PermissionMode } from '../tauri/agents';
+import { normalizeWheelSlots } from '../quickAccess/wheel';
 
 const STORAGE_KEY = 'auric-starred-projects';
 const MAX_STARRED = 50;
@@ -56,6 +57,8 @@ export interface StarredProjectSettings {
   skills: QuickAccessSkill[];
   /** Absent on older callers — keep the record's existing list in that case. */
   combos?: QuickAccessCombo[];
+  /** Absent — keep the record's existing wheel. */
+  wheelSlots?: (string | null)[];
 }
 
 export interface StarredProject {
@@ -74,6 +77,11 @@ export interface StarredProject {
    * {@link quickAccessCombos}.
    */
   combos?: QuickAccessCombo[];
+  /**
+   * Skill ids on the radial wheel, by slot. Older records have no key — read
+   * through {@link quickAccessWheelSlots}.
+   */
+  wheelSlots?: (string | null)[];
 }
 
 export function quickAccessSkills(project: StarredProject): QuickAccessSkill[] {
@@ -82,6 +90,22 @@ export function quickAccessSkills(project: StarredProject): QuickAccessSkill[] {
 
 export function quickAccessCombos(project: StarredProject): QuickAccessCombo[] {
   return project.combos ?? [];
+}
+
+export function quickAccessWheelSlots(project: StarredProject): (string | null)[] {
+  return project.wheelSlots ?? [];
+}
+
+function wheelIdsForSettings(
+  skills: QuickAccessSkill[],
+  combos: QuickAccessCombo[] | undefined
+): string[] {
+  const ids = skills.map((skill) => skill.id);
+  for (const entry of combos ?? []) {
+    ids.push(`combo:${entry.id}`);
+    for (const step of entry.steps) ids.push(step.id);
+  }
+  return ids;
 }
 
 /**
@@ -109,6 +133,7 @@ export interface StarredProjectsSlice {
   setStarredProjectIcon: (path: string, icon: ProjectIconOverride | undefined) => void;
   setStarredProjectSkills: (path: string, skills: QuickAccessSkill[]) => void;
   setStarredProjectCombos: (path: string, combos: QuickAccessCombo[]) => void;
+  setStarredProjectWheelSlots: (path: string, wheelSlots: (string | null)[]) => void;
 }
 
 function loadLegacyProjects(): StarredProject[] {
@@ -218,6 +243,10 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
             icon: settings.icon,
             skills: settings.skills,
             combos: settings.combos ?? p.combos,
+            wheelSlots: normalizeWheelSlots(
+              settings.wheelSlots ?? p.wheelSlots,
+              wheelIdsForSettings(settings.skills, settings.combos ?? p.combos)
+            ),
           }
         : p
     );
@@ -241,6 +270,7 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
       icon,
       skills: quickAccessSkills(target),
       combos: quickAccessCombos(target),
+      wheelSlots: quickAccessWheelSlots(target),
     });
   },
 
@@ -251,6 +281,7 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
       icon: target.icon,
       skills,
       combos: quickAccessCombos(target),
+      wheelSlots: quickAccessWheelSlots(target),
     });
   },
 
@@ -261,6 +292,18 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
       icon: target.icon,
       skills: quickAccessSkills(target),
       combos,
+      wheelSlots: quickAccessWheelSlots(target),
+    });
+  },
+
+  setStarredProjectWheelSlots: (path, wheelSlots) => {
+    const target = get().starredProjects.find((p) => p.path === path);
+    if (!target) return;
+    get().updateStarredProjectSettings(path, {
+      icon: target.icon,
+      skills: quickAccessSkills(target),
+      combos: quickAccessCombos(target),
+      wheelSlots,
     });
   },
 

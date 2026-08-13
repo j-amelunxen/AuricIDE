@@ -20,6 +20,7 @@ const MAX_STARRED_PROJECTS: usize = 50;
 const MAX_SKILLS_PER_PROJECT: usize = 20;
 const MAX_COMBOS_PER_PROJECT: usize = 20;
 const MAX_STEPS_PER_COMBO: usize = 8;
+const WHEEL_SLOT_COUNT: usize = 6;
 const LEGACY_KEY: &str = "auric-recent-projects";
 const LEGACY_STARRED_KEY: &str = "auric-starred-projects";
 
@@ -88,6 +89,9 @@ pub struct StarredProjectSettings {
     pub skills: Vec<QuickAccessSkill>,
     #[serde(default)]
     pub combos: Vec<QuickAccessCombo>,
+    /// Missing means "keep the record's wheel, then drop ids that left skills".
+    #[serde(default)]
+    pub wheel_slots: Option<Vec<Option<String>>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -110,6 +114,9 @@ pub struct StarredProject {
     pub skills: Vec<QuickAccessSkill>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combos: Vec<QuickAccessCombo>,
+    /// Skill ids on the radial wheel, by slot. Null is an empty plus-slot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wheel_slots: Vec<Option<String>>,
 }
 
 impl StarredProject {
@@ -132,6 +139,9 @@ impl StarredProject {
         }
         if self.combos.is_empty() {
             self.combos = other.combos;
+        }
+        if self.wheel_slots.is_empty() {
+            self.wheel_slots = other.wheel_slots;
         }
         if self.name.trim().is_empty() {
             self.name = other.name;
@@ -422,6 +432,42 @@ fn normalize_skills(skills: Vec<QuickAccessSkill>) -> Vec<QuickAccessSkill> {
         .collect()
 }
 
+fn known_wheel_ids(project: &StarredProject) -> std::collections::HashSet<String> {
+    let mut ids: std::collections::HashSet<String> = project
+        .skills
+        .iter()
+        .map(|skill| skill.id.clone())
+        .collect();
+    for combo in &project.combos {
+        ids.insert(format!("combo:{}", combo.id));
+        for step in &combo.steps {
+            ids.insert(step.id.clone());
+        }
+    }
+    ids
+}
+
+fn normalize_wheel_slots(
+    slots: Vec<Option<String>>,
+    skill_ids: &std::collections::HashSet<String>,
+) -> Vec<Option<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = vec![None; WHEEL_SLOT_COUNT];
+    for (index, slot) in slots.into_iter().take(WHEEL_SLOT_COUNT).enumerate() {
+        let Some(id) = slot else { continue };
+        let id = id.trim().to_string();
+        if id.is_empty() || !skill_ids.contains(&id) || !seen.insert(id.clone()) {
+            continue;
+        }
+        out[index] = Some(id);
+    }
+    if out.iter().all(Option::is_none) {
+        Vec::new()
+    } else {
+        out
+    }
+}
+
 fn normalize_combos(combos: Vec<QuickAccessCombo>) -> Vec<QuickAccessCombo> {
     let mut seen = std::collections::HashSet::new();
     combos
@@ -455,6 +501,11 @@ fn apply_starred_settings(
     target.icon = settings.icon;
     target.skills = normalize_skills(settings.skills);
     target.combos = normalize_combos(settings.combos);
+    let known_ids = known_wheel_ids(target);
+    let incoming = settings
+        .wheel_slots
+        .unwrap_or_else(|| target.wheel_slots.clone());
+    target.wheel_slots = normalize_wheel_slots(incoming, &known_ids);
     true
 }
 
@@ -477,6 +528,7 @@ fn push_starred_project(projects: &mut Vec<StarredProject>, path: String, starre
         icon: None,
         skills: Vec::new(),
         combos: Vec::new(),
+        wheel_slots: Vec::new(),
     });
 }
 
@@ -725,6 +777,7 @@ mod tests {
             icon: None,
             skills: Vec::new(),
             combos: Vec::new(),
+            wheel_slots: Vec::new(),
         }
     }
 
@@ -868,6 +921,7 @@ mod tests {
                 }),
                 skills: vec![skill("seo")],
                 combos: Vec::new(),
+                wheel_slots: None,
             },
         );
 
@@ -996,5 +1050,89 @@ mod tests {
 
         assert!(applied);
         assert_eq!(projects[0].combos[0].id, "blog-write");
+    }
+
+    #[test]
+    fn apply_settings_writes_wheel_slots_and_drops_unknown_ids() {
+        let mut projects = vec![starred("/a", 1)];
+        projects[0].skills = vec![skill("research")];
+
+        let applied = apply_starred_settings(
+            &mut projects,
+            "/a",
+            StarredProjectSettings {
+                skills: vec![skill("research")],
+                wheel_slots: Some(vec![None, Some("research".into()), Some("gone".into())]),
+                ..StarredProjectSettings::default()
+            },
+        );
+
+        assert!(applied);
+        assert_eq!(projects[0].wheel_slots[1].as_deref(), Some("research"));
+        assert!(
+            projects[0]
+                .wheel_slots
+                .iter()
+                .filter(|s| s.is_some())
+                .count()
+                == 1
+        );
+    }
+
+    #[test]
+    fn apply_settings_keeps_the_wheel_when_the_payload_omits_it() {
+        let mut projects = vec![starred("/a", 1)];
+        projects[0].skills = vec![skill("research")];
+        projects[0].wheel_slots = vec![Some("research".into())];
+
+        apply_starred_settings(
+            &mut projects,
+            "/a",
+            StarredProjectSettings {
+                skills: vec![skill("research")],
+                ..StarredProjectSettings::default()
+            },
+        );
+
+        assert_eq!(projects[0].wheel_slots[0].as_deref(), Some("research"));
+    }
+
+    #[test]
+    fn apply_settings_scrubs_wheel_slots_when_the_skill_is_removed() {
+        let mut projects = vec![starred("/a", 1)];
+        projects[0].skills = vec![skill("research")];
+        projects[0].wheel_slots = vec![Some("research".into())];
+
+        apply_starred_settings(
+            &mut projects,
+            "/a",
+            StarredProjectSettings {
+                skills: Vec::new(),
+                ..StarredProjectSettings::default()
+            },
+        );
+
+        assert!(projects[0].wheel_slots.is_empty());
+    }
+
+    #[test]
+    fn apply_settings_keeps_a_combo_on_the_wheel() {
+        let mut projects = vec![starred("/a", 1)];
+
+        let applied = apply_starred_settings(
+            &mut projects,
+            "/a",
+            StarredProjectSettings {
+                combos: vec![combo("blog-write", vec![skill("finalize")])],
+                wheel_slots: Some(vec![Some("combo:blog-write".into())]),
+                ..StarredProjectSettings::default()
+            },
+        );
+
+        assert!(applied);
+        assert_eq!(
+            projects[0].wheel_slots[0].as_deref(),
+            Some("combo:blog-write")
+        );
     }
 }
