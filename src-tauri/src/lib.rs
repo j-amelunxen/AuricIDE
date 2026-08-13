@@ -3369,4 +3369,32 @@ mod tests {
         let err = search_in_files_impl(missing.to_str().unwrap(), "needle", true, 500).unwrap_err();
         assert!(err.contains("Invalid root path"));
     }
+
+    #[test]
+    fn git_status_reports_an_ignored_directory_itself() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        fs::write(dir.path().join(".gitignore"), "build/\nsecret.txt\n").unwrap();
+        fs::create_dir(dir.path().join("build")).unwrap();
+        fs::write(dir.path().join("build").join("out.js"), "x").unwrap();
+        fs::write(dir.path().join("secret.txt"), "s").unwrap();
+
+        let statuses = git_status_impl(&path).unwrap();
+        let ignored: Vec<&str> = statuses
+            .iter()
+            .filter(|s| s.status == "ignored")
+            .map(|s| s.path.as_str())
+            .collect();
+
+        assert!(
+            ignored.iter().any(|p| *p == "secret.txt"),
+            "ignored files must appear, got {ignored:?}"
+        );
+        // libgit2 reports ignored directories with a trailing slash. The
+        // explorer's relative paths do not — resolveGitStatus strips it.
+        assert!(
+            ignored.contains(&"build/"),
+            "ignored directories must appear as themselves, got {ignored:?}"
+        );
+    }
 }

@@ -538,6 +538,23 @@ describe('useIDEHandlers', () => {
       ]);
     });
 
+    it('greys out a gitignored folder when git reports it with a trailing slash', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [{ path: 'build/', status: 'ignored' }];
+      mockReadDirectory.mockResolvedValue([
+        { name: 'build', path: '/p/build', isDirectory: true },
+        { name: 'src', path: '/p/src', isDirectory: true },
+      ]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefresh('/p', true);
+
+      expect(mockState.setFileTree).toHaveBeenCalledWith([
+        expect.objectContaining({ path: '/p/build', gitStatus: 'ignored' }),
+        expect.objectContaining({ path: '/p/src', gitStatus: undefined }),
+      ]);
+    });
+
     it('leaves gitStatus undefined for untouched children', async () => {
       mockState.rootPath = '/p';
       mockFileStatuses = [];
