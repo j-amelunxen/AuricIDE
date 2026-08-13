@@ -224,6 +224,10 @@ export function ExcalidrawViewer({ content, filePath, onReload }: ExcalidrawView
       {parsed ? (
         <div className="flex-1 overflow-hidden">
           <ExcalidrawCanvas
+            // Excalidraw only applies initialData on mount. Path + content both
+            // belong in the key: the tab flips first, the file body a tick later.
+            key={`${filePath}:${content}`}
+            sceneKey={`${filePath}:${content}`}
             elements={parsed.elements}
             appState={parsed.appState}
             files={parsed.files}

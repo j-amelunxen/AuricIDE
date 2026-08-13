@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ExcalidrawViewer } from './ExcalidrawViewer';
@@ -15,11 +16,13 @@ interface CapturedCanvasProps {
 
 let lastCanvasProps: CapturedCanvasProps | null = null;
 vi.mock('./ExcalidrawCanvas', () => ({
+  // Mirrors @excalidraw/excalidraw: initialData is applied only on mount.
   ExcalidrawCanvas: (props: CapturedCanvasProps) => {
     lastCanvasProps = props;
+    const [scene] = useState(() => props.elements);
     return (
       <div data-testid="excalidraw-canvas" data-view-mode={String(props.viewMode)}>
-        {props.elements.length} elements
+        {scene.length} elements
       </div>
     );
   },
@@ -43,12 +46,24 @@ vi.mock('@/lib/tauri/opener', () => ({
 
 const PROJECT = '/tmp/project';
 const FILE = `${PROJECT}/specs/checkout-flow.excalidraw`;
+const FILE_B = `${PROJECT}/specs/onboarding.excalidraw`;
 
 const VALID_CONTENT = JSON.stringify({
   type: 'excalidraw',
   version: 2,
   elements: [{ id: 'r1', type: 'rectangle' }],
   appState: { viewBackgroundColor: '#fff' },
+  files: {},
+});
+
+const SCENE_B = JSON.stringify({
+  type: 'excalidraw',
+  version: 2,
+  elements: [
+    { id: 'e1', type: 'ellipse' },
+    { id: 'e2', type: 'arrow' },
+  ],
+  appState: { viewBackgroundColor: '#000' },
   files: {},
 });
 
@@ -74,6 +89,19 @@ describe('ExcalidrawViewer', () => {
   it('renders the canvas for a valid .excalidraw file', () => {
     render(<ExcalidrawViewer content={VALID_CONTENT} filePath={FILE} />);
     expect(screen.getByTestId('excalidraw-canvas')).toHaveTextContent('1 elements');
+  });
+
+  it('shows the new diagram when another .excalidraw tab becomes active', () => {
+    const { rerender } = render(<ExcalidrawViewer content={VALID_CONTENT} filePath={FILE} />);
+    expect(screen.getByTestId('excalidraw-canvas')).toHaveTextContent('1 elements');
+    expect(screen.getByText('checkout-flow.excalidraw')).toBeInTheDocument();
+
+    // Tab switch updates the path first; the file body arrives a tick later.
+    rerender(<ExcalidrawViewer content={VALID_CONTENT} filePath={FILE_B} />);
+    rerender(<ExcalidrawViewer content={SCENE_B} filePath={FILE_B} />);
+
+    expect(screen.getByText('onboarding.excalidraw')).toBeInTheDocument();
+    expect(screen.getByTestId('excalidraw-canvas')).toHaveTextContent('2 elements');
   });
 
   it('shows an error panel instead of crashing on invalid JSON', () => {
