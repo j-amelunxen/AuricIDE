@@ -13,14 +13,18 @@ import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSourc
 import {
   quickAccessCombos,
   quickAccessSkills,
+  quickAccessWheelSlots,
   type ProjectIconOverride,
   type QuickAccessCombo,
   type QuickAccessSkill,
   type StarredProject,
 } from '@/lib/store/starredProjectsSlice';
+import { launchEntries, wheelSlotId } from '@/lib/quickAccess/launchSkills';
+import { normalizeWheelSlots } from '@/lib/quickAccess/wheel';
 import { QuickAccessIconPicker } from './QuickAccessIconPicker';
 import { QuickAccessSkillsEditor } from './QuickAccessSkillsEditor';
 import { QuickAccessCombosEditor } from './QuickAccessCombosEditor';
+import { QuickAccessWheelEditor } from './QuickAccessWheelEditor';
 
 interface QuickAccessSettingsDialogProps {
   project: StarredProject;
@@ -45,6 +49,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
   const [icon, setIcon] = useState<ProjectIconOverride | undefined>(project.icon);
   const [skills, setSkills] = useState<QuickAccessSkill[]>(quickAccessSkills(project));
   const [combos, setCombos] = useState<QuickAccessCombo[]>(quickAccessCombos(project));
+  const [wheelSlots, setWheelSlots] = useState<(string | null)[]>(quickAccessWheelSlots(project));
   const [announcement, setAnnouncement] = useState('');
   const { confirm, confirmDialog } = useConfirm();
   const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
@@ -77,12 +82,22 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
     };
   }, [project.path]);
 
+  // The skills list is a draft, so what the wheel may hold moves with it. Both
+  // sides of the dirty check are normalised against their own set of ids —
+  // otherwise deleting a slotted skill would read as an edit to the wheel too.
+  const entries = launchEntries(skills, combos);
+  const draftSlots = normalizeWheelSlots(wheelSlots, entries.map(wheelSlotId));
+
   const dirty =
-    JSON.stringify({ icon, skills, combos }) !==
+    JSON.stringify({ icon, skills, combos, wheelSlots: draftSlots }) !==
     JSON.stringify({
       icon: project.icon,
       skills: quickAccessSkills(project),
       combos: quickAccessCombos(project),
+      wheelSlots: normalizeWheelSlots(
+        quickAccessWheelSlots(project),
+        launchEntries(quickAccessSkills(project), quickAccessCombos(project)).map(wheelSlotId)
+      ),
     });
   const incompleteSkill = skills.some((skill) => !skill.label.trim() || !skill.prompt.trim());
   const incompleteCombo = combos.some(
@@ -131,6 +146,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
           prompt: step.prompt.trim(),
         })),
       })),
+      wheelSlots: draftSlots,
     });
     onClose();
   };
@@ -183,6 +199,13 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
           discovered={discovered}
           discoveryReady={discoveryReady}
           onChange={setCombos}
+          onAnnounce={setAnnouncement}
+        />
+
+        <QuickAccessWheelEditor
+          entries={entries}
+          slots={draftSlots}
+          onChange={setWheelSlots}
           onAnnounce={setAnnouncement}
         />
 
