@@ -1,9 +1,16 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // Capture the attachCustomKeyEventHandler callback
 let keyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
 let resizeHandler: ((size: { rows: number; cols: number }) => void) | null = null;
+
+const mockTerminalOptions: unknown[] = [];
+const mockGetSelection = vi.fn().mockReturnValue('');
+const mockHasSelection = vi.fn().mockReturnValue(false);
+const mockSelectAll = vi.fn();
+const mockPaste = vi.fn();
 
 const mockTerminal = {
   loadAddon: vi.fn(),
@@ -18,6 +25,10 @@ const mockTerminal = {
     mockTerminal.rows = rows;
   }),
   reset: vi.fn(),
+  getSelection: () => mockGetSelection(),
+  hasSelection: () => mockHasSelection(),
+  selectAll: () => mockSelectAll(),
+  paste: (text: string) => mockPaste(text),
   attachCustomKeyEventHandler: vi.fn((handler: (event: KeyboardEvent) => boolean) => {
     keyEventHandler = handler;
   }),
@@ -27,7 +38,8 @@ const mockTerminal = {
 };
 
 vi.mock('@xterm/xterm', () => ({
-  Terminal: function () {
+  Terminal: function (options?: unknown) {
+    mockTerminalOptions.push(options);
     return mockTerminal;
   },
 }));
@@ -130,8 +142,20 @@ describe('XtermTerminal', () => {
     pasteSendText = null;
     dropSendText = null;
     ptyResizeCb = null;
+    mockTerminalOptions.length = 0;
+    mockGetSelection.mockReturnValue('');
+    mockHasSelection.mockReturnValue(false);
+    mockSelectAll.mockReset();
+    mockPaste.mockReset();
     mockTerminal.cols = 80;
     mockTerminal.rows = 24;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+        readText: vi.fn().mockResolvedValue('pasted line'),
+      },
+    });
   });
 
   it('registers a custom key event handler', () => {
@@ -163,13 +187,41 @@ describe('XtermTerminal', () => {
     expect(mockWriteToShell).not.toHaveBeenCalled();
   });
 
-  it('does not intercept CMD+other keys', () => {
+  it('does not intercept Cmd+C when nothing is selected (SIGINT still reaches the PTY)', () => {
     render(<XtermTerminal id="test-session" />);
 
     const event = new KeyboardEvent('keydown', { key: 'c', metaKey: true });
     const result = keyEventHandler!(event);
 
     expect(result).toBe(true);
+  });
+
+  it('copies on Cmd+C when there is a selection', async () => {
+    mockHasSelection.mockReturnValue(true);
+    mockGetSelection.mockReturnValue('picked');
+    render(<XtermTerminal id="test-session" />);
+
+    const event = new KeyboardEvent('keydown', { key: 'c', metaKey: true });
+    expect(keyEventHandler!(event)).toBe(false);
+    await vi.waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('picked'));
+  });
+
+  it('selects all on Cmd+A', () => {
+    render(<XtermTerminal id="test-session" />);
+    const event = new KeyboardEvent('keydown', { key: 'a', metaKey: true });
+    expect(keyEventHandler!(event)).toBe(false);
+    expect(mockSelectAll).toHaveBeenCalled();
+  });
+
+  it('enables Option-click selection and snappier wheel scrolling', () => {
+    render(<XtermTerminal id="test-session" />);
+    expect(mockTerminalOptions[0]).toEqual(
+      expect.objectContaining({
+        macOptionClickForcesSelection: true,
+        scrollSensitivity: 3,
+        smoothScrollDuration: 0,
+      })
+    );
   });
 
   it('loads only the FitAddon on open', () => {
@@ -280,6 +332,31 @@ describe('XtermTerminal', () => {
       unmount();
       expect(mockDetachImagePaste).toHaveBeenCalledTimes(1);
       expect(mockDetachFileDrop).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('context menu', () => {
+    it('offers copy/paste/select-all on right-click when text is selected', () => {
+      mockGetSelection.mockReturnValue('picked');
+      const { container } = render(<XtermTerminal id="test-session" />);
+      fireEvent.contextMenu(container.querySelector('[data-testid="xterm"]')!);
+      expect(screen.getByText('Copy')).toBeInTheDocument();
+      expect(screen.getByText('Paste')).toBeInTheDocument();
+      expect(screen.getByText('Select All')).toBeInTheDocument();
+    });
+
+    it('offers paste without a selection', () => {
+      const { container } = render(<XtermTerminal id="test-session" />);
+      fireEvent.contextMenu(container.querySelector('[data-testid="xterm"]')!);
+      expect(screen.getByText('Paste')).toBeInTheDocument();
+      expect(screen.queryByText('Copy')).not.toBeInTheDocument();
+    });
+
+    it('pastes clipboard text through xterm', async () => {
+      const { container } = render(<XtermTerminal id="test-session" />);
+      fireEvent.contextMenu(container.querySelector('[data-testid="xterm"]')!);
+      await userEvent.click(screen.getByText('Paste'));
+      await vi.waitFor(() => expect(mockPaste).toHaveBeenCalledWith('pasted line'));
     });
   });
 });

@@ -7,7 +7,7 @@ import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
 import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
-import { ContextMenu } from '../ide/ContextMenu';
+import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { agentState, type AgentState } from '@/lib/agents/state';
@@ -15,6 +15,14 @@ import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
+import {
+  TERMINAL_INTERACTION_OPTIONS,
+  buildTerminalMenu,
+  copyText,
+  handleTerminalClipboardKey,
+  readClipboardText,
+  terminalMenuActions,
+} from '@/lib/terminal/interactions';
 
 const EMPTY_ERROR_LOGS: string[] = [];
 
@@ -25,10 +33,14 @@ interface AgentXtermProps {
 
 function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onSelectionSpawnRef = useRef(onSelectionSpawn);
+  useEffect(() => {
+    onSelectionSpawnRef.current = onSelectionSpawn;
+  }, [onSelectionSpawn]);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    selection: string;
+    options: ContextMenuOption[];
   } | null>(null);
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -63,7 +75,9 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
           white: '#ffffff',
         },
         scrollback: 1000,
+        ...TERMINAL_INTERACTION_OPTIONS,
       });
+      term.attachCustomKeyEventHandler((event) => handleTerminalClipboardKey(event, term));
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
@@ -81,16 +95,35 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         fitAddon.fit();
       } catch {}
 
-      // Right-click context menu for selection spawning
+      // Right-click: always show a clipboard menu. Spawn stays a bonus
+      // when there is a selection — never the only entry, and never gated
+      // on already having one (TUI mouse-tracking makes that a dead end).
       const handleContextMenu = (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         const selection = term.getSelection();
-        if (selection) {
-          setContextMenu({ x: e.clientX, y: e.clientY, selection });
-        }
+        setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          options: terminalMenuActions(
+            buildTerminalMenu(selection, !!onSelectionSpawnRef.current),
+            {
+              copy: () => {
+                void copyText(selection);
+              },
+              paste: () => {
+                void readClipboardText().then((text) => {
+                  if (text) term.paste(text);
+                });
+              },
+              selectAll: () => term.selectAll(),
+              spawn: () => onSelectionSpawnRef.current?.(selection),
+            }
+          ),
+        });
       };
-      containerRef.current.addEventListener('contextmenu', handleContextMenu);
+      const host = containerRef.current;
+      host.addEventListener('contextmenu', handleContextMenu);
 
       // Sync PTY + mirror to the settled size BEFORE attaching, so the
       // screen snapshot is laid out for the width it is displayed at.
@@ -167,7 +200,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         detachFileDrop();
         clearTimeout(resizeTimer);
         resizeObserver.disconnect();
-        containerRef.current?.removeEventListener('contextmenu', handleContextMenu);
+        host.removeEventListener('contextmenu', handleContextMenu);
         term.dispose();
       };
     };
@@ -221,16 +254,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          options={[
-            {
-              label: 'Spawn Agent with Selection',
-              icon: 'bolt',
-              action: () => {
-                onSelectionSpawn?.(contextMenu.selection);
-                setContextMenu(null);
-              },
-            },
-          ]}
+          options={contextMenu.options}
           onClose={() => setContextMenu(null)}
         />
       )}

@@ -7,16 +7,24 @@ import { useStore } from '@/lib/store';
 
 // Module-level spies so individual tests can control/inspect behavior
 const mockGetSelection = vi.fn().mockReturnValue('');
+const mockHasSelection = vi.fn().mockReturnValue(false);
+const mockSelectAll = vi.fn();
+const mockPaste = vi.fn();
 const mockWrite = vi.fn();
 const mockFit = vi.fn();
 const mockResize = vi.fn();
 const mockReset = vi.fn();
+const mockTerminalOptions: unknown[] = [];
+let keyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
 
 // Mock xterm.js — AgentXterm dynamically imports these
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     rows = 24;
     cols = 80;
+    constructor(options?: unknown) {
+      mockTerminalOptions.push(options);
+    }
     loadAddon() {}
     open() {}
     write(data: string) {
@@ -24,6 +32,9 @@ vi.mock('@xterm/xterm', () => ({
     }
     onData() {}
     onResize() {}
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
+      keyEventHandler = handler;
+    }
     resize(cols: number, rows: number) {
       this.cols = cols;
       this.rows = rows;
@@ -34,6 +45,15 @@ vi.mock('@xterm/xterm', () => ({
     }
     getSelection() {
       return mockGetSelection();
+    }
+    hasSelection() {
+      return mockHasSelection();
+    }
+    selectAll() {
+      mockSelectAll();
+    }
+    paste(text: string) {
+      mockPaste(text);
     }
     dispose() {}
   },
@@ -429,6 +449,18 @@ describe('AgentTerminalModal', () => {
   describe('context menu', () => {
     beforeEach(() => {
       mockGetSelection.mockReturnValue('');
+      mockHasSelection.mockReturnValue(false);
+      mockSelectAll.mockReset();
+      mockPaste.mockReset();
+      keyEventHandler = null;
+      mockTerminalOptions.length = 0;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: vi.fn().mockResolvedValue(undefined),
+          readText: vi.fn().mockResolvedValue('pasted line'),
+        },
+      });
     });
 
     it('accepts onSelectionSpawn prop without error', () => {
@@ -439,10 +471,22 @@ describe('AgentTerminalModal', () => {
 
     it('does not render context menu by default', () => {
       render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
-      expect(screen.queryByText('Spawn Agent with Selection')).not.toBeInTheDocument();
+      expect(screen.queryByText('Paste')).not.toBeInTheDocument();
     });
 
-    it('shows context menu with selection on right-click', async () => {
+    it('enables Option-click selection and snappier wheel scrolling', async () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(mockTerminalOptions.length).toBeGreaterThan(0));
+      expect(mockTerminalOptions[0]).toEqual(
+        expect.objectContaining({
+          macOptionClickForcesSelection: true,
+          scrollSensitivity: 3,
+          smoothScrollDuration: 0,
+        })
+      );
+    });
+
+    it('shows copy/paste/select-all and spawn when there is a selection', async () => {
       mockGetSelection.mockReturnValue('error on line 42');
       const { container } = render(
         <AgentTerminalModal agent={agent} onClose={vi.fn()} onSelectionSpawn={vi.fn()} />
@@ -450,29 +494,73 @@ describe('AgentTerminalModal', () => {
 
       const xtermContainer = container.querySelector('[data-testid="agent-xterm"]')!;
 
-      // waitFor retries (each wrapped in act), so it waits until setup() attaches
-      // the contextmenu listener and the React state update is flushed.
       await waitFor(() => {
         fireEvent.contextMenu(xtermContainer);
+        expect(screen.getByText('Copy')).toBeInTheDocument();
+        expect(screen.getByText('Paste')).toBeInTheDocument();
+        expect(screen.getByText('Select All')).toBeInTheDocument();
         expect(screen.getByText('Spawn Agent with Selection')).toBeInTheDocument();
       });
     });
 
-    it('does not show context menu when there is no selection', async () => {
+    it('still shows paste and select-all when there is no selection', async () => {
       mockGetSelection.mockReturnValue('');
       const { container } = render(
         <AgentTerminalModal agent={agent} onClose={vi.fn()} onSelectionSpawn={vi.fn()} />
       );
 
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 0));
+      const xtermContainer = container.querySelector('[data-testid="agent-xterm"]')!;
+
+      await waitFor(() => {
+        fireEvent.contextMenu(xtermContainer);
+        expect(screen.getByText('Paste')).toBeInTheDocument();
       });
 
-      act(() => {
-        fireEvent.contextMenu(container.querySelector('[data-testid="agent-xterm"]')!);
-      });
-
+      expect(screen.getByText('Select All')).toBeInTheDocument();
+      expect(screen.queryByText('Copy')).not.toBeInTheDocument();
       expect(screen.queryByText('Spawn Agent with Selection')).not.toBeInTheDocument();
+    });
+
+    it('copies the captured selection from the menu', async () => {
+      mockGetSelection.mockReturnValue('error on line 42');
+      const { container } = render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      const xtermContainer = container.querySelector('[data-testid="agent-xterm"]')!;
+
+      await waitFor(() => {
+        fireEvent.contextMenu(xtermContainer);
+        expect(screen.getByText('Copy')).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByText('Copy'));
+      await waitFor(() =>
+        expect(navigator.clipboard.writeText).toHaveBeenCalledWith('error on line 42')
+      );
+    });
+
+    it('pastes clipboard text through xterm so bracketed-paste stays intact', async () => {
+      const { container } = render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      const xtermContainer = container.querySelector('[data-testid="agent-xterm"]')!;
+
+      await waitFor(() => {
+        fireEvent.contextMenu(xtermContainer);
+        expect(screen.getByText('Paste')).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByText('Paste'));
+      await waitFor(() => expect(mockPaste).toHaveBeenCalledWith('pasted line'));
+    });
+
+    it('selects all from the menu', async () => {
+      const { container } = render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      const xtermContainer = container.querySelector('[data-testid="agent-xterm"]')!;
+
+      await waitFor(() => {
+        fireEvent.contextMenu(xtermContainer);
+        expect(screen.getByText('Select All')).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByText('Select All'));
+      expect(mockSelectAll).toHaveBeenCalled();
     });
 
     it('calls onSelectionSpawn with selected text when menu item is clicked', async () => {
@@ -512,6 +600,25 @@ describe('AgentTerminalModal', () => {
       });
 
       expect(screen.queryByText('Spawn Agent with Selection')).not.toBeInTheDocument();
+    });
+
+    it('copies on Cmd+C when the terminal has a selection', async () => {
+      mockHasSelection.mockReturnValue(true);
+      mockGetSelection.mockReturnValue('picked');
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+
+      await waitFor(() => expect(keyEventHandler).toBeInstanceOf(Function));
+      const event = new KeyboardEvent('keydown', { key: 'c', metaKey: true });
+      expect(keyEventHandler!(event)).toBe(false);
+      await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('picked'));
+    });
+
+    it('selects all on Cmd+A', async () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(keyEventHandler).toBeInstanceOf(Function));
+      const event = new KeyboardEvent('keydown', { key: 'a', metaKey: true });
+      expect(keyEventHandler!(event)).toBe(false);
+      expect(mockSelectAll).toHaveBeenCalled();
     });
   });
 });

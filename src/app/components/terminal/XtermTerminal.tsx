@@ -18,6 +18,15 @@ import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { createRenderKeepAlive } from '@/lib/terminal/renderKeepAlive';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
+import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
+import {
+  TERMINAL_INTERACTION_OPTIONS,
+  buildTerminalMenu,
+  copyText,
+  handleTerminalClipboardKey,
+  readClipboardText,
+  terminalMenuActions,
+} from '@/lib/terminal/interactions';
 
 interface XtermTerminalProps {
   id: string; // Session ID (agent-id or 'main-terminal')
@@ -34,6 +43,11 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
   const promptTemplateRef = useRef<string>(FALLBACK_PROMPT_TEMPLATE);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    options: ContextMenuOption[];
+  } | null>(null);
 
   // Load prompt template from provider on mount
   useEffect(() => {
@@ -70,6 +84,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
         white: '#ffffff',
       },
       allowTransparency: true,
+      ...TERMINAL_INTERACTION_OPTIONS,
     });
 
     const fitAddon = new FitAddon();
@@ -116,8 +131,31 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
         writeToShell(id, promptTemplateRef.current);
         return false;
       }
-      return true;
+      return handleTerminalClipboardKey(event, term);
     });
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const selection = term.getSelection();
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        options: terminalMenuActions(buildTerminalMenu(selection, false), {
+          copy: () => {
+            void copyText(selection);
+          },
+          paste: () => {
+            void readClipboardText().then((text) => {
+              if (text) term.paste(text);
+            });
+          },
+          selectAll: () => term.selectAll(),
+        }),
+      });
+    };
+    const host = containerRef.current;
+    host.addEventListener('contextmenu', handleContextMenu);
 
     const sendText = (data: string) => {
       if (onInput) {
@@ -229,6 +267,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       keepAlive.stop();
       clearTimeout(resizeTimer);
       resizeObserver.disconnect();
+      host.removeEventListener('contextmenu', handleContextMenu);
       term.dispose();
       termRef.current = null;
       xtermUnmounted();
@@ -243,7 +282,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
           Connecting to PTY...
         </div>
       )}
-      <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      <div ref={containerRef} data-testid="xterm" className="h-full w-full overflow-hidden" />
       {isDropTarget && (
         <div
           data-testid="terminal-drop-overlay"
@@ -253,6 +292,14 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
             Drop to insert path
           </span>
         </div>
+      )}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          options={contextMenu.options}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );
