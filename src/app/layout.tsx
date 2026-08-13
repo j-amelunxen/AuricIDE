@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { CrashBoundary, GlobalErrorHandlers } from './components/CrashBoundary';
+import { SharedPrefsGate } from './components/SharedPrefsGate';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -35,7 +36,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} subpixel-antialiased`}>
         <GlobalErrorHandlers />
-        <CrashBoundary>{children}</CrashBoundary>
+        <CrashBoundary>
+          <SharedPrefsGate>{children}</SharedPrefsGate>
+        </CrashBoundary>
       </body>
     </html>
   );

@@ -25,6 +25,7 @@
     "test:e2e": "playwright test",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "build:production": "bash scripts/build-production.sh",
     "tauri:test": "cd src-tauri && cargo test",
     "tauri:clippy": "cd src-tauri && cargo clippy -- -D warnings",
     "tauri:fmt": "cd src-tauri && cargo fmt",

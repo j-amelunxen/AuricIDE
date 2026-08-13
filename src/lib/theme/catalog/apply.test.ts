@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { applyTheme, clearThemeOverrides } from './apply';
+import { applyStoredSnapshot, applyTheme, clearThemeOverrides } from './apply';
 import { getBuiltinTheme } from './builtins';
 import { THEME_SCHEMA_VERSION } from './types';
-import { THEME_SNAPSHOT_KEY } from './storage';
+import { ACCENT_STORAGE_KEY, THEME_SNAPSHOT_KEY, THEME_STORAGE_KEY } from './storage';
 
 describe('applyTheme', () => {
   beforeEach(() => {
@@ -54,5 +54,64 @@ describe('applyTheme', () => {
     expect(raw).toBeTruthy();
     const bag = JSON.parse(raw!);
     expect(bag['--primary']).toBe('#ffb020');
+  });
+});
+
+/**
+ * The pre-paint script in the document head reads the snapshot before anything
+ * else runs. When the shared preferences arrive after that — the first launch
+ * of a build whose origin has never held them — the theme has to be put back on
+ * `<html>` by hand, or the window sits there in the default colours until the
+ * user opens Appearance.
+ */
+describe('applyStoredSnapshot', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    clearThemeOverrides();
+    delete document.documentElement.dataset.accent;
+    delete document.documentElement.dataset.auricTheme;
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    clearThemeOverrides();
+    delete document.documentElement.dataset.accent;
+    delete document.documentElement.dataset.auricTheme;
+  });
+
+  it('puts the stored snapshot back on the root element', () => {
+    localStorage.setItem(THEME_SNAPSHOT_KEY, JSON.stringify({ '--primary': '#ffb020' }));
+
+    applyStoredSnapshot();
+
+    expect(document.documentElement.style.getPropertyValue('--primary')).toBe('#ffb020');
+  });
+
+  it('stamps the stored theme id so the CSS fallback blocks match', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'amber');
+    localStorage.setItem(ACCENT_STORAGE_KEY, 'amber');
+    localStorage.setItem(THEME_SNAPSHOT_KEY, JSON.stringify({ '--primary': '#ffb020' }));
+
+    applyStoredSnapshot();
+
+    expect(document.documentElement.dataset.auricTheme).toBe('amber');
+    expect(document.documentElement.dataset.accent).toBe('amber');
+  });
+
+  /** Re-applying must not rewrite the snapshot it just read. */
+  it('leaves the stored snapshot untouched', () => {
+    const raw = JSON.stringify({ '--primary': '#ffb020' });
+    localStorage.setItem(THEME_SNAPSHOT_KEY, raw);
+
+    applyStoredSnapshot();
+
+    expect(localStorage.getItem(THEME_SNAPSHOT_KEY)).toBe(raw);
+  });
+
+  it('does nothing when no snapshot was stored', () => {
+    applyStoredSnapshot();
+
+    expect(document.documentElement.style.getPropertyValue('--primary')).toBe('');
+    expect(document.documentElement.dataset.auricTheme).toBeUndefined();
   });
 });
