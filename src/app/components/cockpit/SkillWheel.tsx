@@ -81,6 +81,8 @@ interface SkillWheelProps {
   slots: (WheelLaunchEntry | null)[];
   onSlotClick: (index: number) => void;
   onPlusClick: (index: number, clientX: number, clientY: number) => void;
+  /** Right-click on a filled slot: manage what sits there instead of launching it. */
+  onSlotManage: (index: number, clientX: number, clientY: number) => void;
 }
 
 export function SkillWheel({
@@ -91,6 +93,7 @@ export function SkillWheel({
   slots,
   onSlotClick,
   onPlusClick,
+  onSlotManage,
 }: SkillWheelProps) {
   if (phase === 'idle') return null;
   const positions = wheelSlotPositions();
@@ -116,11 +119,20 @@ export function SkillWheel({
             data-wheel-slot={index}
             data-kind={entry?.kind ?? 'empty'}
             aria-label={label}
+            title={entry ? `${wheelEntryName(entry)} — right-click to move or remove` : label}
             disabled={!open}
             onClick={(event) => {
               event.stopPropagation();
               if (mode === 'hold') return;
               if (entry) onSlotClick(index);
+              else onPlusClick(index, event.clientX, event.clientY);
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              // An empty slot has nothing to manage — its plus already is the
+              // one thing a right-click could offer.
+              if (entry) onSlotManage(index, event.clientX, event.clientY);
               else onPlusClick(index, event.clientX, event.clientY);
             }}
             className={`skill-wheel-slot pointer-events-auto absolute flex flex-col items-center gap-0.5 ${
