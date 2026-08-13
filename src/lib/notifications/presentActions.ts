@@ -9,7 +9,7 @@ import type { NotificationAction } from './types';
 
 export interface PresentedAction {
   action: NotificationAction;
-  /** German title on the button. Absent ⇒ enabled. */
+  /** Why the button is disabled. Absent ⇒ enabled. */
   disabledReason?: string;
 }
 
@@ -46,11 +46,11 @@ function overlayLiveLabel(
 ): NotificationAction {
   if (action.kind === 'run-skill') {
     const live = findPinnedSkill(starred, action.repoPath, action.skillId, action.invocation);
-    if (live) return { ...action, label: `${live.label} starten` };
+    if (live) return { ...action, label: `Start ${live.label}` };
   }
   if (action.kind === 'run-combo') {
     const live = findPinnedCombo(starred, action.repoPath, action.comboId);
-    if (live) return { ...action, label: `${live.label} starten` };
+    if (live) return { ...action, label: `Start ${live.label}` };
   }
   return action;
 }
@@ -67,11 +67,11 @@ function disabledReason(
 ): string | undefined {
   const repoPath = repoPathOf(action);
   if (repoPath !== undefined && repoDirStatus.get(repoPath) === 'missing') {
-    return 'Projektordner nicht gefunden';
+    return 'Project folder not found';
   }
   if (action.kind === 'run-combo') {
     const hasStep = action.steps.some((step) => step.prompt.trim().length > 0);
-    if (!hasStep) return 'Combo hat keine gültigen Schritte';
+    if (!hasStep) return 'Combo has no valid steps';
   }
   return undefined;
 }

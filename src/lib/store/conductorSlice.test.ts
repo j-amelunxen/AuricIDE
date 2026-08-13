@@ -1237,7 +1237,7 @@ describe('conductor milestones in the notification inbox', () => {
     expect(entry.actions).toEqual([
       {
         id: 'open',
-        label: 'Zur Freigabe',
+        label: 'Open approval',
         kind: 'open',
         target: { type: 'ticket', ticketId: 't1' },
       },
@@ -1267,7 +1267,7 @@ describe('conductor milestones in the notification inbox', () => {
     await store.getState().conductorTick();
     await inboxSize(1);
 
-    const entry = store.getState().notifications.find((n) => n.title.includes('blockiert'));
+    const entry = store.getState().notifications.find((n) => n.title.includes('Goal blocked'));
     expect(entry).toBeTruthy();
     expect(entry?.refKind).toBe('goal');
     expect(entry?.body).toBeTruthy();
@@ -1279,7 +1279,9 @@ describe('conductor milestones in the notification inbox', () => {
     await store.getState().conductorTick();
     await inboxSize(1);
 
-    expect(store.getState().notifications.some((n) => n.title.includes('beendet'))).toBe(true);
+    expect(
+      store.getState().notifications.some((n) => n.title.includes('Conductor run finished'))
+    ).toBe(true);
   });
 
   // The conductor is about to retry by itself; an entry now would be an alarm

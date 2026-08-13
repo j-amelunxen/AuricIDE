@@ -55,7 +55,9 @@ function renderPanel(overrides: Partial<NotificationsPanelProps> = {}) {
 describe('NotificationsPanel', () => {
   it('names what the inbox is for when it is empty', () => {
     renderPanel();
-    expect(screen.getByTestId('notifications-empty').textContent).toContain('Posteingang leer');
+    expect(screen.getByTestId('notifications-empty').textContent).toBe(
+      'Inbox empty. Agents, schedules, and the Conductor report here.'
+    );
   });
 
   it('renders one row per notification', () => {
@@ -135,7 +137,22 @@ describe('NotificationsPanel', () => {
 
       fireEvent.click(screen.getByTestId('notifications-filter-unread'));
 
-      expect(screen.getByTestId('notifications-hidden-note').textContent).toContain('1');
+      expect(screen.getByTestId('notifications-hidden-note').textContent).toBe(
+        '1 hidden by filters'
+      );
+    });
+
+    it('labels the filter chips in English', () => {
+      renderPanel({
+        notifications: [
+          makeNotification({ projectPath: '/a', projectName: 'alpha' }),
+          makeNotification({ projectPath: '/b', projectName: 'beta' }),
+        ],
+      });
+
+      expect(screen.getByTestId('notifications-filter-all').textContent).toBe('All');
+      expect(screen.getByTestId('notifications-filter-unread').textContent).toBe('Unread');
+      expect(screen.getByTestId('notifications-project-all').textContent).toBe('All projects');
     });
 
     it('reports a project choice upward', () => {
@@ -164,11 +181,18 @@ describe('NotificationsPanel', () => {
 
       fireEvent.click(screen.getByTestId('notifications-filter-unread'));
 
-      expect(screen.getByTestId('notifications-empty').textContent).toContain('Auswahl');
+      expect(screen.getByTestId('notifications-empty').textContent).toBe(
+        'Nothing in this selection.'
+      );
     });
   });
 
   describe('bulk controls', () => {
+    it('names the mark-all-read button', () => {
+      renderPanel({ notifications: [makeNotification()], unreadCount: 1 });
+      expect(screen.getByRole('button', { name: 'Mark all as read' })).toBeTruthy();
+    });
+
     it('marks everything read', () => {
       const props = renderPanel({ notifications: [makeNotification()], unreadCount: 1 });
       fireEvent.click(screen.getByTestId('notifications-mark-all-read'));
@@ -187,11 +211,22 @@ describe('NotificationsPanel', () => {
       fireEvent.click(screen.getByTestId('notifications-clear'));
       expect(props.onClear).toHaveBeenCalled();
     });
+
+    // Clear is a labeled button, not an icon with a title. The hint still
+    // explains that open questions stay.
+    it('exposes Clear as a labeled button', () => {
+      renderPanel({ notifications: [makeNotification()] });
+      const clear = screen.getByRole('button', { name: 'Clear' });
+      expect(clear.textContent).toContain('Clear');
+      expect(clear.getAttribute('title')).toBe('Clear done items. Open questions stay.');
+    });
   });
 
   it('says so when the inbox could not be read', () => {
     renderPanel({ status: 'error' });
-    expect(screen.getByTestId('notifications-error')).toBeTruthy();
+    expect(screen.getByTestId('notifications-error').textContent).toBe(
+      'Inbox could not be read. It will retry when you come back to this window.'
+    );
   });
 });
 
@@ -201,7 +236,7 @@ describe('NotificationRow', () => {
     renderPanel({ notifications: [row] });
 
     expect(screen.getByTestId(`notification-row-${row.uid}`).dataset.unread).toBe('true');
-    expect(screen.getByTestId('notification-unread-dot')).toBeTruthy();
+    expect(screen.getByLabelText('unread')).toBeTruthy();
   });
 
   it('drops the dot once read', () => {

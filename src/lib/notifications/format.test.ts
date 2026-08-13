@@ -36,8 +36,8 @@ describe('formatNotificationAge', () => {
   const base = Date.parse('2026-08-12T10:00:00.000Z');
 
   it.each([
-    ['jetzt', 0],
-    ['jetzt', 59_000],
+    ['now', 0],
+    ['now', 59_000],
     ['1m', 60_000],
     ['59m', 59 * 60_000],
     ['1h', 60 * 60_000],
@@ -52,7 +52,7 @@ describe('formatNotificationAge', () => {
 
   // Clock skew between the database and the UI must not read as a negative age.
   it('never goes negative for a row from the near future', () => {
-    expect(formatNotificationAge(at, base - 5_000)).toBe('jetzt');
+    expect(formatNotificationAge(at, base - 5_000)).toBe('now');
   });
 
   it('renders nothing for an unparseable timestamp', () => {

@@ -96,7 +96,7 @@ describe('TicketTable', () => {
     expect(doneBadge.className).toContain('bg-green-500/10');
   });
 
-  it('calls onUpdateTicket and onSave with in_progress status when Spawn Agent icon clicked', async () => {
+  it('calls onUpdateTicket and onSave with in_progress status when Start agent icon clicked', async () => {
     const onUpdateTicket = vi.fn();
     const onSave = vi.fn();
     const tickets = [makeTicket({ id: 'tk-1' })];
@@ -108,7 +108,7 @@ describe('TicketTable', () => {
         onSave={onSave}
       />
     );
-    const spawnBtn = screen.getByTitle('Spawn Agent');
+    const spawnBtn = screen.getByTitle('Start agent');
     fireEvent.click(spawnBtn);
     expect(onUpdateTicket).toHaveBeenCalledWith('tk-1', { status: 'in_progress' });
     expect(onSave).toHaveBeenCalled();
@@ -158,6 +158,13 @@ describe('TicketTable', () => {
     );
 
     expect(screen.queryByTitle('Blocked by dependencies')).toBeNull();
+  });
+
+  it('titles the strength badge Agent strength', () => {
+    const tickets = [makeTicket({ modelPower: 'high' })];
+    render(<TicketTable {...defaultProps} tickets={tickets} />);
+    expect(screen.getByTitle('Agent strength: high')).toBeInTheDocument();
+    expect(screen.queryByTitle(/model power/i)).not.toBeInTheDocument();
   });
 
   it('does not show blocked indicator when dependency is archived', () => {

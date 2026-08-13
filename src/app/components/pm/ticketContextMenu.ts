@@ -16,8 +16,8 @@ export const priorityIcon: Record<PmTicket['priority'], string> = {
 };
 
 /**
- * Status / Priority / Model Power sections shared by the ticket context menus in
- * TicketTable and DependencyTreeView. Callers append their own trailing options.
+ * Status / Priority / Agent strength sections shared by the ticket context menus
+ * in TicketTable and DependencyTreeView. Callers append their own trailing options.
  */
 export function buildTicketStatusPriorityPowerOptions(
   ticket: PmTicket,
@@ -71,8 +71,8 @@ export function buildTicketStatusPriorityPowerOptions(
 
   options.push({ type: 'separator' });
 
-  // Model Power Section
-  options.push({ type: 'header', label: 'Model Power' });
+  // Agent strength Section
+  options.push({ type: 'header', label: 'Agent strength' });
   options.push({
     label: 'None',
     icon: ticket.modelPower === undefined ? 'check' : undefined,

@@ -6,43 +6,43 @@ import { parseNotificationTimestamp } from './format';
  *
  * A stored rhythm is `{ specKind: 'every', everyN: 21, everyUnit: 'day',
  * timeOfDay: '09:00' }`. Nobody reads that off a list, so the panel shows
- * "alle 21 Tage · 09:00" — and the cron form, which nobody should have to
+ * "every 21 days · 09:00" — and the cron form, which nobody should have to
  * decode either, gets named where it is nameable.
  */
 
 const UNIT_SINGULAR: Record<ScheduleEveryUnit, string> = {
-  hour: 'Stunde',
-  day: 'Tag',
-  week: 'Woche',
+  hour: 'hour',
+  day: 'day',
+  week: 'week',
 };
 
 const UNIT_PLURAL: Record<ScheduleEveryUnit, string> = {
-  hour: 'Stunden',
-  day: 'Tage',
-  week: 'Wochen',
+  hour: 'hours',
+  day: 'days',
+  week: 'weeks',
 };
 
-/** German weekday names, indexed the way cron day-of-week names abbreviate. */
+/** English weekday names, indexed the way cron day-of-week names abbreviate. */
 const WEEKDAY_NAMES: Record<string, string> = {
-  MON: 'Montag',
-  TUE: 'Dienstag',
-  WED: 'Mittwoch',
-  THU: 'Donnerstag',
-  FRI: 'Freitag',
-  SAT: 'Samstag',
-  SUN: 'Sonntag',
+  MON: 'Monday',
+  TUE: 'Tuesday',
+  WED: 'Wednesday',
+  THU: 'Thursday',
+  FRI: 'Friday',
+  SAT: 'Saturday',
+  SUN: 'Sunday',
 };
 
 export const CATCH_UP_LABELS: Record<ScheduleCatchUp, string> = {
-  coalesce: 'Einmal nachholen',
-  skip: 'Verpasste überspringen',
-  all: 'Alle verpassten einzeln',
+  coalesce: 'Catch up once',
+  skip: 'Skip missed',
+  all: 'Every missed one',
 };
 
 export const CATCH_UP_HINTS: Record<ScheduleCatchUp, string> = {
-  coalesce: 'Eine Meldung, die sagt wie überfällig sie ist.',
-  skip: 'Verpasste Termine sind erledigt, es geht beim nächsten weiter.',
-  all: 'Jeder verpasste Termin einzeln, gedeckelt auf 10.',
+  coalesce: 'One notification that says how overdue it is.',
+  skip: 'Missed dates are done; it continues with the next one.',
+  all: 'Each missed date separately, capped at 10.',
 };
 
 /**
@@ -57,7 +57,7 @@ export function formatScheduleRhythm(schedule: Schedule): string {
     const n = schedule.everyN ?? 1;
     const unit = schedule.everyUnit ?? 'day';
     const noun = n === 1 ? UNIT_SINGULAR[unit] : UNIT_PLURAL[unit];
-    const every = n === 1 ? `jede${unit === 'day' ? 'n' : ''} ${noun}` : `alle ${n} ${noun}`;
+    const every = n === 1 ? `every ${noun}` : `every ${n} ${noun}`;
     return unit === 'hour' || schedule.timeOfDay === null
       ? every
       : `${every} · ${schedule.timeOfDay}`;
@@ -75,7 +75,7 @@ export function formatScheduleRhythm(schedule: Schedule): string {
         : null;
 
     if (dayOfMonth === '*' && month === '*' && time !== null) {
-      if (dayOfWeek === '*') return `täglich · ${time}`;
+      if (dayOfWeek === '*') return `daily · ${time}`;
       const days = dayOfWeek
         .split(',')
         .map((day) => WEEKDAY_NAMES[day.toUpperCase()])
@@ -84,21 +84,21 @@ export function formatScheduleRhythm(schedule: Schedule): string {
     }
   }
 
-  return expr === '' ? 'kein Rhythmus' : expr;
+  return expr === '' ? 'no rhythm' : expr;
 }
 
 /** The next occurrence in words, or a note that there is none. */
 export function formatNextDue(schedule: Schedule, now: number): string {
-  if (!schedule.enabled) return 'aus';
-  if (schedule.nextDueAt === null) return 'kein Termin';
+  if (!schedule.enabled) return 'off';
+  if (schedule.nextDueAt === null) return 'no date';
 
   const at = parseNotificationTimestamp(schedule.nextDueAt);
-  if (at === null) return 'kein Termin';
+  if (at === null) return 'no date';
 
   const minutes = Math.round((at.getTime() - now) / 60_000);
   // A due-but-not-yet-run schedule reads as overdue rather than as a stale
   // future date — the runner ticks every 30s, so this window is brief but real.
-  if (minutes <= 0) return 'jetzt fällig';
+  if (minutes <= 0) return 'due now';
   if (minutes < 60) return `in ${minutes} min`;
 
   const hours = Math.round(minutes / 60);
@@ -127,11 +127,11 @@ export function dailyCron(time: string): string {
 }
 
 export const WEEKDAY_OPTIONS: { value: string; label: string }[] = [
-  { value: 'MON', label: 'Mo' },
-  { value: 'TUE', label: 'Di' },
-  { value: 'WED', label: 'Mi' },
-  { value: 'THU', label: 'Do' },
-  { value: 'FRI', label: 'Fr' },
-  { value: 'SAT', label: 'Sa' },
-  { value: 'SUN', label: 'So' },
+  { value: 'MON', label: 'Mon' },
+  { value: 'TUE', label: 'Tue' },
+  { value: 'WED', label: 'Wed' },
+  { value: 'THU', label: 'Thu' },
+  { value: 'FRI', label: 'Fri' },
+  { value: 'SAT', label: 'Sat' },
+  { value: 'SUN', label: 'Sun' },
 ];

@@ -101,7 +101,8 @@ export function NotificationsPanel({
             data-testid="notifications-mark-all-read"
             onClick={onMarkAllRead}
             disabled={unreadCount === 0}
-            title="Alle als gelesen markieren"
+            aria-label="Mark all as read"
+            title="Mark all as read"
             className="rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground disabled:opacity-30"
           >
             <AuricIcon name="visibility" className="text-sm" />
@@ -109,10 +110,11 @@ export function NotificationsPanel({
           <button
             data-testid="notifications-clear"
             onClick={onClear}
-            title="Erledigte aufräumen · offene Rückfragen bleiben"
-            className="rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
+            title="Clear done items. Open questions stay."
+            className="rounded-lg px-2 py-1 text-[10px] font-semibold text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
           >
-            <AuricIcon name="delete_sweep" className="text-sm" />
+            <AuricIcon name="delete_sweep" className="mr-1 text-sm" />
+            Clear
           </button>
         </div>
       </div>
@@ -123,14 +125,14 @@ export function NotificationsPanel({
           active={readFilter === 'all'}
           onClick={() => setReadFilter('all')}
         >
-          Alle
+          All
         </FilterChip>
         <FilterChip
           testId="notifications-filter-unread"
           active={readFilter === 'unread'}
           onClick={() => setReadFilter('unread')}
         >
-          Ungelesen
+          Unread
         </FilterChip>
 
         {projects.length > 1 && (
@@ -141,7 +143,7 @@ export function NotificationsPanel({
               active={projectFilter === null}
               onClick={() => onSetProjectFilter(null)}
             >
-              Alle Projekte
+              All projects
             </FilterChip>
             {projects.map((project) => (
               <FilterChip
@@ -160,7 +162,7 @@ export function NotificationsPanel({
       <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
         {status === 'error' && (
           <p data-testid="notifications-error" className="px-1 py-2 text-[11px] text-[#ff4a4a]/80">
-            Posteingang nicht lesbar. Beim nächsten Fensterwechsel wird es erneut versucht.
+            Inbox could not be read. It will retry when you come back to this window.
           </p>
         )}
 
@@ -170,8 +172,8 @@ export function NotificationsPanel({
             className="px-1 py-3 text-[11px] text-foreground-muted"
           >
             {notifications.length === 0
-              ? 'Posteingang leer. Agenten, Zeitpläne und der Conductor melden sich hier.'
-              : 'Nichts in dieser Auswahl.'}
+              ? 'Inbox empty. Agents, schedules, and the Conductor report here.'
+              : 'Nothing in this selection.'}
           </p>
         ) : (
           visible.map((notification) => (
@@ -193,7 +195,7 @@ export function NotificationsPanel({
             data-testid="notifications-hidden-note"
             className="px-1 pt-1 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/50"
           >
-            {notifications.length - visible.length} durch Filter versteckt
+            {notifications.length - visible.length} hidden by filters
           </p>
         )}
       </div>

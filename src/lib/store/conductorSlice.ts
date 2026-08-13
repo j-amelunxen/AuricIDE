@@ -777,15 +777,15 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             void notifyConductor('goal_achieved', goalName ?? goalId);
             notifyInbox({
               severity: 'success',
-              title: `Ziel erreicht: ${goalName ?? goalId}`,
-              body: 'Alle Tickets fertig, alle Anforderungen verifiziert.',
+              title: `Goal achieved: ${goalName ?? goalId}`,
+              body: 'All tickets done, all requirements verified.',
               refKind: 'goal',
               refId: goalId,
               dedupeKey: `goal:${goalId}:achieved`,
               actions: [
                 {
                   id: 'open',
-                  label: 'Ziel öffnen',
+                  label: 'Open goal',
                   kind: 'open',
                   target: { type: 'goal', goalId },
                 },
@@ -801,7 +801,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             void notifyConductor('goal_blocked', satisfaction.blockers.join('; '));
             notifyInbox({
               severity: 'warn',
-              title: `Ziel blockiert: ${goalName ?? goalId}`,
+              title: `Goal blocked: ${goalName ?? goalId}`,
               body: satisfaction.blockers.join(' · '),
               refKind: 'goal',
               refId: goalId,
@@ -809,7 +809,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
               actions: [
                 {
                   id: 'open',
-                  label: 'Ziel öffnen',
+                  label: 'Open goal',
                   kind: 'open',
                   target: { type: 'goal', goalId },
                 },
@@ -823,8 +823,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           void notifyConductor('run_finished', '');
           notifyInbox({
             severity: 'info',
-            title: 'Conductor-Lauf beendet',
-            body: 'Alle nicht blockierten Tickets abgearbeitet.',
+            title: 'Conductor run finished',
+            body: 'All unblocked tickets are done.',
           });
         }
         await persist();
@@ -858,15 +858,15 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             // notifyInbox. The gate stays where the conductor draws it.
             notifyInbox({
               severity: 'warn',
-              title: `Freigabe nötig: ${ticket.name}`,
-              body: 'Der Conductor wartet auf deine Freigabe, bevor er startet.',
+              title: `Approval needed: ${ticket.name}`,
+              body: 'The Conductor is waiting for your approval before it starts.',
               refKind: 'ticket',
               refId: ticket.id,
               dedupeKey: `ticket:${ticket.id}:approval`,
               actions: [
                 {
                   id: 'open',
-                  label: 'Zur Freigabe',
+                  label: 'Open approval',
                   kind: 'open',
                   target: { type: 'ticket', ticketId: ticket.id },
                 },

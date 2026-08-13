@@ -159,7 +159,7 @@ export function TicketTable({
     options.push({ type: 'separator' });
 
     options.push({
-      label: 'Spawn Agent',
+      label: 'Start agent',
       icon: 'smart_toy',
       action: () => {
         handleSpawnAgent(ticket, { stopPropagation: () => {} } as React.MouseEvent);
@@ -290,13 +290,13 @@ export function TicketTable({
               />
             )}
 
-            {/* Model Power Badge */}
+            {/* Agent strength Badge */}
             {ticket.modelPower && (
               <span
                 className={`shrink-0 rounded px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider border ${
                   modelPowerBadge[ticket.modelPower]
                 }`}
-                title={`Model Power: ${ticket.modelPower}`}
+                title={`Agent strength: ${ticket.modelPower}`}
               >
                 {ticket.modelPower.charAt(0)}
               </span>
@@ -324,7 +324,7 @@ export function TicketTable({
               <button
                 type="button"
                 onClick={(e) => handleSpawnAgent(ticket, e)}
-                title="Spawn Agent"
+                title="Start agent"
                 className="opacity-0 group-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-primary/20 text-primary-light transition"
               >
                 <AuricIcon name="smart_toy" className="text-[14px]" />

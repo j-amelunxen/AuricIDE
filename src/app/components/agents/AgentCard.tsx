@@ -367,8 +367,8 @@ export function AgentCard({
                 onMinimize(agent.id);
               }}
               className="flex h-6 w-6 items-center justify-center rounded text-foreground-muted opacity-0 transition-all hover:bg-white/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-100 focus-visible:opacity-100"
-              title="Park (still running)"
-              aria-label="Park agent"
+              title="Set aside (still running)"
+              aria-label="Set aside agent"
             >
               <AuricIcon name="keyboard_arrow_down" aria-hidden="true" className="text-sm" />
             </button>

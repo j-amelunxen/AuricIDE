@@ -52,7 +52,7 @@ describe('deriveAgentName', () => {
   });
 
   it('keeps the placeholder prompt from turning into a name', () => {
-    // The dialog sends 'wait' when the user deploys with an empty prompt.
+    // Retry of a failed agent can still carry a stored 'wait' task.
     expect(deriveAgentName('wait', 'auric-ide')).toBe('Agent (auric-ide)');
   });
 });

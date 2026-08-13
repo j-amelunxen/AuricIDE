@@ -266,7 +266,7 @@ describe('agentSlice', () => {
       expect(combined.getState().notifications[0].actions).toEqual([
         {
           id: 'logs',
-          label: 'Logs öffnen',
+          label: 'Open logs',
           kind: 'open',
           target: { type: 'agent', agentId: 'mock-agent-1' },
         },

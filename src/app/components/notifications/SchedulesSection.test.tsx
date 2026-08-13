@@ -49,20 +49,29 @@ describe('SchedulesSection', () => {
   // feature: it is not cron, and a closed app misses the moment.
   it('explains the catch-up model when there are no schedules', () => {
     renderSection();
-    const empty = screen.getByTestId('schedules-empty').textContent ?? '';
-    expect(empty).toContain('nachgeholt');
+    expect(screen.getByTestId('schedules-empty').textContent).toBe(
+      'No schedules. Reminders only fire while AuricIDE is open — missed ones catch up on launch.'
+    );
+  });
+
+  it('names the section', () => {
+    renderSection();
+    expect(screen.getByRole('heading', { name: 'Schedules' })).toBeTruthy();
   });
 
   it('offers to create one', () => {
     const props = renderSection();
-    fireEvent.click(screen.getByTestId('schedule-create'));
+    const create = screen.getByTestId('schedule-create');
+    expect(create.getAttribute('title')).toBe('New schedule');
+    expect(create.getAttribute('aria-label')).toBe('New schedule');
+    fireEvent.click(create);
     expect(props.onCreate).toHaveBeenCalled();
   });
 
   it('names the rhythm and the next date in words', () => {
     renderSection({ schedules: [makeSchedule()] });
 
-    expect(screen.getByText('alle 21 Tage · 09:00')).toBeTruthy();
+    expect(screen.getByText('every 21 days · 09:00')).toBeTruthy();
     expect(screen.getByTestId('schedule-next-s1').textContent).toBe('in 21 d');
   });
 
@@ -91,7 +100,14 @@ describe('SchedulesSection', () => {
 
     const row = screen.getByTestId('schedule-row-s1');
     expect(row.dataset.enabled).toBe('false');
-    expect(screen.getByTestId('schedule-next-s1').textContent).toBe('aus');
+    expect(screen.getByTestId('schedule-next-s1').textContent).toBe('off');
+    expect(screen.getByLabelText('Turn schedule on')).toBeTruthy();
+  });
+
+  it('names toggle and delete in English', () => {
+    renderSection({ schedules: [makeSchedule()] });
+    expect(screen.getByLabelText('Turn schedule off')).toBeTruthy();
+    expect(screen.getByLabelText('Delete schedule')).toBeTruthy();
   });
 
   it('reports a delete request', () => {

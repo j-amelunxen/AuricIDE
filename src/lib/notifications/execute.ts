@@ -114,7 +114,7 @@ export async function executeNotificationAction(
     case 'run-skill': {
       if (!(await deps.projectDirExists(action.repoPath))) {
         throw new NotificationActionError(
-          `Projektordner nicht gefunden: ${action.repoPath}`,
+          `Project folder not found: ${action.repoPath}`,
           'missing-project'
         );
       }
@@ -134,13 +134,13 @@ export async function executeNotificationAction(
     case 'run-combo': {
       if (!(await deps.projectDirExists(action.repoPath))) {
         throw new NotificationActionError(
-          `Projektordner nicht gefunden: ${action.repoPath}`,
+          `Project folder not found: ${action.repoPath}`,
           'missing-project'
         );
       }
       const steps = action.steps.filter((step) => step.prompt.trim().length > 0);
       if (steps.length === 0) {
-        throw new NotificationActionError('Combo hat keine gültigen Schritte', 'empty-combo');
+        throw new NotificationActionError('Combo has no valid steps', 'empty-combo');
       }
       await deps.startSkillCombo(action.repoPath, {
         id: action.comboId,

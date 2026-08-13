@@ -204,7 +204,7 @@ export function registerNotificationTools(
     description:
       'Set a recurring reminder for the human. It fires into their inbox with an optional ' +
       '"start agent" button — it never starts anything on its own. To attach a Quick Access ' +
-      'skill or combo, create the schedule in the Zeitpläne editor. AuricIDE does not run ' +
+      'skill or combo, create the schedule in the Schedules editor. AuricIDE does not run ' +
       'around the clock, so an occurrence missed while it was closed is caught up on the next ' +
       'start and shown as overdue.',
     parameters: z.object({
@@ -268,7 +268,7 @@ export function registerNotificationTools(
           actions:
             args.task === undefined || args.task.trim() === ''
               ? []
-              : [{ id: 'run', label: 'Agent starten', kind: 'spawn-agent', task: args.task }],
+              : [{ id: 'run', label: 'Start agent', kind: 'spawn-agent', task: args.task }],
         },
       });
       return JSON.stringify({ id: stored.id, name: stored.name });

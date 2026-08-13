@@ -73,7 +73,7 @@ describe('presentNotificationActions', () => {
       };
       const presented = present([runSkill()], [project({ skills: [pin] })]);
 
-      expect(presented[0].action.label).toBe('Weekly Changelog starten');
+      expect(presented[0].action.label).toBe('Start Weekly Changelog');
     });
 
     it('overlays the live pin label when only the invocation matches', () => {
@@ -88,7 +88,7 @@ describe('presentNotificationActions', () => {
         [project({ skills: [pin] })]
       );
 
-      expect(presented[0].action.label).toBe('Changelog starten');
+      expect(presented[0].action.label).toBe('Start Changelog');
     });
 
     it('overlays the live combo pin label when the combo id still exists', () => {
@@ -99,7 +99,7 @@ describe('presentNotificationActions', () => {
       };
       const presented = present([runCombo()], [project({ combos: [pin] })]);
 
-      expect(presented[0].action.label).toBe('Blog Pipeline starten');
+      expect(presented[0].action.label).toBe('Start Blog Pipeline');
     });
 
     it('keeps the snapshot label when no pin matches', () => {
@@ -133,7 +133,7 @@ describe('presentNotificationActions', () => {
     ] as const)('disables %s when the project folder is missing', (_label, action) => {
       const presented = present([action], [], { [REPO]: 'missing' });
 
-      expect(presented[0].disabledReason).toBe('Projektordner nicht gefunden');
+      expect(presented[0].disabledReason).toBe('Project folder not found');
     });
 
     it('does not disable spawn-agent without a repoPath for a missing dir', () => {
@@ -167,7 +167,7 @@ describe('presentNotificationActions', () => {
       });
       const presented = present([empty], [], { [REPO]: 'dir' });
 
-      expect(presented[0].disabledReason).toBe('Combo hat keine gültigen Schritte');
+      expect(presented[0].disabledReason).toBe('Combo has no valid steps');
     });
 
     it('overlays the live combo label and disables when the folder is missing', () => {
@@ -180,8 +180,8 @@ describe('presentNotificationActions', () => {
         [REPO]: 'missing',
       });
 
-      expect(presented[0].action.label).toBe('Blog Pipeline starten');
-      expect(presented[0].disabledReason).toBe('Projektordner nicht gefunden');
+      expect(presented[0].action.label).toBe('Start Blog Pipeline');
+      expect(presented[0].disabledReason).toBe('Project folder not found');
     });
   });
 });

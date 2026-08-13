@@ -48,7 +48,7 @@ export const FALLBACK_CRUSH_PROVIDER: ProviderInfo = {
   permissionModes: [
     {
       value: 'yolo',
-      label: 'YOLO (Autonomous)',
+      label: 'Act without asking',
       description: 'Skip all permission prompts (--yolo)',
     },
     { value: 'default', label: 'Interactive', description: 'Ask for permissions' },
