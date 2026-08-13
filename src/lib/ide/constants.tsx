@@ -3,18 +3,15 @@
 import { type ActivityItem } from '@/app/components/ide/ActivityBar';
 
 /**
- * The rail leads with the loop: Cockpit → Files → Git → Plan → Requirements
- * are destinations a supervisor lives in. Everything below the separator is
- * a tool: a means, reachable but not shouting. Goals & Orchestration has no
- * slot: the conductor pulse (header) and Mission Control own that path.
+ * The rail leads with the loop: Cockpit → Files → Git → Work.
+ * Work is one place with four views. Everything below the separator is
+ * a tool: a means, reachable but not shouting.
  */
 export const activityItems: ActivityItem[] = [
   { id: 'cockpit', icon: 'space_dashboard', label: 'Mission Control' },
   { id: 'explorer', icon: 'folder', label: 'Explorer' },
   { id: 'source-control', icon: 'commit', label: 'Source Control', badge: 0 },
-  { id: 'project-mgmt', icon: 'task_alt', label: 'Plan' },
-  { id: 'requirements', icon: 'checklist', label: 'Requirements' },
-  { id: 'goal-lines', icon: 'route', label: 'Goal Lines' },
+  { id: 'work', icon: 'task_alt', label: 'Work' },
   // Not primary: the top of the rail states the goal loop, and the inbox cuts
   // across it rather than being a step in it. Its badge shows here either way,
   // which is what actually brings you to it.
@@ -62,8 +59,8 @@ export const TIPS: { icon: string; text: React.ReactNode }[] = [
     text: (
       <>
         Press <kbd className={KBD}>&#8984;⌥F</kbd> to open{' '}
-        <span className="text-primary-light font-medium">Advanced File Selection</span>. Filter
-        files by extension and line count to copy lists to your clipboard.
+        <span className="text-primary-light font-medium">Copy File List</span>. Filter files by
+        extension and line count to copy lists to your clipboard.
       </>
     ),
   },

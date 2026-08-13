@@ -8,8 +8,7 @@ import { RenameItemModal } from '@/app/components/explorer/RenameItemModal';
 import { FileSearch } from '@/app/components/ide/FileSearch';
 import { FileSelector } from '@/app/components/ide/FileSelector';
 import { FindInFilesModal } from '@/app/components/ide/FindInFilesModal';
-import { SettingsModal } from '@/app/components/ide/SettingsModal';
-import { ProjectManagerModal } from '@/app/components/pm/ProjectManagerModal';
+import { SettingsModal, type SettingsCategory } from '@/app/components/ide/SettingsModal';
 import { SpawnAgentDialog } from '@/app/components/agents/SpawnAgentDialog';
 import { useStore } from '@/lib/store';
 import { ImportSpecDialog } from '@/app/components/agents/ImportSpecDialog';
@@ -59,6 +58,8 @@ interface IDEOverlaysProps {
 
   settingsModalOpen: boolean;
   setSettingsModalOpen: (open: boolean) => void;
+  settingsInitialCategory?: SettingsCategory;
+  setSettingsInitialCategory: (category: SettingsCategory | undefined) => void;
 
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -120,6 +121,8 @@ export function IDEOverlays({
   handleFileSelect,
   settingsModalOpen,
   setSettingsModalOpen,
+  settingsInitialCategory,
+  setSettingsInitialCategory,
   commandPaletteOpen,
   setCommandPaletteOpen,
   commands,
@@ -216,14 +219,21 @@ export function IDEOverlays({
         onClose={() => setLinkGraphModalOpen(false)}
         onFileSelect={handleFileSelect}
       />
-      <ProjectManagerModal />
       <BlueprintsGallery />
-      <SettingsModal isOpen={settingsModalOpen} onClose={() => setSettingsModalOpen(false)} />
+      <SettingsModal
+        isOpen={settingsModalOpen}
+        initialCategory={settingsInitialCategory}
+        onClose={() => {
+          setSettingsModalOpen(false);
+          setSettingsInitialCategory(undefined);
+        }}
+      />
       {commandPaletteOpen && (
         <CommandPalette
           commands={commands}
           isOpen
           recentIds={recentCommandIds}
+          hasProject={Boolean(rootPath)}
           onClose={() => setCommandPaletteOpen(false)}
           onExecute={handleCommandExecute}
         />

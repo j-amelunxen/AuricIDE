@@ -1,10 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import { useStore } from '@/lib/store';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/requirementsSlice';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { ConductorPanel } from '../goals/ConductorPanel';
 import { QuickAccess } from './QuickAccess';
+import { RecentProjects } from './RecentProjects';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const STALE_DAYS = 30;
@@ -49,6 +52,72 @@ function StationArrow() {
   );
 }
 
+function specShortPath(path: string): string {
+  const match = path.match(/(?:^|\/)(specs\/.*)$/i);
+  return match?.[1] ?? path.split('/').pop() ?? path;
+}
+
+function SpecPicker({
+  specPaths,
+  onPick,
+  onCreate,
+  onDismiss,
+}: {
+  specPaths: string[];
+  onPick: (path: string) => void;
+  onCreate: () => void;
+  onDismiss: () => void;
+}) {
+  useOverlayLayer({
+    id: 'spec-picker',
+    kind: 'tool',
+    active: true,
+    onEscape: onDismiss,
+  });
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Dismiss spec picker"
+        className="fixed inset-0 z-[var(--z-tool)] cursor-default"
+        onClick={onDismiss}
+      />
+      <div
+        role="listbox"
+        aria-label="Choose a spec"
+        data-testid="mc-spec-picker"
+        className="absolute left-0 top-full z-[var(--z-tool-nested)] mt-2 max-h-64 w-64 overflow-y-auto rounded-xl border border-white/10 bg-[#0a0a10] p-2 shadow-2xl"
+      >
+        {specPaths.map((path) => {
+          const name = path.split('/').pop() ?? path;
+          const shortPath = specShortPath(path);
+          return (
+            <button
+              key={path}
+              type="button"
+              role="option"
+              aria-selected={false}
+              onClick={() => onPick(path)}
+              className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-white/5"
+            >
+              <span className="text-xs font-medium text-foreground">{name}</span>
+              <span className="text-[10px] text-foreground-muted">{shortPath}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onCreate}
+          className="mt-1 w-full rounded-lg px-3 py-1.5 text-left text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+        >
+          New spec
+        </button>
+      </div>
+    </>
+  );
+}
+
 /**
  * Mission Control — the home surface. Shows the supervised loop
  * (Spec → Plan → Execute → Verify) with live numbers, the conductor with its
@@ -59,11 +128,17 @@ function StationArrow() {
 export interface MissionControlProps {
   /** Creates a new spec document under specs/ and opens it in the editor. */
   onCreateSpec?: () => void;
+  /** Opens the Agents panel (Execute station when agents are running). */
+  onOpenAgents?: () => void;
   /** Switches to another (starred) project by path. */
   onSwitchProject?: (path: string) => void;
 }
 
-export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControlProps) {
+export function MissionControl({
+  onCreateSpec,
+  onOpenAgents,
+  onSwitchProject,
+}: MissionControlProps) {
   const rootPath = useStore((s) => s.rootPath);
   const allFilePaths = useStore((s) => s.allFilePaths);
   const tickets = useStore((s) => s.pmDraftTickets);
@@ -71,22 +146,25 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
   const agents = useStore((s) => s.agents);
   const goals = useStore((s) => s.goalsDraft);
 
-  const setPmModalOpen = useStore((s) => s.setPmModalOpen);
+  const openWorkPlace = useStore((s) => s.openWorkPlace);
+  const closeWorkPlace = useStore((s) => s.closeWorkPlace);
   const loadPmData = useStore((s) => s.loadPmData);
-  const setRequirementsModalOpen = useStore((s) => s.setRequirementsModalOpen);
   const loadRequirements = useStore((s) => s.loadRequirements);
-  const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
+  const selectFile = useStore((s) => s.selectFile);
+  const openTab = useStore((s) => s.openTab);
   const setImportSpecDialogOpen = useStore((s) => s.setImportSpecDialogOpen);
   const setVideoImportDialogOpen = useStore((s) => s.setVideoImportDialogOpen);
   const setExcalidrawBrowserOpen = useStore((s) => s.setExcalidrawBrowserOpen);
 
   const conductor = useConductorController();
+  const [specPickerOpen, setSpecPickerOpen] = useState(false);
 
   // "Spec" means documents under a specs/ directory — README, changelogs and
   // scattered notes don't count as specification.
-  const specDocs = allFilePaths.filter((p) =>
+  const specPaths = allFilePaths.filter((p) =>
     /(^|\/)specs\/.*\.(md|markdown|excalidraw)$/i.test(p)
-  ).length;
+  );
+  const specDocs = specPaths.length;
   const openTickets = tickets.filter((t) => t.status !== 'done' && t.status !== 'archived').length;
   const runningAgents = agents.filter((a) => a.status === 'running').length;
 
@@ -101,13 +179,31 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
   const projectName = rootPath?.split('/').pop() ?? '';
   const firstRun = tickets.length === 0 && goals.length === 0;
 
-  const openPlan = () => {
-    setPmModalOpen(true);
+  const openTicketsPlace = () => {
+    openWorkPlace('tickets');
     if (rootPath) void loadPmData(rootPath);
   };
   const openTruths = () => {
-    setRequirementsModalOpen(true);
+    openWorkPlace('requirements');
     if (rootPath) void loadRequirements(rootPath);
+  };
+  const openSpecFile = (path: string) => {
+    setSpecPickerOpen(false);
+    closeWorkPlace();
+    selectFile(path);
+    openTab({ id: path, path, name: path.split('/').pop() ?? path });
+  };
+
+  const openSpecStation = () => {
+    if (specPaths.length === 0) {
+      onCreateSpec?.();
+      return;
+    }
+    if (specPaths.length === 1) {
+      openSpecFile(specPaths[0]);
+      return;
+    }
+    setSpecPickerOpen(true);
   };
 
   return (
@@ -125,15 +221,26 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
       </div>
 
       {/* The loop */}
-      <div className="flex items-center gap-3">
+      <div className="relative flex items-center gap-3">
         <Station
           id="spec"
           icon="description"
           label="Spec"
           value={String(specDocs)}
           hint="Specs under specs/"
-          onClick={() => onCreateSpec?.()}
+          onClick={openSpecStation}
         />
+        {specPickerOpen && (
+          <SpecPicker
+            specPaths={specPaths}
+            onPick={openSpecFile}
+            onCreate={() => {
+              setSpecPickerOpen(false);
+              onCreateSpec?.();
+            }}
+            onDismiss={() => setSpecPickerOpen(false)}
+          />
+        )}
         <StationArrow />
         <Station
           id="plan"
@@ -141,7 +248,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           label="Plan"
           value={String(openTickets)}
           hint="Open tickets"
-          onClick={openPlan}
+          onClick={openTicketsPlace}
         />
         <StationArrow />
         <Station
@@ -150,7 +257,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
           label="Execute"
           value={String(runningAgents)}
           hint="Running agents"
-          onClick={() => setGoalsModalOpen(true)}
+          onClick={() => onOpenAgents?.()}
         />
         <StationArrow />
         <Station
@@ -217,7 +324,7 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
             </button>
             <button
               data-testid="mc-new-goal"
-              onClick={() => setGoalsModalOpen(true)}
+              onClick={() => openWorkPlace('goals')}
               className="rounded-xl border border-white/10 px-6 py-2.5 text-xs font-bold text-foreground transition-[background-color,border-color] duration-150 hover:bg-white/5 hover:border-white/20 active:scale-[0.98]"
             >
               New Goal
@@ -230,6 +337,9 @@ export function MissionControl({ onCreateSpec, onSwitchProject }: MissionControl
       <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/5">
         <ConductorPanel {...conductor} />
       </div>
+
+      {/* Recents live on this same surface so starring is not a hunt. */}
+      <RecentProjects onOpenProject={onSwitchProject} />
 
       {/* Quick Access — jump between starred workspaces */}
       <QuickAccess currentPath={rootPath} onSwitchProject={onSwitchProject} />

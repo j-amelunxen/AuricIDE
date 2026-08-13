@@ -66,6 +66,7 @@ describe('MissionControl', () => {
       loadRequirements: vi.fn(async () => {}),
       loadGoals: vi.fn(async () => {}),
       starredProjects: [],
+      recentProjects: [],
     });
   });
 
@@ -111,11 +112,109 @@ describe('MissionControl', () => {
     expect(screen.getByTestId('mc-station-spec')).toHaveTextContent('0');
   });
 
-  it('starts a new spec when the spec station is clicked', () => {
+  it('starts a new spec when the spec station is clicked and none exist', () => {
     const onCreateSpec = vi.fn();
     render(<MissionControl onCreateSpec={onCreateSpec} />);
     fireEvent.click(screen.getByTestId('mc-station-spec'));
     expect(onCreateSpec).toHaveBeenCalled();
+  });
+
+  it('opens an existing spec instead of creating when the count is a document', () => {
+    const onCreateSpec = vi.fn();
+    const selectFile = vi.fn();
+    const openTab = vi.fn();
+    useStore.setState({
+      allFilePaths: ['/tmp/demo-project/specs/auth.md'],
+      selectFile,
+      openTab,
+    });
+    render(<MissionControl onCreateSpec={onCreateSpec} />);
+    fireEvent.click(screen.getByTestId('mc-station-spec'));
+    expect(onCreateSpec).not.toHaveBeenCalled();
+    expect(selectFile).toHaveBeenCalledWith('/tmp/demo-project/specs/auth.md');
+    expect(openTab).toHaveBeenCalled();
+  });
+
+  it('shows a picker instead of opening the first spec when two exist', () => {
+    const selectFile = vi.fn();
+    const openTab = vi.fn();
+    useStore.setState({
+      allFilePaths: [
+        '/tmp/demo-project/specs/auth.md',
+        '/tmp/demo-project/specs/flows/checkout.md',
+      ],
+      selectFile,
+      openTab,
+    });
+    render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('mc-station-spec'));
+    expect(screen.getByTestId('mc-spec-picker')).toBeInTheDocument();
+    expect(selectFile).not.toHaveBeenCalled();
+    expect(openTab).not.toHaveBeenCalled();
+    expect(screen.getByText('auth.md')).toBeInTheDocument();
+    expect(screen.getByText('checkout.md')).toBeInTheDocument();
+  });
+
+  it('opens the chosen spec from the picker', () => {
+    const selectFile = vi.fn();
+    const openTab = vi.fn();
+    useStore.setState({
+      allFilePaths: [
+        '/tmp/demo-project/specs/auth.md',
+        '/tmp/demo-project/specs/flows/checkout.md',
+      ],
+      selectFile,
+      openTab,
+    });
+    render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('mc-station-spec'));
+    fireEvent.click(screen.getByRole('option', { name: /checkout\.md/ }));
+    expect(selectFile).toHaveBeenCalledWith('/tmp/demo-project/specs/flows/checkout.md');
+    expect(openTab).toHaveBeenCalledWith({
+      id: '/tmp/demo-project/specs/flows/checkout.md',
+      path: '/tmp/demo-project/specs/flows/checkout.md',
+      name: 'checkout.md',
+    });
+    expect(screen.queryByTestId('mc-spec-picker')).not.toBeInTheDocument();
+  });
+
+  it('dismisses the spec picker on Escape or outside click', () => {
+    const selectFile = vi.fn();
+    useStore.setState({
+      allFilePaths: [
+        '/tmp/demo-project/specs/auth.md',
+        '/tmp/demo-project/specs/flows/checkout.md',
+      ],
+      selectFile,
+    });
+    const { rerender } = render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('mc-station-spec'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('mc-spec-picker')).not.toBeInTheDocument();
+    expect(selectFile).not.toHaveBeenCalled();
+
+    rerender(<MissionControl />);
+    fireEvent.click(screen.getByTestId('mc-station-spec'));
+    fireEvent.click(screen.getByLabelText('Dismiss spec picker'));
+    expect(screen.queryByTestId('mc-spec-picker')).not.toBeInTheDocument();
+  });
+
+  it('creates a new spec from the picker', () => {
+    const onCreateSpec = vi.fn();
+    const selectFile = vi.fn();
+    useStore.setState({
+      allFilePaths: [
+        '/tmp/demo-project/specs/auth.md',
+        '/tmp/demo-project/specs/flows/checkout.md',
+      ],
+      selectFile,
+    });
+    render(<MissionControl onCreateSpec={onCreateSpec} />);
+    fireEvent.click(screen.getByTestId('mc-station-spec'));
+    fireEvent.click(screen.getByRole('button', { name: 'New spec' }));
+    expect(onCreateSpec).toHaveBeenCalled();
+    expect(selectFile).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('mc-spec-picker')).not.toBeInTheDocument();
   });
 
   it('counts open tickets at the plan station, ignoring done and archived', () => {
@@ -154,25 +253,28 @@ describe('MissionControl', () => {
     expect(screen.getByTestId('mc-station-verify')).toHaveTextContent('1/2');
   });
 
-  it('opens the plan surface from the plan station and loads PM data', () => {
+  it('opens Work → Tickets from the plan station and loads PM data', () => {
     const loadPmData = vi.fn(async () => {});
     useStore.setState({ loadPmData });
     render(<MissionControl />);
     fireEvent.click(screen.getByTestId('mc-station-plan'));
-    expect(useStore.getState().pmModalOpen).toBe(true);
+    expect(useStore.getState().workPlaceOpen).toBe(true);
+    expect(useStore.getState().workTab).toBe('tickets');
     expect(loadPmData).toHaveBeenCalledWith('/tmp/demo-project');
   });
 
-  it('opens the requirements surface from the verify station', () => {
+  it('opens Work → Requirements from the verify station', () => {
     render(<MissionControl />);
     fireEvent.click(screen.getByTestId('mc-station-verify'));
-    expect(useStore.getState().requirementsModalOpen).toBe(true);
+    expect(useStore.getState().workPlaceOpen).toBe(true);
+    expect(useStore.getState().workTab).toBe('requirements');
   });
 
-  it('opens Goals & Orchestration from the execute station', () => {
-    render(<MissionControl />);
+  it('opens the Agents panel from the execute station', () => {
+    const onOpenAgents = vi.fn();
+    render(<MissionControl onOpenAgents={onOpenAgents} />);
     fireEvent.click(screen.getByTestId('mc-station-execute'));
-    expect(useStore.getState().goalsModalOpen).toBe(true);
+    expect(onOpenAgents).toHaveBeenCalled();
   });
 
   it('embeds the conductor panel with full controls', () => {
@@ -223,6 +325,41 @@ describe('MissionControl', () => {
     expect(useStore.getState().isProjectStarred('/tmp/demo-project')).toBe(true);
   });
 
+  it('shows Recent Projects on the no-project welcome', () => {
+    const onSwitchProject = vi.fn();
+    useStore.setState({
+      rootPath: null,
+      recentProjects: [
+        { path: '/Users/jen/my-app', name: 'my-app', openedAt: 1000 },
+        { path: '/Users/jen/other', name: 'other', openedAt: 900 },
+      ],
+    });
+    render(<MissionControl onSwitchProject={onSwitchProject} />);
+    expect(screen.getByTestId('recent-projects')).toBeInTheDocument();
+    expect(screen.getByText('my-app')).toBeInTheDocument();
+    expect(screen.getByText('other')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('my-app'));
+    expect(onSwitchProject).toHaveBeenCalledWith('/Users/jen/my-app');
+  });
+
+  it('shows Recent Projects on Mission Control when a project is already open', () => {
+    useStore.setState({
+      recentProjects: [{ path: '/tmp/other-project', name: 'other-project', openedAt: 1 }],
+    });
+    render(<MissionControl />);
+    expect(screen.getByTestId('recent-projects')).toBeInTheDocument();
+    expect(screen.getByText('other-project')).toBeInTheDocument();
+  });
+
+  it('stars a recent project into Quick Access from Mission Control', () => {
+    useStore.setState({
+      recentProjects: [{ path: '/tmp/other-project', name: 'other-project', openedAt: 1 }],
+    });
+    render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('star-recent-/tmp/other-project'));
+    expect(useStore.getState().isProjectStarred('/tmp/other-project')).toBe(true);
+  });
+
   it('flags decaying truths with a review shortcut', () => {
     useStore.setState({
       pmDraftTickets: [makeTicket({})],
@@ -232,6 +369,7 @@ describe('MissionControl', () => {
     const strip = screen.getByTestId('mc-truths-warning');
     expect(strip).toHaveTextContent('1');
     fireEvent.click(strip);
-    expect(useStore.getState().requirementsModalOpen).toBe(true);
+    expect(useStore.getState().workPlaceOpen).toBe(true);
+    expect(useStore.getState().workTab).toBe('requirements');
   });
 });

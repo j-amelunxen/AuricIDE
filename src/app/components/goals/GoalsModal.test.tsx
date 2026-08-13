@@ -9,6 +9,7 @@ const mocks = {
   setGoalsModalOpen: vi.fn(),
   setSelectedGoalId: vi.fn(),
   setOrchestrationOpen: vi.fn(),
+  setGoalLinesOpen: vi.fn(),
   loadGoals: vi.fn(),
   saveGoals: vi.fn(),
   discardGoalChanges: vi.fn(),
@@ -103,11 +104,24 @@ const storeState = {
   conductorAssignments: {},
   conductorPendingApprovals: [],
   conductorDecisions: [],
+  overlayStack: { layers: [] as { id: string; kind: string }[] },
+  pushOverlay: (entry: { id: string; kind: string }) => {
+    if (storeState.overlayStack.layers.some((layer) => layer.id === entry.id)) return;
+    storeState.overlayStack = { layers: [...storeState.overlayStack.layers, entry] };
+  },
+  removeOverlay: (id: string) => {
+    storeState.overlayStack = {
+      layers: storeState.overlayStack.layers.filter((layer) => layer.id !== id),
+    };
+  },
+  ownsEscape: (id: string) => storeState.overlayStack.layers.at(-1)?.id === id,
   ...mocks,
 };
 
 vi.mock('@/lib/store', () => ({
-  useStore: (selector: (s: typeof storeState) => unknown) => selector(storeState),
+  useStore: Object.assign((selector: (s: typeof storeState) => unknown) => selector(storeState), {
+    getState: () => storeState,
+  }),
 }));
 
 describe('buildGoalLaunchPrompt', () => {
@@ -208,6 +222,7 @@ describe('GoalsModal', () => {
     storeState.selectedGoalId = null;
     storeState.pmDraftTickets = [];
     storeState.goalsDirty = false;
+    storeState.overlayStack = { layers: [] };
     localStorage.clear();
   });
 
@@ -316,7 +331,49 @@ describe('GoalsModal', () => {
     expect(mocks.setOrchestrationOpen).toHaveBeenCalledWith(true);
   });
 
+  it('replaces itself with Goal Lines instead of stacking', async () => {
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+    await user.click(screen.getByTestId('goals-goal-lines-btn'));
+    expect(mocks.setGoalsModalOpen).toHaveBeenCalledWith(false);
+    expect(mocks.setGoalLinesOpen).toHaveBeenCalledWith(true, { fromGoals: true });
+  });
+
+  it('shows the persist chip only while Goals is dirty', () => {
+    storeState.goalsDirty = false;
+    const { rerender } = render(<GoalsModal />);
+    expect(screen.queryByTestId('persist-chip')).toBeNull();
+
+    storeState.goalsDirty = true;
+    rerender(<GoalsModal />);
+    expect(screen.getByTestId('persist-chip')).toHaveTextContent('Unsaved · ⌘S');
+  });
+
+  it('creates a goal as a draft without persisting', async () => {
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+    await user.click(screen.getByTestId('goals-create-btn'));
+    await user.type(screen.getByTestId('goal-create-name'), 'New outcome');
+    await user.click(screen.getByTestId('goal-create-save'));
+    expect(mocks.addGoal).toHaveBeenCalled();
+    expect(mocks.setSelectedGoalId).toHaveBeenCalled();
+    expect(mocks.saveGoals).not.toHaveBeenCalled();
+  });
+
+  it('replaces itself with Orchestration instead of stacking', async () => {
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+    await user.click(screen.getByTestId('goals-orchestration-btn'));
+    expect(mocks.setGoalsModalOpen).toHaveBeenCalledWith(false);
+    expect(mocks.setOrchestrationOpen).toHaveBeenCalledWith(true);
+  });
+
   describe('closing with unsaved changes', () => {
+    it('names the icon-only close button Close', () => {
+      render(<GoalsModal />);
+      expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
+    });
+
     it('closes straight away when nothing is unsaved', async () => {
       const user = userEvent.setup();
       render(<GoalsModal />);

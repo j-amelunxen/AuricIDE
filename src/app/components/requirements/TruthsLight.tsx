@@ -9,7 +9,7 @@ const STALE_DAYS = 30;
 export function TruthsLight() {
   const requirements = useStore((s) => s.requirementsDraft);
   const rootPath = useStore((s) => s.rootPath);
-  const setRequirementsModalOpen = useStore((s) => s.setRequirementsModalOpen);
+  const openWorkPlace = useStore((s) => s.openWorkPlace);
   const loadRequirements = useStore((s) => s.loadRequirements);
 
   const relevant = requirements.filter(
@@ -23,7 +23,7 @@ export function TruthsLight() {
   const held = relevant.length - needProof;
 
   const handleClick = () => {
-    setRequirementsModalOpen(true);
+    openWorkPlace('requirements');
     if (rootPath) void loadRequirements(rootPath);
   };
 

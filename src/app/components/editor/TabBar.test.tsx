@@ -22,6 +22,13 @@ describe('TabBar', () => {
     expect(screen.getByTestId('tab-/a.md')).toHaveClass('border-t-2');
   });
 
+  it('marks no tab active when activeTabId is null', () => {
+    render(<TabBar tabs={tabs} activeTabId={null} onSelect={() => {}} onClose={() => {}} />);
+    expect(screen.getByTestId('tab-/a.md')).not.toHaveClass('border-t-2');
+    expect(screen.getByTestId('tab-/b.md')).not.toHaveClass('border-t-2');
+    expect(screen.getByTestId('tab-/c.md')).not.toHaveClass('border-t-2');
+  });
+
   it('shows an icon before the name when a tab declares one', () => {
     const withIcon: TabItem[] = [
       { id: '/data/scratches/scratch-1.md', name: 'scratch-1.md', icon: 'sticky_note_2' },

@@ -7,7 +7,7 @@ export function ConductorPulse() {
   const running = useStore((s) => s.conductorRunning);
   const assignments = useStore((s) => s.conductorAssignments);
   const pendingApprovals = useStore((s) => s.conductorPendingApprovals);
-  const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
+  const openWorkPlace = useStore((s) => s.openWorkPlace);
 
   const workingCount = Object.keys(assignments).length;
   const waitingCount = pendingApprovals.length;
@@ -16,8 +16,8 @@ export function ConductorPulse() {
     <button
       data-testid="conductor-pulse"
       aria-label="Conductor status"
-      onClick={() => setGoalsModalOpen(true)}
-      title={running ? 'Conductor running · open Goals' : 'Start conductor in Goals'}
+      onClick={() => openWorkPlace('goals')}
+      title={running ? 'Conductor running · open Work → Goals' : 'Start conductor in Work → Goals'}
       className={`group flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-medium backdrop-blur-sm transition-colors duration-150 hover:bg-white/10 ${
         running ? 'border-green-500/25 bg-green-500/5' : 'border-white/5 bg-black/20'
       }`}

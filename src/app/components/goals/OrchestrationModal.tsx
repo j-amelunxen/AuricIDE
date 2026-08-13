@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, BackgroundVariant, Controls, type Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -11,6 +11,7 @@ import {
 } from '@/lib/orchestration/graphBuilder';
 import { OrchestrationNode } from './OrchestrationNode';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const nodeTypes = { orchestration: OrchestrationNode };
@@ -63,24 +64,28 @@ function OrchestrationModalContent() {
     [edges]
   );
 
-  const handleClose = useCallback(() => setOrchestrationOpen(false), [setOrchestrationOpen]);
+  const handleClose = useCallback(() => {
+    setOrchestrationOpen(false);
+    const workOpen = useStore.getState().workPlaceOpen;
+    if (!workOpen) setGoalsModalOpen(true);
+  }, [setOrchestrationOpen, setGoalsModalOpen]);
 
-  useEffect(() => {
-    if (!orchestrationOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [orchestrationOpen, handleClose]);
+  useOverlayLayer({
+    id: 'orchestration',
+    kind: 'tool',
+    active: orchestrationOpen,
+    onEscape: handleClose,
+  });
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       const data = node.data as OrchestrationNodeData;
       if (data.kind === 'goal') {
         setSelectedGoalId(data.entityId);
-        setGoalsModalOpen(true);
         setOrchestrationOpen(false);
+        const workOpen = useStore.getState().workPlaceOpen;
+        if (workOpen) useStore.getState().setWorkTab('goals');
+        else setGoalsModalOpen(true);
       }
     },
     [setSelectedGoalId, setGoalsModalOpen, setOrchestrationOpen]
@@ -95,7 +100,7 @@ function OrchestrationModalContent() {
       aria-modal="true"
       aria-labelledby="orchestration-modal-title"
       data-testid="orchestration-modal"
-      className="fixed inset-0 z-[105] flex flex-col bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex flex-col bg-black/80 backdrop-blur-sm"
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-background-dark/80 px-6 py-3">

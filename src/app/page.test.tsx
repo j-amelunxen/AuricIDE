@@ -435,7 +435,16 @@ describe('Home page', () => {
     });
     render(<Home />);
     // Should count 'open' and 'in_progress' = 2
-    expect(screen.getByTestId('badge-project-mgmt')).toHaveTextContent('2');
+    expect(screen.getByTestId('badge-work')).toHaveTextContent('2');
+  });
+
+  it('opens Work in the center when the Work rail item is clicked', () => {
+    useStore.setState({ rootPath: '/test/project' });
+    render(<Home />);
+    fireEvent.click(screen.getByTestId('activity-item-work'));
+    expect(useStore.getState().workPlaceOpen).toBe(true);
+    expect(screen.getByTestId('work-view')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /goals/i })).not.toBeInTheDocument();
   });
 });
 

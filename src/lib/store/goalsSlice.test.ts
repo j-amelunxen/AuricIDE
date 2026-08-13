@@ -633,6 +633,17 @@ describe('goal lines view state', () => {
     store.getState().setGoalLinesOpen(false);
     expect(store.getState().goalLinesOpen).toBe(false);
   });
+
+  it('remembers when Goal Lines was opened from Goals, and forgets a rail open', () => {
+    const store = createTestStore();
+    store.getState().setGoalLinesOpen(true, { fromGoals: true });
+    expect(store.getState().goalLinesReturnToGoals).toBe(true);
+    store.getState().setGoalLinesOpen(false);
+    expect(store.getState().goalLinesReturnToGoals).toBe(false);
+
+    store.getState().setGoalLinesOpen(true);
+    expect(store.getState().goalLinesReturnToGoals).toBe(false);
+  });
 });
 
 describe('goal stations in the draft double-buffer', () => {

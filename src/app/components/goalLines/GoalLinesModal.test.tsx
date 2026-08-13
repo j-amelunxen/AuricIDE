@@ -72,6 +72,8 @@ function seedStore(overrides: Record<string, unknown> = {}): void {
     reviewedAgentIds: [],
     selectedGoalId: null,
     goalsModalOpen: false,
+    goalLinesReturnToGoals: false,
+    overlayStack: { layers: [] },
     loadGoals: vi.fn(async () => {}),
     loadPmData: vi.fn(async () => {}),
     loadRequirements: vi.fn(async () => {}),
@@ -119,6 +121,36 @@ describe('GoalLinesModal', () => {
     render(<GoalLinesModal />);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(useStore.getState().goalLinesOpen).toBe(false);
+  });
+
+  it('reopens Goals on Escape only when opened from Goals', () => {
+    seedStore();
+    useStore.getState().setGoalLinesOpen(true, { fromGoals: true });
+    render(<GoalLinesModal />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useStore.getState().goalLinesOpen).toBe(false);
+    expect(useStore.getState().goalsModalOpen).toBe(true);
+  });
+
+  it('does not open Goals on Escape when opened from the rail', () => {
+    seedStore();
+    useStore.getState().setGoalLinesOpen(true);
+    render(<GoalLinesModal />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useStore.getState().goalLinesOpen).toBe(false);
+    expect(useStore.getState().goalsModalOpen).toBe(false);
+  });
+
+  it('shows the autosaved persist chip', () => {
+    seedStore();
+    render(<GoalLinesModal />);
+    expect(screen.getByTestId('persist-chip')).toHaveTextContent('Autosaved');
+  });
+
+  it('names the icon-only close button Close', () => {
+    seedStore();
+    render(<GoalLinesModal />);
+    expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
   });
 
   it('clicking a card opens and closes an accessible large detail layer', () => {
@@ -169,7 +201,7 @@ describe('GoalLinesModal', () => {
       agents: [healthy],
     });
     render(<GoalLinesModal />);
-    expect(screen.getByTestId('for-you-all-quiet').textContent).toContain('idle');
+    expect(screen.getByTestId('for-you-all-quiet').textContent).toContain('All quiet');
   });
 
   it('perches the running agent on its station in the map', () => {

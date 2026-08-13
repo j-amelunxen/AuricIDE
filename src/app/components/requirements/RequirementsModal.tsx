@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { PersistChip } from '@/app/components/ui/PersistChip';
 import { RequirementFilterPanel } from './RequirementFilterPanel';
 import { RequirementList } from './RequirementList';
 import { RequirementDetailPanel } from './RequirementDetailPanel';
@@ -13,7 +15,11 @@ import type { PmRequirement } from '@/lib/tauri/requirements';
 import { persistQuietly } from '@/lib/store/persistFeedback';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
-function RequirementsDialog() {
+export function RequirementsPanel({ embedded = false }: { embedded?: boolean }) {
+  return <RequirementsDialog embedded={embedded} />;
+}
+
+function RequirementsDialog({ embedded = false }: { embedded?: boolean }) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const requirementsModalOpen = useStore((s) => s.requirementsModalOpen);
   const requirementsDraft = useStore((s) => s.requirementsDraft);
@@ -46,11 +52,13 @@ function RequirementsDialog() {
 
   const [createOpen, setCreateOpen] = useState(false);
 
+  const active = embedded || requirementsModalOpen;
+
   useEffect(() => {
-    if (requirementsModalOpen && rootPath) {
+    if (active && rootPath) {
       loadRequirements(rootPath);
     }
-  }, [requirementsModalOpen, rootPath, loadRequirements]);
+  }, [active, rootPath, loadRequirements]);
 
   const handleClose = useCallback(async () => {
     if (requirementsDirty) {
@@ -58,6 +66,7 @@ function RequirementsDialog() {
         title: 'Discard changes?',
         message: 'Discard unsaved changes?',
         confirmLabel: 'Discard',
+        variant: 'discard',
       });
       if (!go) return;
       discardRequirementChanges();
@@ -72,23 +81,24 @@ function RequirementsDialog() {
     await persistQuietly(saveRequirements(rootPath));
   }, [rootPath, saveRequirements]);
 
-  // Escape belongs to whatever is on top: the confirm dialog cancels itself,
-  // and this handler must not answer it by asking the same question again.
-  const confirmOpen = confirmDialog !== null;
+  useOverlayLayer({
+    id: 'requirements',
+    kind: 'tool',
+    active: !embedded && requirementsModalOpen,
+    onEscape: handleClose,
+  });
 
   useEffect(() => {
-    if (!requirementsModalOpen) return;
+    if (!active) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !createOpen && !confirmOpen) {
-        void handleClose();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (requirementsDirty) void handleSave();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [requirementsModalOpen, createOpen, confirmOpen, handleClose, handleSave, requirementsDirty]);
+  }, [active, handleSave, requirementsDirty]);
 
   const categories = useMemo(() => {
     const cats = new Set<string>();
@@ -144,11 +154,10 @@ function RequirementsDialog() {
   );
 
   const handleCreate = useCallback(
-    async (req: PmRequirement) => {
+    (req: PmRequirement) => {
       addRequirement(req);
-      if (rootPath) await persistQuietly(saveRequirements(rootPath));
     },
-    [addRequirement, saveRequirements, rootPath]
+    [addRequirement]
   );
 
   // A requirement carries more than its text: its verification record and the
@@ -169,22 +178,21 @@ function RequirementsDialog() {
     [confirm, requirementsDraft, deleteRequirement, selectedRequirementId, setSelectedRequirementId]
   );
 
-  if (!requirementsModalOpen) return null;
+  if (!embedded && !requirementsModalOpen) return null;
 
-  return createPortal(
-    <div
-      data-testid="requirements-modal"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) void handleClose();
-      }}
-    >
+  const body = (
+    <>
       <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+        ref={embedded ? undefined : dialogRef}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : 'true'}
         aria-labelledby="requirements-modal-title"
-        className="flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl"
+        data-testid={embedded ? 'work-panel-requirements' : 'requirements-modal'}
+        className={
+          embedded
+            ? 'flex h-full w-full flex-col bg-background-dark'
+            : 'flex h-[85vh] w-[90vw] max-w-[1400px] flex-col rounded-2xl border border-white/10 bg-background-dark shadow-2xl'
+        }
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-6 py-3">
@@ -196,11 +204,7 @@ function RequirementsDialog() {
             <span className="text-[10px] text-foreground-muted">
               {requirementsDraft.length} total
             </span>
-            {requirementsDirty && (
-              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-                unsaved
-              </span>
-            )}
+            <PersistChip dirty={requirementsDirty} />
           </div>
 
           <div className="flex items-center gap-2">
@@ -228,13 +232,16 @@ function RequirementsDialog() {
                 Save
               </button>
             )}
-            <button
-              data-testid="requirements-close-btn"
-              onClick={() => void handleClose()}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
-            >
-              <AuricIcon name="close" className="text-base" />
-            </button>
+            {!embedded && (
+              <button
+                data-testid="requirements-close-btn"
+                aria-label="Close"
+                onClick={() => void handleClose()}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
+              >
+                <AuricIcon name="close" className="text-base" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -280,6 +287,19 @@ function RequirementsDialog() {
       />
 
       {confirmDialog}
+    </>
+  );
+
+  if (embedded) return body;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) void handleClose();
+      }}
+    >
+      {body}
     </div>,
     document.body
   );

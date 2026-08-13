@@ -101,7 +101,8 @@ describe('TruthsLight', () => {
     });
     render(<TruthsLight />);
     fireEvent.click(screen.getByTestId('truths-light'));
-    expect(useStore.getState().requirementsModalOpen).toBe(true);
+    expect(useStore.getState().workPlaceOpen).toBe(true);
+    expect(useStore.getState().workTab).toBe('requirements');
   });
 
   it('is reachable by an accessible label', () => {

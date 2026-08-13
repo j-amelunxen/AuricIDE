@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ActivityBar } from './ActivityBar';
@@ -136,6 +136,42 @@ describe('ActivityBar', () => {
   it('renders no separator when every item is primary', () => {
     render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
     expect(screen.queryByTestId('activity-section-separator')).not.toBeInTheDocument();
+  });
+
+  it('pins Settings to a footer region so it cannot scroll away', () => {
+    const sectioned = [
+      { id: 'cockpit', icon: 'space_dashboard', label: 'Mission Control' },
+      { id: 'explorer', icon: 'folder', label: 'Explorer' },
+      { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools' as const },
+      { id: 'extensions', icon: 'extension', label: 'Extensions', section: 'tools' as const },
+      { id: 'settings', icon: 'settings', label: 'Settings', section: 'tools' as const },
+    ];
+    render(<ActivityBar items={sectioned} activeId="cockpit" onSelect={() => {}} />);
+
+    const pin = screen.getByTestId('activity-settings-pin');
+    expect(within(pin).getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mission Control' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Explorer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Outline' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Extensions' })).toBeInTheDocument();
+
+    const scroll = screen.getByTestId('activity-rail-scroll');
+    expect(within(scroll).queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument();
+    expect(scroll).toHaveClass('overflow-y-auto');
+    expect(pin).not.toHaveClass('overflow-y-auto');
+    // Stretch to the shell row and allow shrinking so overflow actually scrolls.
+    expect(screen.getByTestId('activity-bar')).toHaveClass('h-full', 'min-h-0');
+  });
+
+  it('does not render a Settings pin when Settings is not in the rail', () => {
+    render(
+      <ActivityBar
+        items={[{ id: 'explorer', icon: 'folder', label: 'Explorer' }]}
+        activeId="explorer"
+        onSelect={() => {}}
+      />
+    );
+    expect(screen.queryByTestId('activity-settings-pin')).not.toBeInTheDocument();
   });
 
   it('gives activity items a snappy press-and-hover feedback', () => {

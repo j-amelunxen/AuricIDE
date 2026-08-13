@@ -107,15 +107,20 @@ export function ActivityBar({
   onTerminalToggle,
   onAgentsToggle,
 }: ActivityBarProps) {
-  const primary = items.filter((item) => item.section !== 'tools');
-  const tools = items.filter((item) => item.section === 'tools');
+  const settings = items.find((item) => item.id === 'settings');
+  const rest = items.filter((item) => item.id !== 'settings');
+  const primary = rest.filter((item) => item.section !== 'tools');
+  const tools = rest.filter((item) => item.section === 'tools');
 
   return (
     <nav
       data-testid="activity-bar"
-      className="glass-panel flex w-14 flex-col items-center justify-between py-4 z-20"
+      className="glass-panel flex h-full min-h-0 w-14 flex-col items-center py-4 z-20"
     >
-      <div className="flex flex-col items-center gap-4 w-full">
+      <div
+        data-testid="activity-rail-scroll"
+        className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto"
+      >
         {primary.map((item) => (
           <ActivityButton
             key={item.id}
@@ -144,8 +149,17 @@ export function ActivityBar({
         )}
       </div>
 
+      {settings && (
+        <div
+          data-testid="activity-settings-pin"
+          className="mt-2 flex flex-shrink-0 flex-col items-center"
+        >
+          <ActivityButton item={settings} isActive={settings.id === activeId} onSelect={onSelect} />
+        </div>
+      )}
+
       {/* Panel toggles at the bottom */}
-      <div className="flex flex-col items-center gap-2">
+      <div className="mt-2 flex flex-shrink-0 flex-col items-center gap-2">
         {onAgentsToggle && (
           <button
             onClick={onAgentsToggle}
