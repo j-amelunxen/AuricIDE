@@ -1265,6 +1265,19 @@ describe('useIDEHandlers', () => {
 
       expect(mockSaveGoals).not.toHaveBeenCalled();
     });
+
+    it('leaves the bottom terminal panel collapsed', async () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleSpawnNewAgent({
+        name: 'Agent',
+        model: 'sonnet',
+        task: 'Do the thing',
+        provider: 'claude',
+      });
+
+      expect(mockState.setBottomCollapsed).not.toHaveBeenCalled();
+    });
   });
 
   describe('tab content loading', () => {
