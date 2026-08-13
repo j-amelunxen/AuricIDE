@@ -13,6 +13,7 @@ import {
 } from '@/lib/pm/dependencyProposal';
 import { DependencyProposalModal } from './DependencyProposalModal';
 import { DependencySelector } from './DependencySelector';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
 interface TicketCreateModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ interface TicketCreateModalProps {
     dependencies: PmDependency[]
   ) => void;
   onClose: () => void;
+  onCreateEpic?: () => void;
 }
 
 const statusConfig: { value: PmTicket['status']; label: string; activeClass: string }[] = [
@@ -47,11 +49,6 @@ const statusConfig: { value: PmTicket['status']; label: string; activeClass: str
     value: 'done',
     label: 'Done',
     activeClass: 'bg-green-500/15 text-green-300 border-green-500/25',
-  },
-  {
-    value: 'archived',
-    label: 'Archived',
-    activeClass: 'bg-purple-500/15 text-purple-300 border-purple-500/25',
   },
 ];
 
@@ -70,16 +67,6 @@ const priorityConfig: { value: PmTicket['priority']; label: string; activeClass:
   },
 ];
 
-const modelPowerConfig: { value: PmTicket['modelPower']; label: string; activeClass: string }[] = [
-  { value: 'low', label: 'Low', activeClass: 'bg-blue-500/15 text-blue-300 border-blue-500/25' },
-  {
-    value: 'medium',
-    label: 'Medium',
-    activeClass: 'bg-orange-500/15 text-orange-300 border-orange-500/25',
-  },
-  { value: 'high', label: 'High', activeClass: 'bg-red-500/15 text-red-300 border-red-500/25' },
-];
-
 type DetailTab = 'details' | 'dependencies';
 
 function TicketCreateForm({
@@ -88,16 +75,15 @@ function TicketCreateForm({
   availableItems,
   defaultEpicId,
   initialValues,
-  onSave,
   onSaveAndClose,
   onClose,
+  onCreateEpic,
 }: Omit<TicketCreateModalProps, 'isOpen'>) {
-  const [ticketId, setTicketId] = useState(() => crypto.randomUUID());
+  const [ticketId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState(initialValues?.name ?? '');
   const [epicId, setEpicId] = useState(defaultEpicId ?? epics[0]?.id ?? '');
   const [status, setStatus] = useState<PmTicket['status']>('open');
   const [priority, setPriority] = useState<PmTicket['priority']>('normal');
-  const [modelPower, setModelPower] = useState<PmTicket['modelPower']>(undefined);
   const [description, setDescription] = useState(initialValues?.description ?? '');
   const [context] = useState<PmContextItem[]>(initialValues?.context ?? []);
   const [localDependencies, setLocalDependencies] = useState<PmDependency[]>([]);
@@ -111,6 +97,13 @@ function TicketCreateForm({
   );
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
 
+  useOverlayLayer({
+    id: 'ticket-create',
+    kind: 'tool',
+    active: true,
+    onEscape: proposalModalOpen ? undefined : onClose,
+  });
+
   const getTicketData = () => ({
     id: ticketId,
     name: name.trim(),
@@ -118,22 +111,10 @@ function TicketCreateForm({
     status,
     priority,
     description,
-    modelPower,
+    modelPower: undefined,
     context,
     needsHumanSupervision: false,
   });
-
-  const handleCreateOnly = () => {
-    if (!name.trim() || !epicId) return;
-    onSave(getTicketData(), localDependencies);
-
-    setTicketId(crypto.randomUUID());
-    setName('');
-    setDescription('');
-    setPriority('normal');
-    setModelPower(undefined);
-    setLocalDependencies([]);
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,7 +172,7 @@ function TicketCreateForm({
   };
 
   return (
-    <div className="fixed inset-0 z-[210] flex items-center justify-center">
+    <div className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={dialogRef}
@@ -285,9 +266,20 @@ function TicketCreateForm({
                       ))}
                     </select>
                   ) : (
-                    <p className="text-xs text-foreground-muted py-2.5">
-                      No epics yet. Create one first.
-                    </p>
+                    <div className="flex flex-col gap-1.5 py-1">
+                      <p className="text-xs text-foreground-muted">
+                        No epics yet. Create one first.
+                      </p>
+                      {onCreateEpic && (
+                        <button
+                          type="button"
+                          onClick={onCreateEpic}
+                          className="self-start rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-[10px] font-bold text-primary-light hover:bg-primary/20 transition-colors"
+                        >
+                          Create epic
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div>
@@ -328,41 +320,6 @@ function TicketCreateForm({
                       onClick={() => setPriority(opt.value)}
                       className={`flex-1 rounded-lg border py-2 text-[10px] font-medium transition-colors leading-none ${
                         priority === opt.value
-                          ? opt.activeClass
-                          : 'border-transparent text-foreground-muted hover:bg-white/5 hover:text-foreground'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Model Power */}
-              <div>
-                <label className="mb-1.5 flex items-center text-xs font-medium text-foreground-muted">
-                  Model Power (Optional)
-                  <InfoTooltip description={GUIDANCE.pm.modelPower} label="i" />
-                </label>
-                <div className="flex gap-2" data-testid="model-power-selector">
-                  <button
-                    type="button"
-                    onClick={() => setModelPower(undefined)}
-                    className={`flex-1 rounded-lg border py-2 text-[10px] font-medium transition-colors leading-none ${
-                      modelPower === undefined
-                        ? 'bg-white/10 text-foreground border-white/20'
-                        : 'border-transparent text-foreground-muted hover:bg-white/5 hover:text-foreground'
-                    }`}
-                  >
-                    None
-                  </button>
-                  {modelPowerConfig.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setModelPower(opt.value)}
-                      className={`flex-1 rounded-lg border py-2 text-[10px] font-medium transition-colors leading-none ${
-                        modelPower === opt.value
                           ? opt.activeClass
                           : 'border-transparent text-foreground-muted hover:bg-white/5 hover:text-foreground'
                       }`}
@@ -424,18 +381,10 @@ function TicketCreateForm({
           <button
             type="button"
             disabled={!name.trim() || !epicId}
-            onClick={handleCreateOnly}
-            className="rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-xs font-medium text-foreground hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Create
-          </button>
-          <button
-            type="button"
-            disabled={!name.trim() || !epicId}
             onClick={handleSubmit}
             className="rounded-lg bg-primary px-5 py-2 text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/80 transition-colors shadow-lg shadow-primary/20"
           >
-            Create and Close
+            Create
           </button>
         </div>
       </div>

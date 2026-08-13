@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ExtractSectionDialog } from './ExtractSectionDialog';
 
 describe('ExtractSectionDialog', () => {
@@ -60,6 +61,30 @@ describe('ExtractSectionDialog', () => {
 
     fireEvent.click(screen.getByText('Cancel'));
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('calls onCancel when Escape is pressed', async () => {
+    const onCancel = vi.fn();
+    render(<ExtractSectionDialog {...defaultProps} onCancel={onCancel} />);
+
+    await userEvent.setup().keyboard('{Escape}');
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('calls onCancel when the backdrop is clicked', () => {
+    const onCancel = vi.fn();
+    render(<ExtractSectionDialog {...defaultProps} onCancel={onCancel} />);
+
+    fireEvent.click(screen.getByRole('dialog').parentElement!);
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('does not cancel when the dialog itself is clicked', () => {
+    const onCancel = vi.fn();
+    render(<ExtractSectionDialog {...defaultProps} onCancel={onCancel} />);
+
+    fireEvent.click(screen.getByRole('dialog'));
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
   it('disables confirm when filename is empty', () => {

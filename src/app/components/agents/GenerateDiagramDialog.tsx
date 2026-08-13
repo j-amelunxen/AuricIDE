@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import type { AgentConfig } from '@/lib/tauri/agents';
 import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
+import { exists } from '@/lib/tauri/fs';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface GenerateDiagramDialogProps {
@@ -91,10 +93,14 @@ function GenerateDiagramDialogPanel({
   folderPath,
 }: GenerateDiagramDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  useOverlayLayer({ id: 'generate-diagram', kind: 'tool', active: true, onEscape: onClose });
   const [diagramType, setDiagramType] = useState('flowchart');
   const [detailLevel, setDetailLevel] = useState('abstract');
   const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo>(FALLBACK_CRUSH_PROVIDER);
+  // The folder the check answered "yes" for, not a bare flag: a stale `true`
+  // from the previous folder would warn about a file that is not there.
+  const [overwrittenFolder, setOverwrittenFolder] = useState<string | null>(null);
 
   useEffect(() => {
     listProviders()
@@ -108,6 +114,23 @@ function GenerateDiagramDialogPanel({
         // Browser mode — keep fallback
       });
   }, []);
+
+  useEffect(() => {
+    if (!folderPath) return;
+    let cancelled = false;
+    exists(`${folderPath}/diagram.md`)
+      .then((fileExists) => {
+        if (!cancelled) setOverwrittenFolder(fileExists ? folderPath : null);
+      })
+      .catch(() => {
+        // Browser mode has no FS IPC — treat as "no warning".
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [folderPath]);
+
+  const overwriteWarning = overwrittenFolder !== null && overwrittenFolder === folderPath;
 
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const found = providers.find((p) => p.id === e.target.value);
@@ -134,11 +157,8 @@ function GenerateDiagramDialogPanel({
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
     >
       <div
         ref={dialogRef}
@@ -161,6 +181,15 @@ function GenerateDiagramDialogPanel({
         <div className="flex flex-col gap-5">
           <div className="space-y-1.5">
             <p className="text-xs text-foreground-muted truncate">{folderPath}</p>
+            {overwriteWarning && (
+              <p
+                data-testid="diagram-overwrite-warning"
+                role="status"
+                className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-300"
+              >
+                diagram.md already exists in this folder. Generate will overwrite it.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

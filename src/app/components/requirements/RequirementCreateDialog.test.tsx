@@ -164,6 +164,20 @@ describe('RequirementCreateDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('Escape calls onClose', async () => {
+    const user = userEvent.setup();
+    render(
+      <RequirementCreateDialog
+        isOpen={true}
+        existingRequirements={[]}
+        onSave={onSave}
+        onClose={onClose}
+      />
+    );
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('created requirement includes lastVerifiedAt null and appliesTo', async () => {
     const user = userEvent.setup();
     render(

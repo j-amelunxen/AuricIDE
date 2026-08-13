@@ -60,6 +60,13 @@
 
   --font-display: 'Space Grotesk', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+
+  --z-place: 1;
+  --z-tool: 200;
+  --z-tool-nested: 300;
+  --z-confirm: 450;
+  --z-toast: 500;
+  --z-dev: 400;
 }
 
 /* ─────────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { NotificationAction } from '@/lib/notifications/types';
 import { comboPreview } from '@/lib/quickAccess/combo';
+import { useStore } from '@/lib/store';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { Schedule, SchedulePayload } from '@/lib/tauri/schedules';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
@@ -143,9 +144,13 @@ function payloadOf(schedule: Schedule): SchedulePayload {
 }
 
 describe('ScheduleEditor', () => {
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
+  });
+
   it('is a labelled modal dialog', () => {
     renderEditor();
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('dialog', { name: 'New schedule' });
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(dialog.getAttribute('aria-labelledby')).toBe('schedule-editor-title');
   });
@@ -157,8 +162,34 @@ describe('ScheduleEditor', () => {
 
   it('cancels on Escape', () => {
     const props = renderEditor();
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'Escape' });
     expect(props.onCancel).toHaveBeenCalled();
+  });
+
+  it('registers as a tool overlay so a confirm on top owns Escape', () => {
+    renderEditor();
+    expect(useStore.getState().overlayStack.layers.at(-1)).toEqual(
+      expect.objectContaining({ id: 'schedule-editor', kind: 'tool' })
+    );
+  });
+
+  it('sits on the tool-nested layer', () => {
+    renderEditor();
+    expect(screen.getByRole('dialog').parentElement?.className).toContain(
+      'z-[var(--z-tool-nested)]'
+    );
+  });
+
+  it('labels the form chrome in English', () => {
+    renderEditor();
+    expect(screen.getByText('Rhythm')).toBeTruthy();
+    expect(screen.getByText('Action')).toBeTruthy();
+    expect(screen.getByText('Reminder only')).toBeTruthy();
+    expect(screen.getByText('Custom agent')).toBeTruthy();
+    expect(screen.getByText('If AuricIDE was closed')).toBeTruthy();
+    expect(screen.getByText('Upcoming')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
   });
 
   describe('the rhythm it produces', () => {
@@ -230,7 +261,7 @@ describe('ScheduleEditor', () => {
       expect(actions).toEqual([
         {
           id: 'run',
-          label: 'Agent starten',
+          label: 'Start agent',
           kind: 'spawn-agent',
           task: 'Serverscan durchführen',
           repoPath: '/repo/sample',
@@ -326,7 +357,12 @@ describe('ScheduleEditor', () => {
       );
     });
 
-    it('selects Freitext when the stored action is spawn-agent', () => {
+    it('titles an existing schedule as edit', () => {
+      renderEditor({ schedule: existing });
+      expect(screen.getByRole('dialog', { name: 'Edit schedule' })).toBeTruthy();
+    });
+
+    it('selects the custom-agent choice when the stored action is spawn-agent', () => {
       renderEditor({ schedule: existing });
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-task').checked).toBe(true);
     });
@@ -359,7 +395,7 @@ describe('ScheduleEditor', () => {
 
       const select = screen.getByTestId<HTMLSelectElement>('schedule-skill-select');
       expect(select.value).toBe('gone-skill');
-      expect(select.options[select.selectedIndex].textContent).toContain('(gespeichert)');
+      expect(select.options[select.selectedIndex].textContent).toContain('(saved)');
 
       fireEvent.click(screen.getByTestId('schedule-save'));
       expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toEqual(orphan);
@@ -377,7 +413,7 @@ describe('ScheduleEditor', () => {
       expect(payloadOf(draft).actions).toEqual([
         {
           id: 'run',
-          label: 'Agent starten',
+          label: 'Start agent',
           kind: 'spawn-agent',
           task: 'scan',
           repoPath: '/repo/sample',
@@ -402,7 +438,7 @@ describe('ScheduleEditor', () => {
       expect(payloadOf(draft).actions).toEqual([
         {
           id: 'run',
-          label: 'Agent starten',
+          label: 'Start agent',
           kind: 'spawn-agent',
           task: 'scan',
         },
@@ -418,7 +454,7 @@ describe('ScheduleEditor', () => {
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(true);
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-combo').disabled).toBe(true);
       expect(screen.getByTestId('schedule-skill-combo-hint').textContent).toContain(
-        'Skill und Combo brauchen ein Projekt.'
+        'Skill and Combo need a project.'
       );
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-none').disabled).toBe(false);
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-task').disabled).toBe(false);
@@ -440,7 +476,7 @@ describe('ScheduleEditor', () => {
       expect(screen.getByTestId<HTMLButtonElement>('schedule-save').disabled).toBe(true);
     });
 
-    it('treats Freitext with an empty task as Erinnerung', () => {
+    it('treats a custom-agent choice with an empty task as reminder-only', () => {
       const props = renderEditor();
       fireEvent.change(screen.getByTestId('schedule-name'), { target: { value: 'Weekly' } });
       fireEvent.click(screen.getByTestId('schedule-action-task'));
@@ -451,7 +487,7 @@ describe('ScheduleEditor', () => {
       );
     });
 
-    it('offers Snapshot aktualisieren when the live pin has drifted', () => {
+    it('offers to update the snapshot when the live pin has drifted', () => {
       const stored = scheduleWith(runSkillAction);
       const props = renderEditor({
         schedule: stored,
@@ -459,7 +495,7 @@ describe('ScheduleEditor', () => {
       });
 
       expect(screen.getByTestId('schedule-snapshot-stale').textContent).toContain(
-        'Der angepinnte Skill hat sich geändert.'
+        'The pinned skill has changed.'
       );
 
       fireEvent.click(screen.getByTestId('schedule-snapshot-refresh'));
@@ -468,7 +504,7 @@ describe('ScheduleEditor', () => {
       fireEvent.click(screen.getByTestId('schedule-save'));
       expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toEqual({
         id: 'run',
-        label: 'Changelog starten',
+        label: 'Start Changelog',
         kind: 'run-skill',
         skillId: 'skill-1',
         skillLabel: 'Changelog',
@@ -509,7 +545,7 @@ describe('ScheduleEditor', () => {
         [
           {
             id: 'run',
-            label: 'Review starten',
+            label: 'Start Review',
             kind: 'run-skill',
             skillId: 'discovered:/review',
             skillLabel: 'Review',
@@ -540,7 +576,7 @@ describe('ScheduleEditor', () => {
       renderEditor();
       fireEvent.click(screen.getByTestId('schedule-action-skill'));
       expect(
-        screen.getByText('Kein Quick Access für dieses Projekt — zuerst dort anpinnen.')
+        screen.getByText('No Quick Access for this project — pin one there first.')
       ).toBeTruthy();
     });
   });

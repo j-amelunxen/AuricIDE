@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { NewItemModal } from './NewItemModal';
@@ -62,5 +62,21 @@ describe('NewItemModal', () => {
     await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledWith('index.ts');
+  });
+
+  it('calls onCancel when the backdrop is clicked', () => {
+    const onCancel = vi.fn();
+    const { container } = render(
+      <NewItemModal type="file" onConfirm={() => {}} onCancel={onCancel} />
+    );
+    fireEvent.click(container.firstChild as HTMLElement);
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('calls onCancel when Escape is pressed', () => {
+    const onCancel = vi.fn();
+    render(<NewItemModal type="file" onConfirm={() => {}} onCancel={onCancel} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalled();
   });
 });

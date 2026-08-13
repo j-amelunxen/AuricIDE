@@ -48,6 +48,22 @@ describe('ConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
 
+  it('uses a red confirm button by default', () => {
+    render(<ConfirmDialog {...baseProps} />);
+    expect(screen.getByRole('button', { name: 'Delete' }).className).toContain('bg-red-500');
+  });
+
+  it('uses a neutral confirm button for discard', () => {
+    render(<ConfirmDialog {...baseProps} variant="discard" confirmLabel="Discard" />);
+    expect(screen.getByRole('button', { name: 'Discard' }).className).toContain('bg-white/10');
+    expect(screen.getByRole('button', { name: 'Discard' }).className).not.toContain('bg-red-500');
+  });
+
+  it('uses an amber confirm button for elevate', () => {
+    render(<ConfirmDialog {...baseProps} variant="elevate" confirmLabel="Elevate" />);
+    expect(screen.getByRole('button', { name: 'Elevate' }).className).toMatch(/amber/);
+  });
+
   it('keeps Escape from reaching window listeners behind it', () => {
     // Callers such as the agent terminal listen for Escape on window to close
     // themselves. If that listener also sees this key, the thing that asked

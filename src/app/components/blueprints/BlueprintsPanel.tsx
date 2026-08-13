@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from 'react';
 import { useStore } from '@/lib/store';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { BlueprintCard } from './BlueprintCard';
 import { BlueprintCreateModal } from './BlueprintCreateModal';
 import type { Blueprint } from '@/lib/tauri/blueprints';
@@ -27,6 +28,7 @@ export function BlueprintsPanel() {
     setBlueprintsModalOpen,
     setSelectedBlueprintId,
   } = useStore();
+  const { confirm, confirmDialog } = useConfirm();
 
   useEffect(() => {
     if (rootPath) {
@@ -160,6 +162,15 @@ export function BlueprintsPanel() {
             {selectedBlueprintId && (
               <button
                 onClick={async () => {
+                  const name =
+                    blueprintsDraft.find((bp) => bp.id === selectedBlueprintId)?.name ??
+                    'this blueprint';
+                  const go = await confirm({
+                    title: 'Delete this blueprint?',
+                    message: `This permanently deletes "${name}".`,
+                    confirmLabel: 'Delete',
+                  });
+                  if (!go) return;
                   deleteBlueprint(selectedBlueprintId);
                   setSelectedBlueprintId(null);
                   if (rootPath) await persistQuietly(saveBlueprints(rootPath));
@@ -195,6 +206,8 @@ export function BlueprintsPanel() {
         onSave={handleCreate}
         onClose={() => setBlueprintsModalOpen(false)}
       />
+
+      {confirmDialog}
     </>
   );
 }

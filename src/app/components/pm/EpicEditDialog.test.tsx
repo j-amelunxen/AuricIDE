@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { EpicEditDialog } from './EpicEditDialog';
 import type { PmEpic } from '@/lib/tauri/pm';
 
@@ -88,6 +89,15 @@ describe('EpicEditDialog', () => {
     render(<EpicEditDialog {...defaultProps} onClose={onClose} />);
 
     fireEvent.click(screen.getByText('Cancel'));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('calls onClose when Escape is pressed', async () => {
+    const onClose = vi.fn();
+    render(<EpicEditDialog {...defaultProps} onClose={onClose} />);
+
+    const user = userEvent.setup();
+    await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
   });
 });

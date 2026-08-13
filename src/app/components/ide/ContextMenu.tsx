@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export type ContextMenuOption =
@@ -45,8 +46,12 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
-    window.addEventListener('mousedown', handleClickOutside, true);
+    // Next tick: the click that opened this menu must not also dismiss it.
+    const listen = window.setTimeout(() => {
+      window.addEventListener('mousedown', handleClickOutside, true);
+    }, 0);
     return () => {
+      window.clearTimeout(listen);
       window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('mousedown', handleClickOutside, true);
     };
@@ -74,12 +79,15 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
   const adjustedX = Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8));
   const adjustedY = Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8));
 
-  return (
+  // Portal past any ancestor `transform` (tile enter animation keeps
+  // scale(1) via fill-mode). `fixed` inside that box would interpret
+  // clientX/clientY as offsets of the tile, not the viewport.
+  return createPortal(
     <div
       ref={menuRef}
       role="menu"
       aria-label="Context menu"
-      className="fixed z-[200] w-44 overflow-hidden rounded-lg border border-white/10 bg-[#0a0a10]/95 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in duration-100"
+      className="fixed z-[var(--z-tool)] w-44 overflow-hidden rounded-lg border border-white/10 bg-[#0a0a10]/95 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in duration-100"
       style={{ left: adjustedX, top: adjustedY }}
     >
       <div className="max-h-[70vh] overflow-y-auto py-1">
@@ -133,6 +141,7 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
           );
         })}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

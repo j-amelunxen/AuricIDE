@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ExcalidrawBrowser } from './ExcalidrawBrowser';
 import { useStore } from '@/lib/store';
@@ -35,6 +35,19 @@ describe('ExcalidrawBrowser', () => {
       markSceneAsSpec: vi.fn(async () => 'specs/checkout-flow.excalidraw'),
       resyncAllSpecs: vi.fn(async () => ({ synced: 0, failed: 0 })),
     });
+  });
+
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
+  });
+
+  it('closes on Escape', () => {
+    render(<ExcalidrawBrowser />);
+    expect(useStore.getState().excalidrawBrowserOpen).toBe(true);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(useStore.getState().excalidrawBrowserOpen).toBe(false);
   });
 
   it('renders nothing while closed', () => {

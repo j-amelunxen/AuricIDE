@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
 interface ExtractSectionDialogProps {
   headingTitle: string;
@@ -22,6 +23,13 @@ export function ExtractSectionDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useDialogA11y<HTMLFormElement>();
 
+  useOverlayLayer({
+    id: 'extract-section',
+    kind: 'tool',
+    active: true,
+    onEscape: onCancel,
+  });
+
   useEffect(() => {
     inputRef.current?.select();
   }, []);
@@ -34,13 +42,17 @@ export function ExtractSectionDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onCancel}
+    >
       <form
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="extract-section-title"
         onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
         className="w-96 rounded-xl border border-white/10 bg-panel-bg p-5 shadow-2xl"
       >
         <h3 id="extract-section-title" className="mb-3 text-sm font-semibold text-foreground">

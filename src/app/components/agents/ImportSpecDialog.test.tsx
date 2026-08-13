@@ -44,6 +44,17 @@ describe('ImportSpecDialog', () => {
     expect(screen.getByLabelText(/permission mode/i)).toBeInTheDocument();
   });
 
+  it('primary button says "Start import agent", not IMPORT', () => {
+    render(<ImportSpecDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Start import agent' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'IMPORT' })).not.toBeInTheDocument();
+  });
+
+  it('explains that a headless agent will run', () => {
+    render(<ImportSpecDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByText(/headless agent/i)).toBeInTheDocument();
+  });
+
   it('import button is disabled when textarea is empty', () => {
     render(<ImportSpecDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     expect(screen.getByRole('button', { name: /import/i })).toBeDisabled();
@@ -138,8 +149,9 @@ describe('ImportSpecDialog', () => {
 
     // Should show loading text and be disabled
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /importing/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /starting/i })).toBeDisabled();
     });
+    expect(screen.queryByRole('button', { name: /importing/i })).not.toBeInTheDocument();
 
     // Resolve to clean up
     resolveSpawn();

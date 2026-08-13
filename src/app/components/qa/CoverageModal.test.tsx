@@ -106,6 +106,15 @@ describe('CoverageModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('calls onClose when Escape is pressed', () => {
+    const onClose = vi.fn();
+    render(
+      <CoverageModal isOpen={true} onClose={onClose} summary={mockSummary} files={mockFiles} />
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('shows file count', () => {
     render(
       <CoverageModal isOpen={true} onClose={vi.fn()} summary={mockSummary} files={mockFiles} />

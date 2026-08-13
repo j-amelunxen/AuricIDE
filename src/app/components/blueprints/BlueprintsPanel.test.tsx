@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { BlueprintsPanel } from './BlueprintsPanel';
@@ -41,6 +41,10 @@ const defaultStoreState = {
   discardBlueprintChanges: mockDiscardBlueprintChanges,
   setBlueprintsModalOpen: mockSetBlueprintsModalOpen,
   setSelectedBlueprintId: mockSetSelectedBlueprintId,
+  overlayStack: { layers: [] as { id: string; kind: string }[] },
+  pushOverlay: vi.fn(),
+  removeOverlay: vi.fn(),
+  ownsEscape: vi.fn(() => false),
 };
 
 let storeState = { ...defaultStoreState };
@@ -129,5 +133,68 @@ describe('BlueprintsPanel', () => {
     };
     render(<BlueprintsPanel />);
     expect(screen.getByText('Delete')).toBeDefined();
+  });
+
+  describe('deleting a blueprint', () => {
+    beforeEach(() => {
+      storeState = {
+        ...defaultStoreState,
+        blueprintsDraft: [makeBlueprint({ name: 'Auth Service' })],
+        selectedBlueprintId: 'bp1',
+      };
+    });
+
+    it('does not delete the blueprint while the confirmation is still open', async () => {
+      const user = userEvent.setup();
+      render(<BlueprintsPanel />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+      await screen.findByRole('dialog', { name: 'Delete this blueprint?' });
+      expect(mockDeleteBlueprint).not.toHaveBeenCalled();
+      expect(mockSetSelectedBlueprintId).not.toHaveBeenCalledWith(null);
+    });
+
+    it('names the blueprint and says the delete is permanent', async () => {
+      const user = userEvent.setup();
+      render(<BlueprintsPanel />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this blueprint?' });
+
+      expect(dialog.textContent).toContain('Auth Service');
+      expect(dialog.textContent).toMatch(/permanent/i);
+    });
+
+    it('deletes the blueprint once the delete is confirmed', async () => {
+      const user = userEvent.setup();
+      render(<BlueprintsPanel />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this blueprint?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+      await waitFor(() => {
+        expect(mockDeleteBlueprint).toHaveBeenCalledWith('bp1');
+        expect(mockSetSelectedBlueprintId).toHaveBeenCalledWith(null);
+      });
+    });
+
+    it('keeps the blueprint when the delete is declined', async () => {
+      const user = userEvent.setup();
+      render(<BlueprintsPanel />);
+
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Delete this blueprint?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('dialog', { name: 'Delete this blueprint?' })
+        ).not.toBeInTheDocument()
+      );
+      expect(mockDeleteBlueprint).not.toHaveBeenCalled();
+      expect(mockSetSelectedBlueprintId).not.toHaveBeenCalledWith(null);
+    });
   });
 });

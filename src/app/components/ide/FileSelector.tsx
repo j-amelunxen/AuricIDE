@@ -3,6 +3,8 @@
 import { useState, useMemo } from 'react';
 import { ProjectFileInfo } from '@/lib/tauri/fs';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { useStore } from '@/lib/store';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface FileSelectorProps {
@@ -18,6 +20,8 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
   const [maxLines, setMaxLines] = useState<number | ''>('');
   const [query, setQuery] = useState('');
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  const showToast = useStore((s) => s.showToast);
+  useOverlayLayer({ id: 'file-selector', kind: 'tool', active: true, onEscape: onClose });
 
   const filtered = useMemo(() => {
     return files.filter((f) => {
@@ -47,13 +51,19 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
 
   const copyToClipboard = () => {
     const paths = filtered.map((f) => f.path).join('\n');
-    navigator.clipboard.writeText(paths);
-    // Maybe show a toast or temporary "Copied!" state
+    if (!navigator.clipboard?.writeText) {
+      showToast('Clipboard is unavailable in this context', 'error');
+      return;
+    }
+    void navigator.clipboard
+      .writeText(paths)
+      .then(() => showToast('File list copied', 'success'))
+      .catch(() => showToast('Could not copy file list', 'error'));
   };
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -69,9 +79,13 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
             id="file-selector-title"
             className="text-sm font-bold uppercase tracking-wider text-foreground"
           >
-            Advanced File Selection
+            Copy file list
           </h2>
-          <button onClick={onClose} className="text-foreground-muted hover:text-foreground">
+          <button
+            aria-label="Close"
+            onClick={onClose}
+            className="text-foreground-muted hover:text-foreground"
+          >
             <AuricIcon name="close" className="text-[20px]" />
           </button>
         </div>

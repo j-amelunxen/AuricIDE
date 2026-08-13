@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import type { CoverageSummary, FileCoverage } from '@/lib/qa/coverageParser';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 type SortKey = 'lines' | 'statements' | 'functions' | 'branches' | 'name';
@@ -19,6 +20,7 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
   const [sortAsc, setSortAsc] = useState(true);
   const [filter, setFilter] = useState('');
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  useOverlayLayer({ id: 'coverage', kind: 'tool', active: true, onEscape: onClose });
 
   const sortedFiles = useMemo(() => {
     const filtered = filter
@@ -47,7 +49,7 @@ function CoverageModalContent({ onClose, summary, files }: Omit<CoverageModalPro
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center p-4"
       data-testid="coverage-modal-backdrop"
       onClick={onClose}
     >

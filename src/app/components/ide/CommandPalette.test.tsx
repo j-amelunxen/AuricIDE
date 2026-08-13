@@ -287,3 +287,90 @@ describe('CommandPalette', () => {
     expect(screen.getByTestId('command-palette-count')).toHaveTextContent('1');
   });
 });
+
+function projectGatedCommands(): Command[] {
+  return [
+    { id: 'file.save', label: 'Save', category: 'file', action: vi.fn() },
+    {
+      id: 'file.new',
+      label: 'New File',
+      category: 'file',
+      requiresProject: true,
+      action: vi.fn(),
+    },
+    {
+      id: 'git.commit',
+      label: 'Commit Changes',
+      category: 'git',
+      requiresProject: true,
+      action: vi.fn(),
+    },
+  ];
+}
+
+describe('CommandPalette project gate', () => {
+  it('disables project-required commands when hasProject is false', () => {
+    renderPalette({ commands: projectGatedCommands(), hasProject: false });
+    const items = screen.getAllByTestId('command-palette-item');
+    const save = items.find((el) => el.textContent?.includes('Save'));
+    const newFile = items.find((el) => el.textContent?.includes('New File'));
+    const commit = items.find((el) => el.textContent?.includes('Commit Changes'));
+    expect(save).not.toHaveAttribute('aria-disabled', 'true');
+    expect(newFile).toHaveAttribute('aria-disabled', 'true');
+    expect(commit).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('does not execute a project-required command on click when hasProject is false', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette({ commands: projectGatedCommands(), hasProject: false });
+    await user.click(screen.getByText('New File'));
+    expect(props.onExecute).not.toHaveBeenCalled();
+  });
+
+  it('does not execute a project-required command on Enter when hasProject is false', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette({ commands: projectGatedCommands(), hasProject: false });
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{Enter}');
+    expect(props.onExecute).not.toHaveBeenCalled();
+  });
+
+  it('still executes commands that do not require a project when hasProject is false', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette({ commands: projectGatedCommands(), hasProject: false });
+    await user.keyboard('{Enter}');
+    expect(props.onExecute).toHaveBeenCalledWith('file.save');
+  });
+
+  it('executes a project-required command on Enter when hasProject is true', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette({ commands: projectGatedCommands(), hasProject: true });
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{Enter}');
+    expect(props.onExecute).toHaveBeenCalledWith('file.new');
+  });
+
+  it('executes a project-required command on click when hasProject is true', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette({ commands: projectGatedCommands(), hasProject: true });
+    await user.click(screen.getByText('New File'));
+    expect(props.onExecute).toHaveBeenCalledWith('file.new');
+  });
+
+  it('treats a missing hasProject as a project being open', async () => {
+    const user = userEvent.setup();
+    const { props } = renderPalette({
+      commands: [
+        {
+          id: 'file.new',
+          label: 'New File',
+          category: 'file',
+          requiresProject: true,
+          action: vi.fn(),
+        },
+      ],
+    });
+    await user.keyboard('{Enter}');
+    expect(props.onExecute).toHaveBeenCalledWith('file.new');
+  });
+});

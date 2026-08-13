@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { PmRequirement } from '@/lib/tauri/requirements';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
 interface RequirementCreateDialogProps {
   isOpen: boolean;
@@ -43,6 +44,13 @@ function RequirementCreateForm({
   const [acceptanceCriteria, setAcceptanceCriteria] = useState('');
   const [source, setSource] = useState('');
   const [appliesTo, setAppliesTo] = useState('');
+
+  useOverlayLayer({
+    id: 'requirement-create',
+    kind: 'tool',
+    active: true,
+    onEscape: onClose,
+  });
 
   const reset = useCallback(() => {
     setCategory('');
@@ -105,7 +113,7 @@ function RequirementCreateForm({
   return createPortal(
     <div
       data-testid="requirement-create-dialog"
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -12,8 +12,9 @@ import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
-import { agentState, type AgentState } from '@/lib/agents/state';
+import { agentState, AGENT_STATE_LABEL, type AgentState } from '@/lib/agents/state';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
@@ -346,16 +347,7 @@ function AgentTerminalDialog({
 }: AgentTerminalDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const { confirm, confirmDialog } = useConfirm();
-  // The confirm dialog also handles Escape. A window listener that closed this
-  // modal on the same key would take the terminal with the question.
-  const confirmingRef = useRef(false);
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !confirmingRef.current) onClose();
-    },
-    [onClose]
-  );
+  useOverlayLayer({ id: 'agent-terminal', kind: 'tool', active: true, onEscape: onClose });
 
   const closeTab = useCallback(
     async (target: AgentInfo) => {
@@ -363,13 +355,11 @@ function AgentTerminalDialog({
       if (finished ? !onDismiss : !onKill) return;
 
       if (!finished && target.status === 'running') {
-        confirmingRef.current = true;
         const go = await confirm({
           title: 'Stop this agent?',
           message: `Stop ${target.name}? Its work in progress is lost.`,
           confirmLabel: 'Stop',
         });
-        confirmingRef.current = false;
         if (!go) return;
       }
 
@@ -388,11 +378,7 @@ function AgentTerminalDialog({
   );
 
   const now = useNow();
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  const state = agentState(agent, now);
 
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
@@ -414,7 +400,7 @@ function AgentTerminalDialog({
   return (
     <div
       data-testid="agent-modal-backdrop"
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/90 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -448,7 +434,7 @@ function AgentTerminalDialog({
                 <span
                   className={`text-[9px] font-black uppercase tracking-widest ${isRunning ? 'text-primary' : 'text-foreground-muted'}`}
                 >
-                  {agent.status}
+                  {AGENT_STATE_LABEL[state]}
                 </span>
                 {isLive && (
                   <span className="animate-pulse rounded-full bg-primary/20 px-1.5 py-0.5 text-[7px] font-black text-primary border border-primary/30 uppercase tracking-tighter">
@@ -471,6 +457,7 @@ function AgentTerminalDialog({
             <button
               onClick={onClose}
               title="Close"
+              aria-label="Close"
               className="rounded-lg p-2 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-all"
             >
               <AuricIcon name="close" className="text-lg" />
@@ -536,7 +523,7 @@ function AgentTerminalDialog({
                     />
                     <span className="max-w-[140px] truncate">{a.name}</span>
                     <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
-                      {state}
+                      {AGENT_STATE_LABEL[state]}
                     </span>
                   </button>
                   {canEnd && (

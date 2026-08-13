@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Command } from '@/lib/commands/registry';
 import { rankCommands } from '@/lib/commands/fuzzy';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
 export interface CommandPaletteProps {
   commands: Command[];
@@ -12,6 +13,8 @@ export interface CommandPaletteProps {
   onExecute: (commandId: string) => void;
   /** Most-recently-used command ids, newest first. */
   recentIds?: readonly string[];
+  /** When false, commands marked `requiresProject` are shown greyed and will not run. */
+  hasProject?: boolean;
 }
 
 /** Splits a label into runs so matched characters can be emphasised in place. */
@@ -43,12 +46,19 @@ export function CommandPalette({
   onClose,
   onExecute,
   recentIds = [],
+  hasProject = true,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  useOverlayLayer({
+    id: 'command-palette',
+    kind: 'tool',
+    active: isOpen,
+    onEscape: onClose,
+  });
 
   const filtered = useMemo(
     () => rankCommands(commands, query, recentIds),
@@ -71,6 +81,11 @@ export function CommandPalette({
     setSelectedIndex(0);
   }, []);
 
+  const isCommandUnavailable = useCallback(
+    (cmd: Command) => Boolean(cmd.requiresProject && !hasProject),
+    [hasProject]
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       switch (e.key) {
@@ -88,9 +103,10 @@ export function CommandPalette({
         }
         case 'Enter': {
           e.preventDefault();
-          if (filtered.length > 0) {
-            onExecute(filtered[selectedIndex].command.id);
-          }
+          if (filtered.length === 0) return;
+          const selected = filtered[selectedIndex].command;
+          if (isCommandUnavailable(selected)) return;
+          onExecute(selected.id);
           break;
         }
         case 'Escape': {
@@ -100,7 +116,7 @@ export function CommandPalette({
         }
       }
     },
-    [filtered, selectedIndex, onExecute, onClose]
+    [filtered, selectedIndex, onExecute, onClose, isCommandUnavailable]
   );
 
   const handleOverlayClick = useCallback(
@@ -117,7 +133,7 @@ export function CommandPalette({
   return (
     <div
       data-testid="command-palette-overlay"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[15vh] backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool-nested)] flex items-start justify-center bg-black/50 pt-[15vh] backdrop-blur-sm"
       onClick={handleOverlayClick}
       onKeyDown={handleKeyDown}
     >
@@ -149,62 +165,73 @@ export function CommandPalette({
               No matching commands
             </div>
           ) : (
-            filtered.map(({ command: cmd, indices }, index) => (
-              <div
-                key={cmd.id}
-                data-testid="command-palette-item"
-                data-selected={index === selectedIndex}
-                className={`flex cursor-pointer items-center justify-between px-4 py-2 ${
-                  index === selectedIndex
-                    ? 'border-l-2 border-primary bg-primary/15'
-                    : 'border-l-2 border-transparent hover:bg-primary/10'
-                }`}
-                onClick={() => onExecute(cmd.id)}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    data-testid="command-category"
-                    className="text-[10px] uppercase tracking-wider text-foreground-muted"
-                  >
-                    {cmd.category}
-                  </span>
-                  <span className="truncate text-sm text-foreground">
-                    {splitOnMatches(cmd.label, indices).map((part, partIndex) =>
-                      part.match ? (
-                        <span
-                          key={partIndex}
-                          data-testid="command-label-match"
-                          className="font-semibold text-primary"
-                        >
-                          {part.text}
-                        </span>
-                      ) : (
-                        <span key={partIndex}>{part.text}</span>
-                      )
-                    )}
-                  </span>
-                  {showRecentBadges && recentSet.has(cmd.id) && (
+            filtered.map(({ command: cmd, indices }, index) => {
+              const unavailable = isCommandUnavailable(cmd);
+              return (
+                <div
+                  key={cmd.id}
+                  data-testid="command-palette-item"
+                  data-selected={index === selectedIndex}
+                  aria-disabled={unavailable || undefined}
+                  className={`flex items-center justify-between px-4 py-2 ${
+                    unavailable ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'
+                  } ${
+                    index === selectedIndex
+                      ? 'border-l-2 border-primary bg-primary/15'
+                      : unavailable
+                        ? 'border-l-2 border-transparent'
+                        : 'border-l-2 border-transparent hover:bg-primary/10'
+                  }`}
+                  onClick={() => {
+                    if (unavailable) return;
+                    onExecute(cmd.id);
+                  }}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
                     <span
-                      data-testid="command-recent"
-                      title="Recently used"
-                      aria-label="Recently used"
-                      className="text-[10px] text-foreground-muted"
+                      data-testid="command-category"
+                      className="text-[10px] uppercase tracking-wider text-foreground-muted"
                     >
-                      ↩
+                      {cmd.category}
+                    </span>
+                    <span className="truncate text-sm text-foreground">
+                      {splitOnMatches(cmd.label, indices).map((part, partIndex) =>
+                        part.match ? (
+                          <span
+                            key={partIndex}
+                            data-testid="command-label-match"
+                            className="font-semibold text-primary"
+                          >
+                            {part.text}
+                          </span>
+                        ) : (
+                          <span key={partIndex}>{part.text}</span>
+                        )
+                      )}
+                    </span>
+                    {showRecentBadges && recentSet.has(cmd.id) && (
+                      <span
+                        data-testid="command-recent"
+                        title="Recently used"
+                        aria-label="Recently used"
+                        className="text-[10px] text-foreground-muted"
+                      >
+                        ↩
+                      </span>
+                    )}
+                  </div>
+
+                  {cmd.shortcut && (
+                    <span
+                      data-testid="command-shortcut"
+                      className="ml-3 shrink-0 rounded bg-background-dark px-1.5 py-0.5 text-xs text-foreground-muted"
+                    >
+                      {cmd.shortcut}
                     </span>
                   )}
                 </div>
-
-                {cmd.shortcut && (
-                  <span
-                    data-testid="command-shortcut"
-                    className="ml-3 shrink-0 rounded bg-background-dark px-1.5 py-0.5 text-xs text-foreground-muted"
-                  >
-                    {cmd.shortcut}
-                  </span>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 

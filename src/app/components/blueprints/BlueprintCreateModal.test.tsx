@@ -1,9 +1,23 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BlueprintCreateModal } from './BlueprintCreateModal';
+import { useStore } from '@/lib/store';
 
 describe('BlueprintCreateModal', () => {
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
+  });
+
+  it('closes on Escape without closing anything else', () => {
+    const onClose = vi.fn();
+    render(<BlueprintCreateModal isOpen={true} onSave={vi.fn()} onClose={onClose} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('renders nothing when isOpen is false', () => {
     const { container } = render(
       <BlueprintCreateModal isOpen={false} onSave={vi.fn()} onClose={vi.fn()} />

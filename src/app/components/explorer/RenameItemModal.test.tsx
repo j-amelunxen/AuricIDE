@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { RenameItemModal } from './RenameItemModal';
@@ -144,6 +144,34 @@ describe('RenameItemModal', () => {
     );
 
     await user.type(screen.getByRole('textbox'), '{Escape}');
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('calls onCancel when the backdrop is clicked', () => {
+    const onCancel = vi.fn();
+    const { container } = render(
+      <RenameItemModal
+        oldName="notes.md"
+        isDirectory={false}
+        onConfirm={() => {}}
+        onCancel={onCancel}
+      />
+    );
+    fireEvent.click(container.firstChild as HTMLElement);
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('calls onCancel when Escape is pressed on the window', () => {
+    const onCancel = vi.fn();
+    render(
+      <RenameItemModal
+        oldName="notes.md"
+        isDirectory={false}
+        onConfirm={() => {}}
+        onCancel={onCancel}
+      />
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalled();
   });
 

@@ -53,7 +53,7 @@ export function ToastHost() {
   return (
     <div
       data-testid="toast-host"
-      className="pointer-events-none fixed bottom-4 right-4 z-[500] flex flex-col gap-2"
+      className="pointer-events-none fixed bottom-4 right-4 z-[var(--z-toast)] flex flex-col gap-2"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />

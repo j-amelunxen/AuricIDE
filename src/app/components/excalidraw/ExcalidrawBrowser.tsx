@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { ExcalidrawCanvas } from './ExcalidrawCanvas';
 import type { ExcalidrawSceneSummary } from '@/lib/excalidraw/types';
@@ -66,6 +67,12 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
   const showToast = useStore((s) => s.showToast);
 
   const { confirm, confirmDialog } = useConfirm();
+  useOverlayLayer({
+    id: 'excalidraw-browser',
+    kind: 'tool',
+    active: true,
+    onEscape: () => setBrowserOpen(false),
+  });
 
   const [importing, setImporting] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
@@ -73,14 +80,6 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
   useEffect(() => {
     if (rootPath) void loadCollections(rootPath);
   }, [rootPath, loadCollections]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setBrowserOpen(false);
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [setBrowserOpen]);
 
   const linkedSceneIds = useMemo(
     () => new Set(Object.values(specLinks).map((l) => l.sceneId)),
@@ -145,7 +144,7 @@ function ExcalidrawBrowserContent({ onImported, onOpenSettings }: ExcalidrawBrow
   return createPortal(
     <div
       data-testid="excalidraw-browser"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) setBrowserOpen(false);
       }}

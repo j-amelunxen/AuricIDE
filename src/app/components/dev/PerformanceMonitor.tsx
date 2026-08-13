@@ -184,7 +184,7 @@ export function PerformanceMonitor() {
       <button
         data-testid="perf-monitor"
         onClick={toggle}
-        className={`fixed bottom-1 right-1.5 z-[9999] flex h-6 items-center gap-1.5 px-2 rounded-md text-[11px] font-mono font-bold shadow-lg transition-[filter] hover:brightness-110 ${colorClass}`}
+        className={`fixed bottom-1 right-1.5 z-[var(--z-dev)] flex h-6 items-center gap-1.5 px-2 rounded-md text-[11px] font-mono font-bold shadow-lg transition-[filter] hover:brightness-110 ${colorClass}`}
         title="Performance Monitor: click to expand"
       >
         <AuricIcon name="memory" className="text-sm" aria-hidden="true" />
@@ -204,7 +204,7 @@ export function PerformanceMonitor() {
       {expanded && (
         <div
           data-testid="perf-panel"
-          className="fixed bottom-9 right-1.5 z-[9999] w-80 max-h-[70vh] rounded-xl bg-panel-bg border border-white/15 shadow-2xl text-xs text-foreground-muted overflow-y-auto"
+          className="fixed bottom-9 right-1.5 z-[var(--z-dev)] w-80 max-h-[70vh] rounded-xl bg-panel-bg border border-white/15 shadow-2xl text-xs text-foreground-muted overflow-y-auto"
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 sticky top-0 bg-panel-bg z-10">
             <span className="font-semibold text-foreground">Performance Monitor</span>

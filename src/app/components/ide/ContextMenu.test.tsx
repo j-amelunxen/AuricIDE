@@ -20,10 +20,20 @@ describe('ContextMenu', () => {
   });
 
   it('hides icon glyphs from assistive technology', () => {
-    const { container } = render(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} />);
-    const icons = container.querySelectorAll('[data-icon]');
+    render(<ContextMenu x={0} y={0} options={options} onClose={vi.fn()} />);
+    const icons = document.body.querySelectorAll('[role="menu"] [data-icon]');
     expect(icons.length).toBeGreaterThan(0);
     icons.forEach((icon) => expect(icon).toHaveAttribute('aria-hidden', 'true'));
+  });
+
+  it('portals to document.body so a transformed parent cannot trap it', () => {
+    const { container } = render(
+      <div style={{ transform: 'scale(1)' }}>
+        <ContextMenu x={24} y={24} options={options} onClose={vi.fn()} />
+      </div>
+    );
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.body.querySelector('[role="menu"]')).toBeTruthy();
   });
 
   it('runs an item action on click', async () => {

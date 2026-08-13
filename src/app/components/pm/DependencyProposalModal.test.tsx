@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { DependencyProposalModal } from './DependencyProposalModal';
 
@@ -35,6 +36,24 @@ describe('DependencyProposalModal', () => {
     fireEvent.click(confirmBtn);
 
     expect(onConfirm).toHaveBeenCalled();
+  });
+
+  it('calls onClose when Escape is pressed', async () => {
+    const onClose = vi.fn();
+    render(
+      <DependencyProposalModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={vi.fn()}
+        suggestions={mockSuggestions}
+        selectedIds={['t2']}
+        onToggleSuggestion={vi.fn()}
+        isLoading={false}
+      />
+    );
+
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('renders empty state when no suggestions', () => {

@@ -5,6 +5,7 @@ import type { PmEpic } from '@/lib/tauri/pm';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
 interface EpicEditDialogProps {
   isOpen: boolean;
@@ -24,6 +25,13 @@ function EpicEditForm({
   const [description, setDescription] = useState(epic?.description ?? '');
   const dialogRef = useDialogA11y<HTMLFormElement>();
 
+  useOverlayLayer({
+    id: 'epic-edit',
+    kind: 'tool',
+    active: true,
+    onEscape: onClose,
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
@@ -32,7 +40,7 @@ function EpicEditForm({
   };
 
   return (
-    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <form
         ref={dialogRef}
         role="dialog"
