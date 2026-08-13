@@ -84,3 +84,9 @@ workarounds/
 
 # Local commit-guard state — machine-specific, not repo content
 .commit-guard.json
+
+# Design reviews, drafts and QA checklists — local working material, not repo docs
+.design-review/
+docs/actionplan-overlay-flows.md
+docs/design-scheduled-skill-combo-notifications.md
+docs/invariants-scheduled-skill-combo.md
