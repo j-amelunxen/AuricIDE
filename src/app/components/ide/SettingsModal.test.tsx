@@ -71,12 +71,17 @@ describe('SettingsModal – Close Behaviors', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('names the icon-only close button Close', () => {
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
+  });
+
   it('calls onClose when X button is clicked', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<SettingsModal isOpen={true} onClose={onClose} />);
 
-    await user.click(screen.getByTestId('settings-modal-close'));
+    await user.click(screen.getByRole('button', { name: /close/i }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -87,6 +92,48 @@ describe('SettingsModal – Close Behaviors', () => {
 
     await user.click(screen.getByTestId('settings-modal'));
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Grouped nav + search ──────────────────────────────────────────────────────
+
+describe('SettingsModal – Grouped nav', () => {
+  it('shows group headings Agent & models, Editor, Integrations, System', () => {
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    expect(screen.getByText('Agent & models')).toBeInTheDocument();
+    expect(screen.getByText('Integrations')).toBeInTheDocument();
+    expect(screen.getAllByText('Editor').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('System').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('filters nav items by search, hiding non-matching labels', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+
+    await user.type(screen.getByTestId('settings-search'), 'llm');
+
+    expect(screen.queryByTestId('settings-nav-agent')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings-nav-llm')).toBeInTheDocument();
+    expect(screen.queryByText('Editor')).not.toBeInTheDocument();
+  });
+
+  it('shows empty copy when search matches nothing', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+
+    await user.type(screen.getByTestId('settings-search'), 'zzzz');
+
+    expect(screen.getByText('No matching settings')).toBeInTheDocument();
+    expect(screen.queryByTestId('settings-nav-agent')).not.toBeInTheDocument();
+  });
+
+  it('opens on LLM content when initialCategory is llm', () => {
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="llm" />);
+
+    expect(screen.getByTestId('settings-nav-llm').className).toMatch(/border-primary/);
+    expect(
+      screen.getByText(/configure the LLM|LLM Configuration|Loading settings/i)
+    ).toBeInTheDocument();
   });
 });
 

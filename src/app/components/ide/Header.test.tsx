@@ -36,6 +36,18 @@ describe('Header', () => {
     expect(screen.getByTestId('llm-status-badge')).toHaveTextContent('LLM not configured');
   });
 
+  it('renders the LLM warning as a button', () => {
+    render(<Header breadcrumbs={[]} llmConfigured={false} />);
+    expect(screen.getByRole('button', { name: /llm not configured/i })).toBeInTheDocument();
+  });
+
+  it('opens Settings on LLM when the status badge is clicked', async () => {
+    const onOpenSettings = vi.fn();
+    render(<Header breadcrumbs={[]} llmConfigured={false} onOpenSettings={onOpenSettings} />);
+    await userEvent.click(screen.getByTestId('llm-status-badge'));
+    expect(onOpenSettings).toHaveBeenCalledWith('llm');
+  });
+
   it('does not wear an "AI Native" sticker', () => {
     render(<Header breadcrumbs={[]} />);
     expect(screen.queryByText('AI Native')).not.toBeInTheDocument();
@@ -49,6 +61,13 @@ describe('Header', () => {
   it('renders command palette trigger', () => {
     render(<Header breadcrumbs={[]} />);
     expect(screen.getByTestId('command-palette-trigger')).toBeInTheDocument();
+  });
+
+  it('labels the trigger Command Palette, not Find Agent', () => {
+    render(<Header breadcrumbs={[]} />);
+    const trigger = screen.getByTestId('command-palette-trigger');
+    expect(trigger).toHaveTextContent(/Command Palette/);
+    expect(trigger).not.toHaveTextContent(/Find Agent/);
   });
 
   it('applies canvas variant height', () => {

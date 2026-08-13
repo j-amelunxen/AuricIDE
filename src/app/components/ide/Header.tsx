@@ -18,6 +18,7 @@ export interface HeaderProps {
   llmConfigured?: boolean;
   variant?: 'editor' | 'canvas';
   onCommandPalette?: () => void;
+  onOpenSettings?: (category?: string) => void;
 }
 
 export function Header({
@@ -28,6 +29,7 @@ export function Header({
   llmConfigured = false,
   variant = 'editor',
   onCommandPalette,
+  onOpenSettings,
 }: HeaderProps) {
   const hasHeadingCrumbs = headingBreadcrumbs && headingBreadcrumbs.length > 0;
   const baseHeight = variant === 'canvas' ? 'h-14' : hasHeadingCrumbs ? 'h-[4.5rem]' : 'h-12';
@@ -128,7 +130,7 @@ export function Header({
             aria-hidden="true"
             className="text-sm opacity-70 group-hover:opacity-100"
           />
-          <span className="font-medium">Find Agent...</span>
+          <span className="font-medium">Command Palette</span>
           <kbd className="ml-2 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 font-mono text-[9px] text-foreground-muted group-hover:text-foreground">
             ⌘K
           </kbd>
@@ -151,14 +153,16 @@ export function Header({
         )}
 
         {!llmConfigured && (
-          <div
+          <button
+            type="button"
             data-testid="llm-status-badge"
             title="Configure an LLM provider in Settings"
+            onClick={() => onOpenSettings?.('llm')}
             className="flex items-center gap-2 rounded-full border border-white/5 bg-black/20 px-3 py-1 text-[10px] font-medium text-orange-400 backdrop-blur-sm"
           >
             <AuricIcon name="warning" aria-hidden="true" className="text-[12px]" />
             LLM not configured
-          </div>
+          </button>
         )}
       </div>
     </header>
