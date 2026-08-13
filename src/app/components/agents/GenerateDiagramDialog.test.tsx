@@ -1,8 +1,16 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GenerateDiagramDialog } from './GenerateDiagramDialog';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
+
+const mocks = vi.hoisted(() => ({
+  exists: vi.fn(async () => false),
+}));
+
+vi.mock('@/lib/tauri/fs', () => ({
+  exists: mocks.exists,
+}));
 
 const dummyGeminiProvider: ProviderInfo = {
   id: 'gemini',
@@ -28,9 +36,15 @@ describe('GenerateDiagramDialog', () => {
     folderPath: '/projects/my-app',
   };
 
+  beforeEach(() => {
+    mocks.exists.mockReset();
+    mocks.exists.mockResolvedValue(false);
+  });
+
   it('renders nothing when isOpen is false', () => {
     const { container } = render(<GenerateDiagramDialog {...defaultProps} isOpen={false} />);
     expect(container.innerHTML).toBe('');
+    expect(mocks.exists).not.toHaveBeenCalled();
   });
 
   it('renders modal with dropdowns when isOpen is true', () => {
@@ -197,5 +211,44 @@ describe('GenerateDiagramDialog', () => {
 
     const { task } = onGenerate.mock.calls[0][0];
     expect(task).toMatch(/storage|persist|database/i);
+  });
+
+  it('warns when diagram.md already exists but still allows generate', async () => {
+    const user = userEvent.setup();
+    const onGenerate = vi.fn();
+    mocks.exists.mockResolvedValueOnce(true);
+
+    render(<GenerateDiagramDialog {...defaultProps} onGenerate={onGenerate} />);
+
+    const warning = await screen.findByTestId('diagram-overwrite-warning');
+    expect(warning).toHaveTextContent(
+      'diagram.md already exists in this folder. Generate will overwrite it.'
+    );
+    expect(mocks.exists).toHaveBeenCalledWith('/projects/my-app/diagram.md');
+
+    const generate = screen.getByRole('button', { name: /generate/i });
+    expect(generate).toBeEnabled();
+    await user.click(generate);
+    expect(onGenerate).toHaveBeenCalled();
+  });
+
+  it('does not warn when diagram.md is absent', async () => {
+    render(<GenerateDiagramDialog {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(mocks.exists).toHaveBeenCalledWith('/projects/my-app/diagram.md');
+    });
+    expect(screen.queryByTestId('diagram-overwrite-warning')).toBeNull();
+  });
+
+  it('does not warn when the exists check fails', async () => {
+    mocks.exists.mockRejectedValueOnce(new Error('browser mode'));
+
+    render(<GenerateDiagramDialog {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(mocks.exists).toHaveBeenCalledWith('/projects/my-app/diagram.md');
+    });
+    expect(screen.queryByTestId('diagram-overwrite-warning')).toBeNull();
   });
 });

@@ -5,6 +5,20 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('@/lib/store');
 
+const overlayFns = {
+  overlayStack: { layers: [] as { id: string; kind: string }[] },
+  pushOverlay: vi.fn(),
+  removeOverlay: vi.fn(),
+  ownsEscape: vi.fn(() => false),
+};
+
+function mockStore(state: Record<string, unknown>) {
+  const full = { ...overlayFns, ...state };
+  (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+    (selector?: (s: typeof full) => unknown) => (selector ? selector(full) : full)
+  );
+}
+
 describe('QAPanel', () => {
   const mockSetSpawnDialogOpen = vi.fn();
   const mockSetInitialAgentTask = vi.fn();
@@ -12,7 +26,7 @@ describe('QAPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'idle',
       coverageSummary: null,
       fileCoverage: [],
@@ -24,7 +38,7 @@ describe('QAPanel', () => {
   });
 
   it('renders loading state', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'loading',
       coverageSummary: null,
       fileCoverage: [],
@@ -37,7 +51,7 @@ describe('QAPanel', () => {
   });
 
   it('renders not found state with setup button', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'not-found',
       coverageSummary: null,
       fileCoverage: [],
@@ -60,7 +74,7 @@ describe('QAPanel', () => {
   });
 
   it('renders not found state with configure location button', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'not-found',
       coverageSummary: null,
       fileCoverage: [],
@@ -77,7 +91,7 @@ describe('QAPanel', () => {
   });
 
   it('configure location button opens agent dialog with correct task', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'not-found',
       coverageSummary: null,
       fileCoverage: [],
@@ -97,7 +111,7 @@ describe('QAPanel', () => {
   });
 
   it('setup and configure buttons are both visible in not-found state', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'not-found',
       coverageSummary: null,
       fileCoverage: [],
@@ -114,7 +128,7 @@ describe('QAPanel', () => {
   });
 
   it('renders coverage summary cards when data is available', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'idle',
       coverageSummary: {
         lines: 85,
@@ -134,7 +148,7 @@ describe('QAPanel', () => {
   });
 
   it('shows "View Full Report" button when coverage data is available', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'idle',
       coverageSummary: { lines: 85, statements: 80, functions: 75, branches: 70 },
       fileCoverage: [],
@@ -147,7 +161,7 @@ describe('QAPanel', () => {
   });
 
   it('does not show file list inline in the sidebar', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'idle',
       coverageSummary: { lines: 85, statements: 80, functions: 75, branches: 70 },
       fileCoverage: [
@@ -163,7 +177,7 @@ describe('QAPanel', () => {
   });
 
   it('opens coverage modal when "View Full Report" is clicked', () => {
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    mockStore({
       coverageStatus: 'idle',
       coverageSummary: { lines: 85, statements: 80, functions: 75, branches: 70 },
       fileCoverage: [

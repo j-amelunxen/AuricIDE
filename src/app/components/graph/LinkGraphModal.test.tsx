@@ -1,6 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { LinkGraphModal } from './LinkGraphModal';
+import { useStore } from '@/lib/store';
 
 // Mock LinkGraphView to avoid pulling in ReactFlow/store dependencies
 vi.mock('./LinkGraphView', () => ({
@@ -25,6 +26,10 @@ describe('LinkGraphModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
   });
 
   it('renders nothing when isOpen is false', () => {

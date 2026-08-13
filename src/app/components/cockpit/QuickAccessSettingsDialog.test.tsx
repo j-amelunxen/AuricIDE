@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { useStore } from '@/lib/store';
 import { getGlyph } from '@/lib/icons/registry';
@@ -83,7 +83,11 @@ describe('QuickAccessSettingsDialog', () => {
     mockReadImageAsDataUri.mockResolvedValue('data:image/x-icon;base64,AAA');
     // The cache is module state and would leak a previous test's answer.
     clearImageIconCache();
-    useStore.setState({ starredProjects: [] });
+    useStore.setState({ starredProjects: [], overlayStack: { layers: [] } });
+  });
+
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
   });
 
   it('names the dialog after the project it edits', () => {

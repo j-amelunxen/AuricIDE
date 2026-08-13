@@ -58,6 +58,18 @@ describe('PerformanceMonitor', () => {
     expect(screen.getByTestId('perf-monitor')).toBeDefined();
   });
 
+  it('stays on the dev z layer so confirm can sit above it', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await renderAndCollect();
+    const chip = screen.getByTestId('perf-monitor');
+    expect(chip.className).toContain('--z-dev');
+    expect(chip.className).not.toContain('9999');
+    await user.click(chip);
+    const panel = screen.getByTestId('perf-panel');
+    expect(panel.className).toContain('--z-dev');
+    expect(panel.className).not.toContain('9999');
+  });
+
   it('displays heap size in MB (Chrome fallback)', async () => {
     await renderAndCollect();
     // 100 MB via performance.memory (falls back to JS heap when no processes)

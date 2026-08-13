@@ -23,7 +23,7 @@ export function InfoTooltip({ description, label }: InfoTooltipProps) {
       </button>
 
       {isVisible && (
-        <div className="absolute left-0 top-full mt-2 z-[500] w-56 rounded-lg border border-white/10 bg-[#0a0a10] p-3 shadow-2xl animate-in fade-in zoom-in duration-200 pointer-events-none">
+        <div className="absolute left-0 top-full mt-2 z-[var(--z-toast)] w-56 rounded-lg border border-white/10 bg-[#0a0a10] p-3 shadow-2xl animate-in fade-in zoom-in duration-200 pointer-events-none">
           <p className="text-[11px] leading-relaxed text-foreground-muted whitespace-normal font-mono">
             {description}
           </p>

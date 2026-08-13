@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FileSearch } from './FileSearch';
+import { useStore } from '@/lib/store';
 
 describe('FileSearch', () => {
   const defaultProps = {
@@ -10,6 +11,19 @@ describe('FileSearch', () => {
     onSelect: vi.fn(),
     rootPath: '/project',
   };
+
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
+  });
+
+  it('closes on Escape', () => {
+    const onClose = vi.fn();
+    render(<FileSearch {...defaultProps} onClose={onClose} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 
   it('renders nothing when isOpen is false', () => {
     const { container } = render(<FileSearch {...defaultProps} isOpen={false} />);

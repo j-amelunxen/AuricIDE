@@ -85,6 +85,34 @@ describe('useConfirm', () => {
     expect(screen.getByText('This removes it permanently.')).toBeInTheDocument();
   });
 
+  it('applies the discard confirm style when asked', async () => {
+    function DiscardHarness() {
+      const { confirm, confirmDialog } = useConfirm();
+      return (
+        <div>
+          <button
+            onClick={() => {
+              void confirm({
+                title: 'Discard changes?',
+                message: 'Discard unsaved changes?',
+                confirmLabel: 'Discard',
+                variant: 'discard',
+              });
+            }}
+          >
+            Trigger
+          </button>
+          {confirmDialog}
+        </div>
+      );
+    }
+    render(<DiscardHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger' }));
+    const confirmBtn = await screen.findByRole('button', { name: 'Discard' });
+    expect(confirmBtn.className).toContain('bg-white/10');
+    expect(confirmBtn.className).not.toContain('bg-red-500');
+  });
+
   it('settles a superseded request as false rather than leaving it hanging', async () => {
     const answers: boolean[] = [];
     function TwoTriggers() {

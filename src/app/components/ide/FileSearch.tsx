@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import fuzzysort from 'fuzzysort';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface FileSearchProps {
@@ -25,6 +26,7 @@ function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearc
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  useOverlayLayer({ id: 'file-search', kind: 'tool', active: true, onEscape: onClose });
 
   const results = useMemo(() => {
     if (!query) {
@@ -84,14 +86,12 @@ function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearc
     } else if (e.key === 'Enter' && results[selectedIndex]) {
       e.preventDefault();
       onSelect(results[selectedIndex].path);
-    } else if (e.key === 'Escape') {
-      onClose();
     }
   };
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
       <div

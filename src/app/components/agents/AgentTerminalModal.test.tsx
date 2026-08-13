@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { AgentTerminalModal } from './AgentTerminalModal';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
@@ -125,6 +125,10 @@ const agent: AgentInfo = {
 };
 
 describe('AgentTerminalModal – failure digest bar', () => {
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
+  });
+
   it('answers "why did it fail" the moment the terminal opens', () => {
     useStore.setState({
       agentLogs: { 'agent-1': ['Compiling...\n', 'error: cannot find module "fleet"\n'] },
@@ -145,6 +149,10 @@ describe('AgentTerminalModal – failure digest bar', () => {
 });
 
 describe('AgentTerminalModal', () => {
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
+  });
+
   it('renders nothing when no agent is provided', () => {
     const { container } = render(<AgentTerminalModal agent={null} onClose={vi.fn()} />);
     expect(container.innerHTML).toBe('');
@@ -162,7 +170,28 @@ describe('AgentTerminalModal', () => {
 
   it('shows agent status', () => {
     render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
-    expect(screen.getByText('running')).toBeInTheDocument();
+    expect(screen.getByText('Working')).toBeInTheDocument();
+  });
+
+  it('closes on Escape when no confirm is open', () => {
+    const onClose = vi.fn();
+    render(<AgentTerminalModal agent={agent} onClose={onClose} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('does not close the terminal when a confirm owns Escape', () => {
+    const onClose = vi.fn();
+    render(<AgentTerminalModal agent={agent} onClose={onClose} />);
+
+    act(() => {
+      useStore.getState().pushOverlay({ id: 'confirm', kind: 'confirm' });
+    });
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('shows agent id', () => {
@@ -403,7 +432,7 @@ describe('AgentTerminalModal', () => {
       const stale = makeAgent({ id: 'agent-2', name: 'Reviewer', status: 'running' });
       const live = [makeAgent({ id: 'agent-2', name: 'Reviewer', status: 'idle' })];
       render(<AgentTerminalModal agent={stale} agents={live} onClose={vi.fn()} />);
-      expect(screen.getByText('idle')).toBeInTheDocument();
+      expect(screen.getAllByText('Done').length).toBeGreaterThan(0);
     });
 
     /**

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { openFolderDialog } from '@/lib/tauri/fs';
 import {
   joinProjectPath,
@@ -31,6 +32,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
   const [template, setTemplate] = useState<NewProjectTemplate>('empty');
   const [busy, setBusy] = useState(false);
   const dialogRef = useDialogA11y<HTMLFormElement>();
+  useOverlayLayer({ id: 'new-project', kind: 'tool', active: true, onEscape: onClose });
 
   const cleanName = sanitizeProjectName(name);
   const canCreate = cleanName.length > 0 && parentDir.length > 0 && !busy;
@@ -56,12 +58,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[400] flex items-center justify-center"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
-    >
+    <div className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
       <form
         ref={dialogRef}

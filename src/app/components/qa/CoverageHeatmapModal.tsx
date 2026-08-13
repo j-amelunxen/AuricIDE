@@ -5,6 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import type { CoverageSummary, FileCoverage } from '@/lib/qa/coverageParser';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface HeatmapProps {
@@ -105,6 +106,7 @@ function CoverageHeatmapContent({
   files,
 }: Omit<HeatmapProps, 'isOpen'>) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  useOverlayLayer({ id: 'coverage-heatmap', kind: 'tool', active: true, onEscape: onClose });
   const buildings = useMemo(() => {
     // Sort files by path to group folders visually together in the grid
     const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
@@ -136,7 +138,7 @@ function CoverageHeatmapContent({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -162,6 +164,7 @@ function CoverageHeatmapContent({
             </span>
           </div>
           <button
+            aria-label="Close"
             onClick={onClose}
             className="rounded-lg p-1.5 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
           >

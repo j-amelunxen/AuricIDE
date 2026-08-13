@@ -5,6 +5,7 @@ import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
 import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import { buildImportSpecPrompt } from '@/lib/pm/importSpecPrompt';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface ImportSpecDialogProps {
@@ -75,14 +76,12 @@ function ImportSpecDialogPanel({
     setPermissionMode(currentProvider.defaultPermissionMode as PermissionMode);
   }
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  useOverlayLayer({
+    id: 'import-spec',
+    kind: 'tool',
+    active: true,
+    onEscape: onClose,
+  });
 
   // Same reasoning: a fresh dialog is a reset of this render, not a follow-up
   // render after the stale text has already been shown.
@@ -120,7 +119,7 @@ function ImportSpecDialogPanel({
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -140,6 +139,9 @@ function ImportSpecDialogPanel({
             Import Project Spec
           </h2>
         </div>
+        <p className="mb-5 -mt-4 text-[11px] leading-relaxed text-foreground-muted">
+          Starts a headless agent that turns this spec into epics, tickets, and tests.
+        </p>
 
         <div className="flex flex-col gap-5">
           <div className="space-y-1.5">
@@ -260,7 +262,7 @@ function ImportSpecDialogPanel({
               onClick={handleImport}
               className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
             >
-              {isLoading ? 'IMPORTING...' : 'IMPORT'}
+              {isLoading ? 'Starting…' : 'Start import agent'}
             </button>
           </div>
         </div>

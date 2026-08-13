@@ -1,6 +1,7 @@
 'use client';
 
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface DependencySuggestion {
@@ -29,8 +30,15 @@ function DependencyProposalDialog({
 }: Omit<DependencyProposalModalProps, 'isOpen'>) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
+  useOverlayLayer({
+    id: 'dependency-proposal',
+    kind: 'tool',
+    active: true,
+    onEscape: onClose,
+  });
+
   return (
-    <div className="fixed inset-0 z-[210] flex items-center justify-center">
+    <div className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={dialogRef}

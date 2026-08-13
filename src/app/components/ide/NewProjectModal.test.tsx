@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { NewProjectModal } from './NewProjectModal';
+import { useStore } from '@/lib/store';
 
 const openFolderDialog = vi.fn();
 vi.mock('@/lib/tauri/fs', () => ({
@@ -11,6 +12,10 @@ vi.mock('@/lib/tauri/fs', () => ({
 describe('NewProjectModal', () => {
   beforeEach(() => {
     openFolderDialog.mockReset();
+  });
+
+  afterEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
   });
 
   it('renders nothing when closed', () => {

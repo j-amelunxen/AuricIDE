@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import {
   CATCH_UP_HINTS,
   CATCH_UP_LABELS,
@@ -105,7 +106,7 @@ function actionDraftOf(schedule: Schedule | null): ActionDraft {
 function snapshotFromPin(pin: QuickAccessSkill, projectPath: string): RunSkillAction {
   const snapshot: RunSkillAction = {
     id: 'run',
-    label: `${pin.label} starten`,
+    label: `Start ${pin.label}`,
     kind: 'run-skill',
     skillId: pin.id,
     skillLabel: pin.label,
@@ -122,7 +123,7 @@ function snapshotFromPin(pin: QuickAccessSkill, projectPath: string): RunSkillAc
 function snapshotFromDiscovered(found: ProjectSkill, projectPath: string): RunSkillAction {
   return {
     id: 'run',
-    label: `${found.name} starten`,
+    label: `Start ${found.name}`,
     kind: 'run-skill',
     skillId: `${DISCOVERED_PREFIX}${found.invocation}`,
     skillLabel: found.name,
@@ -135,7 +136,7 @@ function snapshotFromDiscovered(found: ProjectSkill, projectPath: string): RunSk
 function snapshotFromCombo(combo: QuickAccessCombo, projectPath: string): RunComboAction {
   return {
     id: 'run',
-    label: `${combo.label} starten`,
+    label: `Start ${combo.label}`,
     kind: 'run-combo',
     comboId: combo.id,
     comboLabel: combo.label,
@@ -190,7 +191,7 @@ function actionsFromDraft(draft: ActionDraft, projectPath: string | null): Notif
     return [
       {
         id: 'run',
-        label: 'Agent starten',
+        label: 'Start agent',
         kind: 'spawn-agent',
         task,
         ...(projectPath !== null ? { repoPath: projectPath } : {}),
@@ -249,6 +250,7 @@ export function ScheduleEditor({
   onCancel,
 }: ScheduleEditorProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  useOverlayLayer({ id: 'schedule-editor', kind: 'tool', active: true, onEscape: onCancel });
 
   // Stored null is app-wide, not "use the open project". `??` would rewrite it.
   const projectPath = schedule === null ? defaultProjectPath : schedule.projectPath;
@@ -313,7 +315,7 @@ export function ScheduleEditor({
 
   const draft = useMemo<Schedule>(() => {
     const payload: SchedulePayload = {
-      title: name.trim() || 'Erinnerung',
+      title: name.trim() || 'Reminder',
       body: body.trim() || undefined,
       severity: 'info',
       // The only action a schedule offers is the one you asked for. It is a
@@ -323,7 +325,7 @@ export function ScheduleEditor({
 
     const base = {
       id: schedule?.id ?? crypto.randomUUID(),
-      name: name.trim() || 'Erinnerung',
+      name: name.trim() || 'Reminder',
       enabled: schedule?.enabled ?? true,
       projectPath,
       projectName,
@@ -449,15 +451,12 @@ export function ScheduleEditor({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center bg-black/60 p-4">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="schedule-editor-title"
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') onCancel();
-        }}
         className="w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-panel-bg p-4 shadow-2xl"
         style={{ maxHeight: '85vh' }}
       >
@@ -465,7 +464,7 @@ export function ScheduleEditor({
           id="schedule-editor-title"
           className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-foreground-muted"
         >
-          {schedule === null ? 'Neuer Zeitplan' : 'Zeitplan bearbeiten'}
+          {schedule === null ? 'New schedule' : 'Edit schedule'}
         </h2>
 
         <Field label="Name">
@@ -479,22 +478,22 @@ export function ScheduleEditor({
           />
         </Field>
 
-        <Field label="Rhythmus">
+        <Field label="Rhythm">
           <select
             data-testid="schedule-rhythm"
             value={rhythm}
             onChange={(event) => setRhythm(event.target.value as RhythmChoice)}
             className={INPUT}
           >
-            <option value="daily">täglich</option>
-            <option value="weekly">wöchentlich</option>
-            <option value="interval">alle N Tage / Wochen / Stunden</option>
-            <option value="cron">eigener Cron-Ausdruck</option>
+            <option value="daily">daily</option>
+            <option value="weekly">weekly</option>
+            <option value="interval">every N days / weeks / hours</option>
+            <option value="cron">custom cron</option>
           </select>
         </Field>
 
         {rhythm === 'weekly' && (
-          <Field label="Wochentage">
+          <Field label="Weekdays">
             <div className="flex flex-wrap gap-1">
               {WEEKDAY_OPTIONS.map((day) => (
                 <button
@@ -516,7 +515,7 @@ export function ScheduleEditor({
         )}
 
         {rhythm === 'interval' && (
-          <Field label="Abstand">
+          <Field label="Interval">
             <div className="flex gap-2">
               <input
                 data-testid="schedule-every-n"
@@ -532,16 +531,16 @@ export function ScheduleEditor({
                 onChange={(event) => setEveryUnit(event.target.value as 'hour' | 'day' | 'week')}
                 className={INPUT}
               >
-                <option value="hour">Stunden</option>
-                <option value="day">Tage</option>
-                <option value="week">Wochen</option>
+                <option value="hour">hours</option>
+                <option value="day">days</option>
+                <option value="week">weeks</option>
               </select>
             </div>
           </Field>
         )}
 
         {rhythm === 'cron' && (
-          <Field label="Cron-Ausdruck">
+          <Field label="Cron expression">
             <input
               data-testid="schedule-cron"
               value={cronExpr}
@@ -550,14 +549,14 @@ export function ScheduleEditor({
               className={`${INPUT} font-mono`}
             />
             <p className="mt-1 text-[9px] text-foreground-muted/60">
-              Sekunden zuerst. Wochentage als Namen (MON, WED) — Zahlen zählen hier anders als im
-              üblichen Cron.
+              Seconds first. Weekdays as names (MON, WED) — numbers count differently here than in
+              ordinary cron.
             </p>
           </Field>
         )}
 
         {(rhythm !== 'interval' || everyUnit !== 'hour') && (
-          <Field label="Uhrzeit">
+          <Field label="Time">
             <input
               data-testid="schedule-time"
               type="time"
@@ -570,12 +569,12 @@ export function ScheduleEditor({
 
         <fieldset className="mb-2.5">
           <legend className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-foreground-muted/70">
-            Aktion
+            Action
           </legend>
           <div className="flex flex-col gap-1">
             <Choice
               testId="schedule-action-none"
-              label="Nur Erinnerung"
+              label="Reminder only"
               checked={actionDraft.choice === 'none'}
               onSelect={() => choose('none')}
             />
@@ -595,7 +594,7 @@ export function ScheduleEditor({
             />
             <Choice
               testId="schedule-action-task"
-              label="Freitext-Agent"
+              label="Custom agent"
               checked={actionDraft.choice === 'task'}
               onSelect={() => choose('task')}
             />
@@ -605,11 +604,11 @@ export function ScheduleEditor({
               data-testid="schedule-skill-combo-hint"
               className="mt-1 text-[9px] text-foreground-muted/60"
             >
-              Skill und Combo brauchen ein Projekt.
+              Skill and Combo need a project.
             </p>
           )}
           <p className="mt-1 text-[9px] text-foreground-muted/60">
-            Wird als Button angeboten. Nichts läuft ohne deinen Klick.
+            Offered as a button. Nothing runs without your click.
           </p>
 
           {actionDraft.choice === 'task' && (
@@ -617,7 +616,7 @@ export function ScheduleEditor({
               data-testid="schedule-task"
               value={actionDraft.task}
               onChange={(event) => setActionDraft({ choice: 'task', task: event.target.value })}
-              placeholder="Serverscan durchführen"
+              placeholder="Run a server scan"
               className={`${INPUT} mt-2`}
             />
           )}
@@ -626,7 +625,7 @@ export function ScheduleEditor({
             <div className="mt-2">
               {noQuickAccess && (
                 <p className="mb-1 text-[9px] text-foreground-muted/60">
-                  Kein Quick Access für dieses Projekt — zuerst dort anpinnen.
+                  No Quick Access for this project — pin one there first.
                 </p>
               )}
               <select
@@ -635,11 +634,9 @@ export function ScheduleEditor({
                 onChange={(event) => selectSkill(event.target.value)}
                 className={INPUT}
               >
-                <option value="">Skill wählen</option>
+                <option value="">Choose a skill</option>
                 {orphanSkill && (
-                  <option value={orphanSkill.skillId}>
-                    {orphanSkill.skillLabel} (gespeichert)
-                  </option>
+                  <option value={orphanSkill.skillId}>{orphanSkill.skillLabel} (saved)</option>
                 )}
                 {pins.map((pin) => (
                   <option key={pin.id} value={pin.id}>
@@ -666,7 +663,7 @@ export function ScheduleEditor({
               {skillStale && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   <p data-testid="schedule-snapshot-stale" className="text-[9px] text-[#ffce2e]">
-                    Der angepinnte Skill hat sich geändert.
+                    The pinned skill has changed.
                   </p>
                   <button
                     type="button"
@@ -674,7 +671,7 @@ export function ScheduleEditor({
                     onClick={refreshSkillSnapshot}
                     className="rounded-lg px-2 py-1 text-[10px] font-semibold text-primary-light hover:bg-white/10"
                   >
-                    Snapshot aktualisieren
+                    Update snapshot
                   </button>
                 </div>
               )}
@@ -685,7 +682,7 @@ export function ScheduleEditor({
             <div className="mt-2">
               {noQuickAccess && (
                 <p className="mb-1 text-[9px] text-foreground-muted/60">
-                  Kein Quick Access für dieses Projekt — zuerst dort anpinnen.
+                  No Quick Access for this project — pin one there first.
                 </p>
               )}
               <select
@@ -694,11 +691,9 @@ export function ScheduleEditor({
                 onChange={(event) => selectCombo(event.target.value)}
                 className={INPUT}
               >
-                <option value="">Combo wählen</option>
+                <option value="">Choose a combo</option>
                 {orphanCombo && (
-                  <option value={orphanCombo.comboId}>
-                    {orphanCombo.comboLabel} (gespeichert)
-                  </option>
+                  <option value={orphanCombo.comboId}>{orphanCombo.comboLabel} (saved)</option>
                 )}
                 {combos.map((combo) => (
                   <option key={combo.id} value={combo.id}>
@@ -721,7 +716,7 @@ export function ScheduleEditor({
               {comboStale && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   <p data-testid="schedule-snapshot-stale" className="text-[9px] text-[#ffce2e]">
-                    Die angepinnte Combo hat sich geändert.
+                    The pinned combo has changed.
                   </p>
                   <button
                     type="button"
@@ -729,7 +724,7 @@ export function ScheduleEditor({
                     onClick={refreshComboSnapshot}
                     className="rounded-lg px-2 py-1 text-[10px] font-semibold text-primary-light hover:bg-white/10"
                   >
-                    Snapshot aktualisieren
+                    Update snapshot
                   </button>
                 </div>
               )}
@@ -737,17 +732,17 @@ export function ScheduleEditor({
           )}
         </fieldset>
 
-        <Field label="Notiz">
+        <Field label="Note">
           <input
             data-testid="schedule-body"
             value={body}
             onChange={(event) => setBody(event.target.value)}
-            placeholder="Optionaler Zusatztext"
+            placeholder="Optional extra text"
             className={INPUT}
           />
         </Field>
 
-        <Field label="Wenn AuricIDE zu war">
+        <Field label="If AuricIDE was closed">
           <select
             data-testid="schedule-catch-up"
             value={catchUp}
@@ -769,11 +764,11 @@ export function ScheduleEditor({
         >
           <p className="mb-1 flex items-center gap-1 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/60">
             <AuricIcon name="schedule" className="text-[11px]" />
-            Nächste Termine
+            Upcoming
           </p>
           {preview.length === 0 ? (
             <p data-testid="schedule-preview-empty" className="text-[10px] text-[#ffce2e]">
-              Kein Termin berechenbar — Rhythmus prüfen.
+              No date could be computed — check the rhythm.
             </p>
           ) : (
             <ul className="space-y-0.5">
@@ -792,7 +787,7 @@ export function ScheduleEditor({
             onClick={onCancel}
             className="rounded-lg px-3 py-1.5 text-[11px] text-foreground-muted transition-colors hover:bg-white/10"
           >
-            Abbrechen
+            Cancel
           </button>
           <button
             data-testid="schedule-save"
@@ -800,7 +795,7 @@ export function ScheduleEditor({
             disabled={saveBlocked(name, actionDraft)}
             className="rounded-lg bg-primary/20 px-3 py-1.5 text-[11px] font-bold text-primary-light transition-colors hover:bg-primary/30 disabled:opacity-40"
           >
-            Speichern
+            Save
           </button>
         </div>
       </div>

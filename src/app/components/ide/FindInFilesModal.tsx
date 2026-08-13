@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { searchInFiles, type SearchMatch } from '@/lib/tauri/search';
 
@@ -38,6 +39,7 @@ function FindInFilesDialog({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  useOverlayLayer({ id: 'find-in-files', kind: 'tool', active: true, onEscape: onClose });
   const loading = query !== '' && query !== resultsQuery;
 
   useEffect(() => {
@@ -87,8 +89,6 @@ function FindInFilesDialog({
     } else if (e.key === 'Enter' && results[selectedIndex]) {
       e.preventDefault();
       navigate(results[selectedIndex]);
-    } else if (e.key === 'Escape') {
-      onClose();
     }
   };
 
@@ -97,7 +97,7 @@ function FindInFilesDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
       <div

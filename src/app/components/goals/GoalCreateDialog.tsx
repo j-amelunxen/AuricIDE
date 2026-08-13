@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface GoalCreateDialogProps {
@@ -34,6 +35,13 @@ export function GoalCreateDialog({
   const [parentId, setParentId] = useState<string>(defaultParentId ?? '');
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
+  useOverlayLayer({
+    id: 'goal-create',
+    kind: 'tool',
+    active: isOpen,
+    onEscape: onClose,
+  });
+
   if (!isOpen) return null;
 
   const handleSave = () => {
@@ -60,12 +68,11 @@ export function GoalCreateDialog({
   return (
     <div
       data-testid="goal-create-dialog"
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSave();
       }}
     >

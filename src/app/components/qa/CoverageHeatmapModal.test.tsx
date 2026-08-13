@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import type { CoverageSummary, FileCoverage } from '@/lib/qa/coverageParser';
 
@@ -69,5 +69,44 @@ describe('CoverageHeatmapModal', () => {
       />
     );
     expect(screen.getByRole('dialog', { name: /3d coverage code city/i })).toBeInTheDocument();
+  });
+
+  it('calls onClose when Escape is pressed', () => {
+    const onClose = vi.fn();
+    render(
+      <CoverageHeatmapModal
+        isOpen={true}
+        onClose={onClose}
+        summary={mockSummary}
+        files={mockFiles}
+      />
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('names the icon-only close button Close', () => {
+    render(
+      <CoverageHeatmapModal
+        isOpen={true}
+        onClose={vi.fn()}
+        summary={mockSummary}
+        files={mockFiles}
+      />
+    );
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
+  });
+
+  it('shows the coverage legend', () => {
+    render(
+      <CoverageHeatmapModal
+        isOpen={true}
+        onClose={vi.fn()}
+        summary={mockSummary}
+        files={mockFiles}
+      />
+    );
+    expect(screen.getByText('0% Coverage')).toBeInTheDocument();
+    expect(screen.getByText('Building height = File size')).toBeInTheDocument();
   });
 });

@@ -3,19 +3,31 @@
 import { createPortal } from 'react-dom';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 
+export type ConfirmVariant = 'destroy' | 'discard' | 'elevate';
+
 interface ConfirmDialogProps {
   title: string;
   message: string;
   confirmLabel: string;
+  variant?: ConfirmVariant;
   onConfirm: () => void;
   onCancel: () => void;
 }
+
+const CONFIRM_BUTTON_CLASS: Record<ConfirmVariant, string> = {
+  destroy:
+    'px-3 py-1.5 text-sm rounded bg-red-500/90 text-white hover:bg-red-500 transition-colors',
+  discard: 'px-3 py-1.5 text-sm rounded bg-white/10 text-white hover:bg-white/15 transition-colors',
+  elevate:
+    'px-3 py-1.5 text-sm rounded bg-amber-500/90 text-white hover:bg-amber-500 transition-colors',
+};
 
 /** Small confirmation dialog for destructive actions (delete / clean all). */
 export function ConfirmDialog({
   title,
   message,
   confirmLabel,
+  variant = 'destroy',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -26,7 +38,7 @@ export function ConfirmDialog({
   // own stacking contexts; rendered in place, the question could end up behind
   // the very thing it interrupts.
   return createPortal(
-    <div className="fixed inset-0 z-[450] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
         ref={dialogRef}
         role="dialog"
@@ -54,10 +66,7 @@ export function ConfirmDialog({
           >
             Cancel
           </button>
-          <button
-            onClick={onConfirm}
-            className="px-3 py-1.5 text-sm rounded bg-red-500/90 text-white hover:bg-red-500 transition-colors"
-          >
+          <button onClick={onConfirm} className={CONFIRM_BUTTON_CLASS[variant]}>
             {confirmLabel}
           </button>
         </div>

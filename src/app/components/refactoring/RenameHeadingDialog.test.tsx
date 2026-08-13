@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { RenameHeadingDialog } from './RenameHeadingDialog';
 
 describe('RenameHeadingDialog', () => {
@@ -91,6 +92,51 @@ describe('RenameHeadingDialog', () => {
 
     const btn = screen.getByText('Rename');
     expect(btn.hasAttribute('disabled') || btn.closest('button')?.disabled).toBe(true);
+  });
+
+  it('calls onCancel when Escape is pressed', async () => {
+    const onCancel = vi.fn();
+    render(
+      <RenameHeadingDialog
+        oldTitle="Title"
+        referenceCount={0}
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />
+    );
+
+    await userEvent.setup().keyboard('{Escape}');
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('calls onCancel when the backdrop is clicked', () => {
+    const onCancel = vi.fn();
+    render(
+      <RenameHeadingDialog
+        oldTitle="Title"
+        referenceCount={0}
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('dialog').parentElement!);
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('does not cancel when the dialog itself is clicked', () => {
+    const onCancel = vi.fn();
+    render(
+      <RenameHeadingDialog
+        oldTitle="Title"
+        referenceCount={0}
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('dialog'));
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
   it('disables rename button when title is unchanged', () => {

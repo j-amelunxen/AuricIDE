@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
 import { LinkGraphView } from './LinkGraphView';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface LinkGraphModalProps {
@@ -18,24 +18,12 @@ export function LinkGraphModal({ isOpen, onClose, onFileSelect }: LinkGraphModal
 
 function LinkGraphDialog({ onClose, onFileSelect }: Omit<LinkGraphModalProps, 'isOpen'>) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
-
-  // Close on Escape
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    },
-    [onClose]
-  );
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  useOverlayLayer({ id: 'link-graph', kind: 'tool', active: true, onEscape: onClose });
 
   return (
     <div
       data-testid="link-graph-modal-backdrop"
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 md:p-8"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 md:p-8"
       onClick={onClose}
     >
       <div

@@ -1,8 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import type { PmGoal } from '@/lib/tauri/goals';
+import { useStore } from '@/lib/store';
 
 // Suppress InfoTooltip from rendering buttons inside <label> elements, which
 // causes Testing Library's getByLabelText to find multiple associated elements.
@@ -20,10 +22,20 @@ vi.mock('@/lib/tauri/providers', async (importOriginal) => {
   };
 });
 
+type User = ReturnType<typeof userEvent.setup>;
+
+/** Answers the first-use YOLO elevate question. */
+async function answerYoloElevate(user: User, button: string) {
+  const dialog = await screen.findByRole('dialog', { name: /act without asking/i });
+  await user.click(within(dialog).getByRole('button', { name: button }));
+}
+
 // Default: reject so only FALLBACK_CRUSH_PROVIDER is used
 beforeEach(() => {
   mockListProviders.mockRejectedValue(new Error('browser mode'));
   localStorage.clear();
+  sessionStorage.clear();
+  useStore.setState({ overlayStack: { layers: [] } });
 });
 
 // Helpers matching the FALLBACK_CRUSH_PROVIDER constants
@@ -75,8 +87,9 @@ describe('SpawnAgentDialog – remembered launch choices', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
 
     await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
-    await user.type(screen.getByLabelText(/instruction/i), 'Do the thing');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Do the thing');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
+    await answerYoloElevate(user, 'Continue');
 
     const saved = JSON.parse(localStorage.getItem('auric.agent-spawn-defaults')!);
     expect(saved.permissionMode).toBe('yolo');
@@ -168,7 +181,7 @@ describe('SpawnAgentDialog – launch presets', () => {
       />
     );
 
-    await user.type(screen.getByLabelText(/instruction/i), 'Write the post');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Write the post');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(localStorage.getItem('auric.agent-spawn-defaults')).toBe(before);
@@ -185,18 +198,18 @@ describe('SpawnAgentDialog', () => {
 
   it('renders dialog when isOpen is true', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByText('New Agent')).toBeInTheDocument();
+    expect(screen.getByText('Start agent')).toBeInTheDocument();
   });
 
   it('exposes an accessible dialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByRole('dialog', { name: /new agent/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /start agent/i })).toBeInTheDocument();
   });
 
   it('renders repo path input, task textarea, model select', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     expect(screen.getByLabelText(/working directory/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/instruction/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/what should it do/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/model/i)).toBeInTheDocument();
   });
 
@@ -213,33 +226,45 @@ describe('SpawnAgentDialog', () => {
     expect(chevron).toHaveAttribute('aria-hidden', 'true');
   });
 
-  it('deploy button is enabled even when task is empty', () => {
+  it('disables Start Agent when the instruction is empty', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /start agent/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
   });
 
-  it('deploy button is enabled when task has content', async () => {
+  it('disables Start Agent when the instruction is only whitespace', async () => {
     const user = userEvent.setup();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
+    await user.type(screen.getByLabelText(/what should it do/i), '   ');
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
+  });
+
+  it('enables Start Agent after typing an instruction', async () => {
+    const user = userEvent.setup();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     expect(screen.getByRole('button', { name: /start agent/i })).toBeEnabled();
   });
 
-  it('deploys with a "wait" task when the instruction is left empty', async () => {
+  it('refuses to spawn when Start Agent is clicked with an empty instruction', async () => {
     const user = userEvent.setup();
     const onSpawn = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
     await user.click(screen.getByRole('button', { name: /start agent/i }));
-    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ task: 'wait' }));
+    expect(onSpawn).not.toHaveBeenCalled();
   });
 
-  it('deploys with a "wait" task when the instruction is only whitespace', async () => {
+  it('spawns with the trimmed instruction, never a wait fallback', async () => {
     const user = userEvent.setup();
     const onSpawn = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
-    await user.type(screen.getByLabelText(/instruction/i), '   ');
+
+    await user.type(screen.getByLabelText(/what should it do/i), '  Fix bugs  ');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
-    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ task: 'wait' }));
+
+    expect(onSpawn).toHaveBeenCalledTimes(1);
+    expect(onSpawn.mock.calls[0][0].task).toBe('Fix bugs');
+    expect(onSpawn.mock.calls[0][0].task).not.toBe('wait');
   });
 
   it('calls onSpawn with correct config on deploy', async () => {
@@ -248,7 +273,7 @@ describe('SpawnAgentDialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
     await user.type(screen.getByLabelText(/working directory/i), '/my/repo');
-    await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
@@ -273,7 +298,7 @@ describe('SpawnAgentDialog', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={vi.fn()} />);
-    await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
     expect(onClose).toHaveBeenCalled();
   });
@@ -290,32 +315,23 @@ describe('SpawnAgentDialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
     await user.type(screen.getByLabelText(/working directory/i), '/my/repo');
-    await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     // Naming every agent after its repo made a fleet of five unreadable.
     expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ name: 'Fix bugs' }));
   });
 
-  it('falls back to the repo folder when deployed without an instruction', async () => {
+  it('does not spawn from an empty instruction even when a repo is set', async () => {
     const user = userEvent.setup();
     const onSpawn = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
     await user.type(screen.getByLabelText(/working directory/i), '/my/repo');
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
-    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ name: 'Agent (repo)' }));
-  });
-
-  it('falls back to a plain name without repo or instruction', async () => {
-    const user = userEvent.setup();
-    const onSpawn = vi.fn();
-    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
-
-    await user.click(screen.getByRole('button', { name: /start agent/i }));
-
-    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ name: 'Agent' }));
+    expect(onSpawn).not.toHaveBeenCalled();
   });
 
   // ── Permission Mode ──────────────────────────────────────────────
@@ -336,7 +352,7 @@ describe('SpawnAgentDialog', () => {
     const onSpawn = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
-    await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
@@ -352,8 +368,9 @@ describe('SpawnAgentDialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
     await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
-    await user.type(screen.getByLabelText(/instruction/i), 'Refactor auth');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Refactor auth');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
+    await answerYoloElevate(user, 'Continue');
 
     expect(onSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -368,7 +385,7 @@ describe('SpawnAgentDialog', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
 
     await user.selectOptions(screen.getByLabelText(/permission mode/i), 'default');
-    await user.type(screen.getByLabelText(/instruction/i), 'Update styles');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Update styles');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
@@ -380,8 +397,64 @@ describe('SpawnAgentDialog', () => {
 
   it('renders all permission mode options', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByText(/yolo/i)).toBeInTheDocument();
+    expect(screen.getByText('Act without asking')).toBeInTheDocument();
     expect(screen.getByText(/interactive/i)).toBeInTheDocument();
+  });
+
+  it('maps a provider yolo label to Act without asking', async () => {
+    mockListProviders.mockResolvedValueOnce([
+      {
+        id: 'crush',
+        name: 'Crush',
+        models: [{ value: 'auto', label: 'Auto / Default' }],
+        permissionModes: [
+          { value: 'yolo', label: 'YOLO (Autonomous)', description: 'Skip permission prompts' },
+          { value: 'default', label: 'Interactive', description: 'Ask for permissions' },
+        ],
+        defaultModel: 'auto',
+        defaultPermissionMode: 'default',
+      },
+    ]);
+
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Act without asking')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('YOLO (Autonomous)')).not.toBeInTheDocument();
+  });
+
+  it('labels the goal binding For goal', () => {
+    const goals: PmGoal[] = [
+      {
+        id: 'g1',
+        parentId: null,
+        name: 'Ship launch',
+        description: '',
+        successCriteria: '',
+        status: 'active',
+        priority: 'normal',
+        goalPrompt: '',
+        createdBy: 'ui',
+        achievedAt: null,
+        sortOrder: 0,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} goals={goals} />);
+    expect(screen.getByLabelText(/for goal/i)).toBeInTheDocument();
+    expect(screen.queryByText(/serves goal/i)).not.toBeInTheDocument();
+  });
+
+  it('registers as the spawn overlay so Escape closes it', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={vi.fn()} />);
+
+    expect(useStore.getState().overlayStack.layers.at(-1)?.id).toBe('spawn');
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   // ── Recent Directories ────────────────────────────────────────────
@@ -417,7 +490,7 @@ describe('SpawnAgentDialog', () => {
     );
 
     await user.selectOptions(screen.getByTestId('recent-dirs'), '/projects/beta');
-    await user.type(screen.getByLabelText(/instruction/i), 'Fix bugs');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start agent/i }));
 
     expect(onSpawn).toHaveBeenCalledWith(
@@ -466,7 +539,7 @@ describe('SpawnAgentDialog keyboard and prompt recall', () => {
     const onSpawn = vi.fn();
     const onClose = vi.fn();
     render(<SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={onSpawn} {...overrides} />);
-    return { onSpawn, onClose, task: screen.getByLabelText(/instruction/i) };
+    return { onSpawn, onClose, task: screen.getByLabelText(/what should it do/i) };
   }
 
   it('puts the cursor in the instruction field on open', () => {
@@ -493,6 +566,22 @@ describe('SpawnAgentDialog keyboard and prompt recall', () => {
     await user.type(task, 'ship it');
     await user.keyboard('{Control>}{Enter}{/Control}');
     expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ task: 'ship it' }));
+  });
+
+  it('does not spawn on Cmd+Enter when the instruction is empty', async () => {
+    const user = userEvent.setup();
+    const { onSpawn, task } = open();
+    expect(task).toHaveValue('');
+    await user.keyboard('{Meta>}{Enter}{/Meta}');
+    expect(onSpawn).not.toHaveBeenCalled();
+  });
+
+  it('does not spawn on Ctrl+Enter when the instruction is empty', async () => {
+    const user = userEvent.setup();
+    const { onSpawn, task } = open();
+    expect(task).toHaveValue('');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(onSpawn).not.toHaveBeenCalled();
   });
 
   it('leaves a plain Enter to insert a newline', async () => {
@@ -572,5 +661,83 @@ describe('SpawnAgentDialog keyboard and prompt recall', () => {
     const { task } = open();
     await user.type(task, '{ArrowUp}');
     expect(task).toHaveValue('');
+  });
+});
+
+describe('SpawnAgentDialog – YOLO elevate confirm', () => {
+  async function startWithYolo(user: User, onSpawn = vi.fn(), onClose = vi.fn()) {
+    render(<SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={onSpawn} />);
+    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Ship the feature');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+    return { onSpawn, onClose };
+  }
+
+  it('asks the first time yolo is started in this session', async () => {
+    const user = userEvent.setup();
+    const { onSpawn } = await startWithYolo(user);
+
+    const question = await screen.findByRole('dialog', { name: /act without asking/i });
+    expect(question).toHaveTextContent(/edit files and run commands without asking/i);
+    expect(screen.getByRole('button', { name: 'Continue' }).className).toMatch(/amber/);
+    expect(onSpawn).not.toHaveBeenCalled();
+  });
+
+  it('does not spawn and stays on the start dialog when the question is cancelled', async () => {
+    const user = userEvent.setup();
+    const { onSpawn, onClose } = await startWithYolo(user);
+
+    await answerYoloElevate(user, 'Cancel');
+
+    expect(onSpawn).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: /start agent/i })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /act without asking/i })).not.toBeInTheDocument();
+  });
+
+  it('spawns with yolo once the question is confirmed', async () => {
+    const user = userEvent.setup();
+    const { onSpawn } = await startWithYolo(user);
+
+    await answerYoloElevate(user, 'Continue');
+
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'yolo' }));
+  });
+
+  it('does not ask again for yolo in the same session', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <SpawnAgentDialog isOpen={true} onClose={onClose} onSpawn={onSpawn} />
+    );
+    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Ship the feature');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+    await answerYoloElevate(user, 'Continue');
+    expect(onSpawn).toHaveBeenCalledTimes(1);
+    unmount();
+
+    const onSpawnAgain = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawnAgain} />);
+    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'yolo');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Do it again');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(screen.queryByRole('dialog', { name: /act without asking/i })).not.toBeInTheDocument();
+    expect(onSpawnAgain).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'yolo' }));
+  });
+
+  it('never asks when starting in interactive mode', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'default');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Ask me first');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(screen.queryByRole('dialog', { name: /act without asking/i })).not.toBeInTheDocument();
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'default' }));
   });
 });

@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TicketCreateModal } from './TicketCreateModal';
+import { useStore } from '@/lib/store';
 
 const mockEpics = [
   { id: 'e1', name: 'Epic One', description: '', sortOrder: 0, createdAt: '', updatedAt: '' },
@@ -9,6 +10,10 @@ const mockEpics = [
 ];
 
 describe('TicketCreateModal', () => {
+  beforeEach(() => {
+    useStore.setState({ overlayStack: { layers: [] } });
+  });
+
   it('renders nothing when isOpen is false', () => {
     const { container } = render(
       <TicketCreateModal
@@ -58,7 +63,7 @@ describe('TicketCreateModal', () => {
     expect(screen.getByRole('dialog', { name: /new ticket/i })).toBeInTheDocument();
   });
 
-  it('Create and Close button is disabled when name is empty', () => {
+  it('Create button is disabled when name is empty', () => {
     render(
       <TicketCreateModal
         isOpen={true}
@@ -71,11 +76,11 @@ describe('TicketCreateModal', () => {
         onClose={vi.fn()}
       />
     );
-    const btn = screen.getByRole('button', { name: 'Create and Close' });
+    const btn = screen.getByRole('button', { name: 'Create' });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('Create and Close button is enabled when name is filled', async () => {
+  it('Create button is enabled when name is filled', async () => {
     render(
       <TicketCreateModal
         isOpen={true}
@@ -90,12 +95,11 @@ describe('TicketCreateModal', () => {
     );
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText('What needs to be done?'), 'My ticket');
-    const btn = screen.getByRole('button', { name: 'Create and Close' });
+    const btn = screen.getByRole('button', { name: 'Create' });
     expect((btn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('calls onSaveAndClose with form values on submit', async () => {
-    const onSaveAndClose = vi.fn();
+  it('has a Create button and no Create and Close or Model Power UI', () => {
     render(
       <TicketCreateModal
         isOpen={true}
@@ -104,13 +108,34 @@ describe('TicketCreateModal', () => {
         availableItems={[]}
         defaultEpicId="e1"
         onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create and Close' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/model power/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('model-power-selector')).not.toBeInTheDocument();
+  });
+
+  it('calls onSaveAndClose with form values on Create', async () => {
+    const onSave = vi.fn();
+    const onSaveAndClose = vi.fn();
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId="e1"
+        onSave={onSave}
         onSaveAndClose={onSaveAndClose}
         onClose={vi.fn()}
       />
     );
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText('What needs to be done?'), 'My Ticket');
-    await user.click(screen.getByRole('button', { name: 'Create and Close' }));
+    await user.click(screen.getByRole('button', { name: 'Create' }));
     expect(onSaveAndClose).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'My Ticket',
@@ -122,41 +147,10 @@ describe('TicketCreateModal', () => {
       }),
       []
     );
+    expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('calls onSave with form values on Create click and resets form', async () => {
-    const onSave = vi.fn();
-    render(
-      <TicketCreateModal
-        isOpen={true}
-        epics={mockEpics}
-        allTickets={[]}
-        availableItems={[]}
-        defaultEpicId="e1"
-        onSave={onSave}
-        onSaveAndClose={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    const user = userEvent.setup();
-    const input = screen.getByPlaceholderText('What needs to be done?');
-    await user.type(input, 'My Ticket');
-    await user.click(screen.getByRole('button', { name: 'Create' }));
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'My Ticket',
-        epicId: 'e1',
-        status: 'open',
-        priority: 'normal',
-        description: '',
-        modelPower: undefined,
-      }),
-      []
-    );
-    expect(input).toHaveValue('');
-  });
-
-  it('respects defaultEpicId when submitting with Create and Close', async () => {
+  it('respects defaultEpicId when submitting with Create', async () => {
     const onSaveAndClose = vi.fn();
     render(
       <TicketCreateModal
@@ -172,7 +166,7 @@ describe('TicketCreateModal', () => {
     );
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText('What needs to be done?'), 'Test');
-    await user.click(screen.getByRole('button', { name: 'Create and Close' }));
+    await user.click(screen.getByRole('button', { name: 'Create' }));
     expect(onSaveAndClose).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Test',
@@ -183,7 +177,7 @@ describe('TicketCreateModal', () => {
   });
 
   it('allows selecting priority', async () => {
-    const onSave = vi.fn();
+    const onSaveAndClose = vi.fn();
     render(
       <TicketCreateModal
         isOpen={true}
@@ -191,8 +185,8 @@ describe('TicketCreateModal', () => {
         allTickets={[]}
         availableItems={[]}
         defaultEpicId="e1"
-        onSave={onSave}
-        onSaveAndClose={vi.fn()}
+        onSave={vi.fn()}
+        onSaveAndClose={onSaveAndClose}
         onClose={vi.fn()}
       />
     );
@@ -203,40 +197,10 @@ describe('TicketCreateModal', () => {
     await user.click(within(selector).getByText('Critical'));
 
     await user.click(screen.getByRole('button', { name: 'Create' }));
-    expect(onSave).toHaveBeenCalledWith(
+    expect(onSaveAndClose).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Critical Task',
         priority: 'critical',
-      }),
-      []
-    );
-  });
-
-  it('allows selecting model power', async () => {
-    const onSave = vi.fn();
-    render(
-      <TicketCreateModal
-        isOpen={true}
-        epics={mockEpics}
-        allTickets={[]}
-        availableItems={[]}
-        defaultEpicId="e1"
-        onSave={onSave}
-        onSaveAndClose={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText('What needs to be done?'), 'Heavy Task');
-
-    const selector = screen.getByTestId('model-power-selector');
-    await user.click(within(selector).getByText('High'));
-
-    await user.click(screen.getByRole('button', { name: 'Create' }));
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Heavy Task',
-        modelPower: 'high',
       }),
       []
     );
@@ -258,6 +222,26 @@ describe('TicketCreateModal', () => {
     );
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('registers as the ticket-create overlay so Escape closes it', async () => {
+    const onClose = vi.fn();
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId="e1"
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={onClose}
+      />
+    );
+    expect(useStore.getState().overlayStack.layers.at(-1)?.id).toBe('ticket-create');
+    const user = userEvent.setup();
+    await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -294,5 +278,92 @@ describe('TicketCreateModal', () => {
     expect(screen.getByRole('button', { name: 'Open' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'In Progress' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Done' })).toBeDefined();
+  });
+
+  it('does not offer Archived as a status on create', () => {
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId="e1"
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Archived' })).not.toBeInTheDocument();
+  });
+
+  it('shows a Create epic button when there are no epics and a handler', () => {
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={[]}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId={null}
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={vi.fn()}
+        onCreateEpic={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Create epic' })).toBeInTheDocument();
+    expect(screen.getByText('No epics yet. Create one first.')).toBeInTheDocument();
+  });
+
+  it('does not show a dead Create epic button when there is no handler', () => {
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={[]}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId={null}
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Create epic' })).not.toBeInTheDocument();
+    expect(screen.getByText('No epics yet. Create one first.')).toBeInTheDocument();
+  });
+
+  it('does not show Create epic when epics exist', () => {
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId="e1"
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Create epic' })).not.toBeInTheDocument();
+  });
+
+  it('calls onCreateEpic when Create epic is clicked', async () => {
+    const onCreateEpic = vi.fn();
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={[]}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId={null}
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={vi.fn()}
+        onCreateEpic={onCreateEpic}
+      />
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Create epic' }));
+    expect(onCreateEpic).toHaveBeenCalledTimes(1);
   });
 });

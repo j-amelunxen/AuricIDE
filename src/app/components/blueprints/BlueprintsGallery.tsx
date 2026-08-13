@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useStore } from '@/lib/store';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { BlueprintCreateModal } from './BlueprintCreateModal';
 import type { Blueprint } from '@/lib/tauri/blueprints';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
@@ -42,26 +44,22 @@ function BlueprintsGalleryContent() {
   const setBlueprintsModalOpen = useStore((s) => s.setBlueprintsModalOpen);
   const setSelectedBlueprintId = useStore((s) => s.setSelectedBlueprintId);
 
+  const { confirm, confirmDialog } = useConfirm();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [complexityFilter, setComplexityFilter] = useState<string>('all');
   const [editTarget, setEditTarget] = useState<Blueprint | null>(null);
   const [readingOpen, setReadingOpen] = useState(false);
 
-  useEffect(() => {
-    if (!blueprintsGalleryOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !blueprintsModalOpen) {
-        if (readingOpen) {
-          setReadingOpen(false);
-        } else {
-          setBlueprintsGalleryOpen(false);
-        }
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [blueprintsGalleryOpen, blueprintsModalOpen, readingOpen, setBlueprintsGalleryOpen]);
+  useOverlayLayer({
+    id: 'blueprints-gallery',
+    kind: 'tool',
+    active: blueprintsGalleryOpen,
+    onEscape: () => {
+      if (readingOpen) setReadingOpen(false);
+      else setBlueprintsGalleryOpen(false);
+    },
+  });
 
   const filtered = blueprintsDraft
     .filter(
@@ -101,11 +99,26 @@ function BlueprintsGalleryContent() {
 
   const handleDelete = useCallback(
     async (id: string) => {
+      const name = blueprintsDraft.find((bp) => bp.id === id)?.name ?? 'this blueprint';
+      const go = await confirm({
+        title: 'Delete this blueprint?',
+        message: `This permanently deletes "${name}".`,
+        confirmLabel: 'Delete',
+      });
+      if (!go) return;
       deleteBlueprint(id);
       if (selectedBlueprintId === id) setSelectedBlueprintId(null);
       if (rootPath) await persistQuietly(saveBlueprints(rootPath));
     },
-    [deleteBlueprint, selectedBlueprintId, setSelectedBlueprintId, saveBlueprints, rootPath]
+    [
+      confirm,
+      blueprintsDraft,
+      deleteBlueprint,
+      selectedBlueprintId,
+      setSelectedBlueprintId,
+      saveBlueprints,
+      rootPath,
+    ]
   );
 
   const syncIcon =
@@ -129,7 +142,7 @@ function BlueprintsGalleryContent() {
           : 'text-foreground-muted';
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center">
+    <div className="fixed inset-0 z-[var(--z-tool)] bg-black/80 backdrop-blur-sm flex items-center justify-center">
       <div
         ref={dialogRef}
         role="dialog"
@@ -474,6 +487,8 @@ function BlueprintsGalleryContent() {
         }}
         initialValues={editTarget ?? undefined}
       />
+
+      {confirmDialog}
     </div>
   );
 }
@@ -493,7 +508,7 @@ function BlueprintReadingOverlay({ blueprint, onBack, onEdit }: BlueprintReading
       role="dialog"
       aria-modal="true"
       aria-labelledby="blueprint-reading-title"
-      className="fixed inset-0 z-[310] bg-[#07070f]/95 backdrop-blur-sm overflow-y-auto custom-scrollbar"
+      className="fixed inset-0 z-[var(--z-tool-nested)] bg-[#07070f]/95 backdrop-blur-sm overflow-y-auto custom-scrollbar"
     >
       <div className="max-w-3xl mx-auto px-6 py-10">
         {/* Reading header */}

@@ -1,13 +1,15 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
-import { ConfirmDialog } from '@/app/components/ui/ConfirmDialog';
+import { useCallback, useId, useRef, useState } from 'react';
+import { ConfirmDialog, type ConfirmVariant } from '@/app/components/ui/ConfirmDialog';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
 export interface ConfirmRequest {
   title: string;
   message: string;
   /** Label on the destructive button. Name the act, not "OK". */
   confirmLabel?: string;
+  variant?: ConfirmVariant;
 }
 
 export interface UseConfirmResult {
@@ -28,6 +30,7 @@ export interface UseConfirmResult {
  * that can settle it is the user.
  */
 export function useConfirm(): UseConfirmResult {
+  const confirmId = useId();
   const [request, setRequest] = useState<ConfirmRequest | null>(null);
   const resolveRef = useRef<((answer: boolean) => void) | null>(null);
 
@@ -37,6 +40,15 @@ export function useConfirm(): UseConfirmResult {
     setRequest(null);
     resolve?.(answer);
   }, []);
+
+  const cancel = useCallback(() => settle(false), [settle]);
+
+  useOverlayLayer({
+    id: `confirm:${confirmId}`,
+    kind: 'confirm',
+    active: request !== null,
+    onEscape: cancel,
+  });
 
   const confirm = useCallback((next: ConfirmRequest) => {
     // A question that gets replaced was never answered — say so, rather than
@@ -53,8 +65,9 @@ export function useConfirm(): UseConfirmResult {
       title={request.title}
       message={request.message}
       confirmLabel={request.confirmLabel ?? 'Confirm'}
+      variant={request.variant}
       onConfirm={() => settle(true)}
-      onCancel={() => settle(false)}
+      onCancel={cancel}
     />
   ) : null;
 

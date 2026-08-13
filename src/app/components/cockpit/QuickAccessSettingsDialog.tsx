@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { useStore } from '@/lib/store';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ConfirmDialog } from '@/app/components/ui/ConfirmDialog';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { FALLBACK_CRUSH_PROVIDER, listProviders, type ProviderInfo } from '@/lib/tauri/providers';
 import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
@@ -28,7 +29,7 @@ interface QuickAccessSettingsDialogProps {
 
 /**
  * Per-project Quick Access settings: the tile's mark, and the launch presets
- * offered in its right-click menu.
+ * that the radial wheel can pin to a slot.
  *
  * The panel is split out so it remounts per open and the draft always starts
  * from the persisted settings — the same shape SpawnAgentDialog uses.
@@ -45,7 +46,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
   const [skills, setSkills] = useState<QuickAccessSkill[]>(quickAccessSkills(project));
   const [combos, setCombos] = useState<QuickAccessCombo[]>(quickAccessCombos(project));
   const [announcement, setAnnouncement] = useState('');
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const { confirm, confirmDialog } = useConfirm();
   const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
   const [discovered, setDiscovered] = useState<ProjectSkill[]>([]);
   const [discoveryReady, setDiscoveryReady] = useState(false);
@@ -92,7 +93,25 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
   );
   const incomplete = incompleteSkill || incompleteCombo;
 
-  const requestClose = () => (dirty ? setConfirmDiscard(true) : onClose());
+  const requestClose = async () => {
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    const discard = await confirm({
+      title: 'Discard changes?',
+      message: "The edits to this project's Quick Access settings have not been saved.",
+      confirmLabel: 'Discard',
+      variant: 'discard',
+    });
+    if (discard) onClose();
+  };
+  useOverlayLayer({
+    id: 'quick-access-settings',
+    kind: 'tool',
+    active: true,
+    onEscape: requestClose,
+  });
 
   const handleSave = () => {
     if (incomplete) return;
@@ -120,7 +139,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
   // containers, which would clip a dialog rendered in place.
   return createPortal(
     <div
-      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={requestClose}
     >
       <div
@@ -130,14 +149,6 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
         aria-labelledby="quick-access-settings-title"
         data-testid="quick-access-settings-dialog"
         onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          // useDialogA11y traps Tab and restores focus, but leaves Escape and
-          // the aria attributes to the consumer.
-          if (event.key === 'Escape') {
-            event.stopPropagation();
-            requestClose();
-          }
-        }}
         className="flex max-h-[85vh] w-full max-w-lg flex-col gap-5 overflow-y-auto rounded-xl border border-white/10 bg-background-dark p-6 shadow-2xl"
       >
         <header className="flex items-center gap-2">
@@ -206,15 +217,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
           </button>
         </footer>
       </div>
-      {confirmDiscard && (
-        <ConfirmDialog
-          title="Discard changes?"
-          message="The edits to this project's Quick Access settings have not been saved."
-          confirmLabel="Discard"
-          onConfirm={onClose}
-          onCancel={() => setConfirmDiscard(false)}
-        />
-      )}
+      {confirmDialog}
     </div>,
     document.body
   );
