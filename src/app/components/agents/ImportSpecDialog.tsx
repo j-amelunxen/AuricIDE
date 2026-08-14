@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
-import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
+import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
+import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { buildImportSpecPrompt } from '@/lib/pm/importSpecPrompt';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
@@ -39,7 +40,10 @@ function ImportSpecDialogPanel({
 }: ImportSpecDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const [specText, setSpecText] = useState('');
-  const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
+  const { providers, blockedAll: noProviderPermitted } = useAllowedProviders(
+    FALLBACK_CRUSH_PROVIDER,
+    workingDirectory || undefined
+  );
   const [selectedProviderId, setSelectedProviderId] = useState(FALLBACK_CRUSH_PROVIDER.id);
   const [model, setModel] = useState(FALLBACK_CRUSH_PROVIDER.defaultModel);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
@@ -48,23 +52,11 @@ function ImportSpecDialogPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentProvider = providers.find((p) => p.id === selectedProviderId) ?? providers[0];
-
-  useEffect(() => {
-    listProviders()
-      .then((fetched) => {
-        if (fetched.length > 0) {
-          setProviders(fetched);
-          const defaultProvider = fetched[0];
-          setSelectedProviderId(defaultProvider.id);
-          setModel(defaultProvider.defaultModel);
-          setPermissionMode(defaultProvider.defaultPermissionMode as PermissionMode);
-        }
-      })
-      .catch(() => {
-        // Browser mode fallback
-      });
-  }, []);
+  // The fallback keeps the fields renderable when the policy permits nothing —
+  // the dialog says so and refuses to import rather than crashing on an empty
+  // list.
+  const currentProvider =
+    providers.find((p) => p.id === selectedProviderId) ?? providers[0] ?? FALLBACK_CRUSH_PROVIDER;
 
   // Adjusting state while rendering, rather than in an effect: React re-runs
   // this render before touching the DOM, so the fields never paint with the
@@ -171,7 +163,7 @@ function ImportSpecDialogPanel({
               <div className="relative">
                 <select
                   id="import-provider-select"
-                  value={selectedProviderId}
+                  value={currentProvider.id}
                   onChange={(e) => setSelectedProviderId(e.target.value)}
                   className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
                 >
@@ -183,6 +175,12 @@ function ImportSpecDialogPanel({
                 </select>
                 <SelectChevron />
               </div>
+              {noProviderPermitted && (
+                <p role="alert" className="text-[11px] text-red-400">
+                  This project permits no agent provider. Change its provider policy under Settings
+                  → Project → Providers.
+                </p>
+              )}
             </div>
           )}
 
@@ -258,7 +256,7 @@ function ImportSpecDialogPanel({
             </button>
             <button
               type="button"
-              disabled={!specText.trim() || isLoading}
+              disabled={!specText.trim() || isLoading || noProviderPermitted}
               onClick={handleImport}
               className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
             >

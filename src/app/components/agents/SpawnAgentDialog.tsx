@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
 import type { PmGoal } from '@/lib/tauri/goals';
-import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
+import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
+import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
@@ -80,7 +81,14 @@ function SpawnAgentDialogPanel({
   /** -1 = composing a fresh prompt; >= 0 = showing promptHistory[historyIndex]. */
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [goalId, setGoalId] = useState<string>(initialGoalId ?? '');
-  const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
+  // Filtered by the policy of the repository this agent will run in — not the
+  // open project, which may be a different one. Rust checks that same policy
+  // before spawning, so offering by any other yardstick would promise launches
+  // it then refuses.
+  const { providers, blockedAll: noProviderPermitted } = useAllowedProviders(
+    FALLBACK_CRUSH_PROVIDER,
+    repoPath || undefined
+  );
   const [selectedProviderId, setSelectedProviderId] = useState(FALLBACK_CRUSH_PROVIDER.id);
   const [model, setModel] = useState(FALLBACK_CRUSH_PROVIDER.defaultModel);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
@@ -95,24 +103,23 @@ function SpawnAgentDialogPanel({
   // remounts on every open, so the ref is re-evaluated per launch.
   const savedDefaultsRef = useRef(mergeSpawnPreset(loadSpawnDefaults(), presetDefaults));
 
-  const currentProvider = providers.find((p) => p.id === selectedProviderId) ?? providers[0];
+  // The fallback keeps the fields renderable when the policy permits nothing:
+  // the dialog says so and refuses to deploy, rather than crashing on an empty
+  // list.
+  const currentProvider =
+    providers.find((p) => p.id === selectedProviderId) ?? providers[0] ?? FALLBACK_CRUSH_PROVIDER;
 
+  // Re-runs whenever the permitted set changes — including when the target
+  // repository is switched to one with a different policy, where the selected
+  // provider may no longer be allowed.
   useEffect(() => {
-    listProviders()
-      .then((fetched) => {
-        if (fetched.length > 0) {
-          setProviders(fetched);
-          const saved = savedDefaultsRef.current;
-          const defaultProvider = fetched.find((p) => p.id === saved?.providerId) ?? fetched[0];
-          setSelectedProviderId(defaultProvider.id);
-          setModel(defaultProvider.defaultModel);
-          setPermissionMode(defaultProvider.defaultPermissionMode as PermissionMode);
-        }
-      })
-      .catch(() => {
-        // Browser mode fallback — keep FALLBACK_CLAUDE_PROVIDER
-      });
-  }, []);
+    if (providers.length === 0) return;
+    const saved = savedDefaultsRef.current;
+    const defaultProvider = providers.find((p) => p.id === saved?.providerId) ?? providers[0];
+    setSelectedProviderId(defaultProvider.id);
+    setModel(defaultProvider.defaultModel);
+    setPermissionMode(defaultProvider.defaultPermissionMode as PermissionMode);
+  }, [providers]);
 
   // Adjusted while rendering rather than in an effect: opening the dialog is a
   // reset of this render, so the previous launch's instruction never paints
@@ -404,6 +411,16 @@ function SpawnAgentDialogPanel({
               </div>
             )}
 
+            {/* Outside the picker on purpose: the picker only renders when
+                there is a choice to make, which is never the case in exactly
+                the situation this message explains. */}
+            {noProviderPermitted && (
+              <p role="alert" className="text-[11px] text-red-400">
+                This project permits no agent provider. Change its provider policy under Settings →
+                Project → Providers.
+              </p>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label
@@ -487,7 +504,7 @@ function SpawnAgentDialogPanel({
               <button
                 type="button"
                 onClick={handleDeploy}
-                disabled={!instruction}
+                disabled={!instruction || noProviderPermitted}
                 className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
               >
                 Start Agent

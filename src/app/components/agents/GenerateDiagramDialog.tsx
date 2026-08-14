@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import type { AgentConfig } from '@/lib/tauri/agents';
-import { listProviders, FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
+import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
+import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { exists } from '@/lib/tauri/fs';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
@@ -96,24 +97,12 @@ function GenerateDiagramDialogPanel({
   useOverlayLayer({ id: 'generate-diagram', kind: 'tool', active: true, onEscape: onClose });
   const [diagramType, setDiagramType] = useState('flowchart');
   const [detailLevel, setDetailLevel] = useState('abstract');
-  const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
-  const [selectedProvider, setSelectedProvider] = useState<ProviderInfo>(FALLBACK_CRUSH_PROVIDER);
+  const { providers, blockedAll: noProviderPermitted } =
+    useAllowedProviders(FALLBACK_CRUSH_PROVIDER);
+  const [selectedProviderId, setSelectedProviderId] = useState(FALLBACK_CRUSH_PROVIDER.id);
   // The folder the check answered "yes" for, not a bare flag: a stale `true`
   // from the previous folder would warn about a file that is not there.
   const [overwrittenFolder, setOverwrittenFolder] = useState<string | null>(null);
-
-  useEffect(() => {
-    listProviders()
-      .then((loadedProviders) => {
-        if (loadedProviders.length > 0) {
-          setProviders(loadedProviders);
-          setSelectedProvider(loadedProviders[0]);
-        }
-      })
-      .catch(() => {
-        // Browser mode — keep fallback
-      });
-  }, []);
 
   useEffect(() => {
     if (!folderPath) return;
@@ -132,9 +121,13 @@ function GenerateDiagramDialogPanel({
 
   const overwriteWarning = overwrittenFolder !== null && overwrittenFolder === folderPath;
 
+  // Derived, not mirrored: a provider this project denies drops out of the
+  // list, and the selection follows it without an effect having to chase it.
+  const selectedProvider =
+    providers.find((p) => p.id === selectedProviderId) ?? providers[0] ?? FALLBACK_CRUSH_PROVIDER;
+
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const found = providers.find((p) => p.id === e.target.value);
-    if (found) setSelectedProvider(found);
+    setSelectedProviderId(e.target.value);
   };
 
   const handleGenerate = () => {
@@ -214,6 +207,12 @@ function GenerateDiagramDialogPanel({
               </select>
               <SelectChevron />
             </div>
+            {noProviderPermitted && (
+              <p role="alert" className="text-[11px] text-red-400">
+                This project permits no agent provider. Change its provider policy under Settings →
+                Project → Providers.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -277,7 +276,8 @@ function GenerateDiagramDialogPanel({
             <button
               type="button"
               onClick={handleGenerate}
-              className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all"
+              disabled={noProviderPermitted}
+              className="rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
             >
               Generate
             </button>

@@ -13,6 +13,15 @@ vi.mock('@/app/components/ui/InfoTooltip', () => ({
 }));
 
 const mockListProviders = vi.fn<() => Promise<ProviderInfo[]>>();
+const mockProviderPolicy = vi.fn();
+
+vi.mock('@/lib/config/projectConfig', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/config/projectConfig')>();
+  return {
+    ...actual,
+    loadProviderPolicy: (...args: unknown[]) => mockProviderPolicy(...(args as [])),
+  };
+});
 
 vi.mock('@/lib/tauri/providers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/tauri/providers')>();
@@ -33,6 +42,7 @@ async function answerYoloElevate(user: User, button: string) {
 // Default: reject so only FALLBACK_CRUSH_PROVIDER is used
 beforeEach(() => {
   mockListProviders.mockRejectedValue(new Error('browser mode'));
+  mockProviderPolicy.mockResolvedValue({ allow: null, deny: [] });
   localStorage.clear();
   sessionStorage.clear();
   useStore.setState({ overlayStack: { layers: [] } });
@@ -739,5 +749,69 @@ describe('SpawnAgentDialog – YOLO elevate confirm', () => {
 
     expect(screen.queryByRole('dialog', { name: /act without asking/i })).not.toBeInTheDocument();
     expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: 'default' }));
+  });
+});
+
+describe('SpawnAgentDialog – the project provider policy', () => {
+  const provider = (id: string, name: string): ProviderInfo => ({
+    id,
+    name,
+    models: [{ value: `${id}-model`, label: `${id} model` }],
+    permissionModes: [{ value: 'default', label: 'Interactive', description: 'Ask' }],
+    defaultModel: `${id}-model`,
+    defaultPermissionMode: 'default',
+  });
+
+  it('leaves a denied provider out of the picker', async () => {
+    mockListProviders.mockResolvedValue([
+      provider('claude', 'Claude Code'),
+      provider('opencode', 'opencode'),
+      provider('grok', 'Grok'),
+    ]);
+    mockProviderPolicy.mockResolvedValue({ allow: null, deny: ['grok'] });
+
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+
+    const picker = await screen.findByLabelText(/provider/i);
+    await waitFor(() => expect(within(picker).getByText('Claude Code')).toBeInTheDocument());
+    expect(within(picker).queryByText('Grok')).not.toBeInTheDocument();
+  });
+
+  it('degrades to a permitted provider when the remembered one is denied', async () => {
+    // The remembered launch choice must not resurrect a provider the project
+    // has since locked out.
+    localStorage.setItem(
+      'auric.agent-spawn-defaults',
+      JSON.stringify({
+        providerId: 'grok',
+        model: 'grok-model',
+        permissionMode: 'default',
+        headless: false,
+      })
+    );
+    mockListProviders.mockResolvedValue([
+      provider('claude', 'Claude Code'),
+      provider('opencode', 'opencode'),
+      provider('grok', 'Grok'),
+    ]);
+    mockProviderPolicy.mockResolvedValue({ allow: null, deny: ['grok'] });
+
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByLabelText(/provider/i)).toHaveValue('claude'));
+    expect(screen.getByLabelText(/model/i)).toHaveValue('claude-model');
+  });
+
+  it('says so and refuses to deploy when the policy permits nothing', async () => {
+    // An empty picker with no explanation reads as a bug, and the setting that
+    // caused it is two screens away.
+    mockListProviders.mockResolvedValue([provider('claude', 'Claude Code')]);
+    mockProviderPolicy.mockResolvedValue({ allow: null, deny: ['claude'] });
+
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+
+    expect(await screen.findByText(/permits no agent provider/i)).toBeInTheDocument();
+    await userEvent.setup().type(screen.getByLabelText(/what should it do/i), 'Try anyway');
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
   });
 });

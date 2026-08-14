@@ -297,6 +297,36 @@ pub async fn list_agents_impl(state: &AgentManagerState) -> Result<Vec<AgentInfo
 
 // ── spawn_agent ─────────────────────────────────────────────────────
 
+/// Resolves the provider a spawn will really use, then holds it against the
+/// project's policy.
+///
+/// Resolution has to come first. An unrecognised id falls back to the registry
+/// default, so checking the *requested* name would let a deny list be dodged by
+/// naming a provider that does not exist — by a typo as easily as by a caller
+/// that never learned the policy exists. What is checked, persisted and shown
+/// is therefore the id that actually resolved.
+fn resolve_permitted_provider(
+    requested: Option<&str>,
+    providers: &ProviderRegistryState,
+    policy: &crate::provider_policy::ProviderPolicy,
+) -> Result<(String, Arc<dyn crate::providers::AgentProvider>), String> {
+    let provider = providers
+        .get(requested.unwrap_or("claude"))
+        .unwrap_or_else(|| providers.default_provider());
+    let resolved_id = provider.info().id;
+
+    if !crate::provider_policy::is_provider_allowed(&resolved_id, policy) {
+        return Err(format!(
+            "Provider '{}' is not permitted in this project. \
+             Its provider policy decides which agents may run here — \
+             change it under Settings → Project → Providers.",
+            resolved_id
+        ));
+    }
+
+    Ok((resolved_id, provider))
+}
+
 pub async fn spawn_agent_impl(
     config: AgentConfig,
     state: &AgentManagerState,
@@ -335,10 +365,17 @@ pub async fn spawn_agent_impl(
         ("sh", vec!["-c".to_string()])
     };
 
-    let provider_id = config.provider.as_deref().unwrap_or("claude");
-    let provider = providers
-        .get(provider_id)
-        .unwrap_or_else(|| providers.default_provider());
+    // Before anything is opened or spawned: may this provider run in this
+    // project at all? The check lives here rather than in the dialogs because
+    // this is the one path every agent takes — the conductor, a retry, a
+    // resumed run and a notification action all arrive here too.
+    let policy = match config.cwd.as_deref() {
+        Some(cwd) => crate::provider_policy::policy_for_project(std::path::Path::new(cwd)),
+        None => crate::provider_policy::ProviderPolicy::default(),
+    };
+    let (provider_id, provider) =
+        resolve_permitted_provider(config.provider.as_deref(), providers, &policy)?;
+    let provider_id = provider_id.as_str();
 
     let spawn_cmd = provider.build_spawn_command(
         &config.model,
@@ -683,6 +720,112 @@ pub async fn cleanup_all_agents(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider_policy::ProviderPolicy;
+    use crate::providers::new_provider_registry;
+
+    // The registry's contents depend on which dynamic-providers directory is
+    // reachable, so these tests pin nothing but "crush is always there" and
+    // whatever the registry itself calls its default.
+    fn registry_and_default() -> (ProviderRegistryState, String) {
+        let registry = new_provider_registry(None);
+        let default_id = registry.default_provider().info().id;
+        (registry, default_id)
+    }
+
+    fn deny(ids: &[&str]) -> ProviderPolicy {
+        ProviderPolicy {
+            allow: None,
+            deny: ids.iter().map(|id| id.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn permits_a_provider_when_no_policy_is_set() {
+        let (registry, _) = registry_and_default();
+
+        let (id, _) =
+            resolve_permitted_provider(Some("crush"), &registry, &ProviderPolicy::default())
+                .expect("an unconfigured project permits everything");
+
+        assert_eq!(id, "crush");
+    }
+
+    #[test]
+    fn refuses_a_denied_provider() {
+        let (registry, _) = registry_and_default();
+
+        let error = resolve_permitted_provider(Some("crush"), &registry, &deny(&["crush"]))
+            .err()
+            .expect("a denied provider must not spawn");
+
+        // The message has to name the provider — it surfaces in an agent's
+        // error row, where "not permitted" alone would say nothing.
+        assert!(error.contains("crush"), "unhelpful message: {}", error);
+    }
+
+    #[test]
+    fn refuses_the_default_when_no_provider_was_requested() {
+        let (registry, default_id) = registry_and_default();
+
+        assert!(
+            resolve_permitted_provider(None, &registry, &deny(&[&default_id])).is_err(),
+            "falling back to the default must not dodge the policy"
+        );
+    }
+
+    #[test]
+    fn an_unknown_provider_name_cannot_slip_past_a_deny_list() {
+        // The heart of the gate. An unknown id falls back to the registry
+        // default, so checking the *requested* name would let any caller past a
+        // deny list by naming a provider that does not exist.
+        let (registry, default_id) = registry_and_default();
+
+        assert!(
+            resolve_permitted_provider(
+                Some("not-a-real-provider"),
+                &registry,
+                &deny(&[&default_id])
+            )
+            .is_err(),
+            "the resolved provider is what must be checked"
+        );
+    }
+
+    #[test]
+    fn an_allow_list_admits_its_members_and_no_one_else() {
+        let (registry, default_id) = registry_and_default();
+        let only_default = ProviderPolicy {
+            allow: Some(vec![default_id.clone()]),
+            deny: Vec::new(),
+        };
+
+        let (id, _) = resolve_permitted_provider(None, &registry, &only_default)
+            .expect("the allowed provider spawns");
+        assert_eq!(id, default_id);
+
+        if default_id != "crush" {
+            assert!(
+                resolve_permitted_provider(Some("crush"), &registry, &only_default).is_err(),
+                "a provider outside the allow list must not spawn"
+            );
+        }
+    }
+
+    #[test]
+    fn reports_the_provider_that_actually_resolved() {
+        // What gets persisted and shown must be what ran, or Retry relaunches
+        // something other than the row the user clicked.
+        let (registry, default_id) = registry_and_default();
+
+        let (id, _) = resolve_permitted_provider(
+            Some("not-a-real-provider"),
+            &registry,
+            &ProviderPolicy::default(),
+        )
+        .expect("an unknown name still falls back");
+
+        assert_eq!(id, default_id);
+    }
 
     #[test]
     fn test_agent_config_deserializes_camel_case() {
