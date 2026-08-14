@@ -125,6 +125,7 @@ const permissionModeSchema = z.enum([
   'plan',
   'auto',
   'default',
+  'yolo',
 ]);
 
 const skillSnapshotSchema = z.object({

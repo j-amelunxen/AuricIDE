@@ -34,7 +34,8 @@ export interface AgentInfo {
   spawnedForReviewOfTicketId?: string;
 }
 
-export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan' | 'auto' | 'default';
+export type PermissionMode =
+  'bypassPermissions' | 'acceptEdits' | 'plan' | 'auto' | 'default' | 'yolo';
 
 import { invoke } from './invoke';
 
