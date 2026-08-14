@@ -636,6 +636,19 @@ describe('QuickAccess', () => {
       expect(useStore.getState().spawnDialogOpen).toBe(false);
     });
 
+    it('still switches the project when the wheel is already open from dwell', async () => {
+      const onSwitchProject = vi.fn();
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" onSwitchProject={onSwitchProject} />);
+      await dwellOpen();
+      const tile = screen.getByTestId('quick-access-tile-/a/website');
+      fireEvent.pointerDown(tile, { button: 0 });
+      fireEvent.pointerUp(tile, { button: 0 });
+      fireEvent.click(tile);
+      expect(onSwitchProject).toHaveBeenCalledWith('/a/website');
+      expect(useStore.getState().spawnDialogOpen).toBe(false);
+    });
+
     it('launches the slotted skill from a dwell click', async () => {
       useStore.setState({ starredProjects: [websiteWithSkills] });
       render(<QuickAccess currentPath="/a/apps" />);
@@ -644,6 +657,32 @@ describe('QuickAccess', () => {
       expect(useStore.getState().initialAgentTask).toBe('/changelog');
       expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
       expect(useStore.getState().spawnDialogOpen).toBe(true);
+    });
+
+    it('shows a single slot label on hover, or all labels while Shift is held', async () => {
+      useStore.setState({ starredProjects: [websiteWithSkills] });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+
+      const firstSlot = screen.getByTestId('quick-access-wheel-slot-/a/website-0');
+      expect(firstSlot).not.toHaveAttribute('title');
+      expect(screen.queryByTestId('quick-access-wheel-label-/a/website-0')).not.toBeInTheDocument();
+
+      fireEvent.pointerEnter(firstSlot);
+      expect(screen.getByTestId('quick-access-wheel-label-/a/website-0')).toBeInTheDocument();
+      expect(screen.queryByTestId('quick-access-wheel-label-/a/website-1')).not.toBeInTheDocument();
+
+      fireEvent.pointerLeave(firstSlot);
+      fireEvent.keyDown(window, { key: 'Shift' });
+      expect(screen.getByTestId('quick-access-wheel-label-/a/website-0')).toHaveTextContent(
+        'Add skill'
+      );
+      expect(screen.getByTestId('quick-access-wheel-label-/a/website-1')).toHaveTextContent(
+        'Changelog'
+      );
+
+      fireEvent.keyUp(window, { key: 'Shift' });
+      expect(screen.queryByTestId('quick-access-wheel-label-/a/website-0')).not.toBeInTheDocument();
     });
 
     it('offers whole combos on a plus slot, separate from skills', async () => {

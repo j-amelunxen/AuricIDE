@@ -95,6 +95,32 @@ export function SkillWheel({
   onPlusClick,
   onSlotManage,
 }: SkillWheelProps) {
+  const [activeSlot, setActiveSlot] = useState<number | null>(null);
+  const [showAllLabels, setShowAllLabels] = useState(false);
+  const phaseRef = useRef(phase);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Shift' && phaseRef.current === 'open') setShowAllLabels(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') setShowAllLabels(false);
+    };
+    const onWindowBlur = () => setShowAllLabels(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onWindowBlur);
+    };
+  }, []);
+
   if (phase === 'idle') return null;
   const positions = wheelSlotPositions();
   const open = phase === 'open';
@@ -111,66 +137,100 @@ export function SkillWheel({
         const combo = entry?.kind === 'combo';
         const armed = armedSlot === index;
         const label = entry ? wheelEntryLabel(entry) : 'Add skill';
+        const active = open && activeSlot === index;
+        const labelPosition =
+          pos.y < 0 && pos.x > 0
+            ? {
+                transform: `translate(${pos.x + 12}px, ${pos.y - 18}px) translateY(-100%)`,
+              }
+            : pos.y < 0 && pos.x < 0
+              ? {
+                  transform: `translate(${pos.x - 12}px, ${pos.y - 18}px) translate(-100%, -100%)`,
+                }
+              : pos.x > 0
+                ? {
+                    transform: `translate(${pos.x + 14}px, ${pos.y}px) translateY(-50%)`,
+                  }
+                : pos.x < 0
+                  ? {
+                      transform: `translate(${pos.x - 14}px, ${pos.y}px) translate(-100%, -50%)`,
+                    }
+                  : {
+                      transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y * 1.45}px)`,
+                    };
         return (
-          <button
-            key={index}
-            type="button"
-            data-testid={`quick-access-wheel-slot-${path}-${index}`}
-            data-wheel-slot={index}
-            data-kind={entry?.kind ?? 'empty'}
-            aria-label={label}
-            title={entry ? `${wheelEntryName(entry)} — right-click to move or remove` : label}
-            disabled={!open}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (mode === 'hold') return;
-              if (entry) onSlotClick(index);
-              else onPlusClick(index, event.clientX, event.clientY);
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              // An empty slot has nothing to manage — its plus already is the
-              // one thing a right-click could offer.
-              if (entry) onSlotManage(index, event.clientX, event.clientY);
-              else onPlusClick(index, event.clientX, event.clientY);
-            }}
-            className={`skill-wheel-slot pointer-events-auto absolute flex flex-col items-center gap-0.5 ${
-              open ? 'h-8 w-8' : 'h-2 w-2'
-            } ${armed && open ? 'z-10' : ''}`}
-            style={{
-              transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)`,
-            }}
-          >
-            <span
-              className={`relative flex items-center justify-center rounded-full shadow-sm ${
-                open
-                  ? `h-8 w-8 text-[11px] font-bold ${
-                      combo
-                        ? 'bg-primary/20 text-foreground ring-1 ring-primary/45'
-                        : entry
-                          ? 'bg-background text-foreground ring-1 ring-white/20'
-                          : 'bg-background/80 text-foreground-muted ring-1 ring-dashed ring-white/25'
-                    } ${armed ? 'ring-2 ring-primary/80' : ''}`
-                  : 'h-1.5 w-1.5 bg-white/55'
-              }`}
+          <span key={index}>
+            <button
+              type="button"
+              data-testid={`quick-access-wheel-slot-${path}-${index}`}
+              data-wheel-slot={index}
+              data-kind={entry?.kind ?? 'empty'}
+              aria-label={label}
+              disabled={!open}
+              onPointerEnter={() => setActiveSlot(index)}
+              onPointerLeave={() =>
+                setActiveSlot((current) => (current === index ? null : current))
+              }
+              onFocus={() => setActiveSlot(index)}
+              onBlur={() => setActiveSlot((current) => (current === index ? null : current))}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (mode === 'hold') return;
+                if (entry) onSlotClick(index);
+                else onPlusClick(index, event.clientX, event.clientY);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                // An empty slot has nothing to manage — its plus already is the
+                // one thing a right-click could offer.
+                if (entry) onSlotManage(index, event.clientX, event.clientY);
+                else onPlusClick(index, event.clientX, event.clientY);
+              }}
+              className={`skill-wheel-slot pointer-events-auto absolute flex items-center justify-center ${
+                open ? 'h-8 w-8' : 'h-2 w-2'
+              } ${armed && open ? 'z-10' : ''}`}
+              style={{
+                transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)`,
+              }}
             >
-              {open ? (entry ? skillMark(wheelEntryName(entry)) : '+') : null}
-              {open && combo && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-primary text-[8px] font-black leading-none text-white"
-                >
-                  +
-                </span>
-              )}
-            </span>
-            {open && entry && (
-              <span className="max-w-16 truncate text-[8px] font-medium leading-none text-foreground-muted">
-                {wheelEntryName(entry)}
+              <span
+                className={`relative flex items-center justify-center rounded-full shadow-sm transition-[transform,box-shadow,color,background-color] duration-150 ease-out ${
+                  open
+                    ? `h-8 w-8 text-[11px] font-bold ${
+                        combo
+                          ? 'bg-primary/20 text-foreground ring-1 ring-primary/45'
+                          : entry
+                            ? 'bg-background text-foreground ring-1 ring-white/20'
+                            : 'bg-background/80 text-foreground-muted ring-1 ring-dashed ring-white/25'
+                      } ${armed ? 'ring-2 ring-primary/80' : ''} ${
+                        active ? 'scale-110 shadow-[0_0_14px_rgba(var(--primary-rgb),0.2)]' : ''
+                      }`
+                    : 'h-1.5 w-1.5 bg-white/55'
+                }`}
+              >
+                {open ? (entry ? skillMark(wheelEntryName(entry)) : '+') : null}
+                {open && combo && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-primary text-[8px] font-black leading-none text-white"
+                  >
+                    +
+                  </span>
+                )}
+              </span>
+            </button>
+            {open && (active || showAllLabels) && (
+              <span
+                data-testid={`quick-access-wheel-label-${path}-${index}`}
+                aria-hidden="true"
+                className="pointer-events-none absolute z-20 max-w-28 truncate rounded-md border border-white/10 bg-background-dark/95 px-2 py-1 text-[10px] font-semibold leading-none tracking-[0.01em] text-foreground shadow-lg"
+                style={labelPosition}
+              >
+                {label}
               </span>
             )}
-          </button>
+          </span>
         );
       })}
     </div>

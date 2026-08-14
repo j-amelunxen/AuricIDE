@@ -273,6 +273,28 @@ describe('hold machine', () => {
     expect(state.mode).toBe('hold');
     expect(state.phase).toBe('open');
   });
+
+  it('treats a tap on the tile as a click after the dwell wheel is already open', () => {
+    // Hover opens the wheel. The next thing a user does is click the tile
+    // to switch projects — that tap must not be eaten as a cancelled hold.
+    let { state } = reduceWheel(createWheelMachine(), { type: 'enter', now: 0 });
+    ({ state } = reduceWheel(state, { type: 'tick', now: DWELL_OPEN_MS }));
+    ({ state } = reduceWheel(state, { type: 'down', now: 500 }));
+    const { state: next, action } = reduceWheel(state, { type: 'up', now: 530 });
+    expect(action).toEqual({ type: 'click-tile' });
+    expect(next.consumedClick).toBe(false);
+    expect(next.phase).toBe('idle');
+  });
+
+  it('still launches a slot if the dwell-open tap is dragged onto one', () => {
+    let { state } = reduceWheel(createWheelMachine(), { type: 'enter', now: 0 });
+    ({ state } = reduceWheel(state, { type: 'tick', now: DWELL_OPEN_MS }));
+    ({ state } = reduceWheel(state, { type: 'down', now: 500 }));
+    ({ state } = reduceWheel(state, { type: 'aim', slot: 2 }));
+    const { state: next, action } = reduceWheel(state, { type: 'up', now: 530 });
+    expect(action).toEqual({ type: 'hold-release', slot: 2 });
+    expect(next.consumedClick).toBe(true);
+  });
 });
 
 function emptySlots(): (string | null)[] {
