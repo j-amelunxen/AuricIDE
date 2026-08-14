@@ -15,6 +15,7 @@ import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
+import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import { type useIDEState } from './useIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
 
@@ -39,6 +40,10 @@ export function useIDEActions(
 
   // The inbox spans projects, so it is not keyed on rootPath like the rest here
   useNotificationInbox();
+
+  // The header doubles as the window's title bar on macOS — this keeps the room
+  // it leaves for the traffic lights honest when they come and go (fullscreen)
+  useTitleBarGutter();
 
   // On mount: load recent projects and custom slash commands from localStorage
   useEffect(() => {

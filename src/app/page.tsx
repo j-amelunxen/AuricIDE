@@ -364,6 +364,7 @@ export default function Home() {
             isConnected={state.cliConnected}
             llmConfigured={state.llmConfigured}
             onCommandPalette={() => state.setCommandPaletteOpen(true)}
+            onShowAgents={() => state.setRightCollapsed(false)}
             onOpenSettings={(category) => {
               if (category) {
                 state.setSettingsInitialCategory(category as SettingsCategory);

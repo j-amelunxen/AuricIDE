@@ -67,6 +67,18 @@
   --z-confirm: 450;
   --z-toast: 500;
   --z-dev: 400;
+
+  /* Room the window's close/minimise/zoom buttons need on the left of the
+     header. Zero unless they are actually drawn over the page — see below. */
+  --titlebar-gutter: 0px;
+}
+
+/* macOS draws the title bar as a transparent overlay for this app, so the
+   header doubles as the title bar and has to step around the traffic lights.
+   The attribute is set before first paint by TITLEBAR_BOOT_SCRIPT
+   (src/lib/platform/titlebar.ts), which also owns the matching offsets. */
+:root[data-titlebar='overlay'] {
+  --titlebar-gutter: 78px;
 }
 
 /* ─────────────────────────────────────────────────────────────
