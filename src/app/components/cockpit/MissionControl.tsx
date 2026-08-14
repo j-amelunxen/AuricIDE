@@ -6,8 +6,7 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/requirementsSlice';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { ConductorPanel } from '../goals/ConductorPanel';
-import { QuickAccess } from './QuickAccess';
-import { RecentProjects } from './RecentProjects';
+import { ProjectSwitcher } from './ProjectSwitcher';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const STALE_DAYS = 30;
@@ -334,15 +333,13 @@ export function MissionControl({
       )}
 
       {/* The conductor, on the table — not in a drawer */}
-      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/5">
+      <div className="glass-card w-full max-w-3xl overflow-hidden rounded-2xl">
         <ConductorPanel {...conductor} />
       </div>
 
-      {/* Recents live on this same surface so starring is not a hunt. */}
-      <RecentProjects onOpenProject={onSwitchProject} />
-
-      {/* Quick Access — jump between starred workspaces */}
-      <QuickAccess currentPath={rootPath} onSwitchProject={onSwitchProject} />
+      {/* One surface for "take me elsewhere": starred workspaces up front,
+          recents a tab away — starring happens over there, so it is not a hunt. */}
+      <ProjectSwitcher currentPath={rootPath} onOpenProject={onSwitchProject} />
     </div>
   );
 }
