@@ -1,11 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { LlmContent } from './settings/LlmContent';
 import { JudgeLlmContent } from './settings/JudgeLlmContent';
 import { AgentContent } from './settings/AgentContent';
+import { ProjectAgentContent } from './settings/ProjectAgentContent';
+import { CredentialsContent } from './settings/CredentialsContent';
+import { ProviderPolicyContent } from './settings/ProviderPolicyContent';
 import { CommandsContent } from './settings/CommandsContent';
 import { EditorContent } from './settings/EditorContent';
 import { AppearanceContent } from './settings/AppearanceContent';
@@ -22,6 +26,7 @@ const JUDGE_HINT =
 
 export type SettingsCategory =
   | 'agent'
+  | 'credentials'
   | 'llm'
   | 'judge'
   | 'commands'
@@ -31,7 +36,27 @@ export type SettingsCategory =
   | 'mcp'
   | 'blueprints'
   | 'excalidraw'
-  | 'video-import';
+  | 'video-import'
+  | 'providers'
+  | 'project-agent';
+
+/**
+ * Which layer a setting belongs to. The split is the whole point of this
+ * screen: application settings follow the install across every project,
+ * project settings travel with one repository in its own database. Mixing them
+ * in one list is what made it impossible to tell which was which.
+ */
+export type SettingsScope = 'application' | 'project';
+
+export const SCOPE_LABELS: Record<SettingsScope, string> = {
+  application: 'Application',
+  project: 'Project',
+};
+
+export const SCOPE_BLURBS: Record<SettingsScope, string> = {
+  application: 'Applies to every project on this machine.',
+  project: 'Stored with the open project.',
+};
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -48,22 +73,27 @@ interface SettingsNavItem {
 interface SettingsNavGroup {
   id: string;
   label: string;
+  scope: SettingsScope;
   items: SettingsNavItem[];
 }
 
 const SETTINGS_GROUPS: SettingsNavGroup[] = [
   {
-    id: 'agent-models',
-    label: 'Agent & models',
-    items: [
-      { id: 'agent', icon: 'robot_2', label: 'Agent' },
-      { id: 'llm', icon: 'psychology', label: 'LLM' },
-      { id: 'judge', icon: 'gavel', label: 'Judge' },
-    ],
+    id: 'app-agent',
+    label: 'Agents',
+    scope: 'application',
+    items: [{ id: 'agent', icon: 'robot_2', label: 'Agent' }],
   },
   {
-    id: 'editor',
+    id: 'app-credentials',
+    label: 'Credentials',
+    scope: 'application',
+    items: [{ id: 'credentials', icon: 'key', label: 'Keys & Endpoints' }],
+  },
+  {
+    id: 'app-editor',
     label: 'Editor',
+    scope: 'application',
     items: [
       { id: 'editor', icon: 'edit_note', label: 'Editor' },
       { id: 'appearance', icon: 'palette', label: 'Appearance' },
@@ -71,21 +101,43 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     ],
   },
   {
-    id: 'integrations',
+    id: 'app-integrations',
     label: 'Integrations',
+    scope: 'application',
     items: [
       { id: 'mcp', icon: 'hub', label: 'MCP' },
       { id: 'blueprints', icon: 'sync', label: 'Blueprints' },
+    ],
+  },
+  {
+    id: 'project-agents',
+    label: 'Agents',
+    scope: 'project',
+    items: [
+      { id: 'providers', icon: 'shield', label: 'Providers' },
+      { id: 'project-agent', icon: 'commit', label: 'Agent & Commits' },
+    ],
+  },
+  {
+    id: 'project-overrides',
+    label: 'Overrides',
+    scope: 'project',
+    items: [
+      { id: 'llm', icon: 'psychology', label: 'LLM' },
+      { id: 'judge', icon: 'gavel', label: 'Judge' },
       { id: 'excalidraw', icon: 'draw', label: 'Excalidraw+' },
       { id: 'video-import', icon: 'video_file', label: 'Video Import' },
     ],
   },
   {
-    id: 'system',
+    id: 'project-system',
     label: 'System',
+    scope: 'project',
     items: [{ id: 'system', icon: 'info', label: 'System' }],
   },
 ];
+
+const SCOPE_ORDER: SettingsScope[] = ['application', 'project'];
 
 function SettingsDialog({
   onClose,
@@ -96,6 +148,7 @@ function SettingsDialog({
   );
   const [search, setSearch] = useState('');
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  const rootPath = useStore((s) => s.rootPath);
 
   useOverlayLayer({ id: 'settings', kind: 'tool', active: true, onEscape: onClose });
 
@@ -113,6 +166,12 @@ function SettingsDialog({
     switch (activeCategory) {
       case 'agent':
         return <AgentContent />;
+      case 'credentials':
+        return <CredentialsContent />;
+      case 'providers':
+        return <ProviderPolicyContent />;
+      case 'project-agent':
+        return <ProjectAgentContent />;
       case 'llm':
         return <LlmContent />;
       case 'judge':
@@ -190,35 +249,53 @@ function SettingsDialog({
               {visibleGroups.length === 0 ? (
                 <p className="px-4 py-2 text-xs text-foreground-muted">No matching settings</p>
               ) : (
-                visibleGroups.map((group) => (
-                  <div key={group.id} className="mb-2">
-                    <div className="px-4 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-foreground-muted/70">
-                      {group.label}
-                    </div>
-                    {group.items.map((cat) => {
-                      const isActive = activeCategory === cat.id;
-                      const isJudge = cat.id === 'judge';
-                      return (
-                        <div key={cat.id} className="flex items-center">
-                          <button
-                            data-testid={`settings-nav-${cat.id}`}
-                            onClick={() => setActiveCategory(cat.id)}
-                            title={isJudge ? JUDGE_HINT : undefined}
-                            className={`min-w-0 flex-1 flex items-center gap-3 px-4 py-2.5 text-xs transition-colors border-l-2 ${
-                              isActive
-                                ? 'border-primary text-primary-light bg-primary/5'
-                                : 'border-transparent text-foreground-muted hover:text-foreground hover:bg-white/5'
-                            }`}
-                          >
-                            <AuricIcon name={cat.icon} className="text-sm" />
-                            {cat.label}
-                          </button>
-                          {isJudge && <InfoTooltip description={JUDGE_HINT} />}
+                SCOPE_ORDER.map((scope) => {
+                  const groups = visibleGroups.filter((group) => group.scope === scope);
+                  if (groups.length === 0) return null;
+                  return (
+                    <div key={scope} data-testid={`settings-scope-${scope}`} className="mb-3">
+                      {/* The heading carries the rule, so nobody has to guess
+                          whether a value follows the install or the repo. */}
+                      <div className="px-4 pt-3 pb-0.5 text-[11px] font-bold uppercase tracking-wider text-foreground">
+                        {SCOPE_LABELS[scope]}
+                      </div>
+                      <div className="px-4 pb-1.5 text-[9px] leading-snug text-foreground-muted/70">
+                        {scope === 'project' && !rootPath
+                          ? 'No project open.'
+                          : SCOPE_BLURBS[scope]}
+                      </div>
+                      {groups.map((group) => (
+                        <div key={group.id} className="mb-2">
+                          <div className="px-4 pt-1 pb-1 text-[10px] font-semibold tracking-wide text-foreground-muted/70">
+                            {group.label}
+                          </div>
+                          {group.items.map((cat) => {
+                            const isActive = activeCategory === cat.id;
+                            const isJudge = cat.id === 'judge';
+                            return (
+                              <div key={cat.id} className="flex items-center">
+                                <button
+                                  data-testid={`settings-nav-${cat.id}`}
+                                  onClick={() => setActiveCategory(cat.id)}
+                                  title={isJudge ? JUDGE_HINT : undefined}
+                                  className={`min-w-0 flex-1 flex items-center gap-3 px-4 py-2.5 text-xs transition-colors border-l-2 ${
+                                    isActive
+                                      ? 'border-primary text-primary-light bg-primary/5'
+                                      : 'border-transparent text-foreground-muted hover:text-foreground hover:bg-white/5'
+                                  }`}
+                                >
+                                  <AuricIcon name={cat.icon} className="text-sm" />
+                                  {cat.label}
+                                </button>
+                                {isJudge && <InfoTooltip description={JUDGE_HINT} />}
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                ))
+                      ))}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

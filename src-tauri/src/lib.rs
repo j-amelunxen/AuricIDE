@@ -1,5 +1,6 @@
 mod agent_persistence;
 mod agents;
+mod app_config;
 pub mod crashlog;
 mod database;
 mod excalidraw;
@@ -11,6 +12,7 @@ mod menu;
 mod notifications;
 mod project_icons;
 mod project_skills;
+mod provider_policy;
 mod providers;
 mod recent_projects;
 mod schedules;
@@ -2113,24 +2115,27 @@ fn goals_clear(project_path: String, state: tauri::State<'_, DatabaseState>) -> 
 async fn llm_call(
     request: llm::LlmRequest,
     db_state: tauri::State<'_, database::DatabaseState>,
+    credentials: tauri::State<'_, app_config::AppCredentialsState>,
 ) -> Result<llm::LlmResponse, String> {
-    llm::llm_call_impl(request, db_state).await
+    llm::llm_call_impl(request, db_state, credentials).await
 }
 
 #[tauri::command]
 async fn excalidraw_test_connection(
     project_path: String,
     db_state: tauri::State<'_, database::DatabaseState>,
+    credentials: tauri::State<'_, app_config::AppCredentialsState>,
 ) -> Result<String, String> {
-    excalidraw::test_connection_impl(&project_path, db_state).await
+    excalidraw::test_connection_impl(&project_path, db_state, credentials).await
 }
 
 #[tauri::command]
 async fn excalidraw_list_collections(
     project_path: String,
     db_state: tauri::State<'_, database::DatabaseState>,
+    credentials: tauri::State<'_, app_config::AppCredentialsState>,
 ) -> Result<Vec<excalidraw::contract::Collection>, String> {
-    excalidraw::list_collections_impl(&project_path, db_state).await
+    excalidraw::list_collections_impl(&project_path, db_state, credentials).await
 }
 
 #[tauri::command]
@@ -2138,8 +2143,9 @@ async fn excalidraw_list_scenes(
     project_path: String,
     collection_id: String,
     db_state: tauri::State<'_, database::DatabaseState>,
+    credentials: tauri::State<'_, app_config::AppCredentialsState>,
 ) -> Result<Vec<excalidraw::contract::SceneSummary>, String> {
-    excalidraw::list_scenes_impl(&project_path, &collection_id, db_state).await
+    excalidraw::list_scenes_impl(&project_path, &collection_id, db_state, credentials).await
 }
 
 #[tauri::command]
@@ -2147,8 +2153,9 @@ async fn excalidraw_get_scene_content(
     project_path: String,
     scene_id: String,
     db_state: tauri::State<'_, database::DatabaseState>,
+    credentials: tauri::State<'_, app_config::AppCredentialsState>,
 ) -> Result<String, String> {
-    excalidraw::get_scene_content_impl(&project_path, &scene_id, db_state).await
+    excalidraw::get_scene_content_impl(&project_path, &scene_id, db_state, credentials).await
 }
 
 #[tauri::command]
@@ -2314,6 +2321,15 @@ pub fn run() {
             );
             app.manage(webview_prefs::WebviewPrefsState::new(webview_prefs_path));
 
+            // Credentials are application-wide too, but they stay out of the
+            // mirror above: that store exists to copy whatever the webview puts
+            // in localStorage, and an API key does not belong in a second copy
+            // inside a WebKit database. This one is written by Rust at 0600.
+            let credentials_path = app_config::credentials_path_in(
+                &app.path().app_data_dir().map_err(|e| e.to_string())?,
+            );
+            app.manage(app_config::AppCredentialsState::new(credentials_path));
+
             let starred_projects_path = app
                 .path()
                 .app_data_dir()
@@ -2470,6 +2486,8 @@ pub fn run() {
             webview_prefs::webview_prefs_sync,
             webview_prefs::webview_prefs_set,
             webview_prefs::webview_prefs_remove,
+            app_config::app_credential_list,
+            app_config::app_credential_set,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,

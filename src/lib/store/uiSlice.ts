@@ -4,8 +4,24 @@ import type { ReferenceResult } from '@/lib/refactoring/findReferences';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
 import type { WorkTab } from '@/lib/work/tabs';
+import { loadProjectConfig, setProjectConfigValue } from '@/lib/config/projectConfig';
 
 export const MAX_TERMINAL_LOGS = 10_000;
+
+/**
+ * The agent settings that belong to the project rather than the machine — they
+ * describe this codebase's conventions, not a preference of yours.
+ *
+ * `dangerouslyIgnorePermissions` and `autoAcceptEdits` are missing on purpose.
+ * Both stay session state: a switch that grants an agent free rein, silently
+ * restored days later, is one nobody remembers leaving on.
+ */
+export const PROJECT_SCOPED_AGENT_SETTINGS = [
+  'agenticCommit',
+  'agenticCommitPrompt',
+  'branchTicketPattern',
+  'commitProviderId',
+] as const satisfies readonly (keyof AgentSettings)[];
 
 export interface AgentSettings {
   dangerouslyIgnorePermissions: boolean;
@@ -69,6 +85,8 @@ export interface UISlice {
   setJudgeLlmConfigured: (configured: boolean) => void;
   setEnableDeepNlp: (enabled: boolean) => void;
   updateAgentSettings: (settings: Partial<AgentSettings>) => void;
+  /** Replaces the project-scoped agent settings with the ones this project stores. */
+  loadProjectAgentSettings: (rootPath: string | null) => Promise<void>;
   setReferencesPanel: (open: boolean, query?: string, results?: ReferenceResult[]) => void;
   setProviders: (providers: ProviderInfo[]) => void;
   openWorkPlace: (tab?: WorkTab) => void;
@@ -76,7 +94,7 @@ export interface UISlice {
   setWorkTab: (tab: WorkTab) => void;
 }
 
-export const createUISlice: StateCreator<UISlice> = (set) => ({
+export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   terminalLogs: [],
   cursorPos: { line: 1, col: 1 },
   commandPaletteOpen: false,
@@ -156,10 +174,44 @@ export const createUISlice: StateCreator<UISlice> = (set) => ({
   setImportSpecDialogOpen: (open) => set({ importSpecDialogOpen: open }),
   setVideoImportDialogOpen: (open) => set({ videoImportDialogOpen: open }),
 
-  updateAgentSettings: (newSettings) =>
+  updateAgentSettings: (newSettings) => {
     set((state) => ({
       agentSettings: { ...state.agentSettings, ...newSettings },
-    })),
+    }));
+
+    // Persist the ones that describe this codebase — how its branches name
+    // tickets, how its commits get written. The two safety switches are
+    // deliberately absent: see PROJECT_SCOPED_AGENT_SETTINGS.
+    const rootPath = (get() as { rootPath?: string | null }).rootPath;
+    if (!rootPath) return;
+    for (const key of PROJECT_SCOPED_AGENT_SETTINGS) {
+      const value = newSettings[key];
+      if (value === undefined) continue;
+      // Fire and forget: a settings write must never block the toggle from
+      // moving, and the value is already live in the store either way.
+      void setProjectConfigValue(rootPath, key, value as never).catch(() => {});
+    }
+  },
+
+  loadProjectAgentSettings: async (rootPath) => {
+    const stored = await loadProjectConfig(rootPath ?? '');
+    set((state) => ({
+      agentSettings: {
+        ...state.agentSettings,
+        agenticCommit: stored.agenticCommit,
+        agenticCommitPrompt: stored.agenticCommitPrompt,
+        branchTicketPattern: stored.branchTicketPattern,
+        commitProviderId: stored.commitProviderId || undefined,
+        // Opening a project is not a reason to carry elevated permissions
+        // from the last one into it.
+        dangerouslyIgnorePermissions: false,
+        autoAcceptEdits: false,
+      },
+      // Lives in another slice but is loaded here, so one read of the project
+      // config restores everything it holds.
+      conductorProviderId: stored.conductorProviderId || null,
+    }));
+  },
 
   setReferencesPanel: (open, query, results) =>
     set({

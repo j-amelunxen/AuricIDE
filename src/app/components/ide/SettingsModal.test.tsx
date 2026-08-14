@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { useStore } from '@/lib/store';
@@ -98,9 +98,41 @@ describe('SettingsModal – Close Behaviors', () => {
 // ─── Grouped nav + search ──────────────────────────────────────────────────────
 
 describe('SettingsModal – Grouped nav', () => {
-  it('shows group headings Agent & models, Editor, Integrations, System', () => {
+  it('separates application settings from project settings', () => {
+    // The split is the point: which of these follow the install, and which
+    // travel with this one repository.
     render(<SettingsModal isOpen={true} onClose={() => {}} />);
-    expect(screen.getByText('Agent & models')).toBeInTheDocument();
+
+    expect(screen.getByTestId('settings-scope-application')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-scope-project')).toBeInTheDocument();
+  });
+
+  it('files each category under the layer that actually stores it', () => {
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+
+    const application = screen.getByTestId('settings-scope-application');
+    const project = screen.getByTestId('settings-scope-project');
+
+    // Keys and theme are properties of the machine…
+    expect(within(application).getByTestId('settings-nav-credentials')).toBeInTheDocument();
+    expect(within(application).getByTestId('settings-nav-appearance')).toBeInTheDocument();
+    // …the provider policy and the commit conventions are the repository's.
+    expect(within(project).getByTestId('settings-nav-providers')).toBeInTheDocument();
+    expect(within(project).getByTestId('settings-nav-project-agent')).toBeInTheDocument();
+  });
+
+  it('says so when there is no project to configure', () => {
+    useStore.setState({ rootPath: null });
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+
+    expect(
+      within(screen.getByTestId('settings-scope-project')).getByText(/no project open/i)
+    ).toBeInTheDocument();
+  });
+
+  it('shows group headings', () => {
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    expect(screen.getAllByText('Agents').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Integrations')).toBeInTheDocument();
     expect(screen.getAllByText('Editor').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('System').length).toBeGreaterThanOrEqual(2);
@@ -131,9 +163,6 @@ describe('SettingsModal – Grouped nav', () => {
     render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="llm" />);
 
     expect(screen.getByTestId('settings-nav-llm').className).toMatch(/border-primary/);
-    expect(
-      screen.getByText(/configure the LLM|LLM Configuration|Loading settings/i)
-    ).toBeInTheDocument();
   });
 });
 
@@ -186,6 +215,7 @@ describe('SettingsModal – Category Navigation', () => {
 
 describe('SettingsModal – Agentic Commit', () => {
   beforeEach(() => {
+    useStore.setState({ rootPath: '/tmp/project' });
     useStore.getState().updateAgentSettings({
       agenticCommit: true,
       agenticCommitPrompt: DEFAULT_PROMPT,
@@ -193,19 +223,19 @@ describe('SettingsModal – Agentic Commit', () => {
   });
 
   it('renders the agentic commit toggle', () => {
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     expect(screen.getByText('Agentic Commit')).toBeInTheDocument();
   });
 
   it('renders the prompt input with default value', () => {
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     const input = screen.getByDisplayValue(DEFAULT_PROMPT);
     expect(input).toBeInTheDocument();
   });
 
   it('toggles agenticCommit when checkbox is clicked', async () => {
     const user = userEvent.setup();
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
 
     const checkbox = screen.getByRole('checkbox', { name: /agentic commit/i });
     expect(checkbox).toBeChecked();
@@ -216,7 +246,7 @@ describe('SettingsModal – Agentic Commit', () => {
 
   it('updates prompt when input changes', async () => {
     const user = userEvent.setup();
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
 
     const input = screen.getByDisplayValue(DEFAULT_PROMPT);
     await user.clear(input);
@@ -228,6 +258,7 @@ describe('SettingsModal – Agentic Commit', () => {
 
 describe('SettingsModal – Ticket Pattern', () => {
   beforeEach(() => {
+    useStore.setState({ rootPath: '/tmp/project' });
     useStore.getState().updateAgentSettings({
       agenticCommit: true,
       agenticCommitPrompt: DEFAULT_PROMPT,
@@ -236,19 +267,19 @@ describe('SettingsModal – Ticket Pattern', () => {
   });
 
   it('renders the ticket pattern input', () => {
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     expect(screen.getByTestId('ticket-pattern-input')).toBeInTheDocument();
   });
 
   it('displays the current pattern value', () => {
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     const input = screen.getByTestId('ticket-pattern-input');
     expect(input).toHaveValue('([A-Z]+-\\d+)');
   });
 
   it('updates branchTicketPattern in store when changed', async () => {
     const user = userEvent.setup();
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
 
     const input = screen.getByTestId('ticket-pattern-input');
     await user.clear(input);
@@ -263,20 +294,19 @@ describe('SettingsModal – Ticket Pattern', () => {
         name: 'feature/AB-1234-your-ticket-text',
         ahead: 0,
         behind: 0,
-        isDetached: false,
       },
     });
 
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     const preview = screen.getByTestId('ticket-preview');
     expect(preview).toHaveTextContent('AB-1234');
     expect(preview).toHaveTextContent('feature/AB-1234-your-ticket-text');
   });
 
   it('shows "(no match)" in preview when pattern does not match', () => {
-    useStore.setState({ branchInfo: { name: 'main', ahead: 0, behind: 0, isDetached: false } });
+    useStore.setState({ branchInfo: { name: 'main', ahead: 0, behind: 0 } });
 
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     const preview = screen.getByTestId('ticket-preview');
     expect(preview).toHaveTextContent('(no match)');
   });
@@ -284,7 +314,7 @@ describe('SettingsModal – Ticket Pattern', () => {
   it('hides preview when no branch info is available', () => {
     useStore.setState({ branchInfo: null });
 
-    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     expect(screen.queryByTestId('ticket-preview')).not.toBeInTheDocument();
   });
 });

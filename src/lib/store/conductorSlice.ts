@@ -8,6 +8,7 @@ import { getGoalDescendants, getGoalSatisfaction } from './goalsSlice';
 import type { PmRequirement } from '../tauri/requirements';
 import type { ModelPower } from '../pm/enums';
 import { notifyConductor } from '../ide/conductorNotifications';
+import { setProjectConfigValue } from '../config/projectConfig';
 import type { NotificationInput } from '../tauri/notifications';
 import {
   buildReviewAgentPrompt,
@@ -670,7 +671,15 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
     setConductorMaxConcurrent: (n) => set({ conductorMaxConcurrent: Math.max(1, n) }),
 
-    setConductorProviderId: (id) => set({ conductorProviderId: id || null }),
+    setConductorProviderId: (id) => {
+      set({ conductorProviderId: id || null });
+      // Which provider runs a project's backlog is a property of the project,
+      // not of the session that happened to pick it.
+      const rootPath = (get() as { rootPath?: string | null }).rootPath;
+      if (rootPath) {
+        void setProjectConfigValue(rootPath, 'conductorProviderId', id || '').catch(() => {});
+      }
+    },
 
     setConductorModel: (model) => set({ conductorModel: model || null }),
 

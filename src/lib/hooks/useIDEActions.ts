@@ -4,11 +4,14 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '@/lib/store';
 import { getProjectFilesInfo } from '@/lib/tauri/fs';
 import { listProviders } from '@/lib/tauri/providers';
+import { filterProviders } from '@/lib/config/providerPolicy';
+import { loadProviderPolicy } from '@/lib/config/projectConfig';
 import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter';
 import { nextAttentionAgentId, withReviewFlags } from '@/lib/agents/attention';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
+import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
@@ -26,6 +29,7 @@ export function useIDEActions(
 
   // The viewer content always follows the active tab (tab click, tab close, …)
   useActiveTabContentLoader(state.activeTabId, handlers.loadTabContent);
+  useActiveDiffLoader();
 
   // Cmd/Ctrl+W closes the active tab, not the window
   useCloseTabShortcut();
@@ -70,20 +74,49 @@ export function useIDEActions(
     void useStore.getState().loadInterruptedAgents();
   }, []);
 
-  // On mount: load provider info for default model resolution
+  // A project's own agent settings — its commit prompt, its ticket pattern —
+  // replace the previous project's as soon as it is opened. Credentials it
+  // still keeps from before the application/project split move up first, so
+  // the settings screens show them where they now live.
   useEffect(() => {
-    listProviders()
-      .then((fetched) => {
-        if (fetched.length > 0) {
-          state.setProviders(fetched);
-          state.setDefaultProvider(fetched[0]);
-        }
-      })
-      .catch(() => {
-        // Browser mode — keep fallback
-      });
+    void (async () => {
+      const { migrateProjectCredentials } = await import('@/lib/config/migrateCredentials');
+      const { lifted } = await migrateProjectCredentials(state.rootPath ?? '');
+      if (lifted.length > 0) {
+        useStore
+          .getState()
+          .showToast(
+            `Moved ${lifted.length} credential group${lifted.length === 1 ? '' : 's'} from this project to Settings → Application → Credentials`,
+            'info'
+          );
+      }
+      await useStore.getState().loadProjectAgentSettings(state.rootPath);
+    })();
+  }, [state.rootPath]);
+
+  // Provider info for default model resolution, narrowed by the open project's
+  // policy so anything reading the store's provider list offers only what this
+  // project permits. Re-runs on a project switch, because the next project's
+  // policy may permit a different set.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const fetched = await listProviders().catch(() => []);
+      if (fetched.length === 0) return;
+      const policy = await loadProviderPolicy(state.rootPath ?? '');
+      const permitted = filterProviders(fetched, policy);
+      // Nothing permitted leaves the previous list standing rather than
+      // emptying a store other screens read from; the spawn dialogs are the
+      // ones that report the lockout, and Rust is what enforces it.
+      if (cancelled || permitted.length === 0) return;
+      state.setProviders(permitted);
+      state.setDefaultProvider(permitted[0]);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [state.rootPath]);
 
   // The router callbacks must always see the latest handleRefresh without
   // recreating the router (a recreate would drop pending debounce timers).
@@ -258,7 +291,7 @@ export function useIDEActions(
         void handlers.handleNewScratch();
       } else if (mod && e.key === 'b') {
         e.preventDefault();
-        state.setBottomCollapsed(!state.bottomCollapsed);
+        if (state.rootPath) state.setBottomCollapsed(!state.bottomCollapsed);
       } else if (mod && e.shiftKey && e.key === 'E') {
         e.preventDefault();
         state.setActiveActivity('explorer');

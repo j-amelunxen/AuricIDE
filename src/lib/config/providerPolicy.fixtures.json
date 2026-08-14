@@ -1,0 +1,140 @@
+{
+  "_comment": [
+    "The single source of truth for how a project's provider allow/deny list decides.",
+    "Two implementations read this file: src/lib/config/providerPolicy.ts (Vitest) and",
+    "src-tauri/src/provider_policy.rs (cargo test, via include_str!). The UI filters with",
+    "the first, the spawn gate blocks with the second — if they ever disagree, a provider",
+    "hidden from the dropdown would still spawn, or a permitted one would be refused.",
+    "Add a case here before changing either implementation, so drift fails both suites."
+  ],
+  "parse": [
+    {
+      "name": "absent policy — nothing configured yet",
+      "raw": null,
+      "expected": { "allow": null, "deny": [] }
+    },
+    {
+      "name": "empty string",
+      "raw": "",
+      "expected": { "allow": null, "deny": [] }
+    },
+    {
+      "name": "malformed JSON never locks a project out",
+      "raw": "{ this is not json",
+      "expected": { "allow": null, "deny": [] }
+    },
+    {
+      "name": "JSON that is not an object",
+      "raw": "[\"claude\"]",
+      "expected": { "allow": null, "deny": [] }
+    },
+    {
+      "name": "both lists present",
+      "raw": "{\"allow\":[\"claude\",\"opencode\"],\"deny\":[\"grok\"]}",
+      "expected": { "allow": ["claude", "opencode"], "deny": ["grok"] }
+    },
+    {
+      "name": "deny only — allow stays off",
+      "raw": "{\"deny\":[\"grok\"]}",
+      "expected": { "allow": null, "deny": ["grok"] }
+    },
+    {
+      "name": "explicit null allow",
+      "raw": "{\"allow\":null,\"deny\":[]}",
+      "expected": { "allow": null, "deny": [] }
+    },
+    {
+      "name": "ids are normalised — trimmed and lowercased",
+      "raw": "{\"allow\":[\"  Claude \",\"OpenCode\"],\"deny\":[\" GROK\"]}",
+      "expected": { "allow": ["claude", "opencode"], "deny": ["grok"] }
+    },
+    {
+      "name": "duplicates collapse, blanks drop out",
+      "raw": "{\"allow\":[\"claude\",\"claude\",\"\",\"   \"],\"deny\":[\"grok\",\"grok\"]}",
+      "expected": { "allow": ["claude"], "deny": ["grok"] }
+    },
+    {
+      "name": "non-string entries are dropped, not coerced",
+      "raw": "{\"allow\":[\"claude\",7,null,{}],\"deny\":[false,\"grok\"]}",
+      "expected": { "allow": ["claude"], "deny": ["grok"] }
+    },
+    {
+      "name": "wrong types for the fields themselves fall back to the open default",
+      "raw": "{\"allow\":\"claude\",\"deny\":\"grok\"}",
+      "expected": { "allow": null, "deny": [] }
+    },
+    {
+      "name": "an allow list that normalises to nothing is treated as no allow list",
+      "raw": "{\"allow\":[\"\",\"  \"],\"deny\":[]}",
+      "expected": { "allow": null, "deny": [] }
+    }
+  ],
+  "decide": [
+    {
+      "name": "default policy permits everything",
+      "policy": { "allow": null, "deny": [] },
+      "providerId": "claude",
+      "allowed": true
+    },
+    {
+      "name": "denied provider is refused",
+      "policy": { "allow": null, "deny": ["grok"] },
+      "providerId": "grok",
+      "allowed": false
+    },
+    {
+      "name": "deny list leaves everyone else alone",
+      "policy": { "allow": null, "deny": ["grok"] },
+      "providerId": "claude",
+      "allowed": true
+    },
+    {
+      "name": "allow list admits its members",
+      "policy": { "allow": ["claude"], "deny": [] },
+      "providerId": "claude",
+      "allowed": true
+    },
+    {
+      "name": "allow list excludes everyone it does not name",
+      "policy": { "allow": ["claude"], "deny": [] },
+      "providerId": "opencode",
+      "allowed": false
+    },
+    {
+      "name": "deny beats allow when a provider is on both lists",
+      "policy": { "allow": ["claude", "grok"], "deny": ["grok"] },
+      "providerId": "grok",
+      "allowed": false
+    },
+    {
+      "name": "an empty allow list is an absent one, never a total lockout",
+      "policy": { "allow": [], "deny": [] },
+      "providerId": "claude",
+      "allowed": true
+    },
+    {
+      "name": "the id under test is normalised too",
+      "policy": { "allow": null, "deny": ["grok"] },
+      "providerId": " GROK ",
+      "allowed": false
+    },
+    {
+      "name": "an id naming no known provider is still checked against the lists",
+      "policy": { "allow": ["claude"], "deny": [] },
+      "providerId": "typo-provider",
+      "allowed": false
+    },
+    {
+      "name": "a blank id is never allowed — it names nothing to permit",
+      "policy": { "allow": null, "deny": [] },
+      "providerId": "",
+      "allowed": false
+    },
+    {
+      "name": "every provider denied is a legal, if unusable, project",
+      "policy": { "allow": null, "deny": ["claude", "crush", "opencode"] },
+      "providerId": "crush",
+      "allowed": false
+    }
+  ]
+}

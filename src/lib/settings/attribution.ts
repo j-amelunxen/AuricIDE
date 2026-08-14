@@ -1,26 +1,21 @@
 'use client';
 
 import { useCallback, useSyncExternalStore } from 'react';
+import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 
-export const ATTRIBUTION_STORAGE_KEY = 'auric-show-attribution';
+/** Application-wide: the credit belongs to the install, not to a project. */
+export const ATTRIBUTION_STORAGE_KEY = APP_CONFIG_KEYS.showAttribution;
 
 const ATTRIBUTION_CHANGE_EVENT = 'auric-attribution-change';
 
 /** Default is OFF — the credit is opt-in advertising, never forced. */
 export function loadShowAttribution(): boolean {
-  try {
-    return localStorage.getItem(ATTRIBUTION_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
+  return readAppPref(ATTRIBUTION_STORAGE_KEY) === 'true';
 }
 
 export function saveShowAttribution(value: boolean): void {
-  try {
-    localStorage.setItem(ATTRIBUTION_STORAGE_KEY, String(value));
-  } catch {
-    // Persistence is best-effort; still notify for the current session.
-  }
+  // Persistence is best-effort; notify either way so the session still updates.
+  writeAppPref(ATTRIBUTION_STORAGE_KEY, String(value));
   window.dispatchEvent(new Event(ATTRIBUTION_CHANGE_EVENT));
 }
 

@@ -106,6 +106,11 @@ export function VideoImportContent() {
 
   return (
     <div className="space-y-6">
+      <p className="text-xs text-foreground-muted leading-relaxed">
+        Set here, these apply to this project only. The endpoint and key it falls back to live under
+        Application → Credentials, so a project that needs nothing special can leave these empty.
+      </p>
+
       <SettingsSection title="Transcription" icon="graphic_eq">
         <label className="flex flex-col gap-1.5 text-[10px] font-bold uppercase tracking-wider text-foreground-muted">
           Mode
