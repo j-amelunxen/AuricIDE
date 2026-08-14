@@ -69,6 +69,29 @@ export interface GitSlice {
   setCommitMessage: (msg: string) => void;
 }
 
+/**
+ * One array for every file that has no blame yet.
+ *
+ * `useStore` runs its selector on every snapshot check and compares the result
+ * by identity, so a selector that builds its own empty array reports a changed
+ * store on each pass — the component re-renders, the selector answers with
+ * another new array, and React stops the loop by throwing. Sharing one instance
+ * is what keeps "no blame loaded" a stable answer.
+ */
+const NO_BLAME_HUNKS: BlameHunk[] = [];
+
+/** Blame for the file behind a tab, addressed by its absolute path. */
+export function selectBlameHunks(
+  state: { rootPath: string | null; blameByPath: Record<string, BlameHunk[]> },
+  filePath: string | undefined
+): BlameHunk[] {
+  if (!state.rootPath || !filePath) return NO_BLAME_HUNKS;
+  const relativePath = filePath.startsWith(`${state.rootPath}/`)
+    ? filePath.slice(state.rootPath.length + 1)
+    : filePath;
+  return state.blameByPath[relativePath] ?? NO_BLAME_HUNKS;
+}
+
 const EMPTY_REVIEW_STATE = {
   scmView: 'changes' as const,
   historyPath: null,

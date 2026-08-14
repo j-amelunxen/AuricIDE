@@ -6,6 +6,7 @@ import { Compartment } from '@codemirror/state';
 import { brokenLinksSetFacet } from '@/lib/editor/wikiLinkBrokenExtension';
 import { fileListFacet, headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
 import { useStore } from '@/lib/store';
+import { selectBlameHunks } from '@/lib/store/gitSlice';
 import {
   slashCommandsFacet,
   mergeSlashCommands,
@@ -329,13 +330,7 @@ export function MarkdownEditor({
   }, [filePath, isDirty, statusSignature]);
 
   const blameVisible = useStore((s) => s.blameVisible);
-  const blameHunks = useStore((s) => {
-    if (!s.rootPath || !filePath) return [];
-    const relativePath = filePath.startsWith(`${s.rootPath}/`)
-      ? filePath.slice(s.rootPath.length + 1)
-      : filePath;
-    return s.blameByPath[relativePath] ?? [];
-  });
+  const blameHunks = useStore((s) => selectBlameHunks(s, filePath));
   const isFileTab = !!filePath && !isDiffTabId(filePath);
   const showBlameToggle = !!useStore((s) => s.rootPath) && isFileTab;
 
