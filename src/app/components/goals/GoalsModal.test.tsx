@@ -94,7 +94,7 @@ const storeState = {
   goalStationsDraft: [],
   goalsDirty: false,
   selectedGoalId: null as string | null,
-  rootPath: '/project',
+  rootPath: '/project' as string | null,
   pmDraftTickets: [] as PmTicket[],
   requirementsDraft: [],
   agents: [],
@@ -222,6 +222,8 @@ describe('GoalsModal', () => {
     storeState.selectedGoalId = null;
     storeState.pmDraftTickets = [];
     storeState.goalsDirty = false;
+    storeState.rootPath = '/project';
+    storeState.goalsDraft = [makeGoal()];
     storeState.overlayStack = { layers: [] };
     localStorage.clear();
   });
@@ -358,6 +360,19 @@ describe('GoalsModal', () => {
     expect(mocks.addGoal).toHaveBeenCalled();
     expect(mocks.setSelectedGoalId).toHaveBeenCalled();
     expect(mocks.saveGoals).not.toHaveBeenCalled();
+  });
+
+  it('does not offer goal creation when no project is open', async () => {
+    storeState.rootPath = null;
+    storeState.goalsDraft = [];
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+    expect(screen.getByTestId('goals-create-btn')).toBeDisabled();
+    expect(screen.queryByTestId('goal-tree-empty-create')).toBeNull();
+    expect(screen.getByText(/open a project to create goals/i)).toBeInTheDocument();
+    await user.click(screen.getByTestId('goals-create-btn'));
+    expect(mocks.addGoal).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('goal-create-dialog')).toBeNull();
   });
 
   it('replaces itself with Orchestration instead of stacking', async () => {

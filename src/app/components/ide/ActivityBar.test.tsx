@@ -12,9 +12,21 @@ describe('ActivityBar', () => {
   ];
 
   it('renders all activity items plus terminal toggle', () => {
-    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    render(
+      <ActivityBar
+        items={items}
+        activeId="explorer"
+        onSelect={() => {}}
+        onTerminalToggle={() => {}}
+      />
+    );
     // 4 activity items + 1 terminal toggle button
     expect(screen.getAllByRole('button')).toHaveLength(5);
+  });
+
+  it('does not offer a terminal toggle when none is provided', () => {
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Toggle Terminal (⌘J)' })).toBeNull();
   });
 
   it('marks the active item with primary styling', () => {
@@ -52,7 +64,14 @@ describe('ActivityBar', () => {
   });
 
   it('exposes the terminal toggle by an accessible label', () => {
-    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    render(
+      <ActivityBar
+        items={items}
+        activeId="explorer"
+        onSelect={() => {}}
+        onTerminalToggle={() => {}}
+      />
+    );
     expect(screen.getByRole('button', { name: 'Toggle Terminal (⌘J)' })).toBeInTheDocument();
   });
 
@@ -93,7 +112,14 @@ describe('ActivityBar', () => {
   });
 
   it('uses a color-only transition on the terminal toggle', () => {
-    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    render(
+      <ActivityBar
+        items={items}
+        activeId="explorer"
+        onSelect={() => {}}
+        onTerminalToggle={() => {}}
+      />
+    );
     const toggle = screen.getByRole('button', { name: 'Toggle Terminal (⌘J)' });
     expect(toggle).toHaveClass('transition-colors');
     expect(toggle).not.toHaveClass('transition-all');

@@ -37,8 +37,9 @@ import {
   type NewProjectOptions,
 } from '@/lib/project/newProject';
 import { type AgentConfig } from '@/lib/tauri/agents';
-import { revealInFileManager } from '@/lib/tauri/opener';
+import { openExternalUrl, revealInFileManager } from '@/lib/tauri/opener';
 import { extractTicket } from '@/lib/git/branchTicket';
+import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
 import { computeBacklinkWarning } from '@/lib/refactoring/backlinkWarning';
 import { computeFileRenameChanges } from '@/lib/refactoring/renameFile';
 import { applyChangesToContent } from '@/lib/refactoring/applyRenameChanges';
@@ -183,6 +184,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleCloseProject = useCallback(() => {
     state.closeProject();
+    state.setBottomCollapsed(true);
     state.closeAllTabs();
     state.setSelectedPaths([]);
     state.setSelectionAnchor(null);
@@ -199,7 +201,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.setVideoSrc(null);
     state.setPdfData(null);
     state.setMindmapData(null);
-    state.setDiffContent(null);
+    state.resetGitInMemory();
   }, [state]);
 
   // Loads a tab's file into the viewer states (editor / image / video / pdf /
@@ -255,7 +257,6 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           state.setObsidianCanvasData(parseObsidianCanvas(content));
         }
       }
-      state.setDiffContent(null);
     },
     [state]
   );
@@ -447,7 +448,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     state.setVideoSrc(null);
     state.setPdfData(null);
     state.setMindmapData(null);
-    state.setDiffContent(null);
+    state.resetGitInMemory();
   }, [state]);
 
   const handleOpenFolder = useCallback(async () => {
@@ -1001,13 +1002,103 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   );
 
   const handleDiffFileClick = useCallback(
-    async (path: string) => {
+    async (path: string, side: 'staged' | 'unstaged' = 'unstaged') => {
       if (!state.rootPath) return;
       const { getGitDiff } = await import('@/lib/tauri/git');
-      const diff = await getGitDiff(state.rootPath, path);
-      state.setDiffContent(diff);
-      state.openTab({ id: `diff:${path}`, path, name: `${path.split('/').pop()} (diff)` });
-      state.setActiveTab(`diff:${path}`);
+      const patch = await getGitDiff(state.rootPath, path, side);
+      const source = { kind: side };
+      const id = diffTabId(source, path);
+      state.setDiffTab(id, { patch, filePath: path, source });
+      state.openTab({
+        id,
+        path,
+        name: `${path.split('/').pop()} ${side === 'staged' ? '(staged)' : '(diff)'}`,
+      });
+    },
+    [state]
+  );
+
+  const editorHistoryPath = useCallback((): string | null => {
+    const store = useStore.getState();
+    if (store.historyPath) return store.historyPath;
+    const root = state.rootPath ?? store.rootPath;
+    const tabId = store.activeTabId;
+    if (!root || !tabId || isDiffTabId(tabId)) return null;
+    return relativeToRoot(tabId, root);
+  }, [state]);
+
+  const showFileHistory = useCallback(() => {
+    const store = useStore.getState();
+    store.setScmView('history');
+    const root = state.rootPath ?? store.rootPath;
+    const path = editorHistoryPath();
+    if (root && path) void store.loadFileHistory(root, path);
+  }, [state, editorHistoryPath]);
+
+  const handleScmViewChange = useCallback(
+    (view: 'changes' | 'history' | 'compare') => {
+      const store = useStore.getState();
+      store.setScmView(view);
+      const root = state.rootPath ?? store.rootPath;
+      if (view === 'history') {
+        const path = editorHistoryPath();
+        if (root && path) void store.loadFileHistory(root, path);
+      }
+      if (view === 'compare' && root) {
+        void store.loadBranches(root);
+      }
+    },
+    [state, editorHistoryPath]
+  );
+
+  const handleHistoryCommitClick = useCallback(
+    async (oid: string) => {
+      const store = useStore.getState();
+      const root = state.rootPath ?? store.rootPath;
+      const path = store.historyPath;
+      if (!root || !path) return;
+      const { getGitDiffCommit } = await import('@/lib/tauri/git');
+      const patch = await getGitDiffCommit(root, oid, path);
+      const summary = store.historyCommits.find((c) => c.oid === oid)?.summary ?? '';
+      const source = { kind: 'revision' as const, oid, summary };
+      const id = diffTabId(source, path);
+      state.setDiffTab(id, { patch, filePath: path, source });
+      state.openTab({
+        id,
+        path,
+        name: `${path.split('/').pop()} @ ${oid.slice(0, 7)}`,
+      });
+      store.setHistorySelectedOid(oid);
+    },
+    [state]
+  );
+
+  const handleCompareRefChange = useCallback(
+    (ref: string) => {
+      const store = useStore.getState();
+      const root = state.rootPath ?? store.rootPath;
+      if (!root) return;
+      void store.loadCompare(root, ref);
+    },
+    [state]
+  );
+
+  const handleCompareFileClick = useCallback(
+    async (path: string) => {
+      const store = useStore.getState();
+      const root = state.rootPath ?? store.rootPath;
+      const ref = store.compareRef;
+      if (!root || !ref) return;
+      const { getGitDiffFileRef } = await import('@/lib/tauri/git');
+      const patch = await getGitDiffFileRef(root, ref, path);
+      const source = { kind: 'ref' as const, ref };
+      const id = diffTabId(source, path);
+      state.setDiffTab(id, { patch, filePath: path, source });
+      state.openTab({
+        id,
+        path,
+        name: `${path.split('/').pop()} ↔ ${ref}`,
+      });
     },
     [state]
   );
@@ -1445,7 +1536,25 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         if (!store.rootPath) return;
         void store.stageAll(store.rootPath);
       },
+      'git.unstage-all': () => {
+        const store = useStore.getState();
+        if (!store.rootPath) return;
+        void store.unstageAll(store.rootPath);
+      },
       'git.show-changes': () => state.setActiveActivity('source-control'),
+      'git.file-history': () => {
+        state.setActiveActivity('source-control');
+        showFileHistory();
+      },
+      'git.compare-with-branch': () => {
+        state.setActiveActivity('source-control');
+        const store = useStore.getState();
+        store.setScmView('compare');
+        if (store.rootPath) void store.loadBranches(store.rootPath);
+      },
+      'git.toggle-blame': () => useStore.getState().toggleBlame(),
+      'git.next-hunk': () => useStore.getState().requestHunkNav('next'),
+      'git.prev-hunk': () => useStore.getState().requestHunkNav('prev'),
       'agent.deploy': () => state.setSpawnDialogOpen(true),
       'agent.ascii-art': () => {
         state.setInitialAgentTask('Create an ASCII art representation of a futuristic AI logo.');
@@ -1453,8 +1562,15 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       },
       'view.toggle-sidebar': () =>
         document.querySelector<HTMLButtonElement>('[data-testid="toggle-left-panel"]')?.click(),
-      'view.toggle-terminal': () =>
-        document.querySelector<HTMLButtonElement>('[data-testid="toggle-bottom-panel"]')?.click(),
+      'view.toggle-terminal': () => {
+        if (!state.rootPath) return;
+        document.querySelector<HTMLButtonElement>('[data-testid="toggle-bottom-panel"]')?.click();
+      },
+      'help.github': () => {
+        void openExternalUrl('https://github.com/j-amelunxen/AuricIDE').catch(() => {
+          /* clipboard fallback already ran inside openExternalUrl */
+        });
+      },
       'view.focus-explorer': () => state.setActiveActivity('explorer'),
       'view.focus-source-control': () => state.setActiveActivity('source-control'),
       'view.link-graph': () => state.setLinkGraphModalOpen(true),
@@ -1491,6 +1607,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       handleSave,
       handleCommit,
       handleNewScratch,
+      showFileHistory,
     ]
   );
 
@@ -1598,8 +1715,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     }
   }, [state.activeTabId]);
 
-  const isDiffTab = !!state.activeTabId?.startsWith('diff:');
-  const diffFilePath = isDiffTab ? state.activeTabId?.replace('diff:', '') : null;
+  const isDiffTab = !!state.activeTabId && isDiffTabId(state.activeTabId);
   const isWorkflowFile = !!state.activeTabId?.endsWith('.workflow.md');
   const isMindmapTab = !!state.activeTabId?.endsWith('.mindmap.md');
   const isObsidianCanvas = !!state.activeTabId?.endsWith('.canvas');
@@ -1642,6 +1758,10 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handlePush,
     handleDiscardFile,
     handleDiffFileClick,
+    handleScmViewChange,
+    handleHistoryCommitClick,
+    handleCompareRefChange,
+    handleCompareFileClick,
     handleContextMenu,
     handleRootContextMenu,
     handleCopyPath,
@@ -1684,7 +1804,6 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleCreateTicketFromMarkdown,
     handleTicketBadgeClick,
     isDiffTab,
-    diffFilePath,
     isWorkflowFile,
     isMindmapTab,
     isObsidianCanvas,

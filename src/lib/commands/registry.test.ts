@@ -197,7 +197,7 @@ describe('the command manifest as the menu contract', () => {
   });
 
   it('only uses categories the menu builder knows', () => {
-    const known = new Set(['file', 'git', 'agent', 'canvas', 'view', 'markdown']);
+    const known = new Set(['file', 'git', 'agent', 'canvas', 'view', 'markdown', 'help']);
     expect(defaultCommands.filter((c) => !known.has(c.category)).map((c) => c.id)).toEqual([]);
   });
 
@@ -213,7 +213,14 @@ describe('the command manifest as the menu contract', () => {
       'file.import-video',
       'file.new',
       'git.commit',
+      'git.compare-with-branch',
+      'git.file-history',
+      'git.next-hunk',
+      'git.prev-hunk',
       'git.stage-all',
+      'git.toggle-blame',
+      'git.unstage-all',
+      'view.toggle-terminal',
     ]);
   });
 });

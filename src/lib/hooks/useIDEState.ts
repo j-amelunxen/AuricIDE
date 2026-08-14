@@ -16,7 +16,6 @@ export function useIDEState() {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [pdfData, setPdfData] = useState<string | null>(null);
   const [mindmapData, setMindmapData] = useState<MindmapData | null>(null);
-  const [diffContent, setDiffContent] = useState<string | null>(null);
   const [bottomCollapsed, setBottomCollapsed] = useState(true);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [fullscreenAgent, setFullscreenAgent] = useState<AgentInfo | null>(null);
@@ -59,6 +58,8 @@ export function useIDEState() {
   const setCommitMessage = useStore((s) => s.setCommitMessage);
   const stageFile = useStore((s) => s.stageFile);
   const unstageFile = useStore((s) => s.unstageFile);
+  const stageAll = useStore((s) => s.stageAll);
+  const unstageAll = useStore((s) => s.unstageAll);
   const commitChanges = useStore((s) => s.commit);
   const agents = useStore((s) => s.agents);
   const spawnNewAgent = useStore((s) => s.spawnNewAgent);
@@ -165,6 +166,8 @@ export function useIDEState() {
   const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
   const spawnAgentPreset = useStore((s) => s.spawnAgentPreset);
   const refreshGitStatus = useStore((s) => s.refreshGitStatus);
+  const setDiffTab = useStore((s) => s.setDiffTab);
+  const resetGitInMemory = useStore((s) => s.resetGitInMemory);
   const scratchDir = useStore((s) => s.scratchDir);
   const scratches = useStore((s) => s.scratches);
   const notificationsUnreadCount = useStore((s) => s.notificationsUnreadCount);
@@ -236,8 +239,6 @@ export function useIDEState() {
     setPdfData,
     mindmapData,
     setMindmapData,
-    diffContent,
-    setDiffContent,
     bottomCollapsed,
     setBottomCollapsed,
     rightCollapsed,
@@ -283,6 +284,8 @@ export function useIDEState() {
     setCommitMessage,
     stageFile,
     unstageFile,
+    stageAll,
+    unstageAll,
     commitChanges,
     agents,
     spawnNewAgent,
@@ -383,6 +386,8 @@ export function useIDEState() {
     setSpawnAgentPreset,
     spawnAgentPreset,
     refreshGitStatus,
+    setDiffTab,
+    resetGitInMemory,
     scratchDir,
     scratches,
     notificationsUnreadCount,

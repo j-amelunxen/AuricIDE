@@ -144,6 +144,10 @@ vi.mock('@codemirror/view', () => ({
   lineNumbers: () => [],
   keymap: { of: () => [] },
   hoverTooltip: () => [],
+  // blameGutterExtension subclasses GutterMarker at module load, so this mock
+  // has to provide it or importing the editor throws before any test runs.
+  gutter: () => [],
+  GutterMarker: class {},
 }));
 
 vi.mock('@codemirror/state', () => ({

@@ -331,7 +331,7 @@ export function GoalTree({
           A goal describes a target state the conductor can verify: tickets done, requirements
           verified, sub-goals achieved.
         </p>
-        {onCreate && (
+        {onCreate ? (
           <button
             data-testid="goal-tree-empty-create"
             onClick={onCreate}
@@ -339,6 +339,10 @@ export function GoalTree({
           >
             Create your first goal
           </button>
+        ) : (
+          <p className="mt-2 max-w-[260px] text-[10px] leading-relaxed text-foreground-muted">
+            Open a project to create goals.
+          </p>
         )}
       </div>
     );

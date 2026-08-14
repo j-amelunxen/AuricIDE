@@ -14,7 +14,6 @@ export interface HeaderProps {
   headingBreadcrumbs?: HeadingBreadcrumb[];
   onHeadingBreadcrumbClick?: (lineNumber: number) => void;
   isConnected?: boolean;
-  connectionLabel?: string;
   llmConfigured?: boolean;
   variant?: 'editor' | 'canvas';
   onCommandPalette?: () => void;
