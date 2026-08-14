@@ -87,7 +87,7 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 **MCP**
 
 - FastMCP server (`src/mcp/server.ts`) over the project SQLite DB
-- Goals, epics, tickets, requirements, tests, deps, blueprints, canvas, history
+- 15 tool domains: goals, epics, tickets, tasks, requirements, testcases, dependencies, blueprints, context, canvas, stations, knowledge, reviews, notifications, history
 - Same state as the UI/conductor: agents mutate the real project, not a side export
 
 ---
@@ -110,10 +110,13 @@ The agent panel is built so you don't have to poll cards: one attention model (`
 
 ## Requirements
 
-- Node.js ≥ 20
-- pnpm ≥ 8
-- Rust ≥ 1.77
+- Node.js ≥ 20.9 (Next 16 rejects 20.0–20.8)
+- pnpm 11.21.0 — pinned via `packageManager`; run `corepack enable` once and the
+  right version is used automatically. The lockfile is v9 and pnpm 8 cannot read it.
+- Rust ≥ 1.77.2
 - [Tauri system deps](https://v2.tauri.app/start/prerequisites/) for your OS
+
+`./check_env.sh` verifies all three versions, not just that the tools exist.
 
 ---
 
@@ -134,6 +137,26 @@ pnpm tauri:dev        # full desktop app
 pnpm dev              # Next only: limited native features
 ```
 
+Build a real app bundle:
+
+```bash
+pnpm build:production # builds the macOS .app and installs it to /Applications
+                      # --no-install keeps it in src-tauri/target/release
+                      # --dmg for a disk image, --open to launch it
+pnpm tauri:build      # plain tauri build, no install step
+```
+
+### Agent providers
+
+AuricIDE compiles in **one** agent provider, Crush. Everything else — Claude Code,
+Gemini CLI, Codex, OpenCode, … — is a JSON file you drop into
+`dynamic-providers/`, and those files are deliberately **not** in the repo
+(`.gitignore`), because they describe CLIs installed on _your_ machine. A fresh
+clone therefore starts with Crush only.
+
+See [`dynamic-providers/README.md`](dynamic-providers/README.md) for the config
+format and a worked example to copy.
+
 ---
 
 ## Tests & checks
@@ -141,7 +164,7 @@ pnpm dev              # Next only: limited native features
 TDD is the house rule (see `CLAUDE.md`). Don't run `pnpm test` in CI/agents: watch mode hangs. Use `test:run`.
 
 ```bash
-pnpm check:all        # lint, format, knip, jscpd, TS tests, cargo test, clippy, fmt, machete
+pnpm check:all        # tauri versions check, lint, automation surface check, format, knip, jscpd, TS tests, cargo test, clippy, fmt, machete
 pnpm test:run         # Vitest once
 pnpm tauri:test       # Rust
 pnpm tauri:clippy
@@ -176,6 +199,19 @@ e2e/                   # Playwright
 dynamic-providers/     # drop-in agent CLI JSON configs
 docs/                  # assets, brand, automation surface notes
 ```
+
+---
+
+## Docs
+
+| Document                                                                            | What it is                                                                          |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [`CLAUDE.md`](CLAUDE.md)                                                            | Architecture and house rules. The map for anyone (or anything) working in this repo |
+| [`docs/automation-surface.md`](docs/automation-surface.md)                          | Every command addressable from outside the app. **Generated** — don't hand-edit     |
+| [`docs/semantic-markdown-highlighting.md`](docs/semantic-markdown-highlighting.md)  | How the Markdown/NLP highlighting layers work                                       |
+| [`dynamic-providers/README.md`](dynamic-providers/README.md)                        | Agent-provider JSON format                                                          |
+| [`themes/README.md`](themes/README.md)                                              | Custom theme JSON format                                                            |
+| [`docs/brand-kit.md`](docs/brand-kit.md) · [`docs/press-kit.md`](docs/press-kit.md) | Visual identity and press material                                                  |
 
 ---
 
