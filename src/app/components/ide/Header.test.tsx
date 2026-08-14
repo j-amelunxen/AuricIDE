@@ -17,7 +17,7 @@ describe('Header', () => {
   });
 
   it('stays quiet about the connection while everything is fine', () => {
-    render(<Header breadcrumbs={[]} isConnected connectionLabel="Claude 3.5 Connected" />);
+    render(<Header breadcrumbs={[]} isConnected />);
     expect(screen.queryByTestId('connection-badge')).not.toBeInTheDocument();
   });
 

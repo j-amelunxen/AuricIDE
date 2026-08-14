@@ -125,6 +125,16 @@ export default function Home() {
   const state = useIDEState();
   const handlers = useIDEHandlers(state);
   useIDEActions(state, handlers);
+  const diffTab = useStore((s) => (s.activeTabId ? s.diffByTabId[s.activeTabId] : undefined));
+  const scmView = useStore((s) => s.scmView);
+  const historyPath = useStore((s) => s.historyPath);
+  const historyCommits = useStore((s) => s.historyCommits);
+  const historySelectedOid = useStore((s) => s.historySelectedOid);
+  const historyLoading = useStore((s) => s.historyLoading);
+  const branches = useStore((s) => s.branches);
+  const compareRef = useStore((s) => s.compareRef);
+  const compareFiles = useStore((s) => s.compareFiles);
+  const compareLoading = useStore((s) => s.compareLoading);
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const handleCreateProject = async (options: NewProjectOptions) => {
@@ -197,7 +207,22 @@ export default function Home() {
             onPush={handlers.handlePush}
             onStageFile={(path) => state.rootPath && state.stageFile(state.rootPath, path)}
             onUnstageFile={(path) => state.rootPath && state.unstageFile(state.rootPath, path)}
+            onStageAll={() => state.rootPath && state.stageAll(state.rootPath)}
+            onUnstageAll={() => state.rootPath && state.unstageAll(state.rootPath)}
             onFileClick={handlers.handleDiffFileClick}
+            scmView={scmView}
+            onScmViewChange={handlers.handleScmViewChange}
+            historyPath={historyPath}
+            historyCommits={historyCommits}
+            historySelectedOid={historySelectedOid}
+            historyLoading={historyLoading}
+            onHistoryCommitClick={handlers.handleHistoryCommitClick}
+            branches={branches}
+            compareRef={compareRef}
+            compareFiles={compareFiles}
+            compareLoading={compareLoading}
+            onCompareRefChange={handlers.handleCompareRefChange}
+            onCompareFileClick={handlers.handleCompareFileClick}
             onDiscardFile={handlers.handleDiscardFile}
             onAgenticToggle={(value) => state.updateAgentSettings({ agenticCommit: value })}
             providers={state.providers}
@@ -243,7 +268,19 @@ export default function Home() {
       default:
         return null;
     }
-  }, [state, handlers]);
+  }, [
+    state,
+    handlers,
+    scmView,
+    historyPath,
+    historyCommits,
+    historySelectedOid,
+    historyLoading,
+    branches,
+    compareRef,
+    compareFiles,
+    compareLoading,
+  ]);
 
   // Scratch tabs carry a marker icon; "is scratch" is derived from the path
   // prefix, so the Tab model itself stays untouched.
@@ -326,7 +363,6 @@ export default function Home() {
             headingBreadcrumbs={handlers.headingBreadcrumbs}
             onHeadingBreadcrumbClick={state.setScrollToLine}
             isConnected={state.cliConnected}
-            connectionLabel={state.cliConnected ? 'CLI connected' : 'CLI not detected'}
             llmConfigured={state.llmConfigured}
             onCommandPalette={() => state.setCommandPaletteOpen(true)}
             onOpenSettings={(category) => {
@@ -342,7 +378,9 @@ export default function Home() {
             items={handlers.itemsWithBadge}
             activeId={state.workPlaceOpen ? 'work' : state.activeActivity}
             onSelect={handlers.handleActivitySelect}
-            onTerminalToggle={() => state.setBottomCollapsed(!state.bottomCollapsed)}
+            onTerminalToggle={
+              state.rootPath ? () => state.setBottomCollapsed(!state.bottomCollapsed) : undefined
+            }
             onAgentsToggle={() => state.setRightCollapsed(!state.rightCollapsed)}
           />
         }
@@ -367,8 +405,8 @@ export default function Home() {
               </div>
             ) : state.activeTabId ? (
               <div className="flex-1 overflow-hidden">
-                {handlers.isDiffTab && state.diffContent !== null ? (
-                  <DiffViewer diff={state.diffContent} fileName={handlers.diffFilePath ?? ''} />
+                {handlers.isDiffTab && diffTab ? (
+                  <DiffViewer diff={diffTab.patch} fileName={diffTab.filePath} />
                 ) : state.imageData ? (
                   <ImageViewer
                     src={state.imageData}
@@ -524,35 +562,37 @@ export default function Home() {
           />
         }
         bottomPanel={
-          <BottomPanelTabs
-            activeTab={state.bottomTab}
-            onTabChange={state.setBottomTab}
-            problemCount={handlers.activeDiagCounts.errors + handlers.activeDiagCounts.warnings}
-            terminalContent={
-              <MemoizedTerminalPanel
-                agents={state.agents}
-                selectedAgentId={state.selectedAgentId}
-                onSelectAgent={handlers.handleSelectAgent}
-                rootPath={state.rootPath}
-                extraTerminals={state.extraTerminals}
-                onCloseTerminal={handlers.handleCloseTerminal}
-              />
-            }
-            problemsContent={
-              <ProblemsPanel
-                diagnostics={handlers.activeDiagnostics}
-                filePath={state.activeTabId ?? ''}
-                onClose={() => {
-                  state.setBottomTab('terminal');
-                  state.setProblemsPanelOpen(false);
-                }}
-                onNavigate={(line) => {
-                  state.setScrollToLine(line);
-                  state.setBottomTab('terminal');
-                }}
-              />
-            }
-          />
+          state.rootPath ? (
+            <BottomPanelTabs
+              activeTab={state.bottomTab}
+              onTabChange={state.setBottomTab}
+              problemCount={handlers.activeDiagCounts.errors + handlers.activeDiagCounts.warnings}
+              terminalContent={
+                <MemoizedTerminalPanel
+                  agents={state.agents}
+                  selectedAgentId={state.selectedAgentId}
+                  onSelectAgent={handlers.handleSelectAgent}
+                  rootPath={state.rootPath}
+                  extraTerminals={state.extraTerminals}
+                  onCloseTerminal={handlers.handleCloseTerminal}
+                />
+              }
+              problemsContent={
+                <ProblemsPanel
+                  diagnostics={handlers.activeDiagnostics}
+                  filePath={state.activeTabId ?? ''}
+                  onClose={() => {
+                    state.setBottomTab('terminal');
+                    state.setProblemsPanelOpen(false);
+                  }}
+                  onNavigate={(line) => {
+                    state.setScrollToLine(line);
+                    state.setBottomTab('terminal');
+                  }}
+                />
+              }
+            />
+          ) : undefined
         }
         statusBar={
           <MemoizedStatusBar

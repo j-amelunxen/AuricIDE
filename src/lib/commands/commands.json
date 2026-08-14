@@ -66,6 +66,44 @@
       "requiresProject": true
     },
     { "id": "git.show-changes", "label": "Show Changes", "category": "git" },
+    {
+      "id": "git.unstage-all",
+      "label": "Unstage All Changes",
+      "category": "git",
+      "requiresProject": true
+    },
+    {
+      "id": "git.file-history",
+      "label": "File History",
+      "category": "git",
+      "requiresProject": true
+    },
+    {
+      "id": "git.toggle-blame",
+      "label": "Toggle Blame",
+      "category": "git",
+      "requiresProject": true
+    },
+    {
+      "id": "git.compare-with-branch",
+      "label": "Compare with Branch",
+      "category": "git",
+      "requiresProject": true
+    },
+    {
+      "id": "git.next-hunk",
+      "label": "Next Diff Hunk",
+      "category": "git",
+      "requiresProject": true,
+      "shortcut": "⌥↓"
+    },
+    {
+      "id": "git.prev-hunk",
+      "label": "Previous Diff Hunk",
+      "category": "git",
+      "requiresProject": true,
+      "shortcut": "⌥↑"
+    },
     { "id": "agent.deploy", "label": "Start Agent", "category": "agent" },
     { "id": "agent.ascii-art", "label": "Generate ASCII Art", "category": "agent" },
     { "id": "agent.kill-all", "label": "Kill All Agents", "category": "agent" },
@@ -81,6 +119,7 @@
       "id": "view.toggle-terminal",
       "label": "Toggle Terminal",
       "category": "view",
+      "requiresProject": true,
       "shortcut": "⌘J"
     },
     {
@@ -119,6 +158,11 @@
       "id": "markdown.extract-section",
       "label": "Extract Section to File",
       "category": "markdown"
+    },
+    {
+      "id": "help.github",
+      "label": "AuricIDE on GitHub",
+      "category": "help"
     }
   ]
 }

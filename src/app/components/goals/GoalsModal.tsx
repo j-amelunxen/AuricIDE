@@ -195,10 +195,11 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
 
   const handleCreate = useCallback(
     (goal: PmGoal) => {
+      if (!rootPath) return;
       addGoal(goal);
       setSelectedGoalId(goal.id);
     },
-    [addGoal, setSelectedGoalId]
+    [addGoal, setSelectedGoalId, rootPath]
   );
 
   const handleDelete = useCallback(
@@ -215,10 +216,14 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
     [confirm, deleteGoal, selectedGoalId, setSelectedGoalId]
   );
 
-  const handleAddSubGoal = useCallback((parentId: string) => {
-    setCreateParentId(parentId);
-    setCreateOpen(true);
-  }, []);
+  const handleAddSubGoal = useCallback(
+    (parentId: string) => {
+      if (!rootPath) return;
+      setCreateParentId(parentId);
+      setCreateOpen(true);
+    },
+    [rootPath]
+  );
 
   const handleMoveGoal = useCallback(
     (draggedId: string, targetId: string, position: GoalDropPosition) => {
@@ -322,10 +327,13 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
             <button
               data-testid="goals-create-btn"
               onClick={() => {
+                if (!rootPath) return;
                 setCreateParentId(null);
                 setCreateOpen(true);
               }}
-              className="rounded-lg bg-primary/15 border border-primary/20 px-3 py-1.5 text-xs font-medium text-primary-light hover:bg-primary/25 transition-colors"
+              disabled={!rootPath}
+              title={rootPath ? undefined : 'Open a project to create goals'}
+              className="rounded-lg bg-primary/15 border border-primary/20 px-3 py-1.5 text-xs font-medium text-primary-light hover:bg-primary/25 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
             >
               + New goal
             </button>
@@ -365,10 +373,14 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
               activeAgentsByGoal={activeAgentsByGoal}
               loading={goalsLoading}
               loadError={goalsLoadError}
-              onCreate={() => {
-                setCreateParentId(null);
-                setCreateOpen(true);
-              }}
+              onCreate={
+                rootPath
+                  ? () => {
+                      setCreateParentId(null);
+                      setCreateOpen(true);
+                    }
+                  : undefined
+              }
             />
           </div>
 
