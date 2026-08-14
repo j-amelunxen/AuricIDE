@@ -2,18 +2,20 @@
 
 import { useEffect } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
-import { useNow } from './useNow';
-import { countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
+import { useAttentionCount } from './useAttentionCount';
 import { applyDockBadge, applyWindowTitle, composeWindowTitle } from '@/lib/agents/windowTitle';
 
 /**
  * Mirrors the fleet's attention count into the window title, so the one
  * number that decides "do I need to look?" is visible from the dock and from
  * any other app. Only writes when the count actually changes.
+ *
+ * On macOS the title text itself is hidden behind the overlay title bar, so
+ * the number reaches the screen through the dock badge and the header's
+ * AttentionChip — all three read the same count.
  */
 export function useAttentionTitle(agents: AgentInfo[], reviewedAgentIds: string[] = []): void {
-  const now = useNow();
-  const attentionCount = countNeedingAttention(withReviewFlags(agents, reviewedAgentIds), now);
+  const attentionCount = useAttentionCount(agents, reviewedAgentIds);
 
   useEffect(() => {
     void applyWindowTitle(composeWindowTitle(attentionCount));
