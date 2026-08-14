@@ -365,6 +365,7 @@ describe('Home page', () => {
       ],
     });
     render(<Home />);
+    fireEvent.click(screen.getByTestId('project-switcher-tab-recent'));
     expect(screen.getByTestId('recent-projects')).toBeInTheDocument();
     expect(screen.getByText('my-app')).toBeInTheDocument();
     expect(screen.getByText('other')).toBeInTheDocument();
@@ -378,6 +379,7 @@ describe('Home page', () => {
       recentProjects: [{ path: '/Users/jen/my-app', name: 'my-app', openedAt: 1000 }],
     });
     render(<Home />);
+    fireEvent.click(screen.getByTestId('project-switcher-tab-recent'));
     const removeBtn = screen.getByTestId('remove-recent-/Users/jen/my-app');
     expect(removeBtn).toBeInTheDocument();
   });
@@ -390,6 +392,7 @@ describe('Home page', () => {
       ],
     });
     render(<Home />);
+    fireEvent.click(screen.getByTestId('project-switcher-tab-recent'));
     const removeBtn = screen.getByTestId('remove-recent-/Users/jen/my-app');
     fireEvent.click(removeBtn);
     expect(screen.queryByText('my-app')).not.toBeInTheDocument();

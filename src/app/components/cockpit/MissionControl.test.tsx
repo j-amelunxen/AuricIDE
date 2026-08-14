@@ -335,10 +335,11 @@ describe('MissionControl', () => {
       ],
     });
     render(<MissionControl onSwitchProject={onSwitchProject} />);
+    fireEvent.click(screen.getByTestId('project-switcher-tab-recent'));
     expect(screen.getByTestId('recent-projects')).toBeInTheDocument();
     expect(screen.getByText('my-app')).toBeInTheDocument();
     expect(screen.getByText('other')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('my-app'));
+    fireEvent.click(screen.getByTestId('recent-tile-/Users/jen/my-app'));
     expect(onSwitchProject).toHaveBeenCalledWith('/Users/jen/my-app');
   });
 
@@ -347,8 +348,18 @@ describe('MissionControl', () => {
       recentProjects: [{ path: '/tmp/other-project', name: 'other-project', openedAt: 1 }],
     });
     render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('project-switcher-tab-recent'));
     expect(screen.getByTestId('recent-projects')).toBeInTheDocument();
     expect(screen.getByText('other-project')).toBeInTheDocument();
+  });
+
+  it('opens the project switcher on Quick Access, with the recents a tab away', () => {
+    useStore.setState({
+      recentProjects: [{ path: '/tmp/other-project', name: 'other-project', openedAt: 1 }],
+    });
+    render(<MissionControl />);
+    expect(screen.getByTestId('quick-access')).toBeInTheDocument();
+    expect(screen.queryByTestId('recent-projects')).not.toBeInTheDocument();
   });
 
   it('stars a recent project into Quick Access from Mission Control', () => {
@@ -356,6 +367,7 @@ describe('MissionControl', () => {
       recentProjects: [{ path: '/tmp/other-project', name: 'other-project', openedAt: 1 }],
     });
     render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('project-switcher-tab-recent'));
     fireEvent.click(screen.getByTestId('star-recent-/tmp/other-project'));
     expect(useStore.getState().isProjectStarred('/tmp/other-project')).toBe(true);
   });

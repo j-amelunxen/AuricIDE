@@ -28,6 +28,7 @@ import {
   wheelSlotChoices,
 } from '@/lib/quickAccess/wheel';
 import { ProjectTileFace } from './ProjectTileFace';
+import { PROJECT_TILE_COLUMNS, PROJECT_TILE_GRID } from './projectGrid';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { SkillWheel, useSkillWheel } from './SkillWheel';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -44,6 +45,13 @@ const EXIT_MS = 180;
  * a list. The rest stay one click away in the settings dialog.
  */
 const MAX_MENU_SKILLS = 8;
+
+/**
+ * Shown by whoever owns the header above the tiles, because removing is not
+ * discoverable from an × that ignores a click. It lives here, next to the hold
+ * that implements it, so the two cannot drift apart.
+ */
+export const QUICK_ACCESS_HINT = 'hold × to remove';
 
 const RING_RADIUS = 9;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -96,6 +104,13 @@ function ProjectTile({
   const slotted = slotIds.map((id) => resolveWheelEntry(project, id));
 
   const wheelLive = machine.phase !== 'idle' || machine.mode !== 'none';
+  // Hovering a tile does two things at once: it reveals the remove ×, and it
+  // starts the wheel's dwell. Gating the × on "the wheel is doing something"
+  // meant the dwell hid it from the first frame of every hover, and the wheel
+  // opens 300ms in and never closes while the pointer rests there — so the ×
+  // was unreachable by pointer, full stop. It now yields only to an actual
+  // hold gesture, where a release could otherwise land on it by accident.
+  const wheelGrabbed = machine.mode === 'hold';
   const onWheelActivityRef = useRef(onWheelActivity);
   useEffect(() => {
     onWheelActivityRef.current = onWheelActivity;
@@ -302,7 +317,9 @@ function ProjectTile({
             <span
               data-testid={`quick-access-combo-mark-${project.path}`}
               aria-hidden="true"
-              className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold leading-none text-white shadow"
+              // Bottom-left: the opposite bottom corner belongs to the remove ×,
+              // and two badges in one corner would cover each other.
+              className="absolute -bottom-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold leading-none text-white shadow"
             >
               +
             </span>
@@ -318,6 +335,62 @@ function ProjectTile({
           onPlusClick={(index, x, y) => setPicker({ slot: index, x, y, mode: 'assign' })}
           onSlotManage={(index, x, y) => setPicker({ slot: index, x, y, mode: 'manage' })}
         />
+        <button
+          type="button"
+          data-testid={`quick-access-unstar-${project.path}`}
+          data-holding={holding}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            startHold();
+          }}
+          onPointerUp={cancelHold}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
+          onKeyDown={(e) => {
+            if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+              e.preventDefault();
+              startHold();
+            }
+          }}
+          onKeyUp={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') cancelHold();
+          }}
+          title={holding ? 'Keep holding to remove…' : `Hold to remove ${project.name}`}
+          aria-label={`Hold to remove ${project.name} from Quick Access`}
+          // On the icon's own bottom-right corner, not on the 80px column
+          // around it — out there it sat in the gutter between two tiles and
+          // read as belonging to neither. Muted red because it removes
+          // something; saturated red would shout at a row that is mostly at
+          // rest, so the colour only comes up on hover and on the hold.
+          className={`absolute -bottom-1.5 -right-1.5 z-40 flex h-5 w-5 items-center justify-center rounded-full border border-red-300/20 bg-background opacity-0 transition-[opacity,transform,color] duration-150 focus-visible:opacity-100 ${
+            wheelGrabbed ? 'pointer-events-none' : 'group-hover/tile:opacity-100'
+          } ${holding ? 'scale-90 text-red-400' : 'text-red-300/80 hover:text-red-300'}`}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            className="absolute inset-0 -rotate-90"
+            style={{ opacity: holding ? 1 : 0, transition: 'opacity 150ms ease-out' }}
+          >
+            <circle
+              cx="10"
+              cy="10"
+              r={RING_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeDasharray={RING_CIRCUMFERENCE}
+              strokeDashoffset={holding ? 0 : RING_CIRCUMFERENCE}
+              style={{
+                transition: holding
+                  ? `stroke-dashoffset ${HOLD_MS}ms linear`
+                  : 'stroke-dashoffset 150ms ease-out',
+              }}
+            />
+          </svg>
+          <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
+        </button>
       </div>
       <span
         title={project.name}
@@ -325,57 +398,6 @@ function ProjectTile({
       >
         {project.name}
       </span>
-      <button
-        type="button"
-        data-testid={`quick-access-unstar-${project.path}`}
-        data-holding={holding}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          startHold();
-        }}
-        onPointerUp={cancelHold}
-        onPointerLeave={cancelHold}
-        onPointerCancel={cancelHold}
-        onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
-            e.preventDefault();
-            startHold();
-          }
-        }}
-        onKeyUp={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') cancelHold();
-        }}
-        title={holding ? 'Keep holding to remove…' : `Hold to remove ${project.name}`}
-        aria-label={`Hold to remove ${project.name} from Quick Access`}
-        className={`absolute -right-0.5 -top-1 z-40 flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-background text-foreground-muted opacity-0 transition-[opacity,transform,color] duration-150 focus-visible:opacity-100 ${
-          wheelLive ? 'pointer-events-none' : 'group-hover/tile:opacity-100'
-        } ${holding ? 'scale-90 text-red-400' : 'hover:text-foreground'}`}
-      >
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 20 20"
-          className="absolute inset-0 -rotate-90"
-          style={{ opacity: holding ? 1 : 0, transition: 'opacity 150ms ease-out' }}
-        >
-          <circle
-            cx="10"
-            cy="10"
-            r={RING_RADIUS}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeDasharray={RING_CIRCUMFERENCE}
-            strokeDashoffset={holding ? 0 : RING_CIRCUMFERENCE}
-            style={{
-              transition: holding
-                ? `stroke-dashoffset ${HOLD_MS}ms linear`
-                : 'stroke-dashoffset 150ms ease-out',
-            }}
-          />
-        </svg>
-        <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
-      </button>
       {picker && (
         <ContextMenu
           // Keyed by mode: swapping the manage menu for the assign one is a new
@@ -557,27 +579,15 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const canStarCurrent = currentPath !== null && !currentStarred;
 
   return (
-    <div data-testid="quick-access" className="flex w-full max-w-3xl flex-col items-center gap-3">
-      <div className="flex items-center gap-1.5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
-          Quick Access
-        </p>
-        {starredProjects.length > 0 && (
-          <span
-            data-testid="quick-access-hint"
-            className="text-[9px] font-normal normal-case tracking-normal text-foreground-muted/50"
-          >
-            (hold × to remove)
-          </span>
-        )}
-      </div>
+    <div data-testid="quick-access" className="flex w-full flex-col items-center gap-3">
+      {starredProjects.length === 0 && !canStarCurrent && (
+        <p className="text-[11px] text-foreground-muted/70">Open a project, then star it.</p>
+      )}
       <div
         data-testid="quick-access-row"
-        className="flex flex-wrap items-start justify-center gap-x-2 gap-y-4 overflow-visible"
+        data-columns={PROJECT_TILE_COLUMNS}
+        className={`${PROJECT_TILE_GRID} items-start overflow-visible`}
       >
-        {starredProjects.length === 0 && !canStarCurrent && (
-          <p className="text-[11px] text-foreground-muted/70">Open a project, then star it.</p>
-        )}
         {sortedProjects.map((project) => (
           <ProjectTile
             key={project.path}

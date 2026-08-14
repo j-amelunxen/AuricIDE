@@ -31,8 +31,7 @@ import { NotificationsSidebar } from './components/notifications/NotificationsSi
 import { isScratchPath } from '@/lib/scratch/naming';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
-import { QuickAccess } from './components/cockpit/QuickAccess';
-import { RecentProjects } from './components/cockpit/RecentProjects';
+import { ProjectSwitcher } from './components/cockpit/ProjectSwitcher';
 import { ExcalidrawViewer } from './components/excalidraw/ExcalidrawViewer';
 import { ExcalidrawBrowser } from './components/excalidraw/ExcalidrawBrowser';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
@@ -509,20 +508,23 @@ export default function Home() {
                       New
                     </button>
                   </div>
-                  <div className="mt-8 mx-auto">
-                    <RecentProjects onOpenProject={(path) => handlers.handleOpenRecent(path)} />
-                  </div>
-                  <div className="mt-8">
-                    <QuickAccess
+                  <div className="mt-10 flex justify-center">
+                    <ProjectSwitcher
                       currentPath={null}
-                      onSwitchProject={(path) => handlers.handleOpenRecent(path)}
+                      onOpenProject={(path) => handlers.handleOpenRecent(path)}
                     />
                   </div>
-                  <div className="mt-10 w-80 mx-auto text-left" data-testid="tip-of-the-day">
-                    <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted mb-3">
+                  {/* Same width as the switcher above it: two blocks sharing
+                      one edge read as a column, two different widths read as
+                      clutter. */}
+                  <div
+                    className="mt-6 w-full max-w-3xl mx-auto text-left"
+                    data-testid="tip-of-the-day"
+                  >
+                    <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted mb-2">
                       Tip of the Day
                     </h2>
-                    <div className="flex items-start gap-3 rounded-xl bg-primary/5 border border-primary/10 px-4 py-3">
+                    <div className="flex items-start gap-3 rounded-2xl bg-primary/5 border border-primary/10 px-4 py-3">
                       <AuricIcon
                         name={handlers.dailyTip.icon}
                         className="text-primary-light text-base mt-0.5"

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QuickAccess } from './QuickAccess';
+import { QUICK_ACCESS_HINT, QuickAccess } from './QuickAccess';
+import { DWELL_DOTS_MS, DWELL_OPEN_MS } from '@/lib/quickAccess/wheel';
 import { useStore } from '@/lib/store';
 
 describe('QuickAccess', () => {
@@ -116,6 +117,95 @@ describe('QuickAccess', () => {
       expect(onSwitchProject).not.toHaveBeenCalled();
     });
 
+    // The × is a hover affordance and the wheel starts dwelling on the very
+    // same hover. Gating it on "the wheel is doing something" therefore hid it
+    // from the first frame of every hover — it could never be reached with a
+    // pointer at all. Only an actually-open wheel may claim the tile.
+    it('keeps the remove × reachable while the wheel is only dwelling', async () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const tile = screen.getByTestId('quick-access-item-/a/website');
+      const unstarBtn = screen.getByTestId('quick-access-unstar-/a/website');
+
+      fireEvent.pointerEnter(tile, { timeStamp: 0 });
+      expect(unstarBtn.className).toContain('group-hover/tile:opacity-100');
+      expect(unstarBtn.className).not.toContain('pointer-events-none');
+    });
+
+    it('keeps the × reachable even once the dwell has opened the wheel', async () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const tile = screen.getByTestId('quick-access-item-/a/website');
+
+      fireEvent.pointerEnter(tile, { timeStamp: 0 });
+      // idle → dots → open: each step is its own timer, scheduled only after
+      // the previous one has re-rendered. The wheel then stays open for as
+      // long as the pointer rests here, so this is the steady state of a hover.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DWELL_DOTS_MS);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DWELL_OPEN_MS);
+      });
+      const unstarBtn = screen.getByTestId('quick-access-unstar-/a/website');
+      expect(unstarBtn.className).toContain('group-hover/tile:opacity-100');
+      expect(unstarBtn.className).not.toContain('pointer-events-none');
+    });
+
+    it('yields the × while a hold gesture is aiming the wheel', async () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const tileButton = screen.getByTestId('quick-access-tile-/a/website');
+
+      fireEvent.pointerDown(tileButton, { button: 0, timeStamp: 0 });
+      const unstarBtn = screen.getByTestId('quick-access-unstar-/a/website');
+      expect(unstarBtn.className).toContain('pointer-events-none');
+    });
+
+    // The × used to hang off the outer 80px column, which put it in the gutter
+    // between two tiles rather than on the tile it removes. It belongs to the
+    // icon, in the corner the combo mark had to vacate.
+    it('anchors the × to the icon itself, not to the column around it', () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const iconWrapper = screen.getByTestId('quick-access-tile-/a/website').parentElement;
+      expect(screen.getByTestId('quick-access-unstar-/a/website').parentElement).toBe(iconWrapper);
+    });
+
+    it('keeps the × and the combo mark out of the same corner', () => {
+      useStore.setState({
+        starredProjects: [
+          {
+            path: '/a/website',
+            name: 'website',
+            starredAt: 1,
+            combos: [{ id: 'c1', label: 'Ship it', steps: [] }],
+          },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      const unstar = screen.getByTestId('quick-access-unstar-/a/website').className;
+      const comboMark = screen.getByTestId('quick-access-combo-mark-/a/website').className;
+      expect(unstar).toMatch(/-bottom-[\d.]+ -right-[\d.]+/);
+      expect(comboMark).toMatch(/-bottom-[\d.]+ -left-[\d.]+/);
+    });
+
+    it('colours the × as the destructive action it is', () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      expect(screen.getByTestId('quick-access-unstar-/a/website').className).toMatch(/text-red-/);
+    });
+
     it('supports the same hold-to-confirm via keyboard (Enter)', async () => {
       useStore.setState({
         starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
@@ -154,17 +244,11 @@ describe('QuickAccess', () => {
     expect(screen.queryByTestId('quick-access-add-current')).not.toBeInTheDocument();
   });
 
-  it('hints at the hold-to-remove gesture once at least one project is starred', () => {
-    useStore.setState({
-      starredProjects: [{ path: '/a/apps', name: 'apps', starredAt: 1 }],
-    });
-    render(<QuickAccess currentPath="/a/apps" />);
-    expect(screen.getByTestId('quick-access-hint')).toHaveTextContent(/hold/i);
-  });
-
-  it('does not show the hold-to-remove hint when nothing is starred yet', () => {
-    render(<QuickAccess currentPath="/a/apps" />);
-    expect(screen.queryByTestId('quick-access-hint')).not.toBeInTheDocument();
+  // The hint itself is rendered by the switcher's header (see
+  // ProjectSwitcher.test.tsx); the wording stays here, next to the hold that
+  // implements it.
+  it('words the hold-to-remove hint as the gesture it describes', () => {
+    expect(QUICK_ACCESS_HINT).toMatch(/hold/i);
   });
 
   it('renders nothing meaningful — no tiles — when nothing is starred and no current project', () => {
