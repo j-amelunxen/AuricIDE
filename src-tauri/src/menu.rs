@@ -44,6 +44,10 @@ pub struct CommandSpec {
     pub requires_project: bool,
 }
 
+/// Shown in About / Hide / Quit. Must match `productName` in tauri.conf.json,
+/// not the Cargo crate name (`auric-ide`), or the menu talks about a different app.
+pub const PRODUCT_NAME: &str = "AuricIDE";
+
 /// Submenu titles, in menu-bar order. A category with no title here is a
 /// category the menu cannot place, which `commands()` refuses to ignore.
 const CATEGORY_TITLES: &[(&str, &str)] = &[
@@ -53,7 +57,19 @@ const CATEGORY_TITLES: &[(&str, &str)] = &[
     ("canvas", "Canvas"),
     ("view", "View"),
     ("markdown", "Markdown"),
+    ("help", "Help"),
 ];
+
+/// Categories that already exist on Tauri's default menu and must be *merged*
+/// into that submenu. Creating a second submenu with the same title (Help,
+/// File) produces two identically named menus, and axbridge addresses the
+/// first — the empty one.
+const MERGE_INTO_DEFAULT: &[&str] = &["file", "help"];
+
+/// Rewrites Tauri's crate-name labels so the app menu matches the product.
+pub fn display_app_menu_title(raw: &str) -> String {
+    raw.replace("auric-ide", PRODUCT_NAME)
+}
 
 pub fn submenu_title(category: &str) -> Option<&'static str> {
     CATEGORY_TITLES
@@ -133,8 +149,7 @@ pub fn extend_with_commands<R: Runtime>(
             continue;
         }
 
-        // `file` has a home already — Tauri's default File submenu.
-        let existing = if *category == "file" {
+        let existing = if MERGE_INTO_DEFAULT.contains(category) {
             find_submenu(menu, title)?
         } else {
             None
@@ -166,6 +181,37 @@ fn item<R: Runtime>(handle: &AppHandle<R>, spec: &CommandSpec) -> tauri::Result<
     // either way, so a caller can see *why* it cannot act instead of hunting
     // for a menu entry that is not there.
     MenuItem::with_id(handle, &spec.id, &spec.label, true, None::<&str>)
+}
+
+/// Relabel About / Hide / Quit so they say AuricIDE, not the crate name.
+pub fn polish_standard_items<R: Runtime>(menu: &Menu<R>) -> tauri::Result<()> {
+    for kind in menu.items()? {
+        let MenuItemKind::Submenu(submenu) = kind else {
+            continue;
+        };
+        for item in submenu.items()? {
+            match item {
+                MenuItemKind::MenuItem(mi) => {
+                    if let Ok(text) = mi.text() {
+                        let next = display_app_menu_title(&text);
+                        if next != text {
+                            let _ = mi.set_text(next);
+                        }
+                    }
+                }
+                MenuItemKind::Predefined(pi) => {
+                    if let Ok(text) = pi.text() {
+                        let next = display_app_menu_title(&text);
+                        if next != text {
+                            let _ = pi.set_text(next);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 fn find_submenu<R: Runtime>(menu: &Menu<R>, title: &str) -> tauri::Result<Option<Submenu<R>>> {
@@ -266,9 +312,38 @@ mod tests {
                 "file.import-video",
                 "file.new",
                 "git.commit",
+                "git.compare-with-branch",
+                "git.file-history",
+                "git.next-hunk",
+                "git.prev-hunk",
                 "git.stage-all",
+                "git.toggle-blame",
+                "git.unstage-all",
+                "view.toggle-terminal",
             ]
         );
+    }
+
+    #[test]
+    fn the_debug_binary_plist_uses_the_same_bundle_id_as_the_packaged_app() {
+        let plist = include_str!("../Info.plist");
+        let conf = include_str!("../tauri.conf.json");
+        assert!(
+            plist.contains("<string>com.auricide.ide</string>"),
+            "dev Info.plist must carry CFBundleIdentifier com.auricide.ide"
+        );
+        assert!(
+            conf.contains("\"identifier\": \"com.auricide.ide\""),
+            "tauri.conf.json identifier must stay in lockstep with Info.plist"
+        );
+    }
+
+    #[test]
+    fn app_menu_titles_use_the_product_name_not_the_crate_name() {
+        assert_eq!(display_app_menu_title("About auric-ide"), "About AuricIDE");
+        assert_eq!(display_app_menu_title("Hide auric-ide"), "Hide AuricIDE");
+        assert_eq!(display_app_menu_title("Quit auric-ide"), "Quit AuricIDE");
+        assert_eq!(display_app_menu_title("About AuricIDE"), "About AuricIDE");
     }
 
     /// Phase 2a ships without accelerators on purpose. A menu accelerator wins

@@ -25,6 +25,7 @@ const CATEGORY_TITLES = [
   ['canvas', 'Canvas'],
   ['view', 'View'],
   ['markdown', 'Markdown'],
+  ['help', 'Help'],
 ];
 
 const { commands } = JSON.parse(

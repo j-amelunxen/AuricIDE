@@ -35,13 +35,19 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `Git > Commit Changes` | `git.commit` | — | yes |
 | `Git > Stage All Changes` | `git.stage-all` | — | yes |
 | `Git > Show Changes` | `git.show-changes` | — | no |
+| `Git > Unstage All Changes` | `git.unstage-all` | — | yes |
+| `Git > File History` | `git.file-history` | — | yes |
+| `Git > Toggle Blame` | `git.toggle-blame` | — | yes |
+| `Git > Compare with Branch` | `git.compare-with-branch` | — | yes |
+| `Git > Next Diff Hunk` | `git.next-hunk` | `⌥↓` | yes |
+| `Git > Previous Diff Hunk` | `git.prev-hunk` | `⌥↑` | yes |
 | `Agent > Start Agent` | `agent.deploy` | — | no |
 | `Agent > Generate ASCII Art` | `agent.ascii-art` | — | no |
 | `Agent > Kill All Agents` | `agent.kill-all` | — | no |
 | `Canvas > Toggle Canvas View` | `canvas.toggle` | — | no |
 | `Canvas > Fit Canvas to Screen` | `canvas.fit` | — | no |
 | `View > Toggle Left Sidebar` | `view.toggle-sidebar` | `⌘B` | no |
-| `View > Toggle Terminal` | `view.toggle-terminal` | `⌘J` | no |
+| `View > Toggle Terminal` | `view.toggle-terminal` | `⌘J` | yes |
 | `View > Focus Explorer` | `view.focus-explorer` | `⌘⇧E` | no |
 | `View > Focus Source Control` | `view.focus-source-control` | `⌘⇧G` | no |
 | `View > Show Link Graph` | `view.link-graph` | — | no |
@@ -55,6 +61,7 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `Markdown > Rename Heading` | `markdown.rename-heading` | `F2` | no |
 | `Markdown > Find All References` | `markdown.find-references` | `Alt+F7` | no |
 | `Markdown > Extract Section to File` | `markdown.extract-section` | — | no |
+| `Help > AuricIDE on GitHub` | `help.github` | — | no |
 
 ## Example
 
