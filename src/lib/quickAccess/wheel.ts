@@ -68,7 +68,7 @@ export function reduceWheel(
     case 'down':
       return { state: onDown(state, event.now), action: { type: 'none' } };
     case 'up':
-      return onUp(state);
+      return onUp(state, event.now);
     case 'tick':
       return { state: onTick(state, event.now), action: { type: 'none' } };
     case 'aim':
@@ -112,14 +112,24 @@ function onDown(state: WheelMachine, now: number): WheelMachine {
   };
 }
 
-function onUp(state: WheelMachine): { state: WheelMachine; action: WheelAction } {
+function onUp(state: WheelMachine, now: number): { state: WheelMachine; action: WheelAction } {
   if (state.mode !== 'hold') {
     return { state, action: { type: 'none' } };
   }
-  if (state.phase === 'open') {
+  if (state.phase === 'open' && state.armedSlot !== null) {
     return {
       state: { ...createWheelMachine(), consumedClick: true },
       action: { type: 'hold-release', slot: state.armedSlot },
+    };
+  }
+  // The wheel may already be open from a hover dwell. A tap on the tile
+  // itself is still a tap — only a held press (or a release on a slot)
+  // swallows the project switch.
+  const heldMs = state.startedAt === null ? 0 : now - state.startedAt;
+  if (state.phase === 'open' && heldMs >= HOLD_OPEN_MS) {
+    return {
+      state: { ...createWheelMachine(), consumedClick: true },
+      action: { type: 'hold-release', slot: null },
     };
   }
   return { state: createWheelMachine(), action: { type: 'click-tile' } };

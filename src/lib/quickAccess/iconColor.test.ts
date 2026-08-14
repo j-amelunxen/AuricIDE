@@ -76,7 +76,16 @@ describe('dominantIconHue', () => {
 
   it('gives up when every pixel is transparent', () => {
     expect(
-      dominantIconHue(pixels(...block(20, 200, 30, 30).map(([r, g, b]) => [r, g, b, 0])))
+      dominantIconHue(
+        pixels(
+          ...block(20, 200, 30, 30).map(([r, g, b]): [number, number, number, number] => [
+            r,
+            g,
+            b,
+            0,
+          ])
+        )
+      )
     ).toBeNull();
   });
 });
