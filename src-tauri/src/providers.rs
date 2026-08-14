@@ -333,6 +333,11 @@ impl AgentProvider for CrushProvider {
 
 // ── ProviderRegistry ────────────────────────────────────────────────
 
+/// The one provider compiled into the binary. Every other provider comes from a
+/// user-supplied `dynamic-providers/*.json`, so this id is the fallback a fresh
+/// install always has and no config file may claim it.
+pub const RESERVED_PROVIDER_ID: &str = "crush";
+
 pub struct ProviderRegistry {
     // Interior mutability so providers can be imported at runtime (the packaged
     // app ships without dynamic-providers/, so users bring their own configs).
@@ -347,7 +352,7 @@ impl ProviderRegistry {
         let mut providers: HashMap<String, Arc<dyn AgentProvider>> = HashMap::new();
 
         // Add Crush as fallback/default if no others are present (or keep it always)
-        providers.insert("crush".to_string(), Arc::new(CrushProvider));
+        providers.insert(RESERVED_PROVIDER_ID.to_string(), Arc::new(CrushProvider));
 
         // Load Dynamic Providers
         let mut search_paths = vec![
@@ -370,30 +375,7 @@ impl ProviderRegistry {
             }
         }
 
-        for dynamic_dir in search_paths {
-            if dynamic_dir.exists() && dynamic_dir.is_dir() {
-                if let Ok(entries) = fs::read_dir(&dynamic_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                            if let Ok(content) = fs::read_to_string(&path) {
-                                match serde_json::from_str::<ProviderConfig>(&content) {
-                                    Ok(config) => {
-                                        let id = config.id.clone();
-                                        providers
-                                            .insert(id, Arc::new(DynamicProvider::new(config)));
-                                    }
-                                    Err(e) => eprintln!(
-                                        "Failed to parse provider config {:?}: {}",
-                                        path, e
-                                    ),
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        providers.extend(Self::load_configs_from(&search_paths));
 
         // Determine default ID. First dynamic provider we find? Or claude?
         // Usually, pick the first dynamic one, or fallback to crush.
@@ -422,6 +404,52 @@ impl ProviderRegistry {
             default_id: RwLock::new(default_id),
             import_dir,
         }
+    }
+
+    /// Scan `dirs` for `*.json` provider configs. Later directories win over
+    /// earlier ones for the same id, which is the order `new()` has always used.
+    ///
+    /// A file that fails to parse is reported on stderr and skipped, so one bad
+    /// config never costs the user the rest of them. A config claiming the
+    /// built-in id is skipped too — see `RESERVED_PROVIDER_ID`.
+    fn load_configs_from(dirs: &[PathBuf]) -> HashMap<String, Arc<dyn AgentProvider>> {
+        let mut loaded: HashMap<String, Arc<dyn AgentProvider>> = HashMap::new();
+
+        for dir in dirs {
+            if !dir.is_dir() {
+                continue;
+            }
+            let Ok(entries) = fs::read_dir(dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                    continue;
+                }
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                match serde_json::from_str::<ProviderConfig>(&content) {
+                    Ok(config) => {
+                        let id = config.id.clone();
+                        if id == RESERVED_PROVIDER_ID {
+                            eprintln!(
+                                "Ignoring {:?}: \"{}\" is a built-in provider id",
+                                path, RESERVED_PROVIDER_ID
+                            );
+                            continue;
+                        }
+                        loaded.insert(id, Arc::new(DynamicProvider::new(config)));
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to parse provider config {:?}: {}", path, e)
+                    }
+                }
+            }
+        }
+
+        loaded
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<dyn AgentProvider>> {
@@ -463,10 +491,11 @@ impl ProviderRegistry {
         if id.is_empty() {
             return Err("Provider config is missing an \"id\"".to_string());
         }
-        if id == "crush" {
-            return Err(
-                "\"crush\" is a built-in provider id and cannot be overwritten".to_string(),
-            );
+        if id == RESERVED_PROVIDER_ID {
+            return Err(format!(
+                "\"{}\" is a built-in provider id and cannot be overwritten",
+                RESERVED_PROVIDER_ID
+            ));
         }
 
         // Persist so the import survives a restart.
@@ -879,6 +908,204 @@ mod tests {
         let provider = DynamicProvider::new(get_codex_config());
         let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
         assert_eq!(cmd.command, "codex exec \"task\"");
+    }
+
+    // ── Dynamic Provider Tests (OpenCode Emulation) ────────────────────
+
+    /// Mirrors dynamic-providers/opencode.json. Headless is the `run`
+    /// subcommand; interactive uses `--prompt` so the task is not parsed as
+    /// the TUI's positional project path. The command strings below were
+    /// checked against a real `opencode 1.18.18` install, not just its --help.
+    fn get_opencode_config() -> ProviderConfig {
+        let json = r#"{
+          "id": "opencode",
+          "name": "OpenCode",
+          "executable": "opencode",
+          "arguments": [
+            { "type": "headless", "flag": "run", "interactiveFlag": "--prompt" },
+            { "type": "task", "quote": true },
+            { "type": "model", "flag": "--model", "ignoreIfAuto": true },
+            { "type": "permission", "map": {
+                "auto": "--auto",
+                "acceptEdits": "--auto",
+                "bypassPermissions": "--auto",
+                "plan": "--agent plan",
+                "default": ""
+              },
+              "fallback": ""
+            }
+          ],
+          "info": {
+            "models": [],
+            "permissionModes": [],
+            "defaultModel": "auto",
+            "defaultPermissionMode": "auto"
+          },
+          "versionCheck": { "command": "opencode", "args": ["--version"] },
+          "promptTemplate": "opencode run \""
+        }"#;
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn test_dynamic_opencode_headless_uses_run_subcommand() {
+        let provider = DynamicProvider::new(get_opencode_config());
+        // `run` has to lead so the prompt is a message, not a project path.
+        let cmd = provider.build_spawn_command(
+            "anthropic/claude-sonnet-4-6",
+            "task",
+            Some("auto"),
+            false,
+            false,
+            true,
+        );
+        assert_eq!(
+            cmd.command,
+            "opencode run \"task\" --model anthropic/claude-sonnet-4-6 --auto"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_opencode_interactive_uses_prompt_flag() {
+        let provider = DynamicProvider::new(get_opencode_config());
+        // A bare positional would be the TUI project path. --prompt owns the task.
+        let cmd =
+            provider.build_spawn_command("auto", "task", Some("default"), false, false, false);
+        assert_eq!(cmd.command, "opencode --prompt \"task\"");
+    }
+
+    #[test]
+    fn test_dynamic_opencode_unattended_default_auto_approves() {
+        // Automated spawns pass no mode, so the configured default decides.
+        // It must run without prompting; deny rules still apply.
+        let provider = DynamicProvider::new(get_opencode_config());
+        let cmd = provider.build_spawn_command("auto", "task", None, false, false, true);
+        assert_eq!(cmd.command, "opencode run \"task\" --auto");
+    }
+
+    #[test]
+    fn test_dynamic_opencode_plan_uses_the_plan_agent() {
+        let provider = DynamicProvider::new(get_opencode_config());
+        let cmd = provider.build_spawn_command("auto", "task", Some("plan"), false, false, true);
+        assert_eq!(cmd.command, "opencode run \"task\" --agent plan");
+        assert!(
+            !cmd.command.contains("--auto"),
+            "plan must not also auto-approve: {}",
+            cmd.command
+        );
+    }
+
+    #[test]
+    fn test_dynamic_opencode_carried_modes_map_to_auto_approve() {
+        // OpenCode has no accept-edits-only or lift-all-denies flag. Modes
+        // carried over from another provider must still produce a runnable
+        // unattended command rather than stall on a prompt.
+        let provider = DynamicProvider::new(get_opencode_config());
+        for mode in ["acceptEdits", "bypassPermissions"] {
+            let cmd = provider.build_spawn_command("auto", "task", Some(mode), false, false, true);
+            assert_eq!(cmd.command, "opencode run \"task\" --auto");
+        }
+    }
+
+    #[test]
+    fn test_local_opencode_config_matches_the_command_contract() {
+        // dynamic-providers/*.json is local-only by design (.gitignore), so a
+        // fresh clone has no file to read here. The command contract itself is
+        // covered deterministically by the get_opencode_config() tests above;
+        // this one only catches a hand-edited local config drifting away from
+        // it, and must stay silent when there is nothing local to check.
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dynamic-providers/opencode.json");
+        let Ok(content) = fs::read_to_string(&path) else {
+            eprintln!("skipping: no local {}", path.display());
+            return;
+        };
+        let provider = DynamicProvider::new(
+            serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("local {} is not valid JSON: {e}", path.display())),
+        );
+        assert_eq!(provider.info().id, "opencode");
+        let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
+        assert_eq!(cmd.command, "opencode run \"task\" --auto");
+    }
+
+    #[test]
+    fn test_import_refuses_to_overwrite_the_built_in_provider() {
+        let registry = ProviderRegistry {
+            providers: RwLock::new(HashMap::from([(
+                RESERVED_PROVIDER_ID.to_string(),
+                Arc::new(CrushProvider) as Arc<dyn AgentProvider>,
+            )])),
+            default_id: RwLock::new(RESERVED_PROVIDER_ID.to_string()),
+            import_dir: None,
+        };
+        let hijack = format!(
+            r#"{{"id": "{}", "name": "Not Crush", "executable": "nope",
+                 "arguments": [], "info": {{"models": [], "permissionModes": [],
+                 "defaultModel": "auto", "defaultPermissionMode": "default"}},
+                 "versionCheck": {{"command": "nope", "args": []}},
+                 "promptTemplate": "nope"}}"#,
+            RESERVED_PROVIDER_ID
+        );
+
+        let err = registry.import_provider(&hijack).unwrap_err();
+
+        assert!(err.contains("built-in provider id"), "{err}");
+        // The built-in must still be the one registered under that id.
+        let providers = registry.providers.read().unwrap();
+        assert_eq!(providers[RESERVED_PROVIDER_ID].info().name, "Crush");
+    }
+
+    #[test]
+    fn test_startup_scan_refuses_to_overwrite_the_built_in_provider() {
+        // Same rule as the import path: a stray crush.json in a scanned folder
+        // must not replace the fallback a fresh install depends on.
+        let dir = tempfile::tempdir().unwrap();
+        let scanned = dir.path().join("dynamic-providers");
+        fs::create_dir_all(&scanned).unwrap();
+        fs::write(
+            scanned.join(format!("{}.json", RESERVED_PROVIDER_ID)),
+            format!(
+                r#"{{"id": "{}", "name": "Not Crush", "executable": "nope",
+                     "arguments": [], "info": {{"models": [], "permissionModes": [],
+                     "defaultModel": "auto", "defaultPermissionMode": "default"}},
+                     "versionCheck": {{"command": "nope", "args": []}},
+                     "promptTemplate": "nope"}}"#,
+                RESERVED_PROVIDER_ID
+            ),
+        )
+        .unwrap();
+
+        let loaded = ProviderRegistry::load_configs_from(&[scanned]);
+
+        assert!(
+            loaded.is_empty(),
+            "a config claiming the reserved id must be skipped, got {:?}",
+            loaded.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_startup_scan_loads_a_normal_config() {
+        // Guard against the reserved-id check swallowing everything.
+        let dir = tempfile::tempdir().unwrap();
+        let scanned = dir.path().join("dynamic-providers");
+        fs::create_dir_all(&scanned).unwrap();
+        fs::write(
+            scanned.join("opencode.json"),
+            r#"{"id": "opencode", "name": "OpenCode", "executable": "opencode",
+                "arguments": [{ "type": "task", "quote": true }],
+                "info": {"models": [], "permissionModes": [],
+                         "defaultModel": "auto", "defaultPermissionMode": "auto"},
+                "versionCheck": {"command": "opencode", "args": ["--version"]},
+                "promptTemplate": "opencode run "}"#,
+        )
+        .unwrap();
+
+        let loaded = ProviderRegistry::load_configs_from(&[scanned]);
+
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded.contains_key("opencode"));
     }
 
     // ── CrushProvider Tests ────────────────────────────────────────────
