@@ -89,6 +89,20 @@ describe('parseNotificationActions', () => {
       expect(parse([action])).toEqual([action]);
     });
 
+    it('keeps Crush yolo as a permissionMode on run-skill', () => {
+      const action = {
+        id: 'skill',
+        label: 'Changelog starten',
+        kind: 'run-skill',
+        skillId: 's1',
+        skillLabel: 'Changelog',
+        prompt: '/changelog',
+        repoPath: '/repo',
+        permissionMode: 'yolo',
+      };
+      expect(parse([action])).toEqual([action]);
+    });
+
     it.each([1, 8])('parses a run-combo action with %s step(s)', (count) => {
       const action = {
         id: 'combo',
