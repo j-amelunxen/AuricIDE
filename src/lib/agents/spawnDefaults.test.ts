@@ -27,6 +27,21 @@ describe('spawn defaults', () => {
     });
   });
 
+  it('round-trips Crush yolo as a remembered permission mode', () => {
+    saveSpawnDefaults({
+      providerId: 'crush',
+      model: 'auto',
+      permissionMode: 'yolo',
+      headless: false,
+    });
+    expect(loadSpawnDefaults()).toEqual({
+      providerId: 'crush',
+      model: 'auto',
+      permissionMode: 'yolo',
+      headless: false,
+    });
+  });
+
   it('returns null when nothing was saved yet', () => {
     expect(loadSpawnDefaults()).toBeNull();
   });

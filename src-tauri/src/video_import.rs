@@ -56,29 +56,69 @@ struct TranscriptionSettings {
     local_args: String,
 }
 
-fn setting(conn: &rusqlite::Connection, key: &str, default: &str) -> Result<String, String> {
-    Ok(kv_get(conn, SETTINGS_NS, key)?.unwrap_or_else(|| default.to_string()))
+/// Every field read for this namespace, in both stores.
+const SETTING_KEYS: [&str; 7] = [
+    "transcription_mode",
+    "remote_endpoint",
+    "remote_api_key",
+    "remote_model",
+    "local_command",
+    "local_args",
+    "vision_enabled",
+];
+
+fn setting(
+    settings: &std::collections::BTreeMap<String, String>,
+    key: &str,
+    default: &str,
+) -> String {
+    settings
+        .get(key)
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
 }
 
+/// Application-wide settings with the project's overrides folded on top. The
+/// transcription endpoint and its key are the same on this machine whichever
+/// project is open; a project that needs its own still says so.
 fn load_settings(
     project_path: &str,
     state: &State<'_, DatabaseState>,
+    credentials: &State<'_, crate::app_config::AppCredentialsState>,
 ) -> Result<TranscriptionSettings, String> {
-    let connections = state.connections.lock().unwrap();
-    let conn = connections
-        .get(project_path)
-        .ok_or("Database not initialized for this project")?;
+    let global = crate::app_config::global_namespace(credentials.path(), SETTINGS_NS);
+
+    // A project without an open database overrides nothing, rather than
+    // failing the import outright.
+    let project = {
+        let connections = state.connections.lock().unwrap();
+        match connections.get(project_path) {
+            Some(conn) => {
+                let mut found = std::collections::BTreeMap::new();
+                for key in SETTING_KEYS {
+                    if let Some(value) = kv_get(conn, SETTINGS_NS, key)? {
+                        found.insert(key.to_string(), value);
+                    }
+                }
+                found
+            }
+            None => std::collections::BTreeMap::new(),
+        }
+    };
+
+    let settings = crate::app_config::merge_namespace(global, project);
+
     Ok(TranscriptionSettings {
-        mode: setting(conn, "transcription_mode", "automatic")?,
-        remote_endpoint: setting(conn, "remote_endpoint", "")?,
-        remote_api_key: setting(conn, "remote_api_key", "")?,
-        remote_model: setting(conn, "remote_model", "nvidia/parakeet-tdt-0.6b-v3")?,
-        local_command: setting(conn, "local_command", "parakeet-mlx")?,
+        mode: setting(&settings, "transcription_mode", "automatic"),
+        remote_endpoint: setting(&settings, "remote_endpoint", ""),
+        remote_api_key: setting(&settings, "remote_api_key", ""),
+        remote_model: setting(&settings, "remote_model", "nvidia/parakeet-tdt-0.6b-v3"),
+        local_command: setting(&settings, "local_command", "parakeet-mlx"),
         local_args: setting(
-            conn,
+            &settings,
             "local_args",
             "{audio} --output-dir {outputDir} --output-format json --highlight-words",
-        )?,
+        ),
     })
 }
 
@@ -475,13 +515,14 @@ pub async fn video_import_analyze_media(
     project_path: String,
     source_path: String,
     db_state: State<'_, DatabaseState>,
+    credentials: State<'_, crate::app_config::AppCredentialsState>,
     app: tauri::AppHandle,
 ) -> Result<VideoMediaAnalysis, String> {
     let source = PathBuf::from(&source_path);
     if !source.is_file() {
         return Err("Choose an existing video file".to_string());
     }
-    let settings = load_settings(&project_path, &db_state)?;
+    let settings = load_settings(&project_path, &db_state, &credentials)?;
     let duration_ms = video_duration_ms(&source).await?;
     let id = import_id();
     // Import artifacts are durable project provenance, not disposable OS temp files.

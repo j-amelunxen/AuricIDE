@@ -1,4 +1,19 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+
+const setProjectConfigValue = vi.fn(async () => {});
+const loadProjectConfig = vi.fn(async () => ({
+  agenticCommit: true,
+  agenticCommitPrompt: 'default prompt',
+  branchTicketPattern: '([A-Z]+-\\d+)',
+  commitProviderId: '',
+  conductorProviderId: '',
+}));
+
+vi.mock('@/lib/config/projectConfig', () => ({
+  setProjectConfigValue: (...args: unknown[]) => setProjectConfigValue(...(args as [])),
+  loadProjectConfig: (...args: unknown[]) => loadProjectConfig(...(args as [])),
+}));
+
 import { createUISlice, MAX_TERMINAL_LOGS, type UISlice } from './uiSlice';
 import { useStore } from '@/lib/store';
 import type { ReferenceResult } from '@/lib/refactoring/findReferences';
@@ -314,5 +329,111 @@ describe('uiSlice – terminalLogs buffer cap', () => {
     expect(store.current.terminalLogs).toHaveLength(3);
     expect(store.current.terminalLogs[0].text).toBe('first');
     expect(store.current.terminalLogs[2].text).toBe('third');
+  });
+});
+
+describe('uiSlice – agent settings that belong to the project', () => {
+  beforeEach(() => {
+    setProjectConfigValue.mockClear();
+    loadProjectConfig.mockClear();
+    useStore.setState({ rootPath: '/tmp/project' });
+  });
+
+  it('persists a commit setting to the project it was made in', async () => {
+    // These were session-only before: a ticket pattern retyped on every launch,
+    // and never per project even though that is what it describes.
+    useStore.getState().updateAgentSettings({ branchTicketPattern: 'FOO-\\d+' });
+
+    expect(useStore.getState().agentSettings.branchTicketPattern).toBe('FOO-\\d+');
+    await vi.waitFor(() =>
+      expect(setProjectConfigValue).toHaveBeenCalledWith(
+        '/tmp/project',
+        'branchTicketPattern',
+        'FOO-\\d+'
+      )
+    );
+  });
+
+  it('does not persist the safety switches', async () => {
+    // Bypass-permissions restored days later is a switch nobody remembers
+    // leaving on. It stays session state, deliberately.
+    useStore.getState().updateAgentSettings({ dangerouslyIgnorePermissions: true });
+
+    expect(useStore.getState().agentSettings.dangerouslyIgnorePermissions).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(setProjectConfigValue).not.toHaveBeenCalled();
+  });
+
+  it('keeps working without a project open', async () => {
+    useStore.setState({ rootPath: null });
+
+    useStore.getState().updateAgentSettings({ agenticCommit: false });
+
+    expect(useStore.getState().agentSettings.agenticCommit).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(setProjectConfigValue).not.toHaveBeenCalled();
+  });
+
+  it('loads a project’s settings when it is opened', async () => {
+    loadProjectConfig.mockResolvedValueOnce({
+      agenticCommit: false,
+      agenticCommitPrompt: 'project prompt',
+      branchTicketPattern: 'BAR-\\d+',
+      commitProviderId: 'opencode',
+      conductorProviderId: '',
+    });
+
+    await useStore.getState().loadProjectAgentSettings('/tmp/other');
+
+    expect(useStore.getState().agentSettings).toMatchObject({
+      agenticCommit: false,
+      agenticCommitPrompt: 'project prompt',
+      branchTicketPattern: 'BAR-\\d+',
+      commitProviderId: 'opencode',
+    });
+  });
+
+  it('leaves the safety switches off when a project is opened', async () => {
+    useStore.setState({
+      agentSettings: {
+        ...useStore.getState().agentSettings,
+        dangerouslyIgnorePermissions: true,
+        autoAcceptEdits: true,
+      },
+    });
+
+    await useStore.getState().loadProjectAgentSettings('/tmp/other');
+
+    // Switching projects is not a reason to carry elevated permissions along.
+    expect(useStore.getState().agentSettings.dangerouslyIgnorePermissions).toBe(false);
+    expect(useStore.getState().agentSettings.autoAcceptEdits).toBe(false);
+  });
+});
+
+describe('uiSlice – the conductor provider', () => {
+  beforeEach(() => {
+    loadProjectConfig.mockClear();
+    useStore.setState({ rootPath: '/tmp/project' });
+  });
+
+  it('restores the provider a project last ran its backlog with', async () => {
+    loadProjectConfig.mockResolvedValueOnce({
+      agenticCommit: true,
+      agenticCommitPrompt: 'p',
+      branchTicketPattern: 'x',
+      commitProviderId: '',
+      conductorProviderId: 'opencode',
+    });
+
+    await useStore.getState().loadProjectAgentSettings('/tmp/project');
+
+    expect(useStore.getState().conductorProviderId).toBe('opencode');
+  });
+
+  it('leaves the conductor on the launch default when the project named none', async () => {
+    // An empty string is "no preference", not a provider called "".
+    await useStore.getState().loadProjectAgentSettings('/tmp/project');
+
+    expect(useStore.getState().conductorProviderId).toBeNull();
   });
 });

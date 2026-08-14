@@ -33,20 +33,29 @@ fn is_mock_value(value: &str) -> bool {
     value == "1"
 }
 
+/// The key is application-wide, so a project that never configured one still
+/// works; a project that set its own still wins.
 fn read_api_key(
     db_state: &State<'_, DatabaseState>,
+    credentials: &State<'_, crate::app_config::AppCredentialsState>,
     project_path: &str,
 ) -> Result<String, ExcalidrawError> {
-    let connections = db_state.connections.lock().unwrap();
-    let conn = connections
-        .get(project_path)
-        .ok_or(ExcalidrawError::NotConfigured)?;
-    let key = kv_get(conn, "excalidraw_settings", "api_key")
-        .map_err(|detail| ExcalidrawError::Network { detail })?;
-    match key {
-        Some(k) if !k.trim().is_empty() => Ok(k),
-        _ => Err(ExcalidrawError::NotConfigured),
-    }
+    let global = crate::app_config::global_namespace(credentials.path(), "excalidraw_settings")
+        .get("api_key")
+        .cloned();
+
+    // No project database is no longer a reason to give up — it only means
+    // this project overrides nothing.
+    let project = {
+        let connections = db_state.connections.lock().unwrap();
+        match connections.get(project_path) {
+            Some(conn) => kv_get(conn, "excalidraw_settings", "api_key")
+                .map_err(|detail| ExcalidrawError::Network { detail })?,
+            None => None,
+        }
+    };
+
+    crate::app_config::resolve_credential(global, project).ok_or(ExcalidrawError::NotConfigured)
 }
 
 fn build_query_path(path: &str, offset: usize) -> String {
@@ -122,11 +131,12 @@ fn mock_scene_content() -> Result<String, ExcalidrawError> {
 pub async fn test_connection_impl(
     project_path: &str,
     db_state: State<'_, DatabaseState>,
+    credentials: State<'_, crate::app_config::AppCredentialsState>,
 ) -> Result<String, String> {
     if mock_enabled() {
         return Ok("Connected to Excalidraw+ (mock) — 2 collections visible".to_string());
     }
-    let api_key = read_api_key(&db_state, project_path).map_err(|e| e.to_string())?;
+    let api_key = read_api_key(&db_state, &credentials, project_path).map_err(|e| e.to_string())?;
     let endpoint = "GET /collections";
     let body = fetch_json(&api_key, "/collections?limit=100", endpoint)
         .await
@@ -142,11 +152,12 @@ pub async fn test_connection_impl(
 pub async fn list_collections_impl(
     project_path: &str,
     db_state: State<'_, DatabaseState>,
+    credentials: State<'_, crate::app_config::AppCredentialsState>,
 ) -> Result<Vec<Collection>, String> {
     if mock_enabled() {
         return mock_collections().map_err(|e| e.to_string());
     }
-    let api_key = read_api_key(&db_state, project_path).map_err(|e| e.to_string())?;
+    let api_key = read_api_key(&db_state, &credentials, project_path).map_err(|e| e.to_string())?;
     let raw: Vec<ApiCollection> = fetch_all_pages(&api_key, "/collections", "GET /collections")
         .await
         .map_err(|e| e.to_string())?;
@@ -157,11 +168,12 @@ pub async fn list_scenes_impl(
     project_path: &str,
     collection_id: &str,
     db_state: State<'_, DatabaseState>,
+    credentials: State<'_, crate::app_config::AppCredentialsState>,
 ) -> Result<Vec<SceneSummary>, String> {
     if mock_enabled() {
         return mock_scenes(collection_id).map_err(|e| e.to_string());
     }
-    let api_key = read_api_key(&db_state, project_path).map_err(|e| e.to_string())?;
+    let api_key = read_api_key(&db_state, &credentials, project_path).map_err(|e| e.to_string())?;
     let endpoint = "GET /scenes";
     let raw: Vec<ApiScene> = fetch_all_pages(
         &api_key,
@@ -177,11 +189,12 @@ pub async fn get_scene_content_impl(
     project_path: &str,
     scene_id: &str,
     db_state: State<'_, DatabaseState>,
+    credentials: State<'_, crate::app_config::AppCredentialsState>,
 ) -> Result<String, String> {
     if mock_enabled() {
         return mock_scene_content().map_err(|e| e.to_string());
     }
-    let api_key = read_api_key(&db_state, project_path).map_err(|e| e.to_string())?;
+    let api_key = read_api_key(&db_state, &credentials, project_path).map_err(|e| e.to_string())?;
     let endpoint = "GET /scenes/{sceneId}/content";
     let body = fetch_json(&api_key, &format!("/scenes/{scene_id}/content"), endpoint)
         .await
