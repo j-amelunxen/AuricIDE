@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./invoke', () => ({ invoke: vi.fn(async () => ({})) }));
 
 import { invoke } from './invoke';
-import { analyzeVideoMedia, getLocalParakeetStatus } from './videoImport';
+import { analyzeVideoMedia, clearVideoImportCache, getLocalParakeetStatus } from './videoImport';
 
 describe('video import IPC', () => {
   beforeEach(() => vi.mocked(invoke).mockClear());
@@ -19,5 +19,10 @@ describe('video import IPC', () => {
   it('queries the managed local Parakeet runtime independently of a project', async () => {
     await getLocalParakeetStatus();
     expect(invoke).toHaveBeenCalledWith('video_import_local_status');
+  });
+
+  it('invokes video_import_clear with the importId', async () => {
+    await clearVideoImportCache('import-123');
+    expect(invoke).toHaveBeenCalledWith('video_import_clear', { importId: 'import-123' });
   });
 });

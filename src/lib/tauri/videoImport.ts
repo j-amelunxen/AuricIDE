@@ -46,3 +46,7 @@ export async function saveVideoProcessAnalysis(
     processJson: JSON.stringify(process, null, 2),
   });
 }
+
+export async function clearVideoImportCache(importId: string): Promise<void> {
+  return invoke<void>('video_import_clear', { importId });
+}
