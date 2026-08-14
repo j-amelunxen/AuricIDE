@@ -38,7 +38,8 @@
     "postinstall": "node scripts/check-tauri-versions.mjs && node scripts/copy-excalidraw-assets.mjs",
     "tauri:versions:check": "node scripts/check-tauri-versions.mjs",
     "automation-surface": "node scripts/generate-automation-surface.mjs",
-    "automation-surface:check": "node scripts/generate-automation-surface.mjs --check"
+    "automation-surface:check": "node scripts/generate-automation-surface.mjs --check",
+    "clean": "bash clean.sh"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
