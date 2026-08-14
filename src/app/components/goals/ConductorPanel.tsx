@@ -155,7 +155,11 @@ export function ConductorPanel({
   const providerList = providers ?? [];
   const activeProvider = providerList.find((p) => p.id === providerId) ?? providerList[0];
   const selectCls =
-    'rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-foreground outline-none focus:ring-1 focus:ring-primary/30';
+    'rounded bg-white/5 px-1.5 py-0.5 text-[11px] text-foreground outline-none focus:ring-1 focus:ring-primary/30';
+  // Every settings label reads the same and none of them wraps: a two-line
+  // "Judge / review" next to single-line neighbours is what makes the bar look
+  // broken long before it actually runs out of room.
+  const settingCls = 'flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px]';
 
   // Stop kills every agent the run launched, so it asks first — but only while
   // there is something to lose. With nothing running the question would be
@@ -175,13 +179,17 @@ export function ConductorPanel({
   };
 
   return (
-    <div data-testid="conductor-panel" className="border-t border-white/5 bg-black/20 px-4 py-2.5">
+    <div data-testid="conductor-panel" className="border-t border-white/5 bg-black/20 px-4 py-3">
+      {/* Row one answers "what is it doing" and "what do I press". It carries
+          nothing that can grow, so the button never gets pushed off the edge of
+          a narrow surface — the panel sits in a 768px card on the cockpit and
+          at full modal width in Goals. */}
       <div className="flex items-center gap-3">
         {/* Status */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <span
             data-testid="conductor-status-dot"
-            className={`h-2 w-2 rounded-full ${
+            className={`h-2 w-2 flex-shrink-0 rounded-full ${
               running
                 ? 'bg-green-400 animate-pulse'
                 : lastRun
@@ -189,15 +197,15 @@ export function ConductorPanel({
                   : 'bg-gray-500'
             }`}
           />
-          <span className="text-[11px] font-bold text-foreground">Conductor</span>
+          <span className="flex-shrink-0 text-[11px] font-bold text-foreground">Conductor</span>
           {running ? (
-            <span className="text-[10px] text-foreground-muted">
+            <span className="truncate text-[11px] text-foreground-muted">
               {`working${scopeGoalName ? ` on "${scopeGoalName}"` : ' (all tickets)'} · ${activeAgentCount} agent(s)`}
             </span>
           ) : lastRun ? (
             <span
               data-testid="conductor-last-run"
-              className={`text-[10px] ${LAST_RUN_META[lastRun.outcome].cls}`}
+              className={`truncate text-[11px] ${LAST_RUN_META[lastRun.outcome].cls}`}
               title={lastRun.blockers.length > 0 ? lastRun.blockers.join('; ') : undefined}
             >
               {lastRunLabel(lastRun)}
@@ -206,12 +214,72 @@ export function ConductorPanel({
               {` · ${formatRunDuration(lastRun.startedAt, lastRun.endedAt)}`}
             </span>
           ) : (
-            <span className="text-[10px] text-foreground-muted">stopped</span>
+            <span className="truncate text-[11px] text-foreground-muted">stopped</span>
           )}
         </div>
 
+        {/* What pressing Start would actually do, in the same glance as the
+            button. One line, always: squeezed by the bar it truncates with
+            the full sentence in the tooltip — a one-word-per-line column
+            reads as a broken layout, not as information. */}
+        {!running && preflight && (canStart || startDisabledReason?.includes('tickets')) && (
+          <span
+            data-testid="conductor-preflight"
+            role="status"
+            aria-live="polite"
+            title={preflightLabel(preflight, selectedGoalName)}
+            className="min-w-0 truncate text-[10px] text-foreground-muted tabular-nums"
+          >
+            {preflightLabel(preflight, selectedGoalName)}
+          </span>
+        )}
+
+        <div data-testid="conductor-actions" className="flex flex-shrink-0 items-center gap-2">
+          <button
+            data-testid="conductor-log-toggle"
+            onClick={() => setLogExpanded((v) => !v)}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
+          >
+            <AuricIcon name="receipt_long" className="text-sm" />
+            Log ({decisions.length})
+          </button>
+          {running ? (
+            <button
+              data-testid="conductor-stop-btn"
+              onClick={() => void handleStop()}
+              className="flex items-center gap-1.5 rounded-lg bg-red-500/15 border border-red-500/25 px-3 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/25 transition-colors"
+            >
+              <AuricIcon name="stop" className="text-sm" />
+              Stop
+            </button>
+          ) : (
+            <button
+              data-testid="conductor-start-btn"
+              onClick={onStart}
+              disabled={!canStart}
+              title={
+                canStart
+                  ? 'Autonomously work all unblocked tickets in scope'
+                  : (startDisabledReason ?? 'Open a project first')
+              }
+              className="flex items-center gap-1.5 rounded-lg bg-green-500/15 border border-green-500/25 px-3 py-1 text-[11px] font-bold text-green-300 hover:bg-green-500/25 transition-colors disabled:opacity-40"
+            >
+              <AuricIcon name="play_arrow" className="text-sm" />
+              Start
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Row two is how the run is configured. It wraps rather than compress
+          its controls: a select narrowed past its own label stops being
+          readable, and reading it is the whole point. */}
+      <div
+        data-testid="conductor-settings"
+        className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/5 pt-2.5"
+      >
         {/* Concurrency */}
-        <label className="ml-2 flex items-center gap-1.5 text-[10px] text-foreground-muted">
+        <label className={`${settingCls} text-foreground-muted`}>
           parallel
           <input
             data-testid="conductor-max-concurrent"
@@ -220,14 +288,14 @@ export function ConductorPanel({
             max={8}
             value={maxConcurrent}
             onChange={(e) => onSetMaxConcurrent(Number(e.target.value) || 1)}
-            className="w-12 rounded bg-white/5 px-1.5 py-0.5 text-center text-[10px] text-foreground outline-none focus:ring-1 focus:ring-primary/30"
+            className="w-12 rounded bg-white/5 px-1.5 py-0.5 text-center text-[11px] text-foreground outline-none focus:ring-1 focus:ring-primary/30"
           />
         </label>
 
         {/* Provider + model selection (before a run starts) */}
         {!running && providerList.length > 0 && (
           <>
-            <label className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+            <label className={`${settingCls} text-foreground-muted`}>
               Provider
               <select
                 data-testid="conductor-provider-select"
@@ -243,7 +311,7 @@ export function ConductorPanel({
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+            <label className={`${settingCls} text-foreground-muted`}>
               Model
               <select
                 data-testid="conductor-model-select"
@@ -266,7 +334,7 @@ export function ConductorPanel({
             behavior (exit 0 = done). On = a finished ticket is reviewed first. */}
         {!running && (
           <label
-            className={`flex items-center gap-1.5 text-[11px] ${
+            className={`${settingCls} ${
               judgeConfigured ? 'text-foreground-muted' : 'text-foreground-muted/40'
             }`}
             title={
@@ -287,7 +355,7 @@ export function ConductorPanel({
           </label>
         )}
         {!running && requireReview && judgeConfigured && (
-          <label className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+          <label className={`${settingCls} text-foreground-muted`}>
             via
             <select
               data-testid="conductor-judge-form"
@@ -300,57 +368,6 @@ export function ConductorPanel({
             </select>
           </label>
         )}
-
-        <div className="ml-auto flex min-w-0 items-center gap-2">
-          {/* What pressing Start would actually do, in the same glance as the
-              button. One line, always: squeezed by the bar it truncates with
-              the full sentence in the tooltip — a one-word-per-line column
-              reads as a broken layout, not as information. */}
-          {!running && preflight && (canStart || startDisabledReason?.includes('tickets')) && (
-            <span
-              data-testid="conductor-preflight"
-              role="status"
-              aria-live="polite"
-              title={preflightLabel(preflight, selectedGoalName)}
-              className="min-w-0 truncate text-[10px] text-foreground-muted tabular-nums"
-            >
-              {preflightLabel(preflight, selectedGoalName)}
-            </span>
-          )}
-          <button
-            data-testid="conductor-log-toggle"
-            onClick={() => setLogExpanded((v) => !v)}
-            className="flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-foreground-muted hover:bg-white/5 hover:text-foreground transition-colors"
-          >
-            <AuricIcon name="receipt_long" className="text-sm" />
-            Log ({decisions.length})
-          </button>
-          {running ? (
-            <button
-              data-testid="conductor-stop-btn"
-              onClick={() => void handleStop()}
-              className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-red-500/15 border border-red-500/25 px-3 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/25 transition-colors"
-            >
-              <AuricIcon name="stop" className="text-sm" />
-              Stop
-            </button>
-          ) : (
-            <button
-              data-testid="conductor-start-btn"
-              onClick={onStart}
-              disabled={!canStart}
-              title={
-                canStart
-                  ? 'Autonomously work all unblocked tickets in scope'
-                  : (startDisabledReason ?? 'Open a project first')
-              }
-              className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-green-500/15 border border-green-500/25 px-3 py-1 text-[11px] font-bold text-green-300 hover:bg-green-500/25 transition-colors disabled:opacity-40"
-            >
-              <AuricIcon name="play_arrow" className="text-sm" />
-              Start
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Pending approvals */}
