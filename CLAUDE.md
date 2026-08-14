@@ -86,7 +86,11 @@ pnpm test:run --reporter=verbose -t "epic"
 
 ## Before Committing
 
-Run `pnpm check:all` to verify lint, format, tests, and Rust checks all pass.
+Run `pnpm check:all`. It is an 11-step chain and four of the steps are gates people
+forget they can fail on their own: `automation-surface:check` (regenerates
+`docs/automation-surface.md` and diffs it), `knip` (unused exports/deps), `jscpd`
+(copy-paste detection) and `tauri:machete` (unused Rust deps) — alongside
+`tauri:versions:check`, lint, format, TS tests, cargo test, clippy and rustfmt.
 
 ---
 
@@ -99,9 +103,60 @@ Next.js (React/TypeScript)  →  Tauri IPC invoke()  →  Rust backend
 src/app/ + src/lib/             src/lib/tauri/*.ts      src-tauri/src/
 ```
 
+## Configuration: application vs. project
+
+Two layers, and the question that decides which one a setting belongs to: **would
+it still be right if you opened a different repository?**
+
+| Layer                    | What lives there                                                                                | Where it is stored                                                          | API                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Application**          | Theme, editor toggles, remembered launch choices, custom commands, MCP auto-start               | `localStorage`, mirrored to `<app_data_dir>/webview-prefs.json` (see above) | `src/lib/config/appConfig.ts`                                     |
+| **Application (secret)** | API keys and endpoints for LLM, Judge, Excalidraw+, video transcription                         | `<app_data_dir>/app-credentials.json`, written by Rust at mode 0600         | `src/lib/tauri/appCredentials.ts` ↔ `src-tauri/src/app_config.rs` |
+| **Project**              | Provider policy, commit conventions, ticket pattern, conductor provider, credential _overrides_ | `kv_store` in `<project>/.auric/project.db`                                 | `src/lib/config/projectConfig.ts`                                 |
+
+Credentials are global with a per-project override. One rule decides which wins,
+and it lives in `app_config::resolve_credential`: the project value wins when it
+carries something, the global one otherwise. A **blank** project value is not an
+override — clearing a field means "use the application value again", never "this
+project deliberately has no key". `CredentialOverride.tsx` therefore stores
+nothing for a cleared field and deletes the row instead.
+
+Projects from before the split migrate once, on open
+(`src/lib/config/migrateCredentials.ts`): field by field, a project value moves
+up only where the application store has nothing, and otherwise stays put as an
+override. The marker `project_config/credentialsMigratedV1` keeps it to one run —
+but only after a clean pass, so a failed write is retried rather than stranded.
+
+**Not persisted, deliberately:** `dangerouslyIgnorePermissions` and
+`autoAcceptEdits`. A switch that lets an agent edit and run without asking,
+restored days later, is one nobody remembers leaving on. Both start off every
+launch and reset again when a project is opened.
+
+### The provider policy
+
+Which agent CLIs a project permits: `{ allow: string[] | null, deny: string[] }`.
+`allow === null` (or empty) means no allow list is in effect; `deny` always wins.
+An allow list that empties out is an absent one, never a total lockout — denying
+everything stays possible, but only by saying so on the deny list.
+
+It has **two implementations on purpose**: `src/lib/config/providerPolicy.ts`
+decides what the dialogs offer, `src-tauri/src/provider_policy.rs` decides what
+actually spawns. Both are tested against the same
+`src/lib/config/providerPolicy.fixtures.json` (Rust reads it via `include_str!`),
+because a disagreement between them is the failure that matters: a provider
+hidden from every picker would still run, or a permitted one would be refused
+with no way to see why. **Change the fixtures first**, then both sides.
+
+The enforcement point is `agents::resolve_permitted_provider`, called from
+`spawn_agent_impl` — the one path every agent takes, conductor, retry, resumed
+run and notification action included. It checks the **resolved** provider id,
+not the requested one: an unknown name falls back to the registry default, so
+checking the request would let a deny list be dodged by naming a provider that
+does not exist.
+
 ## State Management (Zustand)
 
-All frontend state lives in a single combined Zustand store (`src/lib/store/index.ts`). It's composed of ~15 slices using `StateCreator`:
+All frontend state lives in a single combined Zustand store (`src/lib/store/index.ts`), composed of slices using `StateCreator`. The `StoreState` intersection in that file is the authoritative list — read it rather than trusting a count copied into prose:
 
 ```typescript
 // Each slice follows this pattern:
@@ -111,18 +166,28 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({ ... });
 export type StoreState = FileTreeSlice & TabsSlice & GitSlice & PmSlice & ...;
 ```
 
-Key slices and what they own:
+Key store slices:
 
-| Slice              | Key Concern                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------- |
-| `pmSlice`          | Epics, tickets, test cases, dependencies; draft/persisted split with a `pmDirty` flag |
-| `agentSlice`       | Running AI agents, per-agent logs, fleet view state (see below)                       |
-| `gitSlice`         | Branch, file statuses (A/M/D), staging, commit                                        |
-| `tabsSlice`        | Open editor tabs and active tab                                                       |
-| `mcpSlice`         | MCP server running state and PID                                                      |
-| `canvasSlice`      | XYFlow nodes/edges for workflow canvas                                                |
-| `uiSlice`          | Modal open/closed states, panel visibility                                            |
-| `diagnosticsSlice` | remark-lint errors keyed by file path                                                 |
+| Slice                                                                                   | Key Concern                                                                           |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `pmSlice`                                                                               | Epics, tickets, test cases, dependencies; draft/persisted split with a `pmDirty` flag |
+| `agentSlice`                                                                            | Running AI agents, per-agent logs, fleet view state (see below)                       |
+| `gitSlice`                                                                              | Branch, file statuses (A/M/D), staging, commit                                        |
+| `fileTreeSlice`, `projectDbSlice`                                                       | Explorer tree; project SQLite init/close lifecycle                                    |
+| `tabsSlice`                                                                             | Open editor tabs and active tab                                                       |
+| `qaSlice`                                                                               | Test-coverage summary, per-file coverage, heatmap config                              |
+| `mcpSlice`                                                                              | MCP server running state and PID                                                      |
+| `canvasSlice`                                                                           | XYFlow nodes/edges for workflow canvas                                                |
+| `uiSlice`                                                                               | Modal open/closed states, panel visibility                                            |
+| `diagnosticsSlice`                                                                      | remark-lint errors keyed by file path                                                 |
+| `goalsSlice`                                                                            | Goal hierarchy trees, satisfaction predicates, step states                            |
+| `requirementsSlice`                                                                     | Application invariants, test links, freshness checks                                  |
+| `conductorSlice`                                                                        | Conductor run status, judge backend evaluation loops                                  |
+| `recentProjectsSlice`, `starredProjectsSlice`                                           | Multi-project history, pinned shortcuts                                               |
+| `wikiLinkSlice`, `headingIndexSlice`, `entityIndexSlice`                                | WikiLinks graph, document headings, NLP entity index                                  |
+| `blueprintsSlice`, `obsidianCanvasSlice`, `excalidrawSlice`                             | Canvas blueprints, Obsidian canvas view, Excalidraw scenes                            |
+| `slashCommandSlice`, `commandUsageSlice`, `scratchSlice`                                | Slash commands, usage telemetry, scratchpad                                           |
+| `toastSlice`, `notificationsSlice`, `schedulesSlice`, `skillComboSlice`, `overlaySlice` | System toasts, notification bus, recurring schedules, skill combos, overlay stack     |
 
 **PM draft pattern:** `pmDraftEpics` holds in-progress edits; `pmEpics` is the last-persisted snapshot. `savePmData()` flushes drafts to SQLite via IPC.
 
@@ -133,7 +198,17 @@ Goals lead; epics are storage. The primary workflow of the app is one loop:
 1. **Define a goal** — a desired world state with machine-checkable `successCriteria` (`pm_goals`, tree via `parentId`).
 2. **Attach work** — link tickets to the goal (`ticket.goalId`, set atomically via `create_ticket`'s `goalId` param or `link_ticket_to_goal`), link requirements as acceptance gates, or launch a planning agent that calls `decompose_goal` / `create_ticket` itself.
 3. **Run the conductor** (`conductorSlice`) — it spawns agents for unblocked open tickets in the goal's subtree (priority order, dependency-aware, `needsHumanSupervision` approval gate, 2 attempts per ticket).
-4. **Verified done** — when no work is left, `getGoalSatisfaction` checks: all subtree tickets `done` + all linked requirements `verified` + all child goals `achieved`. If green, the goal auto-achieves; otherwise the blockers are listed. A goal with nothing attached never auto-satisfies.
+4. **Verified done** — when no work is left, `getGoalSatisfaction` checks **four**
+   conditions: all subtree tickets `done` + all linked requirements `verified` +
+   **every station of the goal's line `done`** + all child goals `achieved`. If
+   green, the goal auto-achieves; otherwise the blockers are listed. A goal with
+   nothing attached never auto-satisfies.
+
+   The station condition is the one people forget when debugging "why won't this
+   goal close". It is stricter than `status === 'done'`: a station whose evidence
+   is a bare claim rather than a verified kind blocks exactly like a pending one
+   (`isVerifiedEvidence`, `goalsSlice.ts`). The `stations` parameter is required
+   on purpose so a caller cannot omit it and get a falsely green goal.
 
 Tickets still belong to an epic (`epicId`, required) — that is the organizational/backlog view. The goal link (`goalId`, optional) is the outcome view and drives satisfaction. `getGoalWorkflowStage` (goalsSlice) derives which loop stage a goal is in and powers the onboarding stepper in `GoalDetailPanel` plus the workflow strip in `GoalsModal`.
 
@@ -258,14 +333,22 @@ UI (RequirementsModal)  →  Zustand (requirementsSlice)  →  IPC  →  Rust/SQ
 
 ## Tauri IPC Pattern
 
-All IPC wrappers live in `src/lib/tauri/*.ts`. They all use a lazy dynamic import to avoid breaking browser/test environments:
+All IPC wrappers live in `src/lib/tauri/*.ts`. They share one helper —
+`src/lib/tauri/invoke.ts` — rather than each repeating the dynamic import:
 
 ```typescript
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-  return tauriInvoke<T>(cmd, args);
+import { invoke } from './invoke';
+
+export async function requirementsLoad(projectPath: string): Promise<RequirementsState> {
+  return await invoke<RequirementsState>('requirements_load', { projectPath });
 }
 ```
+
+The import stays lazy so browser and test environments don't break on load, and
+`resolveTauriInvoke` does two things a hand-rolled copy misses: it unwraps
+`mod.invoke ?? mod.default?.invoke` (bundlers disagree on the shape), and it
+throws `Tauri IPC is unavailable (<cmd>)` instead of calling `undefined(...)`.
+Import the helper; don't re-implement it.
 
 Rust commands are registered in `src-tauri/src/lib.rs` with `#[tauri::command]` and wired up in `.invoke_handler(tauri::generate_handler![...])`.
 
@@ -279,42 +362,59 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => mockData) }))
 
 `src/lib/editor/setup.ts` assembles the editor state. Each feature is a separate extension:
 
-- `auricHighlightExtension` / `nlpHighlightExtension` – grammar-aware syntax highlighting
+- `auricTheme` / `auricHighlightStyle` – theme styling and Markdown token colours
+- `nlpHighlightExtension` – synchronous marking of **actionable** spans: entities,
+  keywords and prompt-framework labels. It never colours word classes; POS
+  highlighting was deliberately removed. See `docs/semantic-markdown-highlighting.md`.
+- `deepHighlightExtension` – async Transformers.js NER plus paragraph intent
+  classification (`src/lib/nlp/`, not `src/lib/editor/`)
 - `mermaidWidgetExtension` – inline Mermaid diagram rendering
-- `wikiLinkExtension` – `[[WikiLink]]` completion and hover
+- `wikiLink broken/hover/completion extensions` – `[[WikiLink]]` completion, hover popups, and broken link markers
 - `markdownFoldExtension` – heading-based section folding
-- `gitGutterExtension` – per-line git status in gutter
-- `remarkLintProcessor` – real-time remark-lint diagnostics
+- `createGitGutter` – per-line git status in gutter
+- `markdownLintExtension` / `jsonLintExtension` / `xmlLintExtension` / `yamlLintExtension` – real-time diagnostics
+- `renameHeadingExtension` / `findReferencesExtension` – markdown refactoring actions
 
 Dynamic reconfigurations use CodeMirror `Compartment`s so the editor doesn't need to be recreated.
 
 ## MCP Server
 
-`src/mcp/server.ts` is a FastMCP server that exposes the PM database as AI tools (epics, tickets, tasks, dependencies, history). It runs as a subprocess started by Rust (`src-tauri/src/mcp.rs`) and communicates via stdio JSON-RPC. To run it standalone:
+`src/mcp/server.ts` is a FastMCP server that exposes 15 tool domains with 40+ tools (epics, tickets, tasks, dependencies, testcases, history, blueprints, context, canvas, requirements, goals, stations, knowledge, reviews, notifications). It runs as a subprocess started by Rust (`src-tauri/src/mcp.rs`) and communicates via stdio JSON-RPC. To run it standalone:
 
 ```bash
 npx tsx src/mcp/server.ts /path/to/project.db
 ```
 
-Tool implementations are in `src/mcp/tools/` — one file per domain.
+Tool implementations are in `src/mcp/tools/` — one file per domain. Environment variables `AURIC_NOTIFICATIONS_DB` and `AURIC_PROJECT_ROOT` configure notifications and knowledge/canvas tools.
 
 ## Main Page Structure
 
-`src/app/page.tsx` (the only page) splits concerns into three hooks:
+`src/app/page.tsx` (the main page) splits concerns into three hooks:
 
 - `useIDEState()` – derives all state from the store
 - `useIDEHandlers()` – event handlers and computed props
 - `useIDEActions()` – side-effect setup (file watcher, Tauri event listeners)
 
-The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirror), `CanvasView` (XYFlow), `MindmapView`, `DiffViewer`, or `ImageViewer`.
+The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirror), `CanvasView` (XYFlow), `MindmapView`, `DiffViewer`, `ImageViewer`, `VideoViewer`, `PDFViewer`, `HtmlViewer`, `ObsidianCanvasView`, `ExcalidrawViewer`, or `WorkView`.
 
 ## Rust Backend Modules
 
-| Module    | File           | Responsibility                                                               |
-| --------- | -------------- | ---------------------------------------------------------------------------- |
-| Commands  | `lib.rs`       | IPC command registration, PTY shell (`shell_spawn/write/read`), file watcher |
-| Agents    | `agents.rs`    | Spawn/kill AI agent processes, stream output                                 |
-| Database  | `database.rs`  | SQLite schema, all PM CRUD (epics, tickets, test cases, dependencies)        |
-| MCP       | `mcp.rs`       | Start/stop MCP server subprocess                                             |
-| Providers | `providers.rs` | LLM provider config registry                                                 |
-| LLM       | `llm.rs`       | HTTP calls to LLM APIs                                                       |
+| Module                    | File                                                          | Responsibility                                                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commands                  | `lib.rs`                                                      | IPC command registration, PTY shell (`shell_spawn/write/resize`), file watcher                                                                                          |
+| Agents                    | `agents.rs`, `agent_persistence.rs`                           | Spawn/kill AI agent processes, stream PTY output, persist run history                                                                                                   |
+| Crashlog                  | `crashlog.rs`                                                 | Rust panic hook & frontend crash log reporting                                                                                                                          |
+| Database                  | `database.rs`                                                 | SQLite schema, PM CRUD (epics, tickets, test cases, goals, requirements, reviews)                                                                                       |
+| Excalidraw                | `excalidraw/` (`mod.rs`, `contract.rs`)                       | Excalidraw integration REST API & scene listing                                                                                                                         |
+| Git                       | `git.rs`                                                      | **All git behaviour** (git2-rs): status, diff, stage/unstage, commit, push, discard, blame, branches, history. `lib.rs` only registers the commands; the logic is here. |
+| Machine credentials       | `app_config.rs`                                               | Machine-wide settings (API keys) that outlive any one project; a project may still override                                                                             |
+| Provider policy           | `provider_policy.rs`                                          | Which agentic providers a project permits. Twin of `src/lib/config/providerPolicy.ts`; both tested against `providerPolicy.fixtures.json`                               |
+| LLM & Providers           | `llm.rs`, `providers.rs`                                      | HTTP calls to LLM APIs, agent CLI provider registry (`RESERVED_PROVIDER_ID` = the built-in `crush`)                                                                     |
+| MCP                       | `mcp.rs`                                                      | Start/stop FastMCP server subprocess (`AURIC_NOTIFICATIONS_DB`, `AURIC_PROJECT_ROOT`)                                                                                   |
+| Memory Report             | `memory_report.rs`                                            | System & process tree memory monitoring for performance metrics                                                                                                         |
+| Menu                      | `menu.rs`                                                     | Native macOS application menu state management                                                                                                                          |
+| Notifications & Schedules | `notifications.rs`, `schedules.rs`                            | Cross-project notification bus, cron & one-shot schedule execution engine                                                                                               |
+| Configuration             | `app_config.rs`, `provider_policy.rs`                         | Application-wide credentials (`app-credentials.json`, mode 0600) and the per-project agent-provider allow/deny list enforced at spawn                                   |
+| Project Discovery         | `project_icons.rs`, `project_skills.rs`, `recent_projects.rs` | Workspace icons ranking, skills discovery, recent & starred projects management                                                                                         |
+| Themes                    | `themes.rs`                                                   | Custom theme JSON scanner and theme list API                                                                                                                            |
+| Utilities                 | `utf8_stream.rs`, `video_import.rs`, `webview_prefs.rs`       | UTF-8 PTY chunk reassembly, video import processing, cross-origin webview preferences sync                                                                              |
