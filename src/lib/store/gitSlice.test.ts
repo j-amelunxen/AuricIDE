@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { GitFileStatus } from '../tauri/git';
-import { createGitSlice, type GitSlice } from './gitSlice';
+import { createGitSlice, selectBlameHunks, type GitSlice } from './gitSlice';
 
 const file = vi.hoisted(
   () =>
@@ -368,5 +368,38 @@ describe('gitSlice', () => {
     expect(state.blameLoading).toBe(false);
     expect(state.hunkNavNonce).toBe(0);
     expect(state.hunkNavDirection).toBeNull();
+  });
+});
+
+describe('selectBlameHunks', () => {
+  const hunk = {
+    oid: 'abc',
+    summary: 's',
+    author: 'a',
+    timestamp: 't',
+    startLine: 1,
+    lineCount: 2,
+  };
+
+  it('returns the hunks stored for the file', () => {
+    const state = { rootPath: '/repo', blameByPath: { 'src/a.ts': [hunk] } };
+    expect(selectBlameHunks(state, '/repo/src/a.ts')).toEqual([hunk]);
+  });
+
+  // The editor subscribes to this through `useStore`, and zustand v5 runs the
+  // selector on every snapshot check without memoising it. A fresh `[]` per
+  // call therefore reads as a changed store forever: React re-renders, gets
+  // another new array, and gives up with "Maximum update depth exceeded" —
+  // which is what opening any not-yet-blamed file used to do.
+  it('hands back the same empty array every time a file has no blame', () => {
+    const state = { rootPath: '/repo', blameByPath: {} };
+    expect(selectBlameHunks(state, '/repo/src/a.ts')).toBe(
+      selectBlameHunks(state, '/repo/src/a.ts')
+    );
+  });
+
+  it('hands back the same empty array when there is no project open', () => {
+    const state = { rootPath: null, blameByPath: {} };
+    expect(selectBlameHunks(state, '/repo/src/a.ts')).toBe(selectBlameHunks(state, undefined));
   });
 });
