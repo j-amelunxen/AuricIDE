@@ -7,7 +7,8 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { useStore } from '@/lib/store';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useConfirm } from '@/lib/hooks/useConfirm';
-import { FALLBACK_CRUSH_PROVIDER, listProviders, type ProviderInfo } from '@/lib/tauri/providers';
+import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
+import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
 import {
@@ -52,23 +53,11 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
   const [wheelSlots, setWheelSlots] = useState<(string | null)[]>(quickAccessWheelSlots(project));
   const [announcement, setAnnouncement] = useState('');
   const { confirm, confirmDialog } = useConfirm();
-  const [providers, setProviders] = useState<ProviderInfo[]>([FALLBACK_CRUSH_PROVIDER]);
   const [discovered, setDiscovered] = useState<ProjectSkill[]>([]);
   const [discoveryReady, setDiscoveryReady] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    listProviders()
-      .then((fetched) => {
-        if (!cancelled && fetched.length > 0) setProviders(fetched);
-      })
-      .catch(() => {
-        /* Browser mode — the fallback provider stands in. */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // This dialog configures a project from the launcher, which is not
+  // necessarily the open one — so ask about that project's policy.
+  const { providers } = useAllowedProviders(FALLBACK_CRUSH_PROVIDER, project.path);
 
   useEffect(() => {
     let cancelled = false;
