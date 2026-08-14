@@ -119,6 +119,58 @@ describe('Header', () => {
     expect(screen.queryByTestId('heading-breadcrumbs')).not.toBeInTheDocument();
   });
 
+  // The header doubles as the macOS title bar (`titleBarStyle: "Overlay"`),
+  // so the top row has to behave like one: fixed height under the traffic
+  // lights, draggable where it is empty, clickable where it is not.
+  describe('as the window title bar', () => {
+    it('keeps the title-bar row at the traffic lights’ height in every variant', () => {
+      for (const props of [
+        {},
+        { variant: 'canvas' as const },
+        { headingBreadcrumbs: [{ title: 'Setup', lineNumber: 1 }] },
+      ]) {
+        const { unmount } = render(<Header breadcrumbs={[]} {...props} />);
+        expect(screen.getByTestId('titlebar-row')).toHaveClass('h-12');
+        unmount();
+      }
+    });
+
+    it('drags the window by its empty space', () => {
+      render(<Header breadcrumbs={[]} />);
+      expect(screen.getByTestId('titlebar-row')).toHaveAttribute('data-tauri-drag-region');
+    });
+
+    it('drags by the brand mark too, which is decoration and not a target', () => {
+      render(<Header breadcrumbs={[]} />);
+      expect(screen.getByTestId('header-logo')).toHaveAttribute('data-tauri-drag-region');
+    });
+
+    it('leaves controls clickable rather than turning them into drag handles', () => {
+      render(<Header breadcrumbs={[]} llmConfigured={false} isConnected={false} />);
+      for (const testId of ['command-palette-trigger', 'llm-status-badge']) {
+        expect(screen.getByTestId(testId)).not.toHaveAttribute('data-tauri-drag-region');
+      }
+    });
+
+    it('does not drag by the heading crumbs, which are navigation', () => {
+      render(<Header breadcrumbs={[]} headingBreadcrumbs={[{ title: 'Setup', lineNumber: 1 }]} />);
+      expect(screen.getByTestId('heading-breadcrumbs')).not.toHaveAttribute(
+        'data-tauri-drag-region'
+      );
+    });
+
+    it('reserves the traffic lights’ gutter, and only where they exist', () => {
+      render(<Header breadcrumbs={[]} />);
+      // Zero in the browser and on Windows; the boot script raises it on macOS.
+      expect(screen.getByTestId('titlebar-row').className).toContain('--titlebar-gutter');
+    });
+
+    it('does not select text when the user drags the window', () => {
+      render(<Header breadcrumbs={[]} />);
+      expect(screen.getByTestId('titlebar-row')).toHaveClass('select-none');
+    });
+  });
+
   it('hides decorative icon glyphs from assistive technology', () => {
     const { container } = render(
       <Header
