@@ -746,7 +746,7 @@ pub fn agent_prompt_history_list_impl(
         .map_err(|e| format!("Failed to read agent prompt history rows: {}", e))
 }
 
-/// Returns the newest review conductor a review agent recorded for `ticket_id`,
+/// Returns the newest review that the conductor or a review agent recorded for `ticket_id`,
 /// optionally restricted to reviews created at or after `since_iso`. `None`
 /// when no matching row exists — the conductor reads that as "no verdict yet".
 pub fn pm_latest_ticket_review_impl(

@@ -17,8 +17,8 @@ export interface JudgeInput {
 
 /**
  * How a judge run begins. The LLM form resolves a verdict inline; the
- * review-agent form spawns a process and the verdict is collected when it
- * exits (built in stage 5). One abstraction, two verdict channels.
+ * review-agent form spawns a process and collects the verdict via IPC when it exits.
+ * One abstraction, two verdict channels.
  */
 export type JudgeStart =
   { kind: 'verdict'; verdict: JudgeVerdict } | { kind: 'delegated'; reviewAgentId: string };
@@ -104,9 +104,8 @@ async function llmJudgeTicket(input: JudgeInput): Promise<JudgeVerdict> {
 }
 
 /**
- * Builds the judge backend for the chosen form. The review-agent form is
- * added in stage 5 (it needs the pm_ticket_reviews table + IPC); until then
- * only the LLM form is available and the config gate must reflect that.
+ * Builds the judge backend for the chosen form. Supports both the inline LLM form
+ * and the review-agent form (backed by the pm_ticket_reviews database table and IPC).
  */
 export function createJudgeBackend(form: 'llm' | 'agent', deps?: AgentJudgeDeps): JudgeBackend {
   if (form === 'agent') {

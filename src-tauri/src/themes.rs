@@ -39,7 +39,7 @@ pub fn scan_themes(app: Option<&tauri::AppHandle>) -> Vec<ThemeFile> {
                     path: path_str,
                     content,
                 }),
-                Err(e) => eprintln!("Failed to read theme theme {:?}: {}", path, e),
+                Err(e) => eprintln!("Failed to read theme {:?}: {}", path, e),
             }
         }
     }
