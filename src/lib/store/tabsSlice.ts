@@ -38,6 +38,19 @@ function clearDiagnosticsFor(get: () => TabsSlice, ids: string[]): void {
   }
 }
 
+function clearDiffTabsFor(get: () => TabsSlice, ids: string[]): void {
+  const combined = get() as TabsSlice & { clearDiffTab?: (id: string) => void };
+  if (typeof combined.clearDiffTab !== 'function') return;
+  for (const id of ids) {
+    combined.clearDiffTab(id);
+  }
+}
+
+function onTabsClosed(get: () => TabsSlice, ids: string[]): void {
+  clearDiagnosticsFor(get, ids);
+  clearDiffTabsFor(get, ids);
+}
+
 export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
   openTabs: [],
   activeTabId: null,
@@ -72,7 +85,7 @@ export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
     }
 
     set({ openTabs: newTabs, activeTabId: newActiveId });
-    clearDiagnosticsFor(get, [id]);
+    onTabsClosed(get, [id]);
   },
 
   closeOtherTabs: (id) => {
@@ -80,13 +93,13 @@ export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
     const kept = openTabs.filter((t) => t.id === id);
     const closedIds = openTabs.filter((t) => t.id !== id).map((t) => t.id);
     set({ openTabs: kept, activeTabId: kept.length > 0 ? id : null });
-    clearDiagnosticsFor(get, closedIds);
+    onTabsClosed(get, closedIds);
   },
 
   closeAllTabs: () => {
     const closedIds = get().openTabs.map((t) => t.id);
     set({ openTabs: [], activeTabId: null });
-    clearDiagnosticsFor(get, closedIds);
+    onTabsClosed(get, closedIds);
   },
 
   closeTabsToRight: (id) => {
@@ -96,7 +109,7 @@ export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({
     const closedIds = openTabs.slice(idx + 1).map((t) => t.id);
     const activeStillOpen = kept.some((t) => t.id === activeTabId);
     set({ openTabs: kept, activeTabId: activeStillOpen ? activeTabId : id });
-    clearDiagnosticsFor(get, closedIds);
+    onTabsClosed(get, closedIds);
   },
 
   setActiveTab: (id) => set({ activeTabId: id }),

@@ -187,3 +187,88 @@ describe('tabsSlice - diagnostics cleanup on tab close', () => {
     expect(useStore.getState().diagnostics.has('/note.md')).toBe(false);
   });
 });
+
+describe('tabsSlice - diff payload cleanup on tab close', () => {
+  const sample = {
+    patch: 'diff --git a/a.ts b/a.ts\n+one',
+    filePath: 'src/a.ts',
+    source: { kind: 'unstaged' as const },
+  };
+
+  beforeEach(() => {
+    useStore.setState({
+      openTabs: [],
+      activeTabId: null,
+      diffByTabId: {},
+    });
+  });
+
+  it('closeTab on a diff: id calls clearDiffTab via the combined store', () => {
+    const id = 'diff:unstaged:src/a.ts';
+    useStore.getState().setDiffTab(id, sample);
+    useStore.getState().openTab({ id, path: 'src/a.ts', name: 'a.ts (diff)' });
+
+    useStore.getState().closeTab(id);
+
+    expect(useStore.getState().diffByTabId[id]).toBeUndefined();
+  });
+
+  it('closeAllTabs clears every stored diff payload', () => {
+    useStore.getState().setDiffTab('diff:unstaged:src/a.ts', sample);
+    useStore.getState().setDiffTab('diff:unstaged:src/b.ts', { ...sample, filePath: 'src/b.ts' });
+    useStore.getState().openTab({
+      id: 'diff:unstaged:src/a.ts',
+      path: 'src/a.ts',
+      name: 'a.ts (diff)',
+    });
+    useStore.getState().openTab({
+      id: 'diff:unstaged:src/b.ts',
+      path: 'src/b.ts',
+      name: 'b.ts (diff)',
+    });
+
+    useStore.getState().closeAllTabs();
+
+    expect(useStore.getState().diffByTabId).toEqual({});
+  });
+
+  it('closeOtherTabs keeps the remaining tab payload', () => {
+    useStore.getState().setDiffTab('diff:unstaged:src/a.ts', sample);
+    useStore.getState().setDiffTab('diff:unstaged:src/b.ts', { ...sample, filePath: 'src/b.ts' });
+    useStore.getState().openTab({
+      id: 'diff:unstaged:src/a.ts',
+      path: 'src/a.ts',
+      name: 'a.ts (diff)',
+    });
+    useStore.getState().openTab({
+      id: 'diff:unstaged:src/b.ts',
+      path: 'src/b.ts',
+      name: 'b.ts (diff)',
+    });
+
+    useStore.getState().closeOtherTabs('diff:unstaged:src/b.ts');
+
+    expect(useStore.getState().diffByTabId['diff:unstaged:src/a.ts']).toBeUndefined();
+    expect(useStore.getState().diffByTabId['diff:unstaged:src/b.ts']?.filePath).toBe('src/b.ts');
+  });
+
+  it('closeTabsToRight clears payloads for the closed tabs', () => {
+    useStore.getState().setDiffTab('diff:unstaged:src/a.ts', sample);
+    useStore.getState().setDiffTab('diff:unstaged:src/c.ts', { ...sample, filePath: 'src/c.ts' });
+    useStore.getState().openTab({
+      id: 'diff:unstaged:src/a.ts',
+      path: 'src/a.ts',
+      name: 'a.ts (diff)',
+    });
+    useStore.getState().openTab({
+      id: 'diff:unstaged:src/c.ts',
+      path: 'src/c.ts',
+      name: 'c.ts (diff)',
+    });
+
+    useStore.getState().closeTabsToRight('diff:unstaged:src/a.ts');
+
+    expect(useStore.getState().diffByTabId['diff:unstaged:src/c.ts']).toBeUndefined();
+    expect(useStore.getState().diffByTabId['diff:unstaged:src/a.ts']).toEqual(sample);
+  });
+});

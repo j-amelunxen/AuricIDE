@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { isDiffTabId } from '@/lib/git/diffTabId';
 
 /**
  * Keeps the editor content in sync with the active tab: whenever the active
@@ -6,7 +7,7 @@ import { useEffect, useRef } from 'react';
  * activates a neighbour) — the new tab's file is loaded. This is the single
  * owner of content loading; select/open handlers only change the active tab.
  *
- * Diff tabs ('diff:...') are skipped: their content lives in diffContent and
+ * Diff tabs ('diff:...') are skipped: their patch lives in diffByTabId and
  * is provided by the diff viewer.
  */
 export function useActiveTabContentLoader(
@@ -22,7 +23,7 @@ export function useActiveTabContentLoader(
   });
 
   useEffect(() => {
-    if (!activeTabId || activeTabId.startsWith('diff:')) return;
+    if (!activeTabId || isDiffTabId(activeTabId)) return;
     // A failed load (deleted file, browser mode without Tauri) keeps the
     // previous view — it must not surface as an unhandled rejection.
     loaderRef.current(activeTabId).catch(() => {});

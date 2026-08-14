@@ -5,10 +5,10 @@ import { SourceControlPanel, type SourceControlProps } from './SourceControlPane
 
 const defaultProps: SourceControlProps = {
   fileStatuses: [
-    { path: 'README.md', status: 'modified' },
-    { path: 'new-file.md', status: 'added' },
-    { path: 'old-file.md', status: 'deleted' },
-    { path: 'untracked-file.md', status: 'untracked' },
+    { path: 'README.md', status: 'modified', staged: null, unstaged: 'modified' },
+    { path: 'new-file.md', status: 'added', staged: 'added', unstaged: null },
+    { path: 'old-file.md', status: 'deleted', staged: null, unstaged: 'deleted' },
+    { path: 'untracked-file.md', status: 'untracked', staged: null, unstaged: 'untracked' },
   ],
   commitMessage: '',
   isCommitting: false,
@@ -103,41 +103,64 @@ describe('SourceControlPanel', () => {
     expect(screen.getByText('No changes')).toBeInTheDocument();
   });
 
-  it('calls onFileClick when a file row is clicked', async () => {
+  it('calls onFileClick with the unstaged side when a Changes row is clicked', async () => {
     const user = userEvent.setup();
     const onFileClick = vi.fn();
     render(<SourceControlPanel {...defaultProps} onFileClick={onFileClick} />);
 
     await user.click(screen.getByText('README.md'));
-    expect(onFileClick).toHaveBeenCalledWith('README.md');
+    expect(onFileClick).toHaveBeenCalledWith('README.md', 'unstaged');
   });
 
-  it('gives file rows role=button when onFileClick is provided', () => {
+  it('calls onFileClick with the staged side when a Staged row is clicked', async () => {
+    const user = userEvent.setup();
     const onFileClick = vi.fn();
     render(<SourceControlPanel {...defaultProps} onFileClick={onFileClick} />);
 
-    const buttons = screen.getAllByRole('button');
-    // commit button + 4 file rows
-    expect(buttons.length).toBe(5);
+    await user.click(screen.getByText('new-file.md'));
+    expect(onFileClick).toHaveBeenCalledWith('new-file.md', 'staged');
+  });
+
+  it('gives file rows role=button when onFileClick is provided', () => {
+    render(<SourceControlPanel {...defaultProps} onFileClick={vi.fn()} />);
+
+    expect(
+      within(screen.getByTestId('changed-files')).getByRole('button', { name: /README\.md/ })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('staged-files')).getByRole('button', { name: /new-file\.md/ })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('changed-files')).getByRole('button', { name: /old-file\.md/ })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('untracked-files')).getByRole('button', {
+        name: /untracked-file\.md/,
+      })
+    ).toBeInTheDocument();
   });
 
   it('does not give file rows role=button when onFileClick is absent', () => {
     render(<SourceControlPanel {...defaultProps} />);
 
-    const buttons = screen.getAllByRole('button');
-    // only commit button
-    expect(buttons.length).toBe(1);
+    expect(screen.queryByRole('button', { name: /README\.md/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /new-file\.md/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Commit' })).toBeInTheDocument();
   });
 
-  it('separates tracked and untracked files into sections', () => {
+  it('separates staged, changed, and untracked files into sections', () => {
     render(<SourceControlPanel {...defaultProps} />);
 
-    const trackedSection = screen.getByTestId('tracked-files');
+    const stagedSection = screen.getByTestId('staged-files');
+    const changedSection = screen.getByTestId('changed-files');
     const untrackedSection = screen.getByTestId('untracked-files');
 
-    expect(trackedSection).toHaveTextContent('README.md');
-    expect(trackedSection).toHaveTextContent('new-file.md');
-    expect(trackedSection).toHaveTextContent('old-file.md');
+    expect(stagedSection).toHaveTextContent('new-file.md');
+    expect(stagedSection).not.toHaveTextContent('README.md');
+
+    expect(changedSection).toHaveTextContent('README.md');
+    expect(changedSection).toHaveTextContent('old-file.md');
+    expect(changedSection).not.toHaveTextContent('new-file.md');
 
     expect(untrackedSection).toHaveTextContent('Untracked');
     expect(untrackedSection).toHaveTextContent('untracked-file.md');
@@ -364,5 +387,227 @@ describe('SourceControlPanel', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.click(document.body);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+});
+
+describe('SourceControlPanel – staged / changes / untracked', () => {
+  const bothSides = {
+    path: 'src/a.ts',
+    status: 'modified' as const,
+    staged: 'modified' as const,
+    unstaged: 'modified' as const,
+  };
+
+  it('renders Staged, Changes, and Untracked headings', () => {
+    render(<SourceControlPanel {...defaultProps} />);
+
+    expect(screen.getByTestId('staged-files')).toHaveTextContent(/staged/i);
+    expect(screen.getByTestId('changed-files')).toHaveTextContent(/changes/i);
+    expect(screen.getByTestId('untracked-files')).toHaveTextContent(/untracked/i);
+  });
+
+  it('puts a both-sides file in Staged and Changes', () => {
+    render(<SourceControlPanel {...defaultProps} fileStatuses={[bothSides]} />);
+
+    expect(within(screen.getByTestId('staged-files')).getByText('src/a.ts')).toBeInTheDocument();
+    expect(within(screen.getByTestId('changed-files')).getByText('src/a.ts')).toBeInTheDocument();
+    expect(screen.queryByTestId('untracked-files')).not.toBeInTheDocument();
+  });
+
+  it('calls onUnstageFile from − and does not fire onFileClick', async () => {
+    const user = userEvent.setup();
+    const onUnstageFile = vi.fn();
+    const onFileClick = vi.fn();
+    render(
+      <SourceControlPanel
+        {...defaultProps}
+        onUnstageFile={onUnstageFile}
+        onFileClick={onFileClick}
+      />
+    );
+
+    await user.click(screen.getByTestId('unstage-new-file.md'));
+    expect(onUnstageFile).toHaveBeenCalledWith('new-file.md');
+    expect(onFileClick).not.toHaveBeenCalled();
+  });
+
+  it('calls onStageFile from + on Changes and does not fire onFileClick', async () => {
+    const user = userEvent.setup();
+    const onStageFile = vi.fn();
+    const onFileClick = vi.fn();
+    render(
+      <SourceControlPanel {...defaultProps} onStageFile={onStageFile} onFileClick={onFileClick} />
+    );
+
+    await user.click(screen.getByTestId('stage-README.md'));
+    expect(onStageFile).toHaveBeenCalledWith('README.md');
+    expect(onFileClick).not.toHaveBeenCalled();
+  });
+
+  it('calls onStageFile from + on Untracked and does not fire onFileClick', async () => {
+    const user = userEvent.setup();
+    const onStageFile = vi.fn();
+    const onFileClick = vi.fn();
+    render(
+      <SourceControlPanel {...defaultProps} onStageFile={onStageFile} onFileClick={onFileClick} />
+    );
+
+    await user.click(screen.getByTestId('stage-untracked-file.md'));
+    expect(onStageFile).toHaveBeenCalledWith('untracked-file.md');
+    expect(onFileClick).not.toHaveBeenCalled();
+  });
+
+  it('passes unstaged when an Untracked row is clicked', async () => {
+    const user = userEvent.setup();
+    const onFileClick = vi.fn();
+    render(<SourceControlPanel {...defaultProps} onFileClick={onFileClick} />);
+
+    await user.click(screen.getByText('untracked-file.md'));
+    expect(onFileClick).toHaveBeenCalledWith('untracked-file.md', 'unstaged');
+  });
+
+  it('fires Unstage All and Stage All from the section headers', async () => {
+    const user = userEvent.setup();
+    const onStageAll = vi.fn();
+    const onUnstageAll = vi.fn();
+    render(
+      <SourceControlPanel {...defaultProps} onStageAll={onStageAll} onUnstageAll={onUnstageAll} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Unstage All' }));
+    expect(onUnstageAll).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Stage All' }));
+    expect(onStageAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the empty Staged section', () => {
+    render(
+      <SourceControlPanel
+        {...defaultProps}
+        fileStatuses={[
+          { path: 'README.md', status: 'modified', staged: null, unstaged: 'modified' },
+        ]}
+      />
+    );
+
+    expect(screen.queryByTestId('staged-files')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unstage All' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('changed-files')).toBeInTheDocument();
+  });
+
+  it('does not render ignored files even when the caller passes them', () => {
+    render(
+      <SourceControlPanel
+        {...defaultProps}
+        fileStatuses={[
+          { path: 'dist/out.js', status: 'ignored', staged: null, unstaged: null },
+          { path: 'README.md', status: 'modified', staged: null, unstaged: 'modified' },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText('dist/out.js')).not.toBeInTheDocument();
+    expect(screen.getByText('README.md')).toBeInTheDocument();
+  });
+
+  it('shows No changes when every file is ignored', () => {
+    render(
+      <SourceControlPanel
+        {...defaultProps}
+        fileStatuses={[{ path: 'dist/out.js', status: 'ignored', staged: null, unstaged: null }]}
+      />
+    );
+
+    expect(screen.getByText('No changes')).toBeInTheDocument();
+    expect(screen.queryByTestId('staged-files')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('changed-files')).not.toBeInTheDocument();
+  });
+
+  it('keeps discard off a Staged row that also lives in Changes', () => {
+    render(
+      <SourceControlPanel {...defaultProps} fileStatuses={[bothSides]} onDiscardFile={vi.fn()} />
+    );
+
+    fireEvent.contextMenu(within(screen.getByTestId('staged-files')).getByText('src/a.ts'));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(within(screen.getByTestId('changed-files')).getByText('src/a.ts'));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+});
+
+describe('SourceControlPanel – view tabs', () => {
+  it('renders Changes, History and Compare tabs', () => {
+    render(<SourceControlPanel {...defaultProps} />);
+
+    expect(screen.getByTestId('scm-view-changes')).toHaveTextContent('Changes');
+    expect(screen.getByTestId('scm-view-history')).toHaveTextContent('History');
+    expect(screen.getByTestId('scm-view-compare')).toHaveTextContent('Compare');
+  });
+
+  it('keeps Staged / Changes / Untracked on the Changes view', () => {
+    render(<SourceControlPanel {...defaultProps} />);
+
+    expect(screen.getByTestId('staged-files')).toHaveTextContent(/staged/i);
+    expect(screen.getByTestId('changed-files')).toHaveTextContent(/changes/i);
+    expect(screen.getByTestId('untracked-files')).toHaveTextContent(/untracked/i);
+    expect(screen.getByPlaceholderText('Commit message')).toBeInTheDocument();
+  });
+
+  it('switches to History and hides the commit form', async () => {
+    const user = userEvent.setup();
+    const onScmViewChange = vi.fn();
+    const { rerender } = render(
+      <SourceControlPanel {...defaultProps} scmView="changes" onScmViewChange={onScmViewChange} />
+    );
+
+    await user.click(screen.getByTestId('scm-view-history'));
+    expect(onScmViewChange).toHaveBeenCalledWith('history');
+
+    rerender(
+      <SourceControlPanel
+        {...defaultProps}
+        scmView="history"
+        historyPath="src/a.ts"
+        historyCommits={[
+          {
+            oid: 'abc123def456',
+            summary: 'fix the thing',
+            author: 'Ada',
+            timestamp: '2026-08-14 10:00:00',
+            touched: ['src/a.ts'],
+          },
+        ]}
+        onScmViewChange={onScmViewChange}
+      />
+    );
+
+    expect(screen.getByTestId('git-history-list')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Commit message')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('staged-files')).not.toBeInTheDocument();
+  });
+
+  it('switches to Compare and shows the branch select', async () => {
+    const user = userEvent.setup();
+    const onScmViewChange = vi.fn();
+    const { rerender } = render(
+      <SourceControlPanel {...defaultProps} scmView="changes" onScmViewChange={onScmViewChange} />
+    );
+
+    await user.click(screen.getByTestId('scm-view-compare'));
+    expect(onScmViewChange).toHaveBeenCalledWith('compare');
+
+    rerender(
+      <SourceControlPanel
+        {...defaultProps}
+        scmView="compare"
+        branches={[{ name: 'main', kind: 'local', isCurrent: true }]}
+        onScmViewChange={onScmViewChange}
+      />
+    );
+
+    expect(screen.getByTestId('compare-ref-select')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Commit message')).not.toBeInTheDocument();
   });
 });

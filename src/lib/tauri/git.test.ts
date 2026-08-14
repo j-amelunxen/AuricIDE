@@ -11,10 +11,14 @@ describe('git IPC wrappers', () => {
   });
 
   it('getGitStatus returns file statuses', async () => {
-    mockInvoke.mockResolvedValueOnce([{ path: 'file.md', status: 'modified' }]);
+    mockInvoke.mockResolvedValueOnce([
+      { path: 'file.md', status: 'modified', staged: null, unstaged: 'modified' },
+    ]);
     const { getGitStatus } = await import('./git');
     const result = await getGitStatus('/repo');
-    expect(result).toEqual([{ path: 'file.md', status: 'modified' }]);
+    expect(result).toEqual([
+      { path: 'file.md', status: 'modified', staged: null, unstaged: 'modified' },
+    ]);
     expect(mockInvoke).toHaveBeenCalledWith('git_status', { repoPath: '/repo' });
   });
 
@@ -48,6 +52,86 @@ describe('git IPC wrappers', () => {
     expect(mockInvoke).toHaveBeenCalledWith('git_unstage', {
       repoPath: '/repo',
       paths: ['file.md'],
+    });
+  });
+
+  it('getGitDiff omits side when not given', async () => {
+    mockInvoke.mockResolvedValueOnce('diff');
+    const { getGitDiff } = await import('./git');
+    await expect(getGitDiff('/repo', 'file.md')).resolves.toBe('diff');
+    expect(mockInvoke).toHaveBeenCalledWith('git_diff', { repoPath: '/repo', filePath: 'file.md' });
+  });
+
+  it('getGitDiff passes side when given', async () => {
+    mockInvoke.mockResolvedValueOnce('staged-diff');
+    const { getGitDiff } = await import('./git');
+    await expect(getGitDiff('/repo', 'file.md', 'staged')).resolves.toBe('staged-diff');
+    expect(mockInvoke).toHaveBeenCalledWith('git_diff', {
+      repoPath: '/repo',
+      filePath: 'file.md',
+      side: 'staged',
+    });
+  });
+
+  it('listGitBranches invokes git_list_branches', async () => {
+    mockInvoke.mockResolvedValueOnce([{ name: 'main', kind: 'local', isCurrent: true }]);
+    const { listGitBranches } = await import('./git');
+    const result = await listGitBranches('/repo');
+    expect(result).toEqual([{ name: 'main', kind: 'local', isCurrent: true }]);
+    expect(mockInvoke).toHaveBeenCalledWith('git_list_branches', { repoPath: '/repo' });
+  });
+
+  it('gitBlame invokes git_blame', async () => {
+    mockInvoke.mockResolvedValueOnce([
+      {
+        oid: 'abc',
+        author: 'Test',
+        timestamp: '2026-01-01 00:00:00',
+        summary: 'init',
+        startLine: 1,
+        lineCount: 2,
+      },
+    ]);
+    const { gitBlame } = await import('./git');
+    const result = await gitBlame('/repo', 'file.md');
+    expect(result).toHaveLength(1);
+    expect(result[0].startLine).toBe(1);
+    expect(mockInvoke).toHaveBeenCalledWith('git_blame', {
+      repoPath: '/repo',
+      filePath: 'file.md',
+    });
+  });
+
+  it('getGitDiffCommit invokes git_diff_commit', async () => {
+    mockInvoke.mockResolvedValueOnce('commit-diff');
+    const { getGitDiffCommit } = await import('./git');
+    await expect(getGitDiffCommit('/repo', 'abc123', 'file.md')).resolves.toBe('commit-diff');
+    expect(mockInvoke).toHaveBeenCalledWith('git_diff_commit', {
+      repoPath: '/repo',
+      oid: 'abc123',
+      filePath: 'file.md',
+    });
+  });
+
+  it('getGitDiffRefFiles invokes git_diff_ref_files', async () => {
+    mockInvoke.mockResolvedValueOnce([{ path: 'file.md', status: 'modified' }]);
+    const { getGitDiffRefFiles } = await import('./git');
+    const result = await getGitDiffRefFiles('/repo', 'main');
+    expect(result).toEqual([{ path: 'file.md', status: 'modified' }]);
+    expect(mockInvoke).toHaveBeenCalledWith('git_diff_ref_files', {
+      repoPath: '/repo',
+      refName: 'main',
+    });
+  });
+
+  it('getGitDiffFileRef invokes git_diff_file_ref', async () => {
+    mockInvoke.mockResolvedValueOnce('ref-diff');
+    const { getGitDiffFileRef } = await import('./git');
+    await expect(getGitDiffFileRef('/repo', 'main', 'file.md')).resolves.toBe('ref-diff');
+    expect(mockInvoke).toHaveBeenCalledWith('git_diff_file_ref', {
+      repoPath: '/repo',
+      refName: 'main',
+      filePath: 'file.md',
     });
   });
 });

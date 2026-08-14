@@ -38,6 +38,8 @@ import { jsonLintExtension, currentFilePathFacetJson } from '@/lib/editor/jsonLi
 import { xmlLintExtension, currentFilePathFacetXml } from '@/lib/editor/xmlLintExtension';
 import { yamlLintExtension, currentFilePathFacetYaml } from '@/lib/editor/yamlLintExtension';
 import { createGitGutter, diffToLineChanges } from '@/lib/editor/gitGutterExtension';
+import { createBlameGutter } from '@/lib/editor/blameGutterExtension';
+import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
 import { findAllReferences } from '@/lib/refactoring/findReferences';
 import { RenameHeadingDialog } from '@/app/components/refactoring/RenameHeadingDialog';
 import { ExtractSectionDialog } from '@/app/components/refactoring/ExtractSectionDialog';
@@ -148,6 +150,7 @@ export function MarkdownEditor({
     lint: new Compartment(),
     slashCmds: new Compartment(),
     gitGutter: new Compartment(),
+    blameGutter: new Compartment(),
   });
 
   useEffect(() => {
@@ -268,9 +271,22 @@ export function MarkdownEditor({
     });
   }, [filePath, projectFiles]);
 
-  // Diffs against HEAD, so a freshly opened tab reflects the file as last
-  // saved — not live keystrokes. Re-fetches on file switch; a manual
-  // git-status refresh elsewhere in the app catches up the rest.
+  const isDirty = useStore((s) => s.openTabs.find((t) => t.id === filePath)?.isDirty ?? false);
+  const statusSignature = useStore((s) => {
+    const root = s.rootPath;
+    if (!root || !filePath) return '';
+    const relativePath = filePath.startsWith(`${root}/`)
+      ? filePath.slice(root.length + 1)
+      : filePath;
+    return s.fileStatuses
+      .filter((f) => f.path === relativePath)
+      .map((f) => f.status)
+      .join(',');
+  });
+
+  // Last-saved gutter, not live keystrokes: skip while the buffer is dirty,
+  // refetch after save (isDirty → false) and when git status for this path
+  // changes (commit / discard).
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -279,6 +295,7 @@ export function MarkdownEditor({
       view.dispatch({ effects: compartments.current.gitGutter.reconfigure(createGitGutter([])) });
       return;
     }
+    if (isDirty) return;
     const relativePath = filePath.startsWith(`${rootPath}/`)
       ? filePath.slice(rootPath.length + 1)
       : filePath;
@@ -288,7 +305,7 @@ export function MarkdownEditor({
       try {
         const [{ getGitDiff }, { parseDiff }] = await Promise.all([
           import('@/lib/tauri/git'),
-          import('@/app/components/editor/DiffViewer'),
+          import('@/lib/git/parseDiff'),
         ]);
         const diff = await getGitDiff(rootPath, relativePath);
         const changes = diffToLineChanges(parseDiff(diff));
@@ -309,7 +326,74 @@ export function MarkdownEditor({
     return () => {
       cancelled = true;
     };
-  }, [filePath]);
+  }, [filePath, isDirty, statusSignature]);
+
+  const blameVisible = useStore((s) => s.blameVisible);
+  const blameHunks = useStore((s) => {
+    if (!s.rootPath || !filePath) return [];
+    const relativePath = filePath.startsWith(`${s.rootPath}/`)
+      ? filePath.slice(s.rootPath.length + 1)
+      : filePath;
+    return s.blameByPath[relativePath] ?? [];
+  });
+  const isFileTab = !!filePath && !isDiffTabId(filePath);
+  const showBlameToggle = !!useStore((s) => s.rootPath) && isFileTab;
+
+  const openBlameHunk = useCallback(
+    async (hunk: { oid: string; summary: string }) => {
+      const store = useStore.getState();
+      const root = store.rootPath;
+      if (!root || !filePath || isDiffTabId(filePath)) return;
+      const relativePath = filePath.startsWith(`${root}/`)
+        ? filePath.slice(root.length + 1)
+        : filePath;
+      const { getGitDiffCommit } = await import('@/lib/tauri/git');
+      const patch = await getGitDiffCommit(root, hunk.oid, relativePath);
+      const source = { kind: 'revision' as const, oid: hunk.oid, summary: hunk.summary };
+      const id = diffTabId(source, relativePath);
+      store.setDiffTab(id, { patch, filePath: relativePath, source });
+      store.openTab({
+        id,
+        path: relativePath,
+        name: `${relativePath.split('/').pop()} @ ${hunk.oid.slice(0, 7)}`,
+      });
+      if (store.historyPath === relativePath) {
+        store.setHistorySelectedOid(hunk.oid);
+      }
+    },
+    [filePath]
+  );
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const rootPath = useStore.getState().rootPath;
+    if (!blameVisible || !rootPath || !filePath || isDiffTabId(filePath)) {
+      view.dispatch({ effects: compartments.current.blameGutter.reconfigure([]) });
+      return;
+    }
+    if (isDirty) return;
+    const relativePath = filePath.startsWith(`${rootPath}/`)
+      ? filePath.slice(rootPath.length + 1)
+      : filePath;
+    void useStore.getState().loadBlame(rootPath, relativePath);
+  }, [blameVisible, filePath, isDirty]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (!blameVisible || !filePath || isDiffTabId(filePath)) {
+      view.dispatch({ effects: compartments.current.blameGutter.reconfigure([]) });
+      return;
+    }
+    view.dispatch({
+      effects: compartments.current.blameGutter.reconfigure(
+        createBlameGutter(blameHunks, (hunk) => {
+          void openBlameHunk(hunk);
+        })
+      ),
+    });
+  }, [blameVisible, blameHunks, filePath, openBlameHunk]);
 
   useEffect(() => {
     if (viewRef.current && content !== viewRef.current.state.doc.toString()) {
@@ -393,17 +477,34 @@ export function MarkdownEditor({
 
   return (
     <div ref={wrapperRef} className="relative h-full w-full overflow-hidden bg-editor-bg">
-      {isMarkdown && (
-        <div className="absolute top-2 right-2 z-40">
-          <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg bg-panel-bg border border-white/10 text-foreground-muted hover:text-primary hover:border-primary/30 transition shadow-lg"
-            title={showPreview ? 'Hide preview' : 'Show preview'}
-            data-testid="preview-toggle"
-          >
-            <AuricIcon name={showPreview ? 'visibility_off' : 'visibility'} className="text-sm" />
-            {showPreview ? 'Hide Preview' : 'Show Preview'}
-          </button>
+      {(isMarkdown || showBlameToggle) && (
+        <div className="absolute top-2 right-2 z-40 flex items-center gap-1.5">
+          {showBlameToggle && (
+            <button
+              onClick={() => useStore.getState().toggleBlame()}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg bg-panel-bg border border-white/10 transition shadow-lg ${
+                blameVisible
+                  ? 'text-primary border-primary/30'
+                  : 'text-foreground-muted hover:text-primary hover:border-primary/30'
+              }`}
+              title={blameVisible ? 'Hide blame' : 'Show blame'}
+              data-testid="blame-toggle"
+            >
+              <AuricIcon name="rate_review" className="text-sm" />
+              Blame
+            </button>
+          )}
+          {isMarkdown && (
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg bg-panel-bg border border-white/10 text-foreground-muted hover:text-primary hover:border-primary/30 transition shadow-lg"
+              title={showPreview ? 'Hide preview' : 'Show preview'}
+              data-testid="preview-toggle"
+            >
+              <AuricIcon name={showPreview ? 'visibility_off' : 'visibility'} className="text-sm" />
+              {showPreview ? 'Hide Preview' : 'Show Preview'}
+            </button>
+          )}
         </div>
       )}
 
