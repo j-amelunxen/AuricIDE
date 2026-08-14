@@ -14,6 +14,7 @@ const mockWrite = vi.fn();
 const mockFit = vi.fn();
 const mockResize = vi.fn();
 const mockReset = vi.fn();
+const mockFocus = vi.fn();
 const mockTerminalOptions: unknown[] = [];
 let keyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
 
@@ -25,8 +26,15 @@ vi.mock('@xterm/xterm', () => ({
     constructor(options?: unknown) {
       mockTerminalOptions.push(options);
     }
+    // Real xterm renders a hidden textarea into the host and routes focus to
+    // it; the focus assertions below are only meaningful with that in place.
+    helperTextarea: HTMLTextAreaElement | null = null;
     loadAddon() {}
-    open() {}
+    open(host: HTMLElement) {
+      this.helperTextarea = document.createElement('textarea');
+      this.helperTextarea.className = 'xterm-helper-textarea';
+      host.appendChild(this.helperTextarea);
+    }
     write(data: string) {
       mockWrite(data);
     }
@@ -42,6 +50,10 @@ vi.mock('@xterm/xterm', () => ({
     }
     reset() {
       mockReset();
+    }
+    focus() {
+      mockFocus();
+      this.helperTextarea?.focus();
     }
     getSelection() {
       return mockGetSelection();
@@ -226,6 +238,36 @@ describe('AgentTerminalModal', () => {
   it('exposes an accessible dialog named after the agent', () => {
     render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
     expect(screen.getByRole('dialog', { name: /writer/i })).toBeInTheDocument();
+  });
+
+  // Opening an agent means wanting to talk to it. The dialog's own focus rule
+  // lands on the first button in the header — typing there goes nowhere, and
+  // the user has to click into the terminal before writing a single word.
+  describe('keyboard lands in the terminal', () => {
+    beforeEach(() => {
+      mockFocus.mockClear();
+    });
+
+    it('focuses the terminal once it is attached', async () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(mockFocus).toHaveBeenCalled());
+    });
+
+    it('does not leave focus on the close button', async () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(mockFocus).toHaveBeenCalled());
+      expect(document.activeElement).not.toBe(screen.getByTitle('Close'));
+    });
+
+    it('follows a switch to another agent', async () => {
+      const other: AgentInfo = { ...agent, id: 'agent-2', name: 'Reviewer' };
+      const { rerender } = render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(mockFocus).toHaveBeenCalled());
+      mockFocus.mockClear();
+
+      rerender(<AgentTerminalModal agent={other} onClose={vi.fn()} />);
+      await waitFor(() => expect(mockFocus).toHaveBeenCalled());
+    });
   });
 
   describe('terminal stream (single-source from store)', () => {

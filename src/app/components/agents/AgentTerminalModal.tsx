@@ -195,6 +195,15 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         resizeObserver.observe(containerRef.current);
       }
 
+      // Opening an agent is asking to talk to it. The dialog's generic focus
+      // rule lands on the first button in the header, so without this the
+      // first keystrokes go nowhere and the user has to click in first. This
+      // runs after the dialog's own mount focus (setup is async), so it wins,
+      // and it re-runs per agentId — switching tabs keeps the keyboard here.
+      // A setup that lost its race (agent switched mid-await) must stay out of
+      // it, or the terminal being torn down grabs focus from the new one.
+      if (!disposed) term.focus();
+
       return () => {
         disposed = true;
         unsubPtyResize();
