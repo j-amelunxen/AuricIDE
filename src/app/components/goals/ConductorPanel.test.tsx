@@ -383,4 +383,45 @@ describe('ConductorPanel preflight', () => {
       expect(screen.getByTestId('conductor-judge-form')).toBeInTheDocument();
     });
   });
+
+  describe('layout', () => {
+    const providers = [
+      {
+        id: 'claude',
+        name: 'Claude Code',
+        models: [{ value: 'sonnet', label: 'Sonnet' }],
+        permissionModes: [],
+        defaultModel: 'sonnet',
+        defaultPermissionMode: 'acceptEdits',
+      },
+    ];
+
+    // The panel is embedded at very different widths — full modal width in
+    // GoalsModal, a 768px card on the cockpit. Settings and the run controls
+    // therefore never share a row: five selects competing with Start is what
+    // pushes the button off the edge of the narrow surface.
+    it('keeps the settings on their own row, away from status and Start', () => {
+      renderPanel({ providers, requireReview: true, judgeConfigured: true });
+      const settings = screen.getByTestId('conductor-settings');
+
+      expect(settings).toContainElement(screen.getByTestId('conductor-max-concurrent'));
+      expect(settings).toContainElement(screen.getByTestId('conductor-provider-select'));
+      expect(settings).toContainElement(screen.getByTestId('conductor-model-select'));
+      expect(settings).toContainElement(screen.getByTestId('conductor-require-review'));
+      expect(settings).toContainElement(screen.getByTestId('conductor-judge-form'));
+
+      expect(settings).not.toContainElement(screen.getByTestId('conductor-start-btn'));
+      expect(settings).not.toContainElement(screen.getByTestId('conductor-status-dot'));
+    });
+
+    it('lets the settings wrap instead of squeezing their controls', () => {
+      renderPanel({ providers });
+      expect(screen.getByTestId('conductor-settings').className).toContain('flex-wrap');
+    });
+
+    it('never shrinks the run controls', () => {
+      renderPanel({ providers });
+      expect(screen.getByTestId('conductor-actions').className).toContain('flex-shrink-0');
+    });
+  });
 });
