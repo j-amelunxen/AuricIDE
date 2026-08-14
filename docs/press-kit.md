@@ -2,6 +2,11 @@
 
 > Everything you need to know about AuricIDE — the AI-native desktop IDE built for the agent era.
 
+> **Status: alpha.** AuricIDE is in active development. Expect breaking changes,
+> missing features and rough edges; it is not yet meant for production work.
+> Please reflect that in any coverage — the project would rather be described
+> accurately than early.
+
 ---
 
 ## Product Overview
@@ -50,7 +55,7 @@ AuricIDE's conductor and agent fleet are built to design that cost out rather th
 
 ### Markdown-First Editor with Semantic Highlighting
 
-A CodeMirror 6 editor tuned for Markdown and prompt engineering. Beyond standard syntax highlighting, AuricIDE applies **semantic NLP highlighting** — visually distinguishing entities, actions, parameters, keywords, concepts, and prompt directives directly in the editor.
+A CodeMirror 6 editor tuned for Markdown and prompt engineering. Beyond standard syntax highlighting, AuricIDE applies **semantic NLP highlighting** — marking entities, keywords and prompt-framework directives directly in the editor, plus asynchronous named-entity recognition and paragraph-intent classification running on local models. It deliberately does not colour word classes: the aim is to surface what is actionable, not to paint a rainbow over prose.
 
 ### AI Agent Spawning & Management
 
@@ -62,7 +67,7 @@ An interactive React Flow canvas for orchestrating agent workflows visually. Dra
 
 ### Integrated Terminal with PTY
 
-A full xterm.js terminal with WebGL rendering, backed by native PTY sessions via Tauri. Supports dynamic resize, multiple sessions, and direct integration with the agent system.
+A full xterm.js terminal backed by native PTY sessions via Tauri (`portable-pty`). Supports dynamic resize, multiple sessions, and direct integration with the agent system.
 
 ### Git Integration with Status Display
 
@@ -87,7 +92,7 @@ Write Mermaid diagrams in Markdown and see them rendered inline — both in the 
 | UI         | **React 19**                      | Component architecture                         |
 | Styling    | **Tailwind CSS 4**                | Utility-first styling, custom theme            |
 | Editor     | **CodeMirror 6**                  | Markdown editing, syntax/semantic highlighting |
-| Terminal   | **xterm.js 6** + WebGL addon      | Terminal emulation                             |
+| Terminal   | **xterm.js 6**                    | Terminal emulation                             |
 | Canvas     | **React Flow 12** (@xyflow/react) | Visual process orchestration                   |
 | Diagrams   | **Mermaid 11**                    | Diagram rendering from Markdown                |
 | State      | **Zustand 5**                     | Lightweight global state management            |
@@ -161,13 +166,13 @@ The brand name is rendered as two typographic segments:
 | **Product**    | AuricIDE                                     |
 | **Tagline**    | AI Native                                    |
 | **Version**    | 0.1.0                                        |
-| **App ID**     | `com.auricide.app`                           |
+| **App ID**     | `com.auricide.ide`                           |
 | **Platforms**  | macOS, Windows, Linux (via Tauri v2)         |
-| **License**    | AGPL v3                                      |
+| **License**    | AGPL-3.0-only                                |
 | **Language**   | TypeScript (frontend), Rust (backend)        |
 | **Package**    | `auric-ide`                                  |
 | **Built With** | Tauri v2, Next.js 16, React 19, CodeMirror 6 |
 
 ---
 
-_Last updated: 2026-02-18_
+_Last updated: 2026-08-14_

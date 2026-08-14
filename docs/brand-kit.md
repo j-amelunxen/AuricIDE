@@ -10,7 +10,7 @@
 | ------------ | ------------------------- |
 | Product Name | **AuricIDE**              |
 | Package Name | `auric-ide`               |
-| App ID       | `com.auricide.app`        |
+| App ID       | `com.auricide.ide`        |
 | Tagline      | **AI Native**             |
 | Description  | AI-native Markdown editor |
 | Version      | 0.1.0                     |
@@ -26,7 +26,10 @@ The brand name is rendered as two typographic segments:
 - **AURIC** — Space Grotesk, Black weight (`font-black`), tight tracking, white
 - **IDE** — Space Grotesk, Light weight (`font-light`), wide tracking (`tracking-[0.1em]`), `primary-light` color (`#d66aff`)
 
-Below the logotype sits the tagline **AI NATIVE** in 9 px uppercase, muted foreground, widest tracking.
+The logotype stands alone. "AI Native" is the project's **tagline in prose and press
+material only** — it is deliberately not rendered under the logo in the app, and
+`Header.test.tsx` has a standing test asserting the sticker never appears. Do not
+build it into a lockup.
 
 ---
 
@@ -63,6 +66,15 @@ The "A" glyph uses an SVG filter with `feGaussianBlur` (`stdDeviation: 12`) comp
 ---
 
 ## 3. Color Palette
+
+> **These are defaults, not constants.** The purple below is the shipped default
+> accent, but the app carries five further user-selectable accents — blue, cyan,
+> emerald, amber and pink (`[data-accent]` in `src/app/globals.css`) — and a user
+> theme JSON under `themes/` can override _every_ token, the git status colours
+> included. So treat this chapter as "what AuricIDE looks like out of the box", and
+> design assets against it; do not treat any single hex as an invariant the running
+> app will honour. The one genuinely fixed mark is `public/logo.svg`, which hardcodes
+> `#bc13fe`/`#d66aff` and does not re-theme.
 
 ### Primary
 
@@ -161,37 +173,43 @@ The "A" glyph uses an SVG filter with `feGaussianBlur` (`stdDeviation: 12`) comp
 
 ### Semantic NLP Highlighting (Markdown)
 
-**Layer 1+2 (sync — patterns + wink-nlp):**
+This is the one place in the product where the neon palette is deliberately **not**
+used. Highlighting sits on top of prose the user is reading, so the marks are muted
+and desaturated, carry no glow, and change weight rather than shouting. If you are
+adding a mark here, match the restraint — the surrounding chapters do not apply.
 
-| Class                            | Color     | Additional Styles                                        |
-| -------------------------------- | --------- | -------------------------------------------------------- |
-| `.cm-semantic-entity`            | `#d66aff` | Bold 700, bottom border, text glow                       |
-| `.cm-semantic-action`            | `#22d3ee` | Medium 500, italic, neon-pulse animation                 |
-| `.cm-semantic-keyword`           | `#f87171` | Extra-bold 800, uppercase, 0.75 em, pill badge, box glow |
-| `.cm-semantic-negated`           | `#f87171` | Strikethrough, 70 % opacity                              |
-| `.cm-semantic-prompt-directive`  | `#4ade80` | Extra-bold 800, uppercase, bottom border, text glow      |
-| `.cm-semantic-prompt-context`    | `#60a5fa` | Bold 700, left border                                    |
-| `.cm-semantic-prompt-constraint` | `#f472b6` | Underline, 2 px thick                                    |
-| _(variable-hash — inline style)_ | HSL hash  | Bold, 5 px text-shadow glow, deterministic per entity    |
+Prose also stays prose: word classes (nouns, verbs, adjectives) are never coloured.
+Only actionable or factual spans are marked.
+
+**Layer 2 (sync — patterns + wink-nlp NER):**
+
+| Class                            | Color     | Additional Styles                            |
+| -------------------------------- | --------- | -------------------------------------------- |
+| `.cm-semantic-entity`            | `#b9a3d6` | Weight 500                                   |
+| `.cm-semantic-keyword`           | `#d8b06a` | Weight 600                                   |
+| `.cm-semantic-prompt-directive`  | `#8fcabf` | Weight 600 — muted teal, "do this"           |
+| `.cm-semantic-prompt-context`    | `#93b4d8` | Weight 600 — muted slate-blue, "the setting" |
+| `.cm-semantic-prompt-constraint` | `#d8a0b4` | Weight 600 — muted rose, "stay within this"  |
 
 **Layer 3 (async — Transformers.js deep NER):**
 
-| Class                           | Color     | Additional Styles        |
-| ------------------------------- | --------- | ------------------------ |
-| `.cm-semantic-deep-entity-per`  | `#a78bfa` | Bold 600 (People)        |
-| `.cm-semantic-deep-entity-org`  | `#34d399` | Bold 600 (Organizations) |
-| `.cm-semantic-deep-entity-loc`  | `#38bdf8` | Italic (Locations)       |
-| `.cm-semantic-deep-entity-misc` | `#fbbf24` | — (Miscellaneous)        |
+| Class                      | Color     | Additional Styles                                             |
+| -------------------------- | --------- | ------------------------------------------------------------- |
+| `.cm-semantic-deep-entity` | `#a8c0d0` | Dotted underline at 40 % opacity, 3 px offset, 160 ms fade-in |
 
-**Layer 3 (async — paragraph intent, line decorations):**
+Entities are **not** colour-coded per type. One calm class covers all of them.
 
-| Class                    | Color     | Additional Styles              |
-| ------------------------ | --------- | ------------------------------ |
-| `.cm-intent-instruction` | `#4ade80` | 3 px left border, 8 px padding |
-| `.cm-intent-explanation` | `#60a5fa` | 3 px left border, 8 px padding |
-| `.cm-intent-warning`     | `#f87171` | 3 px left border, 8 px padding |
-| `.cm-intent-question`    | `#fbbf24` | 3 px left border, 8 px padding |
-| `.cm-intent-context`     | `#6b7280` | 3 px left border, 8 px padding |
+**Layer 4 (async — paragraph intent, line decorations):**
+
+Intent classes carry no text colour — recolouring a whole paragraph would defeat the
+purpose. They tint the line's left edge instead, with a gradient that fades out
+before mid-line:
+
+`.cm-intent-instruction` · `.cm-intent-explanation` · `.cm-intent-warning` ·
+`.cm-intent-question` · `.cm-intent-context`
+
+Values live in `src/app/globals.css`; treat that file as the source of truth for
+these eleven classes.
 
 ---
 
