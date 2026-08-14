@@ -169,8 +169,6 @@ export interface CreateEditorStateOptions {
   filePath?: string;
   projectFiles: string[];
   compartments: EditorCompartments;
-  onChange?: (content: string) => void;
-  onCursorChange?: (line: number, col: number) => void;
   onUpdate?: (update: ViewUpdate) => void;
 }
 
@@ -237,6 +235,7 @@ export function createEditorState({
     compartments.findReferences.of(isMarkdown ? showReferencesFacet.of(() => {}) : []),
     compartments.lint.of(buildLintExtension(getLintableFileType(filePath), filePath, store)),
     compartments.gitGutter.of(createGitGutter([])),
+    ...(compartments.blameGutter ? [compartments.blameGutter.of([])] : []),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([

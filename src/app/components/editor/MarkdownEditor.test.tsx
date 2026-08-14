@@ -145,11 +145,13 @@ vi.mock('@/lib/editor/yamlLintExtension', () => ({
 }));
 
 const mockGetGitDiff = vi.hoisted(() => vi.fn().mockResolvedValue(''));
+const mockGitBlame = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 vi.mock('@/lib/tauri/git', () => ({
   getGitDiff: mockGetGitDiff,
+  gitBlame: mockGitBlame,
 }));
 
-vi.mock('@/app/components/editor/DiffViewer', () => ({
+vi.mock('@/lib/git/parseDiff', () => ({
   parseDiff: (raw: string) =>
     raw ? [{ type: 'added' as const, content: raw, oldLineNo: null, newLineNo: 1 }] : [],
 }));
@@ -163,25 +165,52 @@ vi.mock('@/lib/editor/gitGutterExtension', () => ({
   diffToLineChanges: (lines: unknown[]) => lines.map((_l, i) => ({ line: i + 1, type: 'added' })),
 }));
 
-const mockStoreState = vi.hoisted(() => ({
-  rootPath: null as string | null,
+const mockBlameGutterReconfigure = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/editor/blameGutterExtension', () => ({
+  createBlameGutter: (hunks: unknown[]) => {
+    mockBlameGutterReconfigure(hunks);
+    return ['blame-gutter-ext', hunks];
+  },
 }));
 
-vi.mock('@/lib/store', () => ({
-  useStore: Object.assign(() => ({}), {
-    getState: () => ({
-      allFilePaths: [],
-      getBrokenLinkTargets: () => new Set(),
-      customSlashCommands: [],
-      headingIndex: new Map(),
-      lintConfig: { enabled: true, disabledRules: new Set() },
-      enableDeepNlp: false,
-      setDiagnostics: () => {},
-      rootPath: mockStoreState.rootPath,
-    }),
-    subscribe: () => () => {},
-  }),
+const mockStoreState = vi.hoisted(() => ({
+  rootPath: null as string | null,
+  openTabs: [] as { id: string; path: string; name: string; isDirty?: boolean }[],
+  fileStatuses: [] as { path: string; status: string }[],
+  blameVisible: false,
+  blameByPath: {} as Record<string, unknown[]>,
+  loadBlame: vi.fn(async () => {}),
+  toggleBlame: vi.fn(),
 }));
+
+vi.mock('@/lib/store', () => {
+  const snapshot = () => ({
+    allFilePaths: [],
+    getBrokenLinkTargets: () => new Set(),
+    customSlashCommands: [],
+    headingIndex: new Map(),
+    lintConfig: { enabled: true, disabledRules: new Set() },
+    enableDeepNlp: false,
+    setDiagnostics: () => {},
+    rootPath: mockStoreState.rootPath,
+    openTabs: mockStoreState.openTabs,
+    fileStatuses: mockStoreState.fileStatuses,
+    blameVisible: mockStoreState.blameVisible,
+    blameByPath: mockStoreState.blameByPath,
+    loadBlame: mockStoreState.loadBlame,
+    toggleBlame: mockStoreState.toggleBlame,
+  });
+  return {
+    useStore: Object.assign(
+      (selector?: (s: ReturnType<typeof snapshot>) => unknown) =>
+        selector ? selector(snapshot()) : snapshot(),
+      {
+        getState: snapshot,
+        subscribe: () => () => {},
+      }
+    ),
+  };
+});
 
 vi.mock('@codemirror/view', () => {
   class MockEditorView {
@@ -290,7 +319,12 @@ describe('MarkdownEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStoreState.rootPath = null;
+    mockStoreState.openTabs = [];
+    mockStoreState.fileStatuses = [];
+    mockStoreState.blameVisible = false;
+    mockStoreState.blameByPath = {};
     mockGetGitDiff.mockResolvedValue('');
+    mockGitBlame.mockResolvedValue([]);
   });
 
   it('renders the editor container', () => {
@@ -368,6 +402,122 @@ describe('MarkdownEditor', () => {
 
       await vi.waitFor(() => {
         expect(mockGitGutterReconfigure).toHaveBeenCalledWith([]);
+      });
+    });
+
+    it('does not refetch while the tab is dirty', async () => {
+      mockStoreState.rootPath = '/proj';
+      mockStoreState.openTabs = [
+        { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: false },
+      ];
+      mockGetGitDiff.mockResolvedValue('some diff');
+
+      const { rerender } = render(
+        <MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />
+      );
+
+      await vi.waitFor(() => {
+        expect(mockGetGitDiff).toHaveBeenCalledTimes(1);
+      });
+
+      mockGetGitDiff.mockClear();
+      mockStoreState.openTabs = [
+        { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: true },
+      ];
+      rerender(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(mockGetGitDiff).not.toHaveBeenCalled();
+    });
+
+    it('refetches when git status for the file changes', async () => {
+      mockStoreState.rootPath = '/proj';
+      mockStoreState.fileStatuses = [{ path: 'note.md', status: 'modified' }];
+      mockGetGitDiff.mockResolvedValue('some diff');
+
+      const { rerender } = render(
+        <MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />
+      );
+
+      await vi.waitFor(() => {
+        expect(mockGetGitDiff).toHaveBeenCalledTimes(1);
+      });
+
+      mockGetGitDiff.mockClear();
+      mockStoreState.fileStatuses = [];
+      rerender(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+
+      await vi.waitFor(() => {
+        expect(mockGetGitDiff).toHaveBeenCalledWith('/proj', 'note.md');
+      });
+    });
+
+    it('refetches when isDirty becomes false after save', async () => {
+      mockStoreState.rootPath = '/proj';
+      mockStoreState.openTabs = [
+        { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: true },
+      ];
+
+      const { rerender } = render(
+        <MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(mockGetGitDiff).not.toHaveBeenCalled();
+
+      mockStoreState.openTabs = [
+        { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: false },
+      ];
+      rerender(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+
+      await vi.waitFor(() => {
+        expect(mockGetGitDiff).toHaveBeenCalledWith('/proj', 'note.md');
+      });
+    });
+  });
+
+  describe('blame toggle', () => {
+    it('shows the blame toggle on a real file tab when a project is open', () => {
+      mockStoreState.rootPath = '/proj';
+      render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+      expect(screen.getByTestId('blame-toggle')).toBeInTheDocument();
+    });
+
+    it('hides the blame toggle without a project', () => {
+      render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+      expect(screen.queryByTestId('blame-toggle')).not.toBeInTheDocument();
+    });
+
+    it('hides the blame toggle on a diff tab', () => {
+      mockStoreState.rootPath = '/proj';
+      render(<MarkdownEditor content="diff" filePath="diff:unstaged:note.md" onChange={vi.fn()} />);
+      expect(screen.queryByTestId('blame-toggle')).not.toBeInTheDocument();
+    });
+
+    it('does not load blame while the tab is dirty', async () => {
+      mockStoreState.rootPath = '/proj';
+      mockStoreState.blameVisible = true;
+      mockStoreState.openTabs = [
+        { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: true },
+      ];
+
+      render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(mockStoreState.loadBlame).not.toHaveBeenCalled();
+    });
+
+    it('loads blame when visible and the file is clean', async () => {
+      mockStoreState.rootPath = '/proj';
+      mockStoreState.blameVisible = true;
+      mockStoreState.openTabs = [
+        { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: false },
+      ];
+
+      render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
+
+      await vi.waitFor(() => {
+        expect(mockStoreState.loadBlame).toHaveBeenCalledWith('/proj', 'note.md');
       });
     });
   });

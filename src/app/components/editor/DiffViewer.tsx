@@ -1,101 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { useStore } from '@/lib/store';
+import {
+  buildSideBySideRows,
+  parseDiff,
+  type DiffLine,
+  type SideBySideRow,
+} from '@/lib/git/parseDiff';
+import { wordDiff, type WordSpan } from '@/lib/git/wordDiff';
 
-export interface DiffLine {
-  type: 'added' | 'removed' | 'context' | 'header';
-  content: string;
-  oldLineNo: number | null;
-  newLineNo: number | null;
-}
-
-export interface SideBySideRow {
-  left: DiffLine | null;
-  right: DiffLine | null;
-  isHeader?: boolean;
-}
-
-export function parseDiff(raw: string): DiffLine[] {
-  const lines = raw.split('\n');
-  const result: DiffLine[] = [];
-  let oldLine = 0;
-  let newLine = 0;
-
-  for (const line of lines) {
-    if (line.startsWith('@@')) {
-      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (match) {
-        oldLine = parseInt(match[1], 10);
-        newLine = parseInt(match[2], 10);
-      }
-      result.push({ type: 'header', content: line, oldLineNo: null, newLineNo: null });
-    } else if (line.startsWith('---') || line.startsWith('+++')) {
-      result.push({ type: 'header', content: line, oldLineNo: null, newLineNo: null });
-    } else if (line.startsWith('+')) {
-      result.push({ type: 'added', content: line.slice(1), oldLineNo: null, newLineNo: newLine });
-      newLine++;
-    } else if (line.startsWith('-')) {
-      result.push({ type: 'removed', content: line.slice(1), oldLineNo: oldLine, newLineNo: null });
-      oldLine++;
-    } else if (line.length > 0) {
-      result.push({
-        type: 'context',
-        content: line.startsWith(' ') ? line.slice(1) : line,
-        oldLineNo: oldLine,
-        newLineNo: newLine,
-      });
-      oldLine++;
-      newLine++;
-    }
-  }
-
-  return result;
-}
-
-export function buildSideBySideRows(lines: DiffLine[]): SideBySideRow[] {
-  const rows: SideBySideRow[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.type === 'header') {
-      rows.push({ left: line, right: line, isHeader: true });
-      i++;
-      continue;
-    }
-
-    if (line.type === 'context') {
-      rows.push({ left: line, right: line });
-      i++;
-      continue;
-    }
-
-    // Collect consecutive removed/added block
-    const removed: DiffLine[] = [];
-    const added: DiffLine[] = [];
-
-    while (i < lines.length && lines[i].type === 'removed') {
-      removed.push(lines[i]);
-      i++;
-    }
-    while (i < lines.length && lines[i].type === 'added') {
-      added.push(lines[i]);
-      i++;
-    }
-
-    const maxLen = Math.max(removed.length, added.length);
-    for (let j = 0; j < maxLen; j++) {
-      rows.push({
-        left: j < removed.length ? removed[j] : null,
-        right: j < added.length ? added[j] : null,
-      });
-    }
-  }
-
-  return rows;
-}
+export type { DiffLine, SideBySideRow };
+export { parseDiff, buildSideBySideRows };
 
 const lineStyles: Record<DiffLine['type'], string> = {
   added: 'bg-green-900/30 text-green-300',
@@ -104,14 +21,95 @@ const lineStyles: Record<DiffLine['type'], string> = {
   header: 'bg-blue-900/20 text-blue-300 font-bold',
 };
 
+const TEXT_WRAP = 'min-w-0 flex-1 whitespace-pre-wrap break-all pr-4';
+const COLUMN = 'flex w-1/2 min-w-0 overflow-hidden';
+
 export interface DiffViewerProps {
   diff: string;
   fileName: string;
 }
 
+function isHunkHeader(line: DiffLine | null | undefined): boolean {
+  return !!line && line.type === 'header' && line.content.startsWith('@@');
+}
+
+function hunkCountOf(lines: DiffLine[]): number {
+  return lines.filter(isHunkHeader).length;
+}
+
+function LineContent({
+  content,
+  spans,
+  changedClass,
+}: {
+  content: string;
+  spans?: WordSpan[] | null;
+  changedClass?: string;
+}) {
+  return (
+    <span className={TEXT_WRAP}>
+      {spans
+        ? spans.map((span, i) =>
+            span.changed ? (
+              <span key={i} className={changedClass}>
+                {span.text}
+              </span>
+            ) : (
+              <span key={i}>{span.text}</span>
+            )
+          )
+        : content}
+    </span>
+  );
+}
+
 export function DiffViewer({ diff, fileName }: DiffViewerProps) {
   const [viewMode, setViewMode] = useState<'unified' | 'side-by-side'>('side-by-side');
+  const [activeHunk, setActiveHunk] = useState(0);
+  const viewerRef = useRef<HTMLDivElement>(null);
   const lines = parseDiff(diff);
+  const hunkCount = hunkCountOf(lines);
+
+  const goToHunk = useCallback(
+    (index: number) => {
+      if (hunkCount === 0) return;
+      const next = ((index % hunkCount) + hunkCount) % hunkCount;
+      setActiveHunk(next);
+      viewerRef.current
+        ?.querySelector(`[data-hunk-index="${next}"]`)
+        ?.scrollIntoView({ block: 'start' });
+    },
+    [hunkCount]
+  );
+
+  const goToHunkRef = useRef(goToHunk);
+  const activeHunkRef = useRef(activeHunk);
+
+  useEffect(() => {
+    goToHunkRef.current = goToHunk;
+    activeHunkRef.current = activeHunk;
+  });
+
+  useEffect(() => {
+    let lastNonce = useStore.getState().hunkNavNonce;
+    return useStore.subscribe((s) => {
+      if (s.hunkNavNonce === lastNonce || !s.hunkNavDirection) return;
+      lastNonce = s.hunkNavNonce;
+      const current = activeHunkRef.current;
+      goToHunkRef.current(s.hunkNavDirection === 'next' ? current + 1 : current - 1);
+    });
+  }, []);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!event.altKey) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      goToHunk(activeHunk + 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      goToHunk(activeHunk - 1);
+    }
+  };
 
   if (!diff.trim()) {
     return (
@@ -122,22 +120,46 @@ export function DiffViewer({ diff, fileName }: DiffViewerProps) {
   }
 
   return (
-    <div data-testid="diff-viewer" className="flex h-full flex-col overflow-hidden bg-editor-bg">
+    <div
+      ref={viewerRef}
+      data-testid="diff-viewer"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className="flex h-full flex-col overflow-hidden bg-editor-bg"
+    >
       <div className="flex items-center gap-2 border-b border-border-dark px-4 py-2">
         <AuricIcon name="difference" className="text-sm text-primary-light" />
         <span className="text-xs font-medium text-foreground">{fileName}</span>
-        <button
-          data-testid="diff-view-toggle"
-          onClick={() => setViewMode((m) => (m === 'unified' ? 'side-by-side' : 'unified'))}
-          className="ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
-          title={viewMode === 'unified' ? 'Switch to side-by-side' : 'Switch to unified'}
-        >
-          <AuricIcon
-            name={viewMode === 'unified' ? 'view_column_2' : 'view_agenda'}
-            className="text-sm"
-          />
-          {viewMode === 'unified' ? 'Side-by-side' : 'Unified'}
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            data-testid="diff-prev-hunk"
+            onClick={() => goToHunk(activeHunk - 1)}
+            className="flex items-center rounded px-1.5 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
+            title="Previous hunk"
+          >
+            <AuricIcon name="arrow_upward" className="text-sm" />
+          </button>
+          <button
+            data-testid="diff-next-hunk"
+            onClick={() => goToHunk(activeHunk + 1)}
+            className="flex items-center rounded px-1.5 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
+            title="Next hunk"
+          >
+            <AuricIcon name="arrow_downward" className="text-sm" />
+          </button>
+          <button
+            data-testid="diff-view-toggle"
+            onClick={() => setViewMode((m) => (m === 'unified' ? 'side-by-side' : 'unified'))}
+            className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
+            title={viewMode === 'unified' ? 'Switch to side-by-side' : 'Switch to unified'}
+          >
+            <AuricIcon
+              name={viewMode === 'unified' ? 'view_column_2' : 'view_agenda'}
+              className="text-sm"
+            />
+            {viewMode === 'unified' ? 'Side-by-side' : 'Unified'}
+          </button>
+        </div>
       </div>
       {viewMode === 'unified' ? <UnifiedView lines={lines} /> : <SideBySideView lines={lines} />}
     </div>
@@ -145,28 +167,34 @@ export function DiffViewer({ diff, fileName }: DiffViewerProps) {
 }
 
 function UnifiedView({ lines }: { lines: DiffLine[] }) {
+  let hunkIndex = 0;
+
   return (
     <div className="flex-1 overflow-auto font-mono text-xs leading-5">
-      {lines.map((line, i) => (
-        <div key={i} className={`flex ${lineStyles[line.type]}`}>
-          <span className="w-12 shrink-0 select-none text-right pr-2 text-foreground-muted/50">
-            {line.oldLineNo ?? ''}
-          </span>
-          <span className="w-12 shrink-0 select-none text-right pr-2 text-foreground-muted/50">
-            {line.newLineNo ?? ''}
-          </span>
-          <span className="w-6 shrink-0 select-none text-center">
-            {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ''}
-          </span>
-          <span className="flex-1 whitespace-pre pr-4">{line.content}</span>
-        </div>
-      ))}
+      {lines.map((line, i) => {
+        const hunkAttr = isHunkHeader(line) ? hunkIndex++ : undefined;
+        return (
+          <div key={i} data-hunk-index={hunkAttr} className={`flex ${lineStyles[line.type]}`}>
+            <span className="w-12 shrink-0 select-none text-right pr-2 text-foreground-muted/50">
+              {line.oldLineNo ?? ''}
+            </span>
+            <span className="w-12 shrink-0 select-none text-right pr-2 text-foreground-muted/50">
+              {line.newLineNo ?? ''}
+            </span>
+            <span className="w-6 shrink-0 select-none text-center">
+              {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ''}
+            </span>
+            <LineContent content={line.content} />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function SideBySideView({ lines }: { lines: DiffLine[] }) {
   const rows = buildSideBySideRows(lines);
+  let hunkIndex = 0;
 
   return (
     <div
@@ -175,32 +203,46 @@ function SideBySideView({ lines }: { lines: DiffLine[] }) {
     >
       {rows.map((row, i) => {
         if (row.isHeader) {
+          const hunkAttr = isHunkHeader(row.left) ? hunkIndex++ : undefined;
           return (
-            <div key={i} className={`flex ${lineStyles.header}`}>
-              <span className="flex-1 whitespace-pre px-4">{row.left!.content}</span>
+            <div key={i} data-hunk-index={hunkAttr} className={`flex ${lineStyles.header}`}>
+              <span className="min-w-0 flex-1 whitespace-pre-wrap break-all px-4">
+                {row.left!.content}
+              </span>
             </div>
           );
         }
 
+        const paired =
+          row.left?.type === 'removed' && row.right?.type === 'added'
+            ? wordDiff(row.left.content, row.right.content)
+            : null;
+
         return (
           <div key={i} className="flex">
-            {/* Left (old) */}
             <div
-              className={`flex w-1/2 border-r border-border-dark ${
+              className={`${COLUMN} border-r border-border-dark ${
                 row.left ? lineStyles[row.left.type] : ''
               }`}
             >
               <span className="w-12 shrink-0 select-none text-right pr-2 text-foreground-muted/50">
                 {row.left?.oldLineNo ?? row.left?.newLineNo ?? ''}
               </span>
-              <span className="flex-1 whitespace-pre pr-4">{row.left?.content ?? ''}</span>
+              <LineContent
+                content={row.left?.content ?? ''}
+                spans={paired?.left}
+                changedClass="rounded-sm bg-red-500/35"
+              />
             </div>
-            {/* Right (new) */}
-            <div className={`flex w-1/2 ${row.right ? lineStyles[row.right.type] : ''}`}>
+            <div className={`${COLUMN} ${row.right ? lineStyles[row.right.type] : ''}`}>
               <span className="w-12 shrink-0 select-none text-right pr-2 text-foreground-muted/50">
                 {row.right?.newLineNo ?? row.right?.oldLineNo ?? ''}
               </span>
-              <span className="flex-1 whitespace-pre pr-4">{row.right?.content ?? ''}</span>
+              <LineContent
+                content={row.right?.content ?? ''}
+                spans={paired?.right}
+                changedClass="rounded-sm bg-green-500/35"
+              />
             </div>
           </div>
         );

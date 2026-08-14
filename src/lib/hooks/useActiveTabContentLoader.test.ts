@@ -36,9 +36,15 @@ describe('useActiveTabContentLoader', () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it('skips diff tabs — their content is provided by the diff viewer', () => {
+  it('skips unstaged diff tabs — their content lives in diffByTabId', () => {
     const { load, hook } = setup('/project/a.md');
-    hook.rerender({ tabId: 'diff:/project/a.md', loader: load });
+    hook.rerender({ tabId: 'diff:unstaged:src/a.ts', loader: load });
+    expect(load).toHaveBeenCalledExactlyOnceWith('/project/a.md');
+  });
+
+  it('skips revision diff tabs', () => {
+    const { load, hook } = setup('/project/a.md');
+    hook.rerender({ tabId: 'diff:rev:abcdef1:src/a.ts', loader: load });
     expect(load).toHaveBeenCalledExactlyOnceWith('/project/a.md');
   });
 

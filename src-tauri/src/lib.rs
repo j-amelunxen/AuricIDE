@@ -4,6 +4,7 @@ mod app_config;
 pub mod crashlog;
 mod database;
 mod excalidraw;
+mod git;
 mod llm;
 mod mcp;
 mod memory_report;
@@ -26,7 +27,11 @@ use database::{
     BlueprintState, DatabaseState, GoalsState, GoalsSyncPayload, KvEntry, PmSavePayload, PmState,
     RequirementsState,
 };
-use git2::{Repository, StatusOptions};
+use git::{
+    git_blame, git_branch_info, git_commit, git_diff, git_diff_commit, git_diff_file_ref,
+    git_diff_ref_files, git_discard, git_list_branches, git_log_since, git_push, git_stage,
+    git_status, git_unstage,
+};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use providers::ProviderRegistryState;
@@ -66,15 +71,6 @@ struct TerminalSession {
 struct FileEvent {
     path: String,
     kind: String,
-}
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    if name.is_empty() {
-        "Hello, World!".to_string()
-    } else {
-        format!("Hello, {}!", name)
-    }
 }
 
 #[tauri::command]
@@ -740,200 +736,6 @@ fn move_path(source: String, destination: String) -> Result<(), String> {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct GitFileStatus {
-    path: String,
-    status: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BranchInfo {
-    name: String,
-    ahead: u32,
-    behind: u32,
-}
-
-/// One commit as the evidence engine reads history: what it touched is the
-/// payload — "a commit touches this path prefix" is a station predicate.
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitInfo {
-    pub oid: String,
-    pub summary: String,
-    pub author: String,
-    /// UTC, `YYYY-MM-DD HH:MM:SS` — the app's one timestamp format.
-    pub timestamp: String,
-    /// Repo-relative paths this commit changed (diff against first parent).
-    pub touched: Vec<String>,
-}
-
-#[tauri::command]
-fn git_status(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
-    git_status_impl(repo_path)
-}
-
-#[tauri::command]
-fn git_branch_info(repo_path: &str) -> Result<BranchInfo, String> {
-    git_branch_info_impl(repo_path)
-}
-
-#[tauri::command]
-fn git_diff(repo_path: &str, file_path: &str) -> Result<String, String> {
-    git_diff_impl(repo_path, file_path)
-}
-
-#[tauri::command]
-fn git_stage(repo_path: &str, paths: Vec<String>) -> Result<(), String> {
-    git_stage_impl(repo_path, &paths)
-}
-
-#[tauri::command]
-fn git_unstage(repo_path: &str, paths: Vec<String>) -> Result<(), String> {
-    git_unstage_impl(repo_path, &paths)
-}
-
-#[tauri::command]
-fn git_commit(repo_path: &str, message: &str) -> Result<String, String> {
-    git_commit_impl(repo_path, message)
-}
-
-#[tauri::command]
-fn git_discard(repo_path: &str, file_path: &str) -> Result<(), String> {
-    git_discard_impl(repo_path, file_path)
-}
-
-#[tauri::command]
-fn git_push(repo_path: &str) -> Result<(), String> {
-    git_push_impl(repo_path)
-}
-
-/// Commits actually walked before we give up, whether or not they matched.
-/// The `limit` bounds the answer; this bounds the *work*. A `path_prefix` that
-/// matches nothing (a freshly planned line is the normal case) would otherwise
-/// diff every commit in the repo looking for a match that never comes, which
-/// on a large history is tens of seconds of frozen work.
-const GIT_LOG_MAX_SCAN: usize = 2000;
-
-// `async` so Tauri runs this off the IPC thread: even bounded, 2000 tree diffs
-// on a big repo should never block the window. A sync command would run inline.
-#[tauri::command(async)]
-fn git_log_since(
-    repo_path: String,
-    since_iso: Option<String>,
-    path_prefix: Option<String>,
-) -> Result<Vec<CommitInfo>, String> {
-    // Hard cap: history is evidence, not an archive browser. 200 commits is
-    // far beyond any staleness window a station predicate looks at.
-    git_log_since_impl(
-        &repo_path,
-        since_iso.as_deref(),
-        path_prefix.as_deref(),
-        200,
-        GIT_LOG_MAX_SCAN,
-    )
-}
-
-/// Walks history from HEAD, newest first, stopping below `since_iso`, at
-/// `limit` matches, or after `max_scan` commits visited. `path_prefix` keeps
-/// only commits touching that prefix. Not a repo is an empty answer, not an
-/// error — same contract as `git_status_impl`.
-pub fn git_log_since_impl(
-    repo_path: &str,
-    since_iso: Option<&str>,
-    path_prefix: Option<&str>,
-    limit: usize,
-    max_scan: usize,
-) -> Result<Vec<CommitInfo>, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()),
-    };
-    if repo.head().is_err() {
-        return Ok(Vec::new()); // empty repo: no commits yet
-    }
-
-    let since_epoch: Option<i64> = match since_iso {
-        Some(raw) => {
-            let normalized = raw.replace('T', " ");
-            let trimmed = normalized.trim_end_matches('Z').trim().to_string();
-            let parsed = chrono::NaiveDateTime::parse_from_str(&trimmed, "%Y-%m-%d %H:%M:%S")
-                .or_else(|_| {
-                    chrono::NaiveDate::parse_from_str(&trimmed, "%Y-%m-%d")
-                        .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
-                })
-                .map_err(|e| format!("Invalid since_iso '{}': {}", raw, e))?;
-            Some(parsed.and_utc().timestamp())
-        }
-        None => None,
-    };
-
-    let mut walk = repo
-        .revwalk()
-        .map_err(|e| format!("Failed to walk history: {}", e))?;
-    walk.push_head()
-        .map_err(|e| format!("Failed to start at HEAD: {}", e))?;
-    walk.set_sorting(git2::Sort::TIME)
-        .map_err(|e| format!("Failed to sort history: {}", e))?;
-
-    let mut result = Vec::new();
-    for (scanned, oid) in walk.enumerate() {
-        if result.len() >= limit || scanned >= max_scan {
-            break;
-        }
-        let oid = oid.map_err(|e| format!("Failed to read commit id: {}", e))?;
-        let commit = repo
-            .find_commit(oid)
-            .map_err(|e| format!("Failed to read commit: {}", e))?;
-        let seconds = commit.time().seconds();
-        if let Some(since) = since_epoch {
-            // TIME sorting walks newest → oldest: past the cutoff means done.
-            if seconds < since {
-                break;
-            }
-        }
-
-        let tree = commit
-            .tree()
-            .map_err(|e| format!("Failed to read commit tree: {}", e))?;
-        let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-        let diff = repo
-            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)
-            .map_err(|e| format!("Failed to diff commit: {}", e))?;
-        // HashSet membership, not a linear rescan: a merge commit diffed
-        // against its first parent can touch thousands of files, and the old
-        // `touched.iter().any(...)` made that quadratic.
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut touched: Vec<String> = Vec::with_capacity(diff.deltas().len().saturating_mul(2));
-        for delta in diff.deltas() {
-            for file in [delta.new_file(), delta.old_file()] {
-                if let Some(path) = file.path().and_then(|p| p.to_str()) {
-                    if seen.insert(path.to_string()) {
-                        touched.push(path.to_string());
-                    }
-                }
-            }
-        }
-
-        if let Some(prefix) = path_prefix {
-            if !touched.iter().any(|p| p.starts_with(prefix)) {
-                continue;
-            }
-        }
-
-        let timestamp = chrono::DateTime::from_timestamp(seconds, 0)
-            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-            .unwrap_or_default();
-        result.push(CommitInfo {
-            oid: oid.to_string(),
-            summary: commit.summary().unwrap_or("").to_string(),
-            author: commit.author().name().unwrap_or("").to_string(),
-            timestamp,
-            touched,
-        });
-    }
-    Ok(result)
-}
-
 /// Marker in the sibling temp file name an atomic write uses. Defined once so
 /// the writer and the watcher filter can never disagree about what to hide.
 const ATOMIC_WRITE_MARKER: &str = ".tmp-";
@@ -1062,354 +864,6 @@ pub fn write_file_impl(path: &str, content: &str) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()), // Return empty if not a git repo
-    };
-    let mut opts = StatusOptions::new();
-    opts.include_untracked(true)
-        .recurse_untracked_dirs(true)
-        .include_ignored(true);
-
-    let statuses = repo
-        .statuses(Some(&mut opts))
-        .map_err(|e| format!("Failed to get status: {}", e))?;
-
-    let mut result = Vec::new();
-    for entry in statuses.iter() {
-        let path = entry.path().unwrap_or("").to_string();
-        let status = entry.status();
-
-        let label = if status.is_ignored() {
-            "ignored"
-        } else if status.is_index_new() {
-            "added"
-        } else if status.is_index_modified() || status.is_wt_modified() {
-            "modified"
-        } else if status.is_index_deleted() || status.is_wt_deleted() {
-            "deleted"
-        } else if status.is_wt_new() {
-            "untracked"
-        } else {
-            continue;
-        };
-
-        result.push(GitFileStatus {
-            path,
-            status: label.to_string(),
-        });
-    }
-
-    Ok(result)
-}
-
-pub fn git_branch_info_impl(repo_path: &str) -> Result<BranchInfo, String> {
-    let repo = match Repository::open(repo_path) {
-        Ok(r) => r,
-        Err(_) => {
-            return Ok(BranchInfo {
-                name: "-".to_string(),
-                ahead: 0,
-                behind: 0,
-            })
-        }
-    };
-
-    let head = match repo.head() {
-        Ok(h) => h,
-        Err(_) => {
-            return Ok(BranchInfo {
-                name: "no head".to_string(),
-                ahead: 0,
-                behind: 0,
-            })
-        }
-    };
-    let name = head.shorthand().unwrap_or("HEAD").to_string();
-
-    Ok(BranchInfo {
-        name,
-        ahead: 0,
-        behind: 0,
-    })
-}
-
-pub fn git_stage_impl(repo_path: &str, paths: &[String]) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
-    let mut index = repo
-        .index()
-        .map_err(|e| format!("Failed to get index: {}", e))?;
-
-    for path in paths {
-        index
-            .add_path(Path::new(path))
-            .map_err(|e| format!("Failed to stage {}: {}", path, e))?;
-    }
-
-    index
-        .write()
-        .map_err(|e| format!("Failed to write index: {}", e))?;
-
-    Ok(())
-}
-
-pub fn git_unstage_impl(repo_path: &str, paths: &[String]) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
-    let head = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
-
-    repo.reset_default(
-        head.as_ref().map(|t| t.as_object()),
-        paths.iter().map(Path::new),
-    )
-    .map_err(|e| format!("Failed to unstage: {}", e))?;
-
-    Ok(())
-}
-
-pub fn git_commit_impl(repo_path: &str, message: &str) -> Result<String, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
-
-    let mut index = repo
-        .index()
-        .map_err(|e| format!("Failed to get index: {}", e))?;
-
-    let tree_oid = index
-        .write_tree()
-        .map_err(|e| format!("Failed to write tree: {}", e))?;
-
-    let tree = repo
-        .find_tree(tree_oid)
-        .map_err(|e| format!("Failed to find tree: {}", e))?;
-
-    let sig = repo.signature().map_err(|e| {
-        format!(
-            "Failed to get git signature: {}. Please configure git user.name and user.email.",
-            e
-        )
-    })?;
-
-    let parent_commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
-    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
-
-    let oid = repo
-        .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
-        .map_err(|e| format!("Failed to commit: {}", e))?;
-
-    Ok(oid.to_string())
-}
-
-/// Pushes the current branch to `origin`, trying the SSH agent, the default
-/// key files and the configured credential helper in that order. Sets the
-/// upstream on first push so later pushes (and the branch display) know
-/// where home is.
-pub fn git_push_impl(repo_path: &str) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
-    let head = repo
-        .head()
-        .map_err(|e| format!("Failed to read HEAD: {}", e))?;
-    let branch_name = head
-        .shorthand()
-        .filter(|_| head.is_branch())
-        .ok_or_else(|| "Detached HEAD — check out a branch before pushing".to_string())?
-        .to_string();
-
-    let mut remote = repo
-        .find_remote("origin")
-        .map_err(|_| "No 'origin' remote configured for this repository".to_string())?;
-
-    // git2 re-asks the callback after every failed credential, which loops
-    // forever if we keep proposing the same one — bail after a few tries
-    // with a message that names the fix instead of hanging the UI.
-    let attempts = std::cell::Cell::new(0u32);
-    let mut callbacks = git2::RemoteCallbacks::new();
-    callbacks.credentials(move |url, username_from_url, allowed| {
-        let attempt = attempts.get();
-        attempts.set(attempt + 1);
-        if attempt > 4 {
-            return Err(git2::Error::from_str(
-                "no accepted credentials (tried SSH agent, key files and credential helper)",
-            ));
-        }
-        if allowed.contains(git2::CredentialType::SSH_KEY) {
-            let user = username_from_url.unwrap_or("git");
-            if attempt == 0 {
-                if let Ok(cred) = git2::Cred::ssh_key_from_agent(user) {
-                    return Ok(cred);
-                }
-            }
-            if let Ok(home) = std::env::var("HOME") {
-                for key in ["id_ed25519", "id_rsa"] {
-                    let path = std::path::Path::new(&home).join(".ssh").join(key);
-                    if path.exists() {
-                        if let Ok(cred) = git2::Cred::ssh_key(user, None, &path, None) {
-                            return Ok(cred);
-                        }
-                    }
-                }
-            }
-        }
-        if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-            if let Ok(config) = git2::Config::open_default() {
-                if let Ok(cred) = git2::Cred::credential_helper(&config, url, username_from_url) {
-                    return Ok(cred);
-                }
-            }
-        }
-        git2::Cred::default()
-    });
-
-    let mut options = git2::PushOptions::new();
-    options.remote_callbacks(callbacks);
-    let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
-    remote
-        .push(&[&refspec], Some(&mut options))
-        .map_err(|e| format!("Push failed: {}", e))?;
-
-    // Best-effort: the push itself succeeded, a missing upstream note is a
-    // cosmetic follow-up, not a failure.
-    if let Ok(mut branch) = repo.find_branch(&branch_name, git2::BranchType::Local) {
-        if branch.upstream().is_err() {
-            let _ = branch.set_upstream(Some(&format!("origin/{branch_name}")));
-        }
-    }
-
-    Ok(())
-}
-
-pub fn git_discard_impl(repo_path: &str, file_path: &str) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
-
-    let mut opts = StatusOptions::new();
-    opts.pathspec(file_path)
-        .include_untracked(true)
-        .include_ignored(false);
-    let statuses = repo
-        .statuses(Some(&mut opts))
-        .map_err(|e| format!("Failed to get status: {}", e))?;
-
-    let status = statuses
-        .iter()
-        .next()
-        .map(|s| s.status())
-        .unwrap_or(git2::Status::CURRENT);
-
-    let full_path = Path::new(repo_path).join(file_path);
-
-    if status.contains(git2::Status::WT_NEW) {
-        // Untracked file — delete from disk
-        fs::remove_file(&full_path)
-            .map_err(|e| format!("Failed to delete untracked file: {}", e))?;
-    } else if status.contains(git2::Status::INDEX_NEW) {
-        // Staged new file — unstage (reset index entry to HEAD, which has no such file) then delete
-        repo.reset_default(None, [Path::new(file_path)].iter().copied())
-            .map_err(|e| format!("Failed to unstage: {}", e))?;
-        if full_path.exists() {
-            fs::remove_file(&full_path).map_err(|e| format!("Failed to delete file: {}", e))?;
-        }
-    } else {
-        // Modified or deleted tracked file — restore from HEAD
-        let mut checkout_opts = git2::build::CheckoutBuilder::new();
-        checkout_opts.path(file_path).force();
-        repo.checkout_head(Some(&mut checkout_opts))
-            .map_err(|e| format!("Failed to discard changes: {}", e))?;
-    }
-
-    Ok(())
-}
-
-pub fn git_diff_impl(repo_path: &str, file_path: &str) -> Result<String, String> {
-    let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
-
-    let mut opts = StatusOptions::new();
-    opts.pathspec(file_path)
-        .include_untracked(true)
-        .recurse_untracked_dirs(true);
-
-    let statuses = repo
-        .statuses(Some(&mut opts))
-        .map_err(|e| format!("Failed to get status: {}", e))?;
-
-    if statuses.is_empty() {
-        return Ok(String::new());
-    }
-
-    let entry = statuses.get(0).ok_or("File not found in status")?;
-    let status = entry.status();
-
-    // Untracked file: show entire content as added
-    if status.is_wt_new() {
-        let full_path = Path::new(repo_path).join(file_path);
-        let content =
-            fs::read_to_string(&full_path).map_err(|e| format!("Failed to read file: {}", e))?;
-        let mut diff_text = format!("--- /dev/null\n+++ b/{}\n", file_path);
-        let lines: Vec<&str> = content.lines().collect();
-        diff_text.push_str(&format!("@@ -0,0 +1,{} @@\n", lines.len()));
-        for line in &lines {
-            diff_text.push('+');
-            diff_text.push_str(line);
-            diff_text.push('\n');
-        }
-        return Ok(diff_text);
-    }
-
-    // Deleted file: show entire old content as removed
-    if status.is_wt_deleted() || status.is_index_deleted() {
-        let head = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
-        if let Some(tree) = head {
-            if let Ok(blob_entry) = tree.get_path(Path::new(file_path)) {
-                if let Ok(obj) = blob_entry.to_object(&repo) {
-                    if let Some(blob) = obj.as_blob() {
-                        let content = String::from_utf8_lossy(blob.content());
-                        let mut diff_text = format!("--- a/{}\n+++ /dev/null\n", file_path);
-                        let lines: Vec<&str> = content.lines().collect();
-                        diff_text.push_str(&format!("@@ -1,{} +0,0 @@\n", lines.len()));
-                        for line in &lines {
-                            diff_text.push('-');
-                            diff_text.push_str(line);
-                            diff_text.push('\n');
-                        }
-                        return Ok(diff_text);
-                    }
-                }
-            }
-        }
-        return Ok(String::new());
-    }
-
-    // Modified file: use git2 diff
-    let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
-    let mut diff_opts = git2::DiffOptions::new();
-    diff_opts.pathspec(file_path);
-
-    let diff = repo
-        .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))
-        .map_err(|e| format!("Failed to generate diff: {}", e))?;
-
-    let mut diff_text = String::new();
-    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-        match line.origin() {
-            '+' | '-' | ' ' => {
-                diff_text.push(line.origin());
-                diff_text.push_str(&String::from_utf8_lossy(line.content()));
-            }
-            'F' => {
-                // File header line
-                diff_text.push_str(&String::from_utf8_lossy(line.content()));
-            }
-            'H' => {
-                // Hunk header
-                diff_text.push_str(&String::from_utf8_lossy(line.content()));
-            }
-            _ => {}
-        }
-        true
-    })
-    .map_err(|e| format!("Failed to print diff: {}", e))?;
-
-    Ok(diff_text)
 }
 
 #[tauri::command]
@@ -2379,7 +1833,6 @@ pub fn run() {
             sessions: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             read_directory,
             exists,
             is_dir,
@@ -2411,6 +1864,11 @@ pub fn run() {
             git_push,
             git_log_since,
             git_discard,
+            git_list_branches,
+            git_blame,
+            git_diff_commit,
+            git_diff_ref_files,
+            git_diff_file_ref,
             list_agents,
             spawn_agent,
             kill_agent,
@@ -2561,6 +2019,7 @@ pub fn run() {
             // app is drivable through the one surface macOS always exposes
             // semantically — even while a modal owns the webview's focus.
             menu::extend_with_commands(handle, &menu)?;
+            menu::polish_standard_items(&menu)?;
 
             Ok(menu)
         })
@@ -2598,21 +2057,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command as StdCommand;
     use tempfile::TempDir;
-
-    /// A repo with one commit, ready for push tests.
-    fn committed_repo(dir: &TempDir) -> String {
-        let path = dir.path().to_str().unwrap().to_string();
-        let repo = Repository::init(&path).unwrap();
-        let mut config = repo.config().unwrap();
-        config.set_str("user.name", "Test").unwrap();
-        config.set_str("user.email", "test@example.com").unwrap();
-        fs::write(dir.path().join("a.txt"), "hi").unwrap();
-        git_stage_impl(&path, &["a.txt".to_string()]).unwrap();
-        git_commit_impl(&path, "init").unwrap();
-        path
-    }
 
     #[test]
     fn scratch_dir_is_created_under_the_base_and_is_idempotent() {
@@ -2622,56 +2067,6 @@ mod tests {
         assert!(dir.ends_with("scratches"));
         let again = ensure_scratch_dir(base.path().to_path_buf()).unwrap();
         assert_eq!(dir, again);
-    }
-
-    #[test]
-    fn push_without_a_remote_names_the_problem() {
-        let dir = TempDir::new().unwrap();
-        let path = committed_repo(&dir);
-        let err = git_push_impl(&path).unwrap_err();
-        assert!(err.contains("origin"), "unhelpful error: {err}");
-    }
-
-    #[test]
-    fn push_reaches_a_local_bare_remote() {
-        // A bare repo on disk is a real remote as far as git is concerned —
-        // this proves the refspec and branch plumbing without any network.
-        let work = TempDir::new().unwrap();
-        let bare = TempDir::new().unwrap();
-        let path = committed_repo(&work);
-        Repository::init_bare(bare.path()).unwrap();
-        {
-            let repo = Repository::open(&path).unwrap();
-            repo.remote("origin", bare.path().to_str().unwrap())
-                .unwrap();
-        }
-
-        git_push_impl(&path).unwrap();
-
-        let remote = Repository::open_bare(bare.path()).unwrap();
-        assert!(remote.head().unwrap().peel_to_commit().is_ok());
-    }
-
-    #[test]
-    fn push_sets_the_upstream_so_the_next_push_knows_where_home_is() {
-        let work = TempDir::new().unwrap();
-        let bare = TempDir::new().unwrap();
-        let path = committed_repo(&work);
-        Repository::init_bare(bare.path()).unwrap();
-        {
-            let repo = Repository::open(&path).unwrap();
-            repo.remote("origin", bare.path().to_str().unwrap())
-                .unwrap();
-        }
-
-        git_push_impl(&path).unwrap();
-
-        let repo = Repository::open(&path).unwrap();
-        let head = repo.head().unwrap();
-        let branch = repo
-            .find_branch(head.shorthand().unwrap(), git2::BranchType::Local)
-            .unwrap();
-        assert!(branch.upstream().is_ok());
     }
 
     #[test]
@@ -2810,164 +2205,6 @@ mod tests {
             .is_symlink());
     }
 
-    fn init_test_repo() -> TempDir {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path();
-        StdCommand::new("git")
-            .args(["init"])
-            .current_dir(path)
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(path)
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(path)
-            .output()
-            .unwrap();
-        dir
-    }
-
-    fn commit_file(dir: &TempDir, rel_path: &str, content: &str, message: &str) {
-        let full = dir.path().join(rel_path);
-        if let Some(parent) = full.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(&full, content).unwrap();
-        StdCommand::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["commit", "-m", message])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-    }
-
-    #[test]
-    fn test_git_log_since_lists_commits_newest_first_with_touched_paths() {
-        let dir = init_test_repo();
-        commit_file(&dir, "src/a.rs", "a", "first");
-        commit_file(&dir, "docs/readme.md", "d", "second");
-
-        let log =
-            git_log_since_impl(dir.path().to_str().unwrap(), None, None, 200, usize::MAX).unwrap();
-        assert_eq!(log.len(), 2);
-        assert_eq!(log[0].summary, "second");
-        assert_eq!(log[0].touched, vec!["docs/readme.md".to_string()]);
-        assert_eq!(log[1].summary, "first");
-        assert_eq!(log[1].touched, vec!["src/a.rs".to_string()]);
-        assert!(!log[0].timestamp.is_empty());
-    }
-
-    #[test]
-    fn test_git_log_since_filters_by_path_prefix() {
-        let dir = init_test_repo();
-        commit_file(&dir, "src/a.rs", "a", "code");
-        commit_file(&dir, "docs/readme.md", "d", "docs");
-
-        let log = git_log_since_impl(
-            dir.path().to_str().unwrap(),
-            None,
-            Some("docs/"),
-            200,
-            usize::MAX,
-        )
-        .unwrap();
-        assert_eq!(log.len(), 1);
-        assert_eq!(log[0].summary, "docs");
-    }
-
-    #[test]
-    fn test_git_log_since_respects_the_cutoff() {
-        let dir = init_test_repo();
-        commit_file(&dir, "src/a.rs", "a", "old");
-        // A cutoff far in the future excludes everything.
-        let log = git_log_since_impl(
-            dir.path().to_str().unwrap(),
-            Some("2099-01-01 00:00:00"),
-            None,
-            200,
-            usize::MAX,
-        )
-        .unwrap();
-        assert!(log.is_empty());
-        // A cutoff far in the past includes it.
-        let log = git_log_since_impl(
-            dir.path().to_str().unwrap(),
-            Some("2000-01-01"),
-            None,
-            200,
-            usize::MAX,
-        )
-        .unwrap();
-        assert_eq!(log.len(), 1);
-    }
-
-    #[test]
-    fn test_git_log_since_caps_at_limit() {
-        let dir = init_test_repo();
-        for i in 0..5 {
-            commit_file(&dir, "f.txt", &format!("v{}", i), &format!("c{}", i));
-        }
-        let log =
-            git_log_since_impl(dir.path().to_str().unwrap(), None, None, 3, usize::MAX).unwrap();
-        assert_eq!(log.len(), 3);
-        assert_eq!(log[0].summary, "c4");
-    }
-
-    #[test]
-    fn test_git_log_since_caps_work_at_max_scan() {
-        let dir = init_test_repo();
-        // Five commits, none touching the requested prefix. Without a scan cap
-        // the walk would diff all five hunting a match; max_scan stops it early.
-        for i in 0..5 {
-            commit_file(&dir, "src/f.txt", &format!("v{}", i), &format!("c{}", i));
-        }
-        let log =
-            git_log_since_impl(dir.path().to_str().unwrap(), None, Some("docs/"), 200, 2).unwrap();
-        // Prefix matches nothing, and we gave up after 2 commits: no results,
-        // and — the point of the test — the loop terminated rather than
-        // scanning the whole history.
-        assert!(log.is_empty());
-    }
-
-    #[test]
-    fn test_git_log_since_is_empty_for_non_repo_and_empty_repo() {
-        let plain = TempDir::new().unwrap();
-        assert!(
-            git_log_since_impl(plain.path().to_str().unwrap(), None, None, 200, usize::MAX)
-                .unwrap()
-                .is_empty()
-        );
-        let empty = init_test_repo();
-        assert!(
-            git_log_since_impl(empty.path().to_str().unwrap(), None, None, 200, usize::MAX)
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn test_git_log_since_rejects_garbage_cutoff() {
-        let dir = init_test_repo();
-        commit_file(&dir, "f.txt", "x", "c");
-        let err = git_log_since_impl(
-            dir.path().to_str().unwrap(),
-            Some("next tuesday"),
-            None,
-            200,
-            usize::MAX,
-        )
-        .unwrap_err();
-        assert!(err.contains("Invalid since_iso"));
-    }
-
     #[test]
     fn test_move_path_moves_file_between_dirs() {
         let dir = TempDir::new().unwrap();
@@ -3050,67 +2287,6 @@ mod tests {
     }
 
     #[test]
-    fn test_git_diff_untracked_file() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        fs::write(dir.path().join("hello.txt"), "line1\nline2\n").unwrap();
-
-        let diff = git_diff_impl(repo_path, "hello.txt").unwrap();
-        assert!(diff.contains("+++ b/hello.txt"));
-        assert!(diff.contains("+line1"));
-        assert!(diff.contains("+line2"));
-    }
-
-    #[test]
-    fn test_git_diff_modified_file() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        fs::write(dir.path().join("file.txt"), "original\n").unwrap();
-        StdCommand::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        fs::write(dir.path().join("file.txt"), "modified\n").unwrap();
-
-        let diff = git_diff_impl(repo_path, "file.txt").unwrap();
-        assert!(diff.contains("-original"));
-        assert!(diff.contains("+modified"));
-    }
-
-    #[test]
-    fn test_git_diff_deleted_file() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        fs::write(dir.path().join("gone.txt"), "bye\n").unwrap();
-        StdCommand::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        fs::remove_file(dir.path().join("gone.txt")).unwrap();
-
-        let diff = git_diff_impl(repo_path, "gone.txt").unwrap();
-        assert!(diff.contains("--- a/gone.txt"));
-        assert!(diff.contains("-bye"));
-    }
-
-    #[test]
     fn test_pty_resize_after_clone_reader_and_take_writer() {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -3178,128 +2354,6 @@ mod tests {
             "/home/user/project/src/app/page.tsx"
         ));
         assert!(!should_filter_watcher_path("/home/user/project/.gitignore"));
-    }
-
-    #[test]
-    fn test_git_diff_no_changes() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        fs::write(dir.path().join("clean.txt"), "hello\n").unwrap();
-        StdCommand::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        let diff = git_diff_impl(repo_path, "clean.txt").unwrap();
-        assert!(diff.is_empty());
-    }
-
-    #[test]
-    fn test_git_discard_modified_file() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        fs::write(dir.path().join("file.txt"), "original\n").unwrap();
-        StdCommand::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        fs::write(dir.path().join("file.txt"), "modified\n").unwrap();
-        assert_eq!(
-            fs::read_to_string(dir.path().join("file.txt")).unwrap(),
-            "modified\n"
-        );
-
-        git_discard_impl(repo_path, "file.txt").unwrap();
-        assert_eq!(
-            fs::read_to_string(dir.path().join("file.txt")).unwrap(),
-            "original\n"
-        );
-    }
-
-    #[test]
-    fn test_git_discard_deleted_file() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        fs::write(dir.path().join("file.txt"), "content\n").unwrap();
-        StdCommand::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        fs::remove_file(dir.path().join("file.txt")).unwrap();
-        assert!(!dir.path().join("file.txt").exists());
-
-        git_discard_impl(repo_path, "file.txt").unwrap();
-        assert!(dir.path().join("file.txt").exists());
-        assert_eq!(
-            fs::read_to_string(dir.path().join("file.txt")).unwrap(),
-            "content\n"
-        );
-    }
-
-    #[test]
-    fn test_git_discard_untracked_file() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        fs::write(dir.path().join("new.txt"), "new content\n").unwrap();
-        assert!(dir.path().join("new.txt").exists());
-
-        git_discard_impl(repo_path, "new.txt").unwrap();
-        assert!(!dir.path().join("new.txt").exists());
-    }
-
-    #[test]
-    fn test_git_discard_staged_new_file() {
-        let dir = init_test_repo();
-        let repo_path = dir.path().to_str().unwrap();
-
-        // Create initial commit so HEAD exists
-        fs::write(dir.path().join("base.txt"), "base\n").unwrap();
-        StdCommand::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        StdCommand::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-
-        // Stage a brand-new file
-        fs::write(dir.path().join("added.txt"), "added\n").unwrap();
-        StdCommand::new("git")
-            .args(["add", "added.txt"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        assert!(dir.path().join("added.txt").exists());
-
-        git_discard_impl(repo_path, "added.txt").unwrap();
-        assert!(!dir.path().join("added.txt").exists());
     }
 
     fn search_dir(files: &[(&str, &str)]) -> TempDir {
@@ -3392,33 +2446,5 @@ mod tests {
         let missing = dir.path().join("nope");
         let err = search_in_files_impl(missing.to_str().unwrap(), "needle", true, 500).unwrap_err();
         assert!(err.contains("Invalid root path"));
-    }
-
-    #[test]
-    fn git_status_reports_an_ignored_directory_itself() {
-        let dir = TempDir::new().unwrap();
-        let path = committed_repo(&dir);
-        fs::write(dir.path().join(".gitignore"), "build/\nsecret.txt\n").unwrap();
-        fs::create_dir(dir.path().join("build")).unwrap();
-        fs::write(dir.path().join("build").join("out.js"), "x").unwrap();
-        fs::write(dir.path().join("secret.txt"), "s").unwrap();
-
-        let statuses = git_status_impl(&path).unwrap();
-        let ignored: Vec<&str> = statuses
-            .iter()
-            .filter(|s| s.status == "ignored")
-            .map(|s| s.path.as_str())
-            .collect();
-
-        assert!(
-            ignored.iter().any(|p| *p == "secret.txt"),
-            "ignored files must appear, got {ignored:?}"
-        );
-        // libgit2 reports ignored directories with a trailing slash. The
-        // explorer's relative paths do not — resolveGitStatus strips it.
-        assert!(
-            ignored.contains(&"build/"),
-            "ignored directories must appear as themselves, got {ignored:?}"
-        );
     }
 }
