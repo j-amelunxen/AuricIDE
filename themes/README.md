@@ -4,10 +4,14 @@ Drop custom theme JSON files into this folder. AuricIDE scans `themes/` at
 startup (and when you click **Reload themes** in Settings → Appearance) and adds
 valid files to the picker.
 
-- Built-in themes (Purple, Blue, Cyan, Emerald, Amber, Magenta) always ship
-  with the app — you cannot overwrite their ids.
+- Built-in themes (Auric Purple, Electric Blue, Cyan Pulse, Emerald, Amber,
+  Magenta) always ship with the app — you cannot overwrite their ids.
 - `*.json` in this folder is gitignored so personal themes stay local.
-- Packaged installs also look under the app data `themes/` directory.
+  `rose.json.example` is tracked as a starting point: copy it to `rose.json`
+  and edit.
+- Four directories are scanned, later ones winning: `themes/`, `../themes/`,
+  `<app data dir>/themes/` and `<bundle resource dir>/themes/`. Running from
+  the repo uses this folder; a packaged install uses the app-data one.
 
 ## Minimal theme (accent only)
 
@@ -55,34 +59,41 @@ Auric Neon shell.
 
 ## Schema (v1)
 
-| Field                                            | Required | Notes                                                                        |
-| ------------------------------------------------ | -------- | ---------------------------------------------------------------------------- |
-| `schemaVersion`                                  | yes      | Currently `1`                                                                |
-| `id`                                             | yes      | kebab-case `[a-z0-9-]`, unique, not a built-in id                            |
-| `name`                                           | yes      | Label in the picker                                                          |
-| `swatch`                                         | yes      | CSS colour for the picker dot                                                |
-| `tokens.primary`                                 | yes      | Primary / neon colour (selection, borders, badges wash)                      |
-| `tokens.primaryLight`                            | no       | **Same hue family** as primary — badge text, light accents on primary washes |
-| `tokens.secondary`                               | no       | Optional second accent (e.g. pride pink). Not used for badge-on-primary text |
-| `tokens.secondaryLight`                          | no       | Lighter secondary                                                            |
-| `tokens.background`                              | no       | App background                                                               |
-| `tokens.backgroundSecondary`                     | no       | Secondary surface                                                            |
-| `tokens.surface`                                 | no       | Cards / panels                                                               |
-| `tokens.foreground`                              | no       | Main text                                                                    |
-| `tokens.foregroundMuted`                         | no       | Secondary text                                                               |
-| `tokens.border`                                  | no       | Borders                                                                      |
-| `tokens.panelBg`                                 | no       | Side panels / chrome (`bg-panel-bg`) — use solid `#000` for true black       |
-| `tokens.editorBg`                                | no       | Editor / main canvas (`bg-editor-bg`)                                        |
-| `tokens.glassBg`                                 | no       | Header/toolbar `.glass` strips                                               |
-| `tokens.glassPanelBg`                            | no       | Side `.glass-panel` chrome                                                   |
-| `tokens.hoverBg`                                 | no       | Hover wash                                                                   |
-| `tokens.muted`                                   | no       | Muted fill                                                                   |
-| `tokens.gitAdded` / `gitModified` / `gitDeleted` | no       | Git gutter colours                                                           |
-| `tokens.bodyGradientFrom` / `bodyGradientTo`     | no       | Body radial gradient                                                         |
-| `description` / `author`                         | no       | Metadata only                                                                |
+| Field                                            | Required | Notes                                                                         |
+| ------------------------------------------------ | -------- | ----------------------------------------------------------------------------- |
+| `schemaVersion`                                  | yes      | Currently `1`                                                                 |
+| `id`                                             | yes      | kebab-case `[a-z0-9-]`, unique, not a built-in id                             |
+| `name`                                           | yes      | Label in the picker                                                           |
+| `swatch`                                         | yes      | CSS colour for the picker dot                                                 |
+| `tokens.primary`                                 | yes      | Primary / neon colour (selection, borders, badges wash)                       |
+| `tokens.primaryLight`                            | no       | **Same hue family** as primary — badge text, light accents on primary washes  |
+| `tokens.primaryForeground`                       | no       | Text drawn _on top of_ a solid primary fill — set it if your primary is light |
+| `tokens.secondary`                               | no       | Optional second accent (e.g. pride pink). Not used for badge-on-primary text  |
+| `tokens.secondaryLight`                          | no       | Lighter secondary                                                             |
+| `tokens.background`                              | no       | App background                                                                |
+| `tokens.backgroundSecondary`                     | no       | Secondary surface                                                             |
+| `tokens.surface`                                 | no       | Cards / panels                                                                |
+| `tokens.foreground`                              | no       | Main text                                                                     |
+| `tokens.foregroundMuted`                         | no       | Secondary text                                                                |
+| `tokens.border`                                  | no       | Borders                                                                       |
+| `tokens.panelBg`                                 | no       | Side panels / chrome (`bg-panel-bg`) — use solid `#000` for true black        |
+| `tokens.editorBg`                                | no       | Editor / main canvas (`bg-editor-bg`)                                         |
+| `tokens.glassBg`                                 | no       | Header/toolbar `.glass` strips                                                |
+| `tokens.glassPanelBg`                            | no       | Side `.glass-panel` chrome                                                    |
+| `tokens.hoverBg`                                 | no       | Hover wash                                                                    |
+| `tokens.muted`                                   | no       | Muted fill                                                                    |
+| `tokens.gitAdded` / `gitModified` / `gitDeleted` | no       | Git gutter colours                                                            |
+| `tokens.bodyGradientFrom` / `bodyGradientTo`     | no       | Body radial gradient                                                          |
+| `description` / `author`                         | no       | Metadata only                                                                 |
 
 Hex colours (`#rgb`, `#rrggbb`) also drive `--primary-rgb` / `--primary-light-rgb`
-for glow utilities. Invalid files are skipped; the app keeps running.
+for glow utilities.
+
+The table lists all 22 recognised token keys — anything else under `tokens` is
+ignored. Validation lives in `src/lib/theme/catalog/schema.ts` (the Rust side only
+discovers files), so that module is the source of truth if this table and the app
+ever disagree. Invalid files are skipped and Settings → Appearance shows how many
+were skipped; the app keeps running.
 
 ## Reserved built-in ids
 
