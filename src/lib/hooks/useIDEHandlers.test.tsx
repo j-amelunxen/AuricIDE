@@ -669,6 +669,32 @@ describe('useIDEHandlers', () => {
       ]);
     });
 
+    it('forwards createdAt from directory listings onto tree nodes', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockReadDirectory.mockResolvedValue([
+        { name: 'fresh.md', path: '/p/fresh.md', isDirectory: false, createdAt: 1_700_000_000_000 },
+        {
+          name: 'docs',
+          path: '/p/docs',
+          isDirectory: true,
+          newestFileCreatedAt: 1_700_000_000_100,
+        },
+      ]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefresh('/p', true);
+
+      expect(mockState.setFileTree).toHaveBeenCalledWith([
+        expect.objectContaining({ path: '/p/fresh.md', createdAt: 1_700_000_000_000 }),
+        expect.objectContaining({
+          path: '/p/docs',
+          createdAt: undefined,
+          newestFileCreatedAt: 1_700_000_000_100,
+        }),
+      ]);
+    });
+
     it('leaves gitStatus undefined for untouched children', async () => {
       mockState.rootPath = '/p';
       mockFileStatuses = [];

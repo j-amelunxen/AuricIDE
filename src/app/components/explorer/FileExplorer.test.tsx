@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FileExplorer, flattenVisibleTree, type FileTreeNode } from './FileExplorer';
 
 const mockTree: FileTreeNode[] = [
@@ -658,5 +658,145 @@ describe('FileExplorer — drag-and-drop polish', () => {
 
     expect(srcButton).toHaveClass('ring-primary/60');
     expect(overData.dropEffect).toBe('move');
+  });
+});
+
+describe('FileExplorer — recently created glow', () => {
+  const now = 1_700_000_000_000;
+  const recentTree: FileTreeNode[] = [
+    {
+      name: 'fresh.ts',
+      path: '/fresh.ts',
+      isDirectory: false,
+      createdAt: now - 30_000,
+    },
+    {
+      name: 'old.ts',
+      path: '/old.ts',
+      isDirectory: false,
+      createdAt: now - 6 * 60 * 1000,
+    },
+    {
+      name: 'plain.ts',
+      path: '/plain.ts',
+      isDirectory: false,
+    },
+    {
+      name: 'new-folder',
+      path: '/new-folder',
+      isDirectory: true,
+      createdAt: now - 10_000,
+    },
+  ];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('glows a file created in the last 5 minutes', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={recentTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const fresh = screen.getByTestId('tree-item-/fresh.ts');
+    expect(fresh).toHaveAttribute('data-recently-created', 'true');
+    expect(fresh).toHaveClass('explorer-recent-glow');
+  });
+
+  it('does not glow an older file, a file without createdAt, or an empty folder', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={recentTree}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    expect(screen.getByTestId('tree-item-/old.ts')).not.toHaveAttribute('data-recently-created');
+    expect(screen.getByTestId('tree-item-/plain.ts')).not.toHaveAttribute('data-recently-created');
+    expect(screen.getByTestId('tree-item-/new-folder')).not.toHaveAttribute(
+      'data-recently-created'
+    );
+    expect(screen.getByTestId('tree-item-/new-folder')).not.toHaveAttribute('data-contains-recent');
+    expect(screen.getByTestId('tree-item-/old.ts')).not.toHaveClass('explorer-recent-glow');
+  });
+
+  it('glows folders that contain a recently created file, including ancestors', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={[
+          {
+            name: 'src',
+            path: '/src',
+            isDirectory: true,
+            expanded: true,
+            children: [
+              {
+                name: 'lib',
+                path: '/src/lib',
+                isDirectory: true,
+                expanded: false,
+                children: [
+                  {
+                    name: 'fresh.ts',
+                    path: '/src/lib/fresh.ts',
+                    isDirectory: false,
+                    createdAt: now - 20_000,
+                  },
+                ],
+              },
+              {
+                name: 'old.ts',
+                path: '/src/old.ts',
+                isDirectory: false,
+                createdAt: now - 10 * 60 * 1000,
+              },
+            ],
+          },
+        ]}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const src = screen.getByTestId('tree-item-/src');
+    const lib = screen.getByTestId('tree-item-/src/lib');
+    expect(src).toHaveAttribute('data-contains-recent', 'true');
+    expect(lib).toHaveAttribute('data-contains-recent', 'true');
+    expect(src).toHaveClass('explorer-recent-glow-folder');
+    expect(lib).toHaveClass('explorer-recent-glow-folder');
+    expect(src).not.toHaveClass('explorer-recent-glow');
+    expect(screen.queryByTestId('tree-item-/src/lib/fresh.ts')).not.toBeInTheDocument();
+  });
+
+  it('glows a collapsed folder from newestFileCreatedAt when children are not loaded', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={[
+          {
+            name: 'src',
+            path: '/src',
+            isDirectory: true,
+            expanded: false,
+            children: [],
+            newestFileCreatedAt: now - 10_000,
+          },
+        ]}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const src = screen.getByTestId('tree-item-/src');
+    expect(src).toHaveAttribute('data-contains-recent', 'true');
+    expect(src).toHaveClass('explorer-recent-glow-folder');
   });
 });

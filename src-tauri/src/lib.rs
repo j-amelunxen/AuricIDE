@@ -53,6 +53,12 @@ pub struct FileEntry {
     name: String,
     path: String,
     is_directory: bool,
+    /// Filesystem birth time in unix milliseconds. Absent for directories
+    /// and when the OS does not report a creation time.
+    created_at: Option<i64>,
+    /// Newest descendant *file* birth time. Only set on directories, so a
+    /// collapsed folder can glow without its children being loaded.
+    newest_file_created_at: Option<i64>,
 }
 
 struct WatcherState {
@@ -771,6 +777,62 @@ pub fn should_filter_watcher_path(path: &str) -> bool {
         || is_atomic_write_temp(path)
 }
 
+/// Birth time in unix milliseconds. Directories are omitted so the explorer
+/// only lights up files — "created just now" is a file-row signal.
+fn file_created_at_ms(entry: &walkdir::DirEntry) -> Option<i64> {
+    if entry.file_type().is_dir() {
+        return None;
+    }
+    let created = entry.metadata().ok()?.created().ok()?;
+    let duration = created.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(duration.as_millis() as i64)
+}
+
+fn skip_recent_walk_dir(entry: &walkdir::DirEntry) -> bool {
+    matches!(
+        entry.file_name().to_string_lossy().as_ref(),
+        ".git" | "node_modules" | "target"
+    )
+}
+
+/// Newest file birth time under each immediate child of `dir`, one walk.
+fn newest_file_created_at_by_child(dir: &Path) -> HashMap<String, i64> {
+    let mut newest: HashMap<String, i64> = HashMap::new();
+    for entry in WalkDir::new(dir)
+        .min_depth(2)
+        .into_iter()
+        .filter_entry(|e| !skip_recent_walk_dir(e))
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path_str = entry.path().to_string_lossy();
+        if should_filter_watcher_path(&path_str) {
+            continue;
+        }
+        let Some(created) = file_created_at_ms(&entry) else {
+            continue;
+        };
+        let Ok(rel) = entry.path().strip_prefix(dir) else {
+            continue;
+        };
+        let Some(first) = rel.components().next() else {
+            continue;
+        };
+        let key = first.as_os_str().to_string_lossy().into_owned();
+        newest
+            .entry(key)
+            .and_modify(|t| {
+                if created > *t {
+                    *t = created;
+                }
+            })
+            .or_insert(created);
+    }
+    newest
+}
+
 // Pure functions for testability
 pub fn read_directory_impl(path: &str) -> Result<Vec<FileEntry>, String> {
     let dir = Path::new(path);
@@ -778,16 +840,28 @@ pub fn read_directory_impl(path: &str) -> Result<Vec<FileEntry>, String> {
         return Err(format!("Not a directory: {}", path));
     }
 
+    let newest_by_child = newest_file_created_at_by_child(dir);
+
     let mut entries: Vec<FileEntry> = WalkDir::new(dir)
         .min_depth(1)
         .max_depth(1)
         .sort_by_file_name()
         .into_iter()
         .filter_map(|e| e.ok())
-        .map(|entry| FileEntry {
-            name: entry.file_name().to_string_lossy().to_string(),
-            path: entry.path().to_string_lossy().to_string(),
-            is_directory: entry.file_type().is_dir(),
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_directory = entry.file_type().is_dir();
+            FileEntry {
+                created_at: file_created_at_ms(&entry),
+                newest_file_created_at: if is_directory {
+                    newest_by_child.get(&name).copied()
+                } else {
+                    None
+                },
+                name,
+                path: entry.path().to_string_lossy().to_string(),
+                is_directory,
+            }
         })
         .collect();
 
@@ -2117,6 +2191,54 @@ mod tests {
                 "unfiltered leftover: {leftover}"
             );
         }
+    }
+
+    #[test]
+    fn read_directory_impl_reports_file_birth_time() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("fresh.md"), "hi").unwrap();
+        let entries = read_directory_impl(dir.path().to_str().unwrap()).unwrap();
+        let file = entries.iter().find(|e| e.name == "fresh.md").unwrap();
+        assert!(!file.is_directory);
+        let created = file.created_at.expect("birth time");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        assert!(
+            now - created < 60_000,
+            "created_at should be recent: {created} vs {now}"
+        );
+    }
+
+    #[test]
+    fn read_directory_impl_omits_birth_time_on_directories() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        let entries = read_directory_impl(dir.path().to_str().unwrap()).unwrap();
+        let sub = entries.iter().find(|e| e.name == "sub").unwrap();
+        assert!(sub.is_directory);
+        assert!(sub.created_at.is_none());
+    }
+
+    #[test]
+    fn read_directory_impl_reports_newest_descendant_file_on_folders() {
+        let dir = TempDir::new().unwrap();
+        let nested = dir.path().join("src").join("lib");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("fresh.md"), "hi").unwrap();
+        let entries = read_directory_impl(dir.path().to_str().unwrap()).unwrap();
+        let src = entries.iter().find(|e| e.name == "src").unwrap();
+        assert!(src.is_directory);
+        let newest = src.newest_file_created_at.expect("descendant birth time");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        assert!(
+            now - newest < 60_000,
+            "newest_file_created_at should be recent: {newest} vs {now}"
+        );
     }
 
     #[test]

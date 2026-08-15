@@ -1,7 +1,13 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import {
+  collectCreatedAt,
+  hasRecentlyCreatedFile,
+  isRecentlyCreated,
+  nextRecentlyCreatedExpiry,
+} from '@/lib/explorer/recentlyCreated';
 
 export interface FileTreeNode {
   name: string;
@@ -10,6 +16,10 @@ export interface FileTreeNode {
   expanded?: boolean;
   children?: FileTreeNode[];
   gitStatus?: 'added' | 'modified' | 'deleted' | 'ignored';
+  /** Filesystem birth time in unix milliseconds, when the OS reports one. */
+  createdAt?: number;
+  /** Newest descendant file birth time — lets a collapsed folder glow. */
+  newestFileCreatedAt?: number;
 }
 
 /**
@@ -174,6 +184,7 @@ function TreeNode({
   onMoveNode,
   draggingPath,
   onDragStateChange,
+  now,
 }: {
   node: FileTreeNode;
   depth: number;
@@ -184,11 +195,15 @@ function TreeNode({
   onMoveNode?: (sourcePath: string, destDir: string) => void;
   draggingPath: string | null;
   onDragStateChange: (path: string | null) => void;
+  now: number;
 }) {
   const isSelected = selectedPaths.includes(node.path);
   const isPrimary = selectedPath === node.path;
   const isDraggingSelf = draggingPath === node.path;
   const isIgnored = node.gitStatus === 'ignored';
+  const isRecentFile = !node.isDirectory && isRecentlyCreated(node.createdAt, now);
+  const containsRecent = node.isDirectory && hasRecentlyCreatedFile(node, now);
+  const isRecent = isRecentFile || containsRecent;
   const paddingLeft = `${12 + depth * 16}px`;
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isValidDropTarget, setIsValidDropTarget] = useState(true);
@@ -252,7 +267,16 @@ function TreeNode({
               }
             : undefined
         }
-        className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-all duration-150 ease-out hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
+        data-recently-created={isRecentFile ? 'true' : undefined}
+        data-contains-recent={containsRecent ? 'true' : undefined}
+        title={
+          isRecentFile
+            ? 'Created in the last 5 minutes'
+            : containsRecent
+              ? 'Contains a file created in the last 5 minutes'
+              : undefined
+        }
+        className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-[background-color,box-shadow,opacity,color] duration-150 ease-out hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
           isDropTarget
             ? isValidDropTarget
               ? 'bg-primary/20 ring-2 ring-inset ring-primary/60 text-foreground'
@@ -261,10 +285,12 @@ function TreeNode({
               ? 'opacity-40'
               : isSelected
                 ? `bg-primary/10 text-foreground ${isPrimary ? 'border-l-2 border-primary' : ''}`
-                : isIgnored
+                : isIgnored && !isRecent
                   ? 'text-foreground-muted opacity-40'
-                  : 'text-foreground-muted hover:text-foreground'
-        }`}
+                  : isRecent
+                    ? 'text-foreground'
+                    : 'text-foreground-muted hover:text-foreground'
+        } ${isRecentFile ? 'explorer-recent-glow' : containsRecent ? 'explorer-recent-glow-folder' : ''}`}
         style={{ paddingLeft }}
       >
         {node.isDirectory && (
@@ -284,7 +310,13 @@ function TreeNode({
                 : 'folder'
               : fileInfo?.icon || 'description'
           }
-          className={`text-[16px] ${node.isDirectory ? 'text-primary/30' : fileInfo?.color || 'text-foreground-muted'}`}
+          className={`text-[16px] ${
+            node.isDirectory
+              ? containsRecent
+                ? 'text-primary/60'
+                : 'text-primary/30'
+              : fileInfo?.color || 'text-foreground-muted'
+          }`}
         />
 
         <span className="flex-1 truncate ml-0.5">{node.name}</span>
@@ -312,6 +344,7 @@ function TreeNode({
               onMoveNode={onMoveNode}
               draggingPath={draggingPath}
               onDragStateChange={onDragStateChange}
+              now={now}
             />
           ))}
         </div>
@@ -344,7 +377,15 @@ export function FileExplorer({
   const [isRootDropTarget, setIsRootDropTarget] = useState(false);
   const [isRootDropValid, setIsRootDropValid] = useState(true);
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const canDropToRoot = !!onMoveNode && !!rootPath;
+
+  useEffect(() => {
+    const expiry = nextRecentlyCreatedExpiry(collectCreatedAt(tree), Date.now());
+    if (expiry === null) return;
+    const id = setTimeout(() => setNow(Date.now()), Math.max(expiry - Date.now(), 0));
+    return () => clearTimeout(id);
+  }, [tree, now]);
 
   // Defensive fallback: any caller that forgets to keep `selectedPaths` in
   // sync with `selectedPath` still gets a correctly highlighted single row.
@@ -547,6 +588,7 @@ export function FileExplorer({
             onMoveNode={onMoveNode}
             draggingPath={draggingPath}
             onDragStateChange={setDraggingPath}
+            now={now}
           />
         ))}
       </div>
