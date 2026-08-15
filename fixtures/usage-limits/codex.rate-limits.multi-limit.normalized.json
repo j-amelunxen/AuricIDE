@@ -1,0 +1,27 @@
+{
+  "provider": "codex",
+  "planLabel": "plus",
+  "windows": [
+    {
+      "limitId": "codex-mini",
+      "limitLabel": "Codex Mini",
+      "kind": "5h",
+      "label": "5 h",
+      "usedPercent": 7.0,
+      "resetsAt": 1787200000,
+      "windowMinutes": 300
+    },
+    {
+      "limitId": "codex",
+      "limitLabel": null,
+      "kind": "7d",
+      "label": "7 d",
+      "usedPercent": 40.0,
+      "resetsAt": 1787301067,
+      "windowMinutes": 10080
+    }
+  ],
+  "credits": null,
+  "observedAt": 1787300000,
+  "source": "app-server"
+}

@@ -18,6 +18,7 @@ mod providers;
 mod recent_projects;
 mod schedules;
 mod themes;
+mod usage_limits;
 mod utf8_stream;
 mod video_import;
 mod webview_prefs;
@@ -1784,6 +1785,15 @@ pub fn run() {
             );
             app.manage(app_config::AppCredentialsState::new(credentials_path));
 
+            // CLI quota readings for the status bar. The service reads its own
+            // on/off switch out of the mirror above on every call, so nothing
+            // here decides whether it runs — only where it keeps its state.
+            app.manage(usage_limits::UsageLimitsService::new(
+                app.path().app_data_dir().map_err(|e| e.to_string())?,
+            ));
+            usage_limits::install_claude_watcher(app.handle());
+            usage_limits::spawn_usage_limits_runner(app.handle().clone());
+
             let starred_projects_path = app
                 .path()
                 .app_data_dir()
@@ -1946,6 +1956,8 @@ pub fn run() {
             webview_prefs::webview_prefs_remove,
             app_config::app_credential_list,
             app_config::app_credential_set,
+            usage_limits::usage_limits_read,
+            usage_limits::usage_limits_refresh,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,

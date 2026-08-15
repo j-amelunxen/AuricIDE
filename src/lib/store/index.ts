@@ -28,6 +28,7 @@ import { createScratchSlice, type ScratchSlice } from './scratchSlice';
 import { createNotificationsSlice, type NotificationsSlice } from './notificationsSlice';
 import { createSchedulesSlice, type SchedulesSlice } from './schedulesSlice';
 import { createSkillComboSlice, type SkillComboSlice } from './skillComboSlice';
+import { createUsageLimitsSlice, type UsageLimitsSlice } from './usageLimitsSlice';
 import { createOverlaySlice, type OverlaySlice } from '@/lib/overlays/overlaySlice';
 
 export type StoreState = FileTreeSlice &
@@ -59,6 +60,7 @@ export type StoreState = FileTreeSlice &
   NotificationsSlice &
   SchedulesSlice &
   SkillComboSlice &
+  UsageLimitsSlice &
   OverlaySlice;
 
 export const useStore = create<StoreState>()((...a) => ({
@@ -91,6 +93,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createNotificationsSlice(...a),
   ...createSchedulesSlice(...a),
   ...createSkillComboSlice(...a),
+  ...createUsageLimitsSlice(...a),
   ...createOverlaySlice(...a),
 }));
 

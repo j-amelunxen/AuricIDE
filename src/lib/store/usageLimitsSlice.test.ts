@@ -1,0 +1,122 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createStore } from 'zustand';
+
+import type { UsageSnapshot } from '@/lib/usage/types';
+
+const mockRead = vi.fn();
+const mockRefresh = vi.fn();
+
+vi.mock('../tauri/usageLimits', () => ({
+  usageLimitsRead: () => mockRead(),
+  usageLimitsRefresh: () => mockRefresh(),
+}));
+
+import { createUsageLimitsSlice, type UsageLimitsSlice } from './usageLimitsSlice';
+
+function makeSnapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {
+  return {
+    provider: 'codex',
+    planLabel: 'plus',
+    windows: [
+      {
+        limitId: 'codex',
+        limitLabel: null,
+        kind: '7d',
+        label: '7 d',
+        usedPercent: 40,
+        resetsAt: 1_787_301_067,
+        windowMinutes: 10080,
+      },
+    ],
+    credits: null,
+    observedAt: 1_787_300_000,
+    source: 'app-server',
+    ...overrides,
+  };
+}
+
+function createTestStore() {
+  return createStore<UsageLimitsSlice>()((...a) => ({ ...createUsageLimitsSlice(...a) }));
+}
+
+describe('usageLimitsSlice', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('has correct initial state', () => {
+    const store = createTestStore();
+    expect(store.getState().usageSnapshots).toEqual([]);
+    expect(store.getState().usageStatus).toBe('idle');
+  });
+
+  it('loads whatever is already stored', async () => {
+    mockRead.mockResolvedValueOnce([makeSnapshot()]);
+    const store = createTestStore();
+
+    await store.getState().loadUsageLimits();
+
+    expect(store.getState().usageSnapshots).toHaveLength(1);
+    expect(store.getState().usageStatus).toBe('ready');
+  });
+
+  it('refreshes through the backend', async () => {
+    mockRefresh.mockResolvedValueOnce([makeSnapshot({ provider: 'claude' })]);
+    const store = createTestStore();
+
+    await store.getState().refreshUsageLimits();
+
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(store.getState().usageSnapshots[0].provider).toBe('claude');
+    expect(store.getState().usageStatus).toBe('ready');
+  });
+
+  it('reports nothing rather than throwing when there is no backend', async () => {
+    // Browser mode is a normal state for this app, and a status-bar chip must
+    // never be the reason a render blows up.
+    mockRead.mockRejectedValueOnce(new Error('Tauri IPC is unavailable'));
+    const store = createTestStore();
+
+    await store.getState().loadUsageLimits();
+
+    expect(store.getState().usageSnapshots).toEqual([]);
+    expect(store.getState().usageStatus).toBe('error');
+  });
+
+  it('drops stale readings when a refresh fails', async () => {
+    // Keeping the previous numbers would let the chip claim a figure the
+    // backend has just told us it can no longer stand behind.
+    mockRead.mockResolvedValueOnce([makeSnapshot()]);
+    mockRefresh.mockRejectedValueOnce(new Error('gone'));
+    const store = createTestStore();
+
+    await store.getState().loadUsageLimits();
+    expect(store.getState().usageSnapshots).toHaveLength(1);
+
+    await store.getState().refreshUsageLimits();
+    expect(store.getState().usageSnapshots).toEqual([]);
+  });
+
+  it('never puts a non-list into the state', async () => {
+    // An IPC layer that answers null — a stubbed backend, an older build — must
+    // not reach the chip as something it will try to map over.
+    mockRead.mockResolvedValueOnce(null);
+    const store = createTestStore();
+
+    await store.getState().loadUsageLimits();
+
+    expect(store.getState().usageSnapshots).toEqual([]);
+  });
+
+  it('returns an empty list when the feature is switched off', async () => {
+    // The backend answers an empty array rather than an error when the setting
+    // is off, so the chip simply has nothing to show.
+    mockRead.mockResolvedValueOnce([]);
+    const store = createTestStore();
+
+    await store.getState().loadUsageLimits();
+
+    expect(store.getState().usageSnapshots).toEqual([]);
+    expect(store.getState().usageStatus).toBe('ready');
+  });
+});

@@ -57,7 +57,9 @@ pub fn start_mcp_server(
     Ok(child)
 }
 
-fn find_in_path(cmd: &str, path_var: &str) -> Option<PathBuf> {
+/// Resolves a bare command name against a PATH we were handed rather than the
+/// one this process inherited — see `start_mcp_server` for why that matters.
+pub(crate) fn find_in_path(cmd: &str, path_var: &str) -> Option<PathBuf> {
     path_var
         .split(':')
         .filter(|dir| !dir.is_empty())
