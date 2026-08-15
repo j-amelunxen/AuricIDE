@@ -1,5 +1,13 @@
 'use client';
 
+import { useState } from 'react';
+
+import {
+  AGENT_TERMINAL_FONT_SIZES,
+  loadAppConfig,
+  setAppConfigValue,
+} from '@/lib/config/appConfig';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useStore } from '@/lib/store';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
@@ -23,6 +31,55 @@ export function AgentContent() {
   const providers = useStore((s) => s.providers);
   const setProviders = useStore((s) => s.setProviders);
   const showToast = useStore((s) => s.showToast);
+  const refreshUsageLimits = useStore((s) => s.refreshUsageLimits);
+  const loadUsageLimits = useStore((s) => s.loadUsageLimits);
+  const { confirm, confirmDialog } = useConfirm();
+
+  // Read once on mount rather than held in the store: this is the only screen
+  // that edits it, and the value's real home is the localStorage mirror that
+  // Rust reads too.
+  const [cliUsageLimits, setCliUsageLimits] = useState(() => loadAppConfig().cliUsageLimits);
+  const [terminalFontSize, setTerminalFontSize] = useState(
+    () => loadAppConfig().agentTerminalFontSize
+  );
+  const [agentConsoleAutoOpen, setAgentConsoleAutoOpen] = useState(
+    () => loadAppConfig().agentConsoleAutoOpen
+  );
+
+  const handleUsageLimitsChange = (checked: boolean) => {
+    setAppConfigValue('cliUsageLimits', checked);
+    setCliUsageLimits(checked);
+    // Switching off must clear the chip immediately; the backend answers an
+    // empty list once the mirror has caught up.
+    void (checked ? refreshUsageLimits() : loadUsageLimits());
+  };
+
+  const handleAgentConsoleAutoOpenChange = (checked: boolean) => {
+    setAppConfigValue('agentConsoleAutoOpen', checked);
+    setAgentConsoleAutoOpen(checked);
+  };
+
+  const handleTerminalFontSizeChange = (value: string) => {
+    const fontSize = Number(value);
+    setAppConfigValue('agentTerminalFontSize', fontSize);
+    setTerminalFontSize(fontSize);
+  };
+
+  const handlePermissionPromptChange = async (checked: boolean) => {
+    if (!checked) {
+      updateAgentSettings({ dangerouslyIgnorePermissions: false });
+      return;
+    }
+
+    const approved = await confirm({
+      title: 'Skip permission prompts?',
+      message:
+        'New agents in this session can run commands and access files without asking. This resets when you restart AuricIDE. Enable it only for work you trust.',
+      confirmLabel: 'Skip prompts',
+      variant: 'destroy',
+    });
+    if (approved) updateAgentSettings({ dangerouslyIgnorePermissions: true });
+  };
 
   const handleImportProvider = async () => {
     try {
@@ -46,8 +103,7 @@ export function AgentContent() {
     <div className="space-y-8">
       <SettingsSection title="Agent Deployment" icon="robot_2">
         <p className="text-xs text-foreground-muted leading-relaxed">
-          Both reset when the app restarts — an agent should never inherit free rein from a session
-          you have forgotten.
+          Choose whether agents ask before making edits or running commands.
         </p>
 
         <SettingsToggle
@@ -59,20 +115,67 @@ export function AgentContent() {
         />
 
         <SettingsToggle
-          label="Bypass Permissions"
-          description="Grant full system access (Danger)"
+          label="Skip Permission Prompts"
+          description="Let agents run commands and access files without confirmation"
           tooltip={GUIDANCE.settings.dangerouslyIgnorePermissions}
           checked={agentSettings.dangerouslyIgnorePermissions}
-          onChange={(checked) => updateAgentSettings({ dangerouslyIgnorePermissions: checked })}
+          onChange={(checked) => void handlePermissionPromptChange(checked)}
           danger
         />
       </SettingsSection>
 
+      <SettingsSection title="CLI Quota" icon="speed">
+        <p className="text-xs text-foreground-muted leading-relaxed">
+          Show remaining Claude Code and Codex usage in the status bar. Enabling this adds a
+          settings file when AuricIDE starts a Claude Code agent and checks Codex periodically.
+        </p>
+        <SettingsToggle
+          label="Show CLI Quota in the Status Bar"
+          description="Remaining usage and reset times"
+          tooltip={GUIDANCE.settings.cliUsageLimits}
+          testId="cli-usage-limits-toggle"
+          checked={cliUsageLimits}
+          onChange={handleUsageLimitsChange}
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Agent Console" icon="dashboard">
+        <SettingsToggle
+          label="Open Agent Console on launch"
+          description="When no project is open and agents are running, open the Agent Console instead of the start screen."
+          tooltip={GUIDANCE.settings.agentConsoleAutoOpen}
+          testId="agent-console-auto-open-toggle"
+          checked={agentConsoleAutoOpen}
+          onChange={handleAgentConsoleAutoOpenChange}
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Agent Terminal" icon="terminal">
+        <p className="text-xs text-foreground-muted leading-relaxed">
+          Set the text size for agent terminals in the dock and fullscreen view.
+        </p>
+        <label className="mt-3 flex items-center justify-between gap-4 text-xs text-foreground">
+          <span>Font Size</span>
+          <select
+            aria-label="Agent terminal font size"
+            data-testid="agent-terminal-font-size"
+            value={terminalFontSize}
+            onChange={(event) => handleTerminalFontSizeChange(event.target.value)}
+            className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-xs text-foreground outline-none transition-colors focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/70"
+          >
+            {AGENT_TERMINAL_FONT_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size} px
+              </option>
+            ))}
+          </select>
+        </label>
+      </SettingsSection>
+
       <SettingsSection title="Agent Providers" icon="extension">
         <p className="text-xs text-foreground-muted leading-relaxed">
-          Agent CLIs (Claude Code, Gemini, …) are configured via dynamic-provider JSON files. Import
-          one to make it available for spawning — useful in the packaged app, which ships without
-          them. Which of them a given project may use is set under Project → Providers.
+          Import provider configuration files to add agent CLIs. Project settings decide which
+          providers each project can use.
         </p>
         <div className="flex flex-wrap gap-1.5" data-testid="provider-list">
           {providers.map((p) => (
@@ -95,6 +198,7 @@ export function AgentContent() {
       </SettingsSection>
 
       <SkillDiscoveryContent />
+      {confirmDialog}
     </div>
   );
 }
