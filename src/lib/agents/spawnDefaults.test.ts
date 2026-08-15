@@ -13,18 +13,60 @@ describe('spawn defaults', () => {
   });
 
   it('round-trips the choices of the last launch', () => {
-    saveSpawnDefaults({
+    saveSpawnDefaults(
+      {
+        providerId: 'claude',
+        model: 'claude-opus-4-6',
+        permissionMode: 'acceptEdits',
+        headless: true,
+      },
+      '/work/website'
+    );
+    expect(loadSpawnDefaults('/work/website')).toEqual({
       providerId: 'claude',
       model: 'claude-opus-4-6',
       permissionMode: 'acceptEdits',
       headless: true,
     });
-    expect(loadSpawnDefaults()).toEqual({
-      providerId: 'claude',
-      model: 'claude-opus-4-6',
-      permissionMode: 'acceptEdits',
-      headless: true,
-    });
+  });
+
+  it('keeps launch choices separate for each working directory', () => {
+    saveSpawnDefaults(
+      { providerId: 'claude', model: 'opus', permissionMode: 'plan', headless: false },
+      '/work/frontend'
+    );
+    saveSpawnDefaults(
+      { providerId: 'crush', model: 'auto', permissionMode: 'default', headless: true },
+      '/work/backend'
+    );
+
+    expect(loadSpawnDefaults('/work/frontend')?.providerId).toBe('claude');
+    expect(loadSpawnDefaults('/work/backend')?.providerId).toBe('crush');
+    expect(loadSpawnDefaults('/work/unknown')).toBeNull();
+  });
+
+  it('normalizes trailing separators when identifying a working directory', () => {
+    saveSpawnDefaults(
+      { providerId: 'claude', model: 'opus', permissionMode: 'plan', headless: false },
+      '/work/frontend/'
+    );
+
+    expect(loadSpawnDefaults('/work/frontend')?.providerId).toBe('claude');
+  });
+
+  it('keeps legacy global defaults available only to launches without a working directory', () => {
+    localStorage.setItem(
+      SPAWN_DEFAULTS_KEY,
+      JSON.stringify({
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'plan',
+        headless: false,
+      })
+    );
+
+    expect(loadSpawnDefaults()?.providerId).toBe('claude');
+    expect(loadSpawnDefaults('/work/frontend')).toBeNull();
   });
 
   it('round-trips Crush yolo as a remembered permission mode', () => {

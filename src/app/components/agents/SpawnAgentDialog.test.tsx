@@ -105,6 +105,44 @@ describe('SpawnAgentDialog – remembered launch choices', () => {
     expect(saved.permissionMode).toBe('yolo');
     expect(saved.providerId).toBe(DEFAULT_PROVIDER);
   });
+
+  it('loads and saves remembered choices for the target working directory', async () => {
+    localStorage.setItem(
+      'auric.agent-spawn-defaults',
+      JSON.stringify({
+        version: 1,
+        byWorkingDirectory: {
+          '/work/frontend': {
+            providerId: DEFAULT_PROVIDER,
+            model: 'moonshotai/kimi-k2-thinking',
+            permissionMode: 'yolo',
+            headless: true,
+          },
+        },
+      })
+    );
+    const user = userEvent.setup();
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/work/frontend"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/model/i)).toHaveValue('moonshotai/kimi-k2-thinking');
+    });
+    expect(screen.getByLabelText(/permission mode/i)).toHaveValue('yolo');
+
+    await user.type(screen.getByLabelText(/what should it do/i), 'Do the thing');
+    await user.selectOptions(screen.getByLabelText(/permission mode/i), 'default');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    const saved = JSON.parse(localStorage.getItem('auric.agent-spawn-defaults')!);
+    expect(saved.byWorkingDirectory['/work/frontend'].providerId).toBe(DEFAULT_PROVIDER);
+  });
 });
 
 describe('SpawnAgentDialog – launch presets', () => {
