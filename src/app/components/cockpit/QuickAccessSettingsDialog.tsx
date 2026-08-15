@@ -26,6 +26,7 @@ import { QuickAccessIconPicker } from './QuickAccessIconPicker';
 import { QuickAccessSkillsEditor } from './QuickAccessSkillsEditor';
 import { QuickAccessCombosEditor } from './QuickAccessCombosEditor';
 import { QuickAccessWheelEditor } from './QuickAccessWheelEditor';
+import { loadAuricSkills } from '@/lib/settings/auricSkills';
 
 interface QuickAccessSettingsDialogProps {
   project: StarredProject;
@@ -55,6 +56,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
   const { confirm, confirmDialog } = useConfirm();
   const [discovered, setDiscovered] = useState<ProjectSkill[]>([]);
   const [discoveryReady, setDiscoveryReady] = useState(false);
+  const [auricSkills] = useState(loadAuricSkills);
   // This dialog configures a project from the launcher, which is not
   // necessarily the open one — so ask about that project's policy.
   const { providers } = useAllowedProviders(FALLBACK_CRUSH_PROVIDER, project.path);
@@ -177,6 +179,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
           skills={skills}
           providers={providers}
           discovered={discovered}
+          auricSkills={auricSkills}
           discoveryReady={discoveryReady}
           onChange={setSkills}
           onAnnounce={setAnnouncement}
@@ -186,6 +189,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
           combos={combos}
           providers={providers}
           discovered={discovered}
+          auricSkills={auricSkills}
           discoveryReady={discoveryReady}
           onChange={setCombos}
           onAnnounce={setAnnouncement}

@@ -8,11 +8,12 @@ import type { PermissionMode } from '@/lib/tauri/agents';
 import type { ProjectSkill, ProjectSkillScope } from '@/lib/tauri/projectSkills';
 import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
 import { SkillInvocationInput } from './SkillInvocationInput';
+import type { AuricSkillDefinition } from '@/lib/settings/auricSkills';
 
 const SELECT_CLASS =
   'w-full rounded bg-white/5 px-2 py-1.5 text-[11px] text-foreground outline-none disabled:opacity-40';
 const INPUT_CLASS =
-  'min-w-0 flex-1 rounded bg-white/5 px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary/40';
+  'min-w-0 flex-1 rounded bg-white/5 px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60';
 
 /** Project definitions first: they are the specific answer, user ones the generic. */
 const SCOPE_ORDER: { scope: ProjectSkillScope; title: string }[] = [
@@ -24,6 +25,7 @@ interface QuickAccessSkillsEditorProps {
   skills: QuickAccessSkill[];
   providers: ProviderInfo[];
   discovered: ProjectSkill[];
+  auricSkills: AuricSkillDefinition[];
   discoveryReady: boolean;
   onChange: (skills: QuickAccessSkill[]) => void;
   onAnnounce: (message: string) => void;
@@ -52,6 +54,7 @@ export function QuickAccessSkillsEditor({
   skills,
   providers,
   discovered,
+  auricSkills,
   discoveryReady,
   onChange,
   onAnnounce,
@@ -122,6 +125,7 @@ export function QuickAccessSkillsEditor({
       <ul aria-label={title} className="flex flex-col gap-2">
         {skills.map((skill, index) => {
           const provider = providers.find((p) => p.id === skill.providerId);
+          const auricDefinition = auricSkills.find((entry) => entry.id === skill.auricSkillId);
           const name = skill.label || `${itemNoun.toLowerCase()} ${index + 1}`;
           return (
             <li
@@ -130,6 +134,33 @@ export function QuickAccessSkillsEditor({
               className="rounded-lg border border-white/5 bg-white/[0.02] p-3"
             >
               <div className="flex items-center gap-2">
+                <select
+                  aria-label={`${itemNoun} ${index + 1} saved skill`}
+                  value={auricDefinition?.id ?? ''}
+                  onChange={(event) => {
+                    const definition = auricSkills.find((entry) => entry.id === event.target.value);
+                    if (!definition) {
+                      update(index, { auricSkillId: undefined });
+                      return;
+                    }
+                    update(index, {
+                      label: definition.name,
+                      prompt: definition.prompt,
+                      auricSkillId: definition.id,
+                      invocation: undefined,
+                    });
+                  }}
+                  className="max-w-36 rounded bg-white/5 px-2 py-2 text-[11px] text-foreground outline-none focus:ring-1 focus:ring-primary/40"
+                >
+                  <option value="">Custom</option>
+                  <optgroup label="Auric Skills">
+                    {auricSkills.map((definition) => (
+                      <option key={definition.id} value={definition.id}>
+                        {definition.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
                 <input
                   ref={(element) => {
                     if (element) labelRefs.current.set(skill.id, element);
@@ -139,6 +170,7 @@ export function QuickAccessSkillsEditor({
                   aria-label={`${itemNoun} ${index + 1} name`}
                   placeholder="What to call it"
                   onChange={(event) => update(index, { label: event.target.value })}
+                  disabled={!!auricDefinition}
                   className={INPUT_CLASS}
                 />
                 <SkillInvocationInput
@@ -150,6 +182,7 @@ export function QuickAccessSkillsEditor({
                   onChange={(prompt) =>
                     update(index, {
                       prompt,
+                      auricSkillId: undefined,
                       // A hand-edited prompt is no longer the skill that was
                       // picked, and the list on disk must stop calling it added.
                       invocation: prompt === skill.invocation ? skill.invocation : undefined,
@@ -159,6 +192,7 @@ export function QuickAccessSkillsEditor({
                     update(index, {
                       prompt: found.invocation,
                       invocation: found.invocation,
+                      auricSkillId: undefined,
                       // Only when the row is still unnamed: a name someone
                       // typed is a decision, not a gap to fill.
                       label: skill.label.trim() ? skill.label : found.name,

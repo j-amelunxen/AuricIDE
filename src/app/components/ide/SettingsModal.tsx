@@ -18,6 +18,7 @@ import { McpSettingsContent } from './McpSettingsContent';
 import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
 import { ExcalidrawContent } from './settings/ExcalidrawContent';
 import { VideoImportContent } from './settings/VideoImportContent';
+import { AuricSkillsContent } from './settings/AuricSkillsContent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 
@@ -26,6 +27,7 @@ const JUDGE_HINT =
 
 export type SettingsCategory =
   | 'agent'
+  | 'skills'
   | 'credentials'
   | 'llm'
   | 'judge'
@@ -82,7 +84,10 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     id: 'app-agent',
     label: 'Agents',
     scope: 'application',
-    items: [{ id: 'agent', icon: 'robot_2', label: 'Agent' }],
+    items: [
+      { id: 'agent', icon: 'robot_2', label: 'Agent' },
+      { id: 'skills', icon: 'auto_awesome', label: 'Skills' },
+    ],
   },
   {
     id: 'app-credentials',
@@ -166,6 +171,8 @@ function SettingsDialog({
     switch (activeCategory) {
       case 'agent':
         return <AgentContent />;
+      case 'skills':
+        return <AuricSkillsContent />;
       case 'credentials':
         return <CredentialsContent />;
       case 'providers':

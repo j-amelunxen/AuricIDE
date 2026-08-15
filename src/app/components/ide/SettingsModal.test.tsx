@@ -116,6 +116,7 @@ describe('SettingsModal – Grouped nav', () => {
     // Keys and theme are properties of the machine…
     expect(within(application).getByTestId('settings-nav-credentials')).toBeInTheDocument();
     expect(within(application).getByTestId('settings-nav-appearance')).toBeInTheDocument();
+    expect(within(application).getByTestId('settings-nav-skills')).toBeInTheDocument();
     // …the provider policy and the commit conventions are the repository's.
     expect(within(project).getByTestId('settings-nav-providers')).toBeInTheDocument();
     expect(within(project).getByTestId('settings-nav-project-agent')).toBeInTheDocument();
@@ -172,6 +173,7 @@ describe('SettingsModal – Category Navigation', () => {
   it('renders all nav items', () => {
     render(<SettingsModal isOpen={true} onClose={() => {}} />);
     expect(screen.getByTestId('settings-nav-agent')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-nav-skills')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-commands')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-editor')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-appearance')).toBeInTheDocument();

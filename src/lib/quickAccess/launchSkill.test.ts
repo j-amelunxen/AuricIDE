@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openSkillSpawnDialog } from './launchSkill';
+import { saveAuricSkills } from '../settings/auricSkills';
 
 function makeStore() {
   return {
@@ -13,6 +14,8 @@ function makeStore() {
 }
 
 describe('openSkillSpawnDialog', () => {
+  beforeEach(() => saveAuricSkills([]));
+
   it('clears leftover ticket and goal, then opens the dialog for the repo', () => {
     const store = makeStore();
 
@@ -55,5 +58,25 @@ describe('openSkillSpawnDialog', () => {
 
     expect(store.setInitialAgentTask).toHaveBeenCalledWith('/seo-check');
     expect(store.setSpawnAgentPreset).toHaveBeenCalledWith(null);
+  });
+
+  it('injects the latest full prompt for an Auric skill reference', () => {
+    saveAuricSkills([
+      {
+        id: 'review',
+        name: 'Code Review',
+        prompt: 'Review the implementation and return only actionable findings.',
+      },
+    ]);
+    const store = makeStore();
+
+    openSkillSpawnDialog(store, '/repo/sample', {
+      prompt: 'stale snapshot',
+      auricSkillId: 'review',
+    });
+
+    expect(store.setInitialAgentTask).toHaveBeenCalledWith(
+      'Review the implementation and return only actionable findings.'
+    );
   });
 });

@@ -3,6 +3,7 @@ import { recordAgentPromptHistory, spawnAgent } from '../tauri/agents';
 import { useStore } from './index';
 import type { QuickAccessCombo } from './starredProjectsSlice';
 import { FALLBACK_CRUSH_PROVIDER } from '../tauri/providers';
+import { saveAuricSkills } from '../settings/auricSkills';
 
 vi.mock('../tauri/agents', () => {
   let n = 0;
@@ -87,6 +88,7 @@ const blogWrite: QuickAccessCombo = {
 describe('skillComboSlice', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    saveAuricSkills([]);
     useStore.setState({
       agents: [],
       agentLogs: {},
@@ -219,6 +221,25 @@ describe('skillComboSlice', () => {
         provider: FALLBACK_CRUSH_PROVIDER.id,
         model: FALLBACK_CRUSH_PROVIDER.defaultModel,
       })
+    );
+  });
+
+  it('resolves Auric skill steps before a combo starts', async () => {
+    saveAuricSkills([
+      { id: 'draft', name: 'Draft', prompt: 'Write the first complete draft from the brief.' },
+    ]);
+
+    await useStore.getState().startSkillCombo('/a/website', {
+      id: 'auric-combo',
+      label: 'Auric chain',
+      steps: [
+        { id: 'one', label: 'Old draft', prompt: 'stale', auricSkillId: 'draft' },
+        { id: 'two', label: 'Finish', prompt: 'Finish it.' },
+      ],
+    });
+
+    expect(spawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ task: 'Write the first complete draft from the brief.' })
     );
   });
 });

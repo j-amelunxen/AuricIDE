@@ -8,6 +8,7 @@ import {
 } from '../quickAccess/combo';
 import { composeStepTask, deriveHandoffContext } from '../agents/handoff';
 import type { QuickAccessCombo, QuickAccessSkill } from './starredProjectsSlice';
+import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
 
 export type { SkillComboRun } from '../quickAccess/combo';
 
@@ -146,7 +147,10 @@ export const createSkillComboSlice: StateCreator<SkillComboSlice> = (set, get) =
     comboRuns: [],
 
     startSkillCombo: async (projectPath, combo) => {
-      const steps = combo.steps.filter((step) => step.prompt.trim().length > 0);
+      const library = loadAuricSkills();
+      const steps = combo.steps
+        .map((step) => resolveAuricSkillReference(step, library))
+        .filter((step) => step.prompt.trim().length > 0);
       if (steps.length === 0) return;
 
       const existing = get().comboRuns.find(
