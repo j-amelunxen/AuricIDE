@@ -1,8 +1,9 @@
 # Themes
 
-Drop custom theme JSON files into this folder. AuricIDE scans `themes/` at
-startup (and when you click **Reload themes** in Settings → Appearance) and adds
-valid files to the picker.
+Drop custom theme JSON files into this folder, or import them from Settings →
+Appearance → **Import theme**. AuricIDE scans `themes/` at startup (and when you
+click **Reload themes**) and adds valid files to the picker. An import writes
+into the user themes folder (`<app data dir>/themes/`).
 
 - Built-in themes (Auric Purple, Electric Blue, Cyan Pulse, Emerald, Amber,
   Magenta) always ship with the app — you cannot overwrite their ids.

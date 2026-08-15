@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +68,67 @@ fn search_paths(app: Option<&tauri::AppHandle>) -> Vec<PathBuf> {
     paths
 }
 
+/// User-writable destination for imported themes. Created on first import.
+pub fn user_themes_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("themes"))
+        .map_err(|e| format!("Could not resolve the app data directory: {e}"))
+}
+
+fn is_safe_theme_filename(filename: &str) -> bool {
+    let Some(stem) = filename.strip_suffix(".json") else {
+        return false;
+    };
+    // Matches theme id: kebab-case [a-z0-9-], 1–64 chars. No separators.
+    if stem.is_empty() || stem.len() > 64 {
+        return false;
+    }
+    let mut chars = stem.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_ascii_lowercase() || first.is_ascii_digit())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Write `content` as `filename` inside `themes_dir`. Creates the directory.
+/// `filename` must be a bare `*.json` name — no path separators.
+pub fn install_theme_file(
+    themes_dir: &Path,
+    filename: &str,
+    content: &str,
+) -> Result<ThemeFile, String> {
+    if !is_safe_theme_filename(filename) {
+        return Err(
+            "Theme filename must be kebab-case [a-z0-9-], 1–64 chars, ending in .json".to_string(),
+        );
+    }
+    if content.trim().is_empty() {
+        return Err("Theme file is empty".to_string());
+    }
+    const MAX_BYTES: usize = 256 * 1024;
+    if content.len() > MAX_BYTES {
+        return Err("Theme file is larger than 256 KB".to_string());
+    }
+
+    fs::create_dir_all(themes_dir)
+        .map_err(|e| format!("Could not create the themes folder: {e}"))?;
+
+    let dest = themes_dir.join(filename);
+    match dest.parent() {
+        Some(parent) if parent == themes_dir => {}
+        _ => return Err("Theme filename must stay inside the themes folder".to_string()),
+    }
+
+    fs::write(&dest, content).map_err(|e| format!("Could not write the theme file: {e}"))?;
+
+    Ok(ThemeFile {
+        path: dest.to_string_lossy().to_string(),
+        content: content.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +148,90 @@ mod tests {
         let read = fs::read_to_string(&path).unwrap();
         assert!(read.contains("rose"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_theme_file_creates_dir_and_writes_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        let content = r##"{"schemaVersion":1,"id":"rose","name":"Rose","swatch":"#ff4d6d","tokens":{"primary":"#ff4d6d"}}"##;
+
+        let written = install_theme_file(&themes, "rose.json", content).unwrap();
+
+        assert_eq!(written.path, themes.join("rose.json").to_string_lossy());
+        assert_eq!(written.content, content);
+        assert_eq!(
+            fs::read_to_string(themes.join("rose.json")).unwrap(),
+            content
+        );
+    }
+
+    #[test]
+    fn install_theme_file_overwrites_an_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        fs::create_dir_all(&themes).unwrap();
+        fs::write(themes.join("rose.json"), "old").unwrap();
+
+        let written = install_theme_file(&themes, "rose.json", "new").unwrap();
+        assert_eq!(written.content, "new");
+        assert_eq!(fs::read_to_string(themes.join("rose.json")).unwrap(), "new");
+    }
+
+    #[test]
+    fn install_theme_file_rejects_path_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        let err = install_theme_file(&themes, "../escape.json", "{}").unwrap_err();
+        assert!(
+            err.to_lowercase().contains("filename"),
+            "unexpected error: {err}"
+        );
+        assert!(!dir.path().join("escape.json").exists());
+    }
+
+    #[test]
+    fn install_theme_file_rejects_nested_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        let err = install_theme_file(&themes, "nested/rose.json", "{}").unwrap_err();
+        assert!(
+            err.to_lowercase().contains("filename"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn install_theme_file_rejects_non_json_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        let err = install_theme_file(&themes, "rose.txt", "{}").unwrap_err();
+        assert!(
+            err.to_lowercase().contains("filename"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn install_theme_file_rejects_empty_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        let err = install_theme_file(&themes, "rose.json", "   ").unwrap_err();
+        assert!(
+            err.to_lowercase().contains("empty"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn install_theme_file_rejects_dotdot_inside_stem() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        let err = install_theme_file(&themes, "rose../x.json", "{}").unwrap_err();
+        assert!(
+            err.to_lowercase().contains("filename"),
+            "unexpected error: {err}"
+        );
     }
 
     fn tempfile_dir() -> PathBuf {

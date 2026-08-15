@@ -7,9 +7,23 @@ import { loadShowAttribution } from '@/lib/settings/attribution';
 import { clearThemeOverrides } from '@/lib/theme/catalog/apply';
 import { resetThemeForTests } from '@/lib/theme/catalog/controller';
 import { THEME_STORAGE_KEY } from '@/lib/theme/catalog/storage';
+import { useStore } from '@/lib/store';
 
+const mockListThemes = vi.fn(async () => [] as { path: string; content: string }[]);
+const mockImportTheme = vi.fn();
 vi.mock('@/lib/tauri/themes', () => ({
-  listThemes: vi.fn(async () => []),
+  listThemes: (...args: unknown[]) => mockListThemes(...args),
+  importTheme: (...args: unknown[]) => mockImportTheme(...args),
+}));
+
+const mockOpenDialog = vi.fn();
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: (...args: unknown[]) => mockOpenDialog(...args),
+}));
+
+const mockReadFile = vi.fn();
+vi.mock('@/lib/tauri/fs', () => ({
+  readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
 
 describe('AppearanceContent — theme picker', () => {
@@ -19,6 +33,12 @@ describe('AppearanceContent — theme picker', () => {
     resetThemeForTests();
     delete document.documentElement.dataset.accent;
     delete document.documentElement.dataset.auricTheme;
+    mockListThemes.mockReset();
+    mockListThemes.mockResolvedValue([]);
+    mockImportTheme.mockReset();
+    mockOpenDialog.mockReset();
+    mockReadFile.mockReset();
+    useStore.setState({ toasts: [] });
   });
 
   afterEach(() => {
@@ -70,6 +90,80 @@ describe('AppearanceContent — theme picker', () => {
       expect(screen.getByTestId('theme-reload')).toBeInTheDocument();
     });
     expect(screen.getByText(/No custom themes yet/i)).toBeInTheDocument();
+  });
+
+  it('offers an import button next to reload', async () => {
+    render(<AppearanceContent />);
+    await waitFor(() => {
+      expect(screen.getByTestId('theme-import')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('theme-import')).toHaveTextContent(/import/i);
+  });
+
+  it('imports a picked JSON file into the custom list', async () => {
+    const user = userEvent.setup();
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      id: 'rose',
+      name: 'Rose',
+      swatch: '#ff4d6d',
+      tokens: { primary: '#ff4d6d' },
+    });
+    mockOpenDialog.mockResolvedValueOnce('/tmp/rose.json');
+    mockReadFile.mockResolvedValueOnce(json);
+    mockImportTheme.mockImplementation(async (content: string) => {
+      mockListThemes.mockResolvedValue([{ path: '/app/themes/rose.json', content }]);
+      return { path: '/app/themes/rose.json', content };
+    });
+
+    render(<AppearanceContent />);
+    await waitFor(() => {
+      expect(screen.getByTestId('theme-import')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('theme-import'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Rose' })).toBeInTheDocument();
+    });
+    expect(mockImportTheme).toHaveBeenCalledWith(json, 'rose.json');
+    expect(screen.getByRole('radio', { name: 'Rose' })).toBeChecked();
+    expect(useStore.getState().toasts.some((t) => /imported theme "rose"/i.test(t.message))).toBe(
+      true
+    );
+  });
+
+  it('does nothing when the file picker is cancelled', async () => {
+    const user = userEvent.setup();
+    mockOpenDialog.mockResolvedValueOnce(null);
+
+    render(<AppearanceContent />);
+    await waitFor(() => {
+      expect(screen.getByTestId('theme-import')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('theme-import'));
+
+    expect(mockReadFile).not.toHaveBeenCalled();
+    expect(mockImportTheme).not.toHaveBeenCalled();
+  });
+
+  it('toasts when the picked file is not a valid theme', async () => {
+    const user = userEvent.setup();
+    mockOpenDialog.mockResolvedValueOnce('/tmp/bad.json');
+    mockReadFile.mockResolvedValueOnce('{ not json');
+
+    render(<AppearanceContent />);
+    await waitFor(() => {
+      expect(screen.getByTestId('theme-import')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('theme-import'));
+
+    await waitFor(() => {
+      expect(useStore.getState().toasts.some((t) => t.variant === 'error')).toBe(true);
+    });
+    expect(mockImportTheme).not.toHaveBeenCalled();
   });
 });
 

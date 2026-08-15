@@ -13,3 +13,11 @@ export interface ThemeFile {
 export async function listThemes(): Promise<ThemeFile[]> {
   return await invoke<ThemeFile[]>('list_themes');
 }
+
+/**
+ * Persist a theme JSON file into the user themes folder (`<app_data>/themes`).
+ * Filename must be a bare `*.json` stem — the Rust side rejects path traversal.
+ */
+export async function importTheme(content: string, filename: string): Promise<ThemeFile> {
+  return await invoke<ThemeFile>('import_theme', { content, filename });
+}
