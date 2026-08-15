@@ -1,0 +1,16 @@
+{
+  "hook_event_name": "Status",
+  "session_id": "00000000-0000-4000-8000-000000000003",
+  "cwd": "/tmp/example/project",
+  "model": {
+    "id": "claude-opus-5",
+    "display_name": "Opus"
+  },
+  "version": "2.1.233",
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 91,
+      "resets_at": 1738425600
+    }
+  }
+}

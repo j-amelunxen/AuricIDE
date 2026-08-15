@@ -2,6 +2,7 @@
 
 import { useAttribution } from '@/lib/settings/attribution';
 import { TruthsLight } from '../requirements/TruthsLight';
+import { CliQuotaChip } from '../usage/CliQuotaChip';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface StatusBarProps {
@@ -62,6 +63,7 @@ export function StatusBar({
 
       <div className="flex items-center gap-6">
         <TruthsLight />
+        <CliQuotaChip />
         {cursorPos && (
           <span className="font-mono text-primary/80">
             Ln {cursorPos.line}, Col {cursorPos.col}

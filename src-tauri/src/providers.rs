@@ -39,6 +39,37 @@ pub struct ProviderInfo {
 pub struct SpawnCommand {
     pub command: String,
     pub env_vars: Vec<(String, String)>,
+    /// The leading token(s) of `command` that name the binary.
+    ///
+    /// Reported rather than re-derived, because a config may legitimately set
+    /// `"executable": "npx -y @anthropic-ai/claude-code"` — so "the first word
+    /// of the command" is neither the program nor a safe place to splice an
+    /// extra flag in after.
+    pub executable: String,
+}
+
+impl SpawnCommand {
+    /// Inserts a flag directly behind the executable, leaving the provider's
+    /// own argument order untouched.
+    ///
+    /// Splices on the executable prefix rather than splitting the command into
+    /// words and rejoining it: the task is embedded in this string, and
+    /// re-joining would collapse any run of spaces inside the prompt the user
+    /// actually wrote.
+    pub fn with_flag_after_executable(mut self, flag: &str, value: &str) -> Self {
+        let Some(rest) = self.command.strip_prefix(&self.executable) else {
+            return self;
+        };
+        // The value is quoted here, so it is escaped here too. A path under
+        // `Application Support` only needs the quotes; a home directory with a
+        // `$` or a `!` in it needs the escaping as well.
+        self.command = format!(
+            "{executable} {flag} \"{value}\"{rest}",
+            executable = self.executable,
+            value = shell_escape_double_quoted(value),
+        );
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +267,7 @@ impl AgentProvider for DynamicProvider {
         SpawnCommand {
             command: cmd_parts.join(" "),
             env_vars: vec![],
+            executable: self.config.executable.clone(),
         }
     }
 
@@ -314,6 +346,7 @@ impl AgentProvider for CrushProvider {
         SpawnCommand {
             command: cmd,
             env_vars: vec![],
+            executable: "crush".to_string(),
         }
     }
 
@@ -558,6 +591,61 @@ mod tests {
           "promptTemplate": "claude --model sonnet -p \""
         }"#;
         serde_json::from_str(json).unwrap()
+    }
+
+    // ── Splicing a flag in behind the executable ──────────────────────
+
+    #[test]
+    fn a_flag_lands_between_the_executable_and_the_providers_own_arguments() {
+        let provider = DynamicProvider::new(get_claude_config());
+        let cmd = provider
+            .build_spawn_command("sonnet", "task", Some("auto"), false, false, false)
+            .with_flag_after_executable("--settings", "/tmp/s.json");
+        assert_eq!(
+            cmd.command,
+            "claude --settings \"/tmp/s.json\" --model sonnet \"task\" --permission-mode auto"
+        );
+    }
+
+    #[test]
+    fn a_multi_word_executable_keeps_its_own_arguments_together() {
+        // `"executable": "npx -y @anthropic-ai/claude-code"` is a shape the
+        // config format allows. Inserting after the first *word* would produce
+        // `npx --settings ... -y @anthropic-ai/claude-code` and break the run.
+        let mut config = get_claude_config();
+        config.executable = "npx -y @anthropic-ai/claude-code".to_string();
+        let cmd = DynamicProvider::new(config)
+            .build_spawn_command("auto", "task", Some("default"), false, false, false)
+            .with_flag_after_executable("--settings", "/tmp/s.json");
+        assert_eq!(
+            cmd.command,
+            "npx -y @anthropic-ai/claude-code --settings \"/tmp/s.json\" \"task\""
+        );
+    }
+
+    #[test]
+    fn a_spliced_value_is_escaped_for_the_double_quotes_it_lands_in() {
+        let provider = DynamicProvider::new(get_claude_config());
+        let cmd = provider
+            .build_spawn_command("auto", "task", Some("default"), false, false, false)
+            .with_flag_after_executable("--settings", "/Users/a$b!/Application Support/s.json");
+        assert!(
+            cmd.command
+                .contains(r#""/Users/a\$b\!/Application Support/s.json""#),
+            "{}",
+            cmd.command
+        );
+    }
+
+    #[test]
+    fn splicing_does_not_reflow_whitespace_inside_the_task() {
+        // The task is embedded in this string. Splitting the command into
+        // words and rejoining it would quietly rewrite the user's prompt.
+        let provider = DynamicProvider::new(get_claude_config());
+        let cmd = provider
+            .build_spawn_command("auto", "two  spaces", Some("default"), false, false, false)
+            .with_flag_after_executable("--settings", "/tmp/s.json");
+        assert!(cmd.command.contains("\"two  spaces\""), "{}", cmd.command);
     }
 
     #[test]

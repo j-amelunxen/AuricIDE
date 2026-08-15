@@ -1,0 +1,12 @@
+{
+  "hook_event_name": "Status",
+  "session_id": "00000000-0000-4000-8000-000000000004",
+  "cwd": "/tmp/example/project",
+  "version": "2.1.233",
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": "twenty-three",
+      "resets_at": 1738425600
+    }
+  }
+}

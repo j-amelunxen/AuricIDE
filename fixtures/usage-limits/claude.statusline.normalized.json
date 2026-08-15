@@ -1,0 +1,27 @@
+{
+  "provider": "claude",
+  "planLabel": null,
+  "windows": [
+    {
+      "limitId": "claude",
+      "limitLabel": null,
+      "kind": "5h",
+      "label": "5 h",
+      "usedPercent": 23.5,
+      "resetsAt": 1738425600,
+      "windowMinutes": 300
+    },
+    {
+      "limitId": "claude",
+      "limitLabel": null,
+      "kind": "7d",
+      "label": "7 d",
+      "usedPercent": 41.2,
+      "resetsAt": 1738857600,
+      "windowMinutes": 10080
+    }
+  ],
+  "credits": null,
+  "observedAt": 1787300000,
+  "source": "statusline"
+}

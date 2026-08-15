@@ -1,0 +1,35 @@
+{
+  "hook_event_name": "Status",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/tmp/example/transcript.jsonl",
+  "cwd": "/tmp/example/project",
+  "model": {
+    "id": "claude-sonnet-5",
+    "display_name": "Sonnet"
+  },
+  "workspace": {
+    "current_dir": "/tmp/example/project",
+    "project_dir": "/tmp/example/project",
+    "added_dirs": []
+  },
+  "version": "2.1.233",
+  "cost": {
+    "total_cost_usd": 0.01234,
+    "total_duration_ms": 45000
+  },
+  "context_window": {
+    "context_window_size": 200000,
+    "used_percentage": 8,
+    "remaining_percentage": 92
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 23.5,
+      "resets_at": 1738425600
+    },
+    "seven_day": {
+      "used_percentage": 41.2,
+      "resets_at": 1738857600
+    }
+  }
+}

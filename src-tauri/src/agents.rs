@@ -327,6 +327,45 @@ fn resolve_permitted_provider(
     Ok((resolved_id, provider))
 }
 
+/// Points a `claude` spawn at AuricIDE's status-line sidecar, so the quota
+/// numbers Claude Code reports land somewhere the status bar can read them.
+///
+/// Every branch here returns the command untouched rather than failing: the
+/// setting is off, the provider is something else, the sidecar could not be
+/// written. A quota chip is never worth costing someone an agent run.
+fn attach_usage_sidecar(
+    spawn_cmd: crate::providers::SpawnCommand,
+    app: &AppHandle,
+) -> crate::providers::SpawnCommand {
+    // The executable is checked rather than the provider id: a user config can
+    // shadow `claude.json` under any id, and the id would then say nothing
+    // about which binary actually starts.
+    let is_claude =
+        std::path::Path::new(spawn_cmd.executable.split_whitespace().last().unwrap_or(""))
+            .file_name()
+            .is_some_and(|name| name == "claude");
+    if !is_claude {
+        return spawn_cmd;
+    }
+
+    let Some(service) = app.try_state::<crate::usage_limits::UsageLimitsService>() else {
+        return spawn_cmd;
+    };
+    if !service.is_enabled() {
+        return spawn_cmd;
+    }
+
+    match service.ensure_claude_sidecar() {
+        Ok(settings) => {
+            spawn_cmd.with_flag_after_executable("--settings", &settings.display().to_string())
+        }
+        Err(error) => {
+            eprintln!("Usage limits: could not prepare the statusLine sidecar: {error}");
+            spawn_cmd
+        }
+    }
+}
+
 pub async fn spawn_agent_impl(
     config: AgentConfig,
     state: &AgentManagerState,
@@ -385,6 +424,7 @@ pub async fn spawn_agent_impl(
         config.auto_accept_edits.unwrap_or(false),
         config.headless.unwrap_or(false),
     );
+    let spawn_cmd = attach_usage_sidecar(spawn_cmd, app);
 
     let mut cmd = CommandBuilder::new(shell);
     for arg in args {

@@ -1,0 +1,21 @@
+{
+  "provider": "codex",
+  "planLabel": "plus",
+  "windows": [
+    {
+      "limitId": "codex",
+      "limitLabel": null,
+      "kind": "7d",
+      "label": "7 d",
+      "usedPercent": 40.0,
+      "resetsAt": 1787301067,
+      "windowMinutes": 10080
+    }
+  ],
+  "credits": {
+    "balance": "21979.6827500000",
+    "unlimited": false
+  },
+  "observedAt": 1787300000,
+  "source": "app-server"
+}
