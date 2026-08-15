@@ -125,14 +125,70 @@ describe('ActivityBar', () => {
     expect(toggle).not.toHaveClass('transition-all');
   });
 
-  it('renders a fast in-app tooltip label for each item instead of the slow native title', () => {
+  it('reveals a fast in-app tooltip label on hover instead of the slow native title', async () => {
+    const user = userEvent.setup();
     render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    const item = screen.getByTestId('activity-item-extensions');
+    expect(screen.queryByTestId('activity-tooltip-extensions')).not.toBeInTheDocument();
+
+    await user.hover(item);
     // Custom tooltip carries the label...
     const tip = screen.getByTestId('activity-tooltip-extensions');
     expect(tip).toHaveTextContent('Extensions');
     expect(tip).toHaveAttribute('role', 'tooltip');
     // ...and the native title (≈1s OS delay, unstyled) is gone.
-    expect(screen.getByTestId('activity-item-extensions')).not.toHaveAttribute('title');
+    expect(item).not.toHaveAttribute('title');
+
+    await user.unhover(item);
+    expect(screen.queryByTestId('activity-tooltip-extensions')).not.toBeInTheDocument();
+  });
+
+  it('labels the panel toggles on hover as well', async () => {
+    const user = userEvent.setup();
+    render(
+      <ActivityBar
+        items={items}
+        activeId="explorer"
+        onSelect={() => {}}
+        onTerminalToggle={() => {}}
+        onAgentsToggle={() => {}}
+      />
+    );
+    await user.hover(screen.getByRole('button', { name: 'Toggle Terminal (⌘J)' }));
+    expect(screen.getByTestId('activity-tooltip-terminal')).toHaveTextContent(
+      'Toggle Terminal (⌘J)'
+    );
+  });
+
+  it('keeps the hover label out of the scrolling rail so it cannot widen it', async () => {
+    const user = userEvent.setup();
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    await user.hover(screen.getByTestId('activity-item-extensions'));
+
+    const tip = screen.getByTestId('activity-tooltip-extensions');
+    const scroll = screen.getByTestId('activity-rail-scroll');
+    // A label parked inside the scroller reaches ~120px past a 56px rail, and
+    // `overflow-y: auto` computes `overflow-x` to `auto` — that is a horizontal
+    // scrollbar under the icons, which then costs the height that summons a
+    // vertical one. It has to hang outside the scroller entirely.
+    expect(scroll.contains(tip)).toBe(false);
+    expect(tip).toHaveClass('fixed');
+  });
+
+  it('anchors the hover label to the right edge of its icon', async () => {
+    const user = userEvent.setup();
+    render(<ActivityBar items={items} activeId="explorer" onSelect={() => {}} />);
+    const item = screen.getByTestId('activity-item-extensions');
+    vi.spyOn(item, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      right: 56,
+      height: 40,
+    } as DOMRect);
+
+    await user.hover(item);
+    const tip = screen.getByTestId('activity-tooltip-extensions');
+    expect(tip.style.left).toBe('68px'); // 56 + 12px gap
+    expect(tip.style.top).toBe('120px'); // vertically centred on the icon
   });
 
   it('separates primary destinations from demoted tools', () => {
