@@ -7,6 +7,7 @@ import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { ProjectIconCandidate } from '@/lib/tauri/projectIcons';
 import { clearImageIconCache } from '@/lib/quickAccess/imageIconCache';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import { saveAuricSkills } from '@/lib/settings/auricSkills';
 
 const mockListProjectSkills = vi.fn<() => Promise<ProjectSkill[]>>();
 const mockFindProjectIconCandidates = vi.fn<() => Promise<ProjectIconCandidate[]>>();
@@ -83,6 +84,7 @@ describe('QuickAccessSettingsDialog', () => {
     mockReadImageAsDataUri.mockResolvedValue('data:image/x-icon;base64,AAA');
     // The cache is module state and would leak a previous test's answer.
     clearImageIconCache();
+    saveAuricSkills([]);
     useStore.setState({ starredProjects: [], overlayStack: { layers: [] } });
   });
 
@@ -310,6 +312,67 @@ describe('QuickAccessSettingsDialog', () => {
   });
 
   describe('skills', () => {
+    it('selects a global Auric skill and stores only its stable reference plus fallback', () => {
+      saveAuricSkills([
+        {
+          id: 'review',
+          name: 'Code Review',
+          prompt: 'Inspect the current change and report concrete findings.',
+        },
+      ]);
+      renderDialog();
+      fireEvent.click(screen.getByTestId('quick-access-add-skill'));
+      fireEvent.change(screen.getByLabelText('Skill 1 saved skill'), {
+        target: { value: 'review' },
+      });
+
+      expect(screen.getByLabelText('Skill 1 name')).toHaveValue('Code Review');
+      expect(screen.getByLabelText('Skill 1 prompt')).toHaveValue(
+        'Inspect the current change and report concrete findings.'
+      );
+      fireEvent.click(screen.getByTestId('quick-access-settings-save'));
+      expect(useStore.getState().starredProjects[0].skills?.[0]).toMatchObject({
+        auricSkillId: 'review',
+        label: 'Code Review',
+        prompt: 'Inspect the current change and report concrete findings.',
+      });
+    });
+
+    it('offers global Auric skills inside combo steps too', () => {
+      saveAuricSkills([{ id: 'review', name: 'Code Review', prompt: 'Review the change.' }]);
+      renderDialog({
+        ...website,
+        combos: [
+          { id: 'combo', label: 'Review chain', steps: [{ id: 'step', label: '', prompt: '' }] },
+        ],
+      });
+
+      fireEvent.change(screen.getByLabelText('Combo 1 step 1 saved skill'), {
+        target: { value: 'review' },
+      });
+
+      expect(screen.getByLabelText('Combo 1 step 1 name')).toHaveValue('Code Review');
+      expect(screen.getByLabelText('Combo 1 step 1 prompt')).toHaveValue('Review the change.');
+    });
+
+    it('keeps a deleted global skill as an editable fallback prompt', () => {
+      renderDialog({
+        ...website,
+        skills: [
+          {
+            id: 'preset',
+            label: 'Deleted skill',
+            prompt: 'The last saved prompt.',
+            auricSkillId: 'no-longer-in-library',
+          },
+        ],
+      });
+
+      expect(screen.getByLabelText('Skill 1 saved skill')).toHaveValue('');
+      expect(screen.getByLabelText('Skill 1 name')).not.toBeDisabled();
+      expect(screen.getByLabelText('Skill 1 prompt')).toHaveValue('The last saved prompt.');
+    });
+
     it('adds a row and focuses its name field', () => {
       renderDialog();
       fireEvent.click(screen.getByTestId('quick-access-add-skill'));

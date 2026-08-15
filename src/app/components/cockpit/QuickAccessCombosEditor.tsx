@@ -8,11 +8,13 @@ import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { QuickAccessCombo, QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import { QuickAccessSkillsEditor } from './QuickAccessSkillsEditor';
+import type { AuricSkillDefinition } from '@/lib/settings/auricSkills';
 
 interface QuickAccessCombosEditorProps {
   combos: QuickAccessCombo[];
   providers: ProviderInfo[];
   discovered: ProjectSkill[];
+  auricSkills: AuricSkillDefinition[];
   discoveryReady: boolean;
   onChange: (combos: QuickAccessCombo[]) => void;
   onAnnounce: (message: string) => void;
@@ -30,6 +32,7 @@ export function QuickAccessCombosEditor({
   combos,
   providers,
   discovered,
+  auricSkills,
   discoveryReady,
   onChange,
   onAnnounce,
@@ -110,6 +113,7 @@ export function QuickAccessCombosEditor({
                   skills={combo.steps}
                   providers={providers}
                   discovered={discovered}
+                  auricSkills={auricSkills}
                   discoveryReady={discoveryReady}
                   title="Steps"
                   addLabel="Add step"

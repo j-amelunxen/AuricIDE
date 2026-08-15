@@ -2,8 +2,9 @@
  * Settings that belong to the machine rather than to any one project.
  *
  * The dividing line: would the setting still be right if you opened a different
- * repository? A theme, an editor toggle or a remembered launch choice would —
- * those live here. A ticket-key pattern or a provider policy would not; those
+ * repository? A theme or editor toggle would — those live here. The spawn
+ * defaults use one app-level envelope too, but key its entries by working
+ * directory. A ticket-key pattern or a provider policy would not; those
  * live in `projectConfig`. Credentials are global too, but go through the Rust
  * store instead (`@/lib/tauri/appCredentials`), because a secret does not
  * belong in the localStorage mirror.
@@ -31,6 +32,7 @@ export const APP_CONFIG_KEYS = {
   accent: 'auric.accent',
   showAttribution: 'auric-show-attribution',
   skillSources: 'auric.skill-sources',
+  auricSkills: 'auric.prompt-skills',
   spawnDefaults: 'auric.agent-spawn-defaults',
   customSlashCommands: 'auric-custom-slash-commands',
   recentCommands: 'auric-recent-commands',

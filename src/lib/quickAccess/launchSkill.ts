@@ -1,5 +1,6 @@
 import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
 import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import { resolveAuricSkillReference } from '@/lib/settings/auricSkills';
 
 /**
  * The one path into the spawn dialog. Everything a previous entry point may
@@ -16,17 +17,24 @@ export function openSkillSpawnDialog(
     setSpawnDialogOpen: (open: boolean) => void;
   },
   repoPath: string,
-  skill?: Pick<QuickAccessSkill, 'prompt' | 'providerId' | 'model' | 'permissionMode'>
+  skill?: Pick<
+    QuickAccessSkill,
+    'prompt' | 'providerId' | 'model' | 'permissionMode' | 'auricSkillId'
+  > &
+    Partial<Pick<QuickAccessSkill, 'label'>>
 ): void {
+  const resolved = skill
+    ? resolveAuricSkillReference({ ...skill, label: skill.label ?? '' })
+    : undefined;
   store.setSpawnAgentTicketId(null);
   store.setSpawnAgentGoalId(null);
-  store.setInitialAgentTask(skill?.prompt ?? '');
+  store.setInitialAgentTask(resolved?.prompt ?? '');
   store.setSpawnAgentPreset(
-    skill?.providerId
+    resolved?.providerId
       ? {
-          providerId: skill.providerId,
-          model: skill.model,
-          permissionMode: skill.permissionMode,
+          providerId: resolved.providerId,
+          model: resolved.model,
+          permissionMode: resolved.permissionMode,
         }
       : null
   );

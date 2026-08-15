@@ -2,6 +2,7 @@ import type { StateCreator } from 'zustand';
 import * as nativeStarredProjects from '../tauri/starredProjects';
 import type { PermissionMode } from '../tauri/agents';
 import { normalizeWheelSlots } from '../quickAccess/wheel';
+import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
 
 const STORAGE_KEY = 'auric-starred-projects';
 const MAX_STARRED = 50;
@@ -43,6 +44,8 @@ export interface QuickAccessSkill {
   permissionMode?: PermissionMode;
   /** Where an adopted entry came from, so a re-scan can tell it apart. */
   invocation?: string;
+  /** Global Auric definition. `prompt` and `label` remain as deletion-safe snapshots. */
+  auricSkillId?: string;
 }
 
 /** An ordered chain of launch presets. Ending one step starts the next. */
@@ -85,11 +88,16 @@ export interface StarredProject {
 }
 
 export function quickAccessSkills(project: StarredProject): QuickAccessSkill[] {
-  return project.skills ?? [];
+  const library = loadAuricSkills();
+  return (project.skills ?? []).map((skill) => resolveAuricSkillReference(skill, library));
 }
 
 export function quickAccessCombos(project: StarredProject): QuickAccessCombo[] {
-  return project.combos ?? [];
+  const library = loadAuricSkills();
+  return (project.combos ?? []).map((combo) => ({
+    ...combo,
+    steps: combo.steps.map((step) => resolveAuricSkillReference(step, library)),
+  }));
 }
 
 export function quickAccessWheelSlots(project: StarredProject): (string | null)[] {

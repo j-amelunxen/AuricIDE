@@ -65,6 +65,10 @@ pub struct QuickAccessSkill {
     pub permission_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headless: Option<bool>,
+    /// A prompt skill from Auric's application-wide library. The prompt and
+    /// label above are retained as a fallback snapshot if it is later deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auric_skill_id: Option<String>,
 }
 
 /// An ordered chain of launch presets. Ending one step starts the next.
@@ -798,6 +802,7 @@ mod tests {
             model: None,
             permission_mode: None,
             headless: None,
+            auric_skill_id: None,
         }
     }
 
@@ -848,6 +853,7 @@ mod tests {
             model: Some("opus".into()),
             permission_mode: Some("plan".into()),
             headless: Some(true),
+            auric_skill_id: Some("review".into()),
             ..skill("changelog")
         }];
 
