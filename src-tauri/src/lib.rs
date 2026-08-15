@@ -1139,6 +1139,17 @@ fn list_themes(app: tauri::AppHandle) -> Vec<themes::ThemeFile> {
     themes::scan_themes(Some(&app))
 }
 
+/// Copy a validated theme JSON into `<app_data>/themes/<filename>`.
+#[tauri::command]
+fn import_theme(
+    app: tauri::AppHandle,
+    content: String,
+    filename: String,
+) -> Result<themes::ThemeFile, String> {
+    let dir = themes::user_themes_dir(&app)?;
+    themes::install_theme_file(&dir, &filename, &content)
+}
+
 #[tauri::command]
 fn get_prompt_template(
     provider_id: Option<String>,
@@ -1964,6 +1975,7 @@ pub fn run() {
             list_providers,
             import_provider,
             list_themes,
+            import_theme,
             get_prompt_template,
             get_system_memory,
             init_project_db,

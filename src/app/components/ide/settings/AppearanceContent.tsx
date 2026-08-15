@@ -3,7 +3,9 @@
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { useTheme } from '@/lib/theme/catalog/useTheme';
+import { importCustomTheme } from '@/lib/theme/catalog/importTheme';
 import { useAttribution } from '@/lib/settings/attribution';
+import { useStore } from '@/lib/store';
 import type { ThemeMeta } from '@/lib/theme/catalog/types';
 
 function ThemeOption({
@@ -56,17 +58,42 @@ function ThemeOption({
 export function AppearanceContent() {
   const { id, list, skippedCount, select, reload } = useTheme();
   const [showAttribution, setShowAttribution] = useAttribution();
+  const showToast = useStore((s) => s.showToast);
 
   const builtins = list.filter((t) => t.builtin);
   const customs = list.filter((t) => !t.builtin);
+
+  const handleImport = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Theme', extensions: ['json'] }],
+        title: 'Import theme',
+      });
+      if (!selected || typeof selected !== 'string') return;
+      const { readFile } = await import('@/lib/tauri/fs');
+      const json = await readFile(selected);
+      const result = await importCustomTheme(json);
+      if (!result.ok) {
+        showToast(result.error, 'error');
+        return;
+      }
+      await reload();
+      select(result.theme.id);
+      showToast(`Imported theme "${result.theme.name}"`, 'success');
+    } catch (err) {
+      showToast(typeof err === 'string' ? err : 'Could not import theme', 'error');
+    }
+  };
 
   return (
     <div className="space-y-6">
       <SettingsSection title="Theme" icon="palette">
         <p className="text-xs text-foreground-muted leading-relaxed">
-          Pick a look for highlights, buttons, and glows. Built-ins ship with the app; drop a JSON
-          file into the <code className="text-foreground/80">themes/</code> folder for custom
-          themes. Applies instantly and is remembered on this machine.
+          Pick a look for highlights, buttons, and glows. Built-ins ship with the app; import a JSON
+          file or drop one into the <code className="text-foreground/80">themes/</code> folder.
+          Applies instantly and is remembered on this machine.
         </p>
 
         <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -85,21 +112,31 @@ export function AppearanceContent() {
             <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
               Custom
             </span>
-            <button
-              type="button"
-              onClick={() => void reload()}
-              className="text-[10px] text-primary-light hover:underline"
-              data-testid="theme-reload"
-            >
-              Reload themes
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleImport()}
+                className="text-[10px] text-primary-light hover:underline"
+                data-testid="theme-import"
+              >
+                Import theme
+              </button>
+              <button
+                type="button"
+                onClick={() => void reload()}
+                className="text-[10px] text-primary-light hover:underline"
+                data-testid="theme-reload"
+              >
+                Reload themes
+              </button>
+            </div>
           </div>
 
           {customs.length === 0 ? (
             <p className="text-[10px] text-foreground-muted/80 leading-relaxed">
-              No custom themes yet. Add a <code className="text-foreground/70">.json</code> file to{' '}
-              <code className="text-foreground/70">themes/</code> (see the folder README), then
-              reload.
+              No custom themes yet. Import a <code className="text-foreground/70">.json</code> file
+              or add one to <code className="text-foreground/70">themes/</code> (see the folder
+              README).
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
