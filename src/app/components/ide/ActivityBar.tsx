@@ -1,5 +1,7 @@
 'use client';
 
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export interface ActivityItem {
@@ -31,22 +33,85 @@ const iconMap: Record<string, string> = {
   hub: 'hub',
 };
 
+/** Screen-space point a hover label is pinned to: the icon's right edge. */
+interface TooltipAnchor {
+  top: number;
+  left: number;
+}
+
+/** Air between the icon's right edge and the label. */
+const TOOLTIP_GAP_PX = 12;
+
+/**
+ * Places a rail hover label in viewport coordinates.
+ *
+ * The label reaches roughly 120px past a 56px rail, and the rail scrolls —
+ * so parked inside the scroller it becomes scrollable overflow, and since
+ * `overflow-y: auto` computes `overflow-x` to `auto`, that is a horizontal
+ * scrollbar under the icons. Measuring the button and drawing the label
+ * outside the scroller keeps the rail exactly as wide as its icons.
+ */
+function useRailTooltip() {
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const [anchor, setAnchor] = useState<TooltipAnchor | null>(null);
+
+  const place = useCallback(() => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setAnchor({ top: rect.top + rect.height / 2, left: rect.right + TOOLTIP_GAP_PX });
+  }, []);
+  const hide = useCallback(() => setAnchor(null), []);
+
+  const isOpen = anchor !== null;
+  useEffect(() => {
+    if (!isOpen) return;
+    // A pinned label knows nothing about the rail scrolling under it, nor about
+    // the window resizing beneath it — so re-measure rather than leave it behind.
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [isOpen, place]);
+
+  return {
+    anchorRef,
+    anchor,
+    tooltipHandlers: { onMouseEnter: place, onMouseLeave: hide, onFocus: place, onBlur: hide },
+  };
+}
+
 /**
  * Fast, on-brand hover label. Replaces the native `title` tooltip (≈1s OS
  * delay, unstyled) so an icon-only rail stays discoverable and consistent
  * with the rest of the polish (wayfinding). Purely visual —
  * assistive tech reads the button's `aria-label`, so this is aria-hidden.
+ *
+ * Drawn into `document.body`: `position: fixed` alone would still be caught by
+ * the `active:scale-95` press, which makes the button a containing block for
+ * fixed descendants and hands the label back to the scroller mid-click.
  */
-function ActivityTooltip({ id, label }: { id: string; label: string }) {
-  return (
+function ActivityTooltip({
+  id,
+  label,
+  anchor,
+}: {
+  id: string;
+  label: string;
+  anchor: TooltipAnchor;
+}) {
+  return createPortal(
     <span
       role="tooltip"
       aria-hidden="true"
       data-testid={`activity-tooltip-${id}`}
-      className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-white/10 bg-[rgba(10,10,16,0.92)] px-2 py-1 text-xs font-medium text-foreground opacity-0 shadow-lg backdrop-blur-md transition-[opacity,transform] duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
+      style={{ top: anchor.top, left: anchor.left, zIndex: 'var(--z-tool)' }}
+      className="activity-tooltip-enter pointer-events-none fixed whitespace-nowrap rounded-md border border-white/10 bg-[rgba(10,10,16,0.92)] px-2 py-1 text-xs font-medium text-foreground shadow-lg backdrop-blur-md"
     >
       {label}
-    </span>
+    </span>,
+    document.body
   );
 }
 
@@ -60,43 +125,82 @@ function ActivityButton({
   onSelect: (id: string) => void;
 }) {
   const isTool = item.section === 'tools';
+  const { anchorRef, anchor, tooltipHandlers } = useRailTooltip();
   return (
-    <button
-      data-testid={`activity-item-${item.id}`}
-      onClick={() => onSelect(item.id)}
-      aria-label={item.label}
-      className={`group relative flex items-center justify-center rounded-xl transition-colors duration-150 active:scale-95 ${
-        isTool ? 'h-8 w-8' : 'h-10 w-10'
-      } ${
-        isActive
-          ? 'bg-primary/10 text-primary neon-glow'
-          : `text-foreground-muted hover:bg-white/5 hover:text-foreground ${isTool ? 'opacity-70 hover:opacity-100' : ''}`
-      }`}
-    >
-      <AuricIcon
-        name={iconMap[item.icon] || item.icon}
-        aria-hidden="true"
-        className={`transition-transform duration-150 ${
-          isTool ? 'text-base' : 'text-xl'
-        } ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}
-      />
+    <>
+      <button
+        ref={anchorRef}
+        data-testid={`activity-item-${item.id}`}
+        onClick={() => onSelect(item.id)}
+        aria-label={item.label}
+        {...tooltipHandlers}
+        className={`group relative flex items-center justify-center rounded-xl transition-colors duration-150 active:scale-95 ${
+          isTool ? 'h-8 w-8' : 'h-10 w-10'
+        } ${
+          isActive
+            ? 'bg-primary/10 text-primary neon-glow'
+            : `text-foreground-muted hover:bg-white/5 hover:text-foreground ${isTool ? 'opacity-70 hover:opacity-100' : ''}`
+        }`}
+      >
+        <AuricIcon
+          name={iconMap[item.icon] || item.icon}
+          aria-hidden="true"
+          className={`transition-transform duration-150 ${
+            isTool ? 'text-base' : 'text-xl'
+          } ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}
+        />
 
-      {/* Active Indicator Pips */}
-      {isActive && (
-        <span className="absolute -left-1 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
-      )}
+        {/* Active Indicator Pips */}
+        {isActive && (
+          <span className="absolute -left-1 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
+        )}
 
-      {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
-        <span
-          data-testid={`badge-${item.id}`}
-          className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-white shadow-sm ring-2 ring-[#050508]"
-        >
-          {item.badge}
-        </span>
-      )}
+        {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
+          <span
+            data-testid={`badge-${item.id}`}
+            className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-white shadow-sm ring-2 ring-[#050508]"
+          >
+            {item.badge}
+          </span>
+        )}
+      </button>
 
-      <ActivityTooltip id={item.id} label={item.label} />
-    </button>
+      {anchor && <ActivityTooltip id={item.id} label={item.label} anchor={anchor} />}
+    </>
+  );
+}
+
+/** A bottom-of-rail panel toggle — same affordances as an item, no destination. */
+function PanelToggleButton({
+  id,
+  label,
+  icon,
+  onClick,
+}: {
+  id: string;
+  label: string;
+  icon: string;
+  onClick: () => void;
+}) {
+  const { anchorRef, anchor, tooltipHandlers } = useRailTooltip();
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        onClick={onClick}
+        aria-label={label}
+        {...tooltipHandlers}
+        className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
+      >
+        <AuricIcon
+          name={icon}
+          aria-hidden="true"
+          className="text-xl transition-transform duration-150 group-hover:scale-110"
+        />
+      </button>
+
+      {anchor && <ActivityTooltip id={id} label={label} anchor={anchor} />}
+    </>
   );
 }
 
@@ -161,32 +265,20 @@ export function ActivityBar({
       {/* Panel toggles at the bottom */}
       <div className="mt-2 flex flex-shrink-0 flex-col items-center gap-2">
         {onAgentsToggle && (
-          <button
+          <PanelToggleButton
+            id="agents-toggle"
+            label="Toggle Agents Panel"
+            icon="smart_toy"
             onClick={onAgentsToggle}
-            aria-label="Toggle Agents Panel"
-            className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
-          >
-            <AuricIcon
-              name="smart_toy"
-              aria-hidden="true"
-              className="text-xl transition-transform duration-150 group-hover:scale-110"
-            />
-            <ActivityTooltip id="agents-toggle" label="Toggle Agents Panel" />
-          </button>
+          />
         )}
         {onTerminalToggle && (
-          <button
+          <PanelToggleButton
+            id="terminal"
+            label="Toggle Terminal (⌘J)"
+            icon="terminal"
             onClick={onTerminalToggle}
-            aria-label="Toggle Terminal (⌘J)"
-            className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground-muted transition-colors duration-150 active:scale-95 hover:bg-white/5 hover:text-foreground"
-          >
-            <AuricIcon
-              name="terminal"
-              aria-hidden="true"
-              className="text-xl transition-transform duration-150 group-hover:scale-110"
-            />
-            <ActivityTooltip id="terminal" label="Toggle Terminal (⌘J)" />
-          </button>
+          />
         )}
       </div>
     </nav>
