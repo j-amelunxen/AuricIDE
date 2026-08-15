@@ -32,6 +32,7 @@ import { isScratchPath } from '@/lib/scratch/naming';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
 import { ProjectSwitcher } from './components/cockpit/ProjectSwitcher';
+import { StartScreenAgentsLine } from './components/cockpit/StartScreenAgentsLine';
 import { ExcalidrawViewer } from './components/excalidraw/ExcalidrawViewer';
 import { ExcalidrawBrowser } from './components/excalidraw/ExcalidrawBrowser';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
@@ -518,24 +519,9 @@ export default function Home() {
                   </div>
                   {/* Same width as the switcher above it: two blocks sharing
                       one edge read as a column, two different widths read as
-                      clutter. */}
-                  <div
-                    className="mt-6 w-full max-w-3xl mx-auto text-left"
-                    data-testid="tip-of-the-day"
-                  >
-                    <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted mb-2">
-                      Tip of the Day
-                    </h2>
-                    <div className="flex items-start gap-3 rounded-2xl bg-primary/5 border border-primary/10 px-4 py-3">
-                      <AuricIcon
-                        name={handlers.dailyTip.icon}
-                        className="text-primary-light text-base mt-0.5"
-                      />
-                      <p className="text-[12px] text-foreground-muted leading-relaxed">
-                        {handlers.dailyTip.text}
-                      </p>
-                    </div>
-                  </div>
+                      clutter. Swaps to a running-agents line the moment
+                      there is something more useful to say than a tip. */}
+                  <StartScreenAgentsLine dailyTip={handlers.dailyTip} />
                 </div>
               </div>
             )}
