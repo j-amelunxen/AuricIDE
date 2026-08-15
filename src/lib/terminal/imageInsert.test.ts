@@ -254,4 +254,46 @@ describe('attachFileDrop', () => {
     detach();
     expect(mockUnlistenDragDrop).toHaveBeenCalled();
   });
+
+  // A native drag never moves keyboard focus, so the path lands in a terminal
+  // the keyboard is not pointing at — the user has to click in before Enter
+  // does anything. Dropping into a terminal is asking to talk to it.
+  describe('handing the keyboard back after a drop', () => {
+    it('reports the insert so the caller can focus the terminal', async () => {
+      const onInsert = vi.fn();
+      const detach = attachFileDrop(container, sendText, onDragState, onInsert);
+      await vi.waitFor(() => expect(dragDropHandler).not.toBeNull());
+
+      dragDropHandler!({
+        payload: { type: 'drop', paths: ['/Users/j/pic.png'], position: { x: 50, y: 200 } },
+      });
+
+      expect(onInsert).toHaveBeenCalledTimes(1);
+      detach();
+    });
+
+    it('stays silent for drops outside the container', async () => {
+      const onInsert = vi.fn();
+      const detach = attachFileDrop(container, sendText, onDragState, onInsert);
+      await vi.waitFor(() => expect(dragDropHandler).not.toBeNull());
+
+      dragDropHandler!({
+        payload: { type: 'drop', paths: ['/Users/j/pic.png'], position: { x: 50, y: 10 } },
+      });
+
+      expect(onInsert).not.toHaveBeenCalled();
+      detach();
+    });
+
+    it('stays silent when nothing was inserted', async () => {
+      const onInsert = vi.fn();
+      const detach = attachFileDrop(container, sendText, onDragState, onInsert);
+      await vi.waitFor(() => expect(dragDropHandler).not.toBeNull());
+
+      dragDropHandler!({ payload: { type: 'drop', paths: [], position: { x: 50, y: 200 } } });
+
+      expect(onInsert).not.toHaveBeenCalled();
+      detach();
+    });
+  });
 });

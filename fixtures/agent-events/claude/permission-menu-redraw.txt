@@ -1,0 +1,11 @@
+⏺ Bash(rm -rf build)
+⎿  Waiting for confirmation…
+Do you want to proceed?
+❯ 1. Yes
+  2. No
+Do you want to proceed?
+❯ 1. Yes
+  2. No
+Do you want to proceed?
+❯ 1. Yes
+  2. No

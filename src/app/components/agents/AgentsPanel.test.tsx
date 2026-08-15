@@ -41,6 +41,29 @@ const agents: AgentInfo[] = [
   },
 ];
 
+describe('AgentsPanel — open console', () => {
+  it('renders no button when onOpenConsole is not provided', () => {
+    render(<AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    expect(screen.queryByTestId('agents-open-console')).not.toBeInTheDocument();
+  });
+
+  it('calls onOpenConsole when the button is provided and clicked', async () => {
+    const user = userEvent.setup();
+    const onOpenConsole = vi.fn();
+    render(
+      <AgentsPanel
+        agents={agents}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onOpenConsole={onOpenConsole}
+      />
+    );
+
+    await user.click(screen.getByTestId('agents-open-console'));
+    expect(onOpenConsole).toHaveBeenCalled();
+  });
+});
+
 describe('AgentsPanel', () => {
   it('renders panel with data-testid', () => {
     render(<AgentsPanel agents={agents} onSpawn={vi.fn()} onKill={vi.fn()} />);

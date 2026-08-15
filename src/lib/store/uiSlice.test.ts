@@ -280,6 +280,36 @@ describe('uiSlice – videoImportDialogOpen', () => {
   });
 });
 
+describe('uiSlice – agentConsoleOpen', () => {
+  let store: ReturnType<typeof createTestStore>;
+
+  beforeEach(() => {
+    store = createTestStore();
+  });
+
+  it('defaults agentConsoleOpen to false', () => {
+    expect(store.current.agentConsoleOpen).toBe(false);
+  });
+
+  it('openAgentConsole opens it', () => {
+    store.current.openAgentConsole();
+    expect(store.current.agentConsoleOpen).toBe(true);
+  });
+
+  it('closeAgentConsole closes it', () => {
+    store.current.openAgentConsole();
+    store.current.closeAgentConsole();
+    expect(store.current.agentConsoleOpen).toBe(false);
+  });
+
+  it('toggleAgentConsole flips the current state', () => {
+    store.current.toggleAgentConsole();
+    expect(store.current.agentConsoleOpen).toBe(true);
+    store.current.toggleAgentConsole();
+    expect(store.current.agentConsoleOpen).toBe(false);
+  });
+});
+
 describe('uiSlice – spawnAgentRepoPath', () => {
   let store: ReturnType<typeof createTestStore>;
 

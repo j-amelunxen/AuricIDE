@@ -1,0 +1,4 @@
+[
+  { "kind": "run", "label": "Ran rm -rf build" },
+  { "kind": "ask", "label": "Permission requested: Bash(rm -rf build)" }
+]

@@ -16,6 +16,7 @@ import { GenerateDiagramDialog } from '@/app/components/agents/GenerateDiagramDi
 import { AgentTerminalModal } from '@/app/components/agents/AgentTerminalModal';
 import { LinkGraphModal } from '@/app/components/graph/LinkGraphModal';
 import { BlueprintsGallery } from '@/app/components/blueprints/BlueprintsGallery';
+import { AgentConsole } from '@/app/components/console/AgentConsole';
 import { PerformanceMonitor } from '@/app/components/dev/PerformanceMonitor';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
@@ -51,6 +52,9 @@ interface IDEOverlaysProps {
   fullscreenAgent: AgentInfo | null;
   setFullscreenAgent: (agent: AgentInfo | null) => void;
   handleSelectionSpawn: (selection: string) => void;
+  /** Opens an agent's full terminal — selects it and fullscreens its output.
+   * Used by the Agent Console to jump from a card into its terminal. */
+  handleSelectAgent: (agentId: string | null) => void;
 
   linkGraphModalOpen: boolean;
   setLinkGraphModalOpen: (open: boolean) => void;
@@ -116,6 +120,7 @@ export function IDEOverlays({
   fullscreenAgent,
   setFullscreenAgent,
   handleSelectionSpawn,
+  handleSelectAgent,
   linkGraphModalOpen,
   setLinkGraphModalOpen,
   handleFileSelect,
@@ -205,6 +210,18 @@ export function IDEOverlays({
         onGenerate={handleSpawnNewAgent}
         folderPath={diagramDialogFolder ?? ''}
       />
+      <LinkGraphModal
+        isOpen={linkGraphModalOpen}
+        onClose={() => setLinkGraphModalOpen(false)}
+        onFileSelect={handleFileSelect}
+      />
+      <BlueprintsGallery />
+      {/* Mounted before AgentTerminalModal on purpose: both share the same
+          z-[var(--z-tool)] layer, so DOM order — not z-index — decides which
+          one paints on top. The terminal has to win, or "Open terminal" from
+          a card opens a modal buried behind the still full-screen console,
+          with Esc answered by the console instead. */}
+      <AgentConsole onOpenTerminal={handleSelectAgent} />
       <AgentTerminalModal
         agent={fullscreenAgent}
         agents={activeAgents}
@@ -214,12 +231,6 @@ export function IDEOverlays({
         onKill={killRunningAgent}
         onDismiss={dismissFinishedAgent}
       />
-      <LinkGraphModal
-        isOpen={linkGraphModalOpen}
-        onClose={() => setLinkGraphModalOpen(false)}
-        onFileSelect={handleFileSelect}
-      />
-      <BlueprintsGallery />
       <SettingsModal
         isOpen={settingsModalOpen}
         initialCategory={settingsInitialCategory}

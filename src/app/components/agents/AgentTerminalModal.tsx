@@ -13,9 +13,12 @@ import { useConfirm } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { agentState, AGENT_STATE_LABEL, type AgentState } from '@/lib/agents/state';
+import { groupAgentTabs } from '@/lib/agents/tabGroups';
+import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
+import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS, loadAppConfig } from '@/lib/config/appConfig';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
 import {
@@ -61,7 +64,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 
       const term = new Terminal({
         cursorBlink: true,
-        fontSize: 14,
+        fontSize: loadAppConfig().agentTerminalFontSize,
         fontFamily: "'JetBrains Mono', monospace",
         theme: {
           background: '#050510',
@@ -85,6 +88,17 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
+      const applyFontSize = () => {
+        term.options.fontSize = loadAppConfig().agentTerminalFontSize;
+        try {
+          fitAddon.fit();
+        } catch {}
+      };
+      const onConfigChange = (event: Event) => {
+        const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+        if (key === APP_CONFIG_KEYS.agentTerminalFontSize) applyFontSize();
+      };
+      window.addEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
       // Fit BEFORE attaching, and only attach once the layout has settled
       // (fit again after a frame): TUI agents redraw via cursor-relative
       // escape sequences, so writing the screen at one width and reflowing
@@ -174,7 +188,11 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       // Warp-style image handling: pasting an image saves it to the app
       // cache and inserts its path; dropping files inserts their paths.
       const detachImagePaste = attachImagePaste(containerRef.current, sendText);
-      const detachFileDrop = attachFileDrop(containerRef.current, sendText, setIsDropTarget);
+      // Dropping onto a terminal is asking to talk to it: focus follows the
+      // inserted path, so the next keystroke — usually Enter — lands here.
+      const detachFileDrop = attachFileDrop(containerRef.current, sendText, setIsDropTarget, () =>
+        term.focus()
+      );
 
       // Propagate xterm resize events to PTY backend
       term.onResize(({ rows, cols }) => {
@@ -213,6 +231,7 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         clearTimeout(resizeTimer);
         resizeObserver.disconnect();
         host.removeEventListener('contextmenu', handleContextMenu);
+        window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
         term.dispose();
       };
     };
@@ -336,7 +355,11 @@ interface AgentTerminalDialogProps {
   onDismiss?: (agentId: string) => void;
 }
 
-/** The tab to land on after one is closed — the next one, or the previous at the end. */
+/**
+ * The tab to land on after one is closed — the next one, or the previous at
+ * the end. Takes the agents in the order the strip draws them, not the order
+ * the fleet arrives in.
+ */
 function neighborAfterClose(agents: AgentInfo[], closingId: string): AgentInfo | null {
   const idx = agents.findIndex((a) => a.id === closingId);
   const remaining = agents.filter((a) => a.id !== closingId);
@@ -358,6 +381,14 @@ function AgentTerminalDialog({
   const { confirm, confirmDialog } = useConfirm();
   useOverlayLayer({ id: 'agent-terminal', kind: 'tool', active: true, onEscape: onClose });
 
+  // One project is not a grouping: with the whole fleet in one repository the
+  // heading says nothing every tab does not already imply, so it stays away.
+  const tabGroups = useMemo(() => groupAgentTabs(agents ?? []), [agents]);
+  const showTabGroupLabels = tabGroups.length > 1;
+  // Grouping reorders the strip, so "the tab beside this one" has to be read
+  // off the strip — the raw list would send the user to another project.
+  const tabOrder = useMemo(() => tabGroups.flatMap((group) => group.agents), [tabGroups]);
+
   const closeTab = useCallback(
     async (target: AgentInfo) => {
       const finished = isFinishedAgent(target);
@@ -375,7 +406,7 @@ function AgentTerminalDialog({
       // Leave the dying tab before the process dies, so the screen does not
       // sit on a snapshot of an agent that is already gone.
       if (target.id === agent.id) {
-        const next = neighborAfterClose(agents ?? [], target.id);
+        const next = neighborAfterClose(tabOrder, target.id);
         if (next) onSwitchAgent?.(next);
         else onClose();
       }
@@ -383,7 +414,7 @@ function AgentTerminalDialog({
       if (finished) onDismiss?.(target.id);
       else onKill?.(target.id);
     },
-    [agent.id, agents, confirm, onClose, onDismiss, onKill, onSwitchAgent]
+    [agent.id, tabOrder, confirm, onClose, onDismiss, onKill, onSwitchAgent]
   );
 
   const now = useNow();
@@ -484,76 +515,95 @@ function AgentTerminalDialog({
           </div>
         )}
 
-        {/* Agent tabs — fast switching between active agents with state preview */}
+        {/* Agent tabs — fast switching between active agents with state preview,
+            grouped per project so a fleet spanning repositories reads as one. */}
         {agents && agents.length > 0 && (
           <div
             role="tablist"
             aria-label="Active agents"
             className="flex items-center gap-1 px-3 py-1.5 border-b border-white/10 bg-black/40 overflow-x-auto no-scrollbar flex-shrink-0"
           >
-            {agents.map((a) => {
-              const isActive = a.id === agent.id;
-              const state = agentState(a, now);
-              const style = TAB_STATE_STYLES[state];
-              const finished = isFinishedAgent(a);
-              const canEnd = finished ? !!onDismiss : !!onKill;
-              const endLabel = finished ? `Dismiss ${a.name}` : `Stop ${a.name}`;
-              return (
-                <div
-                  key={a.id}
-                  className={`group flex items-center rounded-lg border whitespace-nowrap transition-colors ${
-                    isActive
-                      ? 'border-primary/40 bg-primary/15 text-white'
-                      : 'border-white/5 bg-white/[0.02] text-foreground-muted hover:bg-white/5 hover:text-foreground'
-                  }`}
-                >
-                  <button
-                    role="tab"
-                    aria-selected={isActive}
-                    data-testid={`agent-tab-${a.id}`}
-                    data-state={state}
-                    onClick={() => {
-                      if (!isActive) onSwitchAgent?.(a);
-                    }}
-                    onMouseDown={(e) => {
-                      if (e.button === 1) e.preventDefault();
-                    }}
-                    onAuxClick={(e) => {
-                      if (e.button === 1) {
-                        e.preventDefault();
-                        void closeTab(a);
-                      }
-                    }}
-                    className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider"
+            {tabGroups.map((group, groupIndex) => (
+              <div
+                key={group.repoPath ?? UNGROUPED_REPO_KEY}
+                data-testid={`agent-tab-group-${group.repoPath ?? UNGROUPED_REPO_KEY}`}
+                className={`flex items-center gap-1 ${
+                  groupIndex > 0 ? 'ml-1 border-l border-white/10 pl-2' : ''
+                }`}
+              >
+                {showTabGroupLabels && (
+                  <span
+                    title={group.repoPath ?? undefined}
+                    className="mr-0.5 max-w-[120px] flex-shrink-0 truncate text-[8px] font-black uppercase tracking-widest text-foreground-muted/70"
                   >
-                    <span
-                      aria-hidden="true"
-                      className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
-                    />
-                    <span className="max-w-[140px] truncate">{a.name}</span>
-                    <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
-                      {AGENT_STATE_LABEL[state]}
-                    </span>
-                  </button>
-                  {canEnd && (
-                    <button
-                      type="button"
-                      data-testid={`agent-tab-close-${a.id}`}
-                      aria-label={endLabel}
-                      title={endLabel}
-                      onClick={() => void closeTab(a)}
-                      className={`mr-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[opacity,transform,color,background-color] hover:bg-red-500/15 hover:text-red-400 active:scale-[0.96] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                    {group.label}
+                  </span>
+                )}
+                {group.agents.map((a) => {
+                  const isActive = a.id === agent.id;
+                  const state = agentState(a, now);
+                  const style = TAB_STATE_STYLES[state];
+                  const finished = isFinishedAgent(a);
+                  const canEnd = finished ? !!onDismiss : !!onKill;
+                  const endLabel = finished ? `Dismiss ${a.name}` : `Stop ${a.name}`;
+                  return (
+                    <div
+                      key={a.id}
+                      className={`group flex items-center rounded-lg border whitespace-nowrap transition-colors ${
                         isActive
-                          ? 'opacity-70'
-                          : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                          ? 'border-primary/40 bg-primary/15 text-white'
+                          : 'border-white/5 bg-white/[0.02] text-foreground-muted hover:bg-white/5 hover:text-foreground'
                       }`}
                     >
-                      <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+                      <button
+                        role="tab"
+                        aria-selected={isActive}
+                        data-testid={`agent-tab-${a.id}`}
+                        data-state={state}
+                        onClick={() => {
+                          if (!isActive) onSwitchAgent?.(a);
+                        }}
+                        onMouseDown={(e) => {
+                          if (e.button === 1) e.preventDefault();
+                        }}
+                        onAuxClick={(e) => {
+                          if (e.button === 1) {
+                            e.preventDefault();
+                            void closeTab(a);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
+                        />
+                        <span className="max-w-[140px] truncate">{a.name}</span>
+                        <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
+                          {AGENT_STATE_LABEL[state]}
+                        </span>
+                      </button>
+                      {canEnd && (
+                        <button
+                          type="button"
+                          data-testid={`agent-tab-close-${a.id}`}
+                          aria-label={endLabel}
+                          title={endLabel}
+                          onClick={() => void closeTab(a)}
+                          className={`mr-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[opacity,transform,color,background-color] hover:bg-red-500/15 hover:text-red-400 active:scale-[0.96] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                            isActive
+                              ? 'opacity-70'
+                              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                          }`}
+                        >
+                          <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         )}
 

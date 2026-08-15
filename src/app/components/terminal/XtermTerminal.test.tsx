@@ -11,8 +11,10 @@ const mockGetSelection = vi.fn().mockReturnValue('');
 const mockHasSelection = vi.fn().mockReturnValue(false);
 const mockSelectAll = vi.fn();
 const mockPaste = vi.fn();
+const mockFocus = vi.fn();
 
 const mockTerminal = {
+  options: {} as { fontSize?: number },
   loadAddon: vi.fn(),
   open: vi.fn(),
   onData: vi.fn(),
@@ -25,6 +27,7 @@ const mockTerminal = {
     mockTerminal.rows = rows;
   }),
   reset: vi.fn(),
+  focus: () => mockFocus(),
   getSelection: () => mockGetSelection(),
   hasSelection: () => mockHasSelection(),
   selectAll: () => mockSelectAll(),
@@ -70,16 +73,26 @@ const mockAttachImagePaste = vi.fn((_c: HTMLElement, sendText: (text: string) =>
   pasteSendText = sendText;
   return mockDetachImagePaste;
 });
-const mockAttachFileDrop = vi.fn((_c: HTMLElement, sendText: (text: string) => void) => {
-  dropSendText = sendText;
-  return mockDetachFileDrop;
-});
+// The drop handler's "a path was inserted" callback — fired below the way a
+// real drop would fire it.
+let dropInsertNotify: (() => void) | null = null;
+const mockAttachFileDrop = vi.fn(
+  (_c: HTMLElement, sendText: (text: string) => void, onInsert?: () => void) => {
+    dropSendText = sendText;
+    dropInsertNotify = onInsert ?? null;
+    return mockDetachFileDrop;
+  }
+);
 
 vi.mock('@/lib/terminal/imageInsert', () => ({
   attachImagePaste: (container: HTMLElement, sendText: (text: string) => void) =>
     mockAttachImagePaste(container, sendText),
-  attachFileDrop: (container: HTMLElement, sendText: (text: string) => void) =>
-    mockAttachFileDrop(container, sendText),
+  attachFileDrop: (
+    container: HTMLElement,
+    sendText: (text: string) => void,
+    _onDragState?: (inside: boolean) => void,
+    onInsert?: () => void
+  ) => mockAttachFileDrop(container, sendText, onInsert),
 }));
 
 // Agent-mode collaborators: stream attach + PTY resize notifications
@@ -141,6 +154,7 @@ describe('XtermTerminal', () => {
     resizeHandler = null;
     pasteSendText = null;
     dropSendText = null;
+    dropInsertNotify = null;
     ptyResizeCb = null;
     mockTerminalOptions.length = 0;
     mockGetSelection.mockReturnValue('');
@@ -149,6 +163,7 @@ describe('XtermTerminal', () => {
     mockPaste.mockReset();
     mockTerminal.cols = 80;
     mockTerminal.rows = 24;
+    mockTerminal.options = {};
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -222,6 +237,27 @@ describe('XtermTerminal', () => {
         smoothScrollDuration: 0,
       })
     );
+  });
+
+  it('uses the global font size for an agent terminal', () => {
+    localStorage.setItem('auric.agent-terminal-font-size', '17');
+
+    render(<XtermTerminal id="agent-a1" agentId="a1" onInput={vi.fn()} />);
+
+    expect(mockTerminalOptions[0]).toEqual(expect.objectContaining({ fontSize: 17 }));
+  });
+
+  it('updates an already-open agent terminal when the setting changes', () => {
+    render(<XtermTerminal id="agent-a1" agentId="a1" onInput={vi.fn()} />);
+    localStorage.setItem('auric.agent-terminal-font-size', '18');
+
+    window.dispatchEvent(
+      new CustomEvent('auric:app-config-changed', {
+        detail: { key: 'auric.agent-terminal-font-size' },
+      })
+    );
+
+    expect(mockTerminal.options.fontSize).toBe(18);
   });
 
   it('loads only the FitAddon on open', () => {
@@ -325,6 +361,15 @@ describe('XtermTerminal', () => {
       render(<XtermTerminal id="test-session" onInput={onInput} />);
       dropSendText!('/Users/j/pic.png ');
       expect(onInput).toHaveBeenCalledWith('/Users/j/pic.png ');
+    });
+
+    // A native drag leaves the keyboard wherever it was, so without this the
+    // path is in the prompt but Enter goes somewhere else until you click in.
+    it('takes the keyboard back once a dropped path is inserted', () => {
+      render(<XtermTerminal id="test-session" />);
+      mockFocus.mockClear();
+      dropInsertNotify!();
+      expect(mockFocus).toHaveBeenCalled();
     });
 
     it('detaches both handlers on unmount', () => {

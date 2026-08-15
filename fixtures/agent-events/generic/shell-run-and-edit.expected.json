@@ -1,0 +1,7 @@
+[
+  { "kind": "run", "label": "Ran pnpm test:run" },
+  { "kind": "run", "label": "Ran pnpm lint" },
+  { "kind": "edit", "label": "Edited src/lib/example.ts", "path": "src/lib/example.ts" },
+  { "kind": "read", "label": "Read src/lib/other.ts", "path": "src/lib/other.ts" },
+  { "kind": "edit", "label": "Edited src/lib/example.ts", "path": "src/lib/example.ts" }
+]

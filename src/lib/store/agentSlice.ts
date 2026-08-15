@@ -10,12 +10,21 @@ import {
   recordAgentPromptHistory,
   renameAgent,
   resumeInterruptedAgent,
+  sendToAgent,
   spawnAgent,
 } from '../tauri/agents';
 import { deriveAgentActivity } from '../agents/activity';
 import { detectAwaitingInput } from '../agents/awaitingInput';
 import type { AgentColor } from '../agents/colors';
 import { deriveErrorDigest } from '../agents/errorDigest';
+import { pushHeartbeat, type HeartbeatBucket } from '../agents/events/heartbeat';
+import {
+  accumulateHeartbeatBytes,
+  drainHeartbeatBytes,
+  extractorForAgent,
+  pruneAgentRuntime,
+} from '../agents/events/registry';
+import type { AgentEvent } from '../agents/events/types';
 import { isFinishedAgent } from '../agents/fleet';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import { uniqueAgentName } from '../agents/naming';
@@ -34,6 +43,9 @@ export const MAX_AGENT_LOG_BYTES = 2_000_000;
 // but without a bound they and their logs accumulate for the app's whole
 // lifetime. Cap how many finished agents are retained, evicting the oldest.
 export const MAX_FINISHED_AGENTS = 20;
+// A feed row per event, not per PTY chunk — a long run's structured history
+// still needs the same kind of bound agentLogs has, for the same reason.
+export const MAX_AGENT_EVENTS = 200;
 // The project DB keeps 100 start prompts; the dialog only ever recalls the
 // freshest slice of them, so loading the whole tail is wasted work.
 export const MAX_RECALLED_PROMPTS = 25;
@@ -50,6 +62,14 @@ export interface AgentSlice {
   agents: AgentInfo[];
   agentLogs: Record<string, string[]>;
   agentLogMeta: Record<string, AgentLogMeta>;
+  /**
+   * Structured events distilled from each agent's raw output — one entry per
+   * tool call, permission prompt or notable line. Capped at
+   * `MAX_AGENT_EVENTS`, oldest dropped first, same reasoning as `agentLogs`.
+   */
+  agentEvents: Record<string, AgentEvent[]>;
+  /** Per-agent output volume, bucketed by minute — the fleet's activity sparkline. */
+  agentHeartbeat: Record<string, HeartbeatBucket[]>;
   selectedAgentId: string | null;
   /** Agents from a previous app run that died with the app (restart persistence). */
   interruptedAgents: InterruptedAgent[];
@@ -93,11 +113,24 @@ export interface AgentSlice {
   retryFailedAgent: (agentId: string) => Promise<AgentInfo | null>;
   killRunningAgent: (agentId: string) => Promise<void>;
   renameRunningAgent: (agentId: string, name: string) => Promise<void>;
+  /**
+   * Writes straight to an agent's PTY stdin — a permission-menu answer, a
+   * stalled agent's Enter nudge, or a free-text instruction from the Agent
+   * Console. The caller decides the exact bytes; this is only the wire.
+   */
+  sendAgentInput: (agentId: string, text: string) => Promise<void>;
   dismissFinishedAgent: (agentId: string) => void;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
   appendAgentLog: (agentId: string, log: string) => void;
   refreshAgents: () => Promise<void>;
   selectAgent: (agentId: string | null) => void;
+  /**
+   * Marks a finished agent's outcome reviewed without changing what is
+   * selected — `selectAgent`'s side effect of moving `selectedAgentId` also
+   * relocates the bottom terminal panel's active tab, which "I've seen this
+   * one" from a list (the Agent Console) must not do.
+   */
+  markAgentReviewed: (agentId: string) => void;
   killAgentsForRepoPath: (repoPath: string) => Promise<void>;
   loadInterruptedAgents: () => Promise<void>;
   resumeInterruptedAgent: (agentId: string) => Promise<AgentInfo>;
@@ -118,12 +151,57 @@ function completeRunForAgent(
   if (run) goalsSlice.completeGoalRun(run.id, outcome);
 }
 
+/** Drops the entries of a per-agent record for agents that no longer exist —
+ * marker colours, event history, heartbeat buckets, all shaped the same way. */
+function withoutAgentIds<T>(
+  record: Record<string, T>,
+  gone: (agentId: string) => boolean
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([id]) => !gone(id)));
+}
+
+type LogRecords = Pick<AgentSlice, 'agentLogs' | 'agentLogMeta'>;
+
+/**
+ * The log records with one agent's entry removed — the shared shape behind
+ * killing and dismissing a single agent, which otherwise differ only in what
+ * else they clean up around it.
+ */
+function withoutAgentRecords(state: LogRecords, agentId: string): LogRecords {
+  const { [agentId]: _logs, ...agentLogs } = state.agentLogs;
+  const { [agentId]: _meta, ...agentLogMeta } = state.agentLogMeta;
+  return { agentLogs, agentLogMeta };
+}
+
+type AgentRuntimeRecords = Pick<AgentSlice, 'agentEvents' | 'agentHeartbeat'>;
+
+/**
+ * Drops event history, heartbeat buckets, and the out-of-store extractor
+ * registry for any id not present in `keepAgentIds`. Deliberately a sweep
+ * rather than a single-id removal: an id can accumulate these records
+ * (`appendAgentLog`) without ever landing in `agents` at all — Tauri does
+ * not order PTY output against the spawn result — so removing exactly the
+ * one agent a caller has in mind would miss that orphan. Passing the
+ * post-removal `agents` id list here catches both in one pass.
+ */
+function reconcileAgentRuntimeState(
+  state: AgentRuntimeRecords,
+  keepAgentIds: Iterable<string>
+): AgentRuntimeRecords {
+  const keep = new Set(keepAgentIds);
+  pruneAgentRuntime(keep);
+  return {
+    agentEvents: withoutAgentIds(state.agentEvents, (id) => !keep.has(id)),
+    agentHeartbeat: withoutAgentIds(state.agentHeartbeat, (id) => !keep.has(id)),
+  };
+}
+
 /** Drops marker colours for agents that no longer exist. */
 function withoutColors(
   colors: Record<string, AgentColor>,
   gone: (agentId: string) => boolean
 ): Record<string, AgentColor> {
-  return Object.fromEntries(Object.entries(colors).filter(([id]) => !gone(id)));
+  return withoutAgentIds(colors, gone);
 }
 
 /**
@@ -167,6 +245,8 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   agents: [],
   agentLogs: {},
   agentLogMeta: {},
+  agentEvents: {},
+  agentHeartbeat: {},
   selectedAgentId: null,
   interruptedAgents: [],
   minimizedAgentIds: [],
@@ -322,12 +402,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     } catch {
       // Agent may have already terminated naturally — Rust side already cleaned up
     }
-    const { agentLogs, agentLogMeta } = get();
     // Read before the removal below: if this was a combo step, its output is
     // the only thing the next step inherits, and the state drops it here.
-    const endedLogs = agentLogs[agentId] ?? [];
-    const { [agentId]: _, ...remainingLogs } = agentLogs;
-    const { [agentId]: _meta, ...remainingMeta } = agentLogMeta;
+    const endedLogs = get().agentLogs[agentId] ?? [];
 
     const conductor = get() as AgentSlice & {
       conductorAssignments?: Record<string, string>;
@@ -359,10 +436,14 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     completeRunForAgent(get(), agentId, 'killed');
 
+    const remainingAgents = get().agents.filter((a) => a.id !== agentId);
     set({
-      agents: get().agents.filter((a) => a.id !== agentId),
-      agentLogs: remainingLogs,
-      agentLogMeta: remainingMeta,
+      agents: remainingAgents,
+      ...withoutAgentRecords(get(), agentId),
+      ...reconcileAgentRuntimeState(
+        get(),
+        remainingAgents.map((a) => a.id)
+      ),
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => id !== agentId),
       agentColors: withoutColors(get().agentColors, (id) => id === agentId),
     });
@@ -377,6 +458,10 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       logs: endedLogs,
       failed: agent?.status === 'error',
     });
+  },
+
+  sendAgentInput: async (agentId, text) => {
+    await sendToAgent(agentId, text);
   },
 
   renameRunningAgent: async (agentId, name) => {
@@ -401,20 +486,22 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
    * alone, and no ticket or goal bookkeeping is touched.
    */
   dismissFinishedAgent: (agentId) => {
-    const { agents, agentLogs, agentLogMeta, minimizedAgentIds } = get();
+    const { agents, agentLogs, minimizedAgentIds } = get();
     const agent = agents.find((a) => a.id === agentId);
     if (!agent || !isFinishedAgent(agent)) return;
 
     // Read before the removal below — a combo step's successor inherits it.
     const endedLogs = agentLogs[agentId] ?? [];
-    const { [agentId]: _logs, ...remainingLogs } = agentLogs;
-    const { [agentId]: _meta, ...remainingMeta } = agentLogMeta;
     const { [agentId]: _config, ...remainingConfigs } = get().agentSpawnConfigs;
+    const remainingAgents = agents.filter((a) => a.id !== agentId);
     set({
       agentSpawnConfigs: remainingConfigs,
-      agents: agents.filter((a) => a.id !== agentId),
-      agentLogs: remainingLogs,
-      agentLogMeta: remainingMeta,
+      agents: remainingAgents,
+      ...withoutAgentRecords(get(), agentId),
+      ...reconcileAgentRuntimeState(
+        get(),
+        remainingAgents.map((a) => a.id)
+      ),
       minimizedAgentIds: minimizedAgentIds.filter((id) => id !== agentId),
       agentColors: withoutColors(get().agentColors, (id) => id === agentId),
       reviewedAgentIds: get().reviewedAgentIds.filter((id) => id !== agentId),
@@ -498,14 +585,19 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
     const oldestFirst = [...finished].sort((a, b) => a.startedAt - b.startedAt);
     const evictedIds = new Set(oldestFirst.slice(0, excess).map((a) => a.id));
+    const remainingAgents = updatedAgents.filter((a) => !evictedIds.has(a.id));
 
     set({
-      agents: updatedAgents.filter((a) => !evictedIds.has(a.id)),
+      agents: remainingAgents,
       agentLogs: Object.fromEntries(
         Object.entries(agentLogs).filter(([id]) => !evictedIds.has(id))
       ),
       agentLogMeta: Object.fromEntries(
         Object.entries(agentLogMeta).filter(([id]) => !evictedIds.has(id))
+      ),
+      ...reconcileAgentRuntimeState(
+        get(),
+        remainingAgents.map((a) => a.id)
       ),
       minimizedAgentIds: get().minimizedAgentIds.filter((id) => !evictedIds.has(id)),
       agentColors: withoutColors(get().agentColors, (id) => evictedIds.has(id)),
@@ -545,6 +637,22 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     const shouldBumpActivity =
       agent !== undefined && now - (agent.lastActivityAt ?? 0) > AGENT_ACTIVITY_BUMP_MS;
 
+    // The event extractor sees every chunk, not just the throttled ones — it
+    // buffers partial lines internally, so skipping a chunk here would lose
+    // whatever line it was about to complete. `agent?.provider` is passed
+    // as-is (never defaulted here) so the registry can tell "genuinely a
+    // generic-matcher agent" apart from "not resolved yet" and rebuild once
+    // a real provider shows up — Tauri does not order PTY output against the
+    // spawn result, so a chunk can arrive before this agent exists in
+    // `agents` at all.
+    const newEvents = extractorForAgent(agentId, agent?.provider).push(log, now);
+
+    // Heartbeat bytes accumulate on every chunk so none are lost, but the
+    // store write itself rides the same throttle as the activity bump — a
+    // fresh object per chunk would cost the fleet's activity sparkline a
+    // recompute many times a second for no visible change.
+    accumulateHeartbeatBytes(agentId, log.length);
+
     set({
       agentLogs: {
         ...state.agentLogs,
@@ -554,12 +662,34 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         ...state.agentLogMeta,
         [agentId]: { seq: meta.seq + 1, bytes },
       },
-      // Distilling "what is it doing right now" rides the same throttle: it
-      // only runs when the agents array is being replaced anyway, so the
-      // display line costs no additional renders. A tail of pure redraw noise
-      // leaves the previous line standing rather than blanking it.
+      // Only replace the record when a chunk actually produced an event — a
+      // fresh object on every redraw-only chunk would cost every
+      // agentEvents-derived memo a recompute for nothing.
+      ...(newEvents.length > 0
+        ? {
+            agentEvents: {
+              ...state.agentEvents,
+              [agentId]: [...(state.agentEvents[agentId] ?? []), ...newEvents].slice(
+                -MAX_AGENT_EVENTS
+              ),
+            },
+          }
+        : {}),
+      // Distilling "what is it doing right now" — and flushing the
+      // heartbeat's pending bytes — rides the same throttle: both only run
+      // when the agents array is being replaced anyway, so neither costs
+      // additional renders. A tail of pure redraw noise leaves the previous
+      // activity line standing rather than blanking it.
       ...(shouldBumpActivity
         ? {
+            agentHeartbeat: {
+              ...state.agentHeartbeat,
+              [agentId]: pushHeartbeat(
+                state.agentHeartbeat[agentId] ?? [],
+                drainHeartbeatBytes(agentId),
+                now
+              ),
+            },
             agents: state.agents.map((a) =>
               a.id === agentId
                 ? {
@@ -579,7 +709,13 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   refreshAgents: async () => {
     const agents = await listAgents();
-    set({ agents });
+    set({
+      agents,
+      ...reconcileAgentRuntimeState(
+        get(),
+        agents.map((a) => a.id)
+      ),
+    });
   },
 
   selectAgent: (agentId) => {
@@ -593,6 +729,13 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         ? [...state.reviewedAgentIds, agent.id]
         : state.reviewedAgentIds;
     set({ selectedAgentId: agentId, reviewedAgentIds: nowReviewed });
+  },
+
+  markAgentReviewed: (agentId) => {
+    const state = get();
+    const agent = state.agents.find((a) => a.id === agentId);
+    if (!agent || !isFinishedAgent(agent) || state.reviewedAgentIds.includes(agentId)) return;
+    set({ reviewedAgentIds: [...state.reviewedAgentIds, agentId] });
   },
 
   loadInterruptedAgents: async () => {
@@ -689,11 +832,16 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       cancelSkillCombosForAgents?: (agentIds: string[]) => void;
     };
     combo.cancelSkillCombosForAgents?.([...killedIds]);
+    const remainingAgents = agents.filter((a) => !killedIds.has(a.id));
     set({
-      agents: agents.filter((a) => !killedIds.has(a.id)),
+      agents: remainingAgents,
       agentLogs: Object.fromEntries(Object.entries(agentLogs).filter(([id]) => !killedIds.has(id))),
       agentLogMeta: Object.fromEntries(
         Object.entries(agentLogMeta).filter(([id]) => !killedIds.has(id))
+      ),
+      ...reconcileAgentRuntimeState(
+        get(),
+        remainingAgents.map((a) => a.id)
       ),
       minimizedAgentIds: minimizedAgentIds.filter((id) => !killedIds.has(id)),
       agentColors: withoutColors(get().agentColors, (id) => killedIds.has(id)),

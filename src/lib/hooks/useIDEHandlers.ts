@@ -1584,6 +1584,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'view.requirements': () => useStore.getState().openWorkPlace('requirements'),
       'view.goal-lines': () => useStore.getState().openWorkPlace('lines'),
       'view.notifications': () => state.setActiveActivity('notifications'),
+      'view.agent-console': () => useStore.getState().toggleAgentConsole(),
       'excalidraw.new': () => void handleNewDiagram(),
       'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
       'excalidraw.sync-all': () => {

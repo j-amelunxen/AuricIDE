@@ -124,6 +124,7 @@ export default function Home() {
   const state = useIDEState();
   const handlers = useIDEHandlers(state);
   useIDEActions(state, handlers);
+  const openAgentConsole = useStore((s) => s.openAgentConsole);
   const diffTab = useStore((s) => (s.activeTabId ? s.diffByTabId[s.activeTabId] : undefined));
   const scmView = useStore((s) => s.scmView);
   const historyPath = useStore((s) => s.historyPath);
@@ -550,6 +551,7 @@ export default function Home() {
             onSelectAgent={handlers.handleSelectAgent}
             onImageDrop={handlers.handleImageDrop}
             onCollapse={() => state.setRightCollapsed(true)}
+            onOpenConsole={openAgentConsole}
             onResumeInterrupted={handlers.handleResumeInterrupted}
             onDiscardInterrupted={state.discardInterruptedAgent}
             minimizedAgentIds={state.minimizedAgentIds}

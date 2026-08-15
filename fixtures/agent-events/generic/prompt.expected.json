@@ -1,0 +1,4 @@
+[
+  { "kind": "run", "label": "Ran pnpm run migrate" },
+  { "kind": "ask", "label": "Permission requested: Continue? (y/n)" }
+]

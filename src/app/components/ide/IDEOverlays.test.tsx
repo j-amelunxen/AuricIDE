@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDEOverlays } from './IDEOverlays';
 import { useStore } from '@/lib/store';
@@ -21,10 +21,15 @@ vi.mock('@/app/components/agents/ImportSpecDialog', () => ({ ImportSpecDialog: (
 vi.mock('@/app/components/agents/GenerateDiagramDialog', () => ({
   GenerateDiagramDialog: () => null,
 }));
-vi.mock('@/app/components/agents/AgentTerminalModal', () => ({ AgentTerminalModal: () => null }));
+vi.mock('@/app/components/agents/AgentTerminalModal', () => ({
+  AgentTerminalModal: () => <div data-testid="mock-terminal-modal" />,
+}));
 vi.mock('@/app/components/graph/LinkGraphModal', () => ({ LinkGraphModal: () => null }));
 vi.mock('@/app/components/blueprints/BlueprintsGallery', () => ({
   BlueprintsGallery: () => null,
+}));
+vi.mock('@/app/components/console/AgentConsole', () => ({
+  AgentConsole: () => <div data-testid="mock-agent-console" />,
 }));
 vi.mock('@/app/components/dev/PerformanceMonitor', () => ({ PerformanceMonitor: () => null }));
 vi.mock('@/app/components/videoImport/VideoImportDialog', () => ({
@@ -78,5 +83,31 @@ describe('IDEOverlays — prompt history follows the spawn target', () => {
   it('does not touch the history while the dialog is closed', () => {
     renderOverlays({ spawnDialogOpen: false, rootPath: '/open/project' });
     expect(loadPromptHistory).not.toHaveBeenCalled();
+  });
+});
+
+describe('IDEOverlays — stacking order', () => {
+  beforeEach(() => {
+    useStore.setState({
+      loadPromptHistory: vi.fn(async () => {}),
+      promptHistory: [],
+      goalsDraft: [],
+      agents: [],
+    });
+  });
+
+  // Both overlays share the same z-[var(--z-tool)] layer, so paint order
+  // (DOM order) is what actually decides which one is visible — the later
+  // sibling wins. "Open terminal" from the console must open a terminal the
+  // user can actually see and answer Esc on, not one buried behind the still
+  // full-screen console.
+  it('mounts the Agent Console before the terminal modal, so the terminal paints on top', () => {
+    renderOverlays({ rootPath: '/open/project' });
+
+    const consoleNode = screen.getByTestId('mock-agent-console');
+    const terminal = screen.getByTestId('mock-terminal-modal');
+    expect(
+      consoleNode.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 });

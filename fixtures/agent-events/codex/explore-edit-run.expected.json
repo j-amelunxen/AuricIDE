@@ -1,0 +1,12 @@
+[
+  { "kind": "read", "label": "Explored" },
+  { "kind": "read", "label": "Read src/lib/example.ts", "path": "src/lib/example.ts" },
+  { "kind": "read", "label": "Searched \"handleSubmit\"" },
+  { "kind": "read", "label": "Listed src/lib/" },
+  { "kind": "edit", "label": "Edited src/lib/example.ts", "path": "src/lib/example.ts" },
+  { "kind": "edit", "label": "Added src/lib/new-feature.ts", "path": "src/lib/new-feature.ts" },
+  { "kind": "edit", "label": "Deleted src/lib/old-feature.ts", "path": "src/lib/old-feature.ts" },
+  { "kind": "run", "label": "Ran pnpm lint" },
+  { "kind": "run", "label": "Ran pnpm test:run" },
+  { "kind": "run", "label": "Ran pnpm build" }
+]

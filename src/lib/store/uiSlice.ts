@@ -64,6 +64,8 @@ export interface UISlice {
   /** Center place: Goals / Tickets / Requirements / Lines. */
   workPlaceOpen: boolean;
   workTab: WorkTab;
+  /** Full-area overlay listing every running agent, grouped by project. */
+  agentConsoleOpen: boolean;
 
   setImportSpecDialogOpen: (open: boolean) => void;
   setVideoImportDialogOpen: (open: boolean) => void;
@@ -92,6 +94,9 @@ export interface UISlice {
   openWorkPlace: (tab?: WorkTab) => void;
   closeWorkPlace: () => void;
   setWorkTab: (tab: WorkTab) => void;
+  openAgentConsole: () => void;
+  closeAgentConsole: () => void;
+  toggleAgentConsole: () => void;
 }
 
 export const createUISlice: StateCreator<UISlice> = (set, get) => ({
@@ -119,6 +124,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   providers: [FALLBACK_CRUSH_PROVIDER],
   workPlaceOpen: false,
   workTab: 'goals',
+  agentConsoleOpen: false,
   agentSettings: {
     dangerouslyIgnorePermissions: false,
     autoAcceptEdits: false,
@@ -231,4 +237,8 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   closeWorkPlace: () => set({ workPlaceOpen: false }),
 
   setWorkTab: (tab) => set({ workTab: tab, workPlaceOpen: true }),
+
+  openAgentConsole: () => set({ agentConsoleOpen: true }),
+  closeAgentConsole: () => set({ agentConsoleOpen: false }),
+  toggleAgentConsole: () => set((state) => ({ agentConsoleOpen: !state.agentConsoleOpen })),
 });
