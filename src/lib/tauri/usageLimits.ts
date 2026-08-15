@@ -7,11 +7,10 @@ export async function usageLimitsRead(): Promise<UsageSnapshot[]> {
 }
 
 /**
- * Refreshes what has aged out and returns everything.
+ * Asks Codex (and Claude's drop file) for a fresh reading.
  *
- * The backend gates this on a five-minute TTL and a single-flight lock, so
- * calling it on focus, on hover and on a timer is not the same as running
- * `codex` three times.
+ * This is the expensive path: `codex app-server` costs credits. Call it from
+ * the refresh button, not from hover, focus or a timer.
  */
 export async function usageLimitsRefresh(): Promise<UsageSnapshot[]> {
   return await invoke<UsageSnapshot[]>('usage_limits_refresh');

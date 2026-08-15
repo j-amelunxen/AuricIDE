@@ -5,7 +5,7 @@
 //! spawns its own child and lets it go again. A resident server would need
 //! crash detection, restart-with-backoff and shutdown handling, and would hold
 //! the user's OAuth session open for the lifetime of the app, all to save a
-//! process spawn every half hour.
+//! process spawn on a button press that already costs credits.
 
 use std::process::Stdio;
 use std::time::Duration;

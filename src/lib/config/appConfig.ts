@@ -71,11 +71,11 @@ export interface AppConfig {
   /**
    * Reads the agent CLIs' remaining quota and shows it in the status bar.
    *
-   * Off by default because switching it on has two effects beyond the chip:
+   * Off by default because switching it on has an effect beyond the chip:
    * AuricIDE then passes `--settings` to every `claude` it starts, so the
-   * status line can report the numbers, and it runs a short `codex` query
-   * every half hour. Also read from Rust, out of the `webview-prefs.json`
-   * mirror — see `src-tauri/src/usage_limits/mod.rs`.
+   * status line can report the numbers. Codex is only queried when you
+   * refresh — that check costs credits. Also read from Rust, out of the
+   * `webview-prefs.json` mirror — see `src-tauri/src/usage_limits/mod.rs`.
    */
   cliUsageLimits: boolean;
   /** Point size for agent terminal sessions in the dock and fullscreen dialog. */

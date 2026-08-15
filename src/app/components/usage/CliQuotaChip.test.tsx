@@ -1,12 +1,15 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useStore } from '@/lib/store';
 import type { UsageSnapshot } from '@/lib/usage/types';
 
+const usageLimitsRead = vi.fn(async () => [] as UsageSnapshot[]);
+const usageLimitsRefresh = vi.fn(async () => [] as UsageSnapshot[]);
+
 vi.mock('@/lib/tauri/usageLimits', () => ({
-  usageLimitsRead: vi.fn(async () => []),
-  usageLimitsRefresh: vi.fn(async () => []),
+  usageLimitsRead: () => usageLimitsRead(),
+  usageLimitsRefresh: () => usageLimitsRefresh(),
 }));
 vi.mock('@/lib/tauri/usageEvents', () => ({
   onUsageLimitsChanged: vi.fn(() => () => {}),
@@ -48,9 +51,22 @@ function setSnapshots(snapshots: UsageSnapshot[]) {
   useStore.setState({ usageSnapshots: snapshots, usageStatus: 'ready' });
 }
 
+const originalRefresh = useStore.getState().refreshUsageLimits;
+
 describe('CliQuotaChip', () => {
+  beforeEach(() => {
+    usageLimitsRead.mockReset();
+    usageLimitsRefresh.mockReset();
+    usageLimitsRead.mockResolvedValue([]);
+    usageLimitsRefresh.mockResolvedValue([]);
+  });
+
   afterEach(() => {
-    useStore.setState({ usageSnapshots: [], usageStatus: 'idle' });
+    useStore.setState({
+      usageSnapshots: [],
+      usageStatus: 'idle',
+      refreshUsageLimits: originalRefresh,
+    });
   });
 
   it('stays away when there is nothing to say', () => {
@@ -131,6 +147,56 @@ describe('CliQuotaChip', () => {
     expect(popover).toHaveTextContent('resets in 58m');
     // Kept as text: rounding it would drop digits the server sent on purpose.
     expect(popover).toHaveTextContent('credits: 21979.6827500000');
+  });
+
+  it('loads whatever is already stored and does not spend a Codex check', async () => {
+    // Hover, focus and a 30-minute timer used to spawn `codex app-server`.
+    // That reading costs credits, so the chip only reads the cache on mount.
+    usageLimitsRead.mockResolvedValue([snapshot()]);
+    setSnapshots([]);
+    render(<CliQuotaChip />);
+
+    await waitFor(() => expect(usageLimitsRead).toHaveBeenCalledTimes(1));
+    expect(usageLimitsRefresh).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh Codex just because the pointer moved over the chip', async () => {
+    // Hang the cheap read so a mount-time refresh cannot hide a hover one.
+    usageLimitsRead.mockImplementation(() => new Promise(() => {}));
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(usageLimitsRefresh).not.toHaveBeenCalled();
+  });
+
+  it('refreshes only when the refresh button is pressed', () => {
+    const refresh = vi.fn(async () => {});
+    usageLimitsRead.mockImplementation(() => new Promise(() => {}));
+    useStore.setState({
+      usageSnapshots: [snapshot()],
+      usageStatus: 'ready',
+      refreshUsageLimits: refresh,
+    });
+    render(<CliQuotaChip />);
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+
+    fireEvent.click(screen.getByTestId('cli-quota-refresh'));
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('says Claude is waiting for an interactive agent when only Codex answered', () => {
+    // Claude never arrives from a poll — only from a running agent's status
+    // line. A popover that only lists Codex looks like Claude is missing.
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+
+    const popover = screen.getByTestId('cli-quota-popover');
+    expect(popover).toHaveTextContent('Claude Code');
+    expect(popover).toHaveTextContent(/interactive Claude agent/i);
   });
 
   it('says a reset is due rather than counting past zero', () => {
