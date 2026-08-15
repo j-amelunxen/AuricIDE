@@ -4,6 +4,7 @@ import type { AgentSlice } from './agentSlice';
 import {
   createAgentSlice,
   groupAgentsByRepo,
+  MAX_AGENT_EVENTS,
   MAX_AGENT_LOGS,
   MAX_AGENT_LOG_BYTES,
   MAX_FINISHED_AGENTS,
@@ -60,6 +61,7 @@ vi.mock('../tauri/agents', () => ({
     repoPath: '/repo',
   })),
   discardInterruptedAgent: vi.fn(async () => undefined),
+  sendToAgent: vi.fn(async () => undefined),
   listAgentPromptHistory: vi.fn(async () => [
     { id: 'h1', prompt: 'newest', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
     { id: 'h2', prompt: 'older', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
@@ -457,6 +459,36 @@ describe('agentSlice', () => {
     store.getState().selectAgent('mock-agent-1');
 
     store.getState().dismissFinishedAgent('mock-agent-1');
+    expect(store.getState().reviewedAgentIds).not.toContain('mock-agent-1');
+  });
+
+  it('marks a finished agent reviewed without touching selectedAgentId', async () => {
+    // The Agent Console needs "mark reviewed" without also stealing the
+    // bottom terminal panel's active tab the way selectAgent's side effect
+    // would — reviewing from the console must not relocate the user's focus.
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+    store.getState().updateAgentStatus('mock-agent-1', 'idle');
+    store.getState().selectAgent('other-agent');
+
+    store.getState().markAgentReviewed('mock-agent-1');
+
+    expect(store.getState().reviewedAgentIds).toContain('mock-agent-1');
+    expect(store.getState().selectedAgentId).toBe('other-agent');
+  });
+
+  it('does not mark a still-running agent reviewed via markAgentReviewed', async () => {
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+    });
+
+    store.getState().markAgentReviewed('mock-agent-1');
+
     expect(store.getState().reviewedAgentIds).not.toContain('mock-agent-1');
   });
 
@@ -1558,5 +1590,242 @@ describe('agentSlice – derived current activity', () => {
     // Within the throttle window the agents array must stay identical.
     store.getState().appendAgentLog('a1', 'second line\n');
     expect(store.getState().agents).toBe(afterFirst);
+  });
+});
+
+describe('agentSlice – event extraction', () => {
+  let store: StoreApi<AgentSlice>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+    // Extractors live in a module-level registry outside the store, keyed by
+    // agent id — reset it so no test here inherits another test's buffer.
+    const { resetAgentExtractors } = await import('../agents/events/registry');
+    resetAgentExtractors();
+  });
+
+  const claudeAgent = (id: string) => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status: 'running' as const,
+    startedAt: 0,
+  });
+
+  it('turns a recognizable log chunk into a structured event', () => {
+    store.setState({ agents: [claudeAgent('events-a')] });
+    store.getState().appendAgentLog('events-a', '⏺ Read(src/lib/example.ts)\n');
+
+    expect(store.getState().agentEvents['events-a']).toEqual([
+      expect.objectContaining({
+        kind: 'read',
+        label: 'Read src/lib/example.ts',
+        path: 'src/lib/example.ts',
+      }),
+    ]);
+  });
+
+  it('completes a line split across two log chunks', () => {
+    store.setState({ agents: [claudeAgent('events-b')] });
+    store.getState().appendAgentLog('events-b', '⏺ Bash(pnpm te');
+    expect(store.getState().agentEvents['events-b']).toBeUndefined();
+
+    store.getState().appendAgentLog('events-b', 'st:run)\n');
+    expect(store.getState().agentEvents['events-b']).toEqual([
+      expect.objectContaining({ kind: 'run', label: 'Ran pnpm test:run' }),
+    ]);
+  });
+
+  it('uses the agent’s own provider to pick the matcher, not a default', () => {
+    // A bare "$ cmd" line is a run event to the generic matcher but not to
+    // Claude's — proves the agent's `provider` field actually drives this.
+    store.setState({ agents: [claudeAgent('events-c')] });
+    store.getState().appendAgentLog('events-c', '$ pnpm build\n');
+    expect(store.getState().agentEvents['events-c']).toBeUndefined();
+  });
+
+  it('falls back to the generic matcher when the agent is not in the fleet', () => {
+    // appendAgentLog can be called for an id with no matching AgentInfo yet.
+    store.getState().appendAgentLog('events-unknown', '$ pnpm build\n');
+    expect(store.getState().agentEvents['events-unknown']).toEqual([
+      expect.objectContaining({ kind: 'run', label: 'Ran pnpm build' }),
+    ]);
+  });
+
+  it('switches to the real matcher once the agent lands in the fleet, even if output arrived first', () => {
+    // Tauri does not order PTY output events against the spawn-result await —
+    // a chunk can and does arrive before spawnNewAgent has added the agent.
+    store.getState().appendAgentLog('a', 'banner\n');
+    expect(store.getState().agentEvents['a']).toBeUndefined();
+
+    store.setState({ agents: [claudeAgent('a')] });
+    // A bare "$ cmd" line would match the generic fallback but not Claude's —
+    // this only produces an event if the extractor actually rebuilt with the
+    // now-known real provider instead of staying stuck on the guess.
+    store.getState().appendAgentLog('a', '⏺ Read(src/x.ts)\n');
+
+    expect(store.getState().agentEvents['a']).toEqual([
+      expect.objectContaining({ kind: 'read', label: 'Read src/x.ts', path: 'src/x.ts' }),
+    ]);
+  });
+
+  it('caps retained events per agent at MAX_AGENT_EVENTS, dropping the oldest', () => {
+    store.setState({ agents: [claudeAgent('events-cap')] });
+    for (let i = 0; i < MAX_AGENT_EVENTS + 20; i++) {
+      store.getState().appendAgentLog('events-cap', `⏺ Bash(step ${i})\n`);
+    }
+    const events = store.getState().agentEvents['events-cap'];
+    expect(events).toHaveLength(MAX_AGENT_EVENTS);
+    expect(events[0].label).toBe('Ran step 20');
+    expect(events[events.length - 1].label).toBe(`Ran step ${MAX_AGENT_EVENTS + 19}`);
+  });
+
+  it('does not replace the agentEvents record when a chunk produces no event', () => {
+    store.setState({ agents: [claudeAgent('events-quiet')] });
+    store.getState().appendAgentLog('events-quiet', '⏺ Bash(pnpm lint)\n');
+    const afterFirst = store.getState().agentEvents;
+
+    // A redraw-only chunk with no new event must not touch the record at all.
+    store.getState().appendAgentLog('events-quiet', '╭───╮\n');
+    expect(store.getState().agentEvents).toBe(afterFirst);
+  });
+
+  it('drops the accumulated events when a finished agent is dismissed', () => {
+    store.setState({ agents: [{ ...claudeAgent('events-dismiss'), status: 'idle' as const }] });
+    store.getState().appendAgentLog('events-dismiss', '⏺ Bash(pnpm lint)\n');
+    expect(store.getState().agentEvents['events-dismiss']).toBeDefined();
+
+    store.getState().dismissFinishedAgent('events-dismiss');
+    expect(store.getState().agentEvents['events-dismiss']).toBeUndefined();
+    expect(store.getState().agentHeartbeat['events-dismiss']).toBeUndefined();
+  });
+
+  it('drops the accumulated events when a running agent is killed', async () => {
+    store.setState({ agents: [claudeAgent('events-kill')] });
+    store.getState().appendAgentLog('events-kill', '⏺ Bash(pnpm lint)\n');
+    expect(store.getState().agentEvents['events-kill']).toBeDefined();
+
+    await store.getState().killRunningAgent('events-kill');
+    expect(store.getState().agentEvents['events-kill']).toBeUndefined();
+    expect(store.getState().agentHeartbeat['events-kill']).toBeUndefined();
+  });
+
+  it('drops accumulated events for agents evicted past the finished-agent cap', () => {
+    const finished = Array.from({ length: MAX_FINISHED_AGENTS }, (_, i) => ({
+      ...claudeAgent(`events-evict-${i}`),
+      status: 'idle' as const,
+      startedAt: i,
+    }));
+    store.setState({
+      agents: [...finished, { ...claudeAgent('events-evict-new'), startedAt: 1000 }],
+    });
+    for (const a of finished) {
+      store.getState().appendAgentLog(a.id, '⏺ Bash(pnpm lint)\n');
+    }
+
+    // Pushes the finished count past MAX_FINISHED_AGENTS, evicting the oldest.
+    store.getState().updateAgentStatus('events-evict-new', 'idle');
+
+    expect(store.getState().agentEvents['events-evict-0']).toBeUndefined();
+    expect(store.getState().agentEvents[`events-evict-${MAX_FINISHED_AGENTS - 1}`]).toBeDefined();
+  });
+
+  it('drops accumulated events for every agent killed in a repo', async () => {
+    store.setState({
+      agents: [
+        { ...claudeAgent('events-repo-1'), repoPath: '/repo-a' },
+        { ...claudeAgent('events-repo-2'), repoPath: '/repo-a' },
+      ],
+    });
+    store.getState().appendAgentLog('events-repo-1', '⏺ Bash(pnpm lint)\n');
+    store.getState().appendAgentLog('events-repo-2', '⏺ Bash(pnpm lint)\n');
+
+    await store.getState().killAgentsForRepoPath('/repo-a');
+
+    expect(store.getState().agentEvents['events-repo-1']).toBeUndefined();
+    expect(store.getState().agentEvents['events-repo-2']).toBeUndefined();
+  });
+
+  it('accumulates output-volume heartbeat bytes across chunks, flushed at the throttle', () => {
+    store.setState({ agents: [claudeAgent('events-heartbeat')] });
+    store.getState().appendAgentLog('events-heartbeat', 'first chunk\n'); // fresh agent: bumps
+    // Force the next append past the throttle too, so its accumulated bytes
+    // flush rather than merely sitting in the pending accumulator.
+    store.setState({ agents: store.getState().agents.map((a) => ({ ...a, lastActivityAt: 0 })) });
+    store.getState().appendAgentLog('events-heartbeat', 'second\n');
+
+    const buckets = store.getState().agentHeartbeat['events-heartbeat'];
+    const totalBytes = buckets.reduce((sum, bucket) => sum + bucket.bytes, 0);
+    expect(totalBytes).toBe('first chunk\n'.length + 'second\n'.length);
+  });
+
+  it('does not replace the agentHeartbeat record for a chunk inside the throttle window', () => {
+    store.setState({ agents: [claudeAgent('events-hb-throttle')] });
+    store.getState().appendAgentLog('events-hb-throttle', 'first\n'); // fresh agent: bumps
+    const afterFirst = store.getState().agentHeartbeat;
+
+    // Still inside the throttle window — no lastActivityAt reset here, so
+    // this chunk's bytes must accumulate in the registry, not the store.
+    store.getState().appendAgentLog('events-hb-throttle', 'second\n');
+    expect(store.getState().agentHeartbeat).toBe(afterFirst);
+  });
+
+  it('does not lose pending heartbeat bytes accumulated while inside the throttle window', () => {
+    store.setState({ agents: [claudeAgent('events-hb-pending')] });
+    store.getState().appendAgentLog('events-hb-pending', 'first\n'); // fresh agent: bumps
+    store.getState().appendAgentLog('events-hb-pending', 'second\n'); // inside the window: pending only
+
+    // Cross the throttle now — the pending bytes from the second chunk must
+    // still be reflected, not silently dropped because they never flushed.
+    store.setState({ agents: store.getState().agents.map((a) => ({ ...a, lastActivityAt: 0 })) });
+    store.getState().appendAgentLog('events-hb-pending', 'third\n');
+
+    const buckets = store.getState().agentHeartbeat['events-hb-pending'];
+    const totalBytes = buckets.reduce((sum, bucket) => sum + bucket.bytes, 0);
+    expect(totalBytes).toBe('first\n'.length + 'second\n'.length + 'third\n'.length);
+  });
+
+  it('sweeps orphaned records for an id that appended logs but never landed in agents, on refresh', async () => {
+    const { listAgents } = await import('../tauri/agents');
+    store.getState().appendAgentLog('orphan', '$ pnpm build\n');
+    expect(store.getState().agentEvents['orphan']).toBeDefined();
+
+    vi.mocked(listAgents).mockResolvedValueOnce([]);
+    await store.getState().refreshAgents();
+
+    expect(store.getState().agentEvents['orphan']).toBeUndefined();
+  });
+
+  it('sweeps an orphaned id as a side effect of an unrelated agent being cleaned up', async () => {
+    store.setState({ agents: [claudeAgent('events-real')] });
+    store.getState().appendAgentLog('orphan-2', '$ pnpm build\n');
+    store.getState().appendAgentLog('events-real', '⏺ Bash(pnpm lint)\n');
+    expect(store.getState().agentEvents['orphan-2']).toBeDefined();
+
+    await store.getState().killRunningAgent('events-real');
+
+    expect(store.getState().agentEvents['orphan-2']).toBeUndefined();
+  });
+});
+
+describe('sendAgentInput', () => {
+  it('writes the exact bytes given to the agent PTY', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    const agents = await import('../tauri/agents');
+
+    await store.getState().sendAgentInput('agent-1', '1\n');
+
+    expect(agents.sendToAgent).toHaveBeenCalledWith('agent-1', '1\n');
+  });
+
+  it('does not decide the bytes itself — a free-text send goes through verbatim', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    const agents = await import('../tauri/agents');
+
+    await store.getState().sendAgentInput('agent-1', 'run the tests\n');
+
+    expect(agents.sendToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\n');
   });
 });

@@ -57,6 +57,7 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `View > Open Requirements` | `view.requirements` | — | no |
 | `View > Open Goal Lines` | `view.goal-lines` | — | no |
 | `View > Open Notifications` | `view.notifications` | — | no |
+| `View > Toggle Agent Console` | `view.agent-console` | `⌘⇧C` | no |
 | `View > Excalidraw+: Browse Workspace` | `excalidraw.browse` | — | no |
 | `Markdown > Rename Heading` | `markdown.rename-heading` | `F2` | no |
 | `Markdown > Find All References` | `markdown.find-references` | `Alt+F7` | no |

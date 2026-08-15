@@ -74,11 +74,17 @@ interface DragDropPosition {
  * Insert dropped file paths into the terminal. Tauri swallows HTML5 file
  * drops, so this listens to the webview drag-drop event and hit-tests the
  * (physical-pixel) drop position against the container.
+ *
+ * `onInsert` fires only when a path actually went in — a native drag moves no
+ * keyboard focus, so the caller uses it to hand the keyboard to the terminal
+ * the path landed in. Without that, the prompt holds the path but Enter goes
+ * elsewhere until the user clicks in.
  */
 export function attachFileDrop(
   container: HTMLElement,
   sendText: (text: string) => void,
-  onDragState?: (inside: boolean) => void
+  onDragState?: (inside: boolean) => void,
+  onInsert?: () => void
 ): () => void {
   let unlisten: (() => void) | undefined;
   let disposed = false;
@@ -107,6 +113,7 @@ export function attachFileDrop(
           onDragState?.(false);
           if (payload.paths.length > 0 && isInside(payload.position)) {
             sendText(buildPathInsert(payload.paths));
+            onInsert?.();
           }
         } else {
           onDragState?.(false);

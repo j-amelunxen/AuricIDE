@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "note",
+    "label": "I'll start by reading the config file to understand current behavior."
+  },
+  { "kind": "read", "label": "Read src/lib/example.ts", "path": "src/lib/example.ts" },
+  { "kind": "note", "label": "Looks straightforward — updating the validation branch now." },
+  { "kind": "edit", "label": "Edited src/lib/example.ts", "path": "src/lib/example.ts" }
+]

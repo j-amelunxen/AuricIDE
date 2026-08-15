@@ -1,0 +1,4 @@
+[
+  { "kind": "read", "label": "Read src/lib/example.ts", "path": "src/lib/example.ts" },
+  { "kind": "edit", "label": "Edited src/lib/example.ts", "path": "src/lib/example.ts" }
+]

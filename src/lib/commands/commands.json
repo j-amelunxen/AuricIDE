@@ -141,6 +141,12 @@
     { "id": "view.requirements", "label": "Open Requirements", "category": "view" },
     { "id": "view.goal-lines", "label": "Open Goal Lines", "category": "view" },
     { "id": "view.notifications", "label": "Open Notifications", "category": "view" },
+    {
+      "id": "view.agent-console",
+      "label": "Toggle Agent Console",
+      "category": "view",
+      "shortcut": "⌘⇧C"
+    },
     { "id": "excalidraw.browse", "label": "Excalidraw+: Browse Workspace", "category": "view" },
     {
       "id": "markdown.rename-heading",

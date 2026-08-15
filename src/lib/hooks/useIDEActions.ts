@@ -10,6 +10,7 @@ import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter
 import { nextAttentionAgentId, withReviewFlags } from '@/lib/agents/attention';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
+import { useAgentConsoleAutoOpen } from '@/lib/hooks/useAgentConsoleAutoOpen';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
 import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
@@ -40,6 +41,10 @@ export function useIDEActions(
 
   // The inbox spans projects, so it is not keyed on rootPath like the rest here
   useNotificationInbox();
+
+  // Opens the Agent Console once, in place of the start screen, if the user
+  // has asked for that and an agent is already running with no project open.
+  useAgentConsoleAutoOpen();
 
   // The header doubles as the window's title bar on macOS — this keeps the room
   // it leaves for the traffic lights honest when they come and go (fullscreen)
@@ -313,6 +318,9 @@ export function useIDEActions(
           Date.now()
         );
         if (nextId) handlers.handleSelectAgent(nextId);
+      } else if (mod && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        useStore.getState().toggleAgentConsole();
       }
     };
     window.addEventListener('keydown', handler);

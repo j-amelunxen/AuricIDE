@@ -1,0 +1,10 @@
+⏺ Read(src/lib/example.ts)
+⎿  Read 42 lines
+⏺ Update(src/lib/example.ts)
+⎿  Updated 3 lines
+⏺ Bash(pnpm test:run src/lib/example.test.ts)
+⎿  Running…
+⏺ Write(src/lib/new-feature.ts)
+⎿  Wrote 18 lines
+⏺ Grep(TODO)
+⎿  Found 2 matches

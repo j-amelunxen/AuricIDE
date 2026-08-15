@@ -1,0 +1,5 @@
+$ pnpm test:run
+> pnpm lint
+Wrote src/lib/example.ts
+Reading src/lib/other.ts
+Updated src/lib/example.ts

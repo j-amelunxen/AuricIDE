@@ -1,0 +1,6 @@
+[2mspinner idle[0m[2mspinner idle.[0m[2mspinner idle..[0m
+[32m⏺ Read(src/lib/example.ts)[0m
+⎿  Read 10 lines
+Progress: 10%Progress: 55%Progress: 100%
+[32m⏺ Update(src/lib/example.ts)[0m
+⎿  Updated 2 lines

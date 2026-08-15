@@ -18,6 +18,7 @@ import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { createRenderKeepAlive } from '@/lib/terminal/renderKeepAlive';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
+import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS, loadAppConfig } from '@/lib/config/appConfig';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import {
   TERMINAL_INTERACTION_OPTIONS,
@@ -66,7 +67,7 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     // Initialize xterm.js
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: agentId ? loadAppConfig().agentTerminalFontSize : 13,
       fontFamily: "'JetBrains Mono', monospace",
       scrollback: 1000,
       theme: {
@@ -170,7 +171,11 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     // Warp-style image handling: pasting an image saves it to the app cache
     // and inserts its path; dropping files inserts their paths.
     const detachImagePaste = attachImagePaste(containerRef.current, sendText);
-    const detachFileDrop = attachFileDrop(containerRef.current, sendText, setIsDropTarget);
+    // Dropping onto a terminal is asking to talk to it: focus follows the
+    // inserted path, so the next keystroke — usually Enter — lands here.
+    const detachFileDrop = attachFileDrop(containerRef.current, sendText, setIsDropTarget, () =>
+      term.focus()
+    );
 
     const setupSession = async () => {
       // Agent mode — replay + live output from the store (single source,
@@ -274,6 +279,28 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, cwd, initialCommand, agentId]);
+
+  // The Settings screen writes within this same webview, so `storage` would
+  // not fire. The app-config event keeps an already open agent terminal in
+  // sync, and fitting again lets xterm report its new geometry to the PTY.
+  useEffect(() => {
+    if (!agentId) return;
+    const applyFontSize = () => {
+      const term = termRef.current;
+      if (!term) return;
+      term.options.fontSize = loadAppConfig().agentTerminalFontSize;
+      try {
+        fitAddonRef.current?.fit();
+      } catch {}
+    };
+    const onConfigChange = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      if (key === APP_CONFIG_KEYS.agentTerminalFontSize) applyFontSize();
+    };
+    window.addEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
+    applyFontSize();
+    return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
+  }, [agentId]);
 
   return (
     <div className="h-full w-full relative">

@@ -29,6 +29,8 @@ export interface AgentsPanelProps {
   onSelectAgent?: (agentId: string) => void;
   onImageDrop?: (agentId: string, imageData: string) => void;
   onCollapse?: () => void;
+  /** Opens the full-area Agent Console — the fleet-wide view across projects. */
+  onOpenConsole?: () => void;
   onResumeInterrupted?: (agentId: string) => void;
   onDiscardInterrupted?: (agentId: string) => void;
   /** Agents folded down to a one-line row — still running, just out of the way. */
@@ -58,6 +60,7 @@ export function AgentsPanel({
   onSelectAgent,
   onImageDrop,
   onCollapse,
+  onOpenConsole,
   onResumeInterrupted,
   onDiscardInterrupted,
   minimizedAgentIds = [],
@@ -263,6 +266,18 @@ export function AgentsPanel({
               className="rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
             >
               Set aside {parkableAgents.length}
+            </button>
+          )}
+          {onOpenConsole && (
+            <button
+              type="button"
+              data-testid="agents-open-console"
+              onClick={onOpenConsole}
+              aria-label="Open Agent Console"
+              title="Open Agent Console"
+              className="group flex h-6 w-6 items-center justify-center rounded text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60"
+            >
+              <AuricIcon name="dashboard" aria-hidden="true" className="text-base" />
             </button>
           )}
           {onCollapse && (

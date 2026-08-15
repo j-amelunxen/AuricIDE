@@ -1,0 +1,7 @@
+[
+  { "kind": "read", "label": "Read src/lib/example.ts", "path": "src/lib/example.ts" },
+  { "kind": "edit", "label": "Edited src/lib/example.ts", "path": "src/lib/example.ts" },
+  { "kind": "run", "label": "Ran pnpm test:run src/lib/example.test.ts" },
+  { "kind": "edit", "label": "Edited src/lib/new-feature.ts", "path": "src/lib/new-feature.ts" },
+  { "kind": "read", "label": "Searched TODO" }
+]

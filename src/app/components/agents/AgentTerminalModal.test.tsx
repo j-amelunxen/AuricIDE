@@ -23,8 +23,10 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     rows = 24;
     cols = 80;
-    constructor(options?: unknown) {
-      mockTerminalOptions.push(options);
+    options: { fontSize?: number };
+    constructor(options?: { fontSize?: number }) {
+      this.options = { ...options };
+      mockTerminalOptions.push(this.options);
     }
     // Real xterm renders a hidden textarea into the host and routes focus to
     // it; the focus assertions below are only meaningful with that in place.
@@ -102,7 +104,13 @@ const mockAttachImagePaste = vi.fn((_c: HTMLElement, sendText: (text: string) =>
   pasteSendText = sendText;
   return mockDetachImagePaste;
 });
-const mockAttachFileDrop = vi.fn(() => mockDetachFileDrop);
+// The drop handler's "a path was inserted" callback — the tests below fire it
+// the way a real drop would.
+let dropInsertNotify: (() => void) | null = null;
+const mockAttachFileDrop = vi.fn((onInsert?: () => void) => {
+  dropInsertNotify = onInsert ?? null;
+  return mockDetachFileDrop;
+});
 
 // Restore latency is the interesting variable here: by default the real stream
 // is used, one test swaps in a restore that stays pending.
@@ -122,7 +130,12 @@ vi.mock('@/lib/terminal/agentStream', async (importOriginal) => {
 vi.mock('@/lib/terminal/imageInsert', () => ({
   attachImagePaste: (container: HTMLElement, sendText: (text: string) => void) =>
     mockAttachImagePaste(container, sendText),
-  attachFileDrop: () => mockAttachFileDrop(),
+  attachFileDrop: (
+    _container: HTMLElement,
+    _sendText: (text: string) => void,
+    _onDragState?: (inside: boolean) => void,
+    onInsert?: () => void
+  ) => mockAttachFileDrop(onInsert),
 }));
 
 const agent: AgentInfo = {
@@ -257,6 +270,18 @@ describe('AgentTerminalModal', () => {
       render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
       await waitFor(() => expect(mockFocus).toHaveBeenCalled());
       expect(document.activeElement).not.toBe(screen.getByTitle('Close'));
+    });
+
+    // Dropping an image into a terminal is asking to talk to it: the path is
+    // inserted, so the next thing the user does is press Enter.
+    it('takes the keyboard back after a dropped path is inserted', async () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(dropInsertNotify).not.toBeNull());
+      mockFocus.mockClear();
+
+      act(() => dropInsertNotify!());
+
+      expect(mockFocus).toHaveBeenCalled();
     });
 
     it('follows a switch to another agent', async () => {
@@ -454,6 +479,51 @@ describe('AgentTerminalModal', () => {
       expect(screen.getByTestId('agent-tab-agent-2')).toHaveTextContent(/waiting/i);
     });
 
+    describe('grouped by project', () => {
+      const here = makeAgent({ id: 'agent-1', name: 'Writer', repoPath: '/work/alpha' });
+      const alsoHere = makeAgent({ id: 'agent-2', name: 'Reviewer', repoPath: '/work/alpha' });
+      const elsewhere = makeAgent({ id: 'agent-3', name: 'Fixer', repoPath: '/work/beta' });
+      const homeless = makeAgent({ id: 'agent-4', name: 'Deployer', repoPath: undefined });
+
+      it('heads each group with its project name', () => {
+        render(<AgentTerminalModal agent={here} agents={[here, elsewhere]} onClose={vi.fn()} />);
+        expect(screen.getByText('alpha')).toBeInTheDocument();
+        expect(screen.getByText('beta')).toBeInTheDocument();
+      });
+
+      it('names the full path on the group heading', () => {
+        render(<AgentTerminalModal agent={here} agents={[here, elsewhere]} onClose={vi.fn()} />);
+        expect(screen.getByText('alpha')).toHaveAttribute('title', '/work/alpha');
+      });
+
+      it('keeps every tab when the fleet spans projects', () => {
+        render(
+          <AgentTerminalModal
+            agent={here}
+            agents={[here, alsoHere, elsewhere, homeless]}
+            onClose={vi.fn()}
+          />
+        );
+        expect(screen.getAllByRole('tab')).toHaveLength(4);
+      });
+
+      it('puts each tab under its own project', () => {
+        render(
+          <AgentTerminalModal agent={here} agents={[here, alsoHere, elsewhere]} onClose={vi.fn()} />
+        );
+        const alpha = screen.getByTestId('agent-tab-group-/work/alpha');
+        expect(within(alpha).getAllByRole('tab')).toHaveLength(2);
+        expect(within(alpha).getByTestId('agent-tab-agent-2')).toBeInTheDocument();
+      });
+
+      /** One project is not a grouping — a heading there is pure noise. */
+      it('shows no project heading while the fleet is all one project', () => {
+        render(<AgentTerminalModal agent={here} agents={[here, alsoHere]} onClose={vi.fn()} />);
+        expect(screen.queryByText('alpha')).not.toBeInTheDocument();
+        expect(screen.getAllByRole('tab')).toHaveLength(2);
+      });
+    });
+
     it('calls onSwitchAgent with the clicked agent', async () => {
       const user = userEvent.setup();
       const onSwitchAgent = vi.fn();
@@ -629,6 +699,32 @@ describe('AgentTerminalModal', () => {
       );
     });
 
+    /**
+     * "Neighbour" has to mean the tab beside it on screen. Grouping reorders
+     * the strip, so following the raw list would jump to another project.
+     */
+    it('moves to the neighbour in the strip, not in the raw list', async () => {
+      const user = userEvent.setup();
+      const onSwitchAgent = vi.fn();
+      const here = makeAgent({ id: 'agent-1', name: 'Writer', repoPath: '/work/alpha' });
+      const elsewhere = makeAgent({ id: 'agent-2', name: 'Reviewer', repoPath: '/work/beta' });
+      const alsoHere = makeAgent({ id: 'agent-3', name: 'Fixer', repoPath: '/work/alpha' });
+      render(
+        <AgentTerminalModal
+          agent={here}
+          agents={[here, elsewhere, alsoHere]}
+          onKill={vi.fn()}
+          onDismiss={vi.fn()}
+          onSwitchAgent={onSwitchAgent}
+          onClose={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Writer' }));
+      await answerStop(user, 'Stop');
+      expect(onSwitchAgent).toHaveBeenCalledWith(alsoHere);
+    });
+
     it('closes the modal when the last tab is stopped', async () => {
       const user = userEvent.setup();
       const onKill = vi.fn();
@@ -793,6 +889,33 @@ describe('AgentTerminalModal', () => {
           smoothScrollDuration: 0,
         })
       );
+    });
+
+    it('uses the globally configured agent terminal font size', async () => {
+      localStorage.setItem('auric.agent-terminal-font-size', '18');
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+
+      await waitFor(() => expect(mockTerminalOptions.length).toBeGreaterThan(0));
+
+      expect(mockTerminalOptions[0]).toEqual(expect.objectContaining({ fontSize: 18 }));
+    });
+
+    it('updates the fullscreen terminal and re-fits when the setting changes', async () => {
+      render(<AgentTerminalModal agent={agent} onClose={vi.fn()} />);
+      await waitFor(() => expect(mockTerminalOptions.length).toBeGreaterThan(0));
+      mockFit.mockClear();
+      localStorage.setItem('auric.agent-terminal-font-size', '17');
+
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('auric:app-config-changed', {
+            detail: { key: 'auric.agent-terminal-font-size' },
+          })
+        );
+      });
+
+      expect(mockTerminalOptions[0]).toEqual(expect.objectContaining({ fontSize: 17 }));
+      expect(mockFit).toHaveBeenCalled();
     });
 
     it('shows copy/paste/select-all and spawn when there is a selection', async () => {
