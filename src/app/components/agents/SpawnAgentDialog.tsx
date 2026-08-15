@@ -94,14 +94,18 @@ function SpawnAgentDialogPanel({
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     FALLBACK_CRUSH_PROVIDER.defaultPermissionMode as PermissionMode
   );
-  const [headless, setHeadless] = useState(() => loadSpawnDefaults()?.headless ?? false);
+  const [headless, setHeadless] = useState(
+    () => loadSpawnDefaults(initialRepoPath)?.headless ?? false
+  );
   // The last launch's choices, applied once when their provider becomes
   // current — four decisions per agent become zero for a same-as-last-time
   // fleet, while an explicit provider switch still resets to that
   // provider's own defaults. A skill's preset is folded in here so it goes
   // through the same validate-against-the-current-offering pass; the panel
   // remounts on every open, so the ref is re-evaluated per launch.
-  const savedDefaultsRef = useRef(mergeSpawnPreset(loadSpawnDefaults(), presetDefaults));
+  const savedDefaultsRef = useRef(
+    mergeSpawnPreset(loadSpawnDefaults(initialRepoPath), presetDefaults)
+  );
 
   // The fallback keeps the fields renderable when the policy permits nothing:
   // the dialog says so and refuses to deploy, rather than crashing on an empty
@@ -186,15 +190,18 @@ function SpawnAgentDialogPanel({
     // column of identical labels. Editable afterwards from the agent card.
     const name = deriveAgentName(task, folderName || undefined);
     // A preset is the project's opinion about one recurring task, not the
-    // user's baseline. Letting it write the global memory would mean a skill
-    // pinned to `plan` quietly redefines every hand-written launch everywhere.
+    // user's baseline. Letting it write remembered defaults would mean a skill
+    // pinned to `plan` quietly redefines later hand-written launches in the project.
     if (!presetDefaults) {
-      saveSpawnDefaults({
-        providerId: selectedProviderId,
-        model,
-        permissionMode,
-        headless,
-      });
+      saveSpawnDefaults(
+        {
+          providerId: selectedProviderId,
+          model,
+          permissionMode,
+          headless,
+        },
+        repoPath
+      );
     }
     onSpawn({
       name,
