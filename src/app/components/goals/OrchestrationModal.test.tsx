@@ -44,7 +44,7 @@ describe('OrchestrationModal', () => {
 
   it('exposes an accessible dialog', () => {
     render(<OrchestrationModal />);
-    expect(screen.getByRole('dialog', { name: /orchestration/i })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /work map/i })).toBeInTheDocument();
   });
 
   it('reopens Goals when closed so it does not sit on a leftover Goals owner', async () => {

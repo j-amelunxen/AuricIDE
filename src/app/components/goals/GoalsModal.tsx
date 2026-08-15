@@ -302,11 +302,11 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
                 if (!embedded) setGoalsModalOpen(false);
                 setOrchestrationOpen(true);
               }}
-              title="Orchestration graph"
+              title="Work map"
               className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground hover:bg-white/10 transition-colors"
             >
               <AuricIcon name="graph_3" className="text-sm" />
-              Orchestration
+              Work map
             </button>
             <button
               data-testid="goals-goal-lines-btn"

@@ -357,10 +357,10 @@ export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
               aria-hidden="true"
               className="text-4xl text-foreground-muted/30"
             />
-            <p className="text-xs text-foreground-muted">No goal has work attached yet.</p>
+            <p className="text-xs text-foreground-muted">No goals have work yet.</p>
             <p className="max-w-[320px] text-[10px] text-foreground-muted/70">
-              Create a goal and attach tickets. Each goal becomes a line here, with done work on the
-              left and the goal always on the right.
+              Create a goal and attach tickets. Each goal appears here from completed work to its
+              next step.
             </p>
             <button
               data-testid="goal-lines-open-goals"

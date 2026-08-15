@@ -333,7 +333,7 @@ export function GoalLineCard({
           onKeyDown={(e) => {
             if (e.key === 'Enter') commitQuickAdd();
           }}
-          placeholder="+ human step: “Call the client”, Enter to add"
+          placeholder="Add a manual step, then press Enter"
           className="flex-1 rounded-lg bg-black/30 px-2.5 py-1.5 text-[11px] text-foreground outline-none transition-colors placeholder:text-foreground-muted/40 focus:bg-black/50 focus-visible:ring-2 focus-visible:ring-primary/70"
         />
         {line.planCommitted && !confirmReset && (
@@ -345,14 +345,14 @@ export function GoalLineCard({
             title={
               resetBlocked
                 ? 'Wait until the assigned agent is no longer running.'
-                : 'Reset this line'
+                : 'Reset this plan'
             }
             onClick={() => {
               if (!resetBlocked) setConfirmReset(true);
             }}
             className="min-h-6 rounded-lg px-2 text-[10px] text-[#ff8a8a] hover:bg-[#ff4a4a]/10 focus-visible:ring-2 focus-visible:ring-primary/70 aria-disabled:cursor-not-allowed aria-disabled:opacity-40"
           >
-            Reset line
+            Reset plan
           </button>
         )}
         {line.planCommitted && resetBlocked && !confirmReset && (
@@ -361,7 +361,7 @@ export function GoalLineCard({
             data-testid={`goal-line-reset-blocked-${line.goalId}`}
             className="basis-full text-[10px] text-foreground-muted"
           >
-            An assigned agent is still running. Reset becomes available when it stops.
+            An assigned agent is still running. Reset is available once it stops.
           </span>
         )}
         {line.planCommitted && confirmReset && (
@@ -374,13 +374,13 @@ export function GoalLineCard({
               }
             }}
           >
-            Remove all checkpoints? The goal remains as a draft.
+            Remove all steps? The goal remains a draft.
             <button
               data-testid={`goal-line-reset-confirm-${line.goalId}`}
               onClick={() => onReset(line.goalId)}
               className="min-h-6 min-w-6 rounded-md bg-[#ff4a4a]/15 px-2 py-1 font-semibold text-[#ff8a8a] focus-visible:ring-2 focus-visible:ring-primary/70"
             >
-              Yes, reset
+              Reset plan
             </button>
             <button
               ref={cancelResetRef}

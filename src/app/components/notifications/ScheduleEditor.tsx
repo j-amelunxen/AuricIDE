@@ -549,7 +549,7 @@ export function ScheduleEditor({
               className={`${INPUT} font-mono`}
             />
             <p className="mt-1 text-[9px] text-foreground-muted/60">
-              Seconds first. Weekdays as names (MON, WED) — numbers count differently here than in
+              Seconds first. Weekdays as names (MON, WED); numbers count differently here than in
               ordinary cron.
             </p>
           </Field>
@@ -625,7 +625,7 @@ export function ScheduleEditor({
             <div className="mt-2">
               {noQuickAccess && (
                 <p className="mb-1 text-[9px] text-foreground-muted/60">
-                  No Quick Access for this project — pin one there first.
+                  No Quick Access is set up for this project. Add a skill there first.
                 </p>
               )}
               <select
@@ -682,7 +682,7 @@ export function ScheduleEditor({
             <div className="mt-2">
               {noQuickAccess && (
                 <p className="mb-1 text-[9px] text-foreground-muted/60">
-                  No Quick Access for this project — pin one there first.
+                  No Quick Access is set up for this project. Add a combo there first.
                 </p>
               )}
               <select
@@ -768,7 +768,7 @@ export function ScheduleEditor({
           </p>
           {preview.length === 0 ? (
             <p data-testid="schedule-preview-empty" className="text-[10px] text-[#ffce2e]">
-              No date could be computed — check the rhythm.
+              No upcoming date could be calculated. Check the schedule fields and try again.
             </p>
           ) : (
             <ul className="space-y-0.5">

@@ -47,15 +47,15 @@ export function AuricSkillsContent() {
     <div className="space-y-8">
       <SettingsSection title="Auric Skills" icon="auto_awesome">
         <p className="max-w-[70ch] text-xs leading-relaxed text-foreground-muted">
-          Prompt-based skills available to every project and every agent harness. Projects choose
-          which ones appear in Quick Access, wheels and combos.
+          Reusable prompt skills available across your projects. Choose which skills appear in Quick
+          Access.
         </p>
 
         {skills.length === 0 ? (
           <div className="rounded-lg border border-dashed border-white/10 px-4 py-5 text-center">
             <p className="text-xs font-medium text-foreground">No Auric skills yet</p>
             <p className="mt-1 text-[11px] text-foreground-muted">
-              Add one reusable instruction, then select it inside any Quick Access project.
+              Add a reusable instruction, then choose it in a project&apos;s Quick Access.
             </p>
           </div>
         ) : (
@@ -81,7 +81,7 @@ export function AuricSkillsContent() {
                     <textarea
                       aria-label={`Auric skill ${index + 1} prompt`}
                       value={skill.prompt}
-                      placeholder="Full instruction injected into the agent context"
+                      placeholder="Instruction provided to the agent when you use this skill"
                       rows={5}
                       onChange={(event) => update(index, { prompt: event.target.value })}
                       className={`${FIELD_CLASS} col-span-2 resize-y font-mono leading-relaxed`}

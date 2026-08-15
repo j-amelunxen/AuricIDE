@@ -58,19 +58,19 @@ export function GoalLineLegend() {
       aria-label="Checkpoint legend"
     >
       <ul className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5">
-        <Swatch label="proven">
+        <Swatch label="complete">
           <Dot fill={HUE} />
         </Swatch>
-        <Swatch label="front">
+        <Swatch label="in progress">
           <svg width="16" height="16" viewBox="0 0 16 16" className="overflow-visible">
             <circle cx="8" cy="8" r="7" fill={HUE} opacity={0.2} className="goal-line-pulse" />
             <circle cx="8" cy="8" r="4.5" fill={SURFACE} stroke={HUE} strokeWidth={2} />
           </svg>
         </Swatch>
-        <Swatch label="planned">
+        <Swatch label="upcoming">
           <Dot fill={SURFACE} opacity={0.7} />
         </Swatch>
-        <Swatch label="fog">
+        <Swatch label="later">
           <Dot fill="none" stroke={HUE} r={3.5} opacity={0.25} />
         </Swatch>
       </ul>
@@ -78,13 +78,13 @@ export function GoalLineLegend() {
       <span aria-hidden="true" className="hidden h-3 w-px bg-white/10 sm:block" />
 
       <ul className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5">
-        <Swatch label="claim">
+        <Swatch label="reported">
           <svg width="16" height="16" viewBox="0 0 16 16" className="overflow-visible">
             <circle cx="8" cy="8" r="4.5" fill={SURFACE} stroke={HUE} strokeWidth={2} />
             <circle cx="8" cy="8" r="1.8" fill={HUE} />
           </svg>
         </Swatch>
-        <Swatch label="AI">
+        <Swatch label="AI check">
           <svg width="16" height="16" viewBox="0 0 16 16" className="overflow-visible">
             <circle
               cx="8"
@@ -99,7 +99,7 @@ export function GoalLineLegend() {
             <circle cx="8" cy="8" r="4" fill={HUE} />
           </svg>
         </Swatch>
-        <Swatch label="stale">
+        <Swatch label="needs review">
           <svg width="16" height="16" viewBox="0 0 16 16" className="overflow-visible">
             <circle
               cx="8"

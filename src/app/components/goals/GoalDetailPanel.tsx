@@ -268,7 +268,7 @@ export function GoalDetailPanel({
           {satisfaction.satisfied ? (
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-medium text-green-300">
-                Checks green. Ready to mark achieved.
+                All checks pass. Ready to mark achieved.
               </p>
               {goal.status !== 'achieved' && (
                 <button
@@ -310,7 +310,7 @@ export function GoalDetailPanel({
       <div>
         {!subtreeHasTickets && (
           <p className="mb-2 text-[10px] text-foreground-muted">
-            The conductor runs tickets, not checkpoints. Create executable work first.
+            Conductor works through tickets. Create tickets before launching an agent.
           </p>
         )}
         <div className="flex flex-wrap gap-2">
@@ -320,7 +320,7 @@ export function GoalDetailPanel({
             className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
           >
             <AuricIcon name="rocket_launch" className="text-sm" />
-            {subtreeHasTickets ? 'Add work with agent' : 'Create tickets with agent'}
+            {subtreeHasTickets ? 'Plan work with agent' : 'Create tickets with agent'}
           </button>
           <button
             data-testid="goal-add-subgoal-btn"
@@ -374,7 +374,7 @@ export function GoalDetailPanel({
           value={goal.goalPrompt}
           onChange={(e) => onUpdate(goal.id, { goalPrompt: e.target.value })}
           rows={3}
-          placeholder="Optional agent prompt (auto if empty)"
+          placeholder="Optional instructions for the agent"
           className={inputCls}
         />
       </div>
@@ -491,8 +491,8 @@ export function GoalDetailPanel({
             className="mb-1.5 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-300/90"
           >
             <AuricIcon name="info" className="mt-px text-[12px]" />
-            No requirement linked: this goal completes purely on agents exiting cleanly. Link a
-            requirement to add a verified acceptance gate.
+            No requirement linked. This goal completes when agents finish successfully. Link a
+            requirement to add a verified completion check.
           </p>
         )}
         <div className="flex flex-wrap gap-1.5">

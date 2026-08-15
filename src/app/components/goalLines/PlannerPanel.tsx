@@ -264,7 +264,7 @@ export function PlannerPanel() {
     } catch (cause) {
       for (const station of stations) deleteStation(station.id);
       if (priorStatus === 'draft') updateGoal(goal.id, { status: priorStatus });
-      setError(`Could not save line: ${(cause as Error).message}. Please try again.`);
+      setError(`Could not save plan: ${(cause as Error).message}. Please try again.`);
       savingRef.current = false;
       setSaving(false);
       return;
@@ -329,8 +329,8 @@ export function PlannerPanel() {
         className="flex w-full items-center gap-2 text-left"
       >
         <AuricIcon name="alt_route" aria-hidden="true" className="text-base text-primary-light" />
-        <span className="text-xs font-bold text-foreground">Plan a line</span>
-        <span className="text-[10px] text-foreground-muted">dump → proposal → refine → save</span>
+        <span className="text-xs font-bold text-foreground">Plan a goal</span>
+        <span className="text-[10px] text-foreground-muted">notes → plan → refine → save</span>
         <span aria-hidden="true" className="ml-auto font-mono text-[10px] text-foreground-muted">
           {open ? '▾' : '▸'}
         </span>
@@ -387,7 +387,7 @@ export function PlannerPanel() {
                   disabled={busy || !dump.trim() || !llmConfigured}
                   className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary-light transition-colors hover:bg-primary/20 disabled:opacity-40"
                 >
-                  {busy ? 'Planning…' : 'Propose plan'}
+                  {busy ? 'Planning…' : 'Create plan'}
                 </button>
               </div>
             </>
@@ -406,7 +406,7 @@ export function PlannerPanel() {
               <div data-testid="planner-preview" className="rounded-xl bg-black/20 px-2 py-1">
                 <GoalLineMap line={previewLine} agentsById={new Map()} />
                 <p className="px-2 pb-2 text-[10px] text-foreground-muted">
-                  Saving this line saves checkpoints. Executable tickets are created next.
+                  Saving this plan adds its steps. You can create tickets next.
                 </p>
               </div>
 
@@ -464,9 +464,9 @@ export function PlannerPanel() {
                         }
                         className="min-h-6 rounded-lg bg-black/30 px-2 py-1 text-[11px] text-foreground focus-visible:ring-2 focus-visible:ring-primary/70"
                       >
-                        <option value="normal">normal</option>
-                        <option value="gate">gate</option>
-                        <option value="human">human</option>
+                        <option value="normal">Step</option>
+                        <option value="gate">Review step</option>
+                        <option value="human">Your step</option>
                       </select>
                       <select
                         data-testid={`planner-station-evidence-${index}`}
@@ -487,10 +487,10 @@ export function PlannerPanel() {
                         }
                         className="min-h-6 rounded-lg bg-black/30 px-2 py-1 text-[11px] text-foreground focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-50"
                       >
-                        <option value="claim">claim</option>
-                        <option value="proof">proof</option>
-                        <option value="judged">judged</option>
-                        <option value="human">human</option>
+                        <option value="claim">Reported</option>
+                        <option value="proof">Verified</option>
+                        <option value="judged">AI reviewed</option>
+                        <option value="human">Manual confirmation</option>
                       </select>
                       <select
                         data-testid={`planner-station-predicate-${index}`}
@@ -517,7 +517,15 @@ export function PlannerPanel() {
                       >
                         {EDITABLE_PREDICATES.map((type) => (
                           <option key={type} value={type}>
-                            {type}
+                            {type === 'undefined'
+                              ? 'No automatic check'
+                              : type === 'human'
+                                ? 'Manual confirmation'
+                                : type === 'file_exists'
+                                  ? 'File exists'
+                                  : type === 'git_touches'
+                                    ? 'Files changed'
+                                    : 'AI review'}
                           </option>
                         ))}
                       </select>
@@ -572,7 +580,7 @@ export function PlannerPanel() {
                             }))
                           }
                         />{' '}
-                        fog
+                        Mark as later
                       </label>
                       <div className="ml-auto flex gap-1">
                         <button
@@ -648,7 +656,7 @@ export function PlannerPanel() {
 
               <div className="flex flex-col gap-1 text-[10px] text-foreground-muted">
                 <label data-testid="planner-refine-label" htmlFor="planner-refine">
-                  Reprompt the planner
+                  Refine the plan
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -661,7 +669,7 @@ export function PlannerPanel() {
                       if (e.key === 'Enter') void applyRefinement();
                     }}
                     disabled={busy}
-                    placeholder="Reprompt to refine… Enter to apply"
+                    placeholder="Describe the change… Enter to apply"
                     className="flex-1 rounded-lg bg-black/30 px-2.5 py-1.5 text-[11px] text-foreground outline-none placeholder:text-foreground-muted/40 focus:bg-black/50 focus-visible:ring-2 focus-visible:ring-primary/70"
                   />
                   <button
@@ -670,7 +678,7 @@ export function PlannerPanel() {
                     disabled={busy || !refine.trim()}
                     className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-white/10 disabled:opacity-40"
                   >
-                    {busy ? '…' : 'Reprompt'}
+                    {busy ? '…' : 'Refine'}
                   </button>
                 </div>
               </div>
@@ -691,7 +699,7 @@ export function PlannerPanel() {
                   onClick={discard}
                   className="rounded-lg px-3 py-1.5 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
                 >
-                  Discard draft
+                  Discard plan
                 </button>
                 <button
                   data-testid="planner-start"
@@ -699,7 +707,7 @@ export function PlannerPanel() {
                   disabled={!!validation || saving}
                   className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary-light transition-colors hover:bg-primary/20"
                 >
-                  {saving ? 'Saving…' : 'Save line'}
+                  {saving ? 'Saving…' : 'Save plan'}
                 </button>
               </div>
               {validation && (
