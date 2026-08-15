@@ -173,6 +173,141 @@ describe('GoalTree', () => {
   });
 });
 
+describe('GoalTree context menu', () => {
+  it('deletes the right-clicked goal, not the selected one', () => {
+    const onDelete = vi.fn();
+    const goals = [
+      makeGoal({ id: 'selected', name: 'Selected' }),
+      makeGoal({ id: 'clicked', name: 'Clicked', sortOrder: 1 }),
+    ];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="selected"
+        onSelect={() => {}}
+        onDelete={onDelete}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('goal-node-clicked'), { clientX: 40, clientY: 60 });
+    fireEvent.click(screen.getByText('Delete goal'));
+
+    expect(onDelete).toHaveBeenCalledWith('clicked');
+  });
+
+  it('names the goal it would delete', () => {
+    render(
+      <GoalTree
+        goals={[makeGoal({ name: 'Ship the thing' })]}
+        tickets={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+    expect(screen.getByRole('menu')).toHaveTextContent('Ship the thing');
+  });
+
+  it('warns that sub-goals go with it', () => {
+    const goals = [makeGoal({ id: 'root' }), makeGoal({ id: 'child', parentId: 'root' })];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('goal-node-root'));
+    expect(screen.getByRole('menu')).toHaveTextContent('1 sub-goal');
+  });
+
+  it('closes the menu after choosing delete', () => {
+    render(
+      <GoalTree
+        goals={[makeGoal()]}
+        tickets={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+    fireEvent.click(screen.getByText('Delete goal'));
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('opens no menu when it would have nothing to offer', () => {
+    render(<GoalTree goals={[makeGoal()]} tickets={[]} selectedId={null} onSelect={() => {}} />);
+    fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('adds a sub-goal under the right-clicked goal', () => {
+    const onAddSubGoal = vi.fn();
+    const goals = [
+      makeGoal({ id: 'selected', name: 'Selected' }),
+      makeGoal({ id: 'clicked', name: 'Clicked', sortOrder: 1 }),
+    ];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="selected"
+        onSelect={() => {}}
+        onAddSubGoal={onAddSubGoal}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('goal-node-clicked'));
+    fireEvent.click(screen.getByText('Add sub-goal'));
+
+    expect(onAddSubGoal).toHaveBeenCalledWith('clicked');
+  });
+
+  it('offers adding without deleting when only adding is wired up', () => {
+    render(
+      <GoalTree
+        goals={[makeGoal()]}
+        tickets={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onAddSubGoal={vi.fn()}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+    expect(screen.getByText('Add sub-goal')).toBeInTheDocument();
+    expect(screen.queryByText('Delete goal')).toBeNull();
+  });
+
+  it('puts the safe action before the destructive one', () => {
+    render(
+      <GoalTree
+        goals={[makeGoal()]}
+        tickets={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onAddSubGoal={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+    const labels = screen
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent?.trim())
+      .filter(Boolean);
+    expect(labels).toEqual(['Add sub-goal', 'Delete goal']);
+  });
+});
+
 describe('GoalTree load status', () => {
   const baseProps = {
     goals: [makeGoal({ id: 'g1' })],

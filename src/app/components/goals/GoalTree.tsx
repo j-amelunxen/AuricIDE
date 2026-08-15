@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, type DragEvent } from 'react';
+import { useState, useMemo, type DragEvent, type MouseEvent } from 'react';
 import type { PmGoal } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 import {
@@ -11,6 +11,7 @@ import {
   type GoalDropPosition,
 } from '@/lib/store/goalsSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 
 export const GOAL_STATUS_STYLES: Record<string, { dot: string; label: string; text: string }> = {
   draft: { dot: 'bg-gray-400', label: 'Draft', text: 'text-gray-300' },
@@ -27,6 +28,10 @@ interface GoalTreeProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onMoveGoal?: (draggedId: string, targetId: string, position: GoalDropPosition) => void;
+  /** Deletes a goal and its subtree; adds the entry to the right-click menu. */
+  onDelete?: (id: string) => void;
+  /** Starts a new goal under this one; adds the entry to the right-click menu. */
+  onAddSubGoal?: (parentId: string) => void;
   /** Agent count per goal id (running agents working toward the goal). */
   activeAgentsByGoal?: Record<string, number>;
   /** Opens the goal creation dialog; enables the empty-state call to action. */
@@ -48,6 +53,7 @@ interface GoalNodeProps extends GoalTreeProps {
   onDragOverGoal: (id: string, event: DragEvent<HTMLDivElement>) => void;
   onDropGoal: (id: string, event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
+  onContextMenuGoal: (id: string, event: MouseEvent<HTMLDivElement>) => void;
 }
 
 export function getGoalDropPosition(
@@ -75,6 +81,7 @@ function GoalNode({
   onDragOverGoal,
   onDropGoal,
   onDragEnd,
+  onContextMenuGoal,
 }: GoalNodeProps) {
   const children = getGoalChildren(goals, goal.id);
   const progress = getGoalProgress(goals, tickets, goal.id);
@@ -105,6 +112,7 @@ function GoalNode({
         onDragOver={(event) => onDragOverGoal(goal.id, event)}
         onDrop={(event) => onDropGoal(goal.id, event)}
         onDragEnd={onDragEnd}
+        onContextMenu={(event) => onContextMenuGoal(goal.id, event)}
         onClick={() => onSelect(goal.id)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -211,6 +219,7 @@ function GoalNode({
             onDragOverGoal={onDragOverGoal}
             onDropGoal={onDropGoal}
             onDragEnd={onDragEnd}
+            onContextMenuGoal={onContextMenuGoal}
           />
         ))}
     </div>
@@ -223,12 +232,15 @@ export function GoalTree({
   selectedId,
   onSelect,
   onMoveGoal,
+  onDelete,
+  onAddSubGoal,
   activeAgentsByGoal,
   onCreate,
   loading = false,
   loadError = null,
 }: GoalTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<{ goalId: string; x: number; y: number } | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     id: string;
@@ -289,6 +301,51 @@ export function GoalTree({
     setDraggedId(null);
     setDropTarget(null);
   };
+
+  // Without either handler the menu would open with nothing in it — leave the
+  // browser's own menu alone in that case.
+  const handleContextMenuGoal = (id: string, event: MouseEvent<HTMLDivElement>) => {
+    if (!onDelete && !onAddSubGoal) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu({ goalId: id, x: event.clientX, y: event.clientY });
+  };
+
+  // The menu acts on the row that was right-clicked, which is not necessarily
+  // the selected one — so it names the goal, and says what else goes with it.
+  // Adding comes first: the destructive entry should not be where the pointer
+  // already is when the menu appears.
+  const menuGoal = menu ? (goals.find((goal) => goal.id === menu.goalId) ?? null) : null;
+  const menuOptions: ContextMenuOption[] = useMemo(() => {
+    if (!menuGoal) return [];
+    const options: ContextMenuOption[] = [{ type: 'header', label: menuGoal.name }];
+    if (onAddSubGoal) {
+      options.push({
+        type: 'item',
+        label: 'Add sub-goal',
+        icon: 'add',
+        action: () => onAddSubGoal(menuGoal.id),
+      });
+    }
+    if (onDelete) {
+      if (onAddSubGoal) options.push({ type: 'separator' });
+      options.push({
+        type: 'item',
+        label: 'Delete goal',
+        icon: 'delete',
+        danger: true,
+        action: () => onDelete(menuGoal.id),
+      });
+      const subCount = getGoalDescendants(goals, menuGoal.id).length;
+      if (subCount > 0) {
+        options.push({
+          type: 'header',
+          label: `Includes ${subCount} sub-goal${subCount === 1 ? '' : 's'}`,
+        });
+      }
+    }
+    return options;
+  }, [goals, menuGoal, onAddSubGoal, onDelete]);
 
   // An empty tree means three different things. Saying "no goals yet" while
   // the read is still running — or failed — is the one that makes a user
@@ -369,8 +426,13 @@ export function GoalTree({
           onDragOverGoal={handleDragOverGoal}
           onDropGoal={handleDropGoal}
           onDragEnd={handleDragEnd}
+          onContextMenuGoal={handleContextMenuGoal}
         />
       ))}
+
+      {menu && menuGoal && (
+        <ContextMenu x={menu.x} y={menu.y} options={menuOptions} onClose={() => setMenu(null)} />
+      )}
     </div>
   );
 }

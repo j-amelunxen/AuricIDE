@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalsModal, buildGoalLaunchPrompt } from './GoalsModal';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
@@ -474,6 +474,40 @@ describe('GoalsModal', () => {
 
       expect(mocks.deleteGoal).not.toHaveBeenCalled();
       expect(screen.queryByRole('dialog', { name: 'Delete this goal?' })).toBeNull();
+    });
+
+    it('right-clicking a goal in the tree deletes it through the same confirmation', async () => {
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+      await user.click(screen.getByText('Delete goal'));
+      expect(mocks.deleteGoal).not.toHaveBeenCalled();
+
+      await answer(user, 'Delete this goal?', 'Delete');
+      expect(mocks.deleteGoal).toHaveBeenCalledWith('g1');
+    });
+  });
+
+  describe('adding a sub-goal from the tree', () => {
+    it('right-clicking a goal opens the create dialog under it', async () => {
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+
+      fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+      await user.click(screen.getByText('Add sub-goal'));
+
+      expect(screen.getByTestId('goal-create-dialog')).toBeTruthy();
+      expect((screen.getByTestId('goal-create-parent') as HTMLSelectElement).value).toBe('g1');
+    });
+
+    it('offers no sub-goal without a project to create it in', async () => {
+      storeState.rootPath = null;
+      render(<GoalsModal />);
+
+      fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
+
+      expect(screen.queryByText('Add sub-goal')).toBeNull();
     });
   });
 });
