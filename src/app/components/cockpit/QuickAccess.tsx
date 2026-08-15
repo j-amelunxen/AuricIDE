@@ -19,7 +19,7 @@ import {
   wheelKnownIds,
   wheelSlotId,
 } from '@/lib/quickAccess/launchSkills';
-import { openSkillSpawnDialog } from '@/lib/quickAccess/launchSkill';
+import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
 import {
   assignSkillToSlot,
   clearWheelSlot,
@@ -446,12 +446,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const starredProjects = useStore((s) => s.starredProjects);
   const removeStarredProject = useStore((s) => s.removeStarredProject);
   const addStarredProject = useStore((s) => s.addStarredProject);
-  const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
-  const setSpawnAgentRepoPath = useStore((s) => s.setSpawnAgentRepoPath);
-  const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
-  const setSpawnAgentGoalId = useStore((s) => s.setSpawnAgentGoalId);
-  const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
-  const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
+  const launchSpawnDialog = useSpawnLauncher();
   const startSkillCombo = useStore((s) => s.startSkillCombo);
   const showToast = useStore((s) => s.showToast);
 
@@ -483,19 +478,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
    * have left behind is cleared explicitly — a skill launched in repo B must
    * not inherit repo A's ticket, goal or preset.
    */
-  const launchSkill = (path: string, skill?: QuickAccessSkill) =>
-    openSkillSpawnDialog(
-      {
-        setSpawnAgentTicketId,
-        setSpawnAgentGoalId,
-        setInitialAgentTask,
-        setSpawnAgentPreset,
-        setSpawnAgentRepoPath,
-        setSpawnDialogOpen,
-      },
-      path,
-      skill
-    );
+  const launchSkill = (path: string, skill?: QuickAccessSkill) => launchSpawnDialog(path, skill);
 
   const launchCombo = (path: string, combo: QuickAccessCombo) => {
     void startSkillCombo(path, combo);
