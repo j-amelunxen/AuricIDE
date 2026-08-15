@@ -370,6 +370,8 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
               selectedId={selectedGoalId}
               onSelect={setSelectedGoalId}
               onMoveGoal={handleMoveGoal}
+              onDelete={(id) => void handleDelete(id)}
+              onAddSubGoal={rootPath ? handleAddSubGoal : undefined}
               activeAgentsByGoal={activeAgentsByGoal}
               loading={goalsLoading}
               loadError={goalsLoadError}
