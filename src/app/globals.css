@@ -184,6 +184,23 @@ body {
       0 0 20px rgba(var(--primary-rgb), 0.2);
   }
 
+  /* Static halo for files created in the last 5 minutes. No pulse — the
+     explorer is on screen constantly, so motion would just nag. */
+  .explorer-recent-glow {
+    box-shadow:
+      inset 0 0 12px rgba(var(--primary-rgb), 0.3),
+      0 0 8px rgba(var(--primary-rgb), 0.45);
+    background-color: rgba(var(--primary-rgb), 0.08);
+  }
+
+  /* Lighter ancestor halo: points at a new file somewhere underneath. */
+  .explorer-recent-glow-folder {
+    box-shadow:
+      inset 0 0 10px rgba(var(--primary-rgb), 0.16),
+      0 0 6px rgba(var(--primary-rgb), 0.22);
+    background-color: rgba(var(--primary-rgb), 0.045);
+  }
+
   .neon-text {
     text-shadow: 0 0 5px rgba(var(--primary-rgb), 0.6);
   }

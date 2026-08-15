@@ -7,6 +7,10 @@ export interface FileNode {
   expanded?: boolean;
   children?: FileNode[];
   gitStatus?: 'added' | 'modified' | 'deleted' | 'ignored';
+  /** Filesystem birth time in unix milliseconds, when the OS reports one. */
+  createdAt?: number;
+  /** Newest descendant file birth time — lets a collapsed folder glow. */
+  newestFileCreatedAt?: number;
 }
 
 export interface FileTreeSlice {
