@@ -1877,7 +1877,6 @@ pub fn run() {
                 app.path().app_data_dir().map_err(|e| e.to_string())?,
             ));
             usage_limits::install_claude_watcher(app.handle());
-            usage_limits::spawn_usage_limits_runner(app.handle().clone());
 
             let starred_projects_path = app
                 .path()

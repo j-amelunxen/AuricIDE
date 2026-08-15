@@ -46,9 +46,9 @@ describe('app config', () => {
   });
 
   it('keeps the CLI quota reader off until it is asked for', () => {
-    // Switching it on changes how AuricIDE invokes `claude` and starts a
-    // background process, so it must never arrive on by default. Rust reads the
-    // same key out of the mirror and applies the same default.
+    // Switching it on changes how AuricIDE invokes `claude`, so it must never
+    // arrive on by default. Rust reads the same key out of the mirror and
+    // applies the same default.
     expect(APP_CONFIG_DEFAULTS.cliUsageLimits).toBe(false);
     expect(loadAppConfig().cliUsageLimits).toBe(false);
     expect(APP_CONFIG_KEYS.cliUsageLimits).toBe('auric.cli-usage-limits');

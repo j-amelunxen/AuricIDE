@@ -34,7 +34,7 @@ export const GUIDANCE = {
       'Enables advanced natural language processing for the editor. Requires downloading ~300MB of models.',
     linting: 'Shows real-time warnings and errors for your Markdown files.',
     cliUsageLimits:
-      'Shows remaining usage and reset times. Claude updates while its agent runs; Codex updates every 30 minutes.',
+      'Shows remaining usage and reset times. Claude updates while its interactive agent runs; Codex updates only when you refresh.',
     agentConsoleAutoOpen:
       'When no project is open and agents are running, shows the Agent Console instead of the start screen.',
   },

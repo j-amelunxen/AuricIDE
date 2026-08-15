@@ -1,8 +1,8 @@
 //! Quota readings for the agent CLIs, surfaced in the status bar.
 //!
 //! Opt-in and off by default: switching it on changes how AuricIDE invokes
-//! `claude` and starts a short background process every 30 minutes, and neither
-//! should happen unasked.
+//! `claude`, and a Codex check costs credits, so neither should happen unasked.
+//! Codex is queried only when the user presses refresh.
 //!
 //! The switch itself is an ordinary application setting. It lives in
 //! `localStorage` and is mirrored into `<app_data_dir>/webview-prefs.json`, and
@@ -25,21 +25,12 @@ use store::UsageLimitsState;
 /// Changing it here without changing it there turns the feature off silently.
 pub const ENABLED_PREF_KEY: &str = "auric.cli-usage-limits";
 
-/// How long a reading counts as current. Every trigger — window focus, hover,
-/// an agent finishing, the timer — goes through this, so five triggers in a row
-/// still cost one process.
-const REFRESH_TTL_SECS: i64 = 300;
-
-/// How often the background timer looks. Deliberately far coarser than the TTL:
-/// a weekly window does not move fast enough to justify waking up more often.
-const TIMER_TICK_SECS: u64 = 1800;
-
 /// Everything the commands need, managed by Tauri.
 pub struct UsageLimitsService {
     pub store: UsageLimitsState,
     app_data_dir: PathBuf,
-    /// Single-flight. Without it, hovering the chip forks one `codex` per
-    /// mouse-over.
+    /// Single-flight. Without it, a double-click on refresh forks one `codex`
+    /// per press.
     refresh_lock: tokio::sync::Mutex<()>,
     /// Kept here only to stay alive — a dropped watcher stops watching.
     watcher: std::sync::Mutex<Option<notify::RecommendedWatcher>>,
@@ -80,37 +71,18 @@ pub fn enabled_in(prefs: &std::collections::BTreeMap<String, String>) -> bool {
     prefs.get(ENABLED_PREF_KEY).map(String::as_str) == Some("true")
 }
 
-/// Whether a stored reading is old enough to be worth replacing.
-pub fn needs_refresh(stored: Option<&UsageSnapshot>, now: i64, ttl_secs: i64) -> bool {
-    match stored {
-        None => true,
-        // A reading stamped in the future is a clock that moved, not a fresh
-        // number — refetching is the cheaper of the two wrong answers.
-        Some(snapshot) => now < snapshot.observed_at || now - snapshot.observed_at >= ttl_secs,
-    }
-}
-
 /// All stored readings, in a stable order.
 pub fn snapshots_of(service: &UsageLimitsService) -> Vec<UsageSnapshot> {
     service.store.read().into_values().collect()
 }
 
-/// Refreshes the codex reading if the stored one has aged out.
-///
-/// Returns `Ok(None)` when the stored reading was still current — that is a
-/// normal outcome, not a failure.
+/// Asks Codex for a fresh reading. This costs credits, so only the refresh
+/// button should call it.
 pub async fn refresh_codex(
     service: &UsageLimitsService,
     now: i64,
-) -> Result<Option<UsageSnapshot>, UsageError> {
+) -> Result<UsageSnapshot, UsageError> {
     let _flight = service.refresh_lock.lock().await;
-
-    // Re-checked inside the lock: whoever was holding it may have just done
-    // exactly this work.
-    let stored = service.store.read();
-    if !needs_refresh(stored.get("codex"), now, REFRESH_TTL_SECS) {
-        return Ok(None);
-    }
 
     let env = crate::agents::cached_login_shell_env().await;
     match codex::read_codex_limits(env, now).await {
@@ -120,7 +92,7 @@ pub async fn refresh_codex(
             if let Err(error) = service.store.put(snapshot.clone()) {
                 eprintln!("Usage limits: could not persist the codex reading: {error}");
             }
-            Ok(Some(snapshot))
+            Ok(snapshot)
         }
         Err(error) => {
             // A source that has gone away must stop claiming a number. Leaving
@@ -148,8 +120,12 @@ pub fn refresh_claude(service: &UsageLimitsService, now: i64) -> Result<UsageSna
         Err(error) => {
             // An API-key account never reports quota. Keeping a stale reading
             // around would let the chip claim a number for an account that has
-            // none to give.
-            let _ = service.store.remove("claude");
+            // none to give. A missing drop file is different: the sidecar has
+            // simply not run yet, and wiping the last good reading would hide
+            // Claude from the chip until the next interactive agent.
+            if matches!(error, UsageError::NotSubscribed { .. }) {
+                let _ = service.store.remove("claude");
+            }
             Err(error)
         }
     }
@@ -186,34 +162,6 @@ pub async fn usage_limits_refresh(
         eprintln!("Usage limits: {error}");
     }
     Ok(snapshots_of(&service))
-}
-
-// ---------------------------------------------------------------------------
-// Background refresh
-// ---------------------------------------------------------------------------
-
-/// Ticks every half hour, refreshing whatever has aged out.
-///
-/// Fires once immediately so a reading exists before anyone looks, and checks
-/// the setting on every pass rather than at startup — a user who switches the
-/// feature off should not have to restart for the process spawns to stop.
-pub fn spawn_usage_limits_runner(app: tauri::AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        loop {
-            {
-                let service = app.state::<UsageLimitsService>();
-                if service.is_enabled() {
-                    let now = chrono::Utc::now().timestamp();
-                    match refresh_codex(&service, now).await {
-                        Ok(Some(_)) => emit_changed(&app),
-                        Ok(None) => {}
-                        Err(error) => eprintln!("Usage limits: {error}"),
-                    }
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(TIMER_TICK_SECS)).await;
-        }
-    });
 }
 
 pub fn emit_changed(app: &tauri::AppHandle) {
@@ -314,25 +262,6 @@ mod tests {
     use contract::{UsageWindow, WindowKind};
     use std::collections::BTreeMap;
 
-    fn snapshot_at(observed_at: i64) -> UsageSnapshot {
-        UsageSnapshot {
-            provider: "codex".to_string(),
-            plan_label: None,
-            windows: vec![UsageWindow {
-                limit_id: "codex".to_string(),
-                limit_label: None,
-                kind: WindowKind::SevenDay,
-                label: "7 d".to_string(),
-                used_percent: 40.0,
-                resets_at: 1_787_301_067,
-                window_minutes: 10080,
-            }],
-            credits: None,
-            observed_at,
-            source: "app-server".to_string(),
-        }
-    }
-
     #[test]
     fn the_feature_is_off_on_a_fresh_install() {
         assert!(!enabled_in(&BTreeMap::new()));
@@ -353,34 +282,38 @@ mod tests {
     }
 
     #[test]
-    fn an_unread_provider_always_needs_a_refresh() {
-        assert!(needs_refresh(None, 1_000, 300));
-    }
+    fn a_missing_claude_drop_does_not_erase_the_last_reading() {
+        // The drop file only exists while a sidecar has run. A manual refresh
+        // before that — or after the file was cleaned up — must not make the
+        // chip forget a reading it already had.
+        let dir = tempfile::tempdir().unwrap();
+        let service = UsageLimitsService::new(dir.path().to_path_buf());
+        service
+            .store
+            .put(UsageSnapshot {
+                provider: "claude".to_string(),
+                plan_label: None,
+                windows: vec![UsageWindow {
+                    limit_id: "claude".to_string(),
+                    limit_label: None,
+                    kind: WindowKind::FiveHour,
+                    label: "5 h".to_string(),
+                    used_percent: 12.0,
+                    resets_at: 1_787_301_067,
+                    window_minutes: 300,
+                }],
+                credits: None,
+                observed_at: 1_000,
+                source: "statusline".to_string(),
+            })
+            .unwrap();
 
-    #[test]
-    fn a_recent_reading_is_left_alone() {
-        let stored = snapshot_at(1_000);
-        assert!(!needs_refresh(Some(&stored), 1_200, 300));
-    }
-
-    #[test]
-    fn a_reading_at_exactly_the_ttl_is_refreshed() {
-        let stored = snapshot_at(1_000);
-        assert!(needs_refresh(Some(&stored), 1_300, 300));
-    }
-
-    #[test]
-    fn a_reading_from_the_future_is_refreshed_rather_than_trusted() {
-        // A clock that jumped backwards would otherwise pin the chip to a
-        // number that never updates again.
-        let stored = snapshot_at(9_000);
-        assert!(needs_refresh(Some(&stored), 1_000, 300));
-    }
-
-    #[test]
-    fn the_timer_ticks_far_less_often_than_a_reading_goes_stale() {
-        // If this ever inverted, every tick would find a current reading and
-        // the background refresh would quietly stop doing anything.
-        assert!(TIMER_TICK_SECS as i64 > REFRESH_TTL_SECS);
+        let error = refresh_claude(&service, 2_000).expect_err("no drop file");
+        assert!(
+            error.to_string().starts_with("USAGE_UNAVAILABLE:"),
+            "{error}"
+        );
+        let stored = service.store.read();
+        assert_eq!(stored["claude"].windows[0].used_percent, 12.0);
     }
 }

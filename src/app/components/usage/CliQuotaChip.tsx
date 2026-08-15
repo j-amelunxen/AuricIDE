@@ -32,15 +32,16 @@ const TEXT_TONE: Record<QuotaTone, string> = {
  */
 export function CliQuotaChip() {
   const snapshots = useStore((s) => s.usageSnapshots);
+  const usageStatus = useStore((s) => s.usageStatus);
   const loadUsageLimits = useStore((s) => s.loadUsageLimits);
   const refreshUsageLimits = useStore((s) => s.refreshUsageLimits);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    // The stored reading first, so the chip can appear before any process runs,
-    // then a refresh for anything that has aged out.
-    void loadUsageLimits().then(() => refreshUsageLimits());
-  }, [loadUsageLimits, refreshUsageLimits]);
+    // Stored readings only. A Codex check costs credits, so it waits for the
+    // refresh button rather than running on mount, hover or focus.
+    void loadUsageLimits();
+  }, [loadUsageLimits]);
 
   useEffect(() => {
     // The Claude reading is written by a running agent's status line, which
@@ -49,15 +50,6 @@ export function CliQuotaChip() {
       void loadUsageLimits();
     });
   }, [loadUsageLimits]);
-
-  useEffect(() => {
-    // Coming back to the window is the moment the number is most likely to be
-    // out of date. The backend's TTL decides whether this actually costs a
-    // process, so it is safe to ask every time.
-    const onFocus = () => void refreshUsageLimits();
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [refreshUsageLimits]);
 
   const segments = chipSegments(snapshots);
   if (segments.length === 0) return null;
@@ -68,10 +60,7 @@ export function CliQuotaChip() {
   return (
     <div
       className="relative flex items-center"
-      onMouseEnter={() => {
-        setOpen(true);
-        void refreshUsageLimits();
-      }}
+      onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
       <button
@@ -92,7 +81,13 @@ export function CliQuotaChip() {
         </span>
       </button>
 
-      {open && <CliQuotaPopover snapshots={withWindows} />}
+      {open && (
+        <CliQuotaPopover
+          snapshots={withWindows}
+          refreshing={usageStatus === 'loading'}
+          onRefresh={() => void refreshUsageLimits()}
+        />
+      )}
     </div>
   );
 }

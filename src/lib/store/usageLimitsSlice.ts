@@ -39,11 +39,10 @@ export const createUsageLimitsSlice: StateCreator<UsageLimitsSlice> = (set) => (
   },
 
   /**
-   * Asks the backend to bring stale readings up to date.
+   * Asks the backend to spend a Codex check and re-read Claude's drop file.
    *
-   * Kept safe to call often on purpose — focus, hover and the background timer
-   * all land here, and the TTL plus single-flight on the Rust side decide
-   * whether that actually costs anything.
+   * Manual only: that Codex process costs credits, so hover, focus and a
+   * timer must not land here.
    */
   refreshUsageLimits: async () => {
     set({ usageStatus: 'loading' });

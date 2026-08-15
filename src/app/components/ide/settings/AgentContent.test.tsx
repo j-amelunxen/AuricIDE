@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AgentContent } from './AgentContent';
+import { useStore } from '@/lib/store';
 
 beforeEach(() => localStorage.clear());
 
@@ -62,6 +63,40 @@ describe('AgentContent — agent providers', () => {
     expect(screen.getByTestId('agent-terminal-font-size').className).toContain(
       'focus-visible:ring-2'
     );
+  });
+});
+
+describe('AgentContent — CLI quota', () => {
+  const originalRefresh = useStore.getState().refreshUsageLimits;
+
+  afterEach(() => {
+    useStore.setState({ refreshUsageLimits: originalRefresh });
+  });
+
+  it('offers a refresh button only after the chip is switched on', async () => {
+    const user = userEvent.setup();
+    const refresh = vi.fn(async () => {});
+    useStore.setState({ refreshUsageLimits: refresh });
+
+    render(<AgentContent />);
+    expect(screen.queryByTestId('cli-usage-limits-refresh')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('cli-usage-limits-toggle'));
+
+    expect(screen.getByTestId('cli-usage-limits-refresh')).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes Codex only when the button is pressed', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('auric.cli-usage-limits', 'true');
+    const refresh = vi.fn(async () => {});
+    useStore.setState({ refreshUsageLimits: refresh });
+
+    render(<AgentContent />);
+    await user.click(screen.getByTestId('cli-usage-limits-refresh'));
+
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -33,6 +33,7 @@ export function AgentContent() {
   const showToast = useStore((s) => s.showToast);
   const refreshUsageLimits = useStore((s) => s.refreshUsageLimits);
   const loadUsageLimits = useStore((s) => s.loadUsageLimits);
+  const usageStatus = useStore((s) => s.usageStatus);
   const { confirm, confirmDialog } = useConfirm();
 
   // Read once on mount rather than held in the store: this is the only screen
@@ -127,7 +128,8 @@ export function AgentContent() {
       <SettingsSection title="CLI Quota" icon="speed">
         <p className="text-xs text-foreground-muted leading-relaxed">
           Show remaining Claude Code and Codex usage in the status bar. Enabling this adds a
-          settings file when AuricIDE starts a Claude Code agent and checks Codex periodically.
+          settings file when AuricIDE starts a Claude Code agent. Codex is checked only when you
+          refresh — that query costs credits.
         </p>
         <SettingsToggle
           label="Show CLI Quota in the Status Bar"
@@ -137,6 +139,22 @@ export function AgentContent() {
           checked={cliUsageLimits}
           onChange={handleUsageLimitsChange}
         />
+        {cliUsageLimits && (
+          <button
+            type="button"
+            data-testid="cli-usage-limits-refresh"
+            onClick={() => void refreshUsageLimits()}
+            disabled={usageStatus === 'loading'}
+            className="mt-1 flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground-muted transition-colors duration-150 hover:bg-white/10 hover:text-foreground disabled:opacity-50"
+          >
+            <AuricIcon
+              name="refresh"
+              aria-hidden="true"
+              className={`text-[14px] ${usageStatus === 'loading' ? 'animate-spin' : ''}`}
+            />
+            Refresh quota now
+          </button>
+        )}
       </SettingsSection>
 
       <SettingsSection title="Agent Console" icon="dashboard">
