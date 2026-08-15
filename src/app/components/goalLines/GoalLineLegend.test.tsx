@@ -8,13 +8,13 @@ describe('GoalLineLegend', () => {
     const legend = screen.getByTestId('goal-line-legend');
     expect(legend.getAttribute('aria-label')).toBe('Checkpoint legend');
     for (const label of [
-      'proven',
-      'front',
-      'planned',
-      'fog',
-      'claim',
-      'AI',
-      'stale',
+      'complete',
+      'in progress',
+      'upcoming',
+      'later',
+      'reported',
+      'AI check',
+      'needs review',
       'human',
       'agent',
     ]) {

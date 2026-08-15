@@ -462,7 +462,7 @@ function VideoImportDialogContent() {
                   <p className="mt-1 max-w-md text-[11px] leading-relaxed text-foreground-muted">
                     {sourcePath
                       ? 'Ready to transcribe. Original stays untouched.'
-                      : 'MP4, MOV, MKV, WEBM or M4V. Stored in the import record.'}
+                      : 'MP4, MOV, MKV, WEBM or M4V.'}
                   </p>
                   <button
                     onClick={() => void chooseVideo()}
@@ -480,9 +480,7 @@ function VideoImportDialogContent() {
                   <div>
                     <p className="text-[11px] font-semibold text-foreground">Source kept</p>
                     <p className="mt-0.5 text-[10px] leading-relaxed text-foreground-muted">
-                      Transcript + frames under{' '}
-                      <span className="font-mono">.auric/video-imports</span>. Unassigned bits show
-                      in review.
+                      Your transcript and screenshots stay available for review.
                     </p>
                   </div>
                 </div>
@@ -665,7 +663,7 @@ function VideoImportDialogContent() {
                 <aside className="space-y-4 border-white/5 lg:border-l lg:pl-5">
                   <div>
                     <h3 className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-foreground-muted/60">
-                      Source record
+                      Video details
                     </h3>
                     <dl className="mt-2 space-y-2 text-[10px]">
                       <div>
@@ -736,13 +734,13 @@ function VideoImportDialogContent() {
                   >
                     <p className="text-[10px] font-semibold text-foreground">
                       {unassignedCount > 0
-                        ? `${unassignedCount} unassigned transcript segments`
+                        ? `${unassignedCount} transcript segments need review`
                         : 'All transcript segments assigned'}
                     </p>
                     <p className="mt-1 text-[9px] leading-relaxed text-foreground-muted">
                       {unassignedCount > 0
-                        ? 'They remain in the lossless import record and are linked from the mission.'
-                        : 'The full transcript remains available independently of the station links.'}
+                        ? 'They remain in the import record, which is linked from the mission.'
+                        : 'The full transcript remains available for this import.'}
                     </p>
                   </div>
                   {process.ambiguities.length > 0 && (
@@ -789,8 +787,8 @@ function VideoImportDialogContent() {
           <footer className="flex flex-col gap-3 border-t border-white/5 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
             <p className="max-w-lg text-[9px] leading-relaxed text-foreground-muted/60">
               {media
-                ? `Import record: ${media.workspacePath}`
-                : 'Uses Parakeet for transcription and the LLM configured in Settings for process analysis.'}
+                ? 'Your video, transcript, and screenshots are ready to review.'
+                : 'Uses Parakeet for transcription and your configured model to identify the process.'}
             </p>
             <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:flex-nowrap">
               {stage === 'review' && (

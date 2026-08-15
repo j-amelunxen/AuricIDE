@@ -131,7 +131,7 @@ describe('PlannerPanel', () => {
     fireEvent.keyDown(screen.getByTestId('planner-refine'), { key: 'Enter' });
 
     await waitFor(() => expect(screen.getByText(/v2: shorter name/)).toBeTruthy());
-    expect(screen.getByTestId('planner-refine-label').textContent).toContain('Reprompt');
+    expect(screen.getByTestId('planner-refine-label').textContent).toContain('Refine the plan');
   });
 
   it('manually edits, adds, reorders and removes stations and persists each change', async () => {
@@ -228,16 +228,16 @@ describe('PlannerPanel', () => {
     await waitFor(() => expect(screen.getByText(/v3: Second reprompt/)).toBeTruthy());
   });
 
-  it('"Save line" commits checkpoints and explains that tickets are created next', async () => {
+  it('"Save plan" commits checkpoints and explains that tickets are created next', async () => {
     const goal = makeGoal({ status: 'draft' });
     seed(goal);
     mockLlmCall.mockResolvedValueOnce({ content: GRAPH_RESPONSE });
     render(<PlannerPanel />);
     await proposeDraft(goal);
 
-    expect(screen.getByTestId('planner-start')).toHaveTextContent('Save line');
+    expect(screen.getByTestId('planner-start')).toHaveTextContent('Save plan');
     expect(screen.getByTestId('planner-preview')).toHaveTextContent(
-      /saves checkpoints.*tickets.*next/i
+      /adds its steps.*tickets.*next/i
     );
 
     fireEvent.click(screen.getByTestId('planner-start'));

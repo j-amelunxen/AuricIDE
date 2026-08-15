@@ -100,9 +100,7 @@ describe('GoalDetailPanel planning action', () => {
     expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent(
       'Create tickets with agent'
     );
-    expect(screen.getByTestId('goal-detail')).toHaveTextContent(
-      /conductor runs tickets, not checkpoints/i
-    );
+    expect(screen.getByTestId('goal-detail')).toHaveTextContent(/conductor works through tickets/i);
     expect(screen.getByTestId('goal-satisfaction')).toHaveTextContent(/open conditions/i);
     expect(screen.getByTestId('goal-satisfaction')).not.toHaveTextContent(/blockers/i);
   });
@@ -111,7 +109,7 @@ describe('GoalDetailPanel planning action', () => {
     const goal = makeGoal();
     const child = makeGoal({ id: 'child', parentId: goal.id });
     renderPanel(goal, [makeTicket({ goalId: child.id })], { goals: [goal, child] });
-    expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent('Add work with agent');
+    expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent('Plan work with agent');
   });
 });
 

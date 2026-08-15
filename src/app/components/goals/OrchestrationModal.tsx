@@ -107,7 +107,7 @@ function OrchestrationModalContent() {
         <div className="flex items-center gap-3">
           <AuricIcon name="graph_3" className="text-primary-light" />
           <h1 id="orchestration-modal-title" className="text-sm font-bold text-foreground">
-            Orchestration
+            Work map
           </h1>
           <span className="text-[10px] text-foreground-muted">
             {goalsDraft.length} goals · {runningAgents} running agent(s)
@@ -115,7 +115,7 @@ function OrchestrationModalContent() {
           {conductorRunning && (
             <span className="flex items-center gap-1.5 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-bold text-green-300">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
-              conductor working
+              Conductor working
             </span>
           )}
         </div>
@@ -149,7 +149,7 @@ function OrchestrationModalContent() {
         {nodes.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <AuricIcon name="graph_3" className="text-4xl text-foreground-muted/30" />
-            <p className="text-xs text-foreground-muted">Nothing to orchestrate yet.</p>
+            <p className="text-xs text-foreground-muted">No work to map yet.</p>
             <p className="max-w-[300px] text-[10px] text-foreground-muted/70">
               Create goals, attach tickets, and launch agents. The live graph appears here.
             </p>

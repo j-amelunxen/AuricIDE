@@ -159,7 +159,7 @@ export function QuickAccessWheelEditor({
       <div className="space-y-2 rounded-lg bg-white/[0.03] p-3">
         <p className="text-[10px] font-bold uppercase tracking-wider text-foreground-muted/60">
           Slot {selected + 1}
-          {occupant ? ` — ${wheelEntryName(occupant)}` : ''}
+          {occupant ? `: ${wheelEntryName(occupant)}` : ''}
         </p>
         {entries.length === 0 ? (
           <p className="text-[11px] text-foreground-muted/70">

@@ -209,8 +209,7 @@ function GenerateDiagramDialogPanel({
             </div>
             {noProviderPermitted && (
               <p role="alert" className="text-[11px] text-red-400">
-                This project permits no agent provider. Change its provider policy under Settings →
-                Project → Providers.
+                No agent providers are allowed for this project.
               </p>
             )}
           </div>

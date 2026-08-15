@@ -132,7 +132,7 @@ function ImportSpecDialogPanel({
           </h2>
         </div>
         <p className="mb-5 -mt-4 text-[11px] leading-relaxed text-foreground-muted">
-          Starts a headless agent that turns this spec into epics, tickets, and tests.
+          Turn this spec into epics, tickets, and tests.
         </p>
 
         <div className="flex flex-col gap-5">
@@ -177,8 +177,7 @@ function ImportSpecDialogPanel({
               </div>
               {noProviderPermitted && (
                 <p role="alert" className="text-[11px] text-red-400">
-                  This project permits no agent provider. Change its provider policy under Settings
-                  → Project → Providers.
+                  No agent providers are allowed for this project.
                 </p>
               )}
             </div>

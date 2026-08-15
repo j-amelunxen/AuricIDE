@@ -164,7 +164,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
             id="quick-access-settings-title"
             className="text-sm font-bold tracking-tight text-foreground"
           >
-            Quick Access — {project.name}
+            Quick Access: {project.name}
           </h2>
         </header>
 

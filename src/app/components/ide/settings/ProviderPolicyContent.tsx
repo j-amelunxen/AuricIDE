@@ -99,8 +99,8 @@ export function ProviderPolicyContent() {
     <div className="space-y-8">
       <SettingsSection title="Providers" icon="shield">
         <p className="text-xs text-foreground-muted leading-relaxed">
-          Which agent CLIs may run in this project. Enforced when an agent is spawned — by the
-          conductor and by a retry as much as by the dialogs — not only hidden from the pickers.
+          Choose which agent CLIs can run in this project. This applies whenever an agent starts,
+          including retries.
         </p>
 
         <div className="flex gap-2" role="radiogroup" aria-label="Policy mode">
@@ -157,7 +157,7 @@ export function ProviderPolicyContent() {
           className={`text-[11px] ${allowedNames.length === 0 ? 'text-red-400' : 'text-foreground-muted'}`}
         >
           {allowedNames.length === 0
-            ? 'No provider is permitted here — no agent can be started in this project.'
+            ? 'No provider is allowed, so agents cannot start in this project.'
             : `Permitted in this project: ${allowedNames.join(', ')}.`}
         </p>
       </SettingsSection>

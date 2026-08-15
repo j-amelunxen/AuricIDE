@@ -75,8 +75,7 @@ function DependencyProposalDialog({
           ) : suggestions.length > 0 ? (
             <div className="flex flex-col gap-3">
               <p className="text-xs text-foreground-muted mb-2">
-                The LLM analyzed the Epic and found potential technical dependencies for this
-                ticket:
+                Review the suggested technical dependencies for this ticket.
               </p>
               {suggestions.map((suggestion) => (
                 <div

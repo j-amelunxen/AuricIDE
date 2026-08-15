@@ -107,8 +107,8 @@ export function VideoImportContent() {
   return (
     <div className="space-y-6">
       <p className="text-xs text-foreground-muted leading-relaxed">
-        Set here, these apply to this project only. The endpoint and key it falls back to live under
-        Application → Credentials, so a project that needs nothing special can leave these empty.
+        These settings apply only to this project. AuricIDE uses the endpoint and API key in
+        Application settings &gt; Credentials unless you override them here.
       </p>
 
       <SettingsSection title="Transcription" icon="graphic_eq">
@@ -120,7 +120,7 @@ export function VideoImportContent() {
             onChange={(event) => save('transcriptionMode', event.target.value as TranscriptionMode)}
             className="rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs font-normal normal-case tracking-normal text-foreground outline-none transition-colors focus:border-primary/50"
           >
-            <option value="automatic">Automatic, remote then local fallback</option>
+            <option value="automatic">Automatic: try remote, then local</option>
             <option value="local">Local Parakeet only</option>
             <option value="remote">Remote endpoint only</option>
           </select>
@@ -149,14 +149,14 @@ export function VideoImportContent() {
           value={settings.localCommand}
           onChange={(value) => save('localCommand', value)}
           placeholder="parakeet-mlx"
-          hint="AuricIDE starts and monitors this command when local transcription is selected."
+          hint="AuricIDE runs and monitors this command for local transcription."
         />
         <SettingsInput
           label="Local arguments"
           value={settings.localArgs}
           onChange={(value) => save('localArgs', value)}
           placeholder="{audio} --output-dir {outputDir} --output-format json --highlight-words"
-          hint="Use {audio} and {outputDir} for paths managed by AuricIDE. The model is downloaded into AuricIDE app data on first use."
+          hint="Use {audio} and {outputDir} for files AuricIDE manages. The model downloads to AuricIDE data on first use."
         />
         {error && (
           <p role="alert" className="text-[11px] leading-relaxed text-red-400">
@@ -171,7 +171,7 @@ export function VideoImportContent() {
           value={settings.remoteEndpoint}
           onChange={(value) => save('remoteEndpoint', value)}
           placeholder="https://transcription.example.com/v1/audio/transcriptions"
-          hint="OpenAI-compatible multipart transcription endpoint. Leave empty to use local Parakeet."
+          hint="OpenAI-compatible transcription endpoint. Leave blank to use local Parakeet."
         />
         <SettingsInput
           label="API Key"
@@ -195,8 +195,8 @@ export function VideoImportContent() {
               Analyze video frames
             </span>
             <span className="mt-0.5 block max-w-[56ch] text-[10px] leading-relaxed text-foreground-muted">
-              Send sampled screenshots to the LLM configured under Settings → LLM. Turn this off for
-              text-only models; the complete transcript and screenshots are still preserved.
+              Send sampled frames to the model selected in Settings &gt; LLM. Turn this off for
+              text-only models. The full transcript and screenshots are still saved.
             </span>
           </span>
           <input

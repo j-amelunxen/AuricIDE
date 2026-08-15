@@ -50,9 +50,8 @@ export function SkillDiscoveryContent() {
   return (
     <SettingsSection title="Skill Discovery" icon="auto_awesome">
       <p className="text-xs leading-relaxed text-foreground-muted">
-        Quick Access can offer the skills an agent CLI already defines, so a recurring task is two
-        clicks. Each source below is searched in the project folder <em>and</em> in your home
-        directory.
+        Quick Access can show skills defined by your agent CLIs. Each source is searched in the
+        project folder <em>and</em> your home directory.
       </p>
 
       <ul className="flex flex-col gap-2" data-testid="skill-source-list">
@@ -67,7 +66,7 @@ export function SkillDiscoveryContent() {
               description={
                 source.id === 'claude'
                   ? '.claude/commands and .claude/skills'
-                  : 'A directory layout of your own'
+                  : 'Custom folder layout'
               }
               checked={source.enabled}
               onChange={(enabled) => update(source.id, { enabled })}

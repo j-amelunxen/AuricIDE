@@ -233,7 +233,7 @@ describe('GoalsModal', () => {
     render(<GoalsModal />);
     const strip = screen.getByTestId('goals-workflow-strip');
     expect(strip.textContent).toContain('Define');
-    expect(strip.textContent).toContain('conductor');
+    expect(strip.textContent).toContain('Conductor');
     await user.click(screen.getByTestId('goals-workflow-dismiss'));
     expect(screen.queryByTestId('goals-workflow-strip')).toBeNull();
     expect(localStorage.getItem('auric.goals.workflow-strip-dismissed')).toBe('1');

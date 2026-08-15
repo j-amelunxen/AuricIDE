@@ -230,7 +230,7 @@ export function QuickAccessSkillsEditor({
               <details className="mt-2">
                 <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-foreground-muted">
                   Launch options
-                  {provider ? ` — ${provider.name}` : ''}
+                  {provider ? `: ${provider.name}` : ''}
                 </summary>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   <select

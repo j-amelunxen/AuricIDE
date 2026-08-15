@@ -572,11 +572,11 @@ describe('ScheduleEditor', () => {
       );
     });
 
-    it('tells you when the project has no Quick Access yet', () => {
+    it('explains how to add a skill when the project has no Quick Access', () => {
       renderEditor();
       fireEvent.click(screen.getByTestId('schedule-action-skill'));
       expect(
-        screen.getByText('No Quick Access for this project — pin one there first.')
+        screen.getByText('No Quick Access is set up for this project. Add a skill there first.')
       ).toBeTruthy();
     });
   });

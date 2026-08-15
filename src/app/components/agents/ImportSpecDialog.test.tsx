@@ -50,9 +50,9 @@ describe('ImportSpecDialog', () => {
     expect(screen.queryByRole('button', { name: 'IMPORT' })).not.toBeInTheDocument();
   });
 
-  it('explains that a headless agent will run', () => {
+  it('explains what importing the specification creates', () => {
     render(<ImportSpecDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
-    expect(screen.getByText(/headless agent/i)).toBeInTheDocument();
+    expect(screen.getByText('Turn this spec into epics, tickets, and tests.')).toBeInTheDocument();
   });
 
   it('import button is disabled when textarea is empty', () => {
