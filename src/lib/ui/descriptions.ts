@@ -28,10 +28,14 @@ export const GUIDANCE = {
   settings: {
     autoAcceptEdits: 'If enabled, the agent will apply file changes without asking for permission.',
     dangerouslyIgnorePermissions:
-      'GRANT FULL ACCESS: The agent can execute any command and access any file. Use with extreme caution!',
+      'Skips permission prompts. The agent can run commands and access files without asking. Use only for work you trust.',
     agenticCommit: 'Use an AI agent to automatically generate commit messages and push changes.',
     deepNlp:
       'Enables advanced natural language processing for the editor. Requires downloading ~300MB of models.',
     linting: 'Shows real-time warnings and errors for your Markdown files.',
+    cliUsageLimits:
+      'Shows remaining usage and reset times. Claude updates while its agent runs; Codex updates every 30 minutes.',
+    agentConsoleAutoOpen:
+      'When no project is open and agents are running, shows the Agent Console instead of the start screen.',
   },
 };
