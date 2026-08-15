@@ -23,12 +23,44 @@ describe('app config', () => {
     setAppConfigValue('enableDeepNlp', true);
     setAppConfigValue('markdownLintEnabled', false);
     setAppConfigValue('mcpAutoStart', true);
+    setAppConfigValue('cliUsageLimits', true);
+    setAppConfigValue('agentTerminalFontSize', 16);
+    setAppConfigValue('agentConsoleAutoOpen', true);
 
     expect(loadAppConfig()).toEqual({
       enableDeepNlp: true,
       markdownLintEnabled: false,
       mcpAutoStart: true,
+      cliUsageLimits: true,
+      agentTerminalFontSize: 16,
+      agentConsoleAutoOpen: true,
     });
+  });
+
+  it('keeps the Agent Console closed on launch until asked for', () => {
+    // Opening it unasked would replace the start screen the moment any agent
+    // is running, which is a surprise the first launch must not spring.
+    expect(APP_CONFIG_DEFAULTS.agentConsoleAutoOpen).toBe(false);
+    expect(loadAppConfig().agentConsoleAutoOpen).toBe(false);
+    expect(APP_CONFIG_KEYS.agentConsoleAutoOpen).toBe('auric.agent-console-auto-open');
+  });
+
+  it('keeps the CLI quota reader off until it is asked for', () => {
+    // Switching it on changes how AuricIDE invokes `claude` and starts a
+    // background process, so it must never arrive on by default. Rust reads the
+    // same key out of the mirror and applies the same default.
+    expect(APP_CONFIG_DEFAULTS.cliUsageLimits).toBe(false);
+    expect(loadAppConfig().cliUsageLimits).toBe(false);
+    expect(APP_CONFIG_KEYS.cliUsageLimits).toBe('auric.cli-usage-limits');
+  });
+
+  it('uses a readable default for agent terminals and persists a chosen size', () => {
+    expect(APP_CONFIG_DEFAULTS.agentTerminalFontSize).toBe(14);
+    expect(APP_CONFIG_KEYS.agentTerminalFontSize).toBe('auric.agent-terminal-font-size');
+
+    setAppConfigValue('agentTerminalFontSize', 18);
+
+    expect(loadAppConfig().agentTerminalFontSize).toBe(18);
   });
 
   it('falls back to the default for a value it did not write', () => {

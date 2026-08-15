@@ -40,7 +40,18 @@ export const APP_CONFIG_KEYS = {
   enableDeepNlp: 'auric.editor.deep-nlp',
   markdownLintEnabled: 'auric.editor.markdown-lint',
   mcpAutoStart: 'auric.mcp.auto-start',
+  cliUsageLimits: 'auric.cli-usage-limits',
+  agentTerminalFontSize: 'auric.agent-terminal-font-size',
+  agentConsoleAutoOpen: 'auric.agent-console-auto-open',
 } as const;
+
+/** Lets mounted UI react to a preference written in this same webview. */
+export const APP_CONFIG_CHANGED_EVENT = 'auric:app-config-changed';
+
+/** Every supported point size, shared by persistence validation and the UI. */
+export const AGENT_TERMINAL_FONT_SIZES = [
+  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+] as const;
 
 /**
  * The settings this module owns outright. The others in `APP_CONFIG_KEYS` are
@@ -57,12 +68,33 @@ export interface AppConfig {
   enableDeepNlp: boolean;
   markdownLintEnabled: boolean;
   mcpAutoStart: boolean;
+  /**
+   * Reads the agent CLIs' remaining quota and shows it in the status bar.
+   *
+   * Off by default because switching it on has two effects beyond the chip:
+   * AuricIDE then passes `--settings` to every `claude` it starts, so the
+   * status line can report the numbers, and it runs a short `codex` query
+   * every half hour. Also read from Rust, out of the `webview-prefs.json`
+   * mirror — see `src-tauri/src/usage_limits/mod.rs`.
+   */
+  cliUsageLimits: boolean;
+  /** Point size for agent terminal sessions in the dock and fullscreen dialog. */
+  agentTerminalFontSize: number;
+  /**
+   * When no project is open and at least one agent is running, open the
+   * Agent Console instead of showing the start screen. Off by default: the
+   * console replacing the start screen unasked would surprise a first launch.
+   */
+  agentConsoleAutoOpen: boolean;
 }
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
   enableDeepNlp: false,
   markdownLintEnabled: true,
   mcpAutoStart: false,
+  cliUsageLimits: false,
+  agentTerminalFontSize: 14,
+  agentConsoleAutoOpen: false,
 };
 
 /** The single read. Absent storage — SSR, tests, a blocked webview — is empty. */
@@ -80,6 +112,7 @@ export function writeAppPref(key: string, value: string): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(key, value);
+    window.dispatchEvent(new CustomEvent(APP_CONFIG_CHANGED_EVENT, { detail: { key, value } }));
   } catch {
     // Storage full or blocked — losing the preference is survivable.
   }
@@ -99,6 +132,13 @@ function decodeBoolean(raw: string | null, fallback: boolean): boolean {
   return raw === 'true';
 }
 
+function decodeFontSize(raw: string | null, fallback: number): number {
+  const value = Number(raw);
+  return AGENT_TERMINAL_FONT_SIZES.includes(value as (typeof AGENT_TERMINAL_FONT_SIZES)[number])
+    ? value
+    : fallback;
+}
+
 export function loadAppConfig(): AppConfig {
   return {
     enableDeepNlp: decodeBoolean(
@@ -112,6 +152,18 @@ export function loadAppConfig(): AppConfig {
     mcpAutoStart: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.mcpAutoStart),
       APP_CONFIG_DEFAULTS.mcpAutoStart
+    ),
+    cliUsageLimits: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.cliUsageLimits),
+      APP_CONFIG_DEFAULTS.cliUsageLimits
+    ),
+    agentTerminalFontSize: decodeFontSize(
+      readAppPref(APP_CONFIG_KEYS.agentTerminalFontSize),
+      APP_CONFIG_DEFAULTS.agentTerminalFontSize
+    ),
+    agentConsoleAutoOpen: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.agentConsoleAutoOpen),
+      APP_CONFIG_DEFAULTS.agentConsoleAutoOpen
     ),
   };
 }
