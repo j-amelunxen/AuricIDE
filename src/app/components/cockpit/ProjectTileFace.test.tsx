@@ -37,6 +37,22 @@ describe('ProjectTileFace', () => {
     expect(face()).toHaveAttribute('data-surface', 'generated');
   });
 
+  describe('sizes', () => {
+    it('is a full 40×40 tile by default', () => {
+      render(<ProjectTileFace path={PROJECT} />);
+      expect(face().className).toContain('h-10 w-10');
+    });
+
+    // A className override cannot be relied on for this: two height utilities
+    // land in the same stylesheet group and the sheet's order decides, not the
+    // call site's. The mark inside would keep its own size regardless.
+    it('shrinks the mark along with the tile', () => {
+      render(<ProjectTileFace path={PROJECT} size="sm" icon={{ kind: 'emoji', value: '🚀' }} />);
+      expect(face().className).toContain('h-5 w-5');
+      expect(face().querySelector('span')?.className).toContain('text-[11px]');
+    });
+  });
+
   it('keeps the generated gradient behind a glyph, so picked marks stay one family', () => {
     render(<ProjectTileFace path={PROJECT} icon={{ kind: 'glyph', value: 'rocket_launch' }} />);
     expect(face()).toHaveAttribute('data-surface', 'generated');

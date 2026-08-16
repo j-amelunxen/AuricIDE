@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstGrapheme, resolveTileIcon } from './icon';
+import { firstGrapheme, projectIconFor, resolveTileIcon } from './icon';
 import { generateProjectIcon } from '@/lib/projectIcon';
 import { QUICK_ACCESS_GLYPHS } from './glyphs';
 import { getGlyph } from '@/lib/icons/registry';
@@ -81,5 +81,29 @@ describe('QUICK_ACCESS_GLYPHS', () => {
 
   it('offers each glyph once', () => {
     expect(new Set(QUICK_ACCESS_GLYPHS).size).toBe(QUICK_ACCESS_GLYPHS.length);
+  });
+});
+
+describe('projectIconFor', () => {
+  const pinned = [
+    { path: '/repo/alpha', icon: { kind: 'emoji', value: '🚀' } as const },
+    { path: '/repo/beta' },
+  ];
+
+  it('finds the mark a project was pinned with', () => {
+    expect(projectIconFor(pinned, '/repo/alpha')).toEqual({ kind: 'emoji', value: '🚀' });
+  });
+
+  it('has nothing for a pinned project that never got a mark', () => {
+    expect(projectIconFor(pinned, '/repo/beta')).toBeUndefined();
+  });
+
+  it('has nothing for a project that was never pinned', () => {
+    expect(projectIconFor(pinned, '/repo/unknown')).toBeUndefined();
+  });
+
+  // An app-wide row has no project to draw.
+  it('has nothing for no project at all', () => {
+    expect(projectIconFor(pinned, null)).toBeUndefined();
   });
 });
