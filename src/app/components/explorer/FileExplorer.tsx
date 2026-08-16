@@ -377,15 +377,32 @@ export function FileExplorer({
   const [isRootDropTarget, setIsRootDropTarget] = useState(false);
   const [isRootDropValid, setIsRootDropValid] = useState(true);
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [tick, setTick] = useState(() => Date.now());
   const canDropToRoot = !!onMoveNode && !!rootPath;
 
+  const createdAtTimes = useMemo(() => collectCreatedAt(tree), [tree]);
+
+  // `tick` only advances when the expiry timer below fires, so a file the
+  // watcher delivers mid-session was born *after* our last reading of the
+  // clock. Measured against a stale `tick` its age comes out negative and
+  // `isRecentlyCreated` rejects it — the row that should glow brightest would
+  // be the one that never does. A birth time ahead of our reading is itself
+  // proof of a later moment, so the window is measured from there instead.
+  const now = useMemo(
+    () =>
+      createdAtTimes.reduce<number>(
+        (latest, t) => (t !== undefined && t > latest ? t : latest),
+        tick
+      ),
+    [createdAtTimes, tick]
+  );
+
   useEffect(() => {
-    const expiry = nextRecentlyCreatedExpiry(collectCreatedAt(tree), Date.now());
+    const expiry = nextRecentlyCreatedExpiry(createdAtTimes, now);
     if (expiry === null) return;
-    const id = setTimeout(() => setNow(Date.now()), Math.max(expiry - Date.now(), 0));
+    const id = setTimeout(() => setTick(Date.now()), Math.max(expiry - now, 0));
     return () => clearTimeout(id);
-  }, [tree, now]);
+  }, [createdAtTimes, now]);
 
   // Defensive fallback: any caller that forgets to keep `selectedPaths` in
   // sync with `selectedPath` still gets a correctly highlighted single row.

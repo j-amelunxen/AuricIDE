@@ -776,6 +776,50 @@ describe('FileExplorer — recently created glow', () => {
     expect(screen.queryByTestId('tree-item-/src/lib/fresh.ts')).not.toBeInTheDocument();
   });
 
+  it('glows a file that appears long after mount, measured against the current clock', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const props = {
+      selectedPath: null,
+      onSelectFile: () => {},
+      onToggleDir: () => {},
+    };
+    const { rerender } = render(
+      <FileExplorer
+        tree={[
+          { name: 'old.ts', path: '/old.ts', isDirectory: false, createdAt: now - 6 * 60 * 1000 },
+        ]}
+        {...props}
+      />
+    );
+
+    // Half an hour of the session goes by, then the watcher hands over a tree
+    // containing a file born seconds ago.
+    const later = now + 30 * 60 * 1000;
+    vi.spyOn(Date, 'now').mockReturnValue(later);
+    rerender(
+      <FileExplorer
+        tree={[
+          { name: 'old.ts', path: '/old.ts', isDirectory: false, createdAt: now - 6 * 60 * 1000 },
+          { name: 'fresh.ts', path: '/fresh.ts', isDirectory: false, createdAt: later - 5_000 },
+          {
+            name: 'src',
+            path: '/src',
+            isDirectory: true,
+            expanded: false,
+            children: [],
+            newestFileCreatedAt: later - 5_000,
+          },
+        ]}
+        {...props}
+      />
+    );
+
+    const fresh = screen.getByTestId('tree-item-/fresh.ts');
+    expect(fresh).toHaveAttribute('data-recently-created', 'true');
+    expect(fresh).toHaveClass('explorer-recent-glow');
+    expect(screen.getByTestId('tree-item-/src')).toHaveAttribute('data-contains-recent', 'true');
+  });
+
   it('glows a collapsed folder from newestFileCreatedAt when children are not loaded', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now);
     render(
