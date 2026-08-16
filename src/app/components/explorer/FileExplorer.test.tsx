@@ -843,4 +843,96 @@ describe('FileExplorer — recently created glow', () => {
     expect(src).toHaveAttribute('data-contains-recent', 'true');
     expect(src).toHaveClass('explorer-recent-glow-folder');
   });
+
+  it('glows a file modified in the last 5 minutes, in its own color', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={[
+          { name: 'touched.ts', path: '/touched.ts', isDirectory: false, modifiedAt: now - 30_000 },
+        ]}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const touched = screen.getByTestId('tree-item-/touched.ts');
+    expect(touched).toHaveAttribute('data-recently-modified', 'true');
+    expect(touched).toHaveClass('explorer-recent-glow-modified');
+    expect(touched).not.toHaveClass('explorer-recent-glow');
+  });
+
+  it('does not glow a folder for a recently modified descendant — modified never rolls up', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={[
+          {
+            name: 'src',
+            path: '/src',
+            isDirectory: true,
+            expanded: true,
+            children: [
+              {
+                name: 'touched.ts',
+                path: '/src/touched.ts',
+                isDirectory: false,
+                modifiedAt: now - 5_000,
+              },
+            ],
+          },
+        ]}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const src = screen.getByTestId('tree-item-/src');
+    expect(src).not.toHaveAttribute('data-contains-recent');
+    expect(src).not.toHaveClass('explorer-recent-glow-folder');
+    expect(src).not.toHaveClass('explorer-recent-glow-modified');
+  });
+
+  it('prefers the created glow over the modified glow when a file is both', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={[
+          {
+            name: 'both.ts',
+            path: '/both.ts',
+            isDirectory: false,
+            createdAt: now - 10_000,
+            modifiedAt: now - 10_000,
+          },
+        ]}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    const both = screen.getByTestId('tree-item-/both.ts');
+    expect(both).toHaveClass('explorer-recent-glow');
+    expect(both).not.toHaveClass('explorer-recent-glow-modified');
+  });
+
+  it('does not glow a file modified more than 5 minutes ago', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    render(
+      <FileExplorer
+        tree={[
+          {
+            name: 'stale.ts',
+            path: '/stale.ts',
+            isDirectory: false,
+            modifiedAt: now - 6 * 60 * 1000,
+          },
+        ]}
+        selectedPath={null}
+        onSelectFile={() => {}}
+        onToggleDir={() => {}}
+      />
+    );
+    expect(screen.getByTestId('tree-item-/stale.ts')).not.toHaveAttribute('data-recently-modified');
+  });
 });

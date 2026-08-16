@@ -4,8 +4,10 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import {
   collectCreatedAt,
+  collectModifiedAt,
   hasRecentlyCreatedFile,
   isRecentlyCreated,
+  isRecentlyModified,
   nextRecentlyCreatedExpiry,
 } from '@/lib/explorer/recentlyCreated';
 
@@ -20,6 +22,12 @@ export interface FileTreeNode {
   createdAt?: number;
   /** Newest descendant file birth time — lets a collapsed folder glow. */
   newestFileCreatedAt?: number;
+  /**
+   * Filesystem modification time in unix milliseconds. Files only — unlike
+   * `createdAt` this never rolls up to a folder, so a modified glow is a
+   * file-row signal alone.
+   */
+  modifiedAt?: number;
 }
 
 /**
@@ -202,8 +210,9 @@ function TreeNode({
   const isDraggingSelf = draggingPath === node.path;
   const isIgnored = node.gitStatus === 'ignored';
   const isRecentFile = !node.isDirectory && isRecentlyCreated(node.createdAt, now);
+  const isRecentlyModifiedFile = !node.isDirectory && isRecentlyModified(node.modifiedAt, now);
   const containsRecent = node.isDirectory && hasRecentlyCreatedFile(node, now);
-  const isRecent = isRecentFile || containsRecent;
+  const isRecent = isRecentFile || isRecentlyModifiedFile || containsRecent;
   const paddingLeft = `${12 + depth * 16}px`;
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isValidDropTarget, setIsValidDropTarget] = useState(true);
@@ -268,13 +277,16 @@ function TreeNode({
             : undefined
         }
         data-recently-created={isRecentFile ? 'true' : undefined}
+        data-recently-modified={isRecentlyModifiedFile ? 'true' : undefined}
         data-contains-recent={containsRecent ? 'true' : undefined}
         title={
           isRecentFile
             ? 'Created in the last 5 minutes'
-            : containsRecent
-              ? 'Contains a file created in the last 5 minutes'
-              : undefined
+            : isRecentlyModifiedFile
+              ? 'Modified in the last 5 minutes'
+              : containsRecent
+                ? 'Contains a file created in the last 5 minutes'
+                : undefined
         }
         className={`flex w-full items-center gap-1 py-0.5 text-left text-xs transition-[background-color,box-shadow,opacity,color] duration-150 ease-out hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
           isDropTarget
@@ -290,7 +302,15 @@ function TreeNode({
                   : isRecent
                     ? 'text-foreground'
                     : 'text-foreground-muted hover:text-foreground'
-        } ${isRecentFile ? 'explorer-recent-glow' : containsRecent ? 'explorer-recent-glow-folder' : ''}`}
+        } ${
+          isRecentFile
+            ? 'explorer-recent-glow'
+            : isRecentlyModifiedFile
+              ? 'explorer-recent-glow-modified'
+              : containsRecent
+                ? 'explorer-recent-glow-folder'
+                : ''
+        }`}
         style={{ paddingLeft }}
       >
         {node.isDirectory && (
@@ -381,6 +401,13 @@ export function FileExplorer({
   const canDropToRoot = !!onMoveNode && !!rootPath;
 
   const createdAtTimes = useMemo(() => collectCreatedAt(tree), [tree]);
+  const modifiedAtTimes = useMemo(() => collectModifiedAt(tree), [tree]);
+  // Created and modified share one window and one clock, so a single combined
+  // list drives both the "now" reading below and the expiry timer.
+  const recentTimes = useMemo(
+    () => [...createdAtTimes, ...modifiedAtTimes],
+    [createdAtTimes, modifiedAtTimes]
+  );
 
   // `tick` only advances when the expiry timer below fires, so a file the
   // watcher delivers mid-session was born *after* our last reading of the
@@ -390,19 +417,16 @@ export function FileExplorer({
   // proof of a later moment, so the window is measured from there instead.
   const now = useMemo(
     () =>
-      createdAtTimes.reduce<number>(
-        (latest, t) => (t !== undefined && t > latest ? t : latest),
-        tick
-      ),
-    [createdAtTimes, tick]
+      recentTimes.reduce<number>((latest, t) => (t !== undefined && t > latest ? t : latest), tick),
+    [recentTimes, tick]
   );
 
   useEffect(() => {
-    const expiry = nextRecentlyCreatedExpiry(createdAtTimes, now);
+    const expiry = nextRecentlyCreatedExpiry(recentTimes, now);
     if (expiry === null) return;
     const id = setTimeout(() => setTick(Date.now()), Math.max(expiry - now, 0));
     return () => clearTimeout(id);
-  }, [createdAtTimes, now]);
+  }, [recentTimes, now]);
 
   // Defensive fallback: any caller that forgets to keep `selectedPaths` in
   // sync with `selectedPath` still gets a correctly highlighted single row.

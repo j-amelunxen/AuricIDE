@@ -61,6 +61,11 @@ pub struct FileEntry {
     /// Newest descendant *file* birth time. Only set on directories, so a
     /// collapsed folder can glow without its children being loaded.
     newest_file_created_at: Option<i64>,
+    /// Filesystem modification time in unix milliseconds. Files only, and
+    /// deliberately no folder rollup: unlike creation, "recently modified"
+    /// is common enough (every save) that bubbling it up to ancestors would
+    /// leave most active folders lit for as long as they are worked in.
+    modified_at: Option<i64>,
 }
 
 struct WatcherState {
@@ -827,6 +832,17 @@ fn file_created_at_ms(entry: &walkdir::DirEntry) -> Option<i64> {
     Some(duration.as_millis() as i64)
 }
 
+/// Modification time in unix milliseconds. Directories are omitted for the
+/// same reason as `file_created_at_ms`: this is a file-row signal.
+fn file_modified_at_ms(entry: &walkdir::DirEntry) -> Option<i64> {
+    if entry.file_type().is_dir() {
+        return None;
+    }
+    let modified = entry.metadata().ok()?.modified().ok()?;
+    let duration = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(duration.as_millis() as i64)
+}
+
 fn skip_recent_walk_dir(entry: &walkdir::DirEntry) -> bool {
     matches!(
         entry.file_name().to_string_lossy().as_ref(),
@@ -951,6 +967,7 @@ fn read_directory_dated_by(
                 } else {
                     None
                 },
+                modified_at: file_modified_at_ms(&entry),
                 name,
                 path: entry.path().to_string_lossy().to_string(),
                 is_directory,
@@ -2370,6 +2387,34 @@ mod tests {
         let sub = entries.iter().find(|e| e.name == "sub").unwrap();
         assert!(sub.is_directory);
         assert!(sub.created_at.is_none());
+    }
+
+    #[test]
+    fn read_directory_impl_reports_file_modified_time() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("touched.md"), "hi").unwrap();
+        let entries = read_directory_impl(dir.path().to_str().unwrap()).unwrap();
+        let file = entries.iter().find(|e| e.name == "touched.md").unwrap();
+        assert!(!file.is_directory);
+        let modified = file.modified_at.expect("modified time");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        assert!(
+            now - modified < 60_000,
+            "modified_at should be recent: {modified} vs {now}"
+        );
+    }
+
+    #[test]
+    fn read_directory_impl_omits_modified_time_on_directories() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        let entries = read_directory_impl(dir.path().to_str().unwrap()).unwrap();
+        let sub = entries.iter().find(|e| e.name == "sub").unwrap();
+        assert!(sub.is_directory);
+        assert!(sub.modified_at.is_none());
     }
 
     #[test]

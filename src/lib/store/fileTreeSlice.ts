@@ -11,6 +11,8 @@ export interface FileNode {
   createdAt?: number;
   /** Newest descendant file birth time — lets a collapsed folder glow. */
   newestFileCreatedAt?: number;
+  /** Filesystem modification time. Files only — never rolls up to a folder. */
+  modifiedAt?: number;
 }
 
 export interface FileTreeSlice {

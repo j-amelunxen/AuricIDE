@@ -11,12 +11,27 @@ export function isRecentlyCreated(
   return age >= 0 && age < windowMs;
 }
 
+/**
+ * True when `modifiedAtMs` falls inside the recent-modification window ending
+ * at `nowMs`. Same window and logic as `isRecentlyCreated` — a distinct name
+ * so call sites read as what they mean, not as a reused Created check.
+ */
+export function isRecentlyModified(
+  modifiedAtMs: number | undefined,
+  nowMs: number,
+  windowMs = RECENTLY_CREATED_WINDOW_MS
+): boolean {
+  return isRecentlyCreated(modifiedAtMs, nowMs, windowMs);
+}
+
 export interface CreatedAtNode {
   createdAt?: number;
   isDirectory?: boolean;
   children?: CreatedAtNode[];
   /** Newest descendant file birth time, so a collapsed folder can still glow. */
   newestFileCreatedAt?: number;
+  /** Filesystem modification time. Files only — folders never carry a modified glow. */
+  modifiedAt?: number;
 }
 
 /**
@@ -45,6 +60,24 @@ export function collectCreatedAt(nodes: CreatedAtNode[]): Array<number | undefin
     out.push(node.newestFileCreatedAt);
     if (node.children?.length) {
       out.push(...collectCreatedAt(node.children));
+    }
+  }
+  return out;
+}
+
+/**
+ * Every modification time that can keep a modified-glow alive. Folders are
+ * skipped — unlike creation, a modified glow never rolls up to an ancestor —
+ * but their children are still walked so nested files are found.
+ */
+export function collectModifiedAt(nodes: CreatedAtNode[]): Array<number | undefined> {
+  const out: Array<number | undefined> = [];
+  for (const node of nodes) {
+    if (!node.isDirectory) {
+      out.push(node.modifiedAt);
+    }
+    if (node.children?.length) {
+      out.push(...collectModifiedAt(node.children));
     }
   }
   return out;
