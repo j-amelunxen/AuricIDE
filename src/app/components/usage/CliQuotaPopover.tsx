@@ -34,10 +34,12 @@ const TONE_BAR: Record<QuotaTone, string> = {
  * percentage with no age next to it would be a claim the data cannot support.
  */
 export function CliQuotaPopover({
+  id,
   snapshots,
   refreshing,
   onRefresh,
 }: {
+  id: string;
   snapshots: UsageSnapshot[];
   refreshing: boolean;
   onRefresh: () => void;
@@ -50,8 +52,11 @@ export function CliQuotaPopover({
 
   return (
     <div
+      id={id}
       data-testid="cli-quota-popover"
-      role="tooltip"
+      /* Not `role="tooltip"`: it holds the refresh button, and a tooltip that
+         owns the only control for a thing is a contradiction — it is the
+         disclosure the chip's aria-expanded refers to. */
       className="absolute right-0 bottom-full mb-2 z-[var(--z-tool)] w-64 rounded-lg border border-white/10 bg-[#0a0a10] p-3 shadow-2xl animate-in fade-in zoom-in duration-150"
     >
       <div className="mb-2 flex items-center justify-between gap-2">

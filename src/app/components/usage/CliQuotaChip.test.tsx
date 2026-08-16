@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useStore } from '@/lib/store';
@@ -47,6 +47,15 @@ function snapshot(overrides: Partial<UsageSnapshot> = {}): UsageSnapshot {
   };
 }
 
+/**
+ * Real focus, not a synthetic event: these tests care about `relatedTarget`
+ * and `document.activeElement`, which only a genuine focus move produces.
+ * `act` is what flushes the state update it triggers.
+ */
+function focus(element: HTMLElement) {
+  act(() => element.focus());
+}
+
 function setSnapshots(snapshots: UsageSnapshot[]) {
   useStore.setState({ usageSnapshots: snapshots, usageStatus: 'ready' });
 }
@@ -89,13 +98,57 @@ describe('CliQuotaChip', () => {
       snapshot(),
     ]);
     render(<CliQuotaChip />);
-    expect(screen.getByTestId('cli-quota-chip')).toHaveTextContent('CC 12% · CX 40%');
+    expect(screen.getByTestId('cli-quota-chip')).toHaveTextContent('CC 7d 12%');
+    expect(screen.getByTestId('cli-quota-chip')).toHaveTextContent('CX 7d 40%');
+  });
+
+  it('names both Claude windows instead of only the one closest to running out', () => {
+    // The five-hour session refills by itself; the week does not. A chip that
+    // only ever states the worse of the two says nothing about which one it is.
+    setSnapshots([
+      snapshot({
+        provider: 'claude',
+        windows: [
+          {
+            ...snapshot().windows[0],
+            kind: '5h',
+            label: '5 h',
+            windowMinutes: 300,
+            usedPercent: 4,
+          },
+          { ...snapshot().windows[0], usedPercent: 61 },
+        ],
+      }),
+    ]);
+    render(<CliQuotaChip />);
+    expect(screen.getByTestId('cli-quota-chip')).toHaveTextContent('CC 5h 4% · 7d 61%');
+  });
+
+  it('colours a spent window without dragging a calm one along', () => {
+    setSnapshots([
+      snapshot({
+        provider: 'claude',
+        windows: [
+          {
+            ...snapshot().windows[0],
+            kind: '5h',
+            label: '5 h',
+            windowMinutes: 300,
+            usedPercent: 4,
+          },
+          { ...snapshot().windows[0], usedPercent: 91 },
+        ],
+      }),
+    ]);
+    render(<CliQuotaChip />);
+    expect(screen.getByTestId('cli-quota-window-claude-5h').className).not.toContain('text-red');
+    expect(screen.getByTestId('cli-quota-window-claude-7d').className).toContain('text-red-300');
   });
 
   it('leaves a provider without windows out of the chip entirely', () => {
     setSnapshots([snapshot(), snapshot({ provider: 'claude', windows: [] })]);
     render(<CliQuotaChip />);
-    expect(screen.getByTestId('cli-quota-chip')).toHaveTextContent('CX 40%');
+    expect(screen.getByTestId('cli-quota-chip')).toHaveTextContent('CX 7d 40%');
     expect(screen.getByTestId('cli-quota-chip')).not.toHaveTextContent('CC');
   });
 
@@ -123,6 +176,148 @@ describe('CliQuotaChip', () => {
 
     fireEvent.mouseLeave(screen.getByTestId('cli-quota-chip').parentElement!);
     expect(screen.queryByTestId('cli-quota-popover')).not.toBeInTheDocument();
+  });
+
+  it('opens the detail on click and closes it again on a second press', () => {
+    // The refresh button lives in the popover and is the only way to re-read
+    // the Codex quota. Without an activation path on the chip a keyboard user
+    // cannot reach it at all.
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+
+    fireEvent.click(screen.getByTestId('cli-quota-chip'));
+    expect(screen.getByTestId('cli-quota-popover')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('cli-quota-chip'));
+    expect(screen.queryByTestId('cli-quota-popover')).not.toBeInTheDocument();
+  });
+
+  it('opens the detail when the chip takes focus and closes when focus leaves', () => {
+    setSnapshots([snapshot()]);
+    render(
+      <>
+        <CliQuotaChip />
+        <button type="button" data-testid="elsewhere" />
+      </>
+    );
+
+    focus(screen.getByTestId('cli-quota-chip'));
+    expect(screen.getByTestId('cli-quota-popover')).toBeInTheDocument();
+
+    focus(screen.getByTestId('elsewhere'));
+    expect(screen.queryByTestId('cli-quota-popover')).not.toBeInTheDocument();
+  });
+
+  it('states whether the detail is open', () => {
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+
+    expect(screen.getByTestId('cli-quota-chip')).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByTestId('cli-quota-chip'));
+    expect(screen.getByTestId('cli-quota-chip')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('cli-quota-chip')).toHaveAttribute(
+      'aria-controls',
+      screen.getByTestId('cli-quota-popover').id
+    );
+  });
+
+  it('closes on Escape and hands focus back to the chip', () => {
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+
+    focus(screen.getByTestId('cli-quota-chip'));
+    focus(screen.getByTestId('cli-quota-refresh'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByTestId('cli-quota-popover')).not.toBeInTheDocument();
+    // Escape must not drop focus onto the body — the chip is where the
+    // keyboard user was, and the popover they were inside is now gone.
+    expect(document.activeElement).toBe(screen.getByTestId('cli-quota-chip'));
+  });
+
+  it('dismisses a hovered detail on Escape without grabbing focus', () => {
+    // Content shown on hover has to be dismissible without moving the pointer,
+    // and dismissing it must not yank focus away from wherever the user is.
+    setSnapshots([snapshot()]);
+    render(
+      <>
+        <CliQuotaChip />
+        <button type="button" data-testid="elsewhere" />
+      </>
+    );
+    focus(screen.getByTestId('elsewhere'));
+
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByTestId('cli-quota-popover')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByTestId('elsewhere'));
+  });
+
+  it('announces the figures it shows rather than a generic label', () => {
+    setSnapshots([
+      snapshot({
+        provider: 'claude',
+        windows: [
+          {
+            ...snapshot().windows[0],
+            kind: '5h',
+            label: '5 h',
+            windowMinutes: 300,
+            usedPercent: 4,
+          },
+          { ...snapshot().windows[0], usedPercent: 61 },
+        ],
+      }),
+    ]);
+    render(<CliQuotaChip />);
+
+    expect(screen.getByRole('button', { name: /5h 4%/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /7d 61%/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /agent cli quota/i })).toBeInTheDocument();
+  });
+
+  it('keeps the refresh button reachable and usable from the keyboard', () => {
+    const refresh = vi.fn(async () => {});
+    usageLimitsRead.mockImplementation(() => new Promise(() => {}));
+    useStore.setState({
+      usageSnapshots: [snapshot()],
+      usageStatus: 'ready',
+      refreshUsageLimits: refresh,
+    });
+    render(<CliQuotaChip />);
+
+    focus(screen.getByTestId('cli-quota-chip'));
+    // Moving focus from the chip into the popover must not read as "focus left".
+    focus(screen.getByTestId('cli-quota-refresh'));
+    expect(screen.getByTestId('cli-quota-popover')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('cli-quota-refresh'));
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a hovered detail open when the chip is clicked', () => {
+    // Clicking focuses the chip, so a naive toggle would close the popover
+    // under a mouse user who has done nothing but click it.
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+    focus(screen.getByTestId('cli-quota-chip'));
+    fireEvent.click(screen.getByTestId('cli-quota-chip'));
+
+    expect(screen.getByTestId('cli-quota-popover')).toBeInTheDocument();
+  });
+
+  it('stays open when the pointer leaves while the chip still has focus', () => {
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+    focus(screen.getByTestId('cli-quota-chip'));
+    fireEvent.mouseLeave(screen.getByTestId('cli-quota-chip').parentElement!);
+
+    expect(screen.getByTestId('cli-quota-popover')).toBeInTheDocument();
   });
 
   it('always says how old a reading is', () => {

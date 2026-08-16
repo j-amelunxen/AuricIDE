@@ -5,7 +5,8 @@ import codexMultiNormalized from '../../../fixtures/usage-limits/codex.rate-limi
 import codexNormalized from '../../../fixtures/usage-limits/codex.rate-limits.normalized.json';
 import {
   ageMs,
-  chipSegments,
+  chipGroups,
+  compactWindowLabel,
   formatPercent,
   msUntilReset,
   overallTone,
@@ -94,22 +95,51 @@ describe('quotaTone', () => {
   });
 });
 
-describe('chipSegments', () => {
-  it('renders one short tag per provider', () => {
-    const segments = chipSegments([CLAUDE, CODEX]);
-    expect(segments.map((s) => s.tag)).toEqual(['CC', 'CX']);
-    expect(segments.map((s) => s.usedPercent)).toEqual([41.2, 40]);
+describe('chipGroups', () => {
+  it('shows every window a provider reported, not just the worst one', () => {
+    // The 5-hour session and the weekly budget run out for different reasons.
+    // Collapsing them to one number hides whichever happens to be lower, and
+    // that is usually the week — the one you cannot wait out.
+    const groups = chipGroups([CLAUDE, CODEX]);
+    expect(groups.map((g) => g.tag)).toEqual(['CC', 'CX']);
+    expect(groups[0].windows.map((w) => w.label)).toEqual(['5h', '7d']);
+    expect(groups[0].windows.map((w) => w.usedPercent)).toEqual([23.5, 41.2]);
+    expect(groups[1].windows.map((w) => w.label)).toEqual(['7d']);
+  });
+
+  it('tones each window on its own', () => {
+    // One calm window next to a critical one must not paint both the same, in
+    // either direction: the quiet 5 h would hide a spent week, and the spent
+    // week would make the 5 h look like it needs attention it does not.
+    const groups = chipGroups([
+      snapshot({
+        provider: 'claude',
+        windows: [
+          { ...CLAUDE.windows[0], usedPercent: 4 },
+          { ...CLAUDE.windows[1], usedPercent: 91 },
+        ],
+      }),
+    ]);
+    expect(groups[0].windows.map((w) => w.tone)).toEqual(['calm', 'critical']);
   });
 
   it('leaves out a provider that reported nothing', () => {
-    const segments = chipSegments([CODEX, snapshot({ provider: 'claude', windows: [] })]);
-    expect(segments.map((s) => s.provider)).toEqual(['codex']);
+    const groups = chipGroups([CODEX, snapshot({ provider: 'claude', windows: [] })]);
+    expect(groups.map((g) => g.provider)).toEqual(['codex']);
   });
 
   it('falls back to a readable tag for an unknown provider', () => {
     expect(providerTag('gemini')).toBe('GE');
     expect(providerName('gemini')).toBe('gemini');
     expect(providerName('claude')).toBe('Claude Code');
+  });
+});
+
+describe('compactWindowLabel', () => {
+  it('drops the space the popover can afford and the chip cannot', () => {
+    expect(compactWindowLabel('5 h')).toBe('5h');
+    expect(compactWindowLabel('7 d')).toBe('7d');
+    expect(compactWindowLabel('90 min')).toBe('90min');
   });
 });
 
