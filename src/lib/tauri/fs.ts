@@ -6,6 +6,7 @@ export interface FileEntry {
   isDirectory: boolean;
   createdAt?: number;
   newestFileCreatedAt?: number;
+  modifiedAt?: number;
 }
 
 interface RawFileEntry {
@@ -14,6 +15,7 @@ interface RawFileEntry {
   is_directory: boolean;
   created_at?: number | null;
   newest_file_created_at?: number | null;
+  modified_at?: number | null;
 }
 
 export async function readDirectory(path: string): Promise<FileEntry[]> {
@@ -24,6 +26,7 @@ export async function readDirectory(path: string): Promise<FileEntry[]> {
     isDirectory: e.is_directory,
     createdAt: e.created_at ?? undefined,
     newestFileCreatedAt: e.newest_file_created_at ?? undefined,
+    modifiedAt: e.modified_at ?? undefined,
   }));
 }
 

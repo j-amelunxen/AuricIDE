@@ -56,6 +56,7 @@
 
   --git-added: #2effa5;
   --git-modified: #ffce2e;
+  --git-modified-rgb: 255, 206, 46;
   --git-deleted: #ff4a4a;
 
   --font-display: 'Space Grotesk', sans-serif;
@@ -199,6 +200,16 @@ body {
       inset 0 0 10px rgba(var(--primary-rgb), 0.16),
       0 0 6px rgba(var(--primary-rgb), 0.22);
     background-color: rgba(var(--primary-rgb), 0.045);
+  }
+
+  /* Static halo for files modified in the last 5 minutes. Same window as
+     created, but amber — the same hue as the git "M" badge — so the two
+     signals never read as one. Files only; never rolls up to a folder. */
+  .explorer-recent-glow-modified {
+    box-shadow:
+      inset 0 0 12px rgba(var(--git-modified-rgb), 0.3),
+      0 0 8px rgba(var(--git-modified-rgb), 0.45);
+    background-color: rgba(var(--git-modified-rgb), 0.08);
   }
 
   .neon-text {

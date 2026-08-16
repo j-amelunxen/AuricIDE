@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   RECENTLY_CREATED_WINDOW_MS,
   collectCreatedAt,
+  collectModifiedAt,
   hasRecentlyCreatedFile,
   isRecentlyCreated,
+  isRecentlyModified,
   nextRecentlyCreatedExpiry,
 } from './recentlyCreated';
 
@@ -119,6 +121,46 @@ describe('hasRecentlyCreatedFile', () => {
         NOW
       )
     ).toBe(true);
+  });
+});
+
+describe('isRecentlyModified', () => {
+  it('is true for a file modified just now', () => {
+    expect(isRecentlyModified(NOW, NOW)).toBe(true);
+  });
+
+  it('is true just inside the 5-minute window', () => {
+    expect(isRecentlyModified(NOW - RECENTLY_CREATED_WINDOW_MS + 1, NOW)).toBe(true);
+  });
+
+  it('is false at exactly 5 minutes', () => {
+    expect(isRecentlyModified(NOW - RECENTLY_CREATED_WINDOW_MS, NOW)).toBe(false);
+  });
+
+  it('is false when modifiedAt is missing', () => {
+    expect(isRecentlyModified(undefined, NOW)).toBe(false);
+  });
+});
+
+describe('collectModifiedAt', () => {
+  it('walks children but skips folders, which never carry a modified glow', () => {
+    expect(
+      collectModifiedAt([
+        { isDirectory: false, modifiedAt: 1 },
+        {
+          isDirectory: true,
+          modifiedAt: 99,
+          children: [
+            { isDirectory: false, modifiedAt: 2 },
+            {
+              isDirectory: true,
+              modifiedAt: 98,
+              children: [{ isDirectory: false, modifiedAt: 3 }],
+            },
+          ],
+        },
+      ])
+    ).toEqual([1, 2, 3]);
   });
 });
 

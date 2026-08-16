@@ -166,6 +166,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             gitStatus: resolveGitStatus(relativeToRoot(e.path, path), statuses),
             createdAt: e.createdAt,
             newestFileCreatedAt: e.newestFileCreatedAt,
+            modifiedAt: e.modifiedAt,
           };
         });
         state.setFileTree(tree);
@@ -196,6 +197,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
               : undefined,
             createdAt: e.createdAt,
             newestFileCreatedAt: e.newestFileCreatedAt,
+            modifiedAt: e.modifiedAt,
           };
         });
         state.setDirectoryChildren(path, children);
@@ -409,6 +411,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           : undefined,
         createdAt: e.createdAt,
         newestFileCreatedAt: e.newestFileCreatedAt,
+        modifiedAt: e.modifiedAt,
       }));
       state.setDirectoryChildren(path, children);
     },
