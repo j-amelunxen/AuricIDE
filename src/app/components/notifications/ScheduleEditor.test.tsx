@@ -120,6 +120,7 @@ function renderEditor(overrides: Partial<ScheduleEditorProps> = {}) {
     defaultProjectName: 'sample-project',
     preview: ['Mi 19.08.2026 09:00'],
     starredProjects: [],
+    projectOptions: [{ path: '/repo/sample', name: 'sample-project', starred: true }],
     discoveredSkills: [],
     onDraftChange: vi.fn(),
     onSave: vi.fn(),
@@ -578,6 +579,130 @@ describe('ScheduleEditor', () => {
       expect(
         screen.getByText('No Quick Access is set up for this project. Add a skill there first.')
       ).toBeTruthy();
+    });
+  });
+
+  describe('choosing the project a reminder belongs to', () => {
+    const twoProjects = [
+      { path: '/repo/sample', name: 'sample-project', starred: true },
+      { path: '/repo/other', name: 'other-project', starred: false },
+    ];
+
+    it('starts on the open project for a new schedule', () => {
+      renderEditor({ projectOptions: twoProjects });
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-project').value).toBe('/repo/sample');
+    });
+
+    it('starts on the stored project when editing, not on the open one', () => {
+      renderEditor({
+        schedule: existing,
+        defaultProjectPath: '/repo/other',
+        defaultProjectName: 'other-project',
+        projectOptions: twoProjects,
+      });
+
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-project').value).toBe('/repo/sample');
+    });
+
+    it('retargets the schedule and its action at the project that was picked', () => {
+      const props = renderEditor({ schedule: existing, projectOptions: twoProjects });
+      fireEvent.change(screen.getByTestId('schedule-project'), {
+        target: { value: '/repo/other' },
+      });
+
+      const draft = lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>);
+      expect(draft.projectPath).toBe('/repo/other');
+      expect(draft.projectName).toBe('other-project');
+      expect(payloadOf(draft).actions?.[0]).toMatchObject({ repoPath: '/repo/other' });
+    });
+
+    it('can aim a reminder at no project at all', () => {
+      const props = renderEditor({ schedule: existing, projectOptions: twoProjects });
+      fireEvent.change(screen.getByTestId('schedule-project'), { target: { value: '' } });
+
+      const draft = lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>);
+      expect(draft.projectPath).toBeNull();
+      expect(draft.projectName).toBeNull();
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(true);
+    });
+
+    // The whole point: an app-wide reminder can be given a project, and only
+    // then does it get a skill catalogue to choose from.
+    it('unlocks Skill and Combo once an app-wide schedule is given a project', () => {
+      renderEditor({
+        schedule: { ...existing, projectPath: null, projectName: null },
+        projectOptions: twoProjects,
+      });
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(true);
+
+      fireEvent.change(screen.getByTestId('schedule-project'), {
+        target: { value: '/repo/other' },
+      });
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(false);
+    });
+
+    // A snapshot names a skill in project A. Carrying it over to B would keep
+    // the old prompt and label while pointing the run at the wrong repository.
+    it('drops the chosen skill when the project changes, and blocks saving until one is re-picked', () => {
+      const props = renderEditor({
+        schedule: scheduleWith(runSkillAction),
+        starredProjects: [matchingStarred],
+        projectOptions: twoProjects,
+      });
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-skill-select').value).toBe('skill-1');
+
+      fireEvent.change(screen.getByTestId('schedule-project'), {
+        target: { value: '/repo/other' },
+      });
+
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-skill-select').value).toBe('');
+      expect(screen.getByTestId<HTMLButtonElement>('schedule-save').disabled).toBe(true);
+      expect(payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions).toEqual(
+        []
+      );
+      expect(props.onSave).not.toHaveBeenCalled();
+    });
+
+    it('drops the chosen combo when the project changes', () => {
+      renderEditor({
+        schedule: scheduleWith(runComboAction, { name: 'Blog-Write' }),
+        starredProjects: [matchingStarred],
+        projectOptions: twoProjects,
+      });
+
+      fireEvent.change(screen.getByTestId('schedule-project'), {
+        target: { value: '/repo/other' },
+      });
+
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-combo-select').value).toBe('');
+      expect(screen.getByTestId<HTMLButtonElement>('schedule-save').disabled).toBe(true);
+    });
+
+    // A typed task is not project-specific — only its repoPath is, and that
+    // follows the picker on its own.
+    it('keeps a typed custom-agent task across a project change', () => {
+      const props = renderEditor({ schedule: existing, projectOptions: twoProjects });
+      fireEvent.change(screen.getByTestId('schedule-project'), {
+        target: { value: '/repo/other' },
+      });
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-task').value).toBe('scan');
+      expect(payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions).toEqual(
+        [
+          {
+            id: 'run',
+            label: 'Start agent',
+            kind: 'spawn-agent',
+            task: 'scan',
+            repoPath: '/repo/other',
+          },
+        ]
+      );
+    });
+
+    it('draws the project tile next to the picker', () => {
+      renderEditor({ projectOptions: twoProjects });
+      expect(screen.getByTestId('tile-face-/repo/sample')).toBeTruthy();
     });
   });
 });

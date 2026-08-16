@@ -5,6 +5,7 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { formatNotificationProject } from '@/lib/notifications/format';
 import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
+import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import { NotificationRow } from './NotificationRow';
 
 export interface NotificationsPanelProps {
@@ -14,6 +15,8 @@ export interface NotificationsPanelProps {
   status: 'idle' | 'loading' | 'error';
   projectFilter: string | null;
   now: number;
+  /** Only for the marks pinned projects carry; rows come from every project. */
+  starredProjects: StarredProject[];
   parseActions: (notification: Notification) => PresentedAction[];
   onOpen: (uid: string) => void;
   onAction: (notification: Notification, action: NotificationAction) => void;
@@ -59,6 +62,7 @@ export function NotificationsPanel({
   status,
   projectFilter,
   now,
+  starredProjects,
   parseActions,
   onOpen,
   onAction,
@@ -182,6 +186,7 @@ export function NotificationsPanel({
               notification={notification}
               actions={parseActions(notification)}
               now={now}
+              starredProjects={starredProjects}
               onOpen={onOpen}
               onAction={onAction}
             />

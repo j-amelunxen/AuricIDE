@@ -34,6 +34,7 @@ function renderSection(overrides: Partial<SchedulesSectionProps> = {}) {
   const props: SchedulesSectionProps = {
     schedules: [],
     now: NOW,
+    starredProjects: [],
     onCreate: vi.fn(),
     onEdit: vi.fn(),
     onToggle: vi.fn(),
@@ -125,5 +126,42 @@ describe('SchedulesSection', () => {
     });
 
     expect(screen.getByText('sample-project')).toBeTruthy();
+  });
+
+  describe('the project a schedule belongs to', () => {
+    it('draws the project tile next to the name', () => {
+      renderSection({
+        schedules: [makeSchedule({ projectPath: '/repo/sample', projectName: 'sample' })],
+      });
+
+      expect(screen.getByTestId('tile-face-/repo/sample')).toBeTruthy();
+      expect(screen.getByTestId('schedule-row-s1').textContent).toContain('sample');
+    });
+
+    it('draws the mark the project was pinned with', () => {
+      renderSection({
+        schedules: [makeSchedule({ projectPath: '/repo/sample', projectName: 'sample' })],
+        starredProjects: [
+          {
+            path: '/repo/sample',
+            name: 'sample',
+            starredAt: 1,
+            icon: { kind: 'emoji', value: '🚀' },
+          },
+        ],
+      });
+
+      expect(screen.getByTestId('tile-face-/repo/sample')).toHaveAttribute(
+        'data-icon-kind',
+        'emoji'
+      );
+    });
+
+    // An app-wide reminder has no project, so there is no tile to draw — the
+    // row must not invent one for the app itself.
+    it('draws no tile for an app-wide schedule', () => {
+      renderSection({ schedules: [makeSchedule()] });
+      expect(screen.queryByTestId(/^tile-face-/)).toBeNull();
+    });
   });
 });

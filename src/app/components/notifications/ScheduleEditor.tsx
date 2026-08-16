@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import {
@@ -12,6 +13,7 @@ import {
   weeklyCron,
   WEEKDAY_OPTIONS,
 } from '@/lib/notifications/scheduleFormat';
+import type { ScheduleProjectOption } from '@/lib/notifications/scheduleProjects';
 import type { NotificationAction } from '@/lib/notifications/types';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import {
@@ -30,12 +32,14 @@ export type RhythmChoice = 'daily' | 'weekly' | 'interval' | 'cron';
 export interface ScheduleEditorProps {
   /** The schedule being edited, or null for a new one. */
   schedule: Schedule | null;
-  /** Project the new schedule belongs to; null means app-wide. */
+  /** Project a new schedule starts on; null means app-wide. */
   defaultProjectPath: string | null;
   defaultProjectName: string | null;
   /** Formatted next occurrences for the draft, from the backend. */
   preview: string[];
   starredProjects: StarredProject[];
+  /** Every project the reminder can be aimed at, in the order they are offered. */
+  projectOptions: ScheduleProjectOption[];
   discoveredSkills: ProjectSkill[];
   onDraftChange: (draft: Schedule) => void;
   onSave: (draft: Schedule) => void;
@@ -57,6 +61,12 @@ const DISCOVERED_PREFIX = 'discovered:';
 const SCOPE_ORDER: { scope: ProjectSkillScope; title: string }[] = [
   { scope: 'project', title: 'In this project' },
   { scope: 'user', title: 'Your skills' },
+];
+
+/** Pinned projects lead the picker; everything else follows under one heading. */
+const PROJECT_GROUPS: { starred: boolean; title: string }[] = [
+  { starred: true, title: 'Quick Access' },
+  { starred: false, title: 'Recent' },
 ];
 
 const UTC_TS = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
@@ -244,6 +254,7 @@ export function ScheduleEditor({
   defaultProjectName,
   preview,
   starredProjects,
+  projectOptions,
   discoveredSkills,
   onDraftChange,
   onSave,
@@ -253,8 +264,17 @@ export function ScheduleEditor({
   useOverlayLayer({ id: 'schedule-editor', kind: 'tool', active: true, onEscape: onCancel });
 
   // Stored null is app-wide, not "use the open project". `??` would rewrite it.
-  const projectPath = schedule === null ? defaultProjectPath : schedule.projectPath;
-  const projectName = schedule === null ? defaultProjectName : schedule.projectName;
+  const [projectPath, setProjectPath] = useState<string | null>(
+    schedule === null ? defaultProjectPath : schedule.projectPath
+  );
+  const projectName =
+    projectPath === null
+      ? null
+      : (projectOptions.find((option) => option.path === projectPath)?.name ??
+        (schedule?.projectPath === projectPath ? schedule.projectName : null) ??
+        (defaultProjectPath === projectPath ? defaultProjectName : null) ??
+        projectPath.split('/').filter(Boolean).pop() ??
+        projectPath);
 
   const [name, setName] = useState(schedule?.name ?? '');
   const [rhythm, setRhythm] = useState<RhythmChoice>(() => rhythmOf(schedule));
@@ -270,6 +290,8 @@ export function ScheduleEditor({
   const [actionDraft, setActionDraft] = useState<ActionDraft>(() => actionDraftOf(schedule));
   const [body, setBody] = useState(() => parsePayload(schedule?.payload ?? '{}').body ?? '');
 
+  const selectedProject =
+    projectPath === null ? undefined : projectOptions.find((option) => option.path === projectPath);
   const starred =
     projectPath === null ? undefined : starredProjects.find((p) => p.path === projectPath);
   const pins = starred ? quickAccessSkills(starred) : [];
@@ -395,6 +417,22 @@ export function ScheduleEditor({
       current.includes(value) ? current.filter((day) => day !== value) : [...current, value]
     );
 
+  /**
+   * A skill or combo snapshot names something inside one specific project.
+   * Carrying it across would keep the old label and prompt while pointing the
+   * run at a different repository — so the selection is dropped and has to be
+   * made again from the new project's catalogue. `saveBlocked` holds the save
+   * until it is.
+   */
+  const chooseProject = (value: string) => {
+    const next = value === '' ? null : value;
+    setProjectPath(next);
+    setActionDraft((current) => {
+      if (current.choice !== 'skill' && current.choice !== 'combo') return current;
+      return next === null ? { choice: 'none' } : { choice: current.choice };
+    });
+  };
+
   const choose = (choice: ActionDraft['choice']) => {
     if ((choice === 'skill' || choice === 'combo') && projectPath === null) return;
     setActionDraft((current) => {
@@ -476,6 +514,43 @@ export function ScheduleEditor({
             placeholder="Security-Scan"
             className={INPUT}
           />
+        </Field>
+
+        <Field label="Project">
+          <div className="flex items-center gap-2">
+            {projectPath !== null && (
+              <ProjectTileFace
+                path={projectPath}
+                icon={selectedProject?.icon}
+                size="sm"
+                className="flex-shrink-0"
+              />
+            )}
+            <select
+              data-testid="schedule-project"
+              value={projectPath ?? ''}
+              onChange={(event) => chooseProject(event.target.value)}
+              className={INPUT}
+            >
+              <option value="">App-wide — no project</option>
+              {PROJECT_GROUPS.map(({ starred, title }) => {
+                const entries = projectOptions.filter((option) => option.starred === starred);
+                if (entries.length === 0) return null;
+                return (
+                  <optgroup key={title} label={title}>
+                    {entries.map((option) => (
+                      <option key={option.path} value={option.path}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+          </div>
+          <p className="mt-1 text-[9px] text-foreground-muted/60">
+            Decides which skills the reminder can offer, and where they run.
+          </p>
         </Field>
 
         <Field label="Rhythm">

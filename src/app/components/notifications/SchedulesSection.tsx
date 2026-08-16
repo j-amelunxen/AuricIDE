@@ -1,13 +1,18 @@
 'use client';
 
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import { formatNotificationProject } from '@/lib/notifications/format';
 import { formatNextDue, formatScheduleRhythm } from '@/lib/notifications/scheduleFormat';
+import { projectIconFor } from '@/lib/quickAccess/icon';
+import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { Schedule } from '@/lib/tauri/schedules';
 
 export interface SchedulesSectionProps {
   schedules: Schedule[];
   now: number;
+  /** Only for the marks pinned projects carry — the list itself is app-global. */
+  starredProjects: StarredProject[];
   onCreate: () => void;
   onEdit: (schedule: Schedule) => void;
   onToggle: (schedule: Schedule, enabled: boolean) => void;
@@ -25,6 +30,7 @@ export interface SchedulesSectionProps {
 export function SchedulesSection({
   schedules,
   now,
+  starredProjects,
   onCreate,
   onEdit,
   onToggle,
@@ -92,6 +98,12 @@ export function SchedulesSection({
                   {schedule.projectPath !== null && (
                     <>
                       <span aria-hidden="true">·</span>
+                      <ProjectTileFace
+                        path={schedule.projectPath}
+                        icon={projectIconFor(starredProjects, schedule.projectPath)}
+                        size="xs"
+                        className="flex-shrink-0"
+                      />
                       <span className="truncate">
                         {formatNotificationProject(schedule.projectName, schedule.projectPath)}
                       </span>

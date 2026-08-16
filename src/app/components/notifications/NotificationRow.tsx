@@ -1,6 +1,7 @@
 'use client';
 
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import {
   formatNotificationAge,
   formatNotificationProject,
@@ -8,11 +9,15 @@ import {
 } from '@/lib/notifications/format';
 import type { PresentedAction } from '@/lib/notifications/presentActions';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
+import { projectIconFor } from '@/lib/quickAccess/icon';
+import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 
 export interface NotificationRowProps {
   notification: Notification;
   actions: PresentedAction[];
   now: number;
+  /** Only for the mark a pinned project carries. */
+  starredProjects: StarredProject[];
   onOpen: (uid: string) => void;
   onAction: (notification: Notification, action: NotificationAction) => void;
 }
@@ -23,11 +28,16 @@ export interface NotificationRowProps {
  * Two markers, two jobs, never mixed up: severity owns the left edge and the
  * icon, unread owns the dot next to the title. A read error still looks like an
  * error, and an unread info still announces itself.
+ *
+ * The project tile is a third, and it stays out of both slots — it sits in the
+ * meta line where the project name already was. Drawn where severity is read,
+ * it would change what the row claims about how bad the news is.
  */
 export function NotificationRow({
   notification,
   actions,
   now,
+  starredProjects,
   onOpen,
   onAction,
 }: NotificationRowProps) {
@@ -78,6 +88,14 @@ export function NotificationRow({
           )}
 
           <span className="mt-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/50">
+            {notification.projectPath !== null && (
+              <ProjectTileFace
+                path={notification.projectPath}
+                icon={projectIconFor(starredProjects, notification.projectPath)}
+                size="xs"
+                className="flex-shrink-0"
+              />
+            )}
             <span className="truncate">
               {formatNotificationProject(notification.projectName, notification.projectPath)}
             </span>
