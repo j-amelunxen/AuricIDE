@@ -9,9 +9,19 @@ export function isProjectDbPath(path: string): boolean {
   return /[\\/]\.auric[\\/]project\.db(-wal|-shm|-journal)?$/.test(path);
 }
 
+/** The directory a changed path lives in — '/' rather than '' at the top. */
+export function parentDirOf(path: string): string {
+  const idx = path.lastIndexOf('/');
+  return idx <= 0 ? '/' : path.slice(0, idx);
+}
+
 export interface FsEventRouterOptions {
-  /** Debounced callback for regular file changes (file tree refresh). */
-  onTreeChange: () => void;
+  /**
+   * Debounced callback for regular file changes. Receives the deduplicated
+   * parent directories of everything that changed since the last flush, so the
+   * refresh can re-read those instead of walking the whole project.
+   */
+  onTreeChange: (changedDirs: string[]) => void;
   /** Debounced callback for project DB changes (PM/requirements/goals reload). */
   onProjectDataChange: () => void;
   /**
@@ -22,6 +32,12 @@ export interface FsEventRouterOptions {
    */
   onEvidenceChange?: () => void;
   treeDebounceMs?: number;
+  /**
+   * Longest a tree refresh may be postponed by fresh events. Without it a
+   * process that writes continuously (a dev server, an install) keeps resetting
+   * the trailing debounce and the tree never refreshes at all.
+   */
+  treeMaxWaitMs?: number;
   dataDebounceMs?: number;
   evidenceDebounceMs?: number;
 }
@@ -43,13 +59,26 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
     onProjectDataChange,
     onEvidenceChange,
     treeDebounceMs = 300,
+    treeMaxWaitMs = 1000,
     dataDebounceMs = 500,
     evidenceDebounceMs = 1000,
   } = options;
 
   let treeTimer: ReturnType<typeof setTimeout> | undefined;
+  let treeMaxWaitTimer: ReturnType<typeof setTimeout> | undefined;
   let dataTimer: ReturnType<typeof setTimeout> | undefined;
   let evidenceTimer: ReturnType<typeof setTimeout> | undefined;
+  let dirtyDirs = new Set<string>();
+
+  function flushTree(): void {
+    clearTimeout(treeTimer);
+    clearTimeout(treeMaxWaitTimer);
+    treeTimer = undefined;
+    treeMaxWaitTimer = undefined;
+    const dirs = [...dirtyDirs];
+    dirtyDirs = new Set();
+    onTreeChange(dirs);
+  }
 
   return {
     handle: (event) => {
@@ -57,8 +86,12 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
         clearTimeout(dataTimer);
         dataTimer = setTimeout(onProjectDataChange, dataDebounceMs);
       } else {
+        dirtyDirs.add(parentDirOf(event.path));
         clearTimeout(treeTimer);
-        treeTimer = setTimeout(onTreeChange, treeDebounceMs);
+        treeTimer = setTimeout(flushTree, treeDebounceMs);
+        // Only armed by the first event of a burst, so it caps the total delay
+        // rather than restarting alongside the trailing timer.
+        treeMaxWaitTimer ??= setTimeout(flushTree, treeMaxWaitMs);
         if (onEvidenceChange) {
           clearTimeout(evidenceTimer);
           evidenceTimer = setTimeout(onEvidenceChange, evidenceDebounceMs);
@@ -67,6 +100,7 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
     },
     dispose: () => {
       clearTimeout(treeTimer);
+      clearTimeout(treeMaxWaitTimer);
       clearTimeout(dataTimer);
       clearTimeout(evidenceTimer);
     },

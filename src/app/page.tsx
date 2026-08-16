@@ -167,7 +167,11 @@ export default function Home() {
               )}
             </div>
             <MemoizedFileExplorer
-              tree={handlers.toFileTreeNodes(state.fileTree)}
+              // Passed straight from the store: FileNode and FileTreeNode are
+              // structurally identical, so the deep clone this used to go
+              // through bought nothing and handed `memo` a new array on every
+              // render — which is every 2s while an agent streams.
+              tree={state.fileTree}
               selectedPath={state.selectedPath}
               selectedPaths={state.selectedPaths}
               selectionAnchor={state.selectionAnchor}

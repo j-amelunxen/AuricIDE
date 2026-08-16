@@ -28,6 +28,7 @@ export function useIDEActions(
   const fsRouterRef = useRef<FsEventRouter | null>(null);
 
   const handleRefreshRef = useRef(handlers.handleRefresh);
+  const handleRefreshDirsRef = useRef(handlers.handleRefreshDirs);
 
   // The viewer content always follows the active tab (tab click, tab close, …)
   useActiveTabContentLoader(state.activeTabId, handlers.loadTabContent);
@@ -132,7 +133,8 @@ export function useIDEActions(
   // recreating the router (a recreate would drop pending debounce timers).
   useEffect(() => {
     handleRefreshRef.current = handlers.handleRefresh;
-  }, [handlers.handleRefresh]);
+    handleRefreshDirsRef.current = handlers.handleRefreshDirs;
+  }, [handlers.handleRefresh, handlers.handleRefreshDirs]);
 
   // File watcher — events split into two debounce lanes: regular file changes
   // refresh the tree; project DB writes (MCP server, external agents) reload
@@ -142,7 +144,7 @@ export function useIDEActions(
   // they need through refs and the store rather than this render's scope.
   useEffect(() => {
     fsRouterRef.current = createFsEventRouter({
-      onTreeChange: () => void handleRefreshRef.current(),
+      onTreeChange: (changedDirs) => void handleRefreshDirsRef.current(changedDirs),
       onProjectDataChange: () => {
         const s = useStore.getState();
         const root = s.rootPath;
