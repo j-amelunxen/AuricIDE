@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QUICK_ACCESS_HINT, QuickAccess } from './QuickAccess';
 import { DWELL_DOTS_MS, DWELL_OPEN_MS } from '@/lib/quickAccess/wheel';
 import { useStore } from '@/lib/store';
+import { saveAuricSkills } from '@/lib/settings/auricSkills';
 
 describe('QuickAccess', () => {
   beforeEach(() => {
@@ -405,6 +406,7 @@ describe('QuickAccess', () => {
         spawnAgentPreset: null,
         initialAgentTask: '',
       });
+      saveAuricSkills([]);
     });
 
     it('offers Quick Access Settings as the last entry', () => {
@@ -539,6 +541,75 @@ describe('QuickAccess', () => {
       openMenu();
       fireEvent.click(screen.getByRole('menuitem', { name: /start agent/i }));
       expect(useStore.getState().spawnAgentPreset).toBeNull();
+    });
+
+    describe('unpinned Auric Skills', () => {
+      const auricDefinition = {
+        id: 'a1',
+        name: 'Refactor Check',
+        prompt: 'Look for refactor opportunities.',
+      };
+
+      it('shows a global Auric skill without it being pinned to the project first', () => {
+        saveAuricSkills([auricDefinition]);
+        useStore.setState({ starredProjects: [website] });
+        render(<QuickAccess currentPath="/a/apps" />);
+        openMenu();
+        expect(screen.getByRole('menuitem', { name: 'Refactor Check' })).toBeInTheDocument();
+        expect(screen.getByText('Skills')).toBeInTheDocument();
+      });
+
+      it('does not list an Auric skill twice once it is also pinned to the project', () => {
+        saveAuricSkills([auricDefinition]);
+        useStore.setState({
+          starredProjects: [
+            {
+              ...website,
+              skills: [
+                {
+                  id: 'pinned-1',
+                  label: 'Refactor Check',
+                  prompt: 'Look for refactor opportunities.',
+                  auricSkillId: 'a1',
+                },
+              ],
+            },
+          ],
+        });
+        render(<QuickAccess currentPath="/a/apps" />);
+        openMenu();
+        expect(screen.getAllByRole('menuitem', { name: 'Refactor Check' })).toHaveLength(1);
+      });
+
+      it('launches an unpinned Auric skill straight from the context menu', () => {
+        saveAuricSkills([auricDefinition]);
+        useStore.setState({ starredProjects: [website] });
+        render(<QuickAccess currentPath="/a/apps" />);
+        openMenu();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Refactor Check' }));
+        expect(useStore.getState().initialAgentTask).toBe('Look for refactor opportunities.');
+        expect(useStore.getState().spawnAgentRepoPath).toBe('/a/website');
+        expect(useStore.getState().spawnDialogOpen).toBe(true);
+      });
+
+      it('counts unpinned Auric skills toward the same overflow cap as pinned ones', () => {
+        const pinned = Array.from({ length: 5 }, (_, i) => ({
+          id: `p${i}`,
+          label: `Pinned ${i}`,
+          prompt: `/p${i}`,
+        }));
+        const library = Array.from({ length: 5 }, (_, i) => ({
+          id: `a${i}`,
+          name: `Auric ${i}`,
+          prompt: `/a${i}`,
+        }));
+        saveAuricSkills(library);
+        useStore.setState({ starredProjects: [{ ...website, skills: pinned }] });
+        render(<QuickAccess currentPath="/a/apps" />);
+        openMenu();
+        expect(screen.getAllByRole('menuitem', { name: /^(Pinned|Auric) \d+$/ })).toHaveLength(8);
+        expect(screen.getByRole('menuitem', { name: /2 more/i })).toBeInTheDocument();
+      });
     });
   });
 
