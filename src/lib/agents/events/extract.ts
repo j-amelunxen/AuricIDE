@@ -1,21 +1,14 @@
 import { stripAnsi } from '../../terminal/ansi';
+import { createLineBuffer } from './lineBuffer';
 import { resolveMatcher } from './providers';
 import type { AgentEvent, AgentEventKind } from './types';
+
+export { MAX_PARTIAL_LINE_BYTES } from './lineBuffer';
 
 export interface EventExtractor {
   /** Feeds one PTY chunk in and returns the events it produced, if any. */
   push(chunk: string, at: number): AgentEvent[];
 }
-
-/**
- * Upper bound on the unterminated-partial-line buffer. Ordinary output
- * completes a line within a chunk or two, but a stream that never emits a
- * newline (a stuck progress bar, a binary blob accidentally sent to stdout)
- * would otherwise grow this buffer for as long as the agent runs. Capped by
- * dropping from the front — the newest tail is what a line, once it finally
- * completes, actually needs.
- */
-export const MAX_PARTIAL_LINE_BYTES = 64 * 1024;
 
 /**
  * How many of the most recent matched (kind|label) pairs the "chatty" kinds
@@ -65,7 +58,7 @@ function createDedupeRing(capacity: number) {
  */
 export function createEventExtractor(providerId: string): EventExtractor {
   const matchLine = resolveMatcher(providerId);
-  let buffer = '';
+  const lineBuffer = createLineBuffer();
   let seq = 0;
   const dedupeRing = createDedupeRing(DEDUPE_RING_SIZE);
 
@@ -83,19 +76,8 @@ export function createEventExtractor(providerId: string): EventExtractor {
 
   return {
     push(chunk: string, at: number): AgentEvent[] {
-      // \r moves the cursor back to column 0 — for line-oriented parsing
-      // that is a line break like any other (see activity.ts).
-      buffer += chunk.replace(/\r\n?/g, '\n');
-      const lines = buffer.split('\n');
-      // The last element is whatever comes after the final newline so far —
-      // possibly a complete line whose terminator just hasn't arrived yet.
-      buffer = lines.pop() ?? '';
-      if (buffer.length > MAX_PARTIAL_LINE_BYTES) {
-        buffer = buffer.slice(-MAX_PARTIAL_LINE_BYTES);
-      }
-
       const events: AgentEvent[] = [];
-      for (const line of lines) {
+      for (const line of lineBuffer.take(chunk)) {
         const event = processLine(line, at);
         if (event) events.push(event);
       }

@@ -8,6 +8,7 @@ import { filterProviders } from '@/lib/config/providerPolicy';
 import { loadProviderPolicy } from '@/lib/config/projectConfig';
 import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter';
 import { nextAttentionAgentId, withReviewFlags } from '@/lib/agents/attention';
+import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useAgentConsoleAutoOpen } from '@/lib/hooks/useAgentConsoleAutoOpen';
@@ -77,6 +78,18 @@ export function useIDEActions(
         });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The agent-log buffer is written on the activity throttle and whenever a run
+  // ends; whatever is still in it when the window goes away has no later flush
+  // to ride. Registered here rather than in the console, so it runs
+  // whether or not that panel was ever opened. `pagehide` over `beforeunload`:
+  // it is the one the webview actually fires on the way out. Best-effort by
+  // nature — the write is fired, not awaited, exactly as everywhere else.
+  useEffect(() => {
+    const flush = () => void flushAgentLog();
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
   }, []);
 
   // On mount: restore agents that were running when the app last quit

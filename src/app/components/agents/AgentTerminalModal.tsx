@@ -12,7 +12,7 @@ import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
-import { agentState, AGENT_STATE_LABEL, type AgentState } from '@/lib/agents/state';
+import { agentState, AGENT_STATE_LABEL } from '@/lib/agents/state';
 import { groupAgentTabs } from '@/lib/agents/tabGroups';
 import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
@@ -21,6 +21,7 @@ import { accentColor, accentRgb } from '@/lib/theme/accent';
 import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS, loadAppConfig } from '@/lib/config/appConfig';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
+import { AgentTab } from './AgentTab';
 import {
   TERMINAL_INTERACTION_OPTIONS,
   buildTerminalMenu,
@@ -295,16 +296,6 @@ function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
 
 // ── Agent tab state ────────────────────────────────────────────────
 
-const TAB_STATE_STYLES: Record<AgentState, { dot: string; label: string }> = {
-  working: { dot: 'bg-primary animate-pulse', label: 'text-primary' },
-  waiting: { dot: 'bg-amber-400', label: 'text-amber-400' },
-  'needs-input': { dot: 'bg-amber-300', label: 'text-amber-300' },
-  stalled: { dot: 'bg-orange-300', label: 'text-orange-300' },
-  done: { dot: 'bg-emerald-400', label: 'text-emerald-400' },
-  error: { dot: 'bg-red-400', label: 'text-red-400' },
-  queued: { dot: 'bg-foreground-muted', label: 'text-foreground-muted' },
-};
-
 // ── Modal ──────────────────────────────────────────────────────────
 
 interface AgentTerminalModalProps {
@@ -541,65 +532,18 @@ function AgentTerminalDialog({
                 )}
                 {group.agents.map((a) => {
                   const isActive = a.id === agent.id;
-                  const state = agentState(a, now);
-                  const style = TAB_STATE_STYLES[state];
-                  const finished = isFinishedAgent(a);
-                  const canEnd = finished ? !!onDismiss : !!onKill;
-                  const endLabel = finished ? `Dismiss ${a.name}` : `Stop ${a.name}`;
+                  const canEnd = isFinishedAgent(a) ? !!onDismiss : !!onKill;
                   return (
-                    <div
+                    <AgentTab
                       key={a.id}
-                      className={`group flex items-center rounded-lg border whitespace-nowrap transition-colors ${
-                        isActive
-                          ? 'border-primary/40 bg-primary/15 text-white'
-                          : 'border-white/5 bg-white/[0.02] text-foreground-muted hover:bg-white/5 hover:text-foreground'
-                      }`}
-                    >
-                      <button
-                        role="tab"
-                        aria-selected={isActive}
-                        data-testid={`agent-tab-${a.id}`}
-                        data-state={state}
-                        onClick={() => {
-                          if (!isActive) onSwitchAgent?.(a);
-                        }}
-                        onMouseDown={(e) => {
-                          if (e.button === 1) e.preventDefault();
-                        }}
-                        onAuxClick={(e) => {
-                          if (e.button === 1) {
-                            e.preventDefault();
-                            void closeTab(a);
-                          }
-                        }}
-                        className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
-                        />
-                        <span className="max-w-[140px] truncate">{a.name}</span>
-                        <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
-                          {AGENT_STATE_LABEL[state]}
-                        </span>
-                      </button>
-                      {canEnd && (
-                        <button
-                          type="button"
-                          data-testid={`agent-tab-close-${a.id}`}
-                          aria-label={endLabel}
-                          title={endLabel}
-                          onClick={() => void closeTab(a)}
-                          className={`mr-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[opacity,transform,color,background-color] hover:bg-red-500/15 hover:text-red-400 active:scale-[0.96] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 ${
-                            isActive
-                              ? 'opacity-70'
-                              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                          }`}
-                        >
-                          <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
-                        </button>
-                      )}
-                    </div>
+                      agent={a}
+                      isActive={isActive}
+                      now={now}
+                      onSelect={() => {
+                        if (!isActive) onSwitchAgent?.(a);
+                      }}
+                      onEnd={canEnd ? () => void closeTab(a) : undefined}
+                    />
                   );
                 })}
               </div>

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { AgentEvent } from '@/lib/agents/events/types';
+import { heartbeatSeries } from '@/lib/agents/events/heartbeat';
 import { useStore } from '@/lib/store';
 import { ConsoleAgentCard } from './ConsoleAgentCard';
 
@@ -35,7 +36,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof ConsoleAgentCa
   return {
     agent: agent(),
     events: [] as AgentEvent[],
-    heartbeat: new Array(24).fill(0),
+    heartbeat: heartbeatSeries([], NOW),
+    heartbeatScaleMax: 1,
     reviewed: false,
     onOpenTerminal: vi.fn(),
     ...overrides,

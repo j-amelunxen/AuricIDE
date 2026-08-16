@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  accumulateHeartbeatBytes,
-  drainHeartbeatBytes,
+  accumulateHeartbeatKinds,
+  drainHeartbeatKinds,
   dropAgentExtractor,
   extractorForAgent,
   pruneAgentRuntime,
@@ -74,56 +74,61 @@ describe('dropAgentExtractor', () => {
     expect(() => dropAgentExtractor('never-seen')).not.toThrow();
   });
 
-  it('also clears any pending, not-yet-drained heartbeat bytes', () => {
-    accumulateHeartbeatBytes('agent-1', 100);
+  it('also clears any pending, not-yet-drained heartbeat counts', () => {
+    accumulateHeartbeatKinds('agent-1', ['edit']);
     dropAgentExtractor('agent-1');
-    expect(drainHeartbeatBytes('agent-1')).toBe(0);
+    expect(drainHeartbeatKinds('agent-1')).toEqual([]);
   });
 });
 
-describe('heartbeat byte accumulation', () => {
-  it('accumulates bytes across calls until drained', () => {
-    accumulateHeartbeatBytes('agent-1', 10);
-    accumulateHeartbeatBytes('agent-1', 5);
-    expect(drainHeartbeatBytes('agent-1')).toBe(15);
+describe('heartbeat kind accumulation', () => {
+  it('accumulates kinds across calls until drained', () => {
+    accumulateHeartbeatKinds('agent-1', ['edit', 'run']);
+    accumulateHeartbeatKinds('agent-1', ['ask']);
+    expect(drainHeartbeatKinds('agent-1')).toEqual(['edit', 'run', 'ask']);
   });
 
-  it('resets to zero once drained', () => {
-    accumulateHeartbeatBytes('agent-1', 10);
-    drainHeartbeatBytes('agent-1');
-    expect(drainHeartbeatBytes('agent-1')).toBe(0);
+  it('empties once drained', () => {
+    accumulateHeartbeatKinds('agent-1', ['edit']);
+    drainHeartbeatKinds('agent-1');
+    expect(drainHeartbeatKinds('agent-1')).toEqual([]);
   });
 
-  it('returns zero for an id that never accumulated anything', () => {
-    expect(drainHeartbeatBytes('never-seen')).toBe(0);
+  it('returns nothing for an id that never accumulated anything', () => {
+    expect(drainHeartbeatKinds('never-seen')).toEqual([]);
+  });
+
+  it('ignores an empty batch instead of creating a runtime record for it', () => {
+    accumulateHeartbeatKinds('agent-never', []);
+    expect(drainHeartbeatKinds('agent-never')).toEqual([]);
   });
 
   it('keeps different agents independent', () => {
-    accumulateHeartbeatBytes('agent-a', 10);
-    accumulateHeartbeatBytes('agent-b', 20);
-    expect(drainHeartbeatBytes('agent-a')).toBe(10);
-    expect(drainHeartbeatBytes('agent-b')).toBe(20);
+    accumulateHeartbeatKinds('agent-a', ['edit']);
+    accumulateHeartbeatKinds('agent-b', ['run', 'run']);
+    expect(drainHeartbeatKinds('agent-a')).toEqual(['edit']);
+    expect(drainHeartbeatKinds('agent-b')).toEqual(['run', 'run']);
   });
 });
 
 describe('pruneAgentRuntime', () => {
-  it('drops the extractor and pending heartbeat bytes for ids not in the kept set', () => {
+  it('drops the extractor and pending heartbeat counts for ids not in the kept set', () => {
     const first = extractorForAgent('agent-1', 'claude');
-    accumulateHeartbeatBytes('agent-1', 42);
+    accumulateHeartbeatKinds('agent-1', ['edit']);
 
     pruneAgentRuntime(['agent-2']);
 
     expect(extractorForAgent('agent-1', 'claude')).not.toBe(first);
-    expect(drainHeartbeatBytes('agent-1')).toBe(0);
+    expect(drainHeartbeatKinds('agent-1')).toEqual([]);
   });
 
   it('leaves ids in the kept set untouched', () => {
     const first = extractorForAgent('agent-1', 'claude');
-    accumulateHeartbeatBytes('agent-1', 42);
+    accumulateHeartbeatKinds('agent-1', ['edit']);
 
     pruneAgentRuntime(['agent-1']);
 
     expect(extractorForAgent('agent-1', 'claude')).toBe(first);
-    expect(drainHeartbeatBytes('agent-1')).toBe(42);
+    expect(drainHeartbeatKinds('agent-1')).toEqual(['edit']);
   });
 });

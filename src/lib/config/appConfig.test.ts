@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  AGENT_LOG_MAX_ROWS,
+  AGENT_LOG_RETENTION_DAYS,
   APP_CONFIG_DEFAULTS,
   APP_CONFIG_KEYS,
   loadAppConfig,
@@ -26,6 +28,8 @@ describe('app config', () => {
     setAppConfigValue('cliUsageLimits', true);
     setAppConfigValue('agentTerminalFontSize', 16);
     setAppConfigValue('agentConsoleAutoOpen', true);
+    setAppConfigValue('agentLogPersist', true);
+    setAppConfigValue('agentLogRetentionDays', 7);
 
     expect(loadAppConfig()).toEqual({
       enableDeepNlp: true,
@@ -34,6 +38,8 @@ describe('app config', () => {
       cliUsageLimits: true,
       agentTerminalFontSize: 16,
       agentConsoleAutoOpen: true,
+      agentLogPersist: true,
+      agentLogRetentionDays: 7,
     });
   });
 
@@ -94,6 +100,53 @@ describe('app config', () => {
     const keys = Object.keys(APP_CONFIG_KEYS);
     expect(keys).not.toContain('dangerouslyIgnorePermissions');
     expect(keys).not.toContain('autoAcceptEdits');
+  });
+});
+
+describe('agent log persistence', () => {
+  it('writes nothing to disk until the user asks for it', () => {
+    // Opt-in on purpose: a history of agent activity is a file on the user's
+    // machine, so an untouched install must keep the feed in memory only.
+    expect(APP_CONFIG_DEFAULTS.agentLogPersist).toBe(false);
+    expect(loadAppConfig().agentLogPersist).toBe(false);
+    expect(APP_CONFIG_KEYS.agentLogPersist).toBe('auric.agent-log.persist');
+  });
+
+  it('keeps two days of history when nothing is stored', () => {
+    // The empty store reads as Number(null) === 0, which is itself a permitted
+    // value ("no age limit") — so an absent key must never decode as one.
+    expect(APP_CONFIG_DEFAULTS.agentLogRetentionDays).toBe(2);
+    expect(loadAppConfig().agentLogRetentionDays).toBe(2);
+    expect(APP_CONFIG_KEYS.agentLogRetentionDays).toBe('auric.agent-log.retention-days');
+  });
+
+  it('falls back to two days for a retention span it does not offer', () => {
+    localStorage.setItem(APP_CONFIG_KEYS.agentLogRetentionDays, '9000');
+
+    expect(loadAppConfig().agentLogRetentionDays).toBe(2);
+  });
+
+  it('falls back to the defaults for values it did not write', () => {
+    localStorage.setItem(APP_CONFIG_KEYS.agentLogPersist, 'yes');
+    localStorage.setItem(APP_CONFIG_KEYS.agentLogRetentionDays, 'forever');
+
+    expect(loadAppConfig().agentLogPersist).toBe(false);
+    expect(loadAppConfig().agentLogRetentionDays).toBe(2);
+  });
+
+  it('round-trips every offered retention span, including no age limit', () => {
+    expect([...AGENT_LOG_RETENTION_DAYS]).toEqual([2, 7, 30, 0]);
+
+    for (const days of AGENT_LOG_RETENTION_DAYS) {
+      setAppConfigValue('agentLogRetentionDays', days);
+      expect(loadAppConfig().agentLogRetentionDays).toBe(days);
+    }
+  });
+
+  it('caps the stored history by row count as well as by age', () => {
+    // Zero days means "no age limit", not "keep nothing" — without a row cap
+    // that choice would let the file grow without any bound at all.
+    expect(AGENT_LOG_MAX_ROWS).toBe(200_000);
   });
 });
 

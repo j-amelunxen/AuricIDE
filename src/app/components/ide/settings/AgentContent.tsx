@@ -3,10 +3,12 @@
 import { useState } from 'react';
 
 import {
+  AGENT_LOG_RETENTION_DAYS,
   AGENT_TERMINAL_FONT_SIZES,
   loadAppConfig,
   setAppConfigValue,
 } from '@/lib/config/appConfig';
+import { agentLogPurge } from '@/lib/tauri/agentLog';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useStore } from '@/lib/store';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
@@ -46,6 +48,10 @@ export function AgentContent() {
   const [agentConsoleAutoOpen, setAgentConsoleAutoOpen] = useState(
     () => loadAppConfig().agentConsoleAutoOpen
   );
+  const [agentLogPersist, setAgentLogPersist] = useState(() => loadAppConfig().agentLogPersist);
+  const [agentLogRetentionDays, setAgentLogRetentionDays] = useState(
+    () => loadAppConfig().agentLogRetentionDays
+  );
 
   const handleUsageLimitsChange = (checked: boolean) => {
     setAppConfigValue('cliUsageLimits', checked);
@@ -58,6 +64,39 @@ export function AgentContent() {
   const handleAgentConsoleAutoOpenChange = (checked: boolean) => {
     setAppConfigValue('agentConsoleAutoOpen', checked);
     setAgentConsoleAutoOpen(checked);
+  };
+
+  // Switching this off is the destructive direction: it throws away everything
+  // already written. Switching it on only starts a file, so it just happens.
+  const handleAgentLogPersistChange = async (checked: boolean) => {
+    if (checked) {
+      setAppConfigValue('agentLogPersist', true);
+      setAgentLogPersist(true);
+      return;
+    }
+
+    const approved = await confirm({
+      title: 'Stop keeping agent history?',
+      message:
+        'The activity already written to disk is deleted, and nothing new is recorded. This cannot be undone.',
+      confirmLabel: 'Delete history',
+      variant: 'destroy',
+    });
+    if (!approved) return;
+
+    setAppConfigValue('agentLogPersist', false);
+    setAgentLogPersist(false);
+    try {
+      await agentLogPurge();
+    } catch {
+      showToast('Could not delete the stored agent history', 'error');
+    }
+  };
+
+  const handleAgentLogRetentionChange = (value: string) => {
+    const days = Number(value);
+    setAppConfigValue('agentLogRetentionDays', days);
+    setAgentLogRetentionDays(days);
   };
 
   const handleTerminalFontSizeChange = (value: string) => {
@@ -166,6 +205,31 @@ export function AgentContent() {
           checked={agentConsoleAutoOpen}
           onChange={handleAgentConsoleAutoOpenChange}
         />
+
+        <SettingsToggle
+          label="Keep a history of agent activity"
+          description="Keeps the activity feed on disk between sessions, including the commands your agents run. Those sometimes carry API keys or passwords, so the stored copy masks the ones it recognises."
+          testId="agent-log-persist-toggle"
+          checked={agentLogPersist}
+          onChange={(checked) => void handleAgentLogPersistChange(checked)}
+        />
+        <label className="flex items-center justify-between gap-4 text-xs text-foreground">
+          <span>Keep History For</span>
+          <select
+            aria-label="Agent history retention"
+            data-testid="agent-log-retention"
+            value={agentLogRetentionDays}
+            disabled={!agentLogPersist}
+            onChange={(event) => handleAgentLogRetentionChange(event.target.value)}
+            className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-xs text-foreground outline-none transition-colors focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-50"
+          >
+            {AGENT_LOG_RETENTION_DAYS.map((days) => (
+              <option key={days} value={days}>
+                {days === 0 ? 'No limit' : `${days} days`}
+              </option>
+            ))}
+          </select>
+        </label>
       </SettingsSection>
 
       <SettingsSection title="Agent Terminal" icon="terminal">

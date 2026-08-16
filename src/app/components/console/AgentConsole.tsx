@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { groupAgentsByRepo } from '@/lib/store/agentSlice';
 import { consoleAgentState } from '@/lib/agents/consoleState';
@@ -8,6 +8,13 @@ import { consoleSummaryLine, consoleAttentionBadge } from '@/lib/agents/consoleS
 import { countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
 import { useNow } from '@/lib/hooks/useNow';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { fleetHeartbeatMax, heartbeatSeries } from '@/lib/agents/events/heartbeat';
+import {
+  isConsoleNavKey,
+  isTypingTarget,
+  nextCardIndex,
+  type ConsoleCardRef,
+} from '@/lib/agents/consoleKeyboard';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { CliQuotaChip } from '@/app/components/usage/CliQuotaChip';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -62,6 +69,14 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   const dismissFinishedAgent = useStore((s) => s.dismissFinishedAgent);
   const retryFailedAgent = useStore((s) => s.retryFailedAgent);
   const markAgentReviewed = useStore((s) => s.markAgentReviewed);
+  const loadAgentLogHistory = useStore((s) => s.loadAgentLogHistory);
+
+  // Read once per opening, not on a timer: the stored history is by definition
+  // the part that is no longer changing, and the live feed already covers what
+  // is. A no-op while persistence is off.
+  useEffect(() => {
+    void loadAgentLogHistory();
+  }, [loadAgentLogHistory]);
 
   // While focused, Esc steps back to the grid — it only falls through to
   // closing the whole console once nothing is focused.
@@ -75,6 +90,65 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   const focusedAgent = focusedAgentId
     ? agents.find((agent) => agent.id === focusedAgentId)
     : undefined;
+
+  // Read from the DOM rather than recomputed from state: the grid's visual
+  // order is the product of two sorts (projects by attention, cards by state
+  // inside each), and a second derivation of it here could drift from what
+  // the reader actually sees.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const handleGridKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target)) return;
+
+      const grid = gridRef.current;
+      if (!grid) return;
+      const elements = Array.from(grid.querySelectorAll<HTMLElement>('[data-console-card]'));
+      if (elements.length === 0) return;
+
+      const activeCard =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement.closest<HTMLElement>('[data-console-card]')
+          : null;
+      const current = activeCard ? elements.indexOf(activeCard) : -1;
+
+      if (isConsoleNavKey(event.key)) {
+        const cards: ConsoleCardRef[] = elements.map((el) => ({
+          agentId: el.dataset.agentId ?? '',
+          repoPath: el.dataset.repoPath ?? '',
+        }));
+        const target = nextCardIndex(cards, current, event.key);
+        // Arrows scroll the grid by default; once they mean "move focus" here
+        // they must not do both.
+        event.preventDefault();
+        if (target !== null) elements[target].focus();
+        return;
+      }
+
+      // Everything below acts on the focused card, so without one there is
+      // nothing to act on — and the keystroke belongs to whatever else has focus.
+      if (!activeCard) return;
+      const agentId = activeCard.dataset.agentId;
+      if (!agentId) return;
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        setFocusedAgentId(agentId);
+      } else if (event.key === 't' || event.key === 'T') {
+        event.preventDefault();
+        onOpenTerminal(agentId);
+      }
+    },
+    [onOpenTerminal]
+  );
+
+  // One scale for every card in the console. Computed here rather than in
+  // each section because comparing two agents across projects is exactly what
+  // the chart is for, and a per-card scale makes that impossible.
+  const heartbeatScaleMax = useMemo(
+    () => fleetHeartbeatMax(agents.map((a) => heartbeatSeries(agentHeartbeat[a.id] ?? [], now))),
+    [agents, agentHeartbeat, now]
+  );
 
   const grouped = useMemo(() => groupAgentsByRepo(agents), [agents]);
   const activeRepoPaths = Object.keys(grouped);
@@ -106,6 +180,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   const sectionProps: Omit<ProjectSectionProps, 'repoPath' | 'agents'> = {
     agentEvents,
     agentHeartbeat,
+    heartbeatScaleMax,
     reviewedAgentIds,
     agentColors,
     onFocus: setFocusedAgentId,
@@ -121,12 +196,22 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
     <div className="fixed inset-0 z-[var(--z-tool)] flex flex-col bg-[#050508]">
       <div
         ref={dialogRef}
+        data-testid="agent-console-shell"
         role="dialog"
         aria-modal="true"
         aria-labelledby="agent-console-title"
-        className="flex h-full min-h-0 flex-col"
+        // Explicit rows, not nested flex: only the middle row may grow, so a
+        // tall fleet can never push the activity feed past the window edge.
+        className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]"
       >
-        <div className="flex flex-shrink-0 items-center gap-3 border-b border-white/10 px-4 py-2">
+        <div
+          data-testid="agent-console-header"
+          data-tauri-drag-region
+          // titleBarStyle is "Overlay", so the traffic lights float over this
+          // row's top-left — `--titlebar-gutter` is the room they need, the
+          // same reservation `Header.tsx` makes.
+          className="flex min-w-0 items-center gap-3 border-b border-white/10 py-2 pr-4 pl-[calc(1rem+var(--titlebar-gutter,0px))]"
+        >
           <h1 id="agent-console-title" className="text-xs font-bold tracking-wide text-foreground">
             Agent Console
           </h1>
@@ -200,7 +285,11 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
             </button>
           </div>
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <div
+            ref={gridRef}
+            onKeyDown={handleGridKeyDown}
+            className="min-h-0 overflow-y-auto px-4 py-3"
+          >
             <div
               className="grid gap-3"
               style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))' }}
@@ -238,15 +327,14 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
           </div>
         )}
 
-        <div className="flex flex-shrink-0 items-center justify-end border-t border-white/10 px-3 py-0.5">
-          <span className="text-[10px] text-foreground-muted/60">
-            {focusedAgent
-              ? 'Esc returns to the project grid'
-              : 'Right-click a project to spawn · Esc closes'}
-          </span>
-        </div>
-        <div className="h-[168px] flex-shrink-0 border-t border-white/10 bg-[#0a0a10]">
-          <ActivityFeed />
+        <div className="h-[168px] min-h-0 border-t border-white/10 bg-[#0a0a10]">
+          <ActivityFeed
+            hint={
+              focusedAgent
+                ? 'Esc returns to the project grid'
+                : 'Right-click a project to spawn · Esc closes'
+            }
+          />
         </div>
       </div>
     </div>

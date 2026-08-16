@@ -31,6 +31,12 @@ export interface ProjectSectionProps {
   agents: AgentInfo[];
   agentEvents: Record<string, AgentEvent[]>;
   agentHeartbeat: Record<string, HeartbeatBucket[]>;
+  /**
+   * The fleet's tallest minute — the shared vertical scale every card's chart
+   * is drawn against. Computed once by the console, not per section, because
+   * comparing two agents is the whole reason the chart exists.
+   */
+  heartbeatScaleMax: number;
   reviewedAgentIds: string[];
   agentColors?: Record<string, AgentColor>;
   onFocus?: (agentId: string) => void;
@@ -55,6 +61,7 @@ export function ProjectSection({
   agents,
   agentEvents,
   agentHeartbeat,
+  heartbeatScaleMax,
   reviewedAgentIds,
   agentColors = {},
   onFocus,
@@ -154,6 +161,16 @@ export function ProjectSection({
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
       }}
+      // The same menu from the keyboard. Both keys are the platform
+      // conventions for "open the context menu here"; anchoring it to the
+      // section's own box means it appears where the eye already is rather
+      // than at a stale pointer position.
+      onKeyDown={(e) => {
+        if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return;
+        e.preventDefault();
+        const box = e.currentTarget.getBoundingClientRect();
+        setMenu({ x: box.left + 16, y: box.top + 16 });
+      }}
       className={`group rounded-2xl border bg-panel-bg/60 p-3 transition-colors ${
         needsAttention
           ? 'border-amber-500/45 shadow-[0_0_0_1px_rgba(245,158,11,0.18)]'
@@ -161,14 +178,19 @@ export function ProjectSection({
       }`}
     >
       <div className="mb-2.5 flex items-center gap-2">
-        <ProjectTileFace path={repoPath} className="h-6 w-6 text-[10px]" />
+        <ProjectTileFace path={repoPath} icon={project?.icon} className="h-6 w-6 text-[10px]" />
         <span className="text-[13px] font-semibold text-foreground">{repoName(repoPath)}</span>
         <span className="whitespace-nowrap font-mono text-[11px] text-foreground-muted">
           {agents.length === 0
             ? 'idle'
             : `${running} running${doneUnreviewed > 0 ? ` · ${doneUnreviewed} done, unreviewed` : ''}`}
         </span>
-        <span className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <span
+          data-testid="project-section-actions"
+          // Hover-revealed, but focus has to reveal them too — otherwise Tab
+          // lands on a button nobody can see.
+          className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        >
           <button
             type="button"
             onClick={() => spawn()}
@@ -195,6 +217,7 @@ export function ProjectSection({
             agent={agent}
             events={agentEvents[agent.id] ?? []}
             heartbeat={heartbeatSeries(agentHeartbeat[agent.id] ?? [], now)}
+            heartbeatScaleMax={heartbeatScaleMax}
             reviewed={reviewed}
             color={agentColors[agent.id]}
             onFocus={onFocus}

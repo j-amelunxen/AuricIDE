@@ -258,7 +258,7 @@ function SpawnAgentDialogPanel({
   return (
     <>
       <div
-        className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center bg-black/80 backdrop-blur-sm"
         onClick={onClose}
         onKeyDown={(e) => {
           // Cmd/Ctrl+Enter deploys from anywhere in the dialog — a plain Enter

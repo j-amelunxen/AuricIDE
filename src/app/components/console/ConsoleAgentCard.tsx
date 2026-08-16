@@ -6,6 +6,7 @@ import type { AgentEvent } from '@/lib/agents/events/types';
 import { consoleAgentState, consoleStateLabel } from '@/lib/agents/consoleState';
 import { describeRightNow } from '@/lib/agents/consoleActivity';
 import { filesTouched } from '@/lib/agents/events/footprint';
+import type { HeartbeatSample } from '@/lib/agents/events/heartbeat';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { agentColorHex, type AgentColor } from '@/lib/agents/colors';
@@ -48,8 +49,14 @@ export interface ConsoleAgentCardProps {
   agent: AgentInfo;
   /** This agent's structured event history, oldest first. */
   events: AgentEvent[];
-  /** 24 trailing per-minute output-volume samples — see `heartbeatSeries`. */
-  heartbeat: number[];
+  /** 24 trailing per-minute activity samples — see `heartbeatSeries`. */
+  heartbeat: HeartbeatSample[];
+  /**
+   * The tallest minute anywhere in the fleet — see `fleetHeartbeatMax`. Passed
+   * in rather than derived here so every card is drawn against the same scale;
+   * a card normalising to its own peak is what made the old chart unreadable.
+   */
+  heartbeatScaleMax: number;
   /** Whether this agent's outcome has already been opened. */
   reviewed: boolean;
   /** Marker colour the user put on this agent. */
@@ -74,6 +81,7 @@ export function ConsoleAgentCard({
   agent,
   events,
   heartbeat,
+  heartbeatScaleMax,
   reviewed,
   color,
   onFocus,
@@ -136,7 +144,17 @@ export function ConsoleAgentCard({
   return (
     <div
       data-testid={`console-agent-card-${agent.id}`}
-      className={`glass-card relative flex flex-col gap-1.5 overflow-hidden rounded-lg p-2.5 ${
+      // The console's keyboard grid reads these: `data-console-card` marks a
+      // navigable cell, `data-repo-path` is the unit left/right steps over.
+      // The handler itself lives on the grid container, not here — a card
+      // must not need to know its own position.
+      data-console-card
+      data-agent-id={agent.id}
+      data-repo-path={agent.repoPath ?? ''}
+      tabIndex={0}
+      role="group"
+      aria-label={`${agent.name} — ${label}`}
+      className={`glass-card relative flex flex-col gap-1.5 overflow-hidden rounded-lg p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
         markerHex ? 'pl-4' : ''
       }`}
     >
@@ -168,15 +186,22 @@ export function ConsoleAgentCard({
         </p>
       )}
 
-      <div className="flex items-end justify-between gap-3">
-        <p className="min-w-0 flex-1 truncate text-[11px] text-foreground">
+      {/* `items-start` and the chart's own line box keep it clear of the task
+          line above — bottom-aligning a 22px chart against a 15px paragraph is
+          what made the sparkline look like it was sitting on the text. */}
+      <div className="flex items-start justify-between gap-3 pt-0.5">
+        <p className="min-w-0 flex-1 truncate text-[11px] leading-6 text-foreground">
           <span aria-hidden="true" className="text-foreground-muted">
             ›{' '}
           </span>
           {rightNow}
         </p>
-        <div className="flex flex-shrink-0 flex-col items-end gap-1">
-          <Heartbeat values={heartbeat} tone={CONSOLE_STATE_HEARTBEAT_TONE[state]} />
+        <div className="flex flex-shrink-0 flex-col items-end gap-0.5">
+          <Heartbeat
+            samples={heartbeat}
+            scaleMax={heartbeatScaleMax}
+            tone={CONSOLE_STATE_HEARTBEAT_TONE[state]}
+          />
           <span
             className="font-mono text-[10px] text-foreground-muted"
             title={filesChanged.length > 0 ? filesChanged.join('\n') : undefined}
