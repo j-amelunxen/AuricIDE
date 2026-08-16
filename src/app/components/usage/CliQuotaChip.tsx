@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 
 import { useStore } from '@/lib/store';
 import { onUsageLimitsChanged } from '@/lib/tauri/usageEvents';
-import { chipSegments, formatPercent, overallTone, type QuotaTone } from '@/lib/usage/quota';
+import { chipGroups, formatPercent, overallTone, type QuotaTone } from '@/lib/usage/quota';
 import { CliQuotaPopover } from './CliQuotaPopover';
 
 const DOT_TONE: Record<QuotaTone, string> = {
@@ -19,6 +19,8 @@ const TEXT_TONE: Record<QuotaTone, string> = {
   critical: 'text-red-300',
 };
 
+const POPOVER_ID = 'cli-quota-detail';
+
 /**
  * How much of the agent CLIs' quota is gone, in the status bar.
  *
@@ -26,6 +28,12 @@ const TEXT_TONE: Record<QuotaTone, string> = {
  * the signal that interrupts — that is the agent attention chip in the header,
  * and a second thing competing for the same colour would blunt it. This one is
  * here to be glanced at, not to be reacted to.
+ *
+ * Every window a provider reported is named and shown — `CC 5h 4% · 7d 61%` —
+ * rather than only the one closest to running out. The two say different
+ * things: a spent five-hour session refills by itself within the afternoon, a
+ * spent week does not, and one figure cannot stand for both. Each keeps its own
+ * tone so a calm session is not painted red by the week beside it.
  *
  * Nothing to say means nothing rendered: the feature switched off, an
  * API-key account, or no reading yet all produce no chip rather than a zero.
@@ -35,7 +43,29 @@ export function CliQuotaChip() {
   const usageStatus = useStore((s) => s.usageStatus);
   const loadUsageLimits = useStore((s) => s.loadUsageLimits);
   const refreshUsageLimits = useStore((s) => s.refreshUsageLimits);
-  const [open, setOpen] = useState(false);
+  // Two reasons to be open, tracked apart. Folding them into one flag would
+  // make a click close the popover under a mouse user who is still hovering
+  // it, because a click focuses the chip first and would toggle the same flag.
+  const [hovered, setHovered] = useState(false);
+  const [stickyOpen, setStickyOpen] = useState(false);
+  const open = hovered || stickyOpen;
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const chipRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    // Listening on the document, not the wrapper: content shown on hover has
+    // to be dismissible without the pointer moving, and in that case nothing
+    // inside the chip is focused for a key event to bubble through.
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setHovered(false);
+      setStickyOpen(false);
+      if (wrapperRef.current?.contains(document.activeElement)) chipRef.current?.focus();
+    };
+    document.addEventListener('keydown', dismissOnEscape);
+    return () => document.removeEventListener('keydown', dismissOnEscape);
+  }, [open]);
 
   useEffect(() => {
     // Stored readings only. A Codex check costs credits, so it waits for the
@@ -51,38 +81,79 @@ export function CliQuotaChip() {
     });
   }, [loadUsageLimits]);
 
-  const segments = chipSegments(snapshots);
-  if (segments.length === 0) return null;
+  const groups = chipGroups(snapshots);
+  if (groups.length === 0) return null;
 
   const tone = overallTone(snapshots);
   const withWindows = snapshots.filter((snapshot) => snapshot.windows.length > 0);
 
   return (
     <div
+      ref={wrapperRef}
       className="relative flex items-center"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      // Only focus crossing the wrapper's edge counts. Moving between the chip
+      // and the popover's refresh button is neither an arrival nor a
+      // departure — and treating it as one would close the popover under the
+      // keyboard user reaching for that button, or reopen what Escape just
+      // dismissed when focus is handed back to the chip.
+      onFocus={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setStickyOpen(true);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setStickyOpen(false);
+      }}
     >
       <button
+        ref={chipRef}
         type="button"
         data-testid="cli-quota-chip"
-        aria-label="Agent CLI quota"
+        aria-expanded={open}
+        aria-controls={POPOVER_ID}
+        onClick={() => setStickyOpen((wasOpen) => !wasOpen)}
         className="flex items-center gap-1.5 hover:text-foreground transition-colors"
       >
+        {/* No aria-label: it would override the figures below, and those are
+            the whole point — the chip would announce itself as "Agent CLI
+            quota" and say nothing about the quota. */}
+        <span className="sr-only">Agent CLI quota: </span>
         <span
           data-testid="cli-quota-dot"
           aria-hidden="true"
           className={`h-2 w-2 rounded-full ${DOT_TONE[tone]}`}
         />
-        <span className={`font-mono ${TEXT_TONE[tone]}`}>
-          {segments
-            .map((segment) => `${segment.tag} ${formatPercent(segment.usedPercent)}`)
-            .join(' · ')}
+        <span className="flex items-center gap-2 font-mono">
+          {groups.map((group, index) => (
+            <span key={group.provider} className="flex items-center gap-2">
+              {/* The tag alone separates two providers poorly once each carries
+                  two figures, so they get the divider the status bar already
+                  uses elsewhere. */}
+              {index > 0 && <span aria-hidden="true" className="h-3 w-[1px] bg-white/10" />}
+              {/* The separators are text rather than flex gaps: a screen reader
+                  reading `CC5h 4%7d 61%` off one element helps nobody. */}
+              <span>
+                {group.tag}{' '}
+                {group.windows.map((window, windowIndex) => (
+                  <Fragment key={window.kind}>
+                    {windowIndex > 0 && <span className="text-foreground-muted/50"> · </span>}
+                    <span
+                      data-testid={`cli-quota-window-${group.provider}-${window.kind}`}
+                      className={TEXT_TONE[window.tone]}
+                    >
+                      {window.label} {formatPercent(window.usedPercent)}
+                    </span>
+                  </Fragment>
+                ))}
+              </span>
+            </span>
+          ))}
         </span>
       </button>
 
       {open && (
         <CliQuotaPopover
+          id={POPOVER_ID}
           snapshots={withWindows}
           refreshing={usageStatus === 'loading'}
           onRefresh={() => void refreshUsageLimits()}

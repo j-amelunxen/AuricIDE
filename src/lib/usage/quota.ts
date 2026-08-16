@@ -62,31 +62,50 @@ export function overallTone(snapshots: UsageSnapshot[]): QuotaTone {
   return worst ? quotaTone(worst.usedPercent) : 'calm';
 }
 
-export interface ChipSegment {
-  provider: string;
-  tag: string;
+export interface ChipWindow {
+  kind: string;
+  /** The window length, tight enough for a status bar: `5h`, not `5 h`. */
+  label: string;
   usedPercent: number;
   tone: QuotaTone;
 }
 
+export interface ChipGroup {
+  provider: string;
+  tag: string;
+  /** Shortest window first, as the snapshot already orders them. */
+  windows: ChipWindow[];
+}
+
+/** The popover has room for `5 h`; a line of four figures does not. */
+export function compactWindowLabel(label: string): string {
+  return label.replace(/\s+/g, '');
+}
+
 /**
- * One segment per provider that actually reported something, leading with its
- * own worst window. A provider with no windows is left out entirely rather than
- * shown at zero.
+ * One group per provider that actually reported something, carrying **every**
+ * window it reported rather than only the one closest to running out.
+ *
+ * The two windows say different things: a spent five-hour session refills on
+ * its own within the afternoon, a spent week does not. Leading with whichever
+ * number happens to be higher states one of them without saying which — so the
+ * chip names both, and each window carries its own tone.
+ *
+ * A provider with no windows is left out entirely rather than shown at zero.
  */
-export function chipSegments(snapshots: UsageSnapshot[]): ChipSegment[] {
+export function chipGroups(snapshots: UsageSnapshot[]): ChipGroup[] {
   return snapshots
-    .map((snapshot) => {
-      const worst = worstWindow([snapshot]);
-      if (!worst) return null;
-      return {
-        provider: snapshot.provider,
-        tag: providerTag(snapshot.provider),
-        usedPercent: worst.usedPercent,
-        tone: quotaTone(worst.usedPercent),
-      };
-    })
-    .filter((segment): segment is ChipSegment => segment !== null);
+    .filter((snapshot) => snapshot.windows.length > 0)
+    .map((snapshot) => ({
+      provider: snapshot.provider,
+      tag: providerTag(snapshot.provider),
+      windows: snapshot.windows.map((window) => ({
+        kind: window.kind,
+        label: compactWindowLabel(window.label),
+        usedPercent: window.usedPercent,
+        tone: quotaTone(window.usedPercent),
+      })),
+    }));
 }
 
 /** Percentages read better without trailing noise; 23.5 % is not a useful 23.5. */
