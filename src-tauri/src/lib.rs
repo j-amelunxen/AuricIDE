@@ -1,3 +1,4 @@
+mod agent_log;
 mod agent_persistence;
 mod agents;
 mod app_config;
@@ -15,6 +16,7 @@ mod project_icons;
 mod project_skills;
 mod provider_policy;
 mod providers;
+mod recent_creations;
 mod recent_projects;
 mod schedules;
 mod themes;
@@ -111,6 +113,7 @@ async fn check_cli_status(
 async fn watch_directory(
     path: String,
     state: tauri::State<'_, WatcherState>,
+    recent: tauri::State<'_, Arc<recent_creations::RecentCreations>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let mut watchers = state.watchers.lock().unwrap();
@@ -120,6 +123,13 @@ async fn watch_directory(
 
     let app_handle = app.clone();
     let path_clone = path.clone();
+    let recent_for_events = recent.inner().clone();
+
+    // Opened before the watcher is armed, so no event can arrive while the root
+    // is unknown and be dropped. It closes when the seeding walk lands below;
+    // until then `newest_by_child` reports "unknown" and reads fall back to
+    // walking, which keeps the explorer correct the whole way — just not cheap.
+    recent.begin_seeding(&path);
 
     let mut watcher = RecommendedWatcher::new(
         move |res: notify::Result<notify::Event>| {
@@ -129,6 +139,11 @@ async fn watch_directory(
                     let path_str = p.to_string_lossy().to_string();
                     if should_filter_watcher_path(&path_str) {
                         continue;
+                    }
+                    // Carry the folder dating forward instead of letting the
+                    // next directory read rebuild it by walking the subtree.
+                    if let Some(created) = birth_time_of_file(&p) {
+                        recent_for_events.note_file(&path_str, created);
                     }
                     let _ = app_handle.emit(
                         "file-event",
@@ -149,6 +164,15 @@ async fn watch_directory(
         .map_err(|e| e.to_string())?;
 
     watchers.insert(path_clone, watcher);
+    drop(watchers);
+
+    let recent_for_seed = recent.inner().clone();
+    let root = path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let files = walk_files_with_birth_time(Path::new(&root));
+        recent_for_seed.seed_root(&root, &files);
+    });
+
     Ok(())
 }
 
@@ -156,6 +180,7 @@ async fn watch_directory(
 async fn unwatch_directory(
     path: String,
     state: tauri::State<'_, WatcherState>,
+    recent: tauri::State<'_, Arc<recent_creations::RecentCreations>>,
 ) -> Result<(), String> {
     let mut watchers = state.watchers.lock().unwrap();
     if let Some(mut watcher) = watchers.remove(&path) {
@@ -163,6 +188,7 @@ async fn unwatch_directory(
             .unwatch(Path::new(&path))
             .map_err(|e| e.to_string())?;
     }
+    recent.forget_root(&path);
     Ok(())
 }
 
@@ -622,9 +648,20 @@ async fn search_in_files(
     search_in_files_impl(&root_path, &query, case_sensitive, SEARCH_MAX_RESULTS)
 }
 
+/// Async so the recursive birth-time walk runs on Tauri's thread pool. A plain
+/// `fn` command runs on the main thread, where the walk of a large project
+/// blocks the UI for tens of milliseconds on every watcher-driven refresh.
 #[tauri::command]
-fn read_directory(path: &str) -> Result<Vec<FileEntry>, String> {
-    read_directory_impl(path)
+async fn read_directory(
+    path: String,
+    recent: tauri::State<'_, Arc<recent_creations::RecentCreations>>,
+) -> Result<Vec<FileEntry>, String> {
+    let recent = recent.inner().clone();
+    read_directory_dated_by(&path, |dir| {
+        recent
+            .newest_by_child(&dir.to_string_lossy())
+            .unwrap_or_else(|| newest_file_created_at_by_child(dir))
+    })
 }
 
 #[tauri::command]
@@ -774,6 +811,8 @@ pub fn should_filter_watcher_path(path: &str) -> bool {
     path.contains("/.git/")
         || path.contains("/node_modules/")
         || path.contains("/target/")
+        || path.contains("/.next/")
+        || path.contains("/.turbo/")
         || is_atomic_write_temp(path)
 }
 
@@ -791,20 +830,63 @@ fn file_created_at_ms(entry: &walkdir::DirEntry) -> Option<i64> {
 fn skip_recent_walk_dir(entry: &walkdir::DirEntry) -> bool {
     matches!(
         entry.file_name().to_string_lossy().as_ref(),
-        ".git" | "node_modules" | "target"
+        ".git" | "node_modules" | "target" | ".next" | ".turbo"
+    )
+}
+
+/// Every file under `root` with its birth time, pruned exactly like the
+/// directory walk — cache and fallback must agree on what counts, or a folder
+/// would be dated differently depending on which of the two answered.
+fn walk_files_with_birth_time(root: &Path) -> Vec<(String, i64)> {
+    WalkDir::new(root)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(|e| !skip_recent_walk_dir(e))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| {
+            let path = e.path().to_string_lossy().to_string();
+            if should_filter_watcher_path(&path) {
+                return None;
+            }
+            Some((path, file_created_at_ms(&e)?))
+        })
+        .collect()
+}
+
+/// Birth time of `path` in unix milliseconds, but only when it is a file.
+/// Directories are excluded for the same reason as in the walk: "created just
+/// now" is a signal about files.
+fn birth_time_of_file(path: &Path) -> Option<i64> {
+    let meta = fs::metadata(path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let created = meta.created().ok()?;
+    Some(
+        created
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis() as i64,
     )
 }
 
 /// Newest file birth time under each immediate child of `dir`, one walk.
 fn newest_file_created_at_by_child(dir: &Path) -> HashMap<String, i64> {
     let mut newest: HashMap<String, i64> = HashMap::new();
+    // `min_depth(2)` must NOT be used here: walkdir applies `filter_entry` only
+    // to entries the iterator actually yields, so a min-depth of 2 hides every
+    // depth-1 directory from the predicate and `.git` gets walked in full
+    // (4k+ files in this repo) only for the results to be dropped below. Walk
+    // from depth 1 so the prune sees the top-level directories, and skip the
+    // depth-1 entries afterwards instead.
     for entry in WalkDir::new(dir)
-        .min_depth(2)
+        .min_depth(1)
         .into_iter()
         .filter_entry(|e| !skip_recent_walk_dir(e))
         .filter_map(|e| e.ok())
     {
-        if !entry.file_type().is_file() {
+        if entry.depth() < 2 || !entry.file_type().is_file() {
             continue;
         }
         let path_str = entry.path().to_string_lossy();
@@ -835,12 +917,23 @@ fn newest_file_created_at_by_child(dir: &Path) -> HashMap<String, i64> {
 
 // Pure functions for testability
 pub fn read_directory_impl(path: &str) -> Result<Vec<FileEntry>, String> {
+    read_directory_dated_by(path, newest_file_created_at_by_child)
+}
+
+/// `read_directory_impl` with the expensive half swapped out: `newest_by_child`
+/// supplies the newest descendant-file birth time per child directory. The
+/// default walks the subtree; the command hands in a maintained cache instead
+/// and only falls back to the walk for directories nothing is known about.
+fn read_directory_dated_by(
+    path: &str,
+    newest_by_child: impl FnOnce(&Path) -> HashMap<String, i64>,
+) -> Result<Vec<FileEntry>, String> {
     let dir = Path::new(path);
     if !dir.is_dir() {
         return Err(format!("Not a directory: {}", path));
     }
 
-    let newest_by_child = newest_file_created_at_by_child(dir);
+    let newest_by_child = newest_by_child(dir);
 
     let mut entries: Vec<FileEntry> = WalkDir::new(dir)
         .min_depth(1)
@@ -1498,6 +1591,41 @@ fn notifications_clear(
     notifications::clear_impl(&conn, project_path.as_deref())
 }
 
+// --- Agent activity log -----------------------------------------------------
+// Opt-in history for the Agent Console's feed. App-global for the same reason
+// the inbox is: the console shows several repos at once.
+
+#[tauri::command]
+fn agent_log_append(
+    events: Vec<agent_log::AgentLogEvent>,
+    state: tauri::State<'_, agent_log::AgentLogState>,
+) -> Result<(), String> {
+    state.with_connection(|conn| agent_log::append_impl(conn, &events))
+}
+
+#[tauri::command]
+fn agent_log_load(
+    limit: u32,
+    state: tauri::State<'_, agent_log::AgentLogState>,
+) -> Result<Vec<agent_log::AgentLogEvent>, String> {
+    state.with_connection(|conn| agent_log::load_impl(conn, limit))
+}
+
+#[tauri::command]
+fn agent_log_prune(
+    retention_days: u32,
+    max_rows: u32,
+    state: tauri::State<'_, agent_log::AgentLogState>,
+) -> Result<u64, String> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    state.with_connection(|conn| agent_log::prune_impl(conn, retention_days, max_rows, now_ms))
+}
+
+#[tauri::command]
+fn agent_log_purge(state: tauri::State<'_, agent_log::AgentLogState>) -> Result<(), String> {
+    state.with_connection(|conn| agent_log::purge_impl(conn))
+}
+
 /// How often the runner looks. A schedule has no event to be driven by, so
 /// this poll *is* the mechanism, not a watchdog over one.
 const SCHEDULE_TICK_SECS: u64 = 30;
@@ -1852,6 +1980,13 @@ pub fn run() {
                 Err(error) => eprintln!("Notification inbox unavailable: {error}"),
             }
 
+            // The agent activity log is app-global for the same reason. Only
+            // the path is settled here: the store opens its database on first
+            // use, so a user who leaves history off never gets a file.
+            app.manage(agent_log::AgentLogState::new(agent_log::db_path_in(
+                &app.path().app_data_dir().map_err(|e| e.to_string())?,
+            )));
+
             // The webview's own localStorage is scoped by data store and page
             // origin, neither of which matches between the dev binary and the
             // bundled app. Mirroring it here puts it on the same footing as
@@ -1920,6 +2055,7 @@ pub fn run() {
         })
         .manage(agents::new_agent_manager_state())
         .manage(mcp::McpServerState::new())
+        .manage(Arc::new(recent_creations::RecentCreations::default()))
         .manage(WatcherState {
             watchers: Mutex::new(HashMap::new()),
         })
@@ -2005,6 +2141,10 @@ pub fn run() {
             notifications_answer,
             notifications_unread_count,
             notifications_clear,
+            agent_log_append,
+            agent_log_load,
+            agent_log_prune,
+            agent_log_purge,
             schedules_list,
             schedules_upsert,
             schedules_delete,
@@ -2046,7 +2186,7 @@ pub fn run() {
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,
-            video_import::video_import_local_status,
+            video_import::video_import_preflight,
             video_import::video_import_install_local,
             video_import::video_import_save_process,
             video_import::video_import_clear
@@ -2250,6 +2390,166 @@ mod tests {
             now - newest < 60_000,
             "newest_file_created_at should be recent: {newest} vs {now}"
         );
+    }
+
+    /// The name/date pairs a directory listing reports for its folders.
+    fn folder_dates(entries: &[FileEntry]) -> Vec<(String, Option<i64>)> {
+        entries
+            .iter()
+            .filter(|e| e.is_directory)
+            .map(|e| (e.name.clone(), e.newest_file_created_at))
+            .collect()
+    }
+
+    #[test]
+    fn the_maintained_dates_replace_the_walk_rather_than_supplement_it() {
+        let dir = TempDir::new().unwrap();
+        let nested = dir.path().join("src");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("a.ts"), "x").unwrap();
+
+        // A birth time no filesystem could produce: if it comes back out, the
+        // subtree walk really was skipped rather than merged with.
+        let sentinel = 4_102_444_800_000;
+        let entries = read_directory_dated_by(dir.path().to_str().unwrap(), |_| {
+            HashMap::from([("src".to_string(), sentinel)])
+        })
+        .unwrap();
+
+        let src = entries.iter().find(|e| e.name == "src").unwrap();
+        assert_eq!(src.newest_file_created_at, Some(sentinel));
+    }
+
+    #[test]
+    fn the_cache_dates_folders_exactly_as_the_walk_would() {
+        // The invariant the whole optimisation rests on: whichever half answers,
+        // the explorer must be told the same thing.
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("src").join("lib")).unwrap();
+        fs::write(dir.path().join("src").join("lib").join("a.ts"), "x").unwrap();
+        fs::create_dir_all(dir.path().join("empty")).unwrap();
+        fs::write(dir.path().join("top.md"), "x").unwrap();
+
+        let root = dir.path().to_str().unwrap();
+        let cache = recent_creations::RecentCreations::default();
+        cache.seed_root(root, &walk_files_with_birth_time(dir.path()));
+
+        let walked = read_directory_impl(root).unwrap();
+        let cached = read_directory_dated_by(root, |d| {
+            cache
+                .newest_by_child(&d.to_string_lossy())
+                .expect("root was seeded")
+        })
+        .unwrap();
+
+        assert_eq!(folder_dates(&walked), folder_dates(&cached));
+        assert!(
+            folder_dates(&walked)
+                .iter()
+                .any(|(n, d)| n == "src" && d.is_some()),
+            "the fixture must actually exercise a dated folder"
+        );
+    }
+
+    #[test]
+    fn a_file_created_after_seeding_dates_its_folder_without_another_walk() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        let root = dir.path().to_str().unwrap();
+
+        let cache = recent_creations::RecentCreations::default();
+        cache.seed_root(root, &walk_files_with_birth_time(dir.path()));
+
+        let fresh = dir.path().join("src").join("late.ts");
+        fs::write(&fresh, "x").unwrap();
+        let created = birth_time_of_file(&fresh).expect("birth time");
+        cache.note_file(&fresh.to_string_lossy(), created);
+
+        let entries = read_directory_dated_by(root, |d| {
+            cache.newest_by_child(&d.to_string_lossy()).unwrap()
+        })
+        .unwrap();
+        let src = entries.iter().find(|e| e.name == "src").unwrap();
+        assert_eq!(src.newest_file_created_at, Some(created));
+    }
+
+    #[test]
+    fn the_seeding_walk_prunes_what_the_directory_walk_prunes() {
+        // Two walks feeding one answer: if they disagreed on what counts, a
+        // folder's date would depend on which one happened to run.
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".next")).unwrap();
+        fs::write(dir.path().join(".next").join("chunk.js"), "x").unwrap();
+        fs::create_dir_all(dir.path().join("node_modules")).unwrap();
+        fs::write(dir.path().join("node_modules").join("dep.js"), "x").unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src").join("a.ts"), "x").unwrap();
+
+        let files = walk_files_with_birth_time(dir.path());
+        assert!(files.iter().any(|(p, _)| p.ends_with("/src/a.ts")));
+        assert!(!files.iter().any(|(p, _)| p.contains("/.next/")));
+        assert!(!files.iter().any(|(p, _)| p.contains("/node_modules/")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_cache_and_the_walk_agree_about_symlinked_directories() {
+        // Neither walk follows links, so a linked-in tree must be invisible to
+        // both. If only one of them descended, a folder's date would depend on
+        // which half answered.
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::create_dir_all(outside.path().join("deep")).unwrap();
+        fs::write(outside.path().join("deep").join("hidden.ts"), "x").unwrap();
+
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src").join("a.ts"), "x").unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("linked")).unwrap();
+
+        let files = walk_files_with_birth_time(dir.path());
+        assert!(
+            !files.iter().any(|(p, _)| p.contains("hidden.ts")),
+            "the seeding walk must not descend into a symlink"
+        );
+
+        let root = dir.path().to_str().unwrap();
+        let cache = recent_creations::RecentCreations::default();
+        cache.seed_root(root, &files);
+
+        let walked = read_directory_impl(root).unwrap();
+        let cached = read_directory_dated_by(root, |d| {
+            cache
+                .newest_by_child(&d.to_string_lossy())
+                .expect("root was seeded")
+        })
+        .unwrap();
+        assert_eq!(folder_dates(&walked), folder_dates(&cached));
+    }
+
+    #[test]
+    fn birth_time_is_read_for_files_only() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("a.ts");
+        fs::write(&file, "x").unwrap();
+
+        assert!(birth_time_of_file(&file).is_some());
+        assert!(birth_time_of_file(dir.path()).is_none());
+        assert!(birth_time_of_file(&dir.path().join("missing.ts")).is_none());
+    }
+
+    #[test]
+    fn read_directory_impl_ignores_build_output_when_dating_folders() {
+        // Otherwise the build directory is the brightest thing in the explorer
+        // during `pnpm dev` — and it outshines the .gitignore dimming, because
+        // a recent row deliberately overrides that.
+        let dir = TempDir::new().unwrap();
+        let build = dir.path().join(".next").join("static");
+        fs::create_dir_all(&build).unwrap();
+        fs::write(build.join("chunk.js"), "x").unwrap();
+        let entries = read_directory_impl(dir.path().to_str().unwrap()).unwrap();
+        let next = entries.iter().find(|e| e.name == ".next").unwrap();
+        assert!(next.is_directory);
+        assert!(next.newest_file_created_at.is_none());
     }
 
     #[test]
@@ -2486,6 +2786,19 @@ mod tests {
         ));
         assert!(should_filter_watcher_path(
             "/home/user/project/target/release/libmyapp.rlib"
+        ));
+    }
+
+    #[test]
+    fn test_watcher_filters_build_output() {
+        // `pnpm dev` rewrites .next continuously. Left unfiltered these events
+        // reset the tree-refresh debounce forever, so the explorer never
+        // refreshes at all while the dev server runs.
+        assert!(should_filter_watcher_path(
+            "/home/user/project/.next/static/chunks/main.js"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/.turbo/daemon/log"
         ));
     }
 
