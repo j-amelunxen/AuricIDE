@@ -18,6 +18,7 @@ import {
   type Notification,
   type NotificationAction,
 } from '@/lib/notifications/types';
+import { scheduleProjectOptions } from '@/lib/notifications/scheduleProjects';
 import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
 import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { schedulesPreview, type Schedule } from '@/lib/tauri/schedules';
@@ -96,6 +97,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
   const clearNotifications = useStore((s) => s.clearNotifications);
   const setNotificationsProjectFilter = useStore((s) => s.setNotificationsProjectFilter);
   const starredProjects = useStore((s) => s.starredProjects);
+  const recentProjects = useStore((s) => s.recentProjects);
 
   const [repoDirStatus, setRepoDirStatus] = useState<Map<string, RepoDirStatus>>(new Map());
   const probedPaths = useRef(new Set<string>());
@@ -283,11 +285,30 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
       ? discoveredByPath.skills
       : [];
 
+  // Built from the schedule being edited, not from the draft: the picker has to
+  // keep offering the project the schedule was SAVED with, even after the draft
+  // has been pointed somewhere else.
+  const boundProject = editing?.schedule?.projectPath ?? null;
+  const projectOptions = useMemo(
+    () =>
+      scheduleProjectOptions({
+        starred: starredProjects,
+        recent: recentProjects,
+        openPath: rootPath,
+        bound:
+          boundProject === null
+            ? null
+            : { path: boundProject, name: editing?.schedule?.projectName ?? null },
+      }),
+    [starredProjects, recentProjects, rootPath, boundProject, editing]
+  );
+
   return (
     <div className="flex h-full flex-col bg-panel-bg">
       <SchedulesSection
         schedules={schedules}
         now={now}
+        starredProjects={starredProjects}
         onCreate={() => setEditing({ schedule: null })}
         onEdit={(schedule) => setEditing({ schedule })}
         onToggle={(schedule, enabled) => void toggleSchedule(schedule.id, enabled)}
@@ -301,6 +322,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
           status={status}
           projectFilter={projectFilter}
           now={now}
+          starredProjects={starredProjects}
           parseActions={parseActions}
           onOpen={handleOpen}
           onAction={(notification, action) => void handleAction(notification, action)}
@@ -317,6 +339,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
           defaultProjectName={rootPath?.split('/').filter(Boolean).pop() ?? null}
           preview={visiblePreview}
           starredProjects={starredProjects}
+          projectOptions={projectOptions}
           discoveredSkills={skillsForEditor}
           onDraftChange={setDraft}
           onSave={(next) => {

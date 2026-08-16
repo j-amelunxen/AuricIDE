@@ -40,6 +40,7 @@ function renderPanel(overrides: Partial<NotificationsPanelProps> = {}) {
     status: 'idle',
     projectFilter: null,
     now: NOW,
+    starredProjects: [],
     parseActions: (n) => ((n.actions as NotificationAction[]) ?? []).map((action) => ({ action })),
     onOpen: vi.fn(),
     onAction: vi.fn(),
@@ -258,6 +259,42 @@ describe('NotificationRow', () => {
     expect(screen.getByText('Der Scan ist fehlgeschlagen')).toBeTruthy();
     expect(screen.getByText('sample-project')).toBeTruthy();
     expect(screen.getByText('1h')).toBeTruthy();
+  });
+
+  it('draws the project tile alongside the project name', () => {
+    renderPanel({
+      notifications: [makeNotification({ projectPath: '/repo/sample', projectName: 'sample' })],
+      starredProjects: [
+        {
+          path: '/repo/sample',
+          name: 'sample',
+          starredAt: 1,
+          icon: { kind: 'glyph', value: 'rocket_launch' },
+        },
+      ],
+    });
+
+    expect(screen.getByTestId('tile-face-/repo/sample')).toHaveAttribute('data-icon-kind', 'glyph');
+  });
+
+  // Severity owns the icon slot on the left. A project mark drawn there would
+  // change what the row claims about how bad the news is.
+  it('leaves the severity icon alone', () => {
+    const notification = makeNotification({
+      projectPath: '/repo/sample',
+      projectName: 'sample',
+      severity: 'error',
+    });
+    renderPanel({ notifications: [notification] });
+
+    const row = screen.getByTestId(`notification-row-${notification.uid}`);
+    expect(row.querySelector('[data-icon="error"]')).toBeTruthy();
+  });
+
+  // An app-wide row says "App" and has no project to draw.
+  it('draws no tile for a row that belongs to no project', () => {
+    renderPanel({ notifications: [makeNotification()] });
+    expect(screen.queryByTestId(/^tile-face-/)).toBeNull();
   });
 
   it('renders a button per action and reports the click', () => {
