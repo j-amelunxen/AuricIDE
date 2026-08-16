@@ -399,27 +399,108 @@ The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirro
 
 ## Rust Backend Modules
 
-| Module                    | File                                                          | Responsibility                                                                                                                                                          |
-| ------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commands                  | `lib.rs`                                                      | IPC command registration, PTY shell (`shell_spawn/write/resize`), file watcher                                                                                          |
-| Agents                    | `agents.rs`, `agent_persistence.rs`                           | Spawn/kill AI agent processes, stream PTY output, persist run history                                                                                                   |
-| Crashlog                  | `crashlog.rs`                                                 | Rust panic hook & frontend crash log reporting                                                                                                                          |
-| Database                  | `database.rs`                                                 | SQLite schema, PM CRUD (epics, tickets, test cases, goals, requirements, reviews)                                                                                       |
-| Excalidraw                | `excalidraw/` (`mod.rs`, `contract.rs`)                       | Excalidraw integration REST API & scene listing                                                                                                                         |
-| Git                       | `git.rs`                                                      | **All git behaviour** (git2-rs): status, diff, stage/unstage, commit, push, discard, blame, branches, history. `lib.rs` only registers the commands; the logic is here. |
-| Machine credentials       | `app_config.rs`                                               | Machine-wide settings (API keys) that outlive any one project; a project may still override                                                                             |
-| Provider policy           | `provider_policy.rs`                                          | Which agentic providers a project permits. Twin of `src/lib/config/providerPolicy.ts`; both tested against `providerPolicy.fixtures.json`                               |
-| LLM & Providers           | `llm.rs`, `providers.rs`                                      | HTTP calls to LLM APIs, agent CLI provider registry (`RESERVED_PROVIDER_ID` = the built-in `crush`)                                                                     |
-| MCP                       | `mcp.rs`                                                      | Start/stop FastMCP server subprocess (`AURIC_NOTIFICATIONS_DB`, `AURIC_PROJECT_ROOT`)                                                                                   |
-| Memory Report             | `memory_report.rs`                                            | System & process tree memory monitoring for performance metrics                                                                                                         |
-| Menu                      | `menu.rs`                                                     | Native macOS application menu state management                                                                                                                          |
-| Notifications & Schedules | `notifications.rs`, `schedules.rs`                            | Cross-project notification bus, cron & one-shot schedule execution engine                                                                                               |
-| Configuration             | `app_config.rs`, `provider_policy.rs`                         | Application-wide credentials (`app-credentials.json`, mode 0600) and the per-project agent-provider allow/deny list enforced at spawn                                   |
-| Project Discovery         | `project_icons.rs`, `project_skills.rs`, `recent_projects.rs` | Workspace icons ranking, skills discovery, recent & starred projects management                                                                                         |
-| Recent creations          | `recent_creations.rs`                                         | Newest file birth time per directory, maintained from watcher events so `read_directory` dates folders without walking their subtree (see below)                        |
-| Themes                    | `themes.rs`                                                   | Custom theme JSON scanner and theme list API                                                                                                                            |
-| Utilities                 | `utf8_stream.rs`, `webview_prefs.rs`                          | UTF-8 PTY chunk reassembly, cross-origin webview preferences sync                                                                                                       |
-| Video import              | `video_import/` (`mod.rs`, `preflight.rs`, `failure.rs`)      | Transcription and frame extraction; the dependency preflight and the rule that tool output never becomes an error message (see below)                                   |
+| Module                    | File                                                                        | Responsibility                                                                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commands                  | `lib.rs`                                                                    | IPC command registration, PTY shell (`shell_spawn/write/resize`), file watcher                                                                                          |
+| Agents                    | `agents.rs`, `agent_persistence.rs`                                         | Spawn/kill AI agent processes, stream PTY output, persist run history                                                                                                   |
+| Crashlog                  | `crashlog.rs`                                                               | Rust panic hook & frontend crash log reporting                                                                                                                          |
+| CLI usage (historical)    | `cc_usage/` (`mod.rs`, `manifest.rs`, `scan.rs`, `pricing.rs`, `report.rs`) | What the agent CLIs consumed over 24 h–30 d, read from their transcripts. Plugin-driven (`usage-plugins/*.json`); twin of `usage_limits` (see below)                    |
+| Database                  | `database.rs`                                                               | SQLite schema, PM CRUD (epics, tickets, test cases, goals, requirements, reviews)                                                                                       |
+| Excalidraw                | `excalidraw/` (`mod.rs`, `contract.rs`)                                     | Excalidraw integration REST API & scene listing                                                                                                                         |
+| Git                       | `git.rs`                                                                    | **All git behaviour** (git2-rs): status, diff, stage/unstage, commit, push, discard, blame, branches, history. `lib.rs` only registers the commands; the logic is here. |
+| Machine credentials       | `app_config.rs`                                                             | Machine-wide settings (API keys) that outlive any one project; a project may still override                                                                             |
+| Provider policy           | `provider_policy.rs`                                                        | Which agentic providers a project permits. Twin of `src/lib/config/providerPolicy.ts`; both tested against `providerPolicy.fixtures.json`                               |
+| LLM & Providers           | `llm.rs`, `providers.rs`                                                    | HTTP calls to LLM APIs, agent CLI provider registry (`RESERVED_PROVIDER_ID` = the built-in `crush`)                                                                     |
+| MCP                       | `mcp.rs`                                                                    | Start/stop FastMCP server subprocess (`AURIC_NOTIFICATIONS_DB`, `AURIC_PROJECT_ROOT`)                                                                                   |
+| Memory Report             | `memory_report.rs`                                                          | System & process tree memory monitoring for performance metrics                                                                                                         |
+| Menu                      | `menu.rs`                                                                   | Native macOS application menu state management                                                                                                                          |
+| Notifications & Schedules | `notifications.rs`, `schedules.rs`                                          | Cross-project notification bus, cron & one-shot schedule execution engine                                                                                               |
+| Configuration             | `app_config.rs`, `provider_policy.rs`                                       | Application-wide credentials (`app-credentials.json`, mode 0600) and the per-project agent-provider allow/deny list enforced at spawn                                   |
+| Project Discovery         | `project_icons.rs`, `project_skills.rs`, `recent_projects.rs`               | Workspace icons ranking, skills discovery, recent & starred projects management                                                                                         |
+| Recent creations          | `recent_creations.rs`                                                       | Newest file birth time per directory, maintained from watcher events so `read_directory` dates folders without walking their subtree (see below)                        |
+| Themes                    | `themes.rs`                                                                 | Custom theme JSON scanner and theme list API                                                                                                                            |
+| Utilities                 | `utf8_stream.rs`, `webview_prefs.rs`                                        | UTF-8 PTY chunk reassembly, cross-origin webview preferences sync                                                                                                       |
+| Video import              | `video_import/` (`mod.rs`, `preflight.rs`, `failure.rs`)                    | Transcription and frame extraction; the dependency preflight and the rule that tool output never becomes an error message (see below)                                   |
+
+## Two usage features, two different questions
+
+`usage_limits` and `cc_usage` sit next to each other and are easy to confuse.
+They are not two views of one number:
+
+|          | `usage_limits`                              | `cc_usage`                               |
+| -------- | ------------------------------------------- | ---------------------------------------- |
+| Question | How full is the quota window **right now**? | What did the last 24 h–30 d **consume**? |
+| Source   | The CLI's own status line / `codex` CLI     | The CLIs' transcripts on disk            |
+| Shape    | A percentage and a reset time               | Tokens, turns, sessions and a cost       |
+| Surface  | The status-bar chip                         | The report panel beside it               |
+
+Neither can be derived from the other: a percentage does not say how many
+tokens produced it, and a token total does not say how much of an allowance is
+left. They also fail independently — quota needs an interactive agent to have
+run recently, the report needs only files that are already there.
+
+### The plugin seam
+
+What a usage source _is_ — where its records live and what its tokens cost —
+is declared in `usage-plugins/*.json` and read by `manifest.rs`, using the same
+five-directory scan as `dynamic-providers/`. Only the reader for the
+`claude-jsonl` shape is compiled in. `usage-plugins/README.md` is the schema;
+the two things worth knowing here:
+
+- **`claude-code` ships compiled in**, unlike the provider registry where
+  users bring their own — a price list nobody wrote is a feature that reports
+  nothing. `usage-plugins/*.json` is git-ignored exactly like
+  `dynamic-providers/*.json`, so the compiled-in default lives in
+  `src-tauri/src/cc_usage/default-manifest.json`: reading it out of an ignored
+  directory would make a fresh clone fail to build.
+- **Rates are dated.** Each record is priced by the day it happened, so an
+  introductory price ending mid-window does not silently rewrite history.
+
+### How the panel reads
+
+Two design rules, both about honesty rather than looks:
+
+- **Every figure is reported against the period before it.** A bare total
+  answers "how much" and leaves "compared to what?" unanswered. This is why
+  the scan reaches back _twice_ the widest window. Where the transcripts do
+  not span the whole earlier period the comparison is withheld
+  (`previous: None`) rather than shown as a quiet one — on a real corpus the
+  30-day window hits this, and rendering absent as idle would have reported a
+  large increase that is only missing data. The coverage test is against the
+  oldest turn found, never against the scan range, which is always wide enough
+  by construction and would make the check tautological.
+- **Each breakdown row carries its own series on one shared scale**
+  (`NamedAggregate.series`, aligned index-for-index with the window's
+  `buckets`). That makes the breakdown small multiples rather than a ranked
+  list: a spike in one row is directly comparable to a spike in another, and a
+  quiet row renders quiet. Per-row scaling would stretch a $3 model to the
+  same height as a $500 one and invert the finding. Only the drawn rows keep
+  a series — several hundred projects times thirty buckets is a lot of JSON
+  for bars nobody renders.
+
+### Three rules the numbers depend on
+
+- **A turn is counted once.** The same API call lands in more than one
+  transcript when a session is resumed or forked — on a real corpus over half
+  of what is read is a duplicate, so counting turns as they are read would
+  roughly double every figure. The key is `message.id` + `requestId`; either
+  alone would collapse turns that really did both happen.
+- **An unpriced model keeps its tokens.** A model missing from the price list
+  contributes tokens, contributes no cost, and is named on `unpricedModels`. A
+  total that is missing money has to say so rather than look complete.
+- **Cost is a list-price equivalent, never a bill.** A transcript records
+  tokens, not what the account was charged, so the only rate it can be priced
+  at is the published one. On a subscription the real charge is the
+  subscription, and the panel says that where the figure is, not in a footnote.
+
+Reading is on demand, cached for 60 seconds, and skips files by modification
+time — a file untouched since before the oldest window cannot hold a record
+inside it. That last one is the only reason a 30-day report does not read
+30 months of transcripts, and it is also the deliberate imprecision: a
+transcript whose mtime was rewritten backwards is invisible past a day of
+slack. `cargo test cc_usage -- --ignored --nocapture` runs the scanner against
+the real machine, which is the only place the transcript format is checked
+against what it actually is rather than against our idea of it.
 
 ## Depending on tools that come from the machine
 

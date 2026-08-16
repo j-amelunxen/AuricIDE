@@ -2,6 +2,7 @@ mod agent_log;
 mod agent_persistence;
 mod agents;
 mod app_config;
+mod cc_usage;
 pub mod crashlog;
 mod database;
 mod excalidraw;
@@ -2030,6 +2031,15 @@ pub fn run() {
             ));
             usage_limits::install_claude_watcher(app.handle());
 
+            // Historical spend, read from the CLIs' own transcripts. Separate
+            // from the quota above on purpose: that one is a fuel gauge, this
+            // one is a logbook, and neither can be derived from the other.
+            app.manage(cc_usage::CcUsageService::new(
+                app.path().app_data_dir().ok(),
+                app.path().resource_dir().ok(),
+                app.path().home_dir().map_err(|e| e.to_string())?,
+            ));
+
             let starred_projects_path = app
                 .path()
                 .app_data_dir()
@@ -2200,6 +2210,8 @@ pub fn run() {
             app_config::app_credential_set,
             usage_limits::usage_limits_read,
             usage_limits::usage_limits_refresh,
+            cc_usage::cc_usage_plugins,
+            cc_usage::cc_usage_report,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,
