@@ -6,13 +6,14 @@ import { createAutosave } from '@/lib/editor/autosave';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { TIPS, activityItems } from '../ide/constants';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
-import { type FileNode } from '@/lib/store/fileTreeSlice';
+import { collectLoadedDirs, findNodeByPath, type FileNode } from '@/lib/store/fileTreeSlice';
 
 import { serializeMindmap, type MindmapNode } from '@/lib/mindmap/mindmapParser';
 import { type WorkflowNode, serializeWorkflow } from '@/lib/canvas/markdownParser';
 import { serializeObsidianCanvas } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianNode, ObsidianEdge, ObsidianColor } from '@/lib/obsidian-canvas/types';
 import type { PmTicket, PmDependency } from '@/lib/tauri/pm';
+import type { GitFileStatus } from '@/lib/tauri/git';
 import {
   exists,
   readFile,
@@ -98,13 +99,6 @@ function contextBoundAction(id: string): () => void {
  * Module scope on purpose: it closes over nothing, and a recursive function
  * cannot refer to itself from inside its own declaration.
  */
-function toFileTreeNodes(nodes: FileNode[]): FileTreeNode[] {
-  return nodes.map((n) => ({
-    ...n,
-    children: n.children ? toFileTreeNodes(n.children) : undefined,
-  }));
-}
-
 /**
  * The tip of the day, picked once when the module loads. The previous
  * useMemo(…, []) was just as fixed for the life of the app, but reached for
@@ -124,25 +118,41 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   // renders `confirmDialog` for these questions to appear at all.
   const { confirm, confirmDialog } = useConfirm();
 
+  /**
+   * The two things that answer for the whole project rather than for one
+   * directory: git status, which colours every node wherever it sits, and the
+   * flat file list, which feeds Mission Control's spec count and wiki-link
+   * resolution. Both must follow filesystem changes, so both refresh together
+   * — once per event, however many directories that event touched.
+   */
+  const refreshProjectIndexes = useCallback(
+    async (rootPath: string): Promise<GitFileStatus[]> => {
+      const [statuses, allFiles] = await Promise.all([
+        useStore
+          .getState()
+          .refreshGitStatus(rootPath)
+          .then(() => useStore.getState().fileStatuses)
+          .catch(() => []),
+        listAllFiles(rootPath).catch(() => null),
+      ]);
+      if (allFiles) state.setAllFiles(allFiles);
+      return statuses;
+    },
+    [state]
+  );
+
   const handleRefresh = useCallback(
     async (dir?: string, isRoot?: boolean): Promise<FileEntry[] | undefined> => {
       const path = dir || state.rootPath;
       if (!path) return;
 
       if (!dir || isRoot || dir === state.rootPath) {
-        // Building the root tree — fetch entries, git status and the flat file
-        // list in parallel. The flat list feeds Mission Control's spec count
-        // and wiki-link resolution, so it must follow filesystem changes too.
-        const [entries, statuses, allFiles] = await Promise.all([
+        // Building the root tree — the entries and the project-wide indexes are
+        // independent reads, so they run side by side.
+        const [entries, statuses] = await Promise.all([
           readDirectory(path),
-          useStore
-            .getState()
-            .refreshGitStatus(path)
-            .then(() => useStore.getState().fileStatuses)
-            .catch(() => []),
-          listAllFiles(path).catch(() => null),
+          refreshProjectIndexes(path),
         ]);
-        if (allFiles) state.setAllFiles(allFiles);
         const currentTree = useStore.getState().fileTree ?? [];
         const existingByPath = new Map<string, FileNode>(currentTree.map((n) => [n.path, n]));
         const tree: FileNode[] = entries.map((e) => {
@@ -167,23 +177,66 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         // untouched — including ones `.gitignore` already dims at the root.
         const rootPath = state.rootPath;
         const statuses = useStore.getState().fileStatuses;
-        const children: FileNode[] = entries.map((e) => ({
-          name: e.name,
-          path: e.path,
-          isDirectory: e.isDirectory,
-          expanded: false,
-          children: e.isDirectory ? [] : undefined,
-          gitStatus: rootPath
-            ? resolveGitStatus(relativeToRoot(e.path, rootPath), statuses)
-            : undefined,
-          createdAt: e.createdAt,
-          newestFileCreatedAt: e.newestFileCreatedAt,
-        }));
+        // Carried over exactly like the root branch does: this runs on a
+        // watcher-driven refresh too, not only on first expand, and a refresh
+        // that reset `expanded`/`children` would collapse the subtree the user
+        // is working in every time a file changed.
+        const existing = findNodeByPath(useStore.getState().fileTree ?? [], path)?.children ?? [];
+        const existingByPath = new Map<string, FileNode>(existing.map((n) => [n.path, n]));
+        const children: FileNode[] = entries.map((e) => {
+          const prev = existingByPath.get(e.path);
+          return {
+            name: e.name,
+            path: e.path,
+            isDirectory: e.isDirectory,
+            expanded: prev?.expanded ?? false,
+            children: prev?.children ?? (e.isDirectory ? [] : undefined),
+            gitStatus: rootPath
+              ? resolveGitStatus(relativeToRoot(e.path, rootPath), statuses)
+              : undefined,
+            createdAt: e.createdAt,
+            newestFileCreatedAt: e.newestFileCreatedAt,
+          };
+        });
         state.setDirectoryChildren(path, children);
         return entries;
       }
     },
-    [state]
+    [state, refreshProjectIndexes]
+  );
+
+  /**
+   * Watcher-driven refresh. The router hands over the directories that actually
+   * changed, so instead of walking the whole project on every event this
+   * re-reads just those — and only the ones whose children are on screen.
+   *
+   * What stays project-wide is `refreshProjectIndexes`: a file changing three
+   * levels down still changes its git status and still belongs in the flat file
+   * list, so a nested event renews both exactly as a root event does. The
+   * directory reads follow that refresh rather than racing it, because they
+   * colour their nodes from the statuses in the store — reading them while the
+   * refresh is still in flight is the staleness this is here to avoid.
+   */
+  const handleRefreshDirs = useCallback(
+    async (changedDirs: string[]): Promise<void> => {
+      const rootPath = state.rootPath;
+      if (!rootPath) return;
+
+      // A root change rebuilds the tree, indexes included, so it subsumes every
+      // nested read.
+      if (changedDirs.includes(rootPath)) {
+        await handleRefresh();
+        return;
+      }
+
+      await refreshProjectIndexes(rootPath);
+
+      const loaded = collectLoadedDirs(useStore.getState().fileTree ?? []);
+      const targets = changedDirs.filter((dir) => loaded.has(dir));
+      if (targets.length === 0) return;
+      await Promise.all(targets.map((dir) => handleRefresh(dir).catch(() => undefined)));
+    },
+    [state, handleRefresh, refreshProjectIndexes]
   );
 
   const handleCloseProject = useCallback(() => {
@@ -1730,8 +1783,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   const isHtmlTab = /\.html?$/i.test(state.activeTabId ?? '');
 
   return {
-    toFileTreeNodes,
     handleRefresh,
+    handleRefreshDirs,
     handleCloseProject,
     loadTabContent,
     handleFileSelect,

@@ -73,6 +73,45 @@ describe('createFsEventRouter', () => {
     expect(onProjectDataChange).toHaveBeenCalledTimes(1);
   });
 
+  it('hands the tree lane the deduplicated parent directories that changed', () => {
+    const r = router();
+    r.handle({ path: '/proj/src/lib/a.ts', kind: 'Create' });
+    r.handle({ path: '/proj/src/lib/b.ts', kind: 'Create' });
+    r.handle({ path: '/proj/README.md', kind: 'Modify' });
+
+    vi.advanceTimersByTime(300);
+    expect(onTreeChange).toHaveBeenCalledTimes(1);
+    expect([...onTreeChange.mock.calls[0][0]].sort()).toEqual(['/proj', '/proj/src/lib']);
+  });
+
+  it('starts each flush from an empty set of directories', () => {
+    const r = router();
+    r.handle({ path: '/proj/src/a.ts', kind: 'Create' });
+    vi.advanceTimersByTime(300);
+    r.handle({ path: '/proj/docs/b.md', kind: 'Create' });
+    vi.advanceTimersByTime(300);
+
+    expect(onTreeChange).toHaveBeenCalledTimes(2);
+    expect(onTreeChange.mock.calls[1][0]).toEqual(['/proj/docs']);
+  });
+
+  it('flushes a continuous write stream instead of starving on it', () => {
+    const r = createFsEventRouter({
+      onTreeChange,
+      onProjectDataChange,
+      treeDebounceMs: 300,
+      treeMaxWaitMs: 1000,
+    });
+    // A build tool writing every 100ms would reset a pure trailing debounce
+    // forever, and the explorer would never refresh while it runs.
+    for (let elapsed = 0; elapsed < 1000; elapsed += 100) {
+      r.handle({ path: `/proj/out/chunk-${elapsed}.js`, kind: 'Create' });
+      vi.advanceTimersByTime(100);
+    }
+    expect(onTreeChange).toHaveBeenCalledTimes(1);
+    expect(onTreeChange.mock.calls[0][0]).toEqual(['/proj/out']);
+  });
+
   it('dispose cancels pending refreshes', () => {
     const r = router();
     r.handle({ path: '/proj/.auric/project.db', kind: 'Modify' });

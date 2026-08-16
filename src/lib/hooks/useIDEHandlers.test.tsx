@@ -712,6 +712,160 @@ describe('useIDEHandlers', () => {
     });
   });
 
+  describe('handleRefreshDirs', () => {
+    it('re-reads only the changed directories that are actually loaded', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [
+        {
+          path: '/p/src',
+          name: 'src',
+          isDirectory: true,
+          children: [{ path: '/p/src/lib', name: 'lib', isDirectory: true, children: [] }],
+        },
+      ];
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      // '/p/vendor' is not in the tree — nobody is looking at it, and opening
+      // it would read it fresh anyway.
+      await result.current.handleRefreshDirs(['/p/src/lib', '/p/vendor']);
+
+      expect(mockReadDirectory).toHaveBeenCalledTimes(1);
+      expect(mockReadDirectory).toHaveBeenCalledWith('/p/src/lib');
+      expect(mockState.setFileTree).not.toHaveBeenCalled();
+    });
+
+    it('refreshes git status and the flat file list for a change below the root', async () => {
+      // Both answer for the whole project, so a nested change has to renew them
+      // just as a root change does — otherwise the explorer keeps colouring
+      // from the snapshot taken when the project was opened.
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [{ path: '/p/src/lib', name: 'lib', isDirectory: true, children: [] }];
+      mockReadDirectory.mockResolvedValue([]);
+      mockListAllFiles.mockResolvedValue(['/p/src/lib/a.ts']);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p/src/lib']);
+
+      expect(mockRefreshGitStatus).toHaveBeenCalledWith('/p');
+      expect(mockState.setAllFiles).toHaveBeenCalledWith(['/p/src/lib/a.ts']);
+    });
+
+    it('refreshes them once for a burst of changed directories', async () => {
+      // A save can touch several folders at once; the project-wide work must
+      // not scale with how many.
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [
+        { path: '/p/src', name: 'src', isDirectory: true, children: [] },
+        { path: '/p/docs', name: 'docs', isDirectory: true, children: [] },
+        { path: '/p/e2e', name: 'e2e', isDirectory: true, children: [] },
+      ];
+      mockReadDirectory.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p/src', '/p/docs', '/p/e2e']);
+
+      expect(mockReadDirectory).toHaveBeenCalledTimes(3);
+      expect(mockRefreshGitStatus).toHaveBeenCalledTimes(1);
+      expect(mockListAllFiles).toHaveBeenCalledTimes(1);
+    });
+
+    it('colours nested nodes from the refreshed statuses, not the ones in the store when it started', async () => {
+      // The nested read paints its nodes from whatever `fileStatuses` holds by
+      // the time it builds them, so it has to run behind the refresh rather
+      // than beside it. Racing the two looks fine most of the time and leaves
+      // the old colours on screen the rest — the failure this whole path
+      // exists to prevent, in its hardest-to-reproduce form.
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [{ path: '/p/src/lib', name: 'lib', isDirectory: true, children: [] }];
+      mockReadDirectory.mockResolvedValue([
+        { name: 'a.ts', path: '/p/src/lib/a.ts', isDirectory: false },
+      ]);
+
+      let landGitStatus = () => {};
+      mockRefreshGitStatus.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            landGitStatus = () => {
+              mockFileStatuses = [
+                { path: 'src/lib/a.ts', status: 'modified', staged: null, unstaged: 'modified' },
+              ];
+              resolve();
+            };
+          })
+      );
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      const refreshed = result.current.handleRefreshDirs(['/p/src/lib']);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(mockReadDirectory).not.toHaveBeenCalled();
+
+      landGitStatus();
+      await refreshed;
+
+      expect(mockState.setDirectoryChildren).toHaveBeenCalledWith('/p/src/lib', [
+        expect.objectContaining({ path: '/p/src/lib/a.ts', gitStatus: 'modified' }),
+      ]);
+    });
+
+    it('rebuilds the whole root tree when the root itself changed', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [];
+      mockReadDirectory.mockResolvedValue([
+        { name: 'new.md', path: '/p/new.md', isDirectory: false, createdAt: 1_700_000_000_000 },
+      ]);
+      mockListAllFiles.mockResolvedValue(['/p/new.md']);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p']);
+
+      expect(mockState.setFileTree).toHaveBeenCalledWith([
+        expect.objectContaining({ path: '/p/new.md', createdAt: 1_700_000_000_000 }),
+      ]);
+    });
+
+    it('keeps nested folders expanded and loaded when refreshing their parent', async () => {
+      // A refresh must not collapse the tree the user is working in.
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      const grandchild = { path: '/p/src/lib/a.ts', name: 'a.ts', isDirectory: false };
+      mockFileTree = [
+        {
+          path: '/p/src',
+          name: 'src',
+          isDirectory: true,
+          children: [
+            {
+              path: '/p/src/lib',
+              name: 'lib',
+              isDirectory: true,
+              expanded: true,
+              children: [grandchild],
+            },
+          ],
+        },
+      ];
+      mockReadDirectory.mockResolvedValue([{ name: 'lib', path: '/p/src/lib', isDirectory: true }]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p/src']);
+
+      expect(mockState.setDirectoryChildren).toHaveBeenCalledWith('/p/src', [
+        expect.objectContaining({
+          path: '/p/src/lib',
+          expanded: true,
+          children: [grandchild],
+        }),
+      ]);
+    });
+  });
+
   describe('root-area context menu', () => {
     it('opens a context menu targeting the project root', () => {
       mockState.rootPath = '/p';
