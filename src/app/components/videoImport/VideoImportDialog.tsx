@@ -24,6 +24,8 @@ import {
   reconcileVideoImportDraftState,
   type VideoImportCommitIdentity,
 } from '@/lib/videoImport/commitImport';
+import { parseToolFailure, type ToolFailure } from '@/lib/videoImport/toolFailure';
+import { ToolFailureNotice } from './ToolFailureNotice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { useConfirm } from '@/lib/hooks/useConfirm';
@@ -75,7 +77,7 @@ function VideoImportDialogContent() {
   const [progress, setProgress] = useState('Preparing video...');
   const [media, setMedia] = useState<VideoMediaAnalysis | null>(null);
   const [process, setProcess] = useState<ExtractedProcess | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ToolFailure | null>(null);
   const [runAfterCreate, setRunAfterCreate] = useState(false);
   const [stepKeys, setStepKeys] = useState<string[]>([]);
   const [announcement, setAnnouncement] = useState('');
@@ -121,7 +123,7 @@ function VideoImportDialogContent() {
               setSourcePath(path);
               setError(null);
             } else if (payload.paths.length > 0) {
-              setError('Choose an MP4, MOV, MKV, WEBM or M4V video.');
+              setError(parseToolFailure('Choose an MP4, MOV, MKV, WEBM or M4V video.'));
             }
           }
         });
@@ -208,7 +210,7 @@ function VideoImportDialogContent() {
       setStage('review');
     } catch (reason) {
       if (runId !== analyzeRunId.current) return;
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(parseToolFailure(reason));
       setStage('select');
     }
   };
@@ -369,7 +371,7 @@ function VideoImportDialogContent() {
         'success'
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(parseToolFailure(reason));
       setStage('review');
     }
   };
@@ -772,12 +774,9 @@ function VideoImportDialogContent() {
             )}
 
             {error && (
-              <p
-                role="alert"
-                className="mx-auto mt-4 max-w-2xl rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[11px] leading-relaxed text-red-300"
-              >
-                {error}
-              </p>
+              <div className="mx-auto mt-4 max-w-2xl">
+                <ToolFailureNotice failure={error} />
+              </div>
             )}
           </main>
 

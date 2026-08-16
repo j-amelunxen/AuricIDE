@@ -1,13 +1,54 @@
+mod failure;
+mod preflight;
+
 use crate::agents::cached_login_shell_env;
 use crate::database::{kv_get, DatabaseState};
+use failure::{describe_failure, FailureReport, Stage};
+use preflight::{resolve_executable, Preflight};
 use reqwest::multipart::{Form, Part};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 const SETTINGS_NS: &str = "video_import_settings";
+
+/// The runtime AuricIDE installs and manages itself. A `local_command` equal
+/// to this means "whatever Setup produced"; anything else is the user's own
+/// choice and is honoured verbatim.
+const DEFAULT_LOCAL_COMMAND: &str = "parakeet-mlx";
+
+/// The package Setup installs. Not pinned to a version on purpose: pinning
+/// means owning the upgrade, and the preflight check plus the classified
+/// errors already keep a bad machine from turning into a stack trace.
+const RUNTIME_PACKAGE: &str = "parakeet-mlx";
+
+/// Streamed to the UI while Setup runs, so a multi-minute download is visibly
+/// working rather than a frozen button.
+const SETUP_PROGRESS_EVENT: &str = "video-import-setup-progress";
+
+/// Full tool output is written next to the work it belongs to. The UI shows a
+/// sentence; this is where the rest goes when the sentence is not enough.
+fn write_log(path: PathBuf, contents: &str) -> Option<String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok()?;
+    }
+    std::fs::write(&path, contents).ok()?;
+    Some(path.to_string_lossy().to_string())
+}
+
+/// `<app_data_dir>/runtime` — the tool environment, its executable and the
+/// model cache all live here, so uninstalling is deleting a directory and
+/// nothing on the machine outside it is touched.
+fn runtime_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("runtime"))
+}
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -38,12 +79,36 @@ pub struct VideoMediaAnalysis {
     transcription_provider: String,
 }
 
+/// A failure the UI can render without ever showing a traceback: one sentence,
+/// the trimmed output behind a fold, and the full log on disk.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LocalParakeetStatus {
-    available: bool,
-    executable: Option<String>,
-    detail: String,
+pub struct ToolFailure {
+    summary: String,
+    details: String,
+    log_path: Option<String>,
+}
+
+impl ToolFailure {
+    fn new(report: FailureReport, log_path: Option<String>) -> Self {
+        Self {
+            summary: report.summary,
+            details: report.details,
+            log_path,
+        }
+    }
+
+    /// Errors cross the IPC boundary as strings, so the structured form is
+    /// carried as JSON and unpacked by the caller. A serialisation failure
+    /// must still not produce a traceback, hence the plain-sentence fallback.
+    fn into_ipc_error(self) -> String {
+        let summary = self.summary.clone();
+        serde_json::to_string(&self).unwrap_or(summary)
+    }
+}
+
+fn tool_error(stage: Stage, raw: &str, log_path: Option<String>) -> String {
+    ToolFailure::new(describe_failure(stage, raw), log_path).into_ipc_error()
 }
 
 #[derive(Default)]
@@ -137,21 +202,14 @@ fn import_id() -> String {
     format!("video-{millis}")
 }
 
-async fn command_available(command: &str) -> bool {
-    if command.contains(std::path::MAIN_SEPARATOR) {
-        return Path::new(command).is_file();
-    }
-    let mut probe = Command::new("sh");
-    probe.args(["-lc", &format!("command -v {}", shell_escape(command))]);
-    for (key, value) in cached_login_shell_env().await {
-        probe.env(key, value);
-    }
-    probe.stdout(Stdio::null()).stderr(Stdio::null());
-    probe.status().await.map(|s| s.success()).unwrap_or(false)
-}
-
-fn shell_escape(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+/// ffmpeg and ffprobe are spawned by absolute path. A bare `Command::new`
+/// searches the PATH this process inherited, and an app launched from
+/// `/Applications` inherits launchd's PATH — which contains neither Homebrew
+/// nor anything else the user installed.
+async fn media_tool(name: &'static str) -> Result<PathBuf, String> {
+    resolve_executable(name).await.ok_or_else(|| {
+        format!("{name} was not found. Video import needs it to read the video and extract its audio. Install it, for example with 'brew install ffmpeg'.")
+    })
 }
 
 fn parse_duration_ms(raw: &[u8]) -> Result<u64, String> {
@@ -164,7 +222,7 @@ fn parse_duration_ms(raw: &[u8]) -> Result<u64, String> {
 }
 
 async fn video_duration_ms(source: &Path) -> Result<u64, String> {
-    let output = Command::new("ffprobe")
+    let output = Command::new(media_tool("ffprobe").await?)
         .args([
             "-v",
             "error",
@@ -187,7 +245,7 @@ async fn video_duration_ms(source: &Path) -> Result<u64, String> {
 }
 
 async fn extract_audio(source: &Path, output: &Path) -> Result<(), String> {
-    let result = Command::new("ffmpeg")
+    let result = Command::new(media_tool("ffmpeg").await?)
         .args(["-y", "-v", "error", "-i"])
         .arg(source)
         .args(["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"])
@@ -211,6 +269,7 @@ async fn extract_frames(
     duration_ms: u64,
 ) -> Result<Vec<VideoFrame>, String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let ffmpeg = media_tool("ffmpeg").await?;
     let count = ((duration_ms / 30_000) + 4).clamp(4, 16);
     let mut frames = Vec::new();
     for index in 0..count {
@@ -220,7 +279,7 @@ async fn extract_frames(
             duration_ms.saturating_mul(index) / (count - 1)
         };
         let path = dir.join(format!("frame-{index:03}-{timestamp_ms}ms.jpg"));
-        let result = Command::new("ffmpeg")
+        let result = Command::new(&ffmpeg)
             .args([
                 "-y",
                 "-v",
@@ -368,19 +427,43 @@ fn expand_local_args(template: &str, audio: &Path, output_dir: &Path) -> Vec<Str
         .collect()
 }
 
+/// Where the runtime executable lives, in the order of who gets to decide: a
+/// command the user configured explicitly, then the one we installed
+/// ourselves, then PATH as a last resort. PATH is last on purpose — it is the
+/// least reliable of the three inside a bundled app.
+async fn local_executable(
+    settings: &TranscriptionSettings,
+    runtime_dir: &Path,
+) -> Result<PathBuf, String> {
+    let configured = settings.local_command.trim();
+    let is_default = configured.is_empty() || configured == DEFAULT_LOCAL_COMMAND;
+    if !is_default {
+        return resolve_executable(configured).await.ok_or_else(|| {
+            format!("The configured local command '{configured}' was not found on this machine.")
+        });
+    }
+    if let Some(installed) = preflight::runtime_executable(runtime_dir) {
+        return Ok(installed);
+    }
+    resolve_executable(DEFAULT_LOCAL_COMMAND).await.ok_or_else(|| {
+        "The local transcription runtime is not installed. Run Setup in Settings > Video Import, or configure a remote endpoint.".to_string()
+    })
+}
+
 async fn transcribe_local(
     audio: &Path,
     settings: &TranscriptionSettings,
     duration_ms: u64,
     model_cache: &Path,
     raw_output: &Path,
+    runtime_dir: &Path,
 ) -> Result<Vec<TranscriptSegment>, String> {
-    if !command_available(&settings.local_command).await {
-        return Err(format!("Local Parakeet is not installed (command: {}). Configure Remote transcription or install the local runtime in Settings.", settings.local_command));
-    }
+    let executable = local_executable(settings, runtime_dir).await?;
     let output_dir = audio.parent().unwrap_or_else(|| Path::new("."));
-    let mut command = Command::new(&settings.local_command);
+    let mut command = Command::new(&executable);
     command.args(expand_local_args(&settings.local_args, audio, output_dir));
+    // `--cache-dir` on the CLI; keeps the ~1.2 GB model with the app's data
+    // rather than in whatever cache the ambient environment points at.
     command.env("PARAKEET_CACHE_DIR", model_cache);
     for (key, value) in cached_login_shell_env().await {
         command.env(key, value);
@@ -388,12 +471,12 @@ async fn transcribe_local(
     let output = command
         .output()
         .await
-        .map_err(|e| format!("Could not start local Parakeet: {e}"))?;
+        .map_err(|e| format!("The local transcription runtime could not be started: {e}"))?;
     if !output.status.success() {
-        return Err(format!(
-            "Local Parakeet failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        let mut raw = String::from_utf8_lossy(&output.stdout).to_string();
+        raw.push_str(&String::from_utf8_lossy(&output.stderr));
+        let log = write_log(raw_output.with_file_name("transcription.log"), &raw);
+        return Err(tool_error(Stage::Transcribe, &raw, log));
     }
     let json_path = output_dir.join(format!(
         "{}.json",
@@ -419,75 +502,215 @@ async fn transcribe(
     duration_ms: u64,
     model_cache: &Path,
     raw_output: &Path,
+    runtime_dir: &Path,
 ) -> Result<(Vec<TranscriptSegment>, String), String> {
+    let local = || {
+        transcribe_local(
+            audio,
+            settings,
+            duration_ms,
+            model_cache,
+            raw_output,
+            runtime_dir,
+        )
+    };
     match settings.mode.as_str() {
-        "remote" => Ok((transcribe_remote(audio, settings, duration_ms, raw_output).await?, "remote".to_string())),
-        "local" => Ok((transcribe_local(audio, settings, duration_ms, model_cache, raw_output).await?, "local".to_string())),
-        _ if !settings.remote_endpoint.trim().is_empty() => match transcribe_remote(audio, settings, duration_ms, raw_output).await {
-            Ok(result) => Ok((result, "remote".to_string())),
-            Err(remote_error) => transcribe_local(audio, settings, duration_ms, model_cache, raw_output).await
-                .map(|result| (result, "local".to_string()))
-                .map_err(|local_error| format!("Remote transcription failed ({remote_error}). Local fallback failed ({local_error}).")),
-        },
-        _ => Ok((transcribe_local(audio, settings, duration_ms, model_cache, raw_output).await?, "local".to_string())),
+        "remote" => Ok((
+            transcribe_remote(audio, settings, duration_ms, raw_output).await?,
+            "remote".to_string(),
+        )),
+        "local" => Ok((local().await?, "local".to_string())),
+        _ if !settings.remote_endpoint.trim().is_empty() => {
+            match transcribe_remote(audio, settings, duration_ms, raw_output).await {
+                Ok(result) => Ok((result, "remote".to_string())),
+                // Both lanes failed. The local half is the structured one, so it
+                // carries the message; the remote reason rides along as detail
+                // rather than being concatenated into an unreadable sentence.
+                Err(remote_error) => local()
+                    .await
+                    .map(|result| (result, "local".to_string()))
+                    .map_err(|local_error| combine_lane_failures(&remote_error, local_error)),
+            }
+        }
+        _ => Ok((local().await?, "local".to_string())),
     }
 }
 
-#[tauri::command]
-pub async fn video_import_local_status() -> LocalParakeetStatus {
-    if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        return LocalParakeetStatus {
-            available: false,
-            executable: None,
-            detail: "Managed Local Parakeet currently requires Apple Silicon. Configure a remote endpoint on this platform.".to_string(),
-        };
-    }
-    let command = "parakeet-mlx";
-    let available = command_available(command).await;
-    LocalParakeetStatus {
-        available,
-        executable: available.then(|| command.to_string()),
-        detail: if available {
-            "Local Parakeet is ready".to_string()
+/// Automatic mode tries remote and then local. When both fail the user needs
+/// one sentence about the lane they can act on, not two errors glued together.
+fn combine_lane_failures(remote_error: &str, local_error: String) -> String {
+    let Ok(mut failure) = serde_json::from_str::<serde_json::Value>(&local_error) else {
+        return local_error;
+    };
+    if let Some(object) = failure.as_object_mut() {
+        let note = format!("Remote transcription was tried first and failed: {remote_error}");
+        let details = object
+            .get("details")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let combined = if details.is_empty() {
+            note
         } else {
-            "Local Parakeet is not installed".to_string()
-        },
+            format!("{note}\n\n{details}")
+        };
+        object.insert("details".to_string(), serde_json::Value::String(combined));
     }
+    failure.to_string()
 }
 
+/// Everything the local runtime needs, checked and reported per dependency.
+/// Cheap enough to call whenever the settings panel opens.
 #[tauri::command]
-pub async fn video_import_install_local() -> Result<LocalParakeetStatus, String> {
-    if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        return Err(
-            "Managed Local Parakeet currently requires Apple Silicon. Configure Remote transcription on this platform."
-                .to_string(),
-        );
+pub async fn video_import_preflight(app: tauri::AppHandle) -> Result<Preflight, String> {
+    Ok(preflight::inspect(&runtime_dir(&app)?).await)
+}
+
+/// Install the runtime, but only onto a machine the preflight has cleared.
+///
+/// The install is bounded, streamed and confined: bounded by a timeout so a
+/// stalled download cannot hang the panel forever, streamed so the user sees
+/// it working, and confined to `<app_data_dir>/runtime` via uv's own directory
+/// variables. That last part matters more than it looks — sharing
+/// `~/.local/share/uv/tools` with the rest of the machine means anything else
+/// touching it can break a transcription mid-run, and the way that surfaces is
+/// a Python traceback.
+#[tauri::command]
+pub async fn video_import_install_local(app: tauri::AppHandle) -> Result<Preflight, String> {
+    let runtime = runtime_dir(&app)?;
+    let report = preflight::inspect(&runtime).await;
+    if report.ready {
+        return Ok(report);
     }
-    if command_available("parakeet-mlx").await {
-        return Ok(video_import_local_status().await);
+    if !report.can_install {
+        let blocker = report
+            .checks
+            .iter()
+            .find(|check| !check.ok)
+            .map(|check| check.detail.clone())
+            .unwrap_or_else(|| "This machine cannot run the local runtime.".to_string());
+        return Err(ToolFailure {
+            summary: blocker,
+            details: String::new(),
+            log_path: None,
+        }
+        .into_ipc_error());
     }
-    if !command_available("uv").await {
-        return Err(
-            "Local Parakeet needs the 'uv' runtime. Install uv or configure a Remote transcription endpoint."
-                .to_string(),
-        );
-    }
-    let mut command = Command::new("uv");
-    command.args(["tool", "install", "parakeet-mlx"]);
+
+    let uv = resolve_executable("uv")
+        .await
+        .ok_or_else(|| "uv was not found.".to_string())?;
+    let bin_dir = runtime.join("bin");
+    let tool_dir = runtime.join("tools");
+    std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&tool_dir).map_err(|e| e.to_string())?;
+
+    let mut command = Command::new(&uv);
+    command.args(["tool", "install", "--force", RUNTIME_PACKAGE]);
     for (key, value) in cached_login_shell_env().await {
         command.env(key, value);
     }
-    let output = command
-        .output()
-        .await
-        .map_err(|e| format!("Could not install Local Parakeet: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "Local Parakeet installation failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+    command.env("UV_TOOL_DIR", &tool_dir);
+    command.env("UV_TOOL_BIN_DIR", &bin_dir);
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let transcript = run_streaming(&app, command).await?;
+    let log = write_log(runtime.join("setup.log"), &transcript.output);
+    if !transcript.success {
+        return Err(tool_error(Stage::Install, &transcript.output, log));
     }
-    Ok(video_import_local_status().await)
+
+    let report = preflight::inspect(&runtime).await;
+    if !report.ready {
+        // uv exits 0 while only warning that its bin directory is not on PATH,
+        // so a green exit code is not proof the executable is where we need it.
+        return Err(ToolFailure {
+            summary: "The install reported success, but the runtime executable is not where it was expected.".to_string(),
+            details: failure::readable_details(&transcript.output),
+            log_path: log,
+        }
+        .into_ipc_error());
+    }
+    Ok(report)
+}
+
+struct StreamedRun {
+    success: bool,
+    output: String,
+}
+
+/// Forward one of the child's streams: each line to the UI as progress, and
+/// every line to the transcript that becomes the log.
+fn pump<R>(
+    app: tauri::AppHandle,
+    collected: std::sync::Arc<std::sync::Mutex<String>>,
+    stream: R,
+) -> tokio::task::JoinHandle<()>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    let mut lines = BufReader::new(stream).lines();
+    tokio::spawn(async move {
+        while let Ok(Some(line)) = lines.next_line().await {
+            let readable = failure::readable_details(&line);
+            if !readable.trim().is_empty() {
+                let _ = app.emit(SETUP_PROGRESS_EVENT, readable);
+            }
+            if let Ok(mut buffer) = collected.lock() {
+                buffer.push_str(&line);
+                buffer.push('\n');
+            }
+        }
+    })
+}
+
+/// How long Setup may take before we call it stuck. Generous — it downloads
+/// roughly 130 MB of wheels and possibly a Python — but finite, because an
+/// install with no upper bound is indistinguishable from a frozen panel.
+const SETUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// Run a command, emitting each output line to the UI as it arrives and
+/// keeping the whole transcript for the log.
+async fn run_streaming(
+    app: &tauri::AppHandle,
+    mut command: Command,
+) -> Result<StreamedRun, String> {
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("The installer could not be started: {e}"))?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let collected = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+
+    let mut readers = Vec::new();
+    if let Some(stream) = stdout {
+        readers.push(pump(app.clone(), collected.clone(), stream));
+    }
+    if let Some(stream) = stderr {
+        readers.push(pump(app.clone(), collected.clone(), stream));
+    }
+
+    let status = match tokio::time::timeout(SETUP_TIMEOUT, child.wait()).await {
+        Ok(result) => result.map_err(|e| format!("The installer could not be run: {e}"))?,
+        Err(_) => {
+            let _ = child.start_kill();
+            return Err(ToolFailure {
+                summary: "Setup was stopped after 30 minutes without finishing. Check the network connection and try again.".to_string(),
+                details: collected.lock().map(|b| b.clone()).unwrap_or_default(),
+                log_path: None,
+            }
+            .into_ipc_error());
+        }
+    };
+    for reader in readers {
+        let _ = reader.await;
+    }
+    let output = collected.lock().map(|b| b.clone()).unwrap_or_default();
+    Ok(StreamedRun {
+        success: status.success(),
+        output,
+    })
 }
 
 #[tauri::command]
@@ -557,6 +780,7 @@ pub async fn video_import_analyze_media(
         duration_ms,
         &model_cache,
         &raw_transcript,
+        &runtime_dir(&app)?,
     )
     .await?;
     let frames = extract_frames(&source, &frame_dir, duration_ms).await?;
