@@ -111,6 +111,26 @@ export function PDFViewer({ src, fileName }: PDFViewerProps) {
   const handlePrevPage = () => setCurrentPage((p) => Math.max(p - 1, 1));
   const handleNextPage = () => setCurrentPage((p) => Math.min(p + 1, numPages));
 
+  // Arrow-key page navigation, skipped while the user is typing elsewhere
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (numPages <= 1) return;
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+      }
+      if (e.key === 'ArrowLeft') {
+        setCurrentPage((p) => Math.max(p - 1, 1));
+      } else if (e.key === 'ArrowRight') {
+        setCurrentPage((p) => Math.min(p + 1, numPages));
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [numPages]);
+
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-editor-bg select-none">
       {/* HUD Toolbar */}

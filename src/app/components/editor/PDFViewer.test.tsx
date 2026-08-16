@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PDFViewer } from './PDFViewer';
 
@@ -81,5 +81,41 @@ describe('PDFViewer', () => {
 
     await user.click(screen.getByTitle('Reset Zoom'));
     expect(screen.getByText('100%')).toBeDefined();
+  });
+
+  it('navigates pages with the arrow keys', async () => {
+    const user = userEvent.setup();
+    render(<PDFViewer src={defaultSrc} fileName="test.pdf" />);
+
+    await waitFor(() => expect(screen.getByText('1 / 3')).toBeDefined());
+
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByText('2 / 3')).toBeDefined();
+
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByText('3 / 3')).toBeDefined();
+
+    // Stays clamped at the last page
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByText('3 / 3')).toBeDefined();
+
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByText('2 / 3')).toBeDefined();
+  });
+
+  it('ignores arrow keys while typing in a form field', async () => {
+    const user = userEvent.setup();
+    render(
+      <div>
+        <input aria-label="unrelated" />
+        <PDFViewer src={defaultSrc} fileName="test.pdf" />
+      </div>
+    );
+
+    await waitFor(() => expect(screen.getByText('1 / 3')).toBeDefined());
+
+    await user.click(screen.getByLabelText('unrelated'));
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByText('1 / 3')).toBeDefined();
   });
 });
