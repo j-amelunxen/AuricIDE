@@ -64,6 +64,10 @@ next-env.d.ts
 # Dynamic Providers
 dynamic-providers/*.json
 
+# Usage plugins (user-supplied price lists / sources). README stays tracked;
+# the compiled-in default lives in src-tauri/src/cc_usage/default-manifest.json.
+usage-plugins/*.json
+
 # Local themes (user-supplied). README + *.example stay tracked; JSON is local-only.
 themes/*.json
 

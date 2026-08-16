@@ -1,0 +1,93 @@
+{
+  "id": "claude-code",
+  "name": "Claude Code",
+  "manifestVersion": 1,
+  "source": {
+    "type": "claude-jsonl",
+    "roots": ["~/.claude/projects"]
+  },
+  "pricing": {
+    "currency": "USD",
+    "cache": {
+      "write5m": 1.25,
+      "write1h": 2.0,
+      "read": 0.1
+    },
+    "serverTools": {
+      "webSearchPerThousand": 10.0,
+      "webFetchPerThousand": 0.0
+    },
+    "models": [
+      {
+        "id": "claude-fable-5",
+        "label": "Fable 5",
+        "aliases": ["fable"],
+        "rates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }]
+      },
+      {
+        "id": "claude-mythos-5",
+        "label": "Mythos 5",
+        "aliases": ["mythos"],
+        "rates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }]
+      },
+      {
+        "id": "claude-opus-5",
+        "label": "Opus 5",
+        "aliases": ["opus"],
+        "rates": [{ "inputPerMTok": 5.0, "outputPerMTok": 25.0 }],
+        "fastRates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }]
+      },
+      {
+        "id": "claude-opus-4-8",
+        "label": "Opus 4.8",
+        "rates": [{ "inputPerMTok": 5.0, "outputPerMTok": 25.0 }],
+        "fastRates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }]
+      },
+      {
+        "id": "claude-opus-4-7",
+        "label": "Opus 4.7",
+        "rates": [{ "inputPerMTok": 5.0, "outputPerMTok": 25.0 }]
+      },
+      {
+        "id": "claude-opus-4-6",
+        "label": "Opus 4.6",
+        "rates": [{ "inputPerMTok": 5.0, "outputPerMTok": 25.0 }]
+      },
+      {
+        "id": "claude-opus-4-5",
+        "label": "Opus 4.5",
+        "rates": [{ "inputPerMTok": 5.0, "outputPerMTok": 25.0 }]
+      },
+      {
+        "id": "claude-sonnet-5",
+        "label": "Sonnet 5",
+        "aliases": ["sonnet"],
+        "rates": [
+          {
+            "until": "2026-09-01",
+            "inputPerMTok": 2.0,
+            "outputPerMTok": 10.0,
+            "note": "Einführungspreis bis 31.08.2026"
+          },
+          { "inputPerMTok": 3.0, "outputPerMTok": 15.0 }
+        ]
+      },
+      {
+        "id": "claude-sonnet-4-6",
+        "label": "Sonnet 4.6",
+        "rates": [{ "inputPerMTok": 3.0, "outputPerMTok": 15.0 }]
+      },
+      {
+        "id": "claude-sonnet-4-5",
+        "label": "Sonnet 4.5",
+        "rates": [{ "inputPerMTok": 3.0, "outputPerMTok": 15.0 }]
+      },
+      {
+        "id": "claude-haiku-4-5",
+        "label": "Haiku 4.5",
+        "aliases": ["haiku", "claude-haiku-4-5-20251001"],
+        "rates": [{ "inputPerMTok": 1.0, "outputPerMTok": 5.0 }]
+      }
+    ]
+  }
+}
