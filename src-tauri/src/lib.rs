@@ -819,6 +819,20 @@ pub fn should_filter_watcher_path(path: &str) -> bool {
         || path.contains("/target/")
         || path.contains("/.next/")
         || path.contains("/.turbo/")
+        || path.contains("/__pycache__/")
+        || path.contains("/.venv/")
+        || path.contains("/venv/")
+        || path.contains("/.pytest_cache/")
+        || path.contains("/.mypy_cache/")
+        || path.contains("/.ruff_cache/")
+        || path.contains("/coverage/")
+        || path.contains("/playwright-report/")
+        || path.contains("/test-results/")
+        || path.contains("/out/")
+        || path.contains("/dist/")
+        || path.contains("/.cache/")
+        || path.ends_with("/.DS_Store")
+        || path.ends_with("/Thumbs.db")
         || is_atomic_write_temp(path)
 }
 
@@ -847,7 +861,23 @@ fn file_modified_at_ms(entry: &walkdir::DirEntry) -> Option<i64> {
 fn skip_recent_walk_dir(entry: &walkdir::DirEntry) -> bool {
     matches!(
         entry.file_name().to_string_lossy().as_ref(),
-        ".git" | "node_modules" | "target" | ".next" | ".turbo"
+        ".git"
+            | "node_modules"
+            | "target"
+            | ".next"
+            | ".turbo"
+            | "__pycache__"
+            | ".venv"
+            | "venv"
+            | ".pytest_cache"
+            | ".mypy_cache"
+            | ".ruff_cache"
+            | "coverage"
+            | "playwright-report"
+            | "test-results"
+            | "out"
+            | "dist"
+            | ".cache"
     )
 }
 
@@ -2856,6 +2886,68 @@ mod tests {
         ));
         assert!(should_filter_watcher_path(
             "/home/user/project/.turbo/daemon/log"
+        ));
+    }
+
+    #[test]
+    fn test_watcher_filters_ds_store() {
+        // Finder rewrites .DS_Store on every folder view, which would
+        // otherwise make the explorer glow folders nobody actually touched.
+        assert!(should_filter_watcher_path("/home/user/project/.DS_Store"));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/src/.DS_Store"
+        ));
+    }
+
+    #[test]
+    fn test_watcher_filters_windows_thumbs_db() {
+        assert!(should_filter_watcher_path("/home/user/project/Thumbs.db"));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/src/Thumbs.db"
+        ));
+    }
+
+    #[test]
+    fn test_watcher_filters_python_caches() {
+        assert!(should_filter_watcher_path(
+            "/home/user/project/src/__pycache__/mod.cpython-312.pyc"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/.venv/lib/site-packages/pkg.py"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/venv/lib/site-packages/pkg.py"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/.pytest_cache/v/cache/lastfailed"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/.mypy_cache/3.12/module.data.json"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/.ruff_cache/0.5.0/cache"
+        ));
+    }
+
+    #[test]
+    fn test_watcher_filters_test_and_build_output() {
+        assert!(should_filter_watcher_path(
+            "/home/user/project/coverage/lcov.info"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/playwright-report/index.html"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/test-results/report.json"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/out/index.html"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/dist/main.js"
+        ));
+        assert!(should_filter_watcher_path(
+            "/home/user/project/.cache/babel-loader/abc123"
         ));
     }
 
