@@ -43,6 +43,8 @@ export const APP_CONFIG_KEYS = {
   cliUsageLimits: 'auric.cli-usage-limits',
   agentTerminalFontSize: 'auric.agent-terminal-font-size',
   agentConsoleAutoOpen: 'auric.agent-console-auto-open',
+  agentLogPersist: 'auric.agent-log.persist',
+  agentLogRetentionDays: 'auric.agent-log.retention-days',
 } as const;
 
 /** Lets mounted UI react to a preference written in this same webview. */
@@ -52,6 +54,20 @@ export const APP_CONFIG_CHANGED_EVENT = 'auric:app-config-changed';
 export const AGENT_TERMINAL_FONT_SIZES = [
   10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
 ] as const;
+
+/**
+ * Every offered retention span for the agent activity history, in days.
+ * `0` means "no age limit", not "keep nothing" — a history that discards
+ * everything is what switching the feature off is for.
+ */
+export const AGENT_LOG_RETENTION_DAYS = [2, 7, 30, 0] as const;
+
+/**
+ * The second bound on the stored history. Age alone cannot cap it: "no age
+ * limit" is a span the user may pick, and a busy fleet writes events faster
+ * than any span would trim them.
+ */
+export const AGENT_LOG_MAX_ROWS = 200_000;
 
 /**
  * The settings this module owns outright. The others in `APP_CONFIG_KEYS` are
@@ -86,6 +102,14 @@ export interface AppConfig {
    * console replacing the start screen unasked would surprise a first launch.
    */
   agentConsoleAutoOpen: boolean;
+  /**
+   * Keep the Agent Console's activity feed on disk instead of in memory only.
+   * Off by default: writing a record of what agents did to the user's machine
+   * is a choice they make, never one an install makes for them.
+   */
+  agentLogPersist: boolean;
+  /** How long stored activity is kept, in days. `0` is no age limit. */
+  agentLogRetentionDays: number;
 }
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
@@ -95,6 +119,8 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   cliUsageLimits: false,
   agentTerminalFontSize: 14,
   agentConsoleAutoOpen: false,
+  agentLogPersist: false,
+  agentLogRetentionDays: 2,
 };
 
 /** The single read. Absent storage — SSR, tests, a blocked webview — is empty. */
@@ -132,11 +158,17 @@ function decodeBoolean(raw: string | null, fallback: boolean): boolean {
   return raw === 'true';
 }
 
-function decodeFontSize(raw: string | null, fallback: number): number {
+/**
+ * Decodes a stored value that has to be one of a fixed set of numbers.
+ *
+ * An absent key is rejected before any conversion, because `Number(null)` is
+ * `0` and `0` is a real choice in some of these sets — a never-written
+ * retention span would otherwise decode as "no age limit".
+ */
+function decodeChoice(raw: string | null, allowed: readonly number[], fallback: number): number {
+  if (raw === null || raw.trim() === '') return fallback;
   const value = Number(raw);
-  return AGENT_TERMINAL_FONT_SIZES.includes(value as (typeof AGENT_TERMINAL_FONT_SIZES)[number])
-    ? value
-    : fallback;
+  return allowed.includes(value) ? value : fallback;
 }
 
 export function loadAppConfig(): AppConfig {
@@ -157,13 +189,23 @@ export function loadAppConfig(): AppConfig {
       readAppPref(APP_CONFIG_KEYS.cliUsageLimits),
       APP_CONFIG_DEFAULTS.cliUsageLimits
     ),
-    agentTerminalFontSize: decodeFontSize(
+    agentTerminalFontSize: decodeChoice(
       readAppPref(APP_CONFIG_KEYS.agentTerminalFontSize),
+      AGENT_TERMINAL_FONT_SIZES,
       APP_CONFIG_DEFAULTS.agentTerminalFontSize
     ),
     agentConsoleAutoOpen: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.agentConsoleAutoOpen),
       APP_CONFIG_DEFAULTS.agentConsoleAutoOpen
+    ),
+    agentLogPersist: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.agentLogPersist),
+      APP_CONFIG_DEFAULTS.agentLogPersist
+    ),
+    agentLogRetentionDays: decodeChoice(
+      readAppPref(APP_CONFIG_KEYS.agentLogRetentionDays),
+      AGENT_LOG_RETENTION_DAYS,
+      APP_CONFIG_DEFAULTS.agentLogRetentionDays
     ),
   };
 }

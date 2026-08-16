@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AgentSlice } from './agentSlice';
+import { agentLogAppend, agentLogLoad, agentLogPrune } from '../tauri/agentLog';
+import { APP_CONFIG_KEYS } from '../config/appConfig';
+import { flushAgentLog, resetAgentLogWriter } from '../agents/events/persistence';
+import { HEARTBEAT_BANDS, type HeartbeatBucket } from '../agents/events/heartbeat';
+
+/** Every event counted into an agent's heartbeat window, across all bands. */
+function totalHeartbeat(buckets: HeartbeatBucket[]): number {
+  return buckets.reduce(
+    (sum, bucket) => sum + HEARTBEAT_BANDS.reduce((n, band) => n + (bucket.counts[band] ?? 0), 0),
+    0
+  );
+}
 import {
   createAgentSlice,
   groupAgentsByRepo,
@@ -10,6 +22,13 @@ import {
   MAX_FINISHED_AGENTS,
   UNGROUPED_REPO_KEY,
 } from './agentSlice';
+
+vi.mock('../tauri/agentLog', () => ({
+  agentLogAppend: vi.fn(async () => undefined),
+  agentLogLoad: vi.fn(async () => []),
+  agentLogPrune: vi.fn(async () => 0),
+  agentLogPurge: vi.fn(async () => undefined),
+}));
 
 vi.mock('../tauri/agents', () => ({
   spawnAgent: vi.fn(async (config: { name: string; model: string; task: string }) => ({
@@ -1748,43 +1767,64 @@ describe('agentSlice – event extraction', () => {
     expect(store.getState().agentEvents['events-repo-2']).toBeUndefined();
   });
 
-  it('accumulates output-volume heartbeat bytes across chunks, flushed at the throttle', () => {
+  it('counts one heartbeat entry per recognised event, flushed at the throttle', () => {
     store.setState({ agents: [claudeAgent('events-heartbeat')] });
-    store.getState().appendAgentLog('events-heartbeat', 'first chunk\n'); // fresh agent: bumps
-    // Force the next append past the throttle too, so its accumulated bytes
+    store.getState().appendAgentLog('events-heartbeat', '⏺ Bash(pnpm lint)\n'); // fresh agent: bumps
+    // Force the next append past the throttle too, so its accumulated counts
     // flush rather than merely sitting in the pending accumulator.
     store.setState({ agents: store.getState().agents.map((a) => ({ ...a, lastActivityAt: 0 })) });
-    store.getState().appendAgentLog('events-heartbeat', 'second\n');
+    store.getState().appendAgentLog('events-heartbeat', '⏺ Edit(src/a.ts)\n');
 
     const buckets = store.getState().agentHeartbeat['events-heartbeat'];
-    const totalBytes = buckets.reduce((sum, bucket) => sum + bucket.bytes, 0);
-    expect(totalBytes).toBe('first chunk\n'.length + 'second\n'.length);
+    expect(totalHeartbeat(buckets)).toBe(2);
+  });
+
+  it('leaves the heartbeat alone for output that produced no event at all', () => {
+    // Bytes used to drive this, which made an agent printing a long file look
+    // busier than one making a careful edit.
+    store.setState({ agents: [claudeAgent('events-hb-prose')] });
+    store.getState().appendAgentLog('events-hb-prose', 'just some prose, no tool call\n');
+    store.setState({ agents: store.getState().agents.map((a) => ({ ...a, lastActivityAt: 0 })) });
+    store.getState().appendAgentLog('events-hb-prose', 'more prose\n');
+
+    expect(store.getState().agentHeartbeat['events-hb-prose']).toBeUndefined();
   });
 
   it('does not replace the agentHeartbeat record for a chunk inside the throttle window', () => {
     store.setState({ agents: [claudeAgent('events-hb-throttle')] });
-    store.getState().appendAgentLog('events-hb-throttle', 'first\n'); // fresh agent: bumps
+    store.getState().appendAgentLog('events-hb-throttle', '⏺ Bash(pnpm lint)\n'); // fresh agent: bumps
     const afterFirst = store.getState().agentHeartbeat;
 
     // Still inside the throttle window — no lastActivityAt reset here, so
-    // this chunk's bytes must accumulate in the registry, not the store.
-    store.getState().appendAgentLog('events-hb-throttle', 'second\n');
+    // this chunk's counts must accumulate in the registry, not the store.
+    store.getState().appendAgentLog('events-hb-throttle', '⏺ Bash(pnpm test)\n');
     expect(store.getState().agentHeartbeat).toBe(afterFirst);
   });
 
-  it('does not lose pending heartbeat bytes accumulated while inside the throttle window', () => {
+  it('does not lose pending heartbeat counts accumulated while inside the throttle window', () => {
     store.setState({ agents: [claudeAgent('events-hb-pending')] });
-    store.getState().appendAgentLog('events-hb-pending', 'first\n'); // fresh agent: bumps
-    store.getState().appendAgentLog('events-hb-pending', 'second\n'); // inside the window: pending only
+    store.getState().appendAgentLog('events-hb-pending', '⏺ Bash(one)\n'); // fresh agent: bumps
+    store.getState().appendAgentLog('events-hb-pending', '⏺ Bash(two)\n'); // inside the window: pending only
 
-    // Cross the throttle now — the pending bytes from the second chunk must
-    // still be reflected, not silently dropped because they never flushed.
+    // Cross the throttle now — the pending counts from the second chunk must
+    // still be reflected, not dropped because they never flushed.
     store.setState({ agents: store.getState().agents.map((a) => ({ ...a, lastActivityAt: 0 })) });
-    store.getState().appendAgentLog('events-hb-pending', 'third\n');
+    store.getState().appendAgentLog('events-hb-pending', '⏺ Bash(three)\n');
 
     const buckets = store.getState().agentHeartbeat['events-hb-pending'];
-    const totalBytes = buckets.reduce((sum, bucket) => sum + bucket.bytes, 0);
-    expect(totalBytes).toBe('first\n'.length + 'second\n'.length + 'third\n'.length);
+    expect(totalHeartbeat(buckets)).toBe(3);
+  });
+
+  it('charts the last of a finished agent’s work, which no further chunk would carry', () => {
+    store.setState({ agents: [claudeAgent('events-hb-finish')] });
+    store.getState().appendAgentLog('events-hb-finish', '⏺ Bash(one)\n'); // fresh agent: bumps
+    store.getState().appendAgentLog('events-hb-finish', '⏺ Bash(two)\n'); // inside the window: pending only
+
+    // No chunk is coming after this one — the agent is done.
+    store.getState().updateAgentStatus('events-hb-finish', 'idle');
+
+    const buckets = store.getState().agentHeartbeat['events-hb-finish'];
+    expect(totalHeartbeat(buckets)).toBe(2);
   });
 
   it('sweeps orphaned records for an id that appended logs but never landed in agents, on refresh', async () => {
@@ -1827,5 +1867,202 @@ describe('sendAgentInput', () => {
     await store.getState().sendAgentInput('agent-1', 'run the tests\n');
 
     expect(agents.sendToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\n');
+  });
+});
+
+describe('agentSlice – on-disk history', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const claudeAgent = (id: string) => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status: 'running' as const,
+    startedAt: 0,
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    resetAgentLogWriter();
+    vi.mocked(agentLogAppend).mockClear();
+    vi.mocked(agentLogLoad).mockClear();
+    vi.mocked(agentLogPrune).mockClear();
+    store = createStore<AgentSlice>()((...a) => createAgentSlice(...a));
+  });
+
+  const enable = () => localStorage.setItem(APP_CONFIG_KEYS.agentLogPersist, 'true');
+
+  it('writes nothing while the setting is off, however much an agent produces', async () => {
+    store.setState({ agents: [claudeAgent('hist-off')] });
+    store.getState().appendAgentLog('hist-off', '⏺ Edit(src/a.ts)\n');
+    await flushAgentLog();
+
+    expect(agentLogAppend).not.toHaveBeenCalled();
+  });
+
+  it('writes the extracted events once the setting is on', async () => {
+    enable();
+    store.setState({ agents: [claudeAgent('hist-on')] });
+    store.getState().appendAgentLog('hist-on', '⏺ Edit(src/a.ts)\n');
+    await flushAgentLog();
+
+    expect(agentLogAppend).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(agentLogAppend).mock.calls[0][0][0]).toMatchObject({
+      agentId: 'hist-on',
+      kind: 'edit',
+      label: 'Edited src/a.ts',
+    });
+  });
+
+  it('records the agent name and repo, so a row outlives the agent', async () => {
+    enable();
+    store.setState({
+      agents: [{ ...claudeAgent('hist-named'), name: 'Waitlist', repoPath: '/repos/acme-app' }],
+    });
+    store.getState().appendAgentLog('hist-named', '⏺ Edit(src/a.ts)\n');
+    await flushAgentLog();
+
+    expect(vi.mocked(agentLogAppend).mock.calls[0][0][0]).toMatchObject({
+      agentName: 'Waitlist',
+      repoPath: '/repos/acme-app',
+    });
+  });
+
+  it('writes nothing for output that produced no event', async () => {
+    enable();
+    store.setState({ agents: [claudeAgent('hist-prose')] });
+    store.getState().appendAgentLog('hist-prose', 'just prose, no tool call\n');
+    await flushAgentLog();
+
+    expect(agentLogAppend).not.toHaveBeenCalled();
+  });
+
+  it('loads the stored history, newest first, and keeps it apart from live events', async () => {
+    enable();
+    vi.mocked(agentLogLoad).mockResolvedValueOnce([
+      { agentId: 'gone', agentName: 'Old', kind: 'edit', label: 'Edited x.ts', at: 5, seq: 0 },
+    ]);
+
+    await store.getState().loadAgentLogHistory();
+
+    expect(store.getState().agentLogHistory).toHaveLength(1);
+    expect(store.getState().agentEvents).toEqual({});
+  });
+
+  it('trims the history before reading it back', async () => {
+    enable();
+    await store.getState().loadAgentLogHistory();
+    expect(agentLogPrune).toHaveBeenCalled();
+  });
+
+  it('loads nothing and prunes nothing while the setting is off', async () => {
+    await store.getState().loadAgentLogHistory();
+
+    expect(agentLogLoad).not.toHaveBeenCalled();
+    expect(agentLogPrune).not.toHaveBeenCalled();
+    expect(store.getState().agentLogHistory).toEqual([]);
+  });
+
+  it('leaves the history empty rather than failing when the store is unreachable', async () => {
+    enable();
+    vi.mocked(agentLogLoad).mockRejectedValueOnce(new Error('no db'));
+
+    await expect(store.getState().loadAgentLogHistory()).resolves.toBeUndefined();
+    expect(store.getState().agentLogHistory).toEqual([]);
+  });
+
+  /** An agent that just bumped its activity, so nothing it prints flushes. */
+  const busyAgent = (id: string) => ({ ...claudeAgent(id), lastActivityAt: Date.now() });
+
+  it('writes the run of an agent that started and finished inside one throttle window', () => {
+    enable();
+    store.setState({ agents: [busyAgent('hist-short')] });
+    store.getState().appendAgentLog('hist-short', '⏺ Edit(src/a.ts)\n');
+    expect(agentLogAppend).not.toHaveBeenCalled();
+
+    store.getState().updateAgentStatus('hist-short', 'idle');
+
+    expect(vi.mocked(agentLogAppend).mock.calls[0][0]).toEqual([
+      expect.objectContaining({ agentId: 'hist-short', label: 'Edited src/a.ts' }),
+    ]);
+  });
+
+  it('writes the run of an agent that failed, not only one that finished cleanly', () => {
+    enable();
+    store.setState({ agents: [busyAgent('hist-failed')] });
+    store.getState().appendAgentLog('hist-failed', '⏺ Bash(pnpm test:run)\n');
+
+    store.getState().updateAgentStatus('hist-failed', 'error');
+
+    expect(vi.mocked(agentLogAppend).mock.calls[0][0]).toEqual([
+      expect.objectContaining({ agentId: 'hist-failed', label: 'Ran pnpm test:run' }),
+    ]);
+  });
+
+  it('writes what arrived after the last throttled flush, not only up to it', () => {
+    enable();
+    store.setState({ agents: [claudeAgent('hist-tail')] }); // no lastActivityAt: the first chunk bumps
+    store.getState().appendAgentLog('hist-tail', '⏺ Read(src/a.ts)\n');
+    expect(agentLogAppend).toHaveBeenCalledTimes(1);
+
+    // Inside the throttle window now — nothing else would ever carry this one.
+    store.getState().appendAgentLog('hist-tail', '⏺ Edit(src/b.ts)\n');
+    store.getState().updateAgentStatus('hist-tail', 'idle');
+
+    expect(vi.mocked(agentLogAppend).mock.calls[1][0]).toEqual([
+      expect.objectContaining({ label: 'Edited src/b.ts' }),
+    ]);
+  });
+
+  it('does not write the same run twice when a stop event arrives twice', () => {
+    enable();
+    store.setState({ agents: [busyAgent('hist-twice')] });
+    store.getState().appendAgentLog('hist-twice', '⏺ Edit(src/a.ts)\n');
+
+    store.getState().updateAgentStatus('hist-twice', 'idle');
+    store.getState().updateAgentStatus('hist-twice', 'idle');
+
+    expect(agentLogAppend).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes what a killed agent produced — no stop event is ever coming for it', async () => {
+    enable();
+    store.setState({ agents: [busyAgent('hist-killed')] });
+    store.getState().appendAgentLog('hist-killed', '⏺ Edit(src/a.ts)\n');
+
+    await store.getState().killRunningAgent('hist-killed');
+
+    expect(vi.mocked(agentLogAppend).mock.calls[0][0]).toEqual([
+      expect.objectContaining({ agentId: 'hist-killed', label: 'Edited src/a.ts' }),
+    ]);
+  });
+
+  it('writes what every agent killed with its repo group produced', async () => {
+    enable();
+    store.setState({
+      agents: [
+        { ...busyAgent('hist-repo-1'), repoPath: '/repo-a' },
+        { ...busyAgent('hist-repo-2'), repoPath: '/repo-a' },
+      ],
+    });
+    store.getState().appendAgentLog('hist-repo-1', '⏺ Edit(src/a.ts)\n');
+    store.getState().appendAgentLog('hist-repo-2', '⏺ Edit(src/b.ts)\n');
+
+    await store.getState().killAgentsForRepoPath('/repo-a');
+
+    expect(vi.mocked(agentLogAppend).mock.calls[0][0]).toEqual([
+      expect.objectContaining({ agentId: 'hist-repo-1' }),
+      expect.objectContaining({ agentId: 'hist-repo-2' }),
+    ]);
+  });
+
+  it('still writes nothing when an agent finishes while the setting is off', () => {
+    store.setState({ agents: [busyAgent('hist-off-finish')] });
+    store.getState().appendAgentLog('hist-off-finish', '⏺ Edit(src/a.ts)\n');
+
+    store.getState().updateAgentStatus('hist-off-finish', 'idle');
+
+    expect(agentLogAppend).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { sendToAgent } from '@/lib/tauri/agents';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import type { HeartbeatBucket } from '@/lib/agents/events/heartbeat';
-import { heartbeatSeries } from '@/lib/agents/events/heartbeat';
+import { fleetHeartbeatMax, heartbeatSeries } from '@/lib/agents/events/heartbeat';
 import {
   consoleAgentState,
   consoleStateLabel,
@@ -63,6 +63,14 @@ export function FocusView({
   const state = consoleAgentState(agent, reviewed, now);
   const label = consoleStateLabel(state, reviewed);
 
+  // One scale across the stage and the rail: the rail exists to be compared
+  // against the focused agent, which a per-chart scale would make impossible.
+  const focusSeries = heartbeatSeries(agentHeartbeat[agent.id] ?? [], now);
+  const scaleMax = fleetHeartbeatMax([
+    focusSeries,
+    ...otherAgents.map((other) => heartbeatSeries(agentHeartbeat[other.id] ?? [], now)),
+  ]);
+
   const sendInstruction = () => {
     const trimmed = instruction.trim();
     if (!trimmed) return;
@@ -93,9 +101,10 @@ export function FocusView({
           </span>
           <PhaseChip state={state} label={label} className="ml-1" />
           <Heartbeat
-            values={heartbeatSeries(agentHeartbeat[agent.id] ?? [], now)}
+            samples={focusSeries}
+            scaleMax={scaleMax}
             tone={CONSOLE_STATE_HEARTBEAT_TONE[state]}
-            className="ml-auto h-6 w-36"
+            className="ml-auto"
           />
         </div>
 
@@ -156,9 +165,10 @@ export function FocusView({
                   {other.name}
                 </span>
                 <Heartbeat
-                  values={heartbeatSeries(agentHeartbeat[other.id] ?? [], now)}
+                  samples={heartbeatSeries(agentHeartbeat[other.id] ?? [], now)}
+                  scaleMax={scaleMax}
                   tone={CONSOLE_STATE_HEARTBEAT_TONE[otherState]}
-                  className="h-5 w-14 flex-shrink-0"
+                  className="flex-shrink-0"
                 />
               </div>
               <div className="truncate text-[10.5px] text-foreground-muted">

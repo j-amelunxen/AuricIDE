@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
@@ -10,6 +10,13 @@ vi.mock('@/app/components/terminal/XtermTerminal', () => ({
   XtermTerminal: ({ agentId }: { agentId?: string }) => (
     <div data-testid="stage-terminal">{agentId}</div>
   ),
+}));
+
+// The console header embeds the CLI quota chip, which lives on its own live
+// usage subscription. Nothing here asserts on it, and letting it render would
+// tie every test in this file to that module's state.
+vi.mock('@/app/components/usage/CliQuotaChip', () => ({
+  CliQuotaChip: () => <div data-testid="cli-quota-chip" />,
 }));
 
 const NOW = Date.now();
@@ -165,6 +172,188 @@ describe('AgentConsole', () => {
 
     const section = screen.getByTestId('project-section-/repos/idle-app');
     expect(section).toHaveTextContent('idle');
+  });
+});
+
+describe('AgentConsole stored history', () => {
+  it('reads the stored history when it opens', async () => {
+    const loadAgentLogHistory = vi.fn(async () => undefined);
+    resetStore({ agentConsoleOpen: true });
+    useStore.setState({ loadAgentLogHistory } as Partial<ReturnType<typeof useStore.getState>>);
+
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    await waitFor(() => expect(loadAgentLogHistory).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not read it while the console is closed', () => {
+    const loadAgentLogHistory = vi.fn(async () => undefined);
+    resetStore({ agentConsoleOpen: false });
+    useStore.setState({ loadAgentLogHistory } as Partial<ReturnType<typeof useStore.getState>>);
+
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    expect(loadAgentLogHistory).not.toHaveBeenCalled();
+  });
+});
+
+describe('AgentConsole layout', () => {
+  it('steps around the traffic lights instead of painting its title under them', () => {
+    // titleBarStyle is "Overlay" (tauri.conf.json), so the window buttons
+    // float over whatever sits at the top-left. --titlebar-gutter is the room
+    // they need; Header.tsx reserves it the same way.
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    expect(screen.getByTestId('agent-console-header').className).toContain('--titlebar-gutter');
+  });
+
+  it('lays the shell out as fixed header/feed rows around one scrolling middle', () => {
+    // Explicit grid rows rather than nested flex: the middle row is the only
+    // one allowed to grow, so a tall fleet can never push the activity feed
+    // off the bottom of the window.
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const shell = screen.getByTestId('agent-console-shell');
+    expect(shell.className).toContain('grid-rows-[auto_minmax(0,1fr)_auto]');
+  });
+
+  it('keeps the shell a grid so the middle row owns every pixel that is left', () => {
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+    expect(screen.getByTestId('agent-console-shell').className).toContain('grid h-full min-h-0');
+  });
+
+  it('puts the shortcut hint in the feed header instead of a bar of its own', () => {
+    // A 20px bar between the grid and the feed read as an overlay sitting on
+    // the ACTIVITY row. The hint belongs next to the filters.
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const feedHeader = screen.getByTestId('activity-feed-header');
+    expect(feedHeader).toHaveTextContent('Esc closes');
+  });
+});
+
+describe('AgentConsole keyboard navigation', () => {
+  const twoProjects: AgentInfo[] = [
+    agent({ id: 'a1', name: 'First', repoPath: '/repos/acme-app' }),
+    agent({ id: 'a2', name: 'Second', repoPath: '/repos/acme-app' }),
+    agent({ id: 'b1', name: 'Third', repoPath: '/repos/other-app' }),
+  ];
+
+  function cards() {
+    return screen.getAllByTestId(/^console-agent-card-/);
+  }
+
+  it('makes every agent card a focus target', () => {
+    resetStore({ agentConsoleOpen: true, agents: twoProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    for (const card of cards()) {
+      expect(card).toHaveAttribute('tabindex', '0');
+    }
+  });
+
+  it('moves down and up through the cards with the arrow keys', () => {
+    resetStore({ agentConsoleOpen: true, agents: twoProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const [first, second] = cards();
+    first.focus();
+
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(second);
+
+    fireEvent.keyDown(second, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('jumps between projects with left and right', () => {
+    resetStore({ agentConsoleOpen: true, agents: twoProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const all = cards();
+    // Two sections: acme-app holds a1/a2, other-app holds b1.
+    const firstOfSecondSection = all[2];
+    all[0].focus();
+
+    fireEvent.keyDown(all[0], { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(firstOfSecondSection);
+
+    fireEvent.keyDown(firstOfSecondSection, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(all[0]);
+  });
+
+  it('stops at the ends instead of wrapping around', () => {
+    // Wrapping would make "am I at the bottom" unanswerable without counting.
+    resetStore({ agentConsoleOpen: true, agents: twoProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const all = cards();
+    all[0].focus();
+    fireEvent.keyDown(all[0], { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(all[0]);
+
+    const last = all[all.length - 1];
+    last.focus();
+    fireEvent.keyDown(last, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('opens the focused agent with Enter', () => {
+    resetStore({ agentConsoleOpen: true, agents: twoProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const second = cards()[1];
+    second.focus();
+    fireEvent.keyDown(second, { key: 'Enter' });
+
+    expect(screen.getByTestId('stage-terminal')).toHaveTextContent('a2');
+  });
+
+  it("opens the focused agent's terminal with t", () => {
+    const onOpenTerminal = vi.fn();
+    resetStore({ agentConsoleOpen: true, agents: twoProjects });
+    render(<AgentConsole onOpenTerminal={onOpenTerminal} />);
+
+    const second = cards()[1];
+    second.focus();
+    fireEvent.keyDown(second, { key: 't' });
+
+    expect(onOpenTerminal).toHaveBeenCalledWith('a2');
+  });
+
+  it('leaves typing alone — a shortcut key inside a text field is just text', () => {
+    // The reply box on a waiting card is a plain input inside the grid; 't'
+    // typed there must not open a terminal.
+    const onOpenTerminal = vi.fn();
+    resetStore({
+      agentConsoleOpen: true,
+      agents: [agent({ id: 'w1', repoPath: '/repos/acme-app', awaitingInput: true })],
+    });
+    render(<AgentConsole onOpenTerminal={onOpenTerminal} />);
+
+    const reply = screen.getByRole('textbox', { name: /reply to/i });
+    reply.focus();
+    fireEvent.keyDown(reply, { key: 't' });
+
+    expect(onOpenTerminal).not.toHaveBeenCalled();
+  });
+
+  it('goes to the first and last card with Home and End', () => {
+    resetStore({ agentConsoleOpen: true, agents: twoProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const all = cards();
+    all[1].focus();
+
+    fireEvent.keyDown(all[1], { key: 'Home' });
+    expect(document.activeElement).toBe(all[0]);
+
+    fireEvent.keyDown(all[0], { key: 'End' });
+    expect(document.activeElement).toBe(all[all.length - 1]);
   });
 });
 

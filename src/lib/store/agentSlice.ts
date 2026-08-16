@@ -19,11 +19,20 @@ import type { AgentColor } from '../agents/colors';
 import { deriveErrorDigest } from '../agents/errorDigest';
 import { pushHeartbeat, type HeartbeatBucket } from '../agents/events/heartbeat';
 import {
-  accumulateHeartbeatBytes,
-  drainHeartbeatBytes,
+  accumulateHeartbeatKinds,
+  drainHeartbeatKinds,
   extractorForAgent,
   pruneAgentRuntime,
+  streamCaptureForAgent,
 } from '../agents/events/registry';
+import { appendStreamLines, type StreamLine } from '../agents/events/streamCapture';
+import {
+  flushAgentLog,
+  pruneAgentLogHistory,
+  recordAgentLogEvents,
+} from '../agents/events/persistence';
+import { agentLogLoad, type PersistedAgentEvent } from '../tauri/agentLog';
+import { loadAppConfig } from '../config/appConfig';
 import type { AgentEvent } from '../agents/events/types';
 import { isFinishedAgent } from '../agents/fleet';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
@@ -45,10 +54,17 @@ export const MAX_AGENT_LOG_BYTES = 2_000_000;
 export const MAX_FINISHED_AGENTS = 20;
 // A feed row per event, not per PTY chunk — a long run's structured history
 // still needs the same kind of bound agentLogs has, for the same reason.
-export const MAX_AGENT_EVENTS = 200;
+// Sized so the console's feed can be scrolled back through rather than
+// showing only the last minute or two of a busy fleet: at 200 an agent's
+// history was gone before anyone came back to read it.
+export const MAX_AGENT_EVENTS = 2_000;
 // The project DB keeps 100 start prompts; the dialog only ever recalls the
 // freshest slice of them, so loading the whole tail is wasted work.
 export const MAX_RECALLED_PROMPTS = 25;
+// How much stored history the console reads back. The file may hold up to
+// AGENT_LOG_MAX_ROWS; rendering all of it would be pointless — this is a feed
+// somebody scrolls, not an archive they page through.
+export const MAX_LOADED_HISTORY = 2_000;
 
 export interface AgentLogMeta {
   /** Total chunks ever appended for this agent — survives trimming, so
@@ -68,7 +84,30 @@ export interface AgentSlice {
    * `MAX_AGENT_EVENTS`, oldest dropped first, same reasoning as `agentLogs`.
    */
   agentEvents: Record<string, AgentEvent[]>;
-  /** Per-agent output volume, bucketed by minute — the fleet's activity sparkline. */
+  /**
+   * Each agent's readable output, line by line — what it *said*, as opposed
+   * to `agentEvents`' what it *did*. This is what the console's feed shows in
+   * "All output" mode; the curated event list only ever holds lines a
+   * provider matcher recognised, which is why it reads as incomplete on its
+   * own. Redraw chrome and consecutive repeats are already filtered out (see
+   * `createStreamCapture`); capped at `MAX_STREAM_LINES` per agent.
+   */
+  agentStreamLines: Record<string, StreamLine[]>;
+  /**
+   * The on-disk activity history, newest first, as last read back.
+   *
+   * Kept apart from `agentEvents` rather than folded into it: that record is
+   * keyed by agents that are currently running, and stored history is mostly
+   * from agents that have long exited. A row folded in there would simply not
+   * render. The two are merged at display time, by `mergeFeedRows`.
+   */
+  agentLogHistory: PersistedAgentEvent[];
+  /**
+   * Per-agent activity, bucketed by minute and counted per kind of work —
+   * the fleet's activity chart. Counts events rather than output bytes: bytes
+   * made an agent printing a long file look busier than one making a careful
+   * edit, which is the opposite of what a reader needs.
+   */
   agentHeartbeat: Record<string, HeartbeatBucket[]>;
   selectedAgentId: string | null;
   /** Agents from a previous app run that died with the app (restart persistence). */
@@ -122,6 +161,12 @@ export interface AgentSlice {
   dismissFinishedAgent: (agentId: string) => void;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
   appendAgentLog: (agentId: string, log: string) => void;
+  /**
+   * Trims the stored history to its configured bounds, then reads it back.
+   * A no-op while persistence is off — nothing was written, so there is
+   * nothing to trim or show.
+   */
+  loadAgentLogHistory: () => Promise<void>;
   refreshAgents: () => Promise<void>;
   selectAgent: (agentId: string | null) => void;
   /**
@@ -173,7 +218,7 @@ function withoutAgentRecords(state: LogRecords, agentId: string): LogRecords {
   return { agentLogs, agentLogMeta };
 }
 
-type AgentRuntimeRecords = Pick<AgentSlice, 'agentEvents' | 'agentHeartbeat'>;
+type AgentRuntimeRecords = Pick<AgentSlice, 'agentEvents' | 'agentHeartbeat' | 'agentStreamLines'>;
 
 /**
  * Drops event history, heartbeat buckets, and the out-of-store extractor
@@ -193,6 +238,7 @@ function reconcileAgentRuntimeState(
   return {
     agentEvents: withoutAgentIds(state.agentEvents, (id) => !keep.has(id)),
     agentHeartbeat: withoutAgentIds(state.agentHeartbeat, (id) => !keep.has(id)),
+    agentStreamLines: withoutAgentIds(state.agentStreamLines, (id) => !keep.has(id)),
   };
 }
 
@@ -246,6 +292,8 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   agentLogs: {},
   agentLogMeta: {},
   agentEvents: {},
+  agentStreamLines: {},
+  agentLogHistory: [],
   agentHeartbeat: {},
   selectedAgentId: null,
   interruptedAgents: [],
@@ -448,6 +496,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agentColors: withoutColors(get().agentColors, (id) => id === agentId),
     });
 
+    // A kill is the other way a run ends, and it never passes through
+    // `updateAgentStatus` — so this is the only place its buffered history can
+    // be written. Nothing to drain into the chart here: the agent's heartbeat
+    // buckets and its runtime record went with it, just above.
+    void flushAgentLog();
+
     // Ending this agent is ending this step, not the combo — the next skill
     // starts here. Awaited so a test (and a user who immediately looks) sees
     // the successor already in the fleet.
@@ -518,17 +572,19 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   },
 
   updateAgentStatus: (agentId, status) => {
+    // Read before anything below can change it — every guard here is on the
+    // *transition*, so they all need the status this agent is coming from.
+    const agent = get().agents.find((a) => a.id === agentId);
     // A failure is the one transition worth interrupting for — it reaches the
     // user even with the agents panel closed. Clean finishes stay silent:
     // they are represented by the unseen marker and the all-quiet signal.
     // Guarded on the *transition* so a duplicate stop event cannot stack.
     if (status === 'error') {
-      const failing = get().agents.find((a) => a.id === agentId);
-      if (failing && failing.status !== 'error' && !willConductorRetry(get(), agentId)) {
+      if (agent && agent.status !== 'error' && !willConductorRetry(get(), agentId)) {
         const toaster = get() as AgentSlice & {
           showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
         };
-        toaster.showToast?.(`${failing.name} failed · see row output`, 'error');
+        toaster.showToast?.(`${agent.name} failed · see row output`, 'error');
         // The toast is the alarm and it interrupts once; this is the record
         // that survives looking away, and it carries the repo so a failure in
         // a project you are not currently in is still findable. Same guards on
@@ -539,12 +595,12 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         };
         void inbox.dispatchNotification?.({
           source: 'system',
-          origin: failing.name,
+          origin: agent.name,
           severity: 'error',
-          title: `${failing.name} failed`,
+          title: `${agent.name} failed`,
           body: deriveErrorDigest(get().agentLogs[agentId] ?? []),
-          projectPath: failing.repoPath ?? null,
-          projectName: failing.repoPath?.split('/').pop() ?? null,
+          projectPath: agent.repoPath ?? null,
+          projectName: agent.repoPath?.split('/').pop() ?? null,
           refKind: 'agent',
           refId: agentId,
           // One row per failed run, so a duplicate stop event cannot stack.
@@ -564,6 +620,30 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     }
     const { agentLogs, agentLogMeta } = get();
     const stopped = status === 'idle' || status === 'error';
+
+    // The last of an agent's work has nowhere else to land. Both the heartbeat
+    // counts and the buffered history ride `appendAgentLog`'s activity
+    // throttle, and once an agent has stopped there is no further chunk coming
+    // to carry them — a run that fits inside one throttle window would leave no
+    // trace at all. Guarded on the *transition*, like `finishedAt` below, so a
+    // duplicate stop event drains nothing a second time.
+    const finishing = stopped && !!agent && !isFinishedAgent(agent);
+    if (finishing) {
+      const finalKinds = drainHeartbeatKinds(agentId);
+      if (finalKinds.length > 0) {
+        set({
+          agentHeartbeat: {
+            ...get().agentHeartbeat,
+            [agentId]: pushHeartbeat(get().agentHeartbeat[agentId] ?? [], finalKinds, Date.now()),
+          },
+        });
+      }
+      // Fire-and-forget for the same reason as in `appendAgentLog`: a status
+      // change must not become async, and `flushAgentLog` never rejects. It
+      // re-checks the setting itself, so nothing here needs a second guard.
+      void flushAgentLog();
+    }
+
     const updatedAgents = get().agents.map((a) =>
       a.id === agentId
         ? {
@@ -647,11 +727,34 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     // `agents` at all.
     const newEvents = extractorForAgent(agentId, agent?.provider).push(log, now);
 
-    // Heartbeat bytes accumulate on every chunk so none are lost, but the
+    // Buffered for the on-disk history, which is opt-in: while the setting is
+    // off this returns without touching anything. The agent's name and repo go
+    // with the events so a stored row still identifies itself once the agent
+    // it came from is gone.
+    recordAgentLogEvents(
+      { id: agentId, name: agent?.name ?? agentId, repoPath: agent?.repoPath },
+      newEvents
+    );
+
+    // The readable stream runs off the same chunk and for the same reason:
+    // it holds partial lines, so it has to see every chunk, not the throttled
+    // ones. Unlike the extractor it keeps whatever it can read rather than
+    // only what a matcher recognised — that difference is the whole point of
+    // the feed's "All output" mode.
+    const newStreamLines = streamCaptureForAgent(agentId).push(log, now);
+
+    // Heartbeat counts accumulate on every chunk so none are lost, but the
     // store write itself rides the same throttle as the activity bump — a
-    // fresh object per chunk would cost the fleet's activity sparkline a
+    // fresh object per chunk would cost the fleet's activity chart a
     // recompute many times a second for no visible change.
-    accumulateHeartbeatBytes(agentId, log.length);
+    accumulateHeartbeatKinds(
+      agentId,
+      newEvents.map((event) => event.kind)
+    );
+
+    // Drained exactly once per flush, and only on a flush — draining outside
+    // the throttle would discard counts that never made it into a bucket.
+    const flushedKinds = shouldBumpActivity ? drainHeartbeatKinds(agentId) : [];
 
     set({
       agentLogs: {
@@ -675,21 +778,39 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
             },
           }
         : {}),
+      // Same rule as above: only replace the record when this chunk actually
+      // produced a readable line, so pure redraw noise costs no recompute.
+      ...(newStreamLines.length > 0
+        ? {
+            agentStreamLines: {
+              ...state.agentStreamLines,
+              [agentId]: appendStreamLines(state.agentStreamLines[agentId] ?? [], newStreamLines),
+            },
+          }
+        : {}),
       // Distilling "what is it doing right now" — and flushing the
-      // heartbeat's pending bytes — rides the same throttle: both only run
+      // heartbeat's pending counts — rides the same throttle: both only run
       // when the agents array is being replaced anyway, so neither costs
       // additional renders. A tail of pure redraw noise leaves the previous
       // activity line standing rather than blanking it.
       ...(shouldBumpActivity
         ? {
-            agentHeartbeat: {
-              ...state.agentHeartbeat,
-              [agentId]: pushHeartbeat(
-                state.agentHeartbeat[agentId] ?? [],
-                drainHeartbeatBytes(agentId),
-                now
-              ),
-            },
+            // Only when something was actually counted. An agent that has
+            // printed nothing but prose has no activity to chart, and writing
+            // an empty record for it would put it in every heartbeat-derived
+            // memo for nothing.
+            ...(flushedKinds.length > 0
+              ? {
+                  agentHeartbeat: {
+                    ...state.agentHeartbeat,
+                    [agentId]: pushHeartbeat(
+                      state.agentHeartbeat[agentId] ?? [],
+                      flushedKinds,
+                      now
+                    ),
+                  },
+                }
+              : {}),
             agents: state.agents.map((a) =>
               a.id === agentId
                 ? {
@@ -705,6 +826,34 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
           }
         : {}),
     });
+
+    // Rides the same throttle as everything else here: the buffered history
+    // goes to disk about once a second per active agent, coalesced across the
+    // whole fleet into one write. Fire-and-forget — an agent's output must
+    // never wait on a disk write, and `flushAgentLog` never rejects.
+    if (shouldBumpActivity) void flushAgentLog();
+  },
+
+  loadAgentLogHistory: async () => {
+    // Trim first, then read: otherwise the first load after a long absence
+    // would pull rows that are about to be discarded anyway.
+    await pruneAgentLogHistory();
+
+    const { agentLogPersist } = loadAppConfig();
+    if (!agentLogPersist) {
+      // Not merely "skip the read" — the previously loaded history is cleared
+      // too, so switching the setting off empties the view as well as the file.
+      set({ agentLogHistory: [] });
+      return;
+    }
+
+    try {
+      set({ agentLogHistory: await agentLogLoad(MAX_LOADED_HISTORY) });
+    } catch {
+      // A history that cannot be read is not a reason to break the console;
+      // the live feed stands on its own.
+      set({ agentLogHistory: [] });
+    }
   },
 
   refreshAgents: async () => {
@@ -846,5 +995,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       minimizedAgentIds: minimizedAgentIds.filter((id) => !killedIds.has(id)),
       agentColors: withoutColors(get().agentColors, (id) => killedIds.has(id)),
     });
+
+    // Same reason as in `killRunningAgent`: none of these agents will report a
+    // status again, so their buffered history is written here or nowhere.
+    void flushAgentLog();
   },
 });

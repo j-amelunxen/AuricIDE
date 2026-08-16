@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
@@ -34,6 +34,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof ProjectSection
     agents: [agent({ id: 'a1' })],
     agentEvents: {},
     agentHeartbeat: {},
+    heartbeatScaleMax: 1,
     reviewedAgentIds: [] as string[],
     onOpenTerminal: vi.fn(),
     onStop: vi.fn(),
@@ -77,6 +78,27 @@ describe('ProjectSection header', () => {
     resetStore();
     const { container } = render(<ProjectSection {...baseProps()} />);
     expect(container.querySelector('[data-needs-attention="true"]')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectSection header icon', () => {
+  it('renders the project’s configured icon override, matching Quick Access', () => {
+    resetStore();
+    useStore.setState({
+      starredProjects: [
+        {
+          path: '/repos/acme-app',
+          name: 'acme-app',
+          starredAt: NOW,
+          icon: { kind: 'emoji', value: '🚀' },
+        },
+      ],
+    } as Partial<ReturnType<typeof useStore.getState>>);
+    render(<ProjectSection {...baseProps()} />);
+
+    const tile = screen.getByTestId('tile-face-/repos/acme-app');
+    expect(tile).toHaveAttribute('data-icon-kind', 'emoji');
+    expect(tile).toHaveTextContent('🚀');
   });
 });
 
@@ -129,5 +151,37 @@ describe('ProjectSection actions', () => {
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: 'Stop all' }));
     expect(onStopAll).toHaveBeenCalledWith('/repos/acme-app');
+  });
+});
+
+describe('ProjectSection keyboard access', () => {
+  it('reveals its actions on keyboard focus, not just on hover', () => {
+    // The actions are hover-revealed (`opacity-0`). Without a focus-within
+    // rule a keyboard user tabs onto a button they cannot see.
+    resetStore();
+    render(<ProjectSection {...baseProps()} />);
+
+    const actions = screen.getByTestId('project-section-actions');
+    expect(actions.className).toContain('group-focus-within:opacity-100');
+  });
+
+  it('opens the spawn menu from the keyboard with the context-menu key', async () => {
+    resetStore();
+    render(<ProjectSection {...baseProps()} />);
+
+    const section = screen.getByTestId('project-section-/repos/acme-app');
+    fireEvent.keyDown(section, { key: 'ContextMenu' });
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+  });
+
+  it('opens the spawn menu with Shift+F10 as well', async () => {
+    resetStore();
+    render(<ProjectSection {...baseProps()} />);
+
+    const section = screen.getByTestId('project-section-/repos/acme-app');
+    fireEvent.keyDown(section, { key: 'F10', shiftKey: true });
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
   });
 });

@@ -1,7 +1,15 @@
 import { createEventExtractor, type EventExtractor } from './extract';
+import { createStreamCapture, type StreamCapture } from './streamCapture';
+import type { AgentEventKind } from './types';
 
 interface AgentRuntime {
   extractor: EventExtractor;
+  /**
+   * The readable-output capture. Provider-independent — it recognises no
+   * syntax — so unlike the extractor it survives the provider rebuild below
+   * with its partial-line buffer intact.
+   */
+  streamCapture: StreamCapture;
   /**
    * The provider id the extractor was actually built with, or `undefined`
    * when it was built as a best-effort fallback before the agent's real
@@ -9,15 +17,15 @@ interface AgentRuntime {
    * a real provider id shows up for this agent.
    */
   providerId: string | undefined;
-  /** Output bytes seen since the last store flush — see `accumulateHeartbeatBytes`. */
-  pendingHeartbeatBytes: number;
+  /** Event kinds seen since the last store flush — see `accumulateHeartbeatKinds`. */
+  pendingHeartbeatKinds: AgentEventKind[];
 }
 
 /**
  * One runtime record per agent, kept outside the Zustand store: the event
- * extractor (partial-line buffer, redraw-dedupe memory) and the heartbeat
- * byte accumulator both need to survive across PTY chunks without forcing a
- * `set()` on every one of them.
+ * extractor (partial-line buffer, redraw-dedupe memory), the readable-output
+ * capture and the heartbeat accumulator all need to survive across PTY chunks
+ * without forcing a `set()` on every one of them.
  */
 const runtimeByAgent = new Map<string, AgentRuntime>();
 
@@ -26,8 +34,9 @@ function runtimeFor(agentId: string, providerId: string | undefined): AgentRunti
   if (!existing) {
     const created: AgentRuntime = {
       extractor: createEventExtractor(providerId ?? 'generic'),
+      streamCapture: createStreamCapture(),
       providerId,
-      pendingHeartbeatBytes: 0,
+      pendingHeartbeatKinds: [],
     };
     runtimeByAgent.set(agentId, created);
     return created;
@@ -41,8 +50,11 @@ function runtimeFor(agentId: string, providerId: string | undefined): AgentRunti
   if (existing.providerId === undefined && providerId !== undefined) {
     const rebuilt: AgentRuntime = {
       extractor: createEventExtractor(providerId),
+      // Carried over, not recreated: it holds a partial line from output
+      // that already arrived, and it never depended on the provider anyway.
+      streamCapture: existing.streamCapture,
       providerId,
-      pendingHeartbeatBytes: existing.pendingHeartbeatBytes,
+      pendingHeartbeatKinds: existing.pendingHeartbeatKinds,
     };
     runtimeByAgent.set(agentId, rebuilt);
     return rebuilt;
@@ -61,27 +73,37 @@ export function extractorForAgent(agentId: string, providerId: string | undefine
 }
 
 /**
- * Adds to an agent's pending heartbeat byte count without touching the
- * store — the store write rides a coarser throttle (see `agentSlice`'s
- * `appendAgentLog`), but every chunk's bytes still have to count somewhere
- * or they'd be lost between flushes.
+ * The readable-output capture for one agent, created on first use. Takes no
+ * provider: it recognises no syntax, so there is nothing for a later real
+ * provider id to change about it.
  */
-export function accumulateHeartbeatBytes(agentId: string, bytes: number): void {
-  runtimeFor(agentId, undefined).pendingHeartbeatBytes += bytes;
-}
-
-/** Reads and zeroes an agent's pending heartbeat bytes — call this exactly once per flush. */
-export function drainHeartbeatBytes(agentId: string): number {
-  const runtime = runtimeByAgent.get(agentId);
-  if (!runtime) return 0;
-  const bytes = runtime.pendingHeartbeatBytes;
-  runtime.pendingHeartbeatBytes = 0;
-  return bytes;
+export function streamCaptureForAgent(agentId: string): StreamCapture {
+  return runtimeFor(agentId, undefined).streamCapture;
 }
 
 /**
- * Drops an agent's whole runtime record — extractor and pending heartbeat
- * bytes alike. Call this everywhere an agent itself is removed (dismissed,
+ * Records event kinds against an agent's pending heartbeat without touching
+ * the store — the store write rides a coarser throttle (see `agentSlice`'s
+ * `appendAgentLog`), but every chunk's events still have to count somewhere
+ * or they'd be lost between flushes.
+ */
+export function accumulateHeartbeatKinds(agentId: string, kinds: readonly AgentEventKind[]): void {
+  if (kinds.length === 0) return;
+  runtimeFor(agentId, undefined).pendingHeartbeatKinds.push(...kinds);
+}
+
+/** Reads and clears an agent's pending heartbeat kinds — call this exactly once per flush. */
+export function drainHeartbeatKinds(agentId: string): AgentEventKind[] {
+  const runtime = runtimeByAgent.get(agentId);
+  if (!runtime) return [];
+  const kinds = runtime.pendingHeartbeatKinds;
+  runtime.pendingHeartbeatKinds = [];
+  return kinds;
+}
+
+/**
+ * Drops an agent's whole runtime record — extractor, stream capture and
+ * pending heartbeat counts alike. Call this everywhere an agent itself is removed (dismissed,
  * killed, evicted); otherwise this map grows for the app's whole lifetime.
  */
 export function dropAgentExtractor(agentId: string): void {

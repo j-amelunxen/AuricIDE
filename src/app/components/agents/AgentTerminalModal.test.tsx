@@ -524,6 +524,27 @@ describe('AgentTerminalModal', () => {
       });
     });
 
+    // The header only has room for a truncated line, so resting on a tab is
+    // how you find out which task an agent in the fleet is actually on.
+    it('spells out a tab’s whole start prompt when the pointer rests on it', async () => {
+      const briefed = makeAgent({
+        id: 'agent-5',
+        name: 'Fixer',
+        currentTask: 'Check the image recycling path end to end, then re-run the fixtures.',
+      });
+      render(<AgentTerminalModal agent={working} agents={[working, briefed]} onClose={vi.fn()} />);
+
+      fireEvent.mouseEnter(screen.getByTestId('agent-tab-shell-agent-5'));
+
+      expect(
+        await screen.findByText(
+          'Check the image recycling path end to end, then re-run the fixtures.',
+          {},
+          { timeout: 2000 }
+        )
+      ).toBeInTheDocument();
+    });
+
     it('calls onSwitchAgent with the clicked agent', async () => {
       const user = userEvent.setup();
       const onSwitchAgent = vi.fn();
