@@ -19,6 +19,8 @@ import {
   wheelKnownIds,
   wheelSlotId,
 } from '@/lib/quickAccess/launchSkills';
+import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
+import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
 import {
   assignSkillToSlot,
@@ -468,7 +470,9 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const menuProject = contextMenu
     ? starredProjects.find((p) => p.path === contextMenu.path)
     : undefined;
-  const menuSkills = menuProject ? quickAccessSkills(menuProject) : [];
+  const menuSkills = menuProject
+    ? menuSkillEntries(quickAccessSkills(menuProject), loadAuricSkills())
+    : [];
   const shownSkills = menuSkills.slice(0, MAX_MENU_SKILLS);
   const menuCombos = menuProject ? quickAccessCombos(menuProject) : [];
   const shownCombos = menuCombos.slice(0, MAX_MENU_SKILLS);
