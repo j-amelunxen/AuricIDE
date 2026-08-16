@@ -1,8 +1,14 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import {
+  CONSOLE_FEED_DEFAULT_HEIGHT,
+  CONSOLE_FEED_KEY_STEP,
+  maxFeedHeight,
+  writeFeedHeight,
+} from '@/lib/agents/consoleLayout';
 import { AgentConsole } from './AgentConsole';
 import { useStore } from '@/lib/store';
 
@@ -233,6 +239,166 @@ describe('AgentConsole layout', () => {
 
     const feedHeader = screen.getByTestId('activity-feed-header');
     expect(feedHeader).toHaveTextContent('Esc closes');
+  });
+});
+
+describe('AgentConsole activity feed height', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const feedRow = () => screen.getByTestId('agent-console-feed');
+  const handle = () => screen.getByTestId('agent-console-feed-handle');
+
+  function drag(fromY: number, toY: number) {
+    fireEvent.mouseDown(handle(), { clientY: fromY });
+    fireEvent.mouseMove(document, { clientY: toY });
+    fireEvent.mouseUp(document);
+  }
+
+  it('starts at the default height', () => {
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+    expect(feedRow()).toHaveStyle({ height: `${CONSOLE_FEED_DEFAULT_HEIGHT}px` });
+  });
+
+  it('offers the divider as a labelled separator a keyboard can reach', () => {
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const separator = screen.getByRole('separator', { name: /resize the activity feed/i });
+    expect(separator).toHaveAttribute('tabindex', '0');
+    expect(separator).toHaveAttribute('aria-orientation', 'horizontal');
+    expect(separator).toHaveAttribute('aria-valuenow', String(CONSOLE_FEED_DEFAULT_HEIGHT));
+  });
+
+  it('grows the feed when the divider is dragged upwards', () => {
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    drag(600, 500);
+
+    expect(feedRow()).toHaveStyle({ height: `${CONSOLE_FEED_DEFAULT_HEIGHT + 100}px` });
+  });
+
+  it('shrinks it again when the divider is dragged back down', () => {
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    drag(600, 500);
+    drag(500, 560);
+
+    expect(feedRow()).toHaveStyle({ height: `${CONSOLE_FEED_DEFAULT_HEIGHT + 40}px` });
+  });
+
+  it('never lets the feed swallow the whole window', () => {
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    drag(600, -4000);
+
+    expect(feedRow()).toHaveStyle({ height: `${maxFeedHeight(window.innerHeight)}px` });
+  });
+
+  it('resizes from the keyboard too', () => {
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    fireEvent.keyDown(handle(), { key: 'ArrowUp' });
+    expect(feedRow()).toHaveStyle({
+      height: `${CONSOLE_FEED_DEFAULT_HEIGHT + CONSOLE_FEED_KEY_STEP}px`,
+    });
+
+    fireEvent.keyDown(handle(), { key: 'ArrowDown' });
+    expect(feedRow()).toHaveStyle({ height: `${CONSOLE_FEED_DEFAULT_HEIGHT}px` });
+  });
+
+  it('remembers the height for the next time the console is opened', () => {
+    resetStore({ agentConsoleOpen: true });
+    const { unmount } = render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    drag(600, 500);
+    unmount();
+
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+    expect(feedRow()).toHaveStyle({ height: `${CONSOLE_FEED_DEFAULT_HEIGHT + 100}px` });
+  });
+
+  it('brings a height stored on a taller monitor back inside this window', () => {
+    writeFeedHeight(4000);
+    resetStore({ agentConsoleOpen: true });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    expect(feedRow()).toHaveStyle({ height: `${maxFeedHeight(window.innerHeight)}px` });
+  });
+});
+
+describe('AgentConsole idle project list', () => {
+  const starredProjects: StarredProject[] = [
+    { path: '/repos/idle-app', name: 'idle-app', starredAt: 0 },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('folds the list away and leaves its heading to bring it back', async () => {
+    const user = userEvent.setup();
+    resetStore({ agentConsoleOpen: true, agents: [], starredProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const toggle = screen.getByRole('button', { name: 'No agents running' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(toggle);
+
+    expect(screen.queryByTestId('project-section-/repos/idle-app')).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(toggle);
+    expect(screen.getByTestId('project-section-/repos/idle-app')).toBeInTheDocument();
+  });
+
+  it('says how many projects the fold is hiding', async () => {
+    const user = userEvent.setup();
+    resetStore({ agentConsoleOpen: true, agents: [], starredProjects });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'No agents running' }));
+
+    // Folding hides tiles, never facts — the same rule the agents panel folds by.
+    expect(screen.getByTestId('agent-console-idle-count')).toHaveTextContent('1');
+  });
+
+  it('stays folded the next time the console is opened', async () => {
+    const user = userEvent.setup();
+    resetStore({ agentConsoleOpen: true, agents: [], starredProjects });
+    const { unmount } = render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'No agents running' }));
+    unmount();
+
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+    expect(screen.queryByTestId('project-section-/repos/idle-app')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'No agents running' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+  });
+
+  it('keeps the running projects visible while the idle ones are folded', async () => {
+    const user = userEvent.setup();
+    resetStore({
+      agentConsoleOpen: true,
+      agents: [agent({ id: 'a1', repoPath: '/repos/acme-app' })],
+      starredProjects,
+    });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'No agents running' }));
+
+    expect(screen.getByTestId('project-section-/repos/acme-app')).toBeInTheDocument();
+    expect(screen.queryByTestId('project-section-/repos/idle-app')).not.toBeInTheDocument();
   });
 });
 

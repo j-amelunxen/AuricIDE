@@ -43,6 +43,8 @@ export const APP_CONFIG_KEYS = {
   cliUsageLimits: 'auric.cli-usage-limits',
   agentTerminalFontSize: 'auric.agent-terminal-font-size',
   agentConsoleAutoOpen: 'auric.agent-console-auto-open',
+  agentConsoleFeedHeight: 'auric.agent-console.feed-height',
+  agentConsoleProjectsCollapsed: 'auric.agent-console.projects-collapsed',
   agentLogPersist: 'auric.agent-log.persist',
   agentLogRetentionDays: 'auric.agent-log.retention-days',
 } as const;
