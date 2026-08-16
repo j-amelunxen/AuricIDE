@@ -26,6 +26,22 @@ export function firstGrapheme(input: string): string {
 }
 
 /**
+ * The mark a project was pinned with, for the places that draw a project tile
+ * without holding the pinned record itself — schedule rows, inbox rows.
+ *
+ * An unpinned project simply has none, and `resolveTileIcon` turns that into
+ * the generated initials, which is the same tile it had before anyone picked
+ * an icon.
+ */
+export function projectIconFor(
+  pinned: { path: string; icon?: ProjectIconOverride }[],
+  path: string | null
+): ProjectIconOverride | undefined {
+  if (path === null || path === '') return undefined;
+  return pinned.find((project) => project.path === path)?.icon;
+}
+
+/**
  * Decides what a Quick Access tile draws.
  *
  * The glyph name comes from stored user data, so it is NOT covered by the

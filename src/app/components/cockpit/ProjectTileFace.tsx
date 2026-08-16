@@ -9,9 +9,55 @@ import { resolveTileIcon } from '@/lib/quickAccess/icon';
 import type { ProjectIconOverride } from '@/lib/store/starredProjectsSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
+/** How large the tile is drawn. `lg` is the Quick Access tile. */
+export type ProjectTileSize = 'xs' | 'sm' | 'md' | 'lg';
+
+/**
+ * Sizing is a prop rather than a `className` override because the mark inside
+ * has to shrink too, and because two height utilities from different call
+ * sites are resolved by the stylesheet's own order — not by which one was
+ * written last.
+ */
+const TILE_SIZES: Record<
+  ProjectTileSize,
+  { box: string; initials: string; glyph: string; emoji: string; image: string }
+> = {
+  // Sized for a 9px meta line: the surface colour carries the recognition, the
+  // initials are a hint rather than something to read.
+  xs: {
+    box: 'h-4 w-4 rounded',
+    initials: 'text-[7px]',
+    glyph: 'text-[10px]',
+    emoji: 'text-[9px]',
+    image: 'h-3 w-3',
+  },
+  sm: {
+    box: 'h-5 w-5 rounded-md',
+    initials: 'text-[8px]',
+    glyph: 'text-[12px]',
+    emoji: 'text-[11px]',
+    image: 'h-3.5 w-3.5',
+  },
+  md: {
+    box: 'h-6 w-6 rounded-lg',
+    initials: 'text-[10px]',
+    glyph: 'text-[14px]',
+    emoji: 'text-[13px]',
+    image: 'h-4 w-4',
+  },
+  lg: {
+    box: 'h-10 w-10 rounded-xl',
+    initials: 'text-[13px]',
+    glyph: 'text-[20px]',
+    emoji: 'text-[18px]',
+    image: 'h-7 w-7',
+  },
+};
+
 interface ProjectTileFaceProps {
   path: string;
   icon?: ProjectIconOverride | null;
+  size?: ProjectTileSize;
   className?: string;
 }
 
@@ -36,7 +82,8 @@ interface ProjectTileFaceProps {
  * Shared with the settings dialog's live preview on purpose: "what you pick"
  * and "what you get" cannot drift apart if they are the same component.
  */
-export function ProjectTileFace({ path, icon, className = '' }: ProjectTileFaceProps) {
+export function ProjectTileFace({ path, icon, size = 'lg', className = '' }: ProjectTileFaceProps) {
+  const scale = TILE_SIZES[size];
   const gradient = generateProjectIcon(path);
   const resolved = resolveTileIcon(path, icon);
   const imagePath = resolved.kind === 'image' ? resolved.path : null;
@@ -89,7 +136,7 @@ export function ProjectTileFace({ path, icon, className = '' }: ProjectTileFaceP
       // tell a sampled surface from a fallback when a tile looks wrong.
       data-surface={!derived ? 'generated' : iconHue === null ? 'neutral' : 'icon'}
       data-surface-hue={derived && iconHue !== null ? String(Math.round(iconHue)) : undefined}
-      className={`flex h-10 w-10 items-center justify-center rounded-xl text-[13px] font-black text-white/95 ${className}`}
+      className={`flex items-center justify-center font-black text-white/95 ${scale.box} ${scale.initials} ${className}`}
       style={{
         backgroundImage: `linear-gradient(135deg, ${surface.from}, ${surface.to})`,
       }}
@@ -102,12 +149,12 @@ export function ProjectTileFace({ path, icon, className = '' }: ProjectTileFaceP
           src={dataUri ?? ''}
           alt=""
           aria-hidden="true"
-          className="h-7 w-7 rounded object-contain"
+          className={`rounded object-contain ${scale.image}`}
         />
       ) : resolved.kind === 'glyph' ? (
-        <AuricIcon name={resolved.name} aria-hidden="true" className="text-[20px]" />
+        <AuricIcon name={resolved.name} aria-hidden="true" className={scale.glyph} />
       ) : resolved.kind === 'emoji' ? (
-        <span aria-hidden="true" className="text-[18px] leading-none">
+        <span aria-hidden="true" className={`leading-none ${scale.emoji}`}>
           {resolved.char}
         </span>
       ) : resolved.kind === 'initials' ? (
