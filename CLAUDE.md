@@ -416,5 +416,80 @@ The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirro
 | Notifications & Schedules | `notifications.rs`, `schedules.rs`                            | Cross-project notification bus, cron & one-shot schedule execution engine                                                                                               |
 | Configuration             | `app_config.rs`, `provider_policy.rs`                         | Application-wide credentials (`app-credentials.json`, mode 0600) and the per-project agent-provider allow/deny list enforced at spawn                                   |
 | Project Discovery         | `project_icons.rs`, `project_skills.rs`, `recent_projects.rs` | Workspace icons ranking, skills discovery, recent & starred projects management                                                                                         |
+| Recent creations          | `recent_creations.rs`                                         | Newest file birth time per directory, maintained from watcher events so `read_directory` dates folders without walking their subtree (see below)                        |
 | Themes                    | `themes.rs`                                                   | Custom theme JSON scanner and theme list API                                                                                                                            |
-| Utilities                 | `utf8_stream.rs`, `video_import.rs`, `webview_prefs.rs`       | UTF-8 PTY chunk reassembly, video import processing, cross-origin webview preferences sync                                                                              |
+| Utilities                 | `utf8_stream.rs`, `webview_prefs.rs`                          | UTF-8 PTY chunk reassembly, cross-origin webview preferences sync                                                                                                       |
+| Video import              | `video_import/` (`mod.rs`, `preflight.rs`, `failure.rs`)      | Transcription and frame extraction; the dependency preflight and the rule that tool output never becomes an error message (see below)                                   |
+
+## Depending on tools that come from the machine
+
+Local transcription is a Python tool (`parakeet-mlx`) driven by `uv`, and video
+import shells out to `ffmpeg`/`ffprobe`. None of that is ours, and none of it is
+pinned — pinning a runtime means owning its upgrades. The cost of not pinning is
+that the machine can be wrong, so three rules carry the weight instead:
+
+- **Check before you run.** `preflight::inspect` probes platform, `uv` (with a
+  minimum version), a Python ≥3.10, `ffmpeg`, `ffprobe` and the runtime itself,
+  and reports each as its own line: requirement, what was found, and the one
+  command that fixes it. A machine that cannot run local transcription says so
+  in a sentence, before anything is downloaded. Installing is offered only when
+  the _sole_ failing check is the runtime — that is what `can_install` means.
+- **Tool output never becomes the message.** `failure::describe_failure`
+  classifies stdout+stderr into one plain sentence; the output itself is
+  stripped of ANSI and box drawing, tail-trimmed, and returned as `details` for
+  a fold, with the full text written to a log file. The frontend twin is
+  `toolFailure.ts`, which demotes anything traceback-shaped that reaches it by
+  another route. A forty-line Python traceback in a `<p role="alert">` is the
+  failure mode both sides exist to prevent.
+- **Resolve executables, never trust PATH.** Everything is spawned by absolute
+  path via `preflight::resolve_executable`, which walks the _login shell's_
+  PATH. An app launched from `/Applications` inherits launchd's PATH, which has
+  no Homebrew in it. The runtime we install is found at
+  `<app_data_dir>/runtime/bin` rather than by name, because `uv tool install`
+  exits 0 while only _warning_ that its bin directory is off PATH — a
+  PATH-based check reports a perfectly good install as missing.
+
+The tool environment, its executable and the model cache all live under
+`<app_data_dir>/runtime/` (`UV_TOOL_DIR`, `UV_TOOL_BIN_DIR`,
+`PARAKEET_CACHE_DIR`). Sharing `~/.local/share/uv/tools` with the rest of the
+machine means anything else touching it can break a transcription mid-run, and
+the way that surfaces is a `ModuleNotFoundError`.
+
+`preflight.rs` has an `#[ignore]`d test, `inspects_this_machine`, that runs the
+real probes against the real machine — the only place the probe logic is checked
+where it actually acts.
+
+## Dating folders without walking them
+
+The explorer marks a file created in the last five minutes, and marks any folder
+that holds one anywhere beneath it. Answering that from the filesystem means
+walking a folder's whole subtree on every directory read — on this repo that was
+thousands of `stat` calls per watcher event, on the main thread.
+
+`recent_creations.rs` maintains the answer instead of recomputing it. Opening a
+project seeds one map of "newest descendant-file birth time" per directory;
+after that every watcher event stamps the file's birth time onto each ancestor
+directory. A read costs one lookup per child.
+
+Three things hold this together, and breaking any of them makes a folder's date
+depend on who answered:
+
+- **Both walks prune identically.** `walk_files_with_birth_time` (seeding) and
+  `newest_file_created_at_by_child` (fallback) share `skip_recent_walk_dir` and
+  `should_filter_watcher_path`. `the_cache_dates_folders_exactly_as_the_walk_would`
+  asserts the two produce the same listing.
+- **A root counts as seeded only once its contents are in.** `seed_root` marks
+  and fills in one step. Marking first would let a read land mid-walk and
+  conclude a folder holds nothing recent — wrong, and nothing would correct it.
+  Until seeding lands, `newest_by_child` returns `None` and the caller walks.
+- **The five-minute window is not in Rust.** The backend reports a timestamp;
+  `src/lib/explorer/recentlyCreated.ts` owns what counts as recent. One
+  definition, so the two sides cannot drift.
+
+The deliberate imprecision: a cached timestamp only moves forward. Delete the
+one young file in a folder and it keeps glowing for the rest of the window.
+That is the price of not walking, and it was taken knowingly.
+
+`read_directory` is `#[tauri::command(async)]` for the same reason — a plain
+`fn` command runs on the main thread, and the fallback walk still happens for
+any directory outside a seeded root.
