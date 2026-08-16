@@ -178,7 +178,7 @@ export function ProjectSection({
       }`}
     >
       <div className="mb-2.5 flex items-center gap-2">
-        <ProjectTileFace path={repoPath} icon={project?.icon} className="h-6 w-6 text-[10px]" />
+        <ProjectTileFace path={repoPath} icon={project?.icon} size="md" />
         <span className="text-[13px] font-semibold text-foreground">{repoName(repoPath)}</span>
         <span className="whitespace-nowrap font-mono text-[11px] text-foreground-muted">
           {agents.length === 0
