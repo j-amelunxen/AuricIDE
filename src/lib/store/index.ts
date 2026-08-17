@@ -26,6 +26,7 @@ import { createExcalidrawSlice, type ExcalidrawSlice } from './excalidrawSlice';
 import { createCommandUsageSlice, type CommandUsageSlice } from './commandUsageSlice';
 import { createScratchSlice, type ScratchSlice } from './scratchSlice';
 import { createNotificationsSlice, type NotificationsSlice } from './notificationsSlice';
+import { createInboxSlice, type InboxSlice } from './inboxSlice';
 import { createSchedulesSlice, type SchedulesSlice } from './schedulesSlice';
 import { createSkillComboSlice, type SkillComboSlice } from './skillComboSlice';
 import { createUsageLimitsSlice, type UsageLimitsSlice } from './usageLimitsSlice';
@@ -58,6 +59,7 @@ export type StoreState = FileTreeSlice &
   CommandUsageSlice &
   ScratchSlice &
   NotificationsSlice &
+  InboxSlice &
   SchedulesSlice &
   SkillComboSlice &
   UsageLimitsSlice &
@@ -91,6 +93,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createExcalidrawSlice(...a),
   ...createScratchSlice(...a),
   ...createNotificationsSlice(...a),
+  ...createInboxSlice(...a),
   ...createSchedulesSlice(...a),
   ...createSkillComboSlice(...a),
   ...createUsageLimitsSlice(...a),

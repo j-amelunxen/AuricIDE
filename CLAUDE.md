@@ -188,6 +188,7 @@ Key store slices:
 | `blueprintsSlice`, `obsidianCanvasSlice`, `excalidrawSlice`                             | Canvas blueprints, Obsidian canvas view, Excalidraw scenes                            |
 | `slashCommandSlice`, `commandUsageSlice`, `scratchSlice`                                | Slash commands, usage telemetry, scratchpad                                           |
 | `toastSlice`, `notificationsSlice`, `schedulesSlice`, `skillComboSlice`, `overlaySlice` | System toasts, notification bus, recurring schedules, skill combos, overlay stack     |
+| `inboxSlice`                                                                            | App-level GTD inbox: captured items, project assignment, cross-project PM overview    |
 
 **PM draft pattern:** `pmDraftEpics` holds in-progress edits; `pmEpics` is the last-persisted snapshot. `savePmData()` flushes drafts to SQLite via IPC.
 
@@ -408,6 +409,7 @@ The active tab type determines which viewer renders: `MarkdownEditor` (CodeMirro
 | Database                  | `database.rs`                                                               | SQLite schema, PM CRUD (epics, tickets, test cases, goals, requirements, reviews)                                                                                       |
 | Excalidraw                | `excalidraw/` (`mod.rs`, `contract.rs`)                                     | Excalidraw integration REST API & scene listing                                                                                                                         |
 | Git                       | `git.rs`                                                                    | **All git behaviour** (git2-rs): status, diff, stage/unstage, commit, push, discard, blame, branches, history. `lib.rs` only registers the commands; the logic is here. |
+| Inbox                     | `inbox.rs`                                                                  | App-level GTD inbox (`inbox.db`, twin of the notification store); assigning an item writes a real ticket into that project's `.auric/project.db`                        |
 | Machine credentials       | `app_config.rs`                                                             | Machine-wide settings (API keys) that outlive any one project; a project may still override                                                                             |
 | Provider policy           | `provider_policy.rs`                                                        | Which agentic providers a project permits. Twin of `src/lib/config/providerPolicy.ts`; both tested against `providerPolicy.fixtures.json`                               |
 | LLM & Providers           | `llm.rs`, `providers.rs`                                                    | HTTP calls to LLM APIs, agent CLI provider registry (`RESERVED_PROVIDER_ID` = the built-in `crush`)                                                                     |
