@@ -15,9 +15,15 @@ import {
 } from '@/lib/notifications/scheduleFormat';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
 import type { SkillLaunchPins } from '@/lib/agents/skillLaunch';
-import type { NotificationAction, NotificationLaunch } from '@/lib/notifications/types';
+import type {
+  ConductorLaunch,
+  NotificationAction,
+  NotificationLaunch,
+} from '@/lib/notifications/types';
 import type { PermissionMode } from '@/lib/tauri/agents';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import { goalsLoad } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/tauri/goals';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import {
   quickAccessCombos,
@@ -53,6 +59,7 @@ export interface ScheduleEditorProps {
 
 type RunSkillAction = Extract<NotificationAction, { kind: 'run-skill' }>;
 type RunComboAction = Extract<NotificationAction, { kind: 'run-combo' }>;
+type RunConductorAction = Extract<NotificationAction, { kind: 'run-conductor' }>;
 
 /**
  * The custom-agent launch, as far as this form owns it. Everything is optional
@@ -66,13 +73,47 @@ type RunComboAction = Extract<NotificationAction, { kind: 'run-combo' }>;
  */
 type TaskLaunchDraft = SkillLaunchPins;
 
+/**
+ * The conductor's run parameters. Unlike a skill or combo, nothing here names
+ * something that lives outside this form — there is no live pin to fall out of
+ * sync with — so the draft carries the values directly rather than through a
+ * snapshot.
+ */
+type ConductorActionDraft = {
+  choice: 'conductor';
+  ticketBudget: number;
+  maxConcurrent: number;
+  /** `null` means "all tickets in the project", not "not decided yet". */
+  goalId: string | null;
+  /** Snapshot for display; the id is what a run actually scopes to. */
+  goalName: string | null;
+  requireReview: boolean;
+  launch: ConductorLaunch;
+};
+
+const DEFAULT_CONDUCTOR_DRAFT: ConductorActionDraft = {
+  choice: 'conductor',
+  ticketBudget: 5,
+  maxConcurrent: 1,
+  goalId: null,
+  goalName: null,
+  requireReview: false,
+  launch: 'auto',
+};
+
 type ActionDraft =
   | { choice: 'none' }
   | ({ choice: 'task'; task: string } & TaskLaunchDraft)
   | { choice: 'skill'; snapshot?: RunSkillAction }
-  | { choice: 'combo'; snapshot?: RunComboAction };
+  | { choice: 'combo'; snapshot?: RunComboAction }
+  | ConductorActionDraft;
 
 const DISCOVERED_PREFIX = 'discovered:';
+
+function clampInt(value: number, min: number, max: number): number {
+  if (Number.isNaN(value)) return min;
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
 
 /** Same grouping Quick Access settings already uses. */
 const SCOPE_ORDER: { scope: ProjectSkillScope; title: string }[] = [
@@ -126,6 +167,19 @@ function actionDraftOf(schedule: Schedule | null): ActionDraft {
   const action = parsePayload(schedule?.payload ?? '{}').actions?.[0];
   if (action?.kind === 'run-skill') return { choice: 'skill', snapshot: action };
   if (action?.kind === 'run-combo') return { choice: 'combo', snapshot: action };
+  if (action?.kind === 'run-conductor') {
+    return {
+      choice: 'conductor',
+      ticketBudget: action.ticketBudget,
+      maxConcurrent: action.maxConcurrent ?? 1,
+      goalId: action.goalId ?? null,
+      goalName: action.goalName ?? null,
+      requireReview: action.requireReview ?? false,
+      // A payload saved before the launch existed — or the run-skill default —
+      // opens the panel. Only an explicit `auto` may start on its own.
+      launch: action.launch ?? 'dialog',
+    };
+  }
   if (action?.kind === 'spawn-agent') {
     return {
       choice: 'task',
@@ -286,6 +340,22 @@ function actionsFromDraft(draft: ActionDraft, projectPath: string | null): Notif
     if (draft.snapshot === undefined || projectPath === null) return [];
     return [{ ...draft.snapshot, repoPath: projectPath }];
   }
+  if (draft.choice === 'conductor') {
+    if (projectPath === null) return [];
+    const action: RunConductorAction = {
+      id: 'run',
+      label: 'Start conductor',
+      kind: 'run-conductor',
+      repoPath: projectPath,
+      ticketBudget: draft.ticketBudget,
+      maxConcurrent: draft.maxConcurrent,
+      launch: draft.launch,
+    };
+    if (draft.goalId !== null) action.goalId = draft.goalId;
+    if (draft.goalName !== null) action.goalName = draft.goalName;
+    if (draft.requireReview) action.requireReview = true;
+    return [action];
+  }
   if (draft.snapshot === undefined || projectPath === null) return [];
   return [{ ...draft.snapshot, repoPath: projectPath }];
 }
@@ -294,6 +364,7 @@ function saveBlocked(name: string, draft: ActionDraft): boolean {
   if (name.trim() === '') return true;
   if (draft.choice === 'skill' && draft.snapshot === undefined) return true;
   if (draft.choice === 'combo' && draft.snapshot === undefined) return true;
+  if (draft.choice === 'conductor' && draft.ticketBudget < 1) return true;
   return false;
 }
 
@@ -364,6 +435,8 @@ export function ScheduleEditor({
   const [catchUp, setCatchUp] = useState<ScheduleCatchUp>(schedule?.catchUp ?? 'coalesce');
   const [actionDraft, setActionDraft] = useState<ActionDraft>(() => actionDraftOf(schedule));
   const [body, setBody] = useState(() => parsePayload(schedule?.payload ?? '{}').body ?? '');
+  const [conductorGoals, setConductorGoals] = useState<PmGoal[]>([]);
+  const [conductorGoalsLoading, setConductorGoalsLoading] = useState(false);
 
   const selectedProject =
     projectPath === null ? undefined : projectOptions.find((option) => option.path === projectPath);
@@ -507,6 +580,41 @@ export function ScheduleEditor({
     onDraftChange(draft);
   }, [draft, onDraftChange]);
 
+  /**
+   * The goal picker is scoped to whichever project the conductor would run
+   * against, read fresh whenever that project changes. Gated on the conductor
+   * being the current choice so every other schedule kind — the common case —
+   * never opens this project's database at all.
+   */
+  useEffect(() => {
+    if (actionDraft.choice !== 'conductor' || projectPath === null) return;
+    const path = projectPath;
+    let cancelled = false;
+
+    async function loadGoals() {
+      setConductorGoalsLoading(true);
+      try {
+        const state = await goalsLoad(path);
+        if (cancelled) return;
+        setConductorGoals(
+          state.goals.filter((goal) => goal.status !== 'achieved' && goal.status !== 'archived')
+        );
+      } catch {
+        // Browser mode, or a project with no database yet: the run simply
+        // scopes to all tickets, same as if the field were left untouched.
+        if (cancelled) return;
+        setConductorGoals([]);
+      } finally {
+        if (!cancelled) setConductorGoalsLoading(false);
+      }
+    }
+
+    void loadGoals();
+    return () => {
+      cancelled = true;
+    };
+  }, [actionDraft.choice, projectPath]);
+
   const toggleWeekday = (value: string) =>
     setWeekdays((current) =>
       current.includes(value) ? current.filter((day) => day !== value) : [...current, value]
@@ -523,19 +631,46 @@ export function ScheduleEditor({
     const next = value === '' ? null : value;
     setProjectPath(next);
     setActionDraft((current) => {
-      if (current.choice !== 'skill' && current.choice !== 'combo') return current;
-      return next === null ? { choice: 'none' } : { choice: current.choice };
+      if (current.choice === 'skill' || current.choice === 'combo') {
+        return next === null ? { choice: 'none' } : { choice: current.choice };
+      }
+      if (current.choice === 'conductor') {
+        // Budget, concurrency, review and launch belong to this reminder, not
+        // to the project — only the goal, which names a row in one project's
+        // own database, has to be re-picked.
+        return next === null ? { choice: 'none' } : { ...current, goalId: null, goalName: null };
+      }
+      return current;
     });
   };
 
   const choose = (choice: ActionDraft['choice']) => {
-    if ((choice === 'skill' || choice === 'combo') && projectPath === null) return;
+    if (
+      (choice === 'skill' || choice === 'combo' || choice === 'conductor') &&
+      projectPath === null
+    )
+      return;
     setActionDraft((current) => {
       if (current.choice === choice) return current;
       if (choice === 'none') return { choice: 'none' };
       if (choice === 'task') return { choice: 'task', task: '' };
+      if (choice === 'conductor') return { ...DEFAULT_CONDUCTOR_DRAFT };
       return { choice };
     });
+  };
+
+  const setConductorDraft = (patch: Partial<ConductorActionDraft>) =>
+    setActionDraft((current) =>
+      current.choice === 'conductor' ? { ...current, ...patch } : current
+    );
+
+  const selectConductorGoal = (value: string) => {
+    if (value === '') {
+      setConductorDraft({ goalId: null, goalName: null });
+      return;
+    }
+    const goal = conductorGoals.find((candidate) => candidate.id === value);
+    setConductorDraft({ goalId: value, goalName: goal?.name ?? null });
   };
 
   /**
@@ -829,6 +964,13 @@ export function ScheduleEditor({
               onSelect={() => choose('combo')}
             />
             <Choice
+              testId="schedule-action-conductor"
+              label="Conductor"
+              checked={actionDraft.choice === 'conductor'}
+              disabled={projectPath === null}
+              onSelect={() => choose('conductor')}
+            />
+            <Choice
               testId="schedule-action-task"
               label="Custom agent"
               checked={actionDraft.choice === 'task'}
@@ -840,11 +982,13 @@ export function ScheduleEditor({
               data-testid="schedule-skill-combo-hint"
               className="mt-1 text-[9px] text-foreground-muted/60"
             >
-              Skill and Combo need a project.
+              Skill, Combo and Conductor need a project.
             </p>
           )}
           <p className="mt-1 text-[9px] text-foreground-muted/60">
-            Offered as a button. Nothing runs without your click.
+            {actionDraft.choice === 'conductor' && actionDraft.launch === 'auto'
+              ? 'Starts on its own when the IDE is unattended — see the hint above.'
+              : 'Offered as a button. Nothing runs without your click.'}
           </p>
 
           {actionDraft.choice === 'task' && (
@@ -1128,6 +1272,120 @@ export function ScheduleEditor({
               )}
             </div>
           )}
+
+          {actionDraft.choice === 'conductor' && projectPath !== null && (
+            <div className="mt-2">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className={SUBLABEL}>Tickets per run</span>
+                  <input
+                    data-testid="schedule-conductor-budget"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={actionDraft.ticketBudget}
+                    onChange={(event) =>
+                      setConductorDraft({
+                        ticketBudget: clampInt(Number(event.target.value), 1, 50),
+                      })
+                    }
+                    className={INPUT}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className={SUBLABEL}>In parallel</span>
+                  <input
+                    data-testid="schedule-conductor-concurrency"
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={actionDraft.maxConcurrent}
+                    onChange={(event) =>
+                      setConductorDraft({
+                        maxConcurrent: clampInt(Number(event.target.value), 1, 8),
+                      })
+                    }
+                    className={INPUT}
+                  />
+                  <p className="mt-1 text-[9px] text-foreground-muted/60">1 = one after another</p>
+                </label>
+              </div>
+
+              <label className="mt-2 block">
+                <span className={SUBLABEL}>Scope</span>
+                <select
+                  data-testid="schedule-conductor-goal"
+                  disabled={conductorGoalsLoading}
+                  value={actionDraft.goalId ?? ''}
+                  onChange={(event) => selectConductorGoal(event.target.value)}
+                  className={`${INPUT} disabled:opacity-40`}
+                >
+                  <option value="">
+                    {conductorGoalsLoading ? 'Loading goals…' : 'All tickets'}
+                  </option>
+                  {actionDraft.goalId !== null &&
+                    !conductorGoals.some((goal) => goal.id === actionDraft.goalId) && (
+                      <option value={actionDraft.goalId}>
+                        {actionDraft.goalName ?? actionDraft.goalId} (saved)
+                      </option>
+                    )}
+                  {conductorGoals.map((goal) => (
+                    <option key={goal.id} value={goal.id}>
+                      {goal.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="mt-2 flex items-start gap-2 text-[11px] text-foreground">
+                <input
+                  type="checkbox"
+                  data-testid="schedule-conductor-review"
+                  checked={actionDraft.requireReview}
+                  onChange={(event) => setConductorDraft({ requireReview: event.target.checked })}
+                  className="mt-[2px]"
+                />
+                <span>Judge the result</span>
+              </label>
+
+              <fieldset className="mt-2">
+                <legend className={SUBLABEL}>Launch</legend>
+                <div className="flex flex-col gap-1">
+                  <Choice
+                    name="schedule-conductor-launch"
+                    testId="schedule-conductor-launch-auto"
+                    label="Start by itself"
+                    checked={actionDraft.launch === 'auto'}
+                    onSelect={() => setConductorDraft({ launch: 'auto' })}
+                  />
+                  <Choice
+                    name="schedule-conductor-launch"
+                    testId="schedule-conductor-launch-direct"
+                    label="Start on click"
+                    checked={actionDraft.launch === 'direct'}
+                    onSelect={() => setConductorDraft({ launch: 'direct' })}
+                  />
+                  <Choice
+                    name="schedule-conductor-launch"
+                    testId="schedule-conductor-launch-dialog"
+                    label="Open the panel first"
+                    checked={actionDraft.launch === 'dialog'}
+                    onSelect={() => setConductorDraft({ launch: 'dialog' })}
+                  />
+                </div>
+                {actionDraft.launch === 'auto' && (
+                  <p
+                    data-testid="schedule-conductor-auto-hint"
+                    className="mt-1 text-[9px] text-foreground-muted/60"
+                  >
+                    Only when the IDE is idle and the timing is fresh; otherwise it waits for your
+                    click.
+                  </p>
+                )}
+              </fieldset>
+            </div>
+          )}
         </fieldset>
 
         <Field label="Note">
@@ -1225,12 +1483,15 @@ function Choice({
   checked,
   disabled,
   onSelect,
+  name = 'schedule-action',
 }: {
   testId: string;
   label: string;
   checked: boolean;
   disabled?: boolean;
   onSelect: () => void;
+  /** Which radio group this belongs to — the Action fieldset by default. */
+  name?: string;
 }) {
   return (
     <label
@@ -1240,7 +1501,7 @@ function Choice({
     >
       <input
         type="radio"
-        name="schedule-action"
+        name={name}
         data-testid={testId}
         checked={checked}
         disabled={disabled}
