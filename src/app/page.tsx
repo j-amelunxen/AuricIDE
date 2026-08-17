@@ -271,7 +271,12 @@ export default function Home() {
       case 'notifications':
         // Self-contained: it reads the store itself and owns the 1-second
         // clock, so the rest of the IDE does not re-render with it.
-        return <NotificationsSidebar onRunCommand={handlers.handleCommandExecute} />;
+        return (
+          <NotificationsSidebar
+            onRunCommand={handlers.handleCommandExecute}
+            onOpenProject={handlers.handleOpenRecent}
+          />
+        );
       case 'inbox':
         // Also self-contained — its data is kept warm app-wide by
         // useInboxData, independent of whether this panel is even mounted.

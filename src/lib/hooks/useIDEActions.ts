@@ -17,6 +17,7 @@ import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
+import { useScheduledConductorRuns } from '@/lib/hooks/useScheduledConductorRuns';
 import { useInboxData } from '@/lib/inbox/useInboxData';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import { type useIDEState } from './useIDEState';
@@ -44,6 +45,10 @@ export function useIDEActions(
 
   // The inbox spans projects, so it is not keyed on rootPath like the rest here
   useNotificationInbox();
+
+  // A schedule's `launch: 'auto'` action arrives through the same inbox; this
+  // is the zero-click half of it, watching for one it may start by itself.
+  useScheduledConductorRuns(handlers.handleOpenRecent);
 
   // Same reasoning as the notification inbox — the capture badge and the
   // start-screen summary both need this warm before the panel ever mounts.

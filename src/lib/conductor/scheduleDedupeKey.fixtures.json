@@ -1,0 +1,7 @@
+{
+  "_comment": "The dedupe key a fired schedule stamps on its notification. Rust writes it (schedules.rs, schedule_dedupe_key), the frontend reads the occurrence back out of it (scheduledRun.ts, scheduleOccurrenceMs) to decide whether an automatic start is still fresh. Both sides are tested against this file, so the format cannot drift on one side alone. The occurrence is UTC.",
+  "scheduleId": "sched-42",
+  "occurrenceUtc": "2026-08-17 15:00:00",
+  "occurrenceMs": 1786978800000,
+  "dedupeKey": "schedule:sched-42:2026-08-17 15:00:00"
+}

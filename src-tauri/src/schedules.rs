@@ -497,6 +497,18 @@ pub fn preview_impl(
 /// Returns how many notifications were raised. The dedupe key carries the
 /// occurrence, so a crash between the dispatch and the bookkeeping write
 /// replaces the same row on the next run instead of creating a second.
+/// The dedupe key a fired schedule stamps on its notification.
+///
+/// The frontend reads the occurrence back out of this key (`scheduleOccurrenceMs`
+/// in `src/lib/conductor/scheduledRun.ts`) to decide whether an automatic
+/// conductor start is still fresh, so the format is a contract: both sides are
+/// tested against `src/lib/conductor/scheduleDedupeKey.fixtures.json`. The
+/// occurrence is written in UTC — a local-time stamp here would read as hours
+/// stale over there and turn every automatic start into a button.
+pub fn schedule_dedupe_key(schedule_id: &str, occurrence: DateTime<Utc>) -> String {
+    format!("schedule:{}:{}", schedule_id, format_ts(occurrence))
+}
+
 pub fn run_due_impl(conn: &mut Connection, now: DateTime<Utc>) -> Result<usize, String> {
     let schedules = list_impl(conn)?;
     let mut fired = 0;
@@ -548,11 +560,7 @@ pub fn run_due_impl(conn: &mut Connection, now: DateTime<Utc>) -> Result<usize, 
                 title,
                 body: if body.is_empty() { None } else { Some(body) },
                 actions: template.get("actions").cloned(),
-                dedupe_key: Some(format!(
-                    "schedule:{}:{}",
-                    schedule.id,
-                    format_ts(*occurrence)
-                )),
+                dedupe_key: Some(schedule_dedupe_key(&schedule.id, *occurrence)),
                 ref_kind: None,
                 ref_id: None,
                 expires_at: None,
@@ -590,6 +598,24 @@ pub fn run_due_impl(conn: &mut Connection, now: DateTime<Utc>) -> Result<usize, 
 mod tests {
     use super::*;
     use chrono::Datelike;
+
+    const DEDUPE_KEY_FIXTURE: &str =
+        include_str!("../../src/lib/conductor/scheduleDedupeKey.fixtures.json");
+
+    #[test]
+    fn dedupe_key_matches_the_shared_fixture_the_frontend_parses() {
+        let fixture: serde_json::Value = serde_json::from_str(DEDUPE_KEY_FIXTURE).unwrap();
+        let schedule_id = fixture["scheduleId"].as_str().unwrap();
+        let occurrence = parse_ts(fixture["occurrenceUtc"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            occurrence.timestamp_millis(),
+            fixture["occurrenceMs"].as_i64().unwrap()
+        );
+        assert_eq!(
+            schedule_dedupe_key(schedule_id, occurrence),
+            fixture["dedupeKey"].as_str().unwrap()
+        );
+    }
 
     fn at(raw: &str) -> DateTime<Utc> {
         parse_ts(raw).expect("timestamp")

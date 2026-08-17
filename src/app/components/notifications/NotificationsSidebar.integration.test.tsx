@@ -183,6 +183,16 @@ function resetStore() {
     spawnAgentTicketId: null,
     spawnAgentGoalId: null,
     rootPath: null,
+    // A previous test's real conductor run must not bleed into the next one.
+    conductorRunning: false,
+    conductorAssignments: {},
+    conductorReviewAssignments: {},
+    pmDraftTickets: [],
+    goalsDraft: [],
+    pmLoading: false,
+    goalsLoading: false,
+    workPlaceOpen: false,
+    toasts: [],
   } as never);
 }
 
@@ -214,7 +224,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
     await waitFor(() => expect(button).toBeEnabled());
@@ -262,7 +272,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
     await waitFor(() => expect(button).toBeEnabled());
@@ -310,7 +320,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
     await waitFor(() => expect(button).toBeEnabled());
@@ -337,7 +347,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
     await user.click(await screen.findByTestId(`notification-action-${notification.uid}-run`));
 
     await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
@@ -364,7 +374,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
     await user.click(await screen.findByTestId(`notification-action-${notification.uid}-run`));
 
     await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
@@ -398,7 +408,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
     await waitFor(() => expect(button).toBeEnabled());
@@ -434,7 +444,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
     await user.click(button);
@@ -465,7 +475,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     });
     useStore.setState({ notifications: [notification] } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
 
     const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
     await waitFor(() => expect(button).toBeDisabled());
@@ -473,6 +483,152 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
 
     expect(spawnAgentMock).not.toHaveBeenCalled();
     expect(useStore.getState().spawnDialogOpen).toBe(false);
+  });
+});
+
+describe('NotificationsSidebar — run-conductor click, end to end', () => {
+  it('direct, already-open project: starts the run for real, no switch prompt', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ rootPath: REPO_PATH } as never);
+    const notification = makeNotification({
+      origin: 'Nightly A',
+      actions: [
+        {
+          id: 'run',
+          label: 'Start',
+          kind: 'run-conductor',
+          repoPath: REPO_PATH,
+          ticketBudget: 5,
+          launch: 'direct',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+    const onOpenProject = vi.fn(async () => undefined);
+
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={onOpenProject} />);
+
+    const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    await waitFor(() =>
+      expect(useStore.getState().toasts.some((t) => t.message.includes('Conductor started'))).toBe(
+        true
+      )
+    );
+    expect(onOpenProject).not.toHaveBeenCalled();
+    expect(useStore.getState().rootPath).toBe(REPO_PATH);
+    // Clicking settled the notification, same as every other action kind.
+    // (The conductor's own "run finished" notification lands at index 0 by
+    // now, since this run has no tickets to work — find ours by uid.)
+    const settled = useStore.getState().notifications.find((n) => n.uid === notification.uid);
+    expect(settled?.readAt).not.toBeNull();
+  });
+
+  it('dialog mode: pre-fills and opens the Conductor panel instead of starting', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ rootPath: REPO_PATH } as never);
+    const notification = makeNotification({
+      actions: [
+        {
+          id: 'run',
+          label: 'Start',
+          kind: 'run-conductor',
+          repoPath: REPO_PATH,
+          ticketBudget: 4,
+          maxConcurrent: 2,
+          requireReview: true,
+          goalId: 'g1',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(
+      <NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn(async () => undefined)} />
+    );
+
+    const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    await waitFor(() => expect(useStore.getState().workPlaceOpen).toBe(true));
+    expect(useStore.getState().workTab).toBe('goals');
+    expect(useStore.getState().selectedGoalId).toBe('g1');
+    expect(useStore.getState().conductorMaxConcurrent).toBe(2);
+    expect(useStore.getState().conductorRequireReview).toBe(true);
+    expect(useStore.getState().conductorRunning).toBe(false);
+  });
+
+  it('targeting a different project: asks first, and a decline starts nothing', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ rootPath: '/repo/other' } as never);
+    const notification = makeNotification({
+      actions: [
+        {
+          id: 'run',
+          label: 'Start',
+          kind: 'run-conductor',
+          repoPath: REPO_PATH,
+          ticketBudget: 3,
+          launch: 'direct',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+    const onOpenProject = vi.fn(async () => undefined);
+
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={onOpenProject} />);
+
+    const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
+    expect(button).toHaveTextContent('Open project & start');
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    expect(onOpenProject).not.toHaveBeenCalled();
+    expect(useStore.getState().rootPath).toBe('/repo/other');
+    // The click itself already settled the notification — same as every other
+    // action kind (the confirm gates the *effect*, not the recorded decision).
+    expect(useStore.getState().notifications[0]?.readAt).not.toBeNull();
+  });
+
+  it('targeting a different project: confirming opens it, then starts', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ rootPath: '/repo/other' } as never);
+    const notification = makeNotification({
+      actions: [
+        {
+          id: 'run',
+          label: 'Start',
+          kind: 'run-conductor',
+          repoPath: REPO_PATH,
+          ticketBudget: 2,
+          launch: 'direct',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+    const onOpenProject = vi.fn(async (path: string) => {
+      useStore.setState({ rootPath: path, pmLoading: false, goalsLoading: false } as never);
+    });
+
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={onOpenProject} />);
+
+    const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    await user.click(await screen.findByRole('button', { name: 'Open & start' }));
+
+    await waitFor(() => expect(onOpenProject).toHaveBeenCalledWith(REPO_PATH));
+    await waitFor(() =>
+      expect(useStore.getState().toasts.some((t) => t.message.includes('Conductor started'))).toBe(
+        true
+      )
+    );
   });
 });
 
@@ -485,7 +641,7 @@ describe('NotificationsSidebar — aiming a reminder at a project', () => {
     const user = userEvent.setup();
     useStore.setState({ starredProjects: [starredWithPins], rootPath: null } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
     await user.click(screen.getByTestId('schedule-create'));
 
     // No project open — an app-wide draft, so Skill has nothing to offer yet.
@@ -508,7 +664,7 @@ describe('NotificationsSidebar — aiming a reminder at a project', () => {
     const { schedulesUpsert } = await import('@/lib/tauri/schedules');
     useStore.setState({ starredProjects: [starredWithPins], rootPath: null } as never);
 
-    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
     await user.click(screen.getByTestId('schedule-create'));
     await user.type(screen.getByTestId('schedule-name'), 'Weekly changelog');
     await user.selectOptions(screen.getByTestId('schedule-project'), REPO_PATH);
