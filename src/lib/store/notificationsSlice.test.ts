@@ -9,6 +9,15 @@ const mockMarkAllRead = vi.fn();
 const mockAnswer = vi.fn();
 const mockClear = vi.fn();
 
+// The banner itself is os.ts's business and tested there; what matters here is
+// which arrivals reach it at all.
+const mockNotifyOs = vi.fn<(title: string, body: string) => Promise<void>>(async () => undefined);
+
+vi.mock('@/lib/notifications/os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/notifications/os')>();
+  return { ...actual, notifyOs: (title: string, body: string) => mockNotifyOs(title, body) };
+});
+
 vi.mock('@/lib/tauri/notifications', () => ({
   notificationsDispatch: (...args: unknown[]) => mockDispatch(...args),
   notificationsList: (...args: unknown[]) => mockList(...args),
@@ -130,9 +139,48 @@ describe('notificationsSlice', () => {
       await store.getState().drainNotifications();
       expect(store.getState().notificationsStatus).toBe('error');
     });
+
+    // A schedule fires in Rust, so it never passes dispatchNotification. This
+    // is the only place its banner can be raised — without it, a reminder that
+    // arrives while the window is in the background says nothing at all.
+    it('raises a banner for what just arrived', async () => {
+      mockList.mockResolvedValueOnce([
+        makeNotification({ id: 5, source: 'system', title: 'Weekly changelog' }),
+      ]);
+
+      await store.getState().drainNotifications();
+
+      expect(mockNotifyOs).toHaveBeenCalledWith('Weekly changelog', '');
+    });
+
+    it('raises one counted banner rather than a stack of them', async () => {
+      mockList.mockResolvedValueOnce([
+        makeNotification({ id: 5, source: 'system', title: 'Backup' }),
+        makeNotification({ id: 6, source: 'system', title: 'Changelog' }),
+      ]);
+
+      await store.getState().drainNotifications();
+
+      expect(mockNotifyOs).toHaveBeenCalledTimes(1);
+      expect(mockNotifyOs).toHaveBeenCalledWith('2 new notifications', 'Backup · Changelog');
+    });
+
+    it('stays quiet for arrivals that have not earned a banner', async () => {
+      mockList.mockResolvedValueOnce([makeNotification({ id: 5, source: 'agent' })]);
+      await store.getState().drainNotifications();
+      expect(mockNotifyOs).not.toHaveBeenCalled();
+    });
   });
 
   describe('reloadNotifications', () => {
+    // It reads the whole table. Banners here would announce a week of history
+    // on every start.
+    it('raises no banner for history it is only re-reading', async () => {
+      mockList.mockResolvedValueOnce([makeNotification({ id: 4, source: 'system' })]);
+      await store.getState().reloadNotifications();
+      expect(mockNotifyOs).not.toHaveBeenCalled();
+    });
+
     it('replaces the list and rebuilds the cursor', async () => {
       store.setState({ notifications: [makeNotification()], notificationsCursor: 99 });
       mockList.mockResolvedValueOnce([makeNotification({ id: 4 })]);

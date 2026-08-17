@@ -10,7 +10,7 @@ vi.mock('@tauri-apps/plugin-notification', () => ({
   sendNotification: (payload: unknown) => mockSend(payload),
 }));
 
-import { deservesOsBanner, notifyOs } from './os';
+import { deservesOsBanner, notifyOs, osBannerForBatch } from './os';
 
 describe('deservesOsBanner', () => {
   // The fleet panel's rule, applied to the inbox: a run of green results must
@@ -21,14 +21,63 @@ describe('deservesOsBanner', () => {
     ['info', 'ask'],
     ['success', 'ask'],
   ] as const)('raises one for severity %s / kind %s', (severity, kind) => {
-    expect(deservesOsBanner(severity, kind)).toBe(true);
+    expect(deservesOsBanner(severity, kind, 'agent')).toBe(true);
   });
 
   it.each([
     ['info', 'info'],
     ['success', 'info'],
   ] as const)('stays quiet for severity %s / kind %s', (severity, kind) => {
-    expect(deservesOsBanner(severity, kind)).toBe(false);
+    expect(deservesOsBanner(severity, kind, 'agent')).toBe(false);
+  });
+
+  // A reminder exists to interrupt. Its severity is `info` because nothing has
+  // gone wrong, and staying quiet on that basis is how a reminder ends up only
+  // reminding someone who was already looking.
+  it('raises one for a schedule even though nothing is wrong', () => {
+    expect(deservesOsBanner('info', 'info', 'system')).toBe(true);
+  });
+});
+
+describe('osBannerForBatch', () => {
+  const arrival = (overrides: Partial<Parameters<typeof osBannerForBatch>[0][number]> = {}) => ({
+    severity: 'info' as const,
+    kind: 'info' as const,
+    source: 'system',
+    title: 'Weekly changelog',
+    body: 'Overdue since Monday',
+    ...overrides,
+  });
+
+  it('words a single arrival as itself', () => {
+    expect(osBannerForBatch([arrival()])).toEqual({
+      title: 'Weekly changelog',
+      body: 'Overdue since Monday',
+    });
+  });
+
+  it('says nothing when nothing in the batch earns a banner', () => {
+    expect(osBannerForBatch([arrival({ source: 'agent' })])).toBeNull();
+  });
+
+  it('ignores the arrivals that do not earn one when wording the batch', () => {
+    expect(osBannerForBatch([arrival({ source: 'agent' }), arrival({ title: 'Backup' })])).toEqual({
+      title: 'Backup',
+      body: 'Overdue since Monday',
+    });
+  });
+
+  // A machine asleep over a weekend hands over a stack at once, and a stack of
+  // banners is a stack you dismiss without reading.
+  it('collapses several arrivals into one counted line', () => {
+    const banner = osBannerForBatch([
+      arrival({ title: 'Backup' }),
+      arrival({ title: 'Changelog' }),
+      arrival({ title: 'Review' }),
+      arrival({ title: 'Deploy' }),
+    ]);
+
+    expect(banner).toEqual({ title: '4 new notifications', body: 'Backup · Changelog · Review' });
   });
 });
 
