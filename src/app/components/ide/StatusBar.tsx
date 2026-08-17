@@ -4,6 +4,7 @@ import { useAttribution } from '@/lib/settings/attribution';
 import { TruthsLight } from '../requirements/TruthsLight';
 import { CliQuotaChip } from '../usage/CliQuotaChip';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { StatusBarClock } from './StatusBarClock';
 
 export interface StatusBarProps {
   branch?: string;
@@ -93,6 +94,7 @@ export function StatusBar({
             </span>
           </>
         )}
+        <StatusBarClock />
       </div>
     </footer>
   );

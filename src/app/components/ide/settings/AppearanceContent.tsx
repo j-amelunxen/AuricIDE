@@ -5,6 +5,7 @@ import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { useTheme } from '@/lib/theme/catalog/useTheme';
 import { importCustomTheme } from '@/lib/theme/catalog/importTheme';
 import { useAttribution } from '@/lib/settings/attribution';
+import { useStatusBarClock } from '@/lib/settings/statusBarClock';
 import { useStore } from '@/lib/store';
 import type { ThemeMeta } from '@/lib/theme/catalog/types';
 
@@ -58,6 +59,7 @@ function ThemeOption({
 export function AppearanceContent() {
   const { id, list, skippedCount, select, reload } = useTheme();
   const [showAttribution, setShowAttribution] = useAttribution();
+  const [showStatusBarClock, setShowStatusBarClock] = useStatusBarClock();
   const showToast = useStore((s) => s.showToast);
 
   const builtins = list.filter((t) => t.builtin);
@@ -158,6 +160,16 @@ export function AppearanceContent() {
             </p>
           )}
         </div>
+      </SettingsSection>
+
+      <SettingsSection title="Status Bar" icon="schedule">
+        <SettingsToggle
+          label="Show clock"
+          description="Show the current time in the status bar, updated every minute."
+          checked={showStatusBarClock}
+          onChange={setShowStatusBarClock}
+          testId="status-bar-clock-toggle"
+        />
       </SettingsSection>
 
       <SettingsSection title="Attribution" icon="favorite">

@@ -2,11 +2,13 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StatusBar } from './StatusBar';
 import { ATTRIBUTION_STORAGE_KEY } from '@/lib/settings/attribution';
+import { STATUS_BAR_CLOCK_STORAGE_KEY } from '@/lib/settings/statusBarClock';
 import { useStore } from '@/lib/store';
 
 describe('StatusBar', () => {
   afterEach(() => {
     localStorage.removeItem(ATTRIBUTION_STORAGE_KEY);
+    localStorage.removeItem(STATUS_BAR_CLOCK_STORAGE_KEY);
     useStore.setState({ requirementsDraft: [] });
   });
 
@@ -130,6 +132,17 @@ describe('StatusBar', () => {
   it('exposes the problems indicator by an accessible label', () => {
     render(<StatusBar errorCount={2} warningCount={3} />);
     expect(screen.getByRole('button', { name: 'Problems' })).toBeInTheDocument();
+  });
+
+  it('shows the clock by default', () => {
+    render(<StatusBar />);
+    expect(screen.getByTestId('status-bar-clock')).toBeInTheDocument();
+  });
+
+  it('hides the clock when the setting is switched off', () => {
+    localStorage.setItem(STATUS_BAR_CLOCK_STORAGE_KEY, 'false');
+    render(<StatusBar />);
+    expect(screen.queryByTestId('status-bar-clock')).not.toBeInTheDocument();
   });
 
   it('hides icon glyphs from assistive technology', () => {
