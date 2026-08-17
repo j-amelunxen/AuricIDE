@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { NotificationAction } from '@/lib/notifications/types';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import { useStore } from '@/lib/store';
@@ -7,7 +7,36 @@ import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { Schedule, SchedulePayload } from '@/lib/tauri/schedules';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import type { GoalsState, PmGoal } from '@/lib/tauri/goals';
 import { ScheduleEditor, type ScheduleEditorProps } from './ScheduleEditor';
+
+const mockGoalsLoad = vi.fn<(projectPath: string) => Promise<GoalsState>>();
+vi.mock('@/lib/tauri/goals', () => ({
+  goalsLoad: (projectPath: string) => mockGoalsLoad(projectPath),
+}));
+
+function goalFixture(overrides: Partial<PmGoal> = {}): PmGoal {
+  return {
+    id: 'goal-1',
+    parentId: null,
+    name: 'Ship the thing',
+    description: '',
+    successCriteria: '',
+    status: 'active',
+    priority: 'normal',
+    goalPrompt: '',
+    createdBy: 'ui',
+    achievedAt: null,
+    sortOrder: 0,
+    createdAt: '2026-08-01 00:00:00',
+    updatedAt: '2026-08-01 00:00:00',
+    ...overrides,
+  };
+}
+
+function goalsStateOf(goals: PmGoal[]): GoalsState {
+  return { goals, goalRuns: [], requirementLinks: [], stations: [] };
+}
 
 const PROVIDERS: ProviderInfo[] = [
   {
@@ -172,6 +201,11 @@ function payloadOf(schedule: Schedule): SchedulePayload {
 }
 
 describe('ScheduleEditor', () => {
+  beforeEach(() => {
+    mockGoalsLoad.mockReset();
+    mockGoalsLoad.mockResolvedValue(goalsStateOf([]));
+  });
+
   afterEach(() => {
     useStore.setState({ overlayStack: { layers: [] } });
   });
@@ -561,7 +595,7 @@ describe('ScheduleEditor', () => {
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(true);
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-combo').disabled).toBe(true);
       expect(screen.getByTestId('schedule-skill-combo-hint').textContent).toContain(
-        'Skill and Combo need a project.'
+        'Skill, Combo and Conductor need a project.'
       );
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-none').disabled).toBe(false);
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-task').disabled).toBe(false);
@@ -1005,6 +1039,272 @@ describe('ScheduleEditor', () => {
     it('draws the project tile next to the picker', () => {
       renderEditor({ projectOptions: twoProjects });
       expect(screen.getByTestId('tile-face-/repo/sample')).toBeTruthy();
+    });
+  });
+
+  describe('the conductor action', () => {
+    it('is disabled without a project, and says so in the hint', () => {
+      renderEditor({ defaultProjectPath: null, defaultProjectName: null, projectOptions: [] });
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-conductor').disabled).toBe(true);
+      expect(screen.getByTestId('schedule-skill-combo-hint').textContent).toContain(
+        'Skill, Combo and Conductor need a project.'
+      );
+    });
+
+    it('shows its fields at their defaults once chosen', () => {
+      renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-budget').value).toBe('5');
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-concurrency').value).toBe(
+        '1'
+      );
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-conductor-goal').value).toBe('');
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-review').checked).toBe(false);
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-launch-auto').checked).toBe(
+        true
+      );
+      expect(screen.getByTestId('schedule-conductor-auto-hint')).toBeTruthy();
+    });
+
+    it('emits a run-conductor action with the chosen budget and concurrency', () => {
+      const props = renderEditor();
+      fireEvent.change(screen.getByTestId('schedule-name'), { target: { value: 'Factory' } });
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+      fireEvent.change(screen.getByTestId('schedule-conductor-budget'), {
+        target: { value: '8' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-conductor-concurrency'), {
+        target: { value: '3' },
+      });
+
+      fireEvent.click(screen.getByTestId('schedule-save'));
+      expect(payloadOf(lastSaved(props.onSave)).actions).toEqual([
+        {
+          id: 'run',
+          label: 'Start conductor',
+          kind: 'run-conductor',
+          repoPath: '/repo/sample',
+          ticketBudget: 8,
+          maxConcurrent: 3,
+          launch: 'auto',
+        },
+      ]);
+    });
+
+    it('clamps the budget and concurrency to their allowed range', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+      fireEvent.change(screen.getByTestId('schedule-conductor-budget'), {
+        target: { value: '0' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-conductor-concurrency'), {
+        target: { value: '99' },
+      });
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).toMatchObject({ ticketBudget: 1, maxConcurrent: 8 });
+    });
+
+    it('populates the scope picker from the open goals of the selected project', async () => {
+      mockGoalsLoad.mockResolvedValueOnce(
+        goalsStateOf([
+          goalFixture({ id: 'g-open', name: 'Reach the milestone', status: 'active' }),
+          goalFixture({ id: 'g-done', name: 'Old goal', status: 'achieved' }),
+          goalFixture({ id: 'g-archived', name: 'Shelved goal', status: 'archived' }),
+        ])
+      );
+      renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+
+      await waitFor(() => {
+        expect(mockGoalsLoad).toHaveBeenCalledWith('/repo/sample');
+      });
+
+      const select = await screen.findByText('Reach the milestone');
+      expect(select).toBeTruthy();
+      expect(screen.queryByText('Old goal')).toBeNull();
+      expect(screen.queryByText('Shelved goal')).toBeNull();
+    });
+
+    it('writes both the goal id and a name snapshot when a goal is picked', async () => {
+      mockGoalsLoad.mockResolvedValueOnce(
+        goalsStateOf([goalFixture({ id: 'g-open', name: 'Reach the milestone' })])
+      );
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+      await screen.findByText('Reach the milestone');
+
+      fireEvent.change(screen.getByTestId('schedule-conductor-goal'), {
+        target: { value: 'g-open' },
+      });
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).toMatchObject({ goalId: 'g-open', goalName: 'Reach the milestone' });
+    });
+
+    it('disables the scope picker with a loading label while goals are still loading', async () => {
+      let resolveGoals: (state: GoalsState) => void = () => {};
+      mockGoalsLoad.mockReturnValueOnce(
+        new Promise<GoalsState>((resolve) => {
+          resolveGoals = resolve;
+        })
+      );
+      renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+
+      const select = screen.getByTestId<HTMLSelectElement>('schedule-conductor-goal');
+      expect(select.disabled).toBe(true);
+      expect(select.options[0].textContent).toBe('Loading goals…');
+
+      resolveGoals(goalsStateOf([]));
+      await waitFor(() => expect(select.disabled).toBe(false));
+    });
+
+    it('falls back to "All tickets" when loading goals fails', async () => {
+      mockGoalsLoad.mockRejectedValueOnce(new Error('no db'));
+      renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+
+      await waitFor(() => {
+        const select = screen.getByTestId<HTMLSelectElement>('schedule-conductor-goal');
+        expect(select.disabled).toBe(false);
+      });
+      expect(screen.getByText('All tickets')).toBeTruthy();
+    });
+
+    it('turns the review checkbox into requireReview only when checked', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+      fireEvent.click(screen.getByTestId('schedule-conductor-review'));
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).toMatchObject({ requireReview: true });
+    });
+
+    it('shows the unattended hint under auto, and the manual footer under the other launches', () => {
+      renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+      expect(screen.getByTestId('schedule-conductor-auto-hint')).toBeTruthy();
+      expect(
+        screen.queryByText('Offered as a button. Nothing runs without your click.')
+      ).toBeNull();
+      expect(
+        screen.getByText('Starts on its own when the IDE is unattended — see the hint above.')
+      ).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId('schedule-conductor-launch-direct'));
+      expect(screen.queryByTestId('schedule-conductor-auto-hint')).toBeNull();
+      expect(
+        screen.getByText('Offered as a button. Nothing runs without your click.')
+      ).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId('schedule-conductor-launch-dialog'));
+      expect(screen.queryByTestId('schedule-conductor-auto-hint')).toBeNull();
+      expect(
+        screen.getByText('Offered as a button. Nothing runs without your click.')
+      ).toBeTruthy();
+    });
+
+    it('writes the picked launch mode onto the action', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+      fireEvent.click(screen.getByTestId('schedule-conductor-launch-direct'));
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).toMatchObject({ launch: 'direct' });
+    });
+
+    const runConductorAction: Extract<NotificationAction, { kind: 'run-conductor' }> = {
+      id: 'run',
+      label: 'Start conductor',
+      kind: 'run-conductor',
+      repoPath: '/repo/sample',
+      ticketBudget: 7,
+      maxConcurrent: 2,
+      goalId: 'g-open',
+      goalName: 'Reach the milestone',
+      requireReview: true,
+      launch: 'direct',
+    };
+
+    it('restores every field of a saved run-conductor action', () => {
+      renderEditor({ schedule: scheduleWith(runConductorAction) });
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-conductor').checked).toBe(true);
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-budget').value).toBe('7');
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-concurrency').value).toBe(
+        '2'
+      );
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-conductor-goal').value).toBe('g-open');
+      expect(screen.getByText('Reach the milestone (saved)')).toBeTruthy();
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-review').checked).toBe(true);
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-launch-direct').checked).toBe(
+        true
+      );
+    });
+
+    // A payload saved before the launch could be configured must not start
+    // itself the first time the schedule is opened again.
+    it('treats an absent launch on a stored action as the dialog, never auto', () => {
+      const { launch: _launch, ...withoutLaunch } = runConductorAction;
+      renderEditor({ schedule: scheduleWith(withoutLaunch as NotificationAction) });
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-conductor-launch-dialog').checked).toBe(
+        true
+      );
+    });
+
+    it('re-saves an unchanged run-conductor snapshot byte for byte', () => {
+      const props = renderEditor({ schedule: scheduleWith(runConductorAction) });
+      fireEvent.click(screen.getByTestId('schedule-save'));
+
+      expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toEqual(runConductorAction);
+    });
+
+    it('keeps budget, concurrency, review and launch but drops the goal when the project changes', () => {
+      const props = renderEditor({
+        schedule: scheduleWith(runConductorAction),
+        projectOptions: [
+          { path: '/repo/sample', name: 'sample-project', starred: true },
+          { path: '/repo/other', name: 'other-project', starred: false },
+        ],
+      });
+
+      fireEvent.change(screen.getByTestId('schedule-project'), {
+        target: { value: '/repo/other' },
+      });
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).toMatchObject({
+        repoPath: '/repo/other',
+        ticketBudget: 7,
+        maxConcurrent: 2,
+        requireReview: true,
+        launch: 'direct',
+      });
+      expect(action).not.toHaveProperty('goalId');
+      expect(action).not.toHaveProperty('goalName');
+    });
+
+    it('falls back to reminder-only once the project is cleared', () => {
+      const props = renderEditor({
+        schedule: scheduleWith(runConductorAction),
+        projectOptions: [{ path: '/repo/sample', name: 'sample-project', starred: true }],
+      });
+
+      fireEvent.change(screen.getByTestId('schedule-project'), { target: { value: '' } });
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-action-none').checked).toBe(true);
+      expect(payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions).toEqual(
+        []
+      );
     });
   });
 });
