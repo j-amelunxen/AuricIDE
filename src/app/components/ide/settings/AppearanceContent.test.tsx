@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { AppearanceContent } from './AppearanceContent';
 import { ACCENTS, ACCENT_STORAGE_KEY } from '@/lib/theme/accent';
 import { loadShowAttribution } from '@/lib/settings/attribution';
+import { loadShowStatusBarClock } from '@/lib/settings/statusBarClock';
 import { clearThemeOverrides } from '@/lib/theme/catalog/apply';
 import { resetThemeForTests } from '@/lib/theme/catalog/controller';
 import { THEME_STORAGE_KEY } from '@/lib/theme/catalog/storage';
@@ -199,5 +200,40 @@ describe('AppearanceContent — attribution toggle', () => {
 
     expect(screen.getByTestId('attribution-toggle')).toBeChecked();
     expect(loadShowAttribution()).toBe(true);
+  });
+});
+
+describe('AppearanceContent — status bar clock toggle', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    clearThemeOverrides();
+    resetThemeForTests();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    clearThemeOverrides();
+    resetThemeForTests();
+  });
+
+  it('renders the status bar clock toggle switched on by default', async () => {
+    render(<AppearanceContent />);
+    await waitFor(() => {
+      expect(screen.getByTestId('status-bar-clock-toggle')).toBeChecked();
+    });
+  });
+
+  it('persists the status bar clock setting when toggled off', async () => {
+    const user = userEvent.setup();
+    render(<AppearanceContent />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status-bar-clock-toggle')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('status-bar-clock-toggle'));
+
+    expect(screen.getByTestId('status-bar-clock-toggle')).not.toBeChecked();
+    expect(loadShowStatusBarClock()).toBe(false);
   });
 });

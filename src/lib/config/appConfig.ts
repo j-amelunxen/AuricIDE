@@ -31,6 +31,7 @@ export const APP_CONFIG_KEYS = {
   themeSnapshot: 'auric.theme.snapshot',
   accent: 'auric.accent',
   showAttribution: 'auric-show-attribution',
+  statusBarClock: 'auric.status-bar.clock',
   skillSources: 'auric.skill-sources',
   auricSkills: 'auric.prompt-skills',
   spawnDefaults: 'auric.agent-spawn-defaults',
