@@ -38,13 +38,11 @@ function renderPanel(overrides: Partial<NotificationsPanelProps> = {}) {
     notifications: [],
     unreadCount: 0,
     status: 'idle',
-    projectFilter: null,
     now: NOW,
     starredProjects: [],
     parseActions: (n) => ((n.actions as NotificationAction[]) ?? []).map((action) => ({ action })),
     onOpen: vi.fn(),
     onAction: vi.fn(),
-    onSetProjectFilter: vi.fn(),
     onMarkAllRead: vi.fn(),
     onClear: vi.fn(),
     ...overrides,
@@ -90,23 +88,9 @@ describe('NotificationsPanel', () => {
       expect(screen.queryByTestId('notifications-unread-count')).toBeNull();
     });
 
-    // The rule that keeps the badge trustworthy: filters hide rows, they never
-    // change the number. A count that shrank with a filter would be unusable
+    // The rule that keeps the badge trustworthy: the filter hides rows, it
+    // never changes the number. A count that shrank with it would be unusable
     // as a reason to look.
-    it('does not shrink when a project filter hides rows', () => {
-      renderPanel({
-        notifications: [
-          makeNotification({ projectPath: '/a' }),
-          makeNotification({ projectPath: '/b' }),
-        ],
-        unreadCount: 2,
-        projectFilter: '/a',
-      });
-
-      expect(screen.getByTestId('notifications-unread-count').textContent).toBe('2');
-      expect(screen.getAllByTestId(/^notification-row-/)).toHaveLength(1);
-    });
-
     it('does not shrink when the unread filter hides rows', () => {
       renderPanel({
         notifications: [makeNotification({ readAt: '2026-08-12 11:00:00' }), makeNotification()],
@@ -153,28 +137,21 @@ describe('NotificationsPanel', () => {
 
       expect(screen.getByTestId('notifications-filter-all').textContent).toBe('All');
       expect(screen.getByTestId('notifications-filter-unread').textContent).toBe('Unread');
-      expect(screen.getByTestId('notifications-project-all').textContent).toBe('All projects');
     });
 
-    it('reports a project choice upward', () => {
-      const props = renderPanel({
+    // Whoever mounts the panel owns the project decision — the Command
+    // Center's rail does. A second control for the same choice, inside the
+    // list it narrows, is one the rail could silently disagree with.
+    it('offers no project chips of its own', () => {
+      renderPanel({
         notifications: [
           makeNotification({ projectPath: '/a', projectName: 'alpha' }),
           makeNotification({ projectPath: '/b', projectName: 'beta' }),
         ],
       });
 
-      fireEvent.click(screen.getByTestId('notifications-project-beta'));
-
-      expect(props.onSetProjectFilter).toHaveBeenCalledWith('/b');
-    });
-
-    // One project is not a choice; the chips would be noise.
-    it('offers no project chips while everything is from one project', () => {
-      renderPanel({
-        notifications: [makeNotification({ projectPath: '/a', projectName: 'alpha' })],
-      });
       expect(screen.queryByTestId('notifications-project-all')).toBeNull();
+      expect(screen.queryByTestId('notifications-project-alpha')).toBeNull();
     });
 
     it('explains an empty result differently from an empty inbox', () => {

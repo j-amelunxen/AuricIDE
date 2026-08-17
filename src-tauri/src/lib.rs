@@ -1640,6 +1640,15 @@ fn notifications_clear(
     notifications::clear_impl(&conn, project_path.as_deref())
 }
 
+#[tauri::command]
+fn notifications_delete(
+    uids: Vec<String>,
+    state: tauri::State<'_, notifications::NotificationsState>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    notifications::delete_impl(&conn, &uids)
+}
+
 // --- Inbox (Fast Access Task Box) -------------------------------------------
 // App-level GTD inbox: items are captured globally, then assigned to a
 // project, which creates a real ticket in that project's `.auric/project.db`.
@@ -2277,6 +2286,7 @@ pub fn run() {
             notifications_answer,
             notifications_unread_count,
             notifications_clear,
+            notifications_delete,
             inbox_list,
             inbox_add,
             inbox_update,

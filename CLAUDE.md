@@ -336,6 +336,35 @@ one click honest.
   showing the run the click began. A launch you cannot watch is the same problem
   as a launch that never happened.
 
+### The tray and the Command Center — one inbox, two sizes
+
+The sidebar panel is a **tray**, not the inbox: unanswered questions pinned on
+top, then the newest `TRAY_SIZE` (3) rows, then "N more" and one "Next:
+<schedule>" line — every one of those opens the **Command Center**
+(`CommandCenter.tsx`), a full-area overlay beside the Agent Console with a
+project rail, each project's triggers (schedules) and its notifications, and an
+upcoming strip across all projects. Rules that keep the two honest:
+
+- **Counts describe the scope, never the truncation.** The tray badge is the
+  whole inbox's unread; a project section's count is that project's unread
+  regardless of the read filter. Hidden rows are announced ("N more").
+- **A question never rotates out.** `selectTray` (`notifications/tray.ts`) pins
+  `ask` rows until they are answered — a fresh info must not push a waiting
+  agent's question out of sight.
+- **One action path.** Tray and center both go through `useNotificationActions`
+  — trust by dispatcher, ask settled before the effect, conductor
+  project-switch confirm, spawn selects the agent. A second copy would let the
+  same button do different things depending on where it was pressed.
+- **The center is a projection.** No new state: `commandCenter.ts` groups the
+  store's notifications and schedules by project, links a notification to its
+  schedule only through the `dedupeKey` (`scheduleIdFromDedupeKey`), never by
+  the schedule's name.
+- **Bulk actions are scoped where they are offered.** Per-project "Mark all
+  read"/"Clear" pass the project path; clear still spares open questions.
+- **Same overlay layer as the console.** `IDEOverlays` mounts the center before
+  the Agent Console and the terminal — DOM order decides who paints on top; the
+  schedule editor and confirms live on higher layers and own Esc first.
+
 ### Scheduled conductor runs — the one launch nobody clicked
 
 A schedule may carry a `run-conductor` action ("open project A, work up to five

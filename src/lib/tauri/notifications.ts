@@ -81,6 +81,14 @@ export async function notificationsClear(projectPath?: string): Promise<void> {
 }
 
 /**
+ * Deletes the named rows. Unanswered questions among them are left standing
+ * by the backend — the same rule `notifications_clear` applies.
+ */
+export async function notificationsDelete(uids: string[]): Promise<void> {
+  return invoke<void>('notifications_delete', { uids });
+}
+
+/**
  * Fires when the inbox file changed. The payload is deliberately empty: the
  * writer may be another process (the MCP server, a second instance), so the
  * only honest thing the event can say is "go look". Clients then drain from

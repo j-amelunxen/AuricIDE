@@ -25,6 +25,7 @@ import { type Command } from '@/lib/commands/registry';
 import { type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import { VideoImportDialog } from '@/app/components/videoImport/VideoImportDialog';
 import { InboxCaptureOverlay } from '@/app/components/inbox/InboxCaptureOverlay';
+import { CommandCenter } from '@/app/components/notifications/CommandCenter';
 
 interface IDEOverlaysProps {
   // Modals state
@@ -70,6 +71,9 @@ interface IDEOverlaysProps {
   setCommandPaletteOpen: (open: boolean) => void;
   commands: Command[];
   handleCommandExecute: (cmdId: string) => void;
+  /** Opens (or switches to) a project — the Command Center's `run-conductor`
+   * button needs it for a run aimed at a project other than the open one. */
+  handleOpenRecent: (path: string) => Promise<void>;
 
   contextMenu: { x: number; y: number; node: FileTreeNode } | null;
   setContextMenu: (menu: { x: number; y: number; node: FileTreeNode } | null) => void;
@@ -133,6 +137,7 @@ export function IDEOverlays({
   setCommandPaletteOpen,
   commands,
   handleCommandExecute,
+  handleOpenRecent,
   contextMenu,
   setContextMenu,
   contextMenuOptions,
@@ -218,11 +223,14 @@ export function IDEOverlays({
         onFileSelect={handleFileSelect}
       />
       <BlueprintsGallery />
-      {/* Mounted before AgentTerminalModal on purpose: both share the same
+      {/* Command Center, Agent Console and the terminal all share the
           z-[var(--z-tool)] layer, so DOM order — not z-index — decides which
-          one paints on top. The terminal has to win, or "Open terminal" from
-          a card opens a modal buried behind the still full-screen console,
-          with Esc answered by the console instead. */}
+          one paints on top. The center comes first so the console can open
+          over it; the console comes before the terminal because the terminal
+          has to win, or "Open terminal" from a card opens a modal buried
+          behind the still full-screen console, with Esc answered by the
+          console instead. */}
+      <CommandCenter onRunCommand={handleCommandExecute} onOpenProject={handleOpenRecent} />
       <AgentConsole onOpenTerminal={handleSelectAgent} />
       <AgentTerminalModal
         agent={fullscreenAgent}

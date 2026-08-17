@@ -493,6 +493,22 @@ pub fn clear_impl(conn: &Connection, project_path: Option<&str>) -> Result<(), S
     Ok(())
 }
 
+/// Deletes the named notifications. The same guard as `clear_impl`, in the
+/// SQL rather than left to the caller: the MCP server writes to this database
+/// too, so "an unanswered question is never dropped" has to hold at the
+/// boundary, not in one slice.
+pub fn delete_impl(conn: &Connection, uids: &[String]) -> Result<(), String> {
+    for uid in uids {
+        conn.execute(
+            "DELETE FROM notifications
+             WHERE uid = ?1 AND (kind <> 'ask' OR answered_at IS NOT NULL)",
+            params![uid],
+        )
+        .map_err(|e| format!("Failed to delete notification: {}", e))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -745,6 +761,24 @@ mod tests {
         let left = list_impl(&conn, None, None, None).expect("list");
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].title, "offen?");
+    }
+
+    #[test]
+    fn delete_removes_only_the_named_rows_and_spares_open_questions() {
+        let mut conn = test_db();
+        let mut ask = input("offen?");
+        ask.kind = Some("ask".to_string());
+        let ask = dispatch_impl(&mut conn, &ask).expect("ask");
+        let gone = dispatch_impl(&mut conn, &input("weg")).expect("gone");
+        let kept = dispatch_impl(&mut conn, &input("bleibt")).expect("kept");
+
+        delete_impl(&conn, &[ask.uid.clone(), gone.uid]).expect("delete");
+
+        let left = list_impl(&conn, None, None, None).expect("list");
+        let uids: Vec<&str> = left.iter().map(|n| n.uid.as_str()).collect();
+        assert_eq!(uids.len(), 2);
+        assert!(uids.contains(&ask.uid.as_str()));
+        assert!(uids.contains(&kept.uid.as_str()));
     }
 
     #[test]

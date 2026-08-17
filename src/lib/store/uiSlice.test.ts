@@ -475,3 +475,97 @@ describe('uiSlice – the conductor provider', () => {
     expect(useStore.getState().conductorProviderId).toBeNull();
   });
 });
+
+describe('uiSlice – Command Center', () => {
+  let store: ReturnType<typeof createTestStore>;
+
+  beforeEach(() => {
+    store = createTestStore();
+  });
+
+  it('starts closed, on no particular project', () => {
+    expect(store.current.commandCenterOpen).toBe(false);
+    expect(store.current.commandCenterProject).toBeUndefined();
+  });
+
+  // Three states, and they are not the same: undefined is "every project",
+  // null is "the app itself", a string is one project.
+  it('opens on All when no project is named', () => {
+    store.current.openCommandCenter();
+
+    expect(store.current.commandCenterOpen).toBe(true);
+    expect(store.current.commandCenterProject).toBeUndefined();
+  });
+
+  it('opens straight into the project it was given', () => {
+    store.current.openCommandCenter('/repos/alpha');
+
+    expect(store.current.commandCenterOpen).toBe(true);
+    expect(store.current.commandCenterProject).toBe('/repos/alpha');
+  });
+
+  it('opens on the app-wide rows when handed null', () => {
+    store.current.openCommandCenter(null);
+
+    expect(store.current.commandCenterOpen).toBe(true);
+    expect(store.current.commandCenterProject).toBeNull();
+  });
+
+  // Reopening from a header button must not land on whatever was selected
+  // last time — the button says "Command Center", not "back to Alpha".
+  it('forgets the last selection when opened without one', () => {
+    store.current.openCommandCenter('/repos/alpha');
+    store.current.closeCommandCenter();
+    store.current.openCommandCenter();
+
+    expect(store.current.commandCenterProject).toBeUndefined();
+  });
+
+  // Both are full-area overlays on the same layer, and the console is mounted
+  // later so it paints on top. Opening the center under an open console would
+  // look like nothing happened — and the next Esc would close the invisible
+  // one. So opening the center takes the console down first.
+  it('closes the Agent Console when it opens', () => {
+    store.current.openAgentConsole();
+    store.current.openCommandCenter();
+
+    expect(store.current.commandCenterOpen).toBe(true);
+    expect(store.current.agentConsoleOpen).toBe(false);
+  });
+
+  it('changes the selected project while open', () => {
+    store.current.openCommandCenter();
+    store.current.selectCommandCenterProject('/repos/beta');
+
+    expect(store.current.commandCenterProject).toBe('/repos/beta');
+    expect(store.current.commandCenterOpen).toBe(true);
+  });
+
+  it('selects All again', () => {
+    store.current.openCommandCenter('/repos/beta');
+    store.current.selectCommandCenterProject(undefined);
+
+    expect(store.current.commandCenterProject).toBeUndefined();
+  });
+
+  // The test double merges by spread; the real store merges through zustand.
+  // Writing `undefined` back is exactly the case where those two could differ,
+  // so "All" is checked where it actually acts.
+  it('writes All back through the real store', () => {
+    useStore.getState().openCommandCenter('/repos/alpha');
+    useStore.getState().openCommandCenter();
+
+    expect(useStore.getState().commandCenterProject).toBeUndefined();
+    expect(useStore.getState().commandCenterOpen).toBe(true);
+
+    useStore.getState().closeCommandCenter();
+  });
+
+  it('closes without touching the selection', () => {
+    store.current.openCommandCenter('/repos/alpha');
+    store.current.closeCommandCenter();
+
+    expect(store.current.commandCenterOpen).toBe(false);
+    expect(store.current.commandCenterProject).toBe('/repos/alpha');
+  });
+});

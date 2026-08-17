@@ -68,6 +68,14 @@ export interface UISlice {
   workTab: WorkTab;
   /** Full-area overlay listing every running agent, grouped by project. */
   agentConsoleOpen: boolean;
+  /** Full-area overlay for the inbox and every schedule, grouped by project. */
+  commandCenterOpen: boolean;
+  /**
+   * Which group the center is showing. Three states, and they mean different
+   * things: `undefined` is every project at once, `null` is the app itself
+   * (rows that belong to no project), a string is that one project.
+   */
+  commandCenterProject: string | null | undefined;
 
   setImportSpecDialogOpen: (open: boolean) => void;
   setVideoImportDialogOpen: (open: boolean) => void;
@@ -100,6 +108,10 @@ export interface UISlice {
   openAgentConsole: () => void;
   closeAgentConsole: () => void;
   toggleAgentConsole: () => void;
+  /** Omitting the path opens on "All" — never on whatever was picked last time. */
+  openCommandCenter: (projectPath?: string | null) => void;
+  closeCommandCenter: () => void;
+  selectCommandCenterProject: (projectPath: string | null | undefined) => void;
 }
 
 export const createUISlice: StateCreator<UISlice> = (set, get) => ({
@@ -129,6 +141,8 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   workPlaceOpen: false,
   workTab: 'goals',
   agentConsoleOpen: false,
+  commandCenterOpen: false,
+  commandCenterProject: undefined,
   agentSettings: {
     dangerouslyIgnorePermissions: false,
     autoAcceptEdits: false,
@@ -246,4 +260,19 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   openAgentConsole: () => set({ agentConsoleOpen: true }),
   closeAgentConsole: () => set({ agentConsoleOpen: false }),
   toggleAgentConsole: () => set((state) => ({ agentConsoleOpen: !state.agentConsoleOpen })),
+
+  // The selection is always written, including back to undefined: a header
+  // button that says "Command Center" must not reopen on the project someone
+  // drilled into an hour ago.
+  // The Agent Console shares the overlay layer and is mounted after this, so
+  // it would paint over a center opened underneath it; the palette command
+  // would look dead and Esc would close the overlay nobody can see.
+  openCommandCenter: (projectPath) =>
+    set({ commandCenterOpen: true, commandCenterProject: projectPath, agentConsoleOpen: false }),
+
+  // Closing keeps the selection — nothing reads it while closed, and opening
+  // decides it afresh anyway.
+  closeCommandCenter: () => set({ commandCenterOpen: false }),
+
+  selectCommandCenterProject: (projectPath) => set({ commandCenterProject: projectPath }),
 });

@@ -154,6 +154,7 @@
       "category": "view",
       "shortcut": "⌘⇧C"
     },
+    { "id": "view.command-center", "label": "Toggle Command Center", "category": "view" },
     { "id": "excalidraw.browse", "label": "Excalidraw+: Browse Workspace", "category": "view" },
     {
       "id": "markdown.rename-heading",

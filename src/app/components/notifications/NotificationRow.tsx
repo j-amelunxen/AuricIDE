@@ -132,7 +132,7 @@ export function NotificationRow({
                 disabled={presented.disabledReason !== undefined}
                 title={presented.disabledReason}
                 onClick={() => onAction(notification, presented.action)}
-                className="rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className="press-feedback rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-foreground hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {presented.action.label}
               </button>
