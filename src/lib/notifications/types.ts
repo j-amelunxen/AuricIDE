@@ -103,11 +103,38 @@ export type NotificationAction =
       repoPath: string;
       steps: SkillSnapshot[];
     }
+  | {
+      id: string;
+      label: string;
+      kind: 'run-conductor';
+      repoPath: string;
+      /** Tickets *spawned* in this run, not tickets finished. */
+      ticketBudget: number;
+      /** Default `1`, i.e. "in a row". */
+      maxConcurrent?: number;
+      goalId?: string;
+      /** Snapshot for the row; the id decides what actually runs. */
+      goalName?: string;
+      requireReview?: boolean;
+      /**
+       * `auto` starts on arrival, within the gate in `scheduledRun.ts` — the
+       * only launch mode that is not itself a click. Honoured only for a
+       * user-authored payload; see `trust.ts`.
+       */
+      launch?: ConductorLaunch;
+    }
   | { id: string; label: string; kind: 'open'; target: NotificationOpenTarget }
   | { id: string; label: string; kind: 'command'; commandId: string };
 
 /** Whether a configured launch still stops at the spawn dialog. */
 export type NotificationLaunch = 'direct' | 'dialog';
+
+/**
+ * A conductor run adds a third mode, `auto`, that a skill launch does not
+ * offer — kept as its own type so `run-skill`'s vocabulary cannot silently
+ * grow a launch mode that skill has no gate for.
+ */
+export type ConductorLaunch = 'auto' | 'direct' | 'dialog';
 
 export type NotificationOpenTarget =
   | { type: 'file'; path: string; line?: number }
@@ -186,6 +213,17 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     comboLabel: nonEmpty,
     repoPath: nonEmpty,
     steps: z.array(skillSnapshotSchema).min(1).max(8),
+  }),
+  z.object({
+    ...identity,
+    kind: z.literal('run-conductor'),
+    repoPath: nonEmpty,
+    ticketBudget: z.number().int().min(1),
+    maxConcurrent: z.number().int().min(1).optional(),
+    goalId: z.string().optional(),
+    goalName: z.string().optional(),
+    requireReview: z.boolean().optional(),
+    launch: z.enum(['auto', 'direct', 'dialog']).optional(),
   }),
   z.object({ ...identity, kind: z.literal('open'), target: openTargetSchema }),
   z.object({ ...identity, kind: z.literal('command'), commandId: nonEmpty }),

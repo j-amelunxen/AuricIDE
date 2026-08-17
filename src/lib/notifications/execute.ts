@@ -27,6 +27,22 @@ export interface NotificationActionDeps {
   openGoal: (goalId: string) => void;
   openAgent: (agentId: string) => void;
   runCommand: (commandId: string) => void;
+  /**
+   * Opens (or switches to) `repoPath` if needed and starts — or pre-fills —
+   * a conductor run there. The project switch, the load wait and the actual
+   * `startConductor` call are the caller's concern; this module only decides
+   * *whether* the run may start on the click (`mode: 'direct'`) or must stop
+   * at the panel for a human to press Start (`mode: 'dialog'`).
+   */
+  startConductorRun: (input: {
+    repoPath: string;
+    ticketBudget: number;
+    maxConcurrent: number;
+    goalId?: string;
+    requireReview: boolean;
+    mode: 'direct' | 'dialog';
+    origin?: string;
+  }) => Promise<void>;
 }
 
 export class NotificationActionError extends Error {
@@ -55,6 +71,8 @@ export interface NotificationActionContext {
   trust?: NotificationTrust;
   /** The harnesses this machine offers, for resolving a skill's pins. */
   providers?: ProviderInfo[];
+  /** Schedule or notification origin name, carried into the decision log. */
+  origin?: string;
 }
 
 /**
@@ -131,6 +149,23 @@ function startsDirectly(
   return action.launch === 'direct' && context.trust === 'user';
 }
 
+/**
+ * Whether a `run-conductor` click may start the run outright.
+ *
+ * `auto` reaching this function means a click already happened — the
+ * unattended path in `scheduledRun.ts` calls `startConductor` directly and
+ * never goes through here — so on a click `auto` is just another way of
+ * saying `direct`. Only a user-authored payload may skip the panel; from a
+ * model the same payload still offers the button, it just always stops there.
+ */
+function conductorLaunchMode(
+  action: Extract<NotificationAction, { kind: 'run-conductor' }>,
+  context: NotificationActionContext
+): 'direct' | 'dialog' {
+  if (context.trust !== 'user') return 'dialog';
+  return action.launch === 'direct' || action.launch === 'auto' ? 'direct' : 'dialog';
+}
+
 function openTarget(target: NotificationOpenTarget, deps: NotificationActionDeps): void {
   switch (target.type) {
     case 'file':
@@ -194,6 +229,24 @@ export async function executeNotificationAction(
               permissionMode: action.permissionMode,
             }
           : null,
+      });
+      return;
+    }
+    case 'run-conductor': {
+      if (!(await deps.projectDirExists(action.repoPath))) {
+        throw new NotificationActionError(
+          `Project folder not found: ${action.repoPath}`,
+          'missing-project'
+        );
+      }
+      await deps.startConductorRun({
+        repoPath: action.repoPath,
+        ticketBudget: action.ticketBudget,
+        maxConcurrent: action.maxConcurrent ?? 1,
+        goalId: action.goalId,
+        requireReview: action.requireReview ?? false,
+        mode: conductorLaunchMode(action, context),
+        origin: context.origin,
       });
       return;
     }

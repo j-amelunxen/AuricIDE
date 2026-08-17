@@ -109,6 +109,15 @@ describe('notification MCP tools', () => {
       steps: [{ id: 's1', label: 'Draft', prompt: '/draft' }],
     };
 
+    const runConductor = {
+      id: 'run',
+      label: 'Start conductor',
+      kind: 'run-conductor',
+      repoPath: '/repo',
+      ticketBudget: 5,
+      launch: 'auto',
+    };
+
     // An agent that can mint a skill snapshot can also mint bypassPermissions.
     // The schema is the privilege boundary; the frontend parser is not.
     it('rejects a well-formed run-skill at the schema', () => {
@@ -117,6 +126,13 @@ describe('notification MCP tools', () => {
 
     it('rejects a well-formed run-combo at the schema', () => {
       expect(notifyActionSchema.safeParse(runCombo).success).toBe(false);
+    });
+
+    // The kind that starts a whole conductor run — and can carry launch:'auto'
+    // — is the one an agent must not be able to mint at all. Trust is checked
+    // again at click, but the schema is where it never enters the inbox.
+    it('rejects a well-formed run-conductor at the schema', () => {
+      expect(notifyActionSchema.safeParse(runConductor).success).toBe(false);
     });
 
     // captureTools calls execute directly, so this is not a Zod claim —
@@ -129,6 +145,12 @@ describe('notification MCP tools', () => {
 
     it('refuses notify when an action is run-combo and inserts no row', async () => {
       await expect(call('notify', { title: 'x', actions: [runCombo] })).rejects.toThrow();
+
+      expect(db.prepare('SELECT * FROM notifications').all()).toHaveLength(0);
+    });
+
+    it('refuses notify when an action is run-conductor and inserts no row', async () => {
+      await expect(call('notify', { title: 'x', actions: [runConductor] })).rejects.toThrow();
 
       expect(db.prepare('SELECT * FROM notifications').all()).toHaveLength(0);
     });

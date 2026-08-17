@@ -40,9 +40,24 @@ function findPinnedCombo(
   return quickAccessCombos(project).find((c) => c.id === comboId);
 }
 
-function overlayLiveLabel(
+/**
+ * Relabels a `run-conductor` button when it would run somewhere other than
+ * the open project — clicking Start there also switches projects, which
+ * closes every tab, so the button says so rather than reading like an
+ * ordinary Start.
+ */
+function conductorLabel(
+  action: Extract<NotificationAction, { kind: 'run-conductor' }>,
+  openProjectPath: string | null | undefined
+): string {
+  if (openProjectPath && openProjectPath !== action.repoPath) return 'Open project & start';
+  return action.label;
+}
+
+function presentLabel(
   action: NotificationAction,
-  starred: StarredProject[]
+  starred: StarredProject[],
+  openProjectPath: string | null | undefined
 ): NotificationAction {
   if (action.kind === 'run-skill') {
     const live = findPinnedSkill(starred, action.repoPath, action.skillId, action.invocation);
@@ -52,11 +67,16 @@ function overlayLiveLabel(
     const live = findPinnedCombo(starred, action.repoPath, action.comboId);
     if (live) return { ...action, label: `Start ${live.label}` };
   }
+  if (action.kind === 'run-conductor') {
+    const label = conductorLabel(action, openProjectPath);
+    if (label !== action.label) return { ...action, label };
+  }
   return action;
 }
 
 function repoPathOf(action: NotificationAction): string | undefined {
-  if (action.kind === 'run-skill' || action.kind === 'run-combo') return action.repoPath;
+  if (action.kind === 'run-skill' || action.kind === 'run-combo' || action.kind === 'run-conductor')
+    return action.repoPath;
   if (action.kind === 'spawn-agent') return action.repoPath;
   return undefined;
 }
@@ -79,10 +99,11 @@ function disabledReason(
 export function presentNotificationActions(
   actions: NotificationAction[],
   starred: StarredProject[],
-  repoDirStatus: Map<string, RepoDirStatus>
+  repoDirStatus: Map<string, RepoDirStatus>,
+  openProjectPath?: string | null
 ): PresentedAction[] {
   return actions.map((action) => {
-    const presented: PresentedAction = { action: overlayLiveLabel(action, starred) };
+    const presented: PresentedAction = { action: presentLabel(action, starred, openProjectPath) };
     const reason = disabledReason(action, repoDirStatus);
     if (reason !== undefined) presented.disabledReason = reason;
     return presented;
