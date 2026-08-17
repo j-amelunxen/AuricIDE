@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RecentProject } from '@/lib/store/recentProjectsSlice';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
-import { scheduleProjectOptions } from './scheduleProjects';
+import { projectPickerOptions } from './projectOptions';
 
 const starred = (
   path: string,
@@ -20,13 +20,12 @@ const recent = (path: string, name: string, openedAt: number): RecentProject => 
   openedAt,
 });
 
-describe('scheduleProjectOptions', () => {
+describe('projectPickerOptions', () => {
   it('offers the Quick Access projects first, alphabetically', () => {
-    const options = scheduleProjectOptions({
+    const options = projectPickerOptions({
       starred: [starred('/repo/zebra', 'zebra'), starred('/repo/alpha', 'alpha')],
       recent: [],
       openPath: null,
-      bound: null,
     });
 
     expect(options.map((o) => o.path)).toEqual(['/repo/alpha', '/repo/zebra']);
@@ -34,11 +33,10 @@ describe('scheduleProjectOptions', () => {
   });
 
   it('appends recently opened projects in recency order, after the pinned ones', () => {
-    const options = scheduleProjectOptions({
+    const options = projectPickerOptions({
       starred: [starred('/repo/alpha', 'alpha')],
       recent: [recent('/repo/older', 'older', 10), recent('/repo/newer', 'newer', 20)],
       openPath: null,
-      bound: null,
     });
 
     expect(options.map((o) => o.path)).toEqual(['/repo/alpha', '/repo/newer', '/repo/older']);
@@ -46,11 +44,10 @@ describe('scheduleProjectOptions', () => {
   });
 
   it('lists a project only once when it is both pinned and recent', () => {
-    const options = scheduleProjectOptions({
+    const options = projectPickerOptions({
       starred: [starred('/repo/alpha', 'alpha')],
       recent: [recent('/repo/alpha', 'alpha', 20)],
       openPath: '/repo/alpha',
-      bound: null,
     });
 
     expect(options.map((o) => o.path)).toEqual(['/repo/alpha']);
@@ -58,11 +55,10 @@ describe('scheduleProjectOptions', () => {
   });
 
   it('includes the open project even when it is neither pinned nor in the recent list', () => {
-    const options = scheduleProjectOptions({
+    const options = projectPickerOptions({
       starred: [],
       recent: [],
       openPath: '/repo/scratch',
-      bound: null,
     });
 
     expect(options.map((o) => o.path)).toEqual(['/repo/scratch']);
@@ -71,8 +67,8 @@ describe('scheduleProjectOptions', () => {
 
   // Dropping it would silently retarget the reminder onto whatever the picker
   // happened to select instead — the one failure worth the extra branch.
-  it("keeps the schedule's own project listed after it was unpinned and forgotten", () => {
-    const options = scheduleProjectOptions({
+  it("keeps a caller's bound project listed after it was unpinned and forgotten", () => {
+    const options = projectPickerOptions({
       starred: [starred('/repo/alpha', 'alpha')],
       recent: [],
       openPath: null,
@@ -84,7 +80,7 @@ describe('scheduleProjectOptions', () => {
   });
 
   it('falls back to the folder name when the bound project has none stored', () => {
-    const options = scheduleProjectOptions({
+    const options = projectPickerOptions({
       starred: [],
       recent: [],
       openPath: null,
@@ -94,12 +90,21 @@ describe('scheduleProjectOptions', () => {
     expect(options[0].name).toBe('retired');
   });
 
+  it('omits the bound project entirely when the caller has no notion of one', () => {
+    const options = projectPickerOptions({
+      starred: [starred('/repo/alpha', 'alpha')],
+      recent: [],
+      openPath: null,
+    });
+
+    expect(options.map((o) => o.path)).toEqual(['/repo/alpha']);
+  });
+
   it('carries the pinned icon so the picker draws the same tile Quick Access does', () => {
-    const options = scheduleProjectOptions({
+    const options = projectPickerOptions({
       starred: [starred('/repo/alpha', 'alpha', { icon: { kind: 'emoji', value: '🚀' } })],
       recent: [],
       openPath: null,
-      bound: null,
     });
 
     expect(options[0].icon).toEqual({ kind: 'emoji', value: '🚀' });

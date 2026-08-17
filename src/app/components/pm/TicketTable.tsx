@@ -10,6 +10,11 @@ import {
   buildTicketStatusPriorityPowerOptions,
 } from './ticketContextMenu';
 import { calculateHeat, getHeatStyles } from '@/lib/pm/heat';
+import {
+  TICKET_STATUS_BADGE_CLASS,
+  TICKET_STATUS_DOT_CLASS,
+  TICKET_STATUS_LABEL,
+} from '@/lib/pm/ticketStatusStyle';
 import { AuricIcon } from '../ui/AuricIcon';
 
 interface TicketTableProps {
@@ -29,30 +34,6 @@ interface TicketTableProps {
 }
 
 type SortKey = 'name' | 'status' | 'priority' | 'createdAt';
-
-const statusLabel: Record<PmTicket['status'], string> = {
-  open: 'Open',
-  in_progress: 'IP',
-  in_review: 'Review',
-  done: 'Done',
-  archived: 'Archived',
-};
-
-const statusBadge: Record<PmTicket['status'], string> = {
-  open: 'bg-white/10 text-foreground-muted',
-  in_progress: 'bg-yellow-500/10 text-git-modified',
-  in_review: 'bg-indigo-500/10 text-indigo-300',
-  done: 'bg-green-500/10 text-git-added',
-  archived: 'bg-purple-500/10 text-purple-400',
-};
-
-const statusDot: Record<PmTicket['status'], string> = {
-  open: 'bg-white/25',
-  in_progress: 'bg-yellow-400/60',
-  in_review: 'bg-indigo-400/60',
-  done: 'bg-green-400/60',
-  archived: 'bg-purple-400/60',
-};
 
 const priorityValue: Record<PmTicket['priority'], number> = {
   low: 0,
@@ -267,7 +248,9 @@ export function TicketTable({
               />
             )}
             {/* Status dot — purely visual */}
-            <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${statusDot[ticket.status]}`} />
+            <span
+              className={`shrink-0 h-1.5 w-1.5 rounded-full ${TICKET_STATUS_DOT_CLASS[ticket.status]}`}
+            />
 
             {/* Priority icon */}
             <AuricIcon
@@ -330,9 +313,9 @@ export function TicketTable({
                 <AuricIcon name="smart_toy" className="text-[14px]" />
               </button>
               <span
-                className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusBadge[ticket.status]}`}
+                className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-medium ${TICKET_STATUS_BADGE_CLASS[ticket.status]}`}
               >
-                {statusLabel[ticket.status]}
+                {TICKET_STATUS_LABEL[ticket.status]}
               </span>
             </div>
           </div>

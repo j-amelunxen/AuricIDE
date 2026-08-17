@@ -13,7 +13,7 @@ import {
   weeklyCron,
   WEEKDAY_OPTIONS,
 } from '@/lib/notifications/scheduleFormat';
-import type { ScheduleProjectOption } from '@/lib/notifications/scheduleProjects';
+import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
 import type { NotificationAction } from '@/lib/notifications/types';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import {
@@ -39,7 +39,7 @@ export interface ScheduleEditorProps {
   preview: string[];
   starredProjects: StarredProject[];
   /** Every project the reminder can be aimed at, in the order they are offered. */
-  projectOptions: ScheduleProjectOption[];
+  projectOptions: ProjectPickerOption[];
   discoveredSkills: ProjectSkill[];
   onDraftChange: (draft: Schedule) => void;
   onSave: (draft: Schedule) => void;
