@@ -241,16 +241,28 @@ export function useIDEActions(
     let canceled = false;
     const path = state.rootPath;
 
-    // Check if direct LLM is configured
-    import('@/lib/tauri/db').then((m) => {
-      m.dbGet(path, 'llm_settings', 'api_key').then((k) => {
+    // Whether the two models are configured, resolved the way the backend
+    // resolves them: the application-wide key unless this project overrides it.
+    // Asking the project database alone reports every inherited key as missing,
+    // and the switches that gate on these flags then cannot be turned on.
+    void Promise.all([
+      import('@/lib/config/credentialStatus'),
+      import('@/lib/tauri/appCredentials'),
+    ]).then(([{ isCredentialConfigured, readCredential }, { CREDENTIAL_NAMESPACES }]) => {
+      void isCredentialConfigured(path, CREDENTIAL_NAMESPACES.llm).then((configured) => {
         if (canceled) return;
-        state.setLlmConfigured(!!k);
+        state.setLlmConfigured(configured);
       });
       // The separate judge model is configured independently.
-      m.dbGet(path, 'judge_llm_settings', 'api_key').then((k) => {
+      void isCredentialConfigured(path, CREDENTIAL_NAMESPACES.judge).then((configured) => {
         if (canceled) return;
-        state.setJudgeLlmConfigured(!!k);
+        state.setJudgeLlmConfigured(configured);
+      });
+      // Its name, so the Conductor panel can say which model would review
+      // rather than pointing at a settings screen.
+      void readCredential(path, CREDENTIAL_NAMESPACES.judge, 'model').then((judgeModel) => {
+        if (canceled) return;
+        state.setJudgeLlmModel(judgeModel);
       });
     });
 

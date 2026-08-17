@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { isCredentialConfigured } from '@/lib/config/credentialStatus';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
@@ -101,10 +102,22 @@ const GROUPS: Group[] = [
 
 export function CredentialsContent() {
   const showToast = useStore((s) => s.showToast);
+  const rootPath = useStore((s) => s.rootPath);
   const setLlmConfigured = useStore((s) => s.setLlmConfigured);
   const setJudgeLlmConfigured = useStore((s) => s.setJudgeLlmConfigured);
   const [values, setValues] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(true);
+
+  // Both flags go through the same resolver the rest of the app uses, so a key
+  // the open project overrides counts here exactly as it counts at spend time.
+  const refreshConfigured = useCallback(async () => {
+    const [llm, judge] = await Promise.all([
+      isCredentialConfigured(rootPath, CREDENTIAL_NAMESPACES.llm),
+      isCredentialConfigured(rootPath, CREDENTIAL_NAMESPACES.judge),
+    ]);
+    setLlmConfigured(llm);
+    setJudgeLlmConfigured(judge);
+  }, [rootPath, setLlmConfigured, setJudgeLlmConfigured]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,16 +126,15 @@ export function CredentialsContent() {
         GROUPS.map(async (group) => [group.namespace, await loadAppCredentials(group.namespace)])
       );
       if (cancelled) return;
-      const next = Object.fromEntries(loaded) as Record<string, Record<string, string>>;
-      setValues(next);
-      setLlmConfigured(!!next[CREDENTIAL_NAMESPACES.llm]?.api_key);
-      setJudgeLlmConfigured(!!next[CREDENTIAL_NAMESPACES.judge]?.api_key);
+      setValues(Object.fromEntries(loaded) as Record<string, Record<string, string>>);
+      await refreshConfigured();
+      if (cancelled) return;
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [setLlmConfigured, setJudgeLlmConfigured]);
+  }, [refreshConfigured]);
 
   const save = async (namespace: string, key: string, value: string) => {
     setValues((current) => ({
@@ -131,11 +143,13 @@ export function CredentialsContent() {
     }));
     try {
       await setAppCredential(namespace, key, value);
-      if (key === 'api_key' && namespace === CREDENTIAL_NAMESPACES.llm) {
-        setLlmConfigured(!!value);
-      }
-      if (key === 'api_key' && namespace === CREDENTIAL_NAMESPACES.judge) {
-        setJudgeLlmConfigured(!!value);
+      if (
+        key === 'api_key' &&
+        (namespace === CREDENTIAL_NAMESPACES.llm || namespace === CREDENTIAL_NAMESPACES.judge)
+      ) {
+        // Clearing the field here does not necessarily leave the feature
+        // unconfigured — the open project may still override it.
+        await refreshConfigured();
       }
     } catch (error) {
       // A save that did not happen must not look like one that did.
