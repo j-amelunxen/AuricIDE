@@ -321,6 +321,14 @@ one click honest.
   direct launch — a combo step and a notification's Start button both. Two
   copies would let one skill run under different permissions depending on which
   button was pressed, and nothing at the button would show it.
+- **The reminder owns its launch, the pin only seeds it.** The schedule form
+  offers agent, model and permission for a skill action, starting from whatever
+  the skill is pinned to in Quick Access — a skill that was merely discovered is
+  pinned to nothing and would otherwise run on whichever harness the machine
+  lists first, with that harness's default model. Once chosen, the values belong
+  to the reminder: the "pinned skill has changed" check compares only label,
+  prompt and invocation, and taking a drifted prompt over keeps the launch. A
+  stale flag on a deliberate choice would offer a fix that discards it.
 - **The launch defaults are read for the project the agent will run in.** They
   are stored per working directory; reading them without the path yields
   whatever was last launched outside any project, which is usually nothing.

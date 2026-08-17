@@ -14,6 +14,7 @@ import {
   WEEKDAY_OPTIONS,
 } from '@/lib/notifications/scheduleFormat';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
+import type { SkillLaunchPins } from '@/lib/agents/skillLaunch';
 import type { NotificationAction, NotificationLaunch } from '@/lib/notifications/types';
 import type { PermissionMode } from '@/lib/tauri/agents';
 import type { ProviderInfo } from '@/lib/tauri/providers';
@@ -59,12 +60,11 @@ type RunComboAction = Extract<NotificationAction, { kind: 'run-combo' }>;
  * defaults stay reachable, so configuring nothing keeps working exactly as it
  * did. A model or a permission mode without a provider is not offered: both
  * only mean something relative to one harness.
+ *
+ * A skill's launch is the same three values in the same shape — the one both
+ * the notification's Start button and a combo step resolve through.
  */
-interface TaskLaunchDraft {
-  providerId?: string;
-  model?: string;
-  permissionMode?: PermissionMode;
-}
+type TaskLaunchDraft = SkillLaunchPins;
 
 type ActionDraft =
   | { choice: 'none' }
@@ -178,6 +178,32 @@ function snapshotFromDiscovered(
   };
 }
 
+/**
+ * Puts one set of launch choices onto a skill snapshot, absences included.
+ *
+ * Deleting rather than assigning `undefined` matters: the snapshot is compared
+ * and stored as data, and a key that is present-but-empty would claim a choice
+ * that was never made.
+ */
+function withLaunchPins(snapshot: RunSkillAction, pins: SkillLaunchPins): RunSkillAction {
+  const next: RunSkillAction = { ...snapshot };
+  delete next.providerId;
+  delete next.model;
+  delete next.permissionMode;
+  if (pins.providerId !== undefined) next.providerId = pins.providerId;
+  if (pins.model !== undefined) next.model = pins.model;
+  if (pins.permissionMode !== undefined) next.permissionMode = pins.permissionMode;
+  return next;
+}
+
+function launchPinsOf(snapshot: RunSkillAction | undefined): SkillLaunchPins {
+  return {
+    providerId: snapshot?.providerId,
+    model: snapshot?.model,
+    permissionMode: snapshot?.permissionMode,
+  };
+}
+
 function snapshotFromCombo(combo: QuickAccessCombo, projectPath: string): RunComboAction {
   return {
     id: 'run',
@@ -200,13 +226,18 @@ function findLiveSkill(
   );
 }
 
+/**
+ * Whether the pinned skill has moved out from under the reminder.
+ *
+ * Only what the reminder does not own is compared. Provider, model and
+ * permission are chosen in this form and belong to the reminder from then on —
+ * flagging a pin that names a different model would report a deliberate choice
+ * as drift, and the fix on offer would throw that choice away.
+ */
 function skillSnapshotStale(snapshot: RunSkillAction, live: QuickAccessSkill): boolean {
   return (
     snapshot.skillLabel !== live.label ||
     snapshot.prompt !== live.prompt ||
-    snapshot.providerId !== live.providerId ||
-    snapshot.model !== live.model ||
-    snapshot.permissionMode !== live.permissionMode ||
     snapshot.invocation !== live.invocation
   );
 }
@@ -359,6 +390,11 @@ export function ScheduleEditor({
   const taskProvider =
     actionDraft.choice === 'task' && actionDraft.providerId
       ? providers.find((provider) => provider.id === actionDraft.providerId)
+      : undefined;
+
+  const skillProvider =
+    actionDraft.choice === 'skill' && actionDraft.snapshot?.providerId
+      ? providers.find((provider) => provider.id === actionDraft.snapshot?.providerId)
       : undefined;
 
   const liveSkill =
@@ -559,6 +595,27 @@ export function ScheduleEditor({
         : { providerId, model: undefined, permissionMode: undefined }
     );
 
+  const setSkillPins = (patch: SkillLaunchPins) =>
+    setActionDraft((current) =>
+      current.choice === 'skill' && current.snapshot !== undefined
+        ? {
+            choice: 'skill',
+            snapshot: withLaunchPins(current.snapshot, {
+              ...launchPinsOf(current.snapshot),
+              ...patch,
+            }),
+          }
+        : current
+    );
+
+  /** Same rule as the custom agent: the harness carries its own two fields. */
+  const chooseSkillProvider = (providerId: string) =>
+    setSkillPins(
+      providerId === ''
+        ? { providerId: undefined, model: undefined, permissionMode: undefined }
+        : { providerId, model: undefined, permissionMode: undefined }
+    );
+
   const selectCombo = (value: string) => {
     if (projectPath === null) return;
     if (value === '') {
@@ -571,12 +628,20 @@ export function ScheduleEditor({
     }
   };
 
+  /**
+   * Takes the pin's wording over, and only its wording. The launch was decided
+   * here and stays decided — a drifted prompt is no reason to start the run on
+   * a different agent than the one the reminder says it uses.
+   */
   const refreshSkillSnapshot = () => {
     if (projectPath === null || liveSkill === undefined) return;
-    setActionDraft({
+    setActionDraft((current) => ({
       choice: 'skill',
-      snapshot: snapshotFromPin(liveSkill, projectPath, skillLaunch),
-    });
+      snapshot: withLaunchPins(
+        snapshotFromPin(liveSkill, projectPath, skillLaunch),
+        launchPinsOf(current.choice === 'skill' ? current.snapshot : undefined)
+      ),
+    }));
   };
 
   const refreshComboSnapshot = () => {
@@ -900,23 +965,92 @@ export function ScheduleEditor({
                 })}
               </select>
               {actionDraft.snapshot && (
-                <label className="mt-2 flex items-start gap-2 text-[11px] text-foreground">
-                  <input
-                    type="checkbox"
-                    data-testid="schedule-skill-direct"
-                    checked={skillLaunch === 'direct'}
-                    onChange={(event) => setSkillLaunch(event.target.checked)}
-                    className="mt-[2px]"
-                  />
-                  <span>
-                    Start on the click
-                    <span className="mt-0.5 block text-[9px] text-foreground-muted/60">
-                      {skillLaunch === 'direct'
-                        ? 'Runs with the provider, model and permission this skill is pinned to.'
-                        : 'Opens the spawn dialog first, pre-filled — one more click.'}
+                <>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className={SUBLABEL}>Agent</span>
+                      <select
+                        data-testid="schedule-skill-provider"
+                        value={actionDraft.snapshot.providerId ?? ''}
+                        onChange={(event) => chooseSkillProvider(event.target.value)}
+                        className={INPUT}
+                      >
+                        <option value="">Default agent</option>
+                        {providers.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className={SUBLABEL}>Model</span>
+                      <select
+                        data-testid="schedule-skill-model"
+                        disabled={skillProvider === undefined}
+                        value={actionDraft.snapshot.model ?? ''}
+                        onChange={(event) =>
+                          setSkillPins({ model: event.target.value || undefined })
+                        }
+                        className={`${INPUT} disabled:opacity-40`}
+                      >
+                        <option value="">
+                          {skillProvider?.defaultModel ?? 'Pick an agent first'}
+                        </option>
+                        {(skillProvider?.models ?? []).map((model) => (
+                          <option key={model.value} value={model.value}>
+                            {model.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="mt-2 block">
+                    <span className={SUBLABEL}>Permission</span>
+                    <select
+                      data-testid="schedule-skill-permission"
+                      disabled={skillProvider === undefined}
+                      value={actionDraft.snapshot.permissionMode ?? ''}
+                      onChange={(event) =>
+                        setSkillPins({
+                          permissionMode: (event.target.value || undefined) as PermissionMode,
+                        })
+                      }
+                      className={`${INPUT} disabled:opacity-40`}
+                    >
+                      <option value="">Agent default</option>
+                      {(skillProvider?.permissionModes ?? []).map((mode) => (
+                        <option key={mode.value} value={mode.value}>
+                          {mode.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[9px] text-foreground-muted/60">
+                      Starts from what the skill is pinned to. Changing it here changes this
+                      reminder only.
+                    </p>
+                  </label>
+
+                  <label className="mt-2 flex items-start gap-2 text-[11px] text-foreground">
+                    <input
+                      type="checkbox"
+                      data-testid="schedule-skill-direct"
+                      checked={skillLaunch === 'direct'}
+                      onChange={(event) => setSkillLaunch(event.target.checked)}
+                      className="mt-[2px]"
+                    />
+                    <span>
+                      Start on the click
+                      <span className="mt-0.5 block text-[9px] text-foreground-muted/60">
+                        {skillLaunch === 'direct'
+                          ? 'Runs with the agent, model and permission chosen above.'
+                          : 'Opens the spawn dialog first, pre-filled — one more click.'}
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                </>
               )}
               {skillStale && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
