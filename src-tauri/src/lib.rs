@@ -7,6 +7,7 @@ pub mod crashlog;
 mod database;
 mod excalidraw;
 mod git;
+mod inbox;
 mod llm;
 mod mcp;
 mod memory_report;
@@ -1639,6 +1640,70 @@ fn notifications_clear(
     notifications::clear_impl(&conn, project_path.as_deref())
 }
 
+// --- Inbox (Fast Access Task Box) -------------------------------------------
+// App-level GTD inbox: items are captured globally, then assigned to a
+// project, which creates a real ticket in that project's `.auric/project.db`.
+
+#[tauri::command]
+fn inbox_list(state: tauri::State<'_, inbox::InboxState>) -> Result<Vec<inbox::InboxItem>, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::list_impl(&conn)
+}
+
+#[tauri::command]
+fn inbox_add(
+    input: inbox::InboxItemInput,
+    state: tauri::State<'_, inbox::InboxState>,
+) -> Result<inbox::InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::add_impl(&conn, &input)
+}
+
+#[tauri::command]
+fn inbox_update(
+    id: String,
+    patch: inbox::InboxItemPatch,
+    state: tauri::State<'_, inbox::InboxState>,
+) -> Result<inbox::InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::update_impl(&conn, &id, &patch)
+}
+
+#[tauri::command]
+fn inbox_dismiss(id: String, state: tauri::State<'_, inbox::InboxState>) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::dismiss_impl(&conn, &id)
+}
+
+#[tauri::command]
+fn inbox_assign(
+    request: inbox::InboxAssignRequest,
+    state: tauri::State<'_, inbox::InboxState>,
+) -> Result<inbox::InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::assign_impl(&conn, &request)
+}
+
+#[tauri::command]
+fn inbox_unassign(
+    id: String,
+    state: tauri::State<'_, inbox::InboxState>,
+) -> Result<inbox::InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::unassign_impl(&conn, &id)
+}
+
+/// Reads several projects' `.auric/project.db` files read-only, so a
+/// possibly large batch does not block the main thread.
+#[tauri::command]
+async fn projects_pm_overview(
+    project_paths: Vec<String>,
+) -> Result<Vec<inbox::ProjectPmOverview>, String> {
+    tauri::async_runtime::spawn_blocking(move || inbox::projects_pm_overview_impl(&project_paths))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // --- Agent activity log -----------------------------------------------------
 // Opt-in history for the Agent Console's feed. App-global for the same reason
 // the inbox is: the console shows several repos at once.
@@ -2028,6 +2093,20 @@ pub fn run() {
                 Err(error) => eprintln!("Notification inbox unavailable: {error}"),
             }
 
+            // The GTD inbox is app-global for the same reason: a captured
+            // thought does not yet belong to any one project.
+            let task_inbox_db =
+                inbox::db_path_in(&app.path().app_data_dir().map_err(|e| e.to_string())?);
+            match inbox::init_db(&task_inbox_db) {
+                Ok(conn) => {
+                    app.manage(inbox::InboxState {
+                        conn: std::sync::Mutex::new(conn),
+                    });
+                }
+                // A missing inbox must not stop the IDE from opening either.
+                Err(error) => eprintln!("Task inbox unavailable: {error}"),
+            }
+
             // The agent activity log is app-global for the same reason. Only
             // the path is settled here: the store opens its database on first
             // use, so a user who leaves history off never gets a file.
@@ -2198,6 +2277,13 @@ pub fn run() {
             notifications_answer,
             notifications_unread_count,
             notifications_clear,
+            inbox_list,
+            inbox_add,
+            inbox_update,
+            inbox_dismiss,
+            inbox_assign,
+            inbox_unassign,
+            projects_pm_overview,
             agent_log_append,
             agent_log_load,
             agent_log_prune,
