@@ -19,6 +19,12 @@ vi.mock('@codemirror/lang-json', () => ({
 }));
 vi.mock('@codemirror/lang-xml', () => ({ xml: () => ['xml-ext'] }));
 vi.mock('@codemirror/lang-yaml', () => ({ yaml: () => ['yaml-ext'] }));
+vi.mock('@codemirror/language', () => ({
+  StreamLanguage: { define: (parser: unknown) => ['stream-ext', parser] },
+}));
+vi.mock('@codemirror/legacy-modes/mode/shell', () => ({ shell: 'shell-parser' }));
+vi.mock('@codemirror/legacy-modes/mode/dockerfile', () => ({ dockerFile: 'dockerfile-parser' }));
+vi.mock('@codemirror/legacy-modes/mode/groovy', () => ({ groovy: 'groovy-parser' }));
 
 vi.mock('@/lib/store', () => ({
   useStore: Object.assign(vi.fn(), {
@@ -226,6 +232,46 @@ describe('getLanguageExtension', () => {
   it('returns empty array for unknown extension', () => {
     const ext = getLanguageExtension('binary.exe');
     expect(ext).toEqual([]);
+  });
+
+  it('returns shell for .sh files', () => {
+    const ext = getLanguageExtension('deploy.sh');
+    expect(ext).toEqual(['stream-ext', 'shell-parser']);
+  });
+
+  it('returns shell for .bash files', () => {
+    const ext = getLanguageExtension('profile.bash');
+    expect(ext).toEqual(['stream-ext', 'shell-parser']);
+  });
+
+  it('returns shell for .zsh files', () => {
+    const ext = getLanguageExtension('profile.zsh');
+    expect(ext).toEqual(['stream-ext', 'shell-parser']);
+  });
+
+  it('returns shell for .ksh files', () => {
+    const ext = getLanguageExtension('script.ksh');
+    expect(ext).toEqual(['stream-ext', 'shell-parser']);
+  });
+
+  it('returns dockerfile syntax for a Dockerfile', () => {
+    const ext = getLanguageExtension('Dockerfile');
+    expect(ext).toEqual(['stream-ext', 'dockerfile-parser']);
+  });
+
+  it('returns groovy syntax for a Jenkinsfile', () => {
+    const ext = getLanguageExtension('Jenkinsfile');
+    expect(ext).toEqual(['stream-ext', 'groovy-parser']);
+  });
+
+  it('returns groovy syntax for .groovy files', () => {
+    const ext = getLanguageExtension('build.groovy');
+    expect(ext).toEqual(['stream-ext', 'groovy-parser']);
+  });
+
+  it('returns groovy syntax for .gradle files', () => {
+    const ext = getLanguageExtension('build.gradle');
+    expect(ext).toEqual(['stream-ext', 'groovy-parser']);
   });
 });
 

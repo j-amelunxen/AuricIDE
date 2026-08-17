@@ -10,6 +10,10 @@ import { json } from '@codemirror/lang-json';
 import { python } from '@codemirror/lang-python';
 import { xml } from '@codemirror/lang-xml';
 import { yaml } from '@codemirror/lang-yaml';
+import { StreamLanguage } from '@codemirror/language';
+import { shell } from '@codemirror/legacy-modes/mode/shell';
+import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
+import { groovy } from '@codemirror/legacy-modes/mode/groovy';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
@@ -65,6 +69,10 @@ import { useStore } from '@/lib/store';
 
 export type EditorCompartments = Record<string, Compartment>;
 
+const shellLanguage = StreamLanguage.define(shell);
+const dockerfileLanguage = StreamLanguage.define(dockerFile);
+const groovyLanguage = StreamLanguage.define(groovy);
+
 export function getLanguageExtension(path?: string) {
   if (!path) return markdown({ base: markdownLanguage, codeLanguages: languages });
   const ext = path.split('.').pop()?.toLowerCase();
@@ -94,6 +102,17 @@ export function getLanguageExtension(path?: string) {
     case 'yaml':
     case 'yml':
       return yaml();
+    case 'sh':
+    case 'bash':
+    case 'ksh':
+    case 'zsh':
+      return shellLanguage;
+    case 'dockerfile':
+      return dockerfileLanguage;
+    case 'jenkinsfile':
+    case 'groovy':
+    case 'gradle':
+      return groovyLanguage;
     case 'md':
     case 'markdown':
       return markdown({ base: markdownLanguage, codeLanguages: languages });
