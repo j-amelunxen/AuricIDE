@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { Notification } from '@/lib/notifications/types';
-import { deservesOsBanner, notifyOs } from '@/lib/notifications/os';
+import { deservesOsBanner, notifyOs, osBannerForBatch } from '@/lib/notifications/os';
 import {
   notificationsAnswer,
   notificationsClear,
@@ -114,7 +114,7 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
   dispatchNotification: async (input) => {
     const severity = input.severity ?? 'info';
     const kind = input.kind ?? 'info';
-    if (deservesOsBanner(severity, kind)) {
+    if (deservesOsBanner(severity, kind, input.source)) {
       void notifyOs(input.title, input.body ?? '');
     }
 
@@ -155,11 +155,24 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
     }
   },
 
-  /** Picks up everything written since the cursor, including by other processes. */
+  /**
+   * Picks up everything written since the cursor, including by other processes.
+   *
+   * This is the only path a schedule's notification takes — it is written in
+   * Rust, so `dispatchNotification` never sees it and never raised its banner.
+   * Without one here, a reminder that fires while the window is in the
+   * background waits, silent, until the user happens to look at the inbox,
+   * which is precisely the moment they did not want to depend on.
+   *
+   * `reloadNotifications` stays silent on purpose: it reads the whole table,
+   * so banners there would announce a week of history on every start.
+   */
   drainNotifications: async () => {
     try {
       const incoming = await notificationsList({ sinceId: get().notificationsCursor });
       if (incoming.length === 0) return;
+      const banner = osBannerForBatch(incoming);
+      if (banner) void notifyOs(banner.title, banner.body);
       const notifications = mergeNotifications(get().notifications, incoming);
       set({
         notifications,
