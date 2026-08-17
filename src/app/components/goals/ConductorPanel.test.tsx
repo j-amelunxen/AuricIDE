@@ -13,6 +13,8 @@ function makeLastRun(overrides: Partial<ConductorRunSummary> = {}): ConductorRun
     blockers: [],
     startedAt: '2026-01-01T10:00:00.000Z',
     endedAt: '2026-01-01T10:12:00.000Z',
+    ticketBudget: null,
+    spawned: 0,
     ...overrides,
   };
 }
@@ -172,6 +174,25 @@ describe('ConductorPanel', () => {
     it('marks a user-initiated stop as such', () => {
       renderPanel({ lastRun: makeLastRun({ outcome: 'user_stopped', completed: 1 }) });
       expect(screen.getByTestId('conductor-last-run').textContent).toContain('stopped by you');
+    });
+
+    it('reports a spent budget by how many tickets it started', () => {
+      renderPanel({
+        lastRun: makeLastRun({
+          outcome: 'budget_reached',
+          completed: 2,
+          ticketBudget: 5,
+          spawned: 5,
+        }),
+      });
+      const summary = screen.getByTestId('conductor-last-run');
+      expect(summary.textContent).toContain('budget reached');
+      expect(summary.textContent).toContain('5 of 5 tickets started');
+    });
+
+    it('shows the "N of M tickets started" readout only when a budget was set', () => {
+      renderPanel({ lastRun: makeLastRun() });
+      expect(screen.getByTestId('conductor-last-run').textContent).not.toContain('tickets started');
     });
 
     it('hides the summary while a new run is working', () => {
