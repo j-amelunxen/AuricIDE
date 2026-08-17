@@ -621,6 +621,11 @@ describe('ScheduleEditor', () => {
         // Refreshing the prompt must not quietly change how the button behaves:
         // this schedule was saved before direct start existed.
         launch: 'dialog',
+        // Nor what it starts: the launch is the reminder's own, chosen in this
+        // form, and taking over a drifted prompt is not a reason to lose it.
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'plan',
       });
     });
 
@@ -735,6 +740,139 @@ describe('ScheduleEditor', () => {
           steps: runComboAction.steps,
         })
       );
+    });
+
+    it('starts a picked skill from the choices it is pinned to', () => {
+      renderEditor({ starredProjects: [matchingStarred] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'skill-1' },
+      });
+
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-skill-provider').value).toBe('claude');
+      expect(screen.getByTestId<HTMLSelectElement>('schedule-skill-model').value).toBe('opus');
+    });
+
+    // The reason this exists: a skill discovered rather than pinned carries no
+    // launch choices at all, so it used to start on whatever harness the
+    // machine happens to list first, with that harness's default model.
+    it('pins the agent and model a discovered skill starts with', () => {
+      const props = renderEditor({ discoveredSkills: [reviewSkill] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'discovered:/review' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-skill-provider'), {
+        target: { value: 'claude' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-skill-model'), { target: { value: 'opus' } });
+      fireEvent.change(screen.getByTestId('schedule-skill-permission'), {
+        target: { value: 'acceptEdits' },
+      });
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toEqual({
+        id: 'run',
+        label: 'Start Review',
+        kind: 'run-skill',
+        skillId: 'discovered:/review',
+        skillLabel: 'Review',
+        prompt: '/review',
+        repoPath: '/repo/sample',
+        invocation: '/review',
+        launch: 'direct',
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+      });
+    });
+
+    it('names the model the skill would fall back to', () => {
+      renderEditor({ discoveredSkills: [reviewSkill] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'discovered:/review' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-skill-provider'), {
+        target: { value: 'claude' },
+      });
+
+      const models = screen.getByTestId<HTMLSelectElement>('schedule-skill-model');
+      expect(models.options[0].textContent).toBe('sonnet');
+      expect([...models.options].map((option) => option.value)).toEqual(['', 'opus', 'sonnet']);
+    });
+
+    it('drops the model and permission when the skill’s agent is changed', () => {
+      const props = renderEditor({ starredProjects: [matchingStarred] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'skill-1' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-skill-provider'), {
+        target: { value: 'codex' },
+      });
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).toMatchObject({ providerId: 'codex' });
+      expect(action).not.toHaveProperty('model');
+      expect(action).not.toHaveProperty('permissionMode');
+    });
+
+    // Clearing the agent has to mean "whatever the launch would have picked",
+    // not "keep the model I chose for a harness I just deselected".
+    it('drops the whole launch when the agent is cleared', () => {
+      const props = renderEditor({ starredProjects: [matchingStarred] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'skill-1' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-skill-provider'), { target: { value: '' } });
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).not.toHaveProperty('providerId');
+      expect(action).not.toHaveProperty('model');
+      expect(action).not.toHaveProperty('permissionMode');
+    });
+
+    // The launch belongs to the reminder once the form offers it here. A pin
+    // that names a different model is not drift the user has to resolve — the
+    // stale check stays on what the reminder does not own.
+    it('does not call the snapshot stale over a differing launch', () => {
+      const otherPin: StarredProject = {
+        ...matchingStarred,
+        skills: [
+          {
+            id: 'skill-1',
+            label: 'Changelog',
+            prompt: '/changelog',
+            providerId: 'codex',
+            invocation: '/changelog',
+          },
+        ],
+      };
+      renderEditor({ schedule: scheduleWith(runSkillAction), starredProjects: [otherPin] });
+
+      expect(screen.queryByTestId('schedule-snapshot-stale')).toBeNull();
+    });
+
+    it('keeps the chosen launch when the drifted prompt is taken over', () => {
+      const props = renderEditor({
+        schedule: scheduleWith(runSkillAction),
+        starredProjects: [driftedStarred],
+      });
+      fireEvent.click(screen.getByTestId('schedule-snapshot-refresh'));
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({
+        prompt: '/changelog-v2',
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'plan',
+      });
     });
 
     it('explains how to add a skill when the project has no Quick Access', () => {
