@@ -446,6 +446,11 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           provider: get().conductorProviderId ?? undefined,
           task: buildReviewAgentPrompt(input),
           cwd: full.rootPath ?? undefined,
+          // Same reason as the implementer: the verdict is collected when this
+          // process exits. Left interactive it would sit at its prompt with the
+          // verdict unwritten until REVIEW_TIMEOUT_MS rejected the ticket — a
+          // rejection earned by the reviewer, not by the work.
+          headless: true,
           spawnedForReviewOfTicketId: input.ticket.id,
           runSource: 'conductor',
         });
@@ -1025,6 +1030,17 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
             cwd: ticket.workingDirectory ?? full.rootPath ?? undefined,
             // No permissionMode: the provider's configured defaultPermissionMode
             // (dynamic-providers/*.json) decides.
+            //
+            // Headless is not a preference here, it is what makes the loop
+            // work at all. Every transition the conductor owns — done, retry,
+            // review, the goal check — hangs off the agent process exiting
+            // with a code. An interactive CLI returns to its prompt when the
+            // task is finished and keeps running, so no exit ever arrives:
+            // the ticket stays in_progress, the slot stays taken and the run
+            // stops advancing without anything looking wrong. The prompt this
+            // spawn carries says "exit non-zero if you could not complete the
+            // task", which only means something in this mode.
+            headless: true,
             spawnedByTicketId: ticket.id,
             spawnedByGoalId: effectiveGoalId,
             runSource: 'conductor',

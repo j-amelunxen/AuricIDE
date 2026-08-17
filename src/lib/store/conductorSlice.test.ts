@@ -49,7 +49,10 @@ vi.mock('../tauri/pm', () => ({
   pmClear: vi.fn(async () => undefined),
 }));
 
-vi.mock('../conductor/judgeBackend', () => ({ createJudgeBackend: vi.fn() }));
+vi.mock('../conductor/judgeBackend', () => ({
+  createJudgeBackend: vi.fn(),
+  buildReviewAgentPrompt: vi.fn(() => 'review prompt'),
+}));
 
 vi.mock('../tauri/db', () => ({
   initProjectDb: vi.fn(async () => undefined),
@@ -440,6 +443,22 @@ describe('conductorSlice', () => {
     // No hardcoded mode: the backend resolves the defaultPermissionMode
     // from the provider's dynamic config (dynamic-providers/*.json).
     expect(mockSpawn.mock.calls[0][0].permissionMode).toBeUndefined();
+  });
+
+  it('spawns the implementer headless so the process exits when the work is done', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+
+    const mockSpawn = vi.mocked(spawnAgent);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    // The whole loop is driven by the agent's exit code: an interactive CLI
+    // returns to its prompt when it is finished and never exits, so the ticket
+    // would stay in_progress forever and the run would never advance.
+    expect(mockSpawn.mock.calls[0][0].headless).toBe(true);
   });
 
   it('does not spawn when conductor is stopped', async () => {
@@ -1254,6 +1273,39 @@ describe('conductor judge review gate', () => {
     expect(store.getState().conductorFailedTickets['t1']).toBe(MAX_TICKET_ATTEMPTS);
     // Exhausted: never spawned again.
     expect(store.getState().conductorAssignments['t1']).toBeUndefined();
+  });
+
+  it('agent form: the reviewer is spawned headless, like the implementer', async () => {
+    // Drive the real spawnReviewAgent seam instead of a stubbed backend — the
+    // injected dependency is what carries the flag, so stubbing the backend
+    // would leave exactly the code under test unexercised.
+    vi.mocked(createJudgeBackend).mockImplementation((form, deps) => ({
+      form,
+      start: async (input: JudgeInput): Promise<JudgeStart> => ({
+        kind: 'delegated',
+        reviewAgentId: await deps!.spawnReviewAgent(input),
+      }),
+    }));
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+      conductorRequireReview: true,
+      conductorJudgeForm: 'agent',
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    const implId = store.getState().conductorAssignments['t1'];
+    store.getState().conductorHandleAgentStatus(implId, 'idle');
+    await flush();
+
+    const reviewCall = vi
+      .mocked(spawnAgent)
+      .mock.calls.find((c) => c[0].name.startsWith('review:'));
+    expect(reviewCall).toBeDefined();
+    // A reviewer left at an interactive prompt writes no verdict and never
+    // exits — it would only ever resolve through the 10-minute timeout, which
+    // rejects the ticket for the reviewer's failure rather than the work's.
+    expect(reviewCall![0].headless).toBe(true);
   });
 
   it('agent form: implementer done → reviewer spawned → verdict collected → done', async () => {
