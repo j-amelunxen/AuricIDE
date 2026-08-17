@@ -420,6 +420,23 @@ describe('goalsSlice draft CRUD', () => {
   });
 });
 
+describe('goalsSlice load status', () => {
+  // A scheduled conductor run opens a project and then waits for
+  // `!goalsLoading` before it starts (`launchScheduledConductor` in
+  // src/lib/conductor/scheduledRun.ts). `handleOpenRecent` kicks the load off
+  // without awaiting it, so the flag has to be up before that call returns —
+  // one microtask later and the wait passes on the *previous* project's
+  // finished state, starting the run against goals that have not arrived.
+  it('raises goalsLoading synchronously, before the read is even reached', () => {
+    const store = createTestStore();
+    mockGoalsLoad.mockImplementationOnce(() => new Promise(() => {}));
+
+    void store.getState().loadGoals('/repo');
+
+    expect(store.getState().goalsLoading).toBe(true);
+  });
+});
+
 describe('goalsSlice persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();

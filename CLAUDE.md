@@ -336,6 +336,34 @@ one click honest.
   showing the run the click began. A launch you cannot watch is the same problem
   as a launch that never happened.
 
+### Scheduled conductor runs — the one launch nobody clicked
+
+A schedule may carry a `run-conductor` action ("open project A, work up to five
+tickets, one at a time"), and with `launch: 'auto'` the run starts when the
+notification arrives. That is the only place in the app where arrival is the
+click, so it is fenced — full reasoning in
+`docs/design-scheduled-conductor-runs.md`:
+
+- **The conductor stays bound to the open project.** A run for another project
+  has to open it, and opening closes every tab. The button says so ("Open
+  project & start") and asks first; the automatic path may switch only when the
+  IDE is unattended: no agent or conductor running, no dirty tab, no input for
+  `UNATTENDED_AFTER_MS`. One predicate, `scheduledRunGate`
+  (`src/lib/conductor/scheduledRun.ts`); a refusal leaves the button and says
+  why in a toast, nothing is queued.
+- **Only a fresh occurrence starts by itself.** The occurrence time is in the
+  dedupe key; a catch-up row from a closed app is older than
+  `AUTO_START_FRESHNESS_MS` and stays a button.
+- **A running conductor is never restarted.** `launchScheduledConductor` is
+  the one launcher for click and auto alike; while a run is active it answers
+  `busy` rather than calling `startConductor` — which would reset the run's
+  bookkeeping under its live agents.
+- **The ticket budget counts distinct tickets spawned**, not finished; a retry
+  is the same ticket. `maxConcurrent`/`requireReview` from a schedule are
+  per-run and restored in `halt()`. Provider and model are the project's — a
+  schedule does not carry them, so a scheduled Tuesday and a clicked Thursday
+  run identically.
+
 ## Requirements vs. Tickets
 
 Requirements and Tickets serve fundamentally different purposes:

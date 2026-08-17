@@ -13,6 +13,8 @@ import {
   type RepoDirStatus,
 } from '@/lib/notifications/presentActions';
 import { openSkillSpawnDialog } from '@/lib/quickAccess/launchSkill';
+import { launchScheduledConductor } from '@/lib/conductor/scheduledRun';
+import { buildScheduledRunDeps } from '@/lib/conductor/scheduledRunDeps';
 import { isDir } from '@/lib/tauri/fs';
 import {
   parseNotificationActions,
@@ -30,6 +32,8 @@ import { SchedulesSection } from './SchedulesSection';
 export interface NotificationsSidebarProps {
   /** Runs a command from the manifest — the same dispatch the palette uses. */
   onRunCommand: (commandId: string) => void;
+  /** Opens (or switches to) a project — `handleOpenRecent`, for a `run-conductor` click. */
+  onOpenProject: (path: string) => Promise<void>;
 }
 
 const KNOWN_COMMAND_IDS = new Set(defaultCommands.map((command) => command.id));
@@ -43,6 +47,7 @@ function repoPathsFromNotifications(notifications: Notification[]): string[] {
       if (
         (action.kind === 'run-skill' ||
           action.kind === 'run-combo' ||
+          action.kind === 'run-conductor' ||
           action.kind === 'spawn-agent') &&
         action.repoPath
       ) {
@@ -62,7 +67,7 @@ function repoPathsFromNotifications(notifications: Notification[]): string[] {
  * IDE every second (the same reason `AttentionTitle` is its own null-rendering
  * leaf in page.tsx).
  */
-export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps) {
+export function NotificationsSidebar({ onRunCommand, onOpenProject }: NotificationsSidebarProps) {
   const now = useNow();
   const { confirm, confirmDialog } = useConfirm();
 
@@ -117,9 +122,10 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
       presentNotificationActions(
         parseNotificationActions(notification.actions, isKnownCommandId),
         starredProjects,
-        repoDirStatus
+        repoDirStatus,
+        rootPath
       ),
-    [starredProjects, repoDirStatus]
+    [starredProjects, repoDirStatus, rootPath]
   );
 
   // Probe each new repoPath once. Absent / in-flight reads as unknown (button
@@ -204,6 +210,22 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
             },
             openAgent: (agentId) => store.selectAgent(agentId),
             runCommand: onRunCommand,
+            // A run against a different project opens it first — closing every
+            // tab — so this asks before doing that, the same in-app `confirm`
+            // the agent panel uses for an equivalent switch.
+            startConductorRun: async (input) => {
+              const openPath = useStore.getState().rootPath;
+              if (openPath !== null && openPath !== input.repoPath) {
+                const folder = input.repoPath.split('/').filter(Boolean).pop() ?? input.repoPath;
+                const go = await confirm({
+                  title: 'Switch project?',
+                  message: `Starting this run opens "${folder}" and closes the tabs of the current project.`,
+                  confirmLabel: 'Open & start',
+                });
+                if (!go) return;
+              }
+              await launchScheduledConductor(input, buildScheduledRunDeps(onOpenProject));
+            },
           },
           {
             fallbackCwd: useStore.getState().rootPath ?? undefined,
@@ -211,6 +233,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
             // wrote it, never on what it says about itself.
             trust: notificationTrust(notification.source),
             providers: useStore.getState().providers,
+            origin: notification.origin ?? undefined,
           }
         );
       } catch (error) {
@@ -225,7 +248,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
         store.showToast(message, 'error');
       }
     },
-    [onRunCommand]
+    [onRunCommand, onOpenProject, confirm]
   );
 
   const handleOpen = useCallback(
