@@ -44,7 +44,32 @@ vi.mock('@/lib/inbox/useInboxData', () => ({ useInboxData: () => undefined }));
 vi.mock('@/lib/hooks/useTitleBarGutter', () => ({ useTitleBarGutter: () => undefined }));
 
 vi.mock('@/lib/tauri/providers', () => ({ listProviders: vi.fn(async () => []) }));
-vi.mock('@/lib/tauri/fs', () => ({ getProjectFilesInfo: vi.fn(async () => []) }));
+vi.mock('@/lib/tauri/fs', () => ({
+  getProjectFilesInfo: vi.fn(async () => []),
+  listAllFiles: vi.fn(async () => []),
+  readFile: vi.fn(async () => ''),
+}));
+// The project store holds no credentials of its own: since the application /
+// project split, that is what a project inheriting the machine's keys looks
+// like. The judge check below has to survive it.
+vi.mock('@/lib/tauri/db', () => ({
+  dbGet: vi.fn(async () => null),
+  dbSet: vi.fn(async () => undefined),
+  dbDelete: vi.fn(async () => undefined),
+  dbList: vi.fn(async () => []),
+}));
+vi.mock('@/lib/tauri/appCredentials', () => ({
+  CREDENTIAL_NAMESPACES: {
+    llm: 'llm_settings',
+    judge: 'judge_llm_settings',
+    excalidraw: 'excalidraw_settings',
+    videoImport: 'video_import_settings',
+  },
+  loadAppCredentials: vi.fn(async (namespace: string) =>
+    namespace === 'judge_llm_settings' ? { api_key: 'placeholder-value-1234' } : {}
+  ),
+  setAppCredential: vi.fn(async () => undefined),
+}));
 vi.mock('@/lib/tauri/agents', () => ({ checkCliStatus: vi.fn(async () => false) }));
 vi.mock('@/lib/config/migrateCredentials', () => ({
   migrateProjectCredentials: vi.fn(async () => ({ lifted: [] })),
@@ -165,6 +190,34 @@ describe('useIDEActions – the scheduled conductor watcher', () => {
     mockScheduledConductorRuns.mockClear();
     renderHook(() => useIDEActions(state, handlers));
     expect(mockScheduledConductorRuns).toHaveBeenCalledWith(handlers.handleOpenRecent);
+  });
+});
+
+describe('useIDEActions – what a freshly opened project knows about the keys', () => {
+  // The judge key lives in the application store; a project that inherits it
+  // has nothing under `judge_llm_settings` of its own. Reading only the project
+  // database therefore reported a configured judge as missing on every project
+  // open — and the conductor's "Judge review" switch, which gates on this flag,
+  // stayed greyed out with no way to turn it on.
+  it('reports the judge configured from the application store alone', async () => {
+    const setJudgeLlmConfigured = vi.fn();
+    const opened = {
+      ...state,
+      rootPath: '/p',
+      setLlmConfigured: vi.fn(),
+      setJudgeLlmConfigured,
+      setJudgeLlmModel: vi.fn(),
+      setProjectFiles: vi.fn(),
+      setAllFiles: vi.fn(),
+      bulkUpdateFilesInIndex: vi.fn(),
+      initProjectDb: vi.fn(),
+      loadPmData: vi.fn(),
+      closeProjectDb: vi.fn(),
+    } as unknown as ReturnType<typeof useIDEState>;
+
+    renderHook(() => useIDEActions(opened, handlers));
+
+    await vi.waitFor(() => expect(setJudgeLlmConfigured).toHaveBeenCalledWith(true));
   });
 });
 

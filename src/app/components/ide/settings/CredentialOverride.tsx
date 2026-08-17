@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
-import { loadAppCredentials } from '@/lib/tauri/appCredentials';
+import { CREDENTIAL_NAMESPACES, loadAppCredentials } from '@/lib/tauri/appCredentials';
 import { loadProjectCredentials } from '@/lib/config/projectConfig';
+import { isCredentialConfigured } from '@/lib/config/credentialStatus';
 import { dbDelete, dbSet } from '@/lib/tauri/db';
 
 export interface OverrideField {
@@ -46,6 +47,8 @@ export function CredentialOverride({
 }: CredentialOverrideProps) {
   const rootPath = useStore((s) => s.rootPath);
   const showToast = useStore((s) => s.showToast);
+  const setLlmConfigured = useStore((s) => s.setLlmConfigured);
+  const setJudgeLlmConfigured = useStore((s) => s.setJudgeLlmConfigured);
   const [global, setGlobal] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -67,6 +70,21 @@ export function CredentialOverride({
     };
   }, [namespace, rootPath]);
 
+  /**
+   * An override on a key is what decides whether a feature reads as configured,
+   * so the switches gating on it have to hear about the change now rather than
+   * on the next project open.
+   */
+  const republishConfigured = async (key: string) => {
+    if (key !== 'api_key') return;
+    if (namespace !== CREDENTIAL_NAMESPACES.llm && namespace !== CREDENTIAL_NAMESPACES.judge) {
+      return;
+    }
+    const configured = await isCredentialConfigured(rootPath, namespace);
+    if (namespace === CREDENTIAL_NAMESPACES.llm) setLlmConfigured(configured);
+    else setJudgeLlmConfigured(configured);
+  };
+
   const save = async (key: string, value: string) => {
     setOverrides((current) => ({ ...current, [key]: value }));
     if (!rootPath) return;
@@ -79,6 +97,7 @@ export function CredentialOverride({
       } else {
         await dbSet(rootPath, namespace, key, value);
       }
+      await republishConfigured(key);
     } catch (error) {
       showToast(`Could not save the override: ${String(error)}`, 'error');
     }
@@ -93,6 +112,7 @@ export function CredentialOverride({
     if (!rootPath) return;
     try {
       await dbDelete(rootPath, namespace, key);
+      await republishConfigured(key);
     } catch (error) {
       showToast(`Could not remove the override: ${String(error)}`, 'error');
     }
