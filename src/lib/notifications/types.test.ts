@@ -103,6 +103,48 @@ describe('parseNotificationActions', () => {
       expect(parse([action])).toEqual([action]);
     });
 
+    it('parses a run-conductor action with only the required fields', () => {
+      const action = {
+        id: 'conductor',
+        label: 'Conductor starten',
+        kind: 'run-conductor',
+        repoPath: '/repo',
+        ticketBudget: 5,
+      };
+      expect(parse([action])).toEqual([action]);
+    });
+
+    it('keeps the optional run-conductor fields', () => {
+      const action = {
+        id: 'conductor',
+        label: 'Conductor starten',
+        kind: 'run-conductor',
+        repoPath: '/repo',
+        ticketBudget: 5,
+        maxConcurrent: 2,
+        goalId: 'g1',
+        goalName: 'Ship v2',
+        requireReview: true,
+        launch: 'auto',
+      };
+      expect(parse([action])).toEqual([action]);
+    });
+
+    it.each(['direct', 'dialog'] as const)(
+      'parses a run-conductor action with launch %s',
+      (launch) => {
+        const action = {
+          id: 'conductor',
+          label: 'Conductor starten',
+          kind: 'run-conductor',
+          repoPath: '/repo',
+          ticketBudget: 5,
+          launch,
+        };
+        expect(parse([action])).toEqual([action]);
+      }
+    );
+
     it.each([1, 8])('parses a run-combo action with %s step(s)', (count) => {
       const action = {
         id: 'combo',
@@ -152,6 +194,28 @@ describe('parseNotificationActions', () => {
             kind: 'run-skill',
             skillId: 's1',
             skillLabel: 'Changelog',
+            ...extra,
+          },
+        ])
+      ).toEqual([]);
+    });
+
+    it.each([
+      ['a zero ticketBudget', { ticketBudget: 0 }],
+      ['a negative ticketBudget', { ticketBudget: -1 }],
+      ['a non-integer ticketBudget', { ticketBudget: 2.5 }],
+      ['a missing repoPath', { repoPath: undefined, ticketBudget: 5 }],
+      ['an empty repoPath', { repoPath: '   ', ticketBudget: 5 }],
+      ['a zero maxConcurrent', { ticketBudget: 5, maxConcurrent: 0 }],
+      ['an unknown launch value', { ticketBudget: 5, launch: 'immediately' }],
+    ])('drops a run-conductor action with %s', (_label, extra) => {
+      expect(
+        parse([
+          {
+            id: 'conductor',
+            label: 'Conductor starten',
+            kind: 'run-conductor',
+            repoPath: '/repo',
             ...extra,
           },
         ])

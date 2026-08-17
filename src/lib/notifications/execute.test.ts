@@ -20,6 +20,7 @@ function makeDeps(): NotificationActionDeps {
     openGoal: vi.fn(),
     openAgent: vi.fn(),
     runCommand: vi.fn(),
+    startConductorRun: vi.fn(async () => undefined),
   };
 }
 
@@ -51,6 +52,18 @@ const PROVIDERS: ProviderInfo[] = [
     defaultPermissionMode: 'default',
   },
 ];
+
+const runConductor: Extract<NotificationAction, { kind: 'run-conductor' }> = {
+  id: 'run',
+  label: 'Conductor starten',
+  kind: 'run-conductor',
+  repoPath: '/repo/sample',
+  ticketBudget: 5,
+  maxConcurrent: 2,
+  goalId: 'g1',
+  goalName: 'Ship v2',
+  requireReview: true,
+};
 
 const runCombo: Extract<NotificationAction, { kind: 'run-combo' }> = {
   id: 'run',
@@ -380,6 +393,104 @@ describe('executeNotificationAction', () => {
 
     expect(deps.openSpawnDialog).not.toHaveBeenCalled();
     expect(deps.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('passes the budget, concurrency, goal and review flag through', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(runConductor, deps, {
+      trust: 'user',
+      origin: 'Weekly factory',
+    });
+
+    expect(deps.startConductorRun).toHaveBeenCalledWith({
+      repoPath: '/repo/sample',
+      ticketBudget: 5,
+      maxConcurrent: 2,
+      goalId: 'g1',
+      requireReview: true,
+      mode: 'dialog',
+      origin: 'Weekly factory',
+    });
+  });
+
+  it('defaults concurrency to 1 and review to off when the payload omits them', async () => {
+    const deps = makeDeps();
+    const minimal: Extract<NotificationAction, { kind: 'run-conductor' }> = {
+      id: 'run',
+      label: 'Conductor starten',
+      kind: 'run-conductor',
+      repoPath: '/repo/sample',
+      ticketBudget: 3,
+    };
+
+    await executeNotificationAction(minimal, deps);
+
+    expect(deps.startConductorRun).toHaveBeenCalledWith(
+      expect.objectContaining({ maxConcurrent: 1, requireReview: false, goalId: undefined })
+    );
+  });
+
+  it('starts directly when the user configured a direct launch', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runConductor, launch: 'direct' }, deps, {
+      trust: 'user',
+    });
+
+    expect(deps.startConductorRun).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'direct' })
+    );
+  });
+
+  // The unattended path calls startConductor on its own; an `auto` payload
+  // reaching this function means a click already happened, so it behaves
+  // exactly like `direct` here.
+  it('starts directly for an auto launch that the user configured', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runConductor, launch: 'auto' }, deps, {
+      trust: 'user',
+    });
+
+    expect(deps.startConductorRun).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'direct' })
+    );
+  });
+
+  // Every schedule saved before direct launch existed says nothing here, and
+  // must keep opening the panel the way it did yesterday.
+  it('opens the panel when the user payload says nothing about launching', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(runConductor, deps, { trust: 'user' });
+
+    expect(deps.startConductorRun).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'dialog' })
+    );
+  });
+
+  // A model can write a payload that looks exactly like a configured
+  // schedule. Skipping the panel is a decision only the person clicking gets
+  // to make.
+  it('falls back to the panel when a model asked for a direct start', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runConductor, launch: 'direct' }, deps, {
+      trust: 'foreign',
+    });
+
+    expect(deps.startConductorRun).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'dialog' })
+    );
+  });
+
+  it('throws missing-project when the run-conductor folder is gone', async () => {
+    const deps = makeDeps();
+    deps.projectDirExists = vi.fn(async () => false);
+
+    await expectActionError(
+      executeNotificationAction({ ...runConductor, repoPath: '/gone' }, deps),
+      'missing-project',
+      'Project folder not found: /gone'
+    );
+
+    expect(deps.startConductorRun).not.toHaveBeenCalled();
   });
 
   it('starts a combo from the snapshot and does not spawn', async () => {

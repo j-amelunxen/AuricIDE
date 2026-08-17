@@ -36,6 +36,17 @@ const runCombo = (
   ...overrides,
 });
 
+const runConductor = (
+  overrides: Partial<Extract<NotificationAction, { kind: 'run-conductor' }>> = {}
+): Extract<NotificationAction, { kind: 'run-conductor' }> => ({
+  id: 'run',
+  label: 'Conductor starten',
+  kind: 'run-conductor',
+  repoPath: REPO,
+  ticketBudget: 5,
+  ...overrides,
+});
+
 const spawnAgent = (
   overrides: Partial<Extract<NotificationAction, { kind: 'spawn-agent' }>> = {}
 ): Extract<NotificationAction, { kind: 'spawn-agent' }> => ({
@@ -58,9 +69,15 @@ function project(overrides: Partial<StarredProject> = {}): StarredProject {
 function present(
   actions: NotificationAction[],
   starred: StarredProject[] = [],
-  status: Record<string, RepoDirStatus> = {}
+  status: Record<string, RepoDirStatus> = {},
+  openProjectPath?: string | null
 ) {
-  return presentNotificationActions(actions, starred, new Map(Object.entries(status)));
+  return presentNotificationActions(
+    actions,
+    starred,
+    new Map(Object.entries(status)),
+    openProjectPath
+  );
 }
 
 describe('presentNotificationActions', () => {
@@ -125,10 +142,45 @@ describe('presentNotificationActions', () => {
     });
   });
 
+  describe('conductor "Open project & start" label', () => {
+    it('relabels when the run target differs from the open project', () => {
+      const presented = present([runConductor({ repoPath: '/repo/other' })], [], {}, REPO);
+
+      expect(presented[0].action.label).toBe('Open project & start');
+    });
+
+    it('keeps the stored label when the open project already matches the run target', () => {
+      const presented = present([runConductor({ repoPath: REPO })], [], {}, REPO);
+
+      expect(presented[0].action.label).toBe('Conductor starten');
+    });
+
+    it('keeps the stored label when no project is open', () => {
+      const presented = present([runConductor({ repoPath: REPO })], [], {}, null);
+
+      expect(presented[0].action.label).toBe('Conductor starten');
+    });
+
+    it('keeps the stored label when the caller passes no open project at all', () => {
+      const presented = present([runConductor({ repoPath: '/repo/other' })]);
+
+      expect(presented[0].action.label).toBe('Conductor starten');
+    });
+
+    it('does not mutate the input action when relabeling', () => {
+      const action = runConductor({ repoPath: '/repo/other' });
+
+      present([action], [], {}, REPO);
+
+      expect(action.label).toBe('Conductor starten');
+    });
+  });
+
   describe('disabledReason', () => {
     it.each([
       ['run-skill', runSkill()],
       ['run-combo', runCombo()],
+      ['run-conductor', runConductor()],
       ['spawn-agent with repoPath', spawnAgent({ repoPath: REPO })],
     ] as const)('disables %s when the project folder is missing', (_label, action) => {
       const presented = present([action], [], { [REPO]: 'missing' });
