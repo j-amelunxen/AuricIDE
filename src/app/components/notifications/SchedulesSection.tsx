@@ -1,129 +1,78 @@
 'use client';
 
-import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
-import { formatNotificationProject } from '@/lib/notifications/format';
-import { formatNextDue, formatScheduleRhythm } from '@/lib/notifications/scheduleFormat';
-import { projectIconFor } from '@/lib/quickAccess/icon';
+import type { Notification } from '@/lib/notifications/types';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { Schedule } from '@/lib/tauri/schedules';
+import { ScheduleRow } from './ScheduleRow';
 
 export interface SchedulesSectionProps {
   schedules: Schedule[];
   now: number;
   /** Only for the marks pinned projects carry — the list itself is app-global. */
   starredProjects: StarredProject[];
-  onCreate: () => void;
+  /** Schedule id → the newest notification it raised. */
+  lastRaised?: Map<string, Notification>;
+  /**
+   * Heading for this run of rows. Set only where several groups are listed
+   * under one section ("All"); a single project's triggers are already named
+   * by the panel around them.
+   */
+  label?: string | null;
   onEdit: (schedule: Schedule) => void;
   onToggle: (schedule: Schedule, enabled: boolean) => void;
   onDelete: (schedule: Schedule) => void;
 }
 
 /**
- * The saved reminders, above the inbox they feed.
+ * A run of saved reminders — one project's, or every one there is.
  *
- * Each row answers the two questions a schedule raises — what rhythm, and when
- * next — in words rather than in stored fields. A disabled schedule stays
- * listed and greyed rather than disappearing: a reminder you switched off is
- * still a decision you made, and one you will want to find again.
+ * Deliberately without a "new schedule" button of its own: the surface around
+ * it owns creation, because that button has to know which project the new
+ * reminder should be pre-bound to and the list does not.
  */
 export function SchedulesSection({
   schedules,
   now,
   starredProjects,
-  onCreate,
+  lastRaised,
+  label,
   onEdit,
   onToggle,
   onDelete,
 }: SchedulesSectionProps) {
+  if (schedules.length === 0) {
+    return (
+      <p data-testid="schedules-empty" className="px-3 pb-3 text-[11px] text-foreground-muted">
+        No schedules. Reminders only fire while AuricIDE is open — missed ones catch up on launch.
+      </p>
+    );
+  }
+
   return (
-    <div data-testid="schedules-section" className="border-b border-white/5">
-      <div className="flex items-center justify-between px-3 py-2">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
-          Schedules
-        </h3>
-        <button
-          data-testid="schedule-create"
-          onClick={onCreate}
-          title="New schedule"
-          aria-label="New schedule"
-          className="rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
-        >
-          <AuricIcon name="add" className="text-sm" />
-        </button>
-      </div>
-
-      {schedules.length === 0 ? (
-        <p data-testid="schedules-empty" className="px-3 pb-3 text-[11px] text-foreground-muted">
-          No schedules. Reminders only fire while AuricIDE is open — missed ones catch up on launch.
-        </p>
-      ) : (
-        <ul className="space-y-1 px-2 pb-2">
-          {schedules.map((schedule) => (
-            <li
-              key={schedule.id}
-              data-testid={`schedule-row-${schedule.id}`}
-              data-enabled={schedule.enabled}
-              className={`flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/[0.04] ${
-                schedule.enabled ? '' : 'opacity-50'
-              }`}
-            >
-              <button
-                data-testid={`schedule-toggle-${schedule.id}`}
-                aria-pressed={schedule.enabled}
-                aria-label={schedule.enabled ? 'Turn schedule off' : 'Turn schedule on'}
-                onClick={() => onToggle(schedule, !schedule.enabled)}
-                className="flex-shrink-0 text-foreground-muted transition-colors hover:text-foreground"
-              >
-                <AuricIcon
-                  name={schedule.enabled ? 'check_circle' : 'radio_button_unchecked'}
-                  className={`text-sm ${schedule.enabled ? 'text-[#2effa5]/70' : ''}`}
-                />
-              </button>
-
-              <button
-                onClick={() => onEdit(schedule)}
-                className="min-w-0 flex-1 text-left"
-                data-testid={`schedule-edit-${schedule.id}`}
-              >
-                <span className="block truncate text-[11px] font-semibold text-foreground">
-                  {schedule.name}
-                </span>
-                <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/60">
-                  <span className="truncate">{formatScheduleRhythm(schedule)}</span>
-                  <span aria-hidden="true">·</span>
-                  <span data-testid={`schedule-next-${schedule.id}`}>
-                    {formatNextDue(schedule, now)}
-                  </span>
-                  {schedule.projectPath !== null && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <ProjectTileFace
-                        path={schedule.projectPath}
-                        icon={projectIconFor(starredProjects, schedule.projectPath)}
-                        size="xs"
-                        className="flex-shrink-0"
-                      />
-                      <span className="truncate">
-                        {formatNotificationProject(schedule.projectName, schedule.projectPath)}
-                      </span>
-                    </>
-                  )}
-                </span>
-              </button>
-
-              <button
-                data-testid={`schedule-delete-${schedule.id}`}
-                aria-label="Delete schedule"
-                onClick={() => onDelete(schedule)}
-                className="flex-shrink-0 rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-[#ff4a4a]"
-              >
-                <AuricIcon name="delete" className="text-sm" />
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div
+      data-testid={
+        label === null || label === undefined ? 'schedules-section' : `schedules-group-${label}`
+      }
+    >
+      {label !== null && label !== undefined && (
+        <h4 className="px-3 pt-2 text-[9px] font-bold uppercase tracking-[0.2em] text-foreground-muted/60">
+          {label}
+        </h4>
       )}
+      <ul className="space-y-1 px-2 pb-2">
+        {schedules.map((schedule) => (
+          <ScheduleRow
+            key={schedule.id}
+            schedule={schedule}
+            now={now}
+            starredProjects={starredProjects}
+            lastRaised={lastRaised?.get(schedule.id) ?? null}
+            onEdit={onEdit}
+            onToggle={onToggle}
+            onDelete={onDelete}
+          />
+        ))}
+      </ul>
     </div>
   );
 }

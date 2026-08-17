@@ -4,6 +4,7 @@ import { deservesOsBanner, notifyOs, osBannerForBatch } from '@/lib/notification
 import {
   notificationsAnswer,
   notificationsClear,
+  notificationsDelete,
   notificationsDispatch,
   notificationsList,
   notificationsMarkAllRead,
@@ -23,6 +24,14 @@ import {
  *   needs me right now" and heals itself. This answers "what happened", and
  *   only reading or answering clears it. The two numbers are never summed.
  */
+
+/**
+ * Which rows a bulk action touches. Three states, and they are not
+ * interchangeable: `undefined` is the whole inbox, `null` is the app-wide rows
+ * (the ones that belong to no project), a string is that one project.
+ */
+export type NotificationScope = string | null;
+
 export interface NotificationsSlice {
   notifications: Notification[];
   /** Unread across every project. Independent of any active filter. */
@@ -30,17 +39,15 @@ export interface NotificationsSlice {
   /** Highest row id drained so far — where the next drain starts. */
   notificationsCursor: number;
   notificationsStatus: 'idle' | 'loading' | 'error';
-  /** Display filter only. Never narrows the count. */
-  notificationsProjectFilter: string | null;
 
   dispatchNotification: (input: NotificationInput) => Promise<Notification | null>;
   drainNotifications: () => Promise<void>;
   reloadNotifications: () => Promise<void>;
   markNotificationRead: (uid: string) => Promise<void>;
-  markAllNotificationsRead: () => Promise<void>;
+  /** See {@link NotificationScope} for what the argument means. */
+  markAllNotificationsRead: (projectPath?: NotificationScope) => Promise<void>;
   answerNotification: (uid: string, answer: string) => Promise<void>;
-  clearNotifications: () => Promise<void>;
-  setNotificationsProjectFilter: (projectPath: string | null) => void;
+  clearNotifications: (projectPath?: NotificationScope) => Promise<void>;
 }
 
 /** Rows that never reached the database carry this id, so they can never move the cursor. */
@@ -87,6 +94,16 @@ export function mergeNotifications(
   return [...kept, ...incoming].sort(byNewest);
 }
 
+/** Whether a row falls inside the scope a bulk action was given. */
+function inScope(notification: Notification, scope: NotificationScope | undefined): boolean {
+  return scope === undefined || notification.projectPath === scope;
+}
+
+/** A question nobody has answered. Bulk clears go around these. */
+function isOpenQuestion(notification: Notification): boolean {
+  return notification.kind === 'ask' && notification.answeredAt === null;
+}
+
 function highestId(notifications: Notification[]): number {
   return notifications.reduce((max, n) => Math.max(max, n.id), 0);
 }
@@ -96,7 +113,6 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
   notificationsUnreadCount: 0,
   notificationsCursor: 0,
   notificationsStatus: 'idle',
-  notificationsProjectFilter: null,
 
   /**
    * Writes a notification and shows it at once. The backend's answer is
@@ -217,15 +233,29 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
     }
   },
 
-  markAllNotificationsRead: async () => {
+  /**
+   * Reads away a whole scope at once.
+   *
+   * The backend's mark-all takes a project path and reads a *missing* one as
+   * "every project" — so `null`, which means the opposite (only the rows that
+   * belong to no project), cannot be expressed through it. Those rows are named
+   * one by one instead. Handing the backend a null there would mark every
+   * project read from a button that claims to touch one group.
+   */
+  markAllNotificationsRead: async (projectPath) => {
     const readAt = new Date().toISOString();
+    const targets = get().notifications.filter((n) => n.readAt === null && inScope(n, projectPath));
     const notifications = get().notifications.map((n) =>
-      n.readAt === null ? { ...n, readAt } : n
+      n.readAt === null && inScope(n, projectPath) ? { ...n, readAt } : n
     );
-    set({ notifications, notificationsUnreadCount: 0 });
+    set({ notifications, notificationsUnreadCount: unreadCount(notifications) });
 
     try {
-      await notificationsMarkAllRead();
+      if (projectPath === null) {
+        if (targets.length > 0) await notificationsMarkRead(targets.map((n) => n.uid));
+      } else {
+        await notificationsMarkAllRead(projectPath);
+      }
     } catch {
       /* see markNotificationRead */
     }
@@ -254,29 +284,32 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
   },
 
   /**
-   * Tidies away what has been dealt with. Unanswered questions stay: clearing
-   * the list is not an answer, and a dropped question is one an agent waits on
-   * forever.
+   * Tidies away what has been dealt with, within one scope. Unanswered
+   * questions stay whatever the scope: clearing the list is not an answer, and
+   * a dropped question is one an agent waits on forever.
+   *
+   * The app-wide scope (`null`) is the one `notifications_clear` cannot
+   * express — a missing project path means "every project" there — so those
+   * rows are deleted by name instead. The backend keeps the open-question
+   * guard in that path too, so the rule holds even for a caller that forgot.
    */
-  clearNotifications: async () => {
+  clearNotifications: async (projectPath) => {
+    const cleared = get().notifications.filter(
+      (n) => inScope(n, projectPath) && !isOpenQuestion(n)
+    );
     const notifications = get().notifications.filter(
-      (n) => n.kind === 'ask' && n.answeredAt === null
+      (n) => !inScope(n, projectPath) || isOpenQuestion(n)
     );
     set({ notifications, notificationsUnreadCount: unreadCount(notifications) });
 
     try {
-      await notificationsClear();
+      if (projectPath === null) {
+        if (cleared.length > 0) await notificationsDelete(cleared.map((n) => n.uid));
+      } else {
+        await notificationsClear(projectPath);
+      }
     } catch {
       /* see markNotificationRead */
     }
   },
-
-  setNotificationsProjectFilter: (projectPath) => set({ notificationsProjectFilter: projectPath }),
 });
-
-/** The rows the panel shows, after the display filter. */
-export function getVisibleNotifications(state: NotificationsSlice): Notification[] {
-  const { notifications, notificationsProjectFilter } = state;
-  if (notificationsProjectFilter === null) return notifications;
-  return notifications.filter((n) => n.projectPath === notificationsProjectFilter);
-}

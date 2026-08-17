@@ -4,19 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import type { Notification } from '@/lib/notifications/types';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
-import type { ProjectSkill } from '@/lib/tauri/projectSkills';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { NotificationsSidebar } from './NotificationsSidebar';
 
 /**
  * Closes the gap the unit tests leave open: `execute.test.ts` proves
  * `executeNotificationAction` calls the right deps when *handed* them, and
- * `NotificationsSidebar.tsx` wires those deps to the real store, but nothing
- * mounts the real component with the real store and clicks the real button.
- * That seam — inbox click → real store mutation → dialog actually open /
- * combo actually spawning — is what this file exercises. Only the Tauri IPC
- * boundary is mocked, exactly the modules `execute.ts`/`skillComboSlice.ts`
- * reach through; everything above that is the production wiring.
+ * `useNotificationActions` wires those deps to the real store, but nothing
+ * else mounts the sidebar the user actually clicks in. That seam — a row in
+ * the tray → real store mutation → dialog actually open / combo actually
+ * spawning — is what this file exercises. Only the Tauri IPC boundary is
+ * mocked, exactly the modules `execute.ts`/`skillComboSlice.ts` reach through;
+ * everything above that is the production wiring.
  */
 
 const spawnAgentMock = vi.fn(async (config: { name: string; model: string; task: string }) => ({
@@ -59,15 +58,6 @@ vi.mock('@/lib/tauri/schedules', () => ({
   schedulesDelete: vi.fn(async () => undefined),
   schedulesSetEnabled: vi.fn(async () => undefined),
   schedulesPreview: vi.fn(async () => []),
-}));
-
-const listProjectSkillsMock = vi.fn<
-  (projectPath: string, sources: unknown) => Promise<ProjectSkill[]>
->(async () => []);
-
-vi.mock('@/lib/tauri/projectSkills', () => ({
-  listProjectSkills: (projectPath: string, sources: unknown) =>
-    listProjectSkillsMock(projectPath, sources),
 }));
 
 vi.mock('@/lib/tauri/notifications', () => ({
@@ -172,7 +162,6 @@ function resetStore() {
     notifications: [],
     notificationsUnreadCount: 0,
     notificationsStatus: 'idle',
-    notificationsProjectFilter: null,
     schedules: [],
     starredProjects: [],
     comboRuns: [],
@@ -192,6 +181,8 @@ function resetStore() {
     pmLoading: false,
     goalsLoading: false,
     workPlaceOpen: false,
+    commandCenterOpen: false,
+    commandCenterProject: undefined,
     toasts: [],
   } as never);
 }
@@ -632,49 +623,25 @@ describe('NotificationsSidebar — run-conductor click, end to end', () => {
   });
 });
 
-describe('NotificationsSidebar — aiming a reminder at a project', () => {
-  // The gap this closes: nothing else mounts the picker against the real
-  // store, so nothing else proves that picking a project actually fetches
-  // THAT project's skill catalogue. Without it, the editor would offer the
-  // previously open project's skills under the new project's name.
-  it('fetches the picked project’s skills even with no project open', async () => {
+describe('NotificationsSidebar — the way out of the glance', () => {
+  it('opens the Command Center from the header button', async () => {
     const user = userEvent.setup();
-    useStore.setState({ starredProjects: [starredWithPins], rootPath: null } as never);
 
     render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
-    await user.click(screen.getByTestId('schedule-create'));
+    await user.click(screen.getByTestId('notifications-open-center'));
 
-    // No project open — an app-wide draft, so Skill has nothing to offer yet.
-    expect(screen.getByTestId<HTMLSelectElement>('schedule-project').value).toBe('');
-    expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(true);
-    expect(listProjectSkillsMock).not.toHaveBeenCalled();
-
-    await user.selectOptions(screen.getByTestId('schedule-project'), REPO_PATH);
-
-    await waitFor(() => expect(listProjectSkillsMock).toHaveBeenCalled());
-    expect(listProjectSkillsMock.mock.calls.at(-1)?.[0]).toBe(REPO_PATH);
-    expect(screen.getByTestId<HTMLInputElement>('schedule-action-skill').disabled).toBe(false);
-
-    await user.click(screen.getByTestId('schedule-action-skill'));
-    expect(screen.getByTestId('schedule-skill-select')).toBeTruthy();
+    expect(useStore.getState().commandCenterOpen).toBe(true);
+    // Opened from the tray, so nothing is preselected — the center starts on
+    // "All" rather than on whichever project was last drilled into.
+    expect(useStore.getState().commandCenterProject).toBeUndefined();
   });
 
-  it('saves the reminder against the project that was picked, not the open one', async () => {
-    const user = userEvent.setup();
-    const { schedulesUpsert } = await import('@/lib/tauri/schedules');
-    useStore.setState({ starredProjects: [starredWithPins], rootPath: null } as never);
+  it('loads the schedules it names, without a project being open', async () => {
+    const { schedulesList } = await import('@/lib/tauri/schedules');
 
     render(<NotificationsSidebar onRunCommand={vi.fn()} onOpenProject={vi.fn()} />);
-    await user.click(screen.getByTestId('schedule-create'));
-    await user.type(screen.getByTestId('schedule-name'), 'Weekly changelog');
-    await user.selectOptions(screen.getByTestId('schedule-project'), REPO_PATH);
-    await user.click(screen.getByTestId('schedule-save'));
 
-    await waitFor(() => expect(schedulesUpsert).toHaveBeenCalled());
-    expect(vi.mocked(schedulesUpsert).mock.calls[0][0]).toMatchObject({
-      name: 'Weekly changelog',
-      projectPath: REPO_PATH,
-      projectName: 'sample',
-    });
+    await waitFor(() => expect(schedulesList).toHaveBeenCalled());
+    expect(screen.getByTestId('notifications-next-schedule')).toHaveTextContent('No schedules');
   });
 });

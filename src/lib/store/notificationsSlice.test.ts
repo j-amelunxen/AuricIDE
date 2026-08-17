@@ -8,6 +8,7 @@ const mockMarkRead = vi.fn();
 const mockMarkAllRead = vi.fn();
 const mockAnswer = vi.fn();
 const mockClear = vi.fn();
+const mockDelete = vi.fn();
 
 // The banner itself is os.ts's business and tested there; what matters here is
 // which arrivals reach it at all.
@@ -25,11 +26,11 @@ vi.mock('@/lib/tauri/notifications', () => ({
   notificationsMarkAllRead: (...args: unknown[]) => mockMarkAllRead(...args),
   notificationsAnswer: (...args: unknown[]) => mockAnswer(...args),
   notificationsClear: (...args: unknown[]) => mockClear(...args),
+  notificationsDelete: (...args: unknown[]) => mockDelete(...args),
 }));
 
 import {
   createNotificationsSlice,
-  getVisibleNotifications,
   mergeNotifications,
   type NotificationsSlice,
 } from './notificationsSlice';
@@ -293,34 +294,6 @@ describe('notificationsSlice', () => {
       expect(mockClear).toHaveBeenCalled();
     });
   });
-
-  describe('the project filter hides rows without changing any count', () => {
-    beforeEach(() => {
-      store.setState({
-        notifications: [
-          makeNotification({ projectPath: '/a' }),
-          makeNotification({ projectPath: '/b' }),
-        ],
-        notificationsUnreadCount: 2,
-      });
-    });
-
-    it('narrows what the panel shows', () => {
-      store.getState().setNotificationsProjectFilter('/a');
-      expect(getVisibleNotifications(store.getState())).toHaveLength(1);
-    });
-
-    it('leaves the unread count describing the whole inbox', () => {
-      store.getState().setNotificationsProjectFilter('/a');
-      expect(store.getState().notificationsUnreadCount).toBe(2);
-    });
-
-    it('shows everything again when cleared', () => {
-      store.getState().setNotificationsProjectFilter('/a');
-      store.getState().setNotificationsProjectFilter(null);
-      expect(getVisibleNotifications(store.getState())).toHaveLength(2);
-    });
-  });
 });
 
 describe('mergeNotifications', () => {
@@ -365,5 +338,100 @@ describe('mergeNotifications', () => {
   it('returns the same list when nothing comes in', () => {
     const existing = [makeNotification()];
     expect(mergeNotifications(existing, [])).toBe(existing);
+  });
+});
+
+// The Command Center marks read and clears one project at a time, so the scope
+// argument decides what a button touches — and what it must leave alone.
+describe('scoped mark-all-read and clear', () => {
+  let store: StoreApi<NotificationsSlice>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    rowId = 0;
+    mockMarkRead.mockResolvedValue(undefined);
+    mockMarkAllRead.mockResolvedValue(undefined);
+    mockClear.mockResolvedValue(undefined);
+    store = createStore<NotificationsSlice>()((...a) => ({ ...createNotificationsSlice(...a) }));
+    store.setState({
+      notifications: [
+        makeNotification({ uid: 'app-1', projectPath: null }),
+        makeNotification({ uid: 'app-ask', projectPath: null, kind: 'ask' }),
+        makeNotification({ uid: 'alpha-1', projectPath: '/repos/alpha' }),
+        makeNotification({ uid: 'alpha-ask', projectPath: '/repos/alpha', kind: 'ask' }),
+        makeNotification({ uid: 'beta-1', projectPath: '/repos/beta' }),
+      ],
+      notificationsUnreadCount: 5,
+    });
+  });
+
+  const unreadUids = () =>
+    store
+      .getState()
+      .notifications.filter((n) => n.readAt === null)
+      .map((n) => n.uid);
+
+  describe('markAllNotificationsRead', () => {
+    it('marks one project and leaves the rest unread', async () => {
+      await store.getState().markAllNotificationsRead('/repos/alpha');
+
+      expect(unreadUids()).toEqual(['app-1', 'app-ask', 'beta-1']);
+      expect(store.getState().notificationsUnreadCount).toBe(3);
+      expect(mockMarkAllRead).toHaveBeenCalledWith('/repos/alpha');
+    });
+
+    // The IPC reads a missing project path as "every project", so app-wide-only
+    // has to name its rows instead — otherwise this button would quietly mark
+    // every project read.
+    it('names the app-wide rows rather than asking for all of them', async () => {
+      await store.getState().markAllNotificationsRead(null);
+
+      expect(unreadUids()).toEqual(['alpha-1', 'alpha-ask', 'beta-1']);
+      expect(mockMarkAllRead).not.toHaveBeenCalled();
+      expect(mockMarkRead).toHaveBeenCalledWith(['app-1', 'app-ask']);
+    });
+
+    it('still marks everything when no scope is given', async () => {
+      await store.getState().markAllNotificationsRead();
+
+      expect(unreadUids()).toEqual([]);
+      expect(mockMarkAllRead).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe('clearNotifications', () => {
+    it('clears one project and leaves the rest standing', async () => {
+      await store.getState().clearNotifications('/repos/alpha');
+
+      expect(store.getState().notifications.map((n) => n.uid)).toEqual([
+        'app-1',
+        'app-ask',
+        'alpha-ask',
+        'beta-1',
+      ]);
+      expect(mockClear).toHaveBeenCalledWith('/repos/alpha');
+    });
+
+    it('clears the app-wide rows without wiping any project', async () => {
+      await store.getState().clearNotifications(null);
+
+      expect(store.getState().notifications.map((n) => n.uid)).toEqual([
+        'app-ask',
+        'alpha-1',
+        'alpha-ask',
+        'beta-1',
+      ]);
+      // Asking the backend to clear "no project" would clear everything, so
+      // the app-wide rows are deleted by name — and deleted for good, or the
+      // next full reload would bring them back.
+      expect(mockClear).not.toHaveBeenCalled();
+      expect(mockDelete).toHaveBeenCalledWith(['app-1']);
+    });
+
+    it('leaves the count describing what is left', async () => {
+      await store.getState().clearNotifications('/repos/alpha');
+
+      expect(store.getState().notificationsUnreadCount).toBe(4);
+    });
   });
 });

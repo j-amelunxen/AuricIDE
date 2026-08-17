@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { Notification } from '@/lib/notifications/types';
 import type { Schedule } from '@/lib/tauri/schedules';
 import { SchedulesSection, type SchedulesSectionProps } from './SchedulesSection';
 
@@ -30,12 +31,36 @@ function makeSchedule(overrides: Partial<Schedule> = {}): Schedule {
   };
 }
 
+function makeNotification(overrides: Partial<Notification> = {}): Notification {
+  return {
+    id: 1,
+    uid: 'n-1',
+    createdAt: '2026-08-12 08:00:00',
+    projectPath: null,
+    projectName: null,
+    source: 'system',
+    origin: 'Security-Scan',
+    kind: 'info',
+    severity: 'info',
+    title: 'Security-Scan is due',
+    body: null,
+    actions: [],
+    dedupeKey: 'schedule:s1:2026-08-12 08:00:00',
+    refKind: null,
+    refId: null,
+    readAt: null,
+    answeredAt: null,
+    answer: null,
+    expiresAt: null,
+    ...overrides,
+  };
+}
+
 function renderSection(overrides: Partial<SchedulesSectionProps> = {}) {
   const props: SchedulesSectionProps = {
     schedules: [],
     now: NOW,
     starredProjects: [],
-    onCreate: vi.fn(),
     onEdit: vi.fn(),
     onToggle: vi.fn(),
     onDelete: vi.fn(),
@@ -53,20 +78,6 @@ describe('SchedulesSection', () => {
     expect(screen.getByTestId('schedules-empty').textContent).toBe(
       'No schedules. Reminders only fire while AuricIDE is open — missed ones catch up on launch.'
     );
-  });
-
-  it('names the section', () => {
-    renderSection();
-    expect(screen.getByRole('heading', { name: 'Schedules' })).toBeTruthy();
-  });
-
-  it('offers to create one', () => {
-    const props = renderSection();
-    const create = screen.getByTestId('schedule-create');
-    expect(create.getAttribute('title')).toBe('New schedule');
-    expect(create.getAttribute('aria-label')).toBe('New schedule');
-    fireEvent.click(create);
-    expect(props.onCreate).toHaveBeenCalled();
   });
 
   it('names the rhythm and the next date in words', () => {
@@ -163,5 +174,54 @@ describe('SchedulesSection', () => {
       renderSection({ schedules: [makeSchedule()] });
       expect(screen.queryByTestId(/^tile-face-/)).toBeNull();
     });
+  });
+
+  // "Next due" is a promise; "last raised" is the evidence it was kept. A
+  // schedule that says "in 21 d" and has never raised anything is the shape a
+  // broken reminder takes, and without this line it is indistinguishable from
+  // a working one.
+  describe('the last notification a schedule raised', () => {
+    it('reports how long ago it was', () => {
+      renderSection({
+        schedules: [makeSchedule()],
+        lastRaised: new Map([['s1', makeNotification()]]),
+      });
+
+      expect(screen.getByTestId('schedule-last-raised-s1').textContent).toContain('2h');
+    });
+
+    it('says so when a schedule has never raised anything', () => {
+      renderSection({ schedules: [makeSchedule()] });
+
+      expect(screen.getByTestId('schedule-last-raised-s1').textContent).toContain('never');
+    });
+
+    // A run that produced no notification still ran. Saying "never run" about
+    // it would send someone looking for a broken schedule that works.
+    it('falls back to when the runner last fired it', () => {
+      renderSection({
+        schedules: [makeSchedule({ lastFiredAt: '2026-08-12 07:00:00' })],
+      });
+
+      expect(screen.getByTestId('schedule-last-raised-s1').textContent).toBe('fired 3h');
+    });
+
+    it('prefers what it raised over when it fired', () => {
+      renderSection({
+        schedules: [makeSchedule({ lastFiredAt: '2026-08-12 07:00:00' })],
+        lastRaised: new Map([['s1', makeNotification()]]),
+      });
+
+      expect(screen.getByTestId('schedule-last-raised-s1').textContent).toBe('raised 2h');
+    });
+  });
+
+  // Under "All" the same list has to carry every project's triggers at once,
+  // so each run of rows says whose it is.
+  it('heads a labelled group with its project name', () => {
+    renderSection({ schedules: [makeSchedule()], label: 'sample-project' });
+
+    expect(screen.getByTestId('schedules-group-sample-project')).toBeTruthy();
+    expect(screen.getByText('sample-project')).toBeTruthy();
   });
 });

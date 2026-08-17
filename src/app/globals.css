@@ -315,6 +315,59 @@ textarea:focus-visible,
   animation: quick-access-tile-out 180ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
+/* Inbox tray rows. A row that arrived while the panel was open slides down
+   into place — the panel is a peek at a moving list, and an arrival that
+   simply appears is one you did not see arrive. The first paint is not an
+   arrival (see `useArrivals`), so opening the sidebar stays still. */
+@keyframes notification-row-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.notification-row-enter {
+  animation: notification-row-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Command Center arriving. Opacity alone reads as a fade; a hair of scale
+   with it reads as a surface settling into place — and it starts from where
+   the eye already is, not from an edge it then has to travel from. */
+@keyframes command-center-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.command-center-enter {
+  /* `backwards`, not `both`: a lingering transform on a fixed, full-screen
+     shell would become the containing block for anything fixed inside it. */
+  animation: command-center-in 180ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  transform-origin: 20% 40%;
+}
+
+/* Feedback lives on the press, and it is instant: a control that only
+   answers on release feels a beat behind the hand. Kept tiny so it reads as
+   give, not as a jump. */
+.press-feedback {
+  transition-property: transform, background-color, border-color, color, opacity;
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.press-feedback:active {
+  transform: scale(0.98);
+  transition-duration: 60ms;
+}
+
 /* Activity rail hover labels. They are drawn into the body at measured
    coordinates so the scrolling icon rail cannot be widened by them, which
    means they mount on hover — the entrance has to be an animation, and the

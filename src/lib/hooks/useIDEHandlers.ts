@@ -1650,6 +1650,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'view.inbox': () => state.setActiveActivity('inbox'),
       'inbox.capture': () => useStore.getState().setInboxCaptureOpen(true),
       'view.agent-console': () => useStore.getState().toggleAgentConsole(),
+      'view.command-center': () => {
+        const store = useStore.getState();
+        if (store.commandCenterOpen) store.closeCommandCenter();
+        else store.openCommandCenter();
+      },
       'excalidraw.new': () => void handleNewDiagram(),
       'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
       'excalidraw.sync-all': () => {

@@ -31,6 +31,9 @@ vi.mock('@/app/components/blueprints/BlueprintsGallery', () => ({
 vi.mock('@/app/components/console/AgentConsole', () => ({
   AgentConsole: () => <div data-testid="mock-agent-console" />,
 }));
+vi.mock('@/app/components/notifications/CommandCenter', () => ({
+  CommandCenter: () => <div data-testid="mock-command-center" />,
+}));
 vi.mock('@/app/components/dev/PerformanceMonitor', () => ({ PerformanceMonitor: () => null }));
 vi.mock('@/app/components/videoImport/VideoImportDialog', () => ({
   VideoImportDialog: () => null,
@@ -111,6 +114,23 @@ describe('IDEOverlays — stacking order', () => {
     const terminal = screen.getByTestId('mock-terminal-modal');
     expect(
       consoleNode.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  // The Command Center shares that layer too. It sits underneath both: a
+  // conductor run started from a notification opens the console over the
+  // center, and the terminal over that.
+  it('mounts the Command Center before the Agent Console and the terminal', () => {
+    renderOverlays({ rootPath: '/open/project' });
+
+    const center = screen.getByTestId('mock-command-center');
+    const consoleNode = screen.getByTestId('mock-agent-console');
+    const terminal = screen.getByTestId('mock-terminal-modal');
+    expect(
+      center.compareDocumentPosition(consoleNode) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      center.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
 });
