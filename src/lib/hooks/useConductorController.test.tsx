@@ -62,6 +62,8 @@ describe('useConductorController', () => {
       blockers: [],
       startedAt: '2026-01-01T10:00:00.000Z',
       endedAt: '2026-01-01T10:05:00.000Z',
+      ticketBudget: null,
+      spawned: 0,
     };
     useStore.setState({ conductorLastRun: lastRun });
     const { result } = renderHook(() => useConductorController());

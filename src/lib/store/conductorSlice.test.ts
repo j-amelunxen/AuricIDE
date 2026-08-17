@@ -889,6 +889,228 @@ describe('conductorSlice', () => {
       expect(store.getState().conductorLastRun?.completed).toBe(0);
     });
   });
+
+  describe('ticket budget and per-run options', () => {
+    it("defaults to an unlimited budget — today's behaviour is unchanged", async () => {
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1' }), makeTicket({ id: 't2' })],
+        conductorMaxConcurrent: 2,
+      });
+      store.getState().startConductor(null);
+      expect(store.getState().conductorTicketBudget).toBeNull();
+
+      await store.getState().conductorTick();
+      expect(Object.keys(store.getState().conductorAssignments).sort()).toEqual(['t1', 't2']);
+    });
+
+    it('stops starting new tickets once the budget is spawned and ends with budget_reached', async () => {
+      store.setState({
+        goalsDraft: [makeGoal({ id: 'g1', status: 'in_progress' })],
+        pmDraftTickets: [
+          makeTicket({ id: 't1', goalId: 'g1' }),
+          makeTicket({ id: 't2', goalId: 'g1' }),
+          makeTicket({ id: 't3', goalId: 'g1' }),
+          makeTicket({ id: 't4', goalId: 'g1' }),
+          makeTicket({ id: 't5', goalId: 'g1' }),
+        ],
+      });
+      store.getState().startConductor('g1', { ticketBudget: 2, maxConcurrent: 5 });
+      await store.getState().conductorTick();
+
+      // Only two of the five ready tickets were spawned, despite five slots
+      // of concurrency being available.
+      expect(Object.keys(store.getState().conductorAssignments).sort()).toEqual(['t1', 't2']);
+      expect(store.getState().conductorRunSpawned).toBe(2);
+
+      const [agentA, agentB] = Object.values(store.getState().conductorAssignments);
+      store.getState().conductorHandleAgentStatus(agentA, 'idle');
+      store.getState().conductorHandleAgentStatus(agentB, 'idle');
+
+      await vi.waitFor(() => {
+        expect(store.getState().conductorRunning).toBe(false);
+      });
+
+      const lastRun = store.getState().conductorLastRun;
+      expect(lastRun?.outcome).toBe('budget_reached');
+      expect(lastRun?.spawned).toBe(2);
+      expect(lastRun?.ticketBudget).toBe(2);
+      // Stopped because it was told to, not because the goal was checked:
+      // three tickets are still open, so a real evaluation would report them.
+      expect(lastRun?.blockers).toEqual([]);
+      expect(store.getState().goalsDraft[0].status).toBe('in_progress');
+      expect(store.getState().conductorDecisions.some((d) => d.action === 'goal_achieved')).toBe(
+        false
+      );
+    });
+
+    it('does not spend a second budget unit when a failed ticket is requeued', async () => {
+      store.setState({
+        pmDraftTickets: [
+          makeTicket({ id: 't1', priority: 'critical' }),
+          makeTicket({ id: 't2', priority: 'high' }),
+        ],
+        conductorMaxConcurrent: 1,
+      });
+      store.getState().startConductor(null, { ticketBudget: 2 });
+      await store.getState().conductorTick();
+      expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t1']);
+      expect(store.getState().conductorRunSpawned).toBe(1);
+
+      // t1 fails and is requeued — the retry is the same ticket, so the
+      // budget does not move.
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'error');
+      await vi.waitFor(() => {
+        expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t1']);
+      });
+      expect(store.getState().conductorRunSpawned).toBe(1);
+
+      // t1 now succeeds — the second distinct ticket, t2, still gets its slot.
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'idle');
+      await vi.waitFor(() => {
+        expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t2']);
+      });
+      expect(store.getState().conductorRunSpawned).toBe(2);
+    });
+
+    it('still retries the last budgeted ticket after it fails, instead of ending the run', async () => {
+      store.setState({ pmDraftTickets: [makeTicket({ id: 't1' })], conductorMaxConcurrent: 1 });
+      store.getState().startConductor(null, { ticketBudget: 1 });
+      await store.getState().conductorTick();
+      expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t1']);
+
+      // The only budgeted ticket errors: nothing is in flight and the budget is
+      // spent, but the ticket still has an attempt left — the run must relaunch
+      // it rather than declare the budget reached with the ticket abandoned.
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'error');
+      await vi.waitFor(() => {
+        expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t1']);
+      });
+      expect(store.getState().conductorRunning).toBe(true);
+      expect(store.getState().conductorLastRun).toBeNull();
+    });
+
+    it('keeps the panel values to restore when a second start arrives without options', async () => {
+      store.setState({
+        conductorMaxConcurrent: 3,
+        conductorRequireReview: false,
+        pmDraftTickets: [],
+      });
+      store.getState().startConductor(null, { maxConcurrent: 1, requireReview: true });
+      // A nested start (nothing in the UI guards every caller) must not forget
+      // what the schedule's run has to hand back.
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      expect(store.getState().conductorRunning).toBe(false);
+      expect(store.getState().conductorMaxConcurrent).toBe(3);
+      expect(store.getState().conductorRequireReview).toBe(false);
+    });
+
+    it('restores maxConcurrent and requireReview to their previous values when the run ends', async () => {
+      store.setState({
+        conductorMaxConcurrent: 3,
+        conductorRequireReview: false,
+        pmDraftTickets: [],
+      });
+      store.getState().startConductor(null, { maxConcurrent: 1, requireReview: true });
+      expect(store.getState().conductorMaxConcurrent).toBe(1);
+      expect(store.getState().conductorRequireReview).toBe(true);
+
+      // No tickets → the run finishes on the very first tick.
+      await store.getState().conductorTick();
+
+      expect(store.getState().conductorRunning).toBe(false);
+      expect(store.getState().conductorMaxConcurrent).toBe(3);
+      expect(store.getState().conductorRequireReview).toBe(false);
+    });
+
+    it('leaves maxConcurrent untouched when no override was given', async () => {
+      store.setState({ conductorMaxConcurrent: 3, pmDraftTickets: [] });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      expect(store.getState().conductorMaxConcurrent).toBe(3);
+    });
+
+    it('does not reach the budget outcome while a review agent is still in flight', async () => {
+      // hasActiveAgents counts reviewers as well as implementers. Without
+      // that, a run whose last ticket is sitting with the judge would report
+      // budget_reached and halt, abandoning the verdict.
+      vi.mocked(createJudgeBackend).mockReturnValue({
+        form: 'llm',
+        start: vi.fn(() => new Promise<never>(() => {})),
+      });
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1' })],
+        conductorMaxConcurrent: 1,
+      });
+      store.getState().startConductor(null, { ticketBudget: 1, requireReview: true });
+      await store.getState().conductorTick();
+
+      store
+        .getState()
+        .conductorHandleAgentStatus(store.getState().conductorAssignments['t1'], 'idle');
+      await new Promise((r) => setTimeout(r, 20));
+      expect(store.getState().conductorReviewAssignments['t1']).toBeDefined();
+      expect(store.getState().conductorAssignments).toEqual({});
+
+      // startReview parks on the judge without re-ticking, so the tick that
+      // would end the run comes from the heartbeat. Drive it by hand — that
+      // is the moment the review has to count as work in flight.
+      await store.getState().conductorTick();
+
+      expect(store.getState().conductorRunning).toBe(true);
+      expect(store.getState().conductorLastRun?.outcome).not.toBe('budget_reached');
+    });
+
+    it('restores the overrides when a human stops a scheduled run by hand', async () => {
+      // user_stopped is a run end like any other; halt() is on that path too,
+      // so a schedule must not leave the panel on its own concurrency.
+      store.setState({
+        conductorMaxConcurrent: 4,
+        conductorRequireReview: false,
+        pmDraftTickets: [makeTicket({ id: 't1' })],
+      });
+      store
+        .getState()
+        .startConductor(null, { maxConcurrent: 1, requireReview: true, ticketBudget: 5 });
+      await store.getState().conductorTick();
+      expect(store.getState().conductorMaxConcurrent).toBe(1);
+
+      store.getState().stopConductor('by hand');
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(store.getState().conductorLastRun?.outcome).toBe('user_stopped');
+      expect(store.getState().conductorMaxConcurrent).toBe(4);
+      expect(store.getState().conductorRequireReview).toBe(false);
+    });
+
+    it('records the origin in the start decision', () => {
+      store.setState({ pmDraftTickets: [] });
+      store.getState().startConductor('g1', { origin: 'Nightly factory' });
+      const startDecision = store.getState().conductorDecisions.find((d) => d.action === 'start');
+      expect(startDecision?.detail).toContain('Nightly factory');
+      expect(startDecision?.detail).toContain('g1');
+    });
+
+    it('carries the ticket budget on the run summary', async () => {
+      store.setState({ pmDraftTickets: [] });
+      store.getState().startConductor(null, { ticketBudget: 5 });
+      await store.getState().conductorTick();
+      expect(store.getState().conductorLastRun?.ticketBudget).toBe(5);
+    });
+
+    it('carries a null ticket budget on the run summary when none was set', async () => {
+      store.setState({ pmDraftTickets: [] });
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      expect(store.getState().conductorLastRun?.ticketBudget).toBeNull();
+    });
+  });
 });
 
 describe('conductor judge review gate', () => {

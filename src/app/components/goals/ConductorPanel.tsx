@@ -68,6 +68,7 @@ const LAST_RUN_META: Record<ConductorRunSummary['outcome'], { cls: string; dot: 
   goal_blocked: { cls: 'text-amber-300', dot: 'bg-amber-400' },
   finished: { cls: 'text-foreground-muted', dot: 'bg-gray-500' },
   user_stopped: { cls: 'text-foreground-muted', dot: 'bg-gray-500' },
+  budget_reached: { cls: 'text-foreground-muted', dot: 'bg-gray-500' },
 };
 
 function lastRunLabel(run: ConductorRunSummary): string {
@@ -80,6 +81,8 @@ function lastRunLabel(run: ConductorRunSummary): string {
       return 'finished';
     case 'user_stopped':
       return 'stopped by you';
+    case 'budget_reached':
+      return 'budget reached';
   }
 }
 
@@ -209,6 +212,9 @@ export function ConductorPanel({
               title={lastRun.blockers.length > 0 ? lastRun.blockers.join('; ') : undefined}
             >
               {lastRunLabel(lastRun)}
+              {lastRun.ticketBudget !== null
+                ? ` · ${lastRun.spawned} of ${lastRun.ticketBudget} tickets started`
+                : ''}
               {` · ${lastRun.completed} done`}
               {lastRun.failed > 0 ? `, ${lastRun.failed} failed` : ''}
               {` · ${formatRunDuration(lastRun.startedAt, lastRun.endedAt)}`}

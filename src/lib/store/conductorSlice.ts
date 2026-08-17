@@ -49,13 +49,17 @@ export interface ConductorDecision {
  * asserted decoratively.
  */
 export interface ConductorRunSummary {
-  outcome: 'goal_achieved' | 'goal_blocked' | 'finished' | 'user_stopped';
+  outcome: 'goal_achieved' | 'goal_blocked' | 'finished' | 'user_stopped' | 'budget_reached';
   goalName: string | null;
   completed: number;
   failed: number;
   blockers: string[];
   startedAt: string;
   endedAt: string;
+  /** The run's ticket budget, or null if it ran unlimited. */
+  ticketBudget: number | null;
+  /** Distinct tickets spawned this run — the numerator for "N of M started". */
+  spawned: number;
 }
 
 /**
@@ -276,7 +280,24 @@ export interface ConductorSlice {
   conductorReviewAssignments: Record<string, string>;
   /** ticketId -> epoch ms the review started, for the watchdog timeout. */
   conductorReviewStartedAt: Record<string, number>;
-  startConductor: (goalId: string | null) => void;
+  /** Cap on implementer launches this run; null = unlimited (today's behaviour). */
+  conductorTicketBudget: number | null;
+  /** Distinct tickets spawned this run. A retry of an already-spawned ticket
+   *  does not add to this — see the budget gate in conductorTick. */
+  conductorRunSpawned: number;
+  startConductor: (
+    goalId: string | null,
+    options?: {
+      /** Stop starting new tickets once this many have been spawned. */
+      ticketBudget?: number;
+      /** Overrides conductorMaxConcurrent for this run; restored on end. */
+      maxConcurrent?: number;
+      /** Overrides conductorRequireReview for this run; restored on end. */
+      requireReview?: boolean;
+      /** Who started this run (e.g. a schedule name), for the decision log. */
+      origin?: string;
+    }
+  ) => void;
   stopConductor: (reason?: string) => void;
   setConductorMaxConcurrent: (n: number) => void;
   setConductorProviderId: (id: string | null) => void;
@@ -313,9 +334,25 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     }
   };
 
+  // A per-run maxConcurrent/requireReview override (e.g. from a schedule)
+  // belongs to that run, not to the panel — null means "nothing to restore".
+  // Captured by startConductor, consumed once by halt, the one choke point
+  // every run-ending path (goal_achieved, goal_blocked, finished,
+  // budget_reached, user_stopped) already passes through.
+  let restoreMaxConcurrentTo: number | null = null;
+  let restoreRequireReviewTo: boolean | null = null;
+
   const halt = (): void => {
     stopHeartbeat();
     set({ conductorRunning: false });
+    if (restoreMaxConcurrentTo !== null) {
+      set({ conductorMaxConcurrent: restoreMaxConcurrentTo });
+      restoreMaxConcurrentTo = null;
+    }
+    if (restoreRequireReviewTo !== null) {
+      set({ conductorRequireReview: restoreRequireReviewTo });
+      restoreRequireReviewTo = null;
+    }
   };
 
   const addDecision = (decision: Omit<ConductorDecision, 'id' | 'timestamp'>): void => {
@@ -376,6 +413,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         blockers,
         startedAt: s.conductorRunStartedAt ?? now,
         endedAt: now,
+        ticketBudget: s.conductorTicketBudget,
+        spawned: s.conductorRunSpawned,
       },
     });
   };
@@ -608,8 +647,23 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorJudgeForm: 'llm',
     conductorReviewAssignments: {},
     conductorReviewStartedAt: {},
+    conductorTicketBudget: null,
+    conductorRunSpawned: 0,
 
-    startConductor: (goalId) => {
+    startConductor: (goalId, options) => {
+      // Capture the pre-run values BEFORE they're overwritten below, so halt()
+      // can put them back exactly as this run found them.
+      // `??` on purpose: if a run with overrides is still active and another
+      // start arrives, the value worth handing back is still the one from
+      // before the first override, not the override itself — and a start
+      // without options leaves an earlier promise to restore untouched.
+      if (options?.maxConcurrent !== undefined) {
+        restoreMaxConcurrentTo = restoreMaxConcurrentTo ?? get().conductorMaxConcurrent;
+      }
+      if (options?.requireReview !== undefined) {
+        restoreRequireReviewTo = restoreRequireReviewTo ?? get().conductorRequireReview;
+      }
+
       set({
         conductorRunning: true,
         conductorGoalId: goalId,
@@ -620,10 +674,21 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         conductorRunCompleted: 0,
         conductorReviewAssignments: {},
         conductorReviewStartedAt: {},
+        conductorTicketBudget: options?.ticketBudget ?? null,
+        conductorRunSpawned: 0,
+        ...(options?.maxConcurrent !== undefined && {
+          conductorMaxConcurrent: options.maxConcurrent,
+        }),
+        ...(options?.requireReview !== undefined && {
+          conductorRequireReview: options.requireReview,
+        }),
       });
+      const startedBy = options?.origin
+        ? `Conductor started by schedule "${options.origin}"`
+        : 'Conductor started';
       addDecision({
         action: 'start',
-        detail: goalId ? `Conductor started for goal ${goalId}` : 'Conductor started (all tickets)',
+        detail: goalId ? `${startedBy} for goal ${goalId}` : `${startedBy} (all tickets)`,
       });
       // Watchdog: the loop is event-driven, but a swallowed error or lost
       // event must not park it silently · the heartbeat re-drives the tick.
@@ -752,6 +817,41 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       // must not auto-achieve the goal.
       const hasActiveAgents =
         Object.keys(assignments).length + Object.keys(get().conductorReviewAssignments).length > 0;
+
+      // Budget spent and nothing in flight → the run stops because it was
+      // told to, whether or not the goal has more open work. This must be
+      // checked before workLeft below: workLeft alone would keep the loop
+      // spawning past the budget on every subsequent tick. Only reachable
+      // when a budget is actually set — conductorTicketBudget stays null for
+      // an unlimited run, exactly today's behaviour.
+      const ticketBudget = get().conductorTicketBudget;
+      const budgetReached = ticketBudget !== null && get().conductorRunSpawned >= ticketBudget;
+      // A budgeted ticket that failed and still has an attempt left is owed
+      // its relaunch — the budget bought that ticket, not its first try. So
+      // the run only ends once no such retry is waiting; otherwise the spawn
+      // loop below (which exempts retries from the budget) picks it up.
+      const retryPending = scoped.some((t) => {
+        const fails = get().conductorFailedTickets[t.id] ?? 0;
+        return t.status === 'open' && fails > 0 && fails < MAX_TICKET_ATTEMPTS;
+      });
+      if (budgetReached && !hasActiveAgents && !retryPending) {
+        const goalName = goalId ? (goals.find((g) => g.id === goalId)?.name ?? null) : null;
+        const spawned = get().conductorRunSpawned;
+        halt();
+        addDecision({
+          action: 'stop',
+          detail: `Ticket budget reached (${spawned}/${ticketBudget})`,
+        });
+        finishRun('budget_reached', goalName, []);
+        void notifyConductor('run_finished', '');
+        notifyInbox({
+          severity: 'info',
+          title: 'Conductor run finished · budget reached',
+          body: `${spawned} of ${ticketBudget} ticket(s) started.`,
+        });
+        await persist();
+        return;
+      }
 
       // Scope exhausted: no open/in-progress work left and no agents running →
       // machine-check the goal and close the loop.
@@ -885,6 +985,21 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
           continue;
         }
 
+        // A ticket already spawned once this run (it has a failed attempt on
+        // the shared ledger — the only way an already-spawned ticket becomes
+        // open again) is a retry, not new work: "work five tickets" budgets
+        // distinct tickets, and a retry is the same ticket. Only a genuinely
+        // new ticket is gated once the budget is spent; a retry always gets
+        // its relaunch.
+        const isRetryThisRun = (state.conductorFailedTickets[ticket.id] ?? 0) > 0;
+        if (
+          state.conductorTicketBudget !== null &&
+          !isRetryThisRun &&
+          state.conductorRunSpawned >= state.conductorTicketBudget
+        ) {
+          continue;
+        }
+
         const effectiveGoalId = ticket.goalId ?? goalId ?? undefined;
         const goal = goals.find((g) => g.id === effectiveGoalId);
         const testCases = (full.pmDraftTestCases ?? []).filter((tc) => tc.ticketId === ticket.id);
@@ -944,6 +1059,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         full.updateTicket?.(ticket.id, { status: 'in_progress' });
         set((s: ConductorSlice) => ({
           conductorAssignments: { ...s.conductorAssignments, [ticket.id]: agent.id },
+          conductorRunSpawned: isRetryThisRun ? s.conductorRunSpawned : s.conductorRunSpawned + 1,
         }));
         addDecision({
           action: 'spawn',
