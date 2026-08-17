@@ -18,7 +18,7 @@ import {
   type Notification,
   type NotificationAction,
 } from '@/lib/notifications/types';
-import { scheduleProjectOptions } from '@/lib/notifications/scheduleProjects';
+import { projectPickerOptions } from '@/lib/projects/projectOptions';
 import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
 import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { schedulesPreview, type Schedule } from '@/lib/tauri/schedules';
@@ -291,7 +291,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
   const boundProject = editing?.schedule?.projectPath ?? null;
   const projectOptions = useMemo(
     () =>
-      scheduleProjectOptions({
+      projectPickerOptions({
         starred: starredProjects,
         recent: recentProjects,
         openPath: rootPath,

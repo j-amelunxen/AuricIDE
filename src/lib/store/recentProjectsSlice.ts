@@ -2,7 +2,8 @@ import type { StateCreator } from 'zustand';
 import * as nativeRecentProjects from '../tauri/recentProjects';
 
 const STORAGE_KEY = 'auric-recent-projects';
-const MAX_RECENT = 50;
+/** How many projects the recency list keeps — and the picker offers all of them. */
+export const MAX_RECENT = 50;
 let syncRevision = 0;
 
 export interface RecentProject {
