@@ -1308,6 +1308,119 @@ describe('conductor judge review gate', () => {
     expect(reviewCall![0].headless).toBe(true);
   });
 
+  describe('which harness the reviewer runs on', () => {
+    // A judge that is the same provider and the same model as the implementer
+    // is not an independent one, so both are their own setting. They are only
+    // *defaulted* to the conductor's, because silently reviewing on a harness
+    // nobody chose would be its own surprise.
+    const driveRealSpawn = () => {
+      vi.mocked(createJudgeBackend).mockImplementation((form, deps) => ({
+        form,
+        start: async (input: JudgeInput): Promise<JudgeStart> => ({
+          kind: 'delegated',
+          reviewAgentId: await deps!.spawnReviewAgent(input),
+        }),
+      }));
+    };
+
+    const spawnReviewerFor = async (): Promise<{ provider?: string; model?: string }> => {
+      store.getState().startConductor(null);
+      await store.getState().conductorTick();
+      const implId = store.getState().conductorAssignments['t1'];
+      store.getState().conductorHandleAgentStatus(implId, 'idle');
+      await flush();
+      const call = vi.mocked(spawnAgent).mock.calls.find((c) => c[0].name.startsWith('review:'));
+      expect(call).toBeDefined();
+      return { provider: call![0].provider, model: call![0].model };
+    };
+
+    beforeEach(() => {
+      driveRealSpawn();
+      store.setState({
+        pmDraftTickets: [makeTicket({ id: 't1' })],
+        conductorMaxConcurrent: 1,
+        conductorRequireReview: true,
+        conductorJudgeForm: 'agent',
+        conductorProviderId: 'implementer-cli',
+        conductorModel: 'implementer-model',
+      });
+    });
+
+    it('runs the reviewer on the judge’s own provider and model', async () => {
+      store.setState({
+        conductorJudgeProviderId: 'judge-cli',
+        conductorJudgeModel: 'judge-model',
+      });
+
+      await expect(spawnReviewerFor()).resolves.toEqual({
+        provider: 'judge-cli',
+        model: 'judge-model',
+      });
+    });
+
+    it('falls back to the conductor’s harness when the judge names none', async () => {
+      store.setState({ conductorJudgeProviderId: null, conductorJudgeModel: null });
+
+      await expect(spawnReviewerFor()).resolves.toEqual({
+        provider: 'implementer-cli',
+        model: 'implementer-model',
+      });
+    });
+
+    it('takes each half on its own — a judge provider with no judge model', async () => {
+      store.setState({ conductorJudgeProviderId: 'judge-cli', conductorJudgeModel: null });
+
+      await expect(spawnReviewerFor()).resolves.toEqual({
+        provider: 'judge-cli',
+        model: 'implementer-model',
+      });
+    });
+  });
+
+  describe('a schedule’s judge settings belong to its run', () => {
+    it('applies them for the run and hands the panel’s back when it ends', async () => {
+      store.setState({
+        pmDraftTickets: [],
+        conductorJudgeForm: 'llm',
+        conductorJudgeProviderId: null,
+        conductorJudgeModel: null,
+      });
+
+      store.getState().startConductor(null, {
+        requireReview: true,
+        judgeForm: 'agent',
+        judgeProviderId: 'judge-cli',
+        judgeModel: 'judge-model',
+      });
+      expect(store.getState().conductorJudgeForm).toBe('agent');
+      expect(store.getState().conductorJudgeProviderId).toBe('judge-cli');
+      expect(store.getState().conductorJudgeModel).toBe('judge-model');
+
+      // No tickets → the run finishes on the very first tick.
+      await store.getState().conductorTick();
+
+      expect(store.getState().conductorJudgeForm).toBe('llm');
+      expect(store.getState().conductorJudgeProviderId).toBeNull();
+      expect(store.getState().conductorJudgeModel).toBeNull();
+    });
+
+    it('leaves the judge settings alone when the schedule names none', async () => {
+      store.setState({
+        pmDraftTickets: [],
+        conductorJudgeForm: 'agent',
+        conductorJudgeProviderId: 'panel-cli',
+        conductorJudgeModel: 'panel-model',
+      });
+
+      store.getState().startConductor(null, { requireReview: true });
+      await store.getState().conductorTick();
+
+      expect(store.getState().conductorJudgeForm).toBe('agent');
+      expect(store.getState().conductorJudgeProviderId).toBe('panel-cli');
+      expect(store.getState().conductorJudgeModel).toBe('panel-model');
+    });
+  });
+
   it('agent form: implementer done → reviewer spawned → verdict collected → done', async () => {
     vi.mocked(createJudgeBackend).mockReturnValue({
       form: 'agent',

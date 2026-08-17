@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { ConductorPanel, formatRunDuration } from './ConductorPanel';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { ConductorRunSummary } from '@/lib/store/conductorSlice';
+import type { ProviderInfo } from '@/lib/tauri/providers';
 
 function makeLastRun(overrides: Partial<ConductorRunSummary> = {}): ConductorRunSummary {
   return {
@@ -50,7 +51,10 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     providerId: null,
     model: null,
     requireReview: false,
-    judgeForm: 'llm' as const,
+    judgeForm: 'llm' as 'llm' | 'agent',
+    judgeProviderId: null as string | null,
+    judgeModel: null as string | null,
+    judgeLlmModel: 'judge-model' as string | null,
     judgeConfigured: true,
     onStart: vi.fn(),
     onStop: vi.fn(),
@@ -59,6 +63,8 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     onSetModel: vi.fn(),
     onSetRequireReview: vi.fn(),
     onSetJudgeForm: vi.fn(),
+    onSetJudgeProvider: vi.fn(),
+    onSetJudgeModel: vi.fn(),
     onApprove: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
@@ -386,9 +392,43 @@ describe('ConductorPanel preflight', () => {
   });
 
   describe('judge review toggle', () => {
-    it('is disabled when no judge model is configured', () => {
-      renderPanel({ judgeConfigured: false });
+    const providers = [
+      {
+        id: 'claude',
+        name: 'Claude Code',
+        models: [{ value: 'sonnet', label: 'Sonnet' }],
+        permissionModes: [],
+        defaultModel: 'sonnet',
+        defaultPermissionMode: 'default',
+      },
+      {
+        id: 'codex',
+        name: 'Codex',
+        models: [{ value: 'gpt', label: 'GPT' }],
+        permissionModes: [],
+        defaultModel: 'gpt',
+        defaultPermissionMode: 'default',
+      },
+    ] satisfies ProviderInfo[];
+
+    it('is disabled only when there is no judge at all — no key and no CLI', () => {
+      renderPanel({ judgeConfigured: false, providers: [] });
       expect(screen.getByTestId('conductor-require-review')).toBeDisabled();
+    });
+
+    // The switch used to hang off the judge API key alone, which locked out
+    // the one form that never needed it. A review agent is a CLI like any
+    // other; if there is one, review is reachable.
+    it('stays reachable with no judge key as long as an agent CLI can review', () => {
+      renderPanel({ judgeConfigured: false, providers });
+      expect(screen.getByTestId('conductor-require-review')).not.toBeDisabled();
+    });
+
+    it('turns review on in the form that can actually run when there is no key', () => {
+      const props = renderPanel({ judgeConfigured: false, providers, requireReview: false });
+      fireEvent.click(screen.getByTestId('conductor-require-review'));
+      expect(props.onSetJudgeForm).toHaveBeenCalledWith('agent');
+      expect(props.onSetRequireReview).toHaveBeenCalledWith(true);
     });
 
     it('toggles review on via the setter when a judge model is configured', () => {
@@ -402,6 +442,74 @@ describe('ConductorPanel preflight', () => {
       expect(screen.queryByTestId('conductor-judge-form')).not.toBeInTheDocument();
       renderPanel({ requireReview: true, judgeConfigured: true });
       expect(screen.getByTestId('conductor-judge-form')).toBeInTheDocument();
+    });
+
+    it('offers no inline-LLM form without a key, and does not claim it is in effect', () => {
+      renderPanel({ requireReview: true, judgeConfigured: false, providers, judgeForm: 'llm' });
+      const picker = screen.getByTestId('conductor-judge-form') as HTMLSelectElement;
+      // A stored 'llm' that cannot run must not be shown as the live setting —
+      // the panel would be naming a judge that is not the one about to review.
+      expect(picker.value).toBe('agent');
+      expect(screen.getByRole('option', { name: /LLM call/ })).toBeDisabled();
+    });
+
+    describe('which harness reviews', () => {
+      it('offers a judge provider and model for a spawned reviewer', () => {
+        const props = renderPanel({
+          requireReview: true,
+          judgeConfigured: true,
+          judgeForm: 'agent',
+          providers,
+        });
+
+        fireEvent.change(screen.getByTestId('conductor-judge-provider'), {
+          target: { value: 'codex' },
+        });
+        expect(props.onSetJudgeProvider).toHaveBeenCalledWith('codex');
+      });
+
+      it('lists the models of the judge’s provider, not the conductor’s', () => {
+        renderPanel({
+          requireReview: true,
+          judgeConfigured: true,
+          judgeForm: 'agent',
+          providers,
+          providerId: 'claude',
+          judgeProviderId: 'codex',
+        });
+
+        const judgeModels = within(screen.getByTestId('conductor-judge-model'));
+        expect(judgeModels.getByRole('option', { name: 'GPT' })).toBeInTheDocument();
+        // The conductor's own picker still offers Sonnet; the judge's must not.
+        expect(judgeModels.queryByRole('option', { name: 'Sonnet' })).not.toBeInTheDocument();
+      });
+
+      it('reads an unset judge harness as the conductor’s, not as nothing', () => {
+        renderPanel({
+          requireReview: true,
+          judgeConfigured: true,
+          judgeForm: 'agent',
+          providers,
+          judgeProviderId: null,
+        });
+
+        expect(screen.getAllByRole('option', { name: 'Same as conductor' })).toHaveLength(2);
+      });
+
+      it('names the model the inline judge would call instead of offering a picker', () => {
+        renderPanel({
+          requireReview: true,
+          judgeConfigured: true,
+          judgeForm: 'llm',
+          providers,
+          judgeLlmModel: 'devstral-medium-latest',
+        });
+
+        expect(screen.getByTestId('conductor-judge-llm-model')).toHaveTextContent(
+          'devstral-medium-latest'
+        );
+        expect(screen.queryByTestId('conductor-judge-provider')).not.toBeInTheDocument();
+      });
     });
   });
 

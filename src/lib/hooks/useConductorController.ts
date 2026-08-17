@@ -18,7 +18,10 @@ export function useConductorController() {
   const reviewAssignments = useStore((s) => s.conductorReviewAssignments);
   const requireReview = useStore((s) => s.conductorRequireReview);
   const judgeForm = useStore((s) => s.conductorJudgeForm);
+  const judgeProviderId = useStore((s) => s.conductorJudgeProviderId);
+  const judgeModel = useStore((s) => s.conductorJudgeModel);
   const judgeConfigured = useStore((s) => s.judgeLlmConfigured);
+  const judgeLlmModel = useStore((s) => s.judgeLlmModel);
   const pendingApprovalIds = useStore((s) => s.conductorPendingApprovals);
   const decisions = useStore((s) => s.conductorDecisions);
   const lastRun = useStore((s) => s.conductorLastRun);
@@ -42,6 +45,8 @@ export function useConductorController() {
   const setConductorModel = useStore((s) => s.setConductorModel);
   const setConductorRequireReview = useStore((s) => s.setConductorRequireReview);
   const setConductorJudgeForm = useStore((s) => s.setConductorJudgeForm);
+  const setConductorJudgeProviderId = useStore((s) => s.setConductorJudgeProviderId);
+  const setConductorJudgeModel = useStore((s) => s.setConductorJudgeModel);
   const approveConductorTicket = useStore((s) => s.approveConductorTicket);
   const dismissConductorApproval = useStore((s) => s.dismissConductorApproval);
 
@@ -129,6 +134,9 @@ export function useConductorController() {
     model,
     requireReview,
     judgeForm,
+    judgeProviderId,
+    judgeModel,
+    judgeLlmModel,
     judgeConfigured,
     onStart,
     onStop,
@@ -137,6 +145,8 @@ export function useConductorController() {
     onSetModel: setConductorModel,
     onSetRequireReview: setConductorRequireReview,
     onSetJudgeForm: setConductorJudgeForm,
+    onSetJudgeProvider: setConductorJudgeProviderId,
+    onSetJudgeModel: setConductorJudgeModel,
     onApprove,
     onDismiss: dismissConductorApproval,
   };

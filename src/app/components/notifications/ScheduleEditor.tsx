@@ -88,6 +88,15 @@ type ConductorActionDraft = {
   /** Snapshot for display; the id is what a run actually scopes to. */
   goalName: string | null;
   requireReview: boolean;
+  /**
+   * How the run judges, and on what. `null` throughout means "whatever the
+   * project is set to" — a reminder that says nothing about the judge must not
+   * overwrite a choice made in the Conductor panel, and a schedule saved before
+   * these fields existed says nothing by definition.
+   */
+  judgeForm: 'llm' | 'agent' | null;
+  judgeProviderId: string | null;
+  judgeModel: string | null;
   launch: ConductorLaunch;
 };
 
@@ -98,6 +107,9 @@ const DEFAULT_CONDUCTOR_DRAFT: ConductorActionDraft = {
   goalId: null,
   goalName: null,
   requireReview: false,
+  judgeForm: null,
+  judgeProviderId: null,
+  judgeModel: null,
   launch: 'auto',
 };
 
@@ -175,6 +187,9 @@ function actionDraftOf(schedule: Schedule | null): ActionDraft {
       goalId: action.goalId ?? null,
       goalName: action.goalName ?? null,
       requireReview: action.requireReview ?? false,
+      judgeForm: action.judgeForm ?? null,
+      judgeProviderId: action.judgeProviderId ?? null,
+      judgeModel: action.judgeModel ?? null,
       // A payload saved before the launch existed — or the run-skill default —
       // opens the panel. Only an explicit `auto` may start on its own.
       launch: action.launch ?? 'dialog',
@@ -354,6 +369,17 @@ function actionsFromDraft(draft: ActionDraft, projectPath: string | null): Notif
     if (draft.goalId !== null) action.goalId = draft.goalId;
     if (draft.goalName !== null) action.goalName = draft.goalName;
     if (draft.requireReview) action.requireReview = true;
+    // Only written when review is on and something was actually chosen: an
+    // absent field is what lets the project's own judge settings stand.
+    if (draft.requireReview) {
+      if (draft.judgeForm !== null) action.judgeForm = draft.judgeForm;
+      if (draft.judgeForm === 'agent' && draft.judgeProviderId !== null) {
+        action.judgeProviderId = draft.judgeProviderId;
+      }
+      if (draft.judgeForm === 'agent' && draft.judgeModel !== null) {
+        action.judgeModel = draft.judgeModel;
+      }
+    }
     return [action];
   }
   if (draft.snapshot === undefined || projectPath === null) return [];
@@ -468,6 +494,13 @@ export function ScheduleEditor({
   const skillProvider =
     actionDraft.choice === 'skill' && actionDraft.snapshot?.providerId
       ? providers.find((provider) => provider.id === actionDraft.snapshot?.providerId)
+      : undefined;
+
+  // Only a named judge provider has models to offer: "same as the conductor"
+  // is resolved at run time against the project, which this form cannot read.
+  const judgeProvider =
+    actionDraft.choice === 'conductor' && actionDraft.judgeProviderId
+      ? providers.find((provider) => provider.id === actionDraft.judgeProviderId)
       : undefined;
 
   const liveSkill =
@@ -1348,6 +1381,88 @@ export function ScheduleEditor({
                 />
                 <span>Judge the result</span>
               </label>
+
+              {/* The judge's own harness. Left on "the project's setting" a
+                  schedule keeps behaving like the panel's Start button, which
+                  is what every schedule saved before this did. */}
+              {actionDraft.requireReview && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className={SUBLABEL}>Judge via</span>
+                    <select
+                      data-testid="schedule-conductor-judge-form"
+                      value={actionDraft.judgeForm ?? ''}
+                      onChange={(event) =>
+                        setConductorDraft({
+                          judgeForm: (event.target.value || null) as 'llm' | 'agent' | null,
+                          // A form that spawns nothing has no harness to name;
+                          // keeping one would save a setting that never applies.
+                          ...(event.target.value !== 'agent' && {
+                            judgeProviderId: null,
+                            judgeModel: null,
+                          }),
+                        })
+                      }
+                      className={INPUT}
+                    >
+                      <option value="">The project&apos;s setting</option>
+                      <option value="llm">LLM call</option>
+                      <option value="agent">Review agent</option>
+                    </select>
+                  </label>
+
+                  {actionDraft.judgeForm === 'agent' && (
+                    <label className="block">
+                      <span className={SUBLABEL}>Judge agent</span>
+                      <select
+                        data-testid="schedule-conductor-judge-provider"
+                        value={actionDraft.judgeProviderId ?? ''}
+                        onChange={(event) =>
+                          setConductorDraft({
+                            judgeProviderId: event.target.value || null,
+                            // The model belongs to the provider that offers it.
+                            judgeModel: null,
+                          })
+                        }
+                        className={INPUT}
+                      >
+                        <option value="">Same as the conductor</option>
+                        {providers.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  {actionDraft.judgeForm === 'agent' && (
+                    <label className="block">
+                      <span className={SUBLABEL}>Judge model</span>
+                      <select
+                        data-testid="schedule-conductor-judge-model"
+                        disabled={judgeProvider === undefined}
+                        value={actionDraft.judgeModel ?? ''}
+                        onChange={(event) =>
+                          setConductorDraft({ judgeModel: event.target.value || null })
+                        }
+                        className={`${INPUT} disabled:opacity-40`}
+                      >
+                        <option value="">
+                          {judgeProvider === undefined
+                            ? 'Pick an agent first'
+                            : 'Same as the conductor'}
+                        </option>
+                        {(judgeProvider?.models ?? []).map((model) => (
+                          <option key={model.value} value={model.value}>
+                            {model.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
 
               <fieldset className="mt-2">
                 <legend className={SUBLABEL}>Launch</legend>

@@ -117,6 +117,19 @@ export type NotificationAction =
       goalName?: string;
       requireReview?: boolean;
       /**
+       * How the run judges finished work, and on what.
+       *
+       * Absent means "whatever the project is set to" — a schedule saved before
+       * these existed must keep running the way it always did, and a reminder
+       * that says nothing about the judge has no business overwriting a choice
+       * the user made in the panel.
+       */
+      judgeForm?: 'llm' | 'agent';
+      /** Provider (agent CLI) for a spawned reviewer; absent = the project's. */
+      judgeProviderId?: string;
+      /** Model for a spawned reviewer; absent = the project's. */
+      judgeModel?: string;
+      /**
        * `auto` starts on arrival, within the gate in `scheduledRun.ts` — the
        * only launch mode that is not itself a click. Honoured only for a
        * user-authored payload; see `trust.ts`.
@@ -223,6 +236,9 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     goalId: z.string().optional(),
     goalName: z.string().optional(),
     requireReview: z.boolean().optional(),
+    judgeForm: z.enum(['llm', 'agent']).optional(),
+    judgeProviderId: nonEmpty.optional(),
+    judgeModel: nonEmpty.optional(),
     launch: z.enum(['auto', 'direct', 'dialog']).optional(),
   }),
   z.object({ ...identity, kind: z.literal('open'), target: openTargetSchema }),

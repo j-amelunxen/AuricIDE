@@ -1,4 +1,5 @@
 import { useStore } from '@/lib/store';
+import { getConductorPreflight } from '@/lib/store/conductorSlice';
 import type { ScheduledRunDeps, ScheduledRunState } from './scheduledRun';
 
 /** How often the project-load wait re-checks the store. */
@@ -52,11 +53,38 @@ export function buildScheduledRunDeps(
     waitUntil: pollUntil,
     startConductor: (goalId, options) => useStore.getState().startConductor(goalId, options),
     conductorTick: () => useStore.getState().conductorTick(),
-    prepareConductorPanel: ({ goalId, maxConcurrent, requireReview }) => {
+    // The panel's own preflight, so "there is work" means the same thing to a
+    // schedule as it does to the Start button a human looks at.
+    readyTicketCount: (goalId) => {
+      const state = useStore.getState();
+      return getConductorPreflight({
+        tickets: state.pmDraftTickets ?? [],
+        dependencies: state.pmDraftDependencies ?? [],
+        goals: state.goalsDraft ?? [],
+        goalId,
+        // A fresh run clears both ledgers, so counting against the previous
+        // run's would hide work this one would happily pick up.
+        failedTickets: {},
+        approvedTickets: [],
+      }).ready;
+    },
+    prepareConductorPanel: ({
+      goalId,
+      maxConcurrent,
+      requireReview,
+      judgeForm,
+      judgeProviderId,
+      judgeModel,
+    }) => {
       const store = useStore.getState();
       store.setSelectedGoalId(goalId);
       store.setConductorMaxConcurrent(maxConcurrent);
       store.setConductorRequireReview(requireReview);
+      // Absent means the schedule said nothing about the judge; the project's
+      // own choice stands rather than being overwritten with a default.
+      if (judgeForm !== undefined) store.setConductorJudgeForm(judgeForm);
+      if (judgeProviderId !== undefined) store.setConductorJudgeProviderId(judgeProviderId);
+      if (judgeModel !== undefined) store.setConductorJudgeModel(judgeModel);
       store.openWorkPlace('goals');
     },
     toast: (message, variant) => {

@@ -38,7 +38,13 @@ interface ConductorPanelProps {
   requireReview: boolean;
   /** Which judge form review uses. */
   judgeForm: 'llm' | 'agent';
-  /** True when a separate judge model is configured (gates review). */
+  /** Provider a spawned reviewer runs on; null = the conductor's own. */
+  judgeProviderId: string | null;
+  /** Model a spawned reviewer runs on; null = the conductor's own. */
+  judgeModel: string | null;
+  /** Model name the inline LLM judge would use, for the read-only line. */
+  judgeLlmModel: string | null;
+  /** True when a separate judge model is configured (gates the LLM form). */
   judgeConfigured: boolean;
   onStart: () => void;
   onStop: () => void;
@@ -47,6 +53,8 @@ interface ConductorPanelProps {
   onSetModel: (model: string | null) => void;
   onSetRequireReview: (v: boolean) => void;
   onSetJudgeForm: (form: 'llm' | 'agent') => void;
+  onSetJudgeProvider: (id: string | null) => void;
+  onSetJudgeModel: (model: string | null) => void;
   onApprove: (ticketId: string) => void;
   onDismiss: (ticketId: string) => void;
 }
@@ -142,6 +150,9 @@ export function ConductorPanel({
   model,
   requireReview,
   judgeForm,
+  judgeProviderId,
+  judgeModel,
+  judgeLlmModel,
   judgeConfigured,
   onStart,
   onStop,
@@ -150,6 +161,8 @@ export function ConductorPanel({
   onSetModel,
   onSetRequireReview,
   onSetJudgeForm,
+  onSetJudgeProvider,
+  onSetJudgeModel,
   onApprove,
   onDismiss,
 }: ConductorPanelProps) {
@@ -157,6 +170,14 @@ export function ConductorPanel({
   const { confirm, confirmDialog } = useConfirm();
   const providerList = providers ?? [];
   const activeProvider = providerList.find((p) => p.id === providerId) ?? providerList[0];
+  // A review needs *a* judge: an API key for the inline form, or an agent CLI
+  // for the spawned one. With neither there is nothing to review with.
+  const canReview = judgeConfigured || providerList.length > 0;
+  // What the stored form would actually resolve to. Without a key the inline
+  // form cannot run, so the panel must not claim it is the one in effect.
+  const effectiveJudgeForm = judgeForm === 'llm' && !judgeConfigured ? 'agent' : judgeForm;
+  const judgeProvider =
+    providerList.find((p) => p.id === (judgeProviderId ?? providerId)) ?? providerList[0];
   const selectCls =
     'rounded bg-white/5 px-1.5 py-0.5 text-[11px] text-foreground outline-none focus:ring-1 focus:ring-primary/30';
   // Every settings label reads the same and none of them wraps: a two-line
@@ -336,43 +357,110 @@ export function ConductorPanel({
           </>
         )}
 
-        {/* Judge review: gated on a configured judge model. Off = the old
-            behavior (exit 0 = done). On = a finished ticket is reviewed first. */}
+        {/* Judge review. Off = the old behavior (exit 0 = done). On = a
+            finished ticket is reviewed first.
+
+            Only the LLM form needs a judge API key; a review agent is a CLI
+            like any other. Gating the whole switch on the key therefore locked
+            out the one form that would have worked without it — so the gate
+            sits on the form, and turning review on with no key picks the form
+            that can actually run. */}
         {!running && (
           <label
             className={`${settingCls} ${
-              judgeConfigured ? 'text-foreground-muted' : 'text-foreground-muted/40'
+              canReview ? 'text-foreground-muted' : 'text-foreground-muted/40'
             }`}
             title={
-              judgeConfigured
+              canReview
                 ? 'Finished tickets pass an independent judge before counting as done.'
-                : 'Configure a Judge model in Settings → Judge to enable review.'
+                : 'Needs either a Judge model (Settings → Judge) or an agent CLI to review with.'
             }
           >
             <input
               data-testid="conductor-require-review"
               type="checkbox"
-              checked={requireReview && judgeConfigured}
-              disabled={!judgeConfigured}
-              onChange={(e) => onSetRequireReview(e.target.checked)}
+              checked={requireReview && canReview}
+              disabled={!canReview}
+              onChange={(e) => {
+                if (e.target.checked && !judgeConfigured) onSetJudgeForm('agent');
+                onSetRequireReview(e.target.checked);
+              }}
               className="accent-primary"
             />
             Judge review
           </label>
         )}
-        {!running && requireReview && judgeConfigured && (
+        {!running && requireReview && canReview && (
           <label className={`${settingCls} text-foreground-muted`}>
             via
             <select
               data-testid="conductor-judge-form"
-              value={judgeForm}
+              value={effectiveJudgeForm}
               onChange={(e) => onSetJudgeForm(e.target.value as 'llm' | 'agent')}
               className={selectCls}
             >
-              <option value="llm">LLM call</option>
-              <option value="agent">Review agent</option>
+              <option value="llm" disabled={!judgeConfigured}>
+                {judgeConfigured ? 'LLM call' : 'LLM call (no key)'}
+              </option>
+              <option value="agent" disabled={providerList.length === 0}>
+                Review agent
+              </option>
             </select>
           </label>
+        )}
+
+        {/* Which harness reviews. A judge on the implementer's own provider and
+            model is not the second opinion review exists to be, so both are
+            selectable — defaulting to the conductor's rather than to something
+            nobody picked. */}
+        {!running && requireReview && canReview && effectiveJudgeForm === 'agent' && (
+          <>
+            <label className={`${settingCls} text-foreground-muted`}>
+              Judge on
+              <select
+                data-testid="conductor-judge-provider"
+                value={judgeProviderId ?? ''}
+                onChange={(e) => onSetJudgeProvider(e.target.value || null)}
+                className={selectCls}
+              >
+                <option value="">Same as conductor</option>
+                {providerList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={`${settingCls} text-foreground-muted`}>
+              Judge model
+              <select
+                data-testid="conductor-judge-model"
+                value={judgeModel ?? ''}
+                onChange={(e) => onSetJudgeModel(e.target.value || null)}
+                className={selectCls}
+              >
+                <option value="">Same as conductor</option>
+                {judgeProvider?.models.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+
+        {/* The inline form has no picker here on purpose: its endpoint and
+            model are the machine's Judge credentials, and a second place to set
+            them would be a second answer to "which model reviewed this". */}
+        {!running && requireReview && canReview && effectiveJudgeForm === 'llm' && (
+          <span
+            data-testid="conductor-judge-llm-model"
+            className={`${settingCls} text-foreground-muted/70`}
+            title="Set under Settings → Application → Credentials → Judge"
+          >
+            on {judgeLlmModel ?? 'the Judge model from Settings'}
+          </span>
         )}
       </div>
 

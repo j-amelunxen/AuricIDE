@@ -1186,6 +1186,77 @@ describe('ScheduleEditor', () => {
       expect(action).toMatchObject({ requireReview: true });
     });
 
+    describe('the judge the run uses', () => {
+      const openConductorWithReview = () => {
+        const props = renderEditor();
+        fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+        fireEvent.click(screen.getByTestId('schedule-conductor-review'));
+        return props;
+      };
+
+      it('offers nothing about the judge until the result is judged at all', () => {
+        renderEditor();
+        fireEvent.click(screen.getByTestId('schedule-action-conductor'));
+
+        expect(screen.queryByTestId('schedule-conductor-judge-form')).toBeNull();
+      });
+
+      // A reminder that says nothing about the judge must leave the project's
+      // own choice standing — which is also every schedule saved before these
+      // fields existed.
+      it('writes no judge fields while the form is left on the project’s setting', () => {
+        const props = openConductorWithReview();
+
+        const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+          .actions?.[0];
+        expect(action).toMatchObject({ requireReview: true });
+        expect(action).not.toHaveProperty('judgeForm');
+        expect(action).not.toHaveProperty('judgeProviderId');
+      });
+
+      it('carries the picked judge form, provider and model onto the action', () => {
+        const props = openConductorWithReview();
+        fireEvent.change(screen.getByTestId('schedule-conductor-judge-form'), {
+          target: { value: 'agent' },
+        });
+        fireEvent.change(screen.getByTestId('schedule-conductor-judge-provider'), {
+          target: { value: 'codex' },
+        });
+        fireEvent.change(screen.getByTestId('schedule-conductor-judge-model'), {
+          target: { value: 'gpt' },
+        });
+
+        expect(
+          payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+        ).toMatchObject({
+          judgeForm: 'agent',
+          judgeProviderId: 'codex',
+          judgeModel: 'gpt',
+        });
+      });
+
+      it('has no harness to name for the inline form, and saves none', () => {
+        const props = openConductorWithReview();
+        fireEvent.change(screen.getByTestId('schedule-conductor-judge-form'), {
+          target: { value: 'agent' },
+        });
+        fireEvent.change(screen.getByTestId('schedule-conductor-judge-provider'), {
+          target: { value: 'codex' },
+        });
+        // Switching back must drop the harness with it — a saved provider that
+        // never applies is a setting the user cannot see is being ignored.
+        fireEvent.change(screen.getByTestId('schedule-conductor-judge-form'), {
+          target: { value: 'llm' },
+        });
+
+        expect(screen.queryByTestId('schedule-conductor-judge-provider')).toBeNull();
+        const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+          .actions?.[0];
+        expect(action).toMatchObject({ judgeForm: 'llm' });
+        expect(action).not.toHaveProperty('judgeProviderId');
+      });
+    });
+
     it('shows the unattended hint under auto, and the manual footer under the other launches', () => {
       renderEditor();
       fireEvent.click(screen.getByTestId('schedule-action-conductor'));

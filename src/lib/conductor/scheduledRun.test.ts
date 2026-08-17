@@ -252,6 +252,7 @@ describe('launchScheduledConductor', () => {
       prepareConductorPanel: [],
       toast: [],
       openProject: [],
+      readyTicketCount: [],
     };
     const deps: ScheduledRunDeps = {
       getState: () => ({
@@ -275,6 +276,10 @@ describe('launchScheduledConductor', () => {
       },
       toast: (message, variant) => {
         calls.toast.push([message, variant]);
+      },
+      readyTicketCount: (goalId) => {
+        calls.readyTicketCount.push([goalId]);
+        return 3;
       },
       ...overrides,
     };
@@ -342,6 +347,98 @@ describe('launchScheduledConductor', () => {
     ]);
     expect(calls.conductorTick).toHaveLength(1);
     expect(calls.toast[0]?.[1]).toBe('success');
+  });
+
+  describe('a cycle with nothing to work on', () => {
+    // A schedule that fires on an empty backlog is the normal case, not an
+    // error: the nightly run comes round whether or not anyone filed tickets
+    // that day. Starting anyway costs a run that immediately reports itself
+    // finished, and — worse for an unattended IDE — a scope holding only
+    // blocked or approval-gated tickets never reaches a finished state at all,
+    // so the run parks and every later schedule refuses behind it.
+    it('skips instead of starting a run that has nothing to spawn', async () => {
+      const { deps, calls } = buildDeps({ readyTicketCount: () => 0 });
+
+      const outcome = await launchScheduledConductor(
+        {
+          repoPath: REPO,
+          ticketBudget: 5,
+          maxConcurrent: 1,
+          requireReview: false,
+          mode: 'direct',
+          origin: 'Nightly A',
+        },
+        deps
+      );
+
+      expect(outcome).toBe('skipped');
+      expect(calls.startConductor).toEqual([]);
+      expect(calls.conductorTick).toEqual([]);
+      // Said out loud, not swallowed: a cycle that did nothing still has to be
+      // tellable apart from one that never fired.
+      expect(calls.toast).toHaveLength(1);
+      expect(String(calls.toast[0][0])).toContain('Nightly A');
+      expect(calls.toast[0][1]).toBe('info');
+    });
+
+    it('counts what is ready inside the run’s own scope', async () => {
+      const { deps, calls } = buildDeps();
+
+      await launchScheduledConductor(
+        {
+          repoPath: REPO,
+          ticketBudget: 5,
+          maxConcurrent: 1,
+          goalId: 'g1',
+          requireReview: false,
+          mode: 'direct',
+        },
+        deps
+      );
+
+      expect(calls.readyTicketCount).toEqual([['g1']]);
+    });
+
+    it('still pre-fills the panel — an empty scope is a human’s to look at', async () => {
+      const { deps, calls } = buildDeps({ readyTicketCount: () => 0 });
+
+      const outcome = await launchScheduledConductor(
+        { repoPath: REPO, ticketBudget: 5, maxConcurrent: 1, requireReview: false, mode: 'dialog' },
+        deps
+      );
+
+      expect(outcome).toBe('prepared');
+      expect(calls.prepareConductorPanel).toHaveLength(1);
+    });
+
+    it('counts only after the switched-to project has finished loading', async () => {
+      // Counting before the load lands reads an empty backlog for every
+      // project switch, which would skip every scheduled run that needed one.
+      const order: string[] = [];
+      const { deps } = buildDeps({
+        getState: () => ({
+          rootPath: '/tmp/project-b',
+          pmLoading: false,
+          goalsLoading: false,
+          conductorRunning: false,
+        }),
+        waitUntil: async () => {
+          order.push('loaded');
+          return true;
+        },
+        readyTicketCount: () => {
+          order.push('counted');
+          return 1;
+        },
+      });
+
+      await launchScheduledConductor(
+        { repoPath: REPO, ticketBudget: 5, maxConcurrent: 1, requireReview: false, mode: 'direct' },
+        deps
+      );
+
+      expect(order).toEqual(['loaded', 'counted']);
+    });
   });
 
   it('opens the target project and waits for it to load before starting', async () => {

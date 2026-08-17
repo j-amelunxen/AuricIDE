@@ -276,6 +276,17 @@ export interface ConductorSlice {
   conductorRequireReview: boolean;
   /** Which judge form review uses: an inline LLM call or a spawned reviewer. */
   conductorJudgeForm: 'llm' | 'agent';
+  /**
+   * Provider (agent CLI) for a spawned reviewer; null = the conductor's own.
+   *
+   * Its own setting because a judge sharing the implementer's harness and model
+   * is not the independent second opinion review is there to be. The fallback
+   * is the conductor's rather than something else, so a run nobody configured
+   * behaves as it always did instead of on a harness nobody picked.
+   */
+  conductorJudgeProviderId: string | null;
+  /** Model for a spawned reviewer; null = the conductor's own. */
+  conductorJudgeModel: string | null;
   /** ticketId -> reviewAgentId, or PENDING_REVIEW while an inline judge runs. */
   conductorReviewAssignments: Record<string, string>;
   /** ticketId -> epoch ms the review started, for the watchdog timeout. */
@@ -294,6 +305,12 @@ export interface ConductorSlice {
       maxConcurrent?: number;
       /** Overrides conductorRequireReview for this run; restored on end. */
       requireReview?: boolean;
+      /** Overrides conductorJudgeForm for this run; restored on end. */
+      judgeForm?: 'llm' | 'agent';
+      /** Overrides conductorJudgeProviderId for this run; restored on end. */
+      judgeProviderId?: string | null;
+      /** Overrides conductorJudgeModel for this run; restored on end. */
+      judgeModel?: string | null;
       /** Who started this run (e.g. a schedule name), for the decision log. */
       origin?: string;
     }
@@ -304,6 +321,8 @@ export interface ConductorSlice {
   setConductorModel: (model: string | null) => void;
   setConductorRequireReview: (v: boolean) => void;
   setConductorJudgeForm: (form: 'llm' | 'agent') => void;
+  setConductorJudgeProviderId: (id: string | null) => void;
+  setConductorJudgeModel: (model: string | null) => void;
   conductorTick: () => Promise<void>;
   approveConductorTicket: (ticketId: string) => Promise<void>;
   dismissConductorApproval: (ticketId: string) => void;
@@ -334,25 +353,47 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     }
   };
 
-  // A per-run maxConcurrent/requireReview override (e.g. from a schedule)
-  // belongs to that run, not to the panel — null means "nothing to restore".
-  // Captured by startConductor, consumed once by halt, the one choke point
-  // every run-ending path (goal_achieved, goal_blocked, finished,
-  // budget_reached, user_stopped) already passes through.
-  let restoreMaxConcurrentTo: number | null = null;
-  let restoreRequireReviewTo: boolean | null = null;
+  // A per-run override (e.g. from a schedule) belongs to that run, not to the
+  // panel. What the run found is captured by startConductor and handed back by
+  // halt, the one choke point every run-ending path (goal_achieved,
+  // goal_blocked, finished, budget_reached, user_stopped) already passes
+  // through. An absent key means the run never touched that setting.
+  type RunOverridable = Pick<
+    ConductorSlice,
+    | 'conductorMaxConcurrent'
+    | 'conductorRequireReview'
+    | 'conductorJudgeForm'
+    | 'conductorJudgeProviderId'
+    | 'conductorJudgeModel'
+  >;
+  let restoreAfterRun: Partial<RunOverridable> = {};
 
   const halt = (): void => {
     stopHeartbeat();
     set({ conductorRunning: false });
-    if (restoreMaxConcurrentTo !== null) {
-      set({ conductorMaxConcurrent: restoreMaxConcurrentTo });
-      restoreMaxConcurrentTo = null;
+    if (Object.keys(restoreAfterRun).length > 0) {
+      set(restoreAfterRun);
+      restoreAfterRun = {};
     }
-    if (restoreRequireReviewTo !== null) {
-      set({ conductorRequireReview: restoreRequireReviewTo });
-      restoreRequireReviewTo = null;
-    }
+  };
+
+  /**
+   * How the conductor's harness choices survive a restart: they are properties
+   * of the project's backlog, not of the session that happened to pick them.
+   * Silent on failure on purpose — browser mode and a project with no database
+   * still have to let the panel work.
+   */
+  const persistProjectValue = (
+    key:
+      | 'conductorProviderId'
+      | 'conductorJudgeForm'
+      | 'conductorJudgeProviderId'
+      | 'conductorJudgeModel',
+    value: string
+  ): void => {
+    const rootPath = (get() as { rootPath?: string | null }).rootPath;
+    if (!rootPath) return;
+    void setProjectConfigValue(rootPath, key, value).catch(() => {});
   };
 
   const addDecision = (decision: Omit<ConductorDecision, 'id' | 'timestamp'>): void => {
@@ -440,10 +481,13 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     const full = cross();
     return {
       spawnReviewAgent: async (input) => {
+        // Each half falls back on its own: a judge given a provider but no
+        // model must not silently lose the conductor's model as well.
+        const state = get();
         const agent = await full.spawnNewAgent?.({
           name: `review:${input.ticket.name.slice(0, 40)}`,
-          model: get().conductorModel || modelForPower(undefined),
-          provider: get().conductorProviderId ?? undefined,
+          model: state.conductorJudgeModel || state.conductorModel || modelForPower(undefined),
+          provider: state.conductorJudgeProviderId ?? state.conductorProviderId ?? undefined,
           task: buildReviewAgentPrompt(input),
           cwd: full.rootPath ?? undefined,
           // Same reason as the implementer: the verdict is collected when this
@@ -650,6 +694,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorRunCompleted: 0,
     conductorRequireReview: false,
     conductorJudgeForm: 'llm',
+    conductorJudgeProviderId: null,
+    conductorJudgeModel: null,
     conductorReviewAssignments: {},
     conductorReviewStartedAt: {},
     conductorTicketBudget: null,
@@ -662,12 +708,15 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       // start arrives, the value worth handing back is still the one from
       // before the first override, not the override itself — and a start
       // without options leaves an earlier promise to restore untouched.
-      if (options?.maxConcurrent !== undefined) {
-        restoreMaxConcurrentTo = restoreMaxConcurrentTo ?? get().conductorMaxConcurrent;
-      }
-      if (options?.requireReview !== undefined) {
-        restoreRequireReviewTo = restoreRequireReviewTo ?? get().conductorRequireReview;
-      }
+      const rememberToRestore = <K extends keyof RunOverridable>(key: K): void => {
+        if (key in restoreAfterRun) return;
+        restoreAfterRun[key] = get()[key];
+      };
+      if (options?.maxConcurrent !== undefined) rememberToRestore('conductorMaxConcurrent');
+      if (options?.requireReview !== undefined) rememberToRestore('conductorRequireReview');
+      if (options?.judgeForm !== undefined) rememberToRestore('conductorJudgeForm');
+      if (options?.judgeProviderId !== undefined) rememberToRestore('conductorJudgeProviderId');
+      if (options?.judgeModel !== undefined) rememberToRestore('conductorJudgeModel');
 
       set({
         conductorRunning: true,
@@ -686,6 +735,13 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         }),
         ...(options?.requireReview !== undefined && {
           conductorRequireReview: options.requireReview,
+        }),
+        ...(options?.judgeForm !== undefined && { conductorJudgeForm: options.judgeForm }),
+        ...(options?.judgeProviderId !== undefined && {
+          conductorJudgeProviderId: options.judgeProviderId || null,
+        }),
+        ...(options?.judgeModel !== undefined && {
+          conductorJudgeModel: options.judgeModel || null,
         }),
       });
       const startedBy = options?.origin
@@ -743,19 +799,27 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
 
     setConductorProviderId: (id) => {
       set({ conductorProviderId: id || null });
-      // Which provider runs a project's backlog is a property of the project,
-      // not of the session that happened to pick it.
-      const rootPath = (get() as { rootPath?: string | null }).rootPath;
-      if (rootPath) {
-        void setProjectConfigValue(rootPath, 'conductorProviderId', id || '').catch(() => {});
-      }
+      persistProjectValue('conductorProviderId', id || '');
     },
 
     setConductorModel: (model) => set({ conductorModel: model || null }),
 
     setConductorRequireReview: (v) => set({ conductorRequireReview: v }),
 
-    setConductorJudgeForm: (form) => set({ conductorJudgeForm: form }),
+    setConductorJudgeForm: (form) => {
+      set({ conductorJudgeForm: form });
+      persistProjectValue('conductorJudgeForm', form);
+    },
+
+    setConductorJudgeProviderId: (id) => {
+      set({ conductorJudgeProviderId: id || null });
+      persistProjectValue('conductorJudgeProviderId', id || '');
+    },
+
+    setConductorJudgeModel: (model) => {
+      set({ conductorJudgeModel: model || null });
+      persistProjectValue('conductorJudgeModel', model || '');
+    },
 
     conductorTick: async () => {
       if (!get().conductorRunning) return;
