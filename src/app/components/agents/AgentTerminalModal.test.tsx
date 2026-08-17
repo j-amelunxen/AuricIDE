@@ -658,6 +658,31 @@ describe('AgentTerminalModal', () => {
       expect(onSwitchAgent).not.toHaveBeenCalled();
     });
 
+    it('keeps the terminal open whichever way the question is answered', async () => {
+      // The question is asked from inside the backdrop that closes the terminal
+      // on click. Answering it must settle the tab and nothing else — a Cancel
+      // that also tears down the terminal cancels far more than it was asked to.
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      render(
+        <AgentTerminalModal
+          agent={working}
+          agents={all}
+          onKill={vi.fn()}
+          onDismiss={vi.fn()}
+          onClose={onClose}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Stop Reviewer' }));
+      await answerStop(user, 'Cancel');
+      expect(onClose).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole('button', { name: 'Stop Reviewer' }));
+      await answerStop(user, 'Stop');
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
     it('dismisses a finished agent without asking', async () => {
       const user = userEvent.setup();
       const onDismiss = vi.fn();

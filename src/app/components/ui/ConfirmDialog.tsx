@@ -38,7 +38,14 @@ export function ConfirmDialog({
   // own stacking contexts; rendered in place, the question could end up behind
   // the very thing it interrupts.
   return createPortal(
-    <div className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      // The portal moves the DOM node but not the React tree, so clicks in here
+      // still bubble to whoever rendered the caller — and callers ask from
+      // inside backdrops that close on a click. Answering the question would
+      // dismiss the thing that asked it.
+      onClick={(e) => e.stopPropagation()}
+    >
       <div
         ref={dialogRef}
         role="dialog"
