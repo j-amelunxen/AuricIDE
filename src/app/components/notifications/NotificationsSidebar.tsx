@@ -6,6 +6,7 @@ import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { defaultCommands } from '@/lib/commands/registry';
 import { executeNotificationAction, NotificationActionError } from '@/lib/notifications/execute';
+import { notificationTrust } from '@/lib/notifications/trust';
 import {
   presentNotificationActions,
   type PresentedAction,
@@ -98,6 +99,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
   const setNotificationsProjectFilter = useStore((s) => s.setNotificationsProjectFilter);
   const starredProjects = useStore((s) => s.starredProjects);
   const recentProjects = useStore((s) => s.recentProjects);
+  const providers = useStore((s) => s.providers);
 
   const [repoDirStatus, setRepoDirStatus] = useState<Map<string, RepoDirStatus>>(new Map());
   const probedPaths = useRef(new Set<string>());
@@ -167,7 +169,15 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
         await executeNotificationAction(
           action,
           {
-            spawnAgent: (config) => store.spawnNewAgent(config),
+            // Selected on the way out, so the agent this click started is the
+            // one the terminal is showing. A launch you cannot see is the same
+            // problem as a launch that never happened.
+            spawnAgent: async (config) => {
+              const agent = await store.spawnNewAgent(config);
+              store.selectAgent(agent.id);
+              store.showToast(`${agent.name} started`, 'success');
+              return agent;
+            },
             openSpawnDialog: ({ task, repoPath, preset }) =>
               openSkillSpawnDialog(store, repoPath, {
                 prompt: task,
@@ -195,7 +205,13 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
             openAgent: (agentId) => store.selectAgent(agentId),
             runCommand: onRunCommand,
           },
-          useStore.getState().rootPath ?? undefined
+          {
+            fallbackCwd: useStore.getState().rootPath ?? undefined,
+            // What the payload may decide about the launch depends on who
+            // wrote it, never on what it says about itself.
+            trust: notificationTrust(notification.source),
+            providers: useStore.getState().providers,
+          }
         );
       } catch (error) {
         // The decision stands; only the effect failed. Say so rather than
@@ -341,6 +357,7 @@ export function NotificationsSidebar({ onRunCommand }: NotificationsSidebarProps
           starredProjects={starredProjects}
           projectOptions={projectOptions}
           discoveredSkills={skillsForEditor}
+          providers={providers}
           onDraftChange={setDraft}
           onSave={(next) => {
             void saveSchedule(next);

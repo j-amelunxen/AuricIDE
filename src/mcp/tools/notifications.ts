@@ -21,6 +21,13 @@ import {
  * The action vocabulary is closed and re-validated in the UI before anything is
  * rendered as a button. Nothing an agent writes here becomes possible that the
  * IDE could not already do.
+ *
+ * It is deliberately narrower than the UI's own vocabulary: the fields that
+ * decide how much authority a started agent gets — a permission mode, a launch
+ * that skips the spawn dialog — are not offered here at all. An agent that
+ * writes one anyway is rejected by this schema, and would be ignored a second
+ * time at click, because `notificationTrust` reads the dispatcher rather than
+ * the payload (`src/lib/notifications/trust.ts`).
  */
 
 export const notifyActionSchema = z.discriminatedUnion('kind', [

@@ -72,6 +72,8 @@ export type NotificationAction =
       goalId?: string;
       provider?: string;
       model?: string;
+      /** Honoured only for a user-authored payload — see `trust.ts`. */
+      permissionMode?: PermissionMode;
     }
   | {
       id: string;
@@ -85,6 +87,12 @@ export type NotificationAction =
       model?: string;
       permissionMode?: PermissionMode;
       invocation?: string;
+      /**
+       * `direct` spawns the agent on the click; `dialog` (and absent, which is
+       * every payload written before this existed) opens the spawn dialog
+       * first. Honoured only for a user-authored payload — see `trust.ts`.
+       */
+      launch?: NotificationLaunch;
     }
   | {
       id: string;
@@ -97,6 +105,9 @@ export type NotificationAction =
     }
   | { id: string; label: string; kind: 'open'; target: NotificationOpenTarget }
   | { id: string; label: string; kind: 'command'; commandId: string };
+
+/** Whether a configured launch still stops at the spawn dialog. */
+export type NotificationLaunch = 'direct' | 'dialog';
 
 export type NotificationOpenTarget =
   | { type: 'file'; path: string; line?: number }
@@ -153,6 +164,7 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     goalId: z.string().optional(),
     provider: z.string().optional(),
     model: z.string().optional(),
+    permissionMode: permissionModeSchema.optional(),
   }),
   z.object({
     ...identity,
@@ -165,6 +177,7 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     model: z.string().optional(),
     permissionMode: permissionModeSchema.optional(),
     invocation: z.string().optional(),
+    launch: z.enum(['direct', 'dialog']).optional(),
   }),
   z.object({
     ...identity,

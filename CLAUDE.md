@@ -291,6 +291,43 @@ Supporting modules in `src/lib/agents/`:
 - `colors.ts` — the marker palette. Explicit hex, not theme tokens: "the red
   one" must stay red whatever accent the user picked.
 
+## From a notification to a running agent
+
+A scheduled reminder is meant to cost one click: it arrives, you press Start,
+the agent is already configured and works. Everything below exists to keep that
+one click honest.
+
+- **A banner is raised where the notification actually arrives.** A schedule
+  fires in Rust, so `dispatchNotification` never sees it — only
+  `drainNotifications` does, and that is where `osBannerForBatch` speaks. A
+  reminder earns a banner despite being `info`: a reminder that only reaches
+  someone already looking at the inbox has reminded nobody. `reloadNotifications`
+  stays silent (it re-reads the whole table), and a batch becomes **one** counted
+  banner, because a stack of them is a stack you dismiss unread.
+- **Who wrote the payload decides what the payload may decide.**
+  `notificationTrust` (`notifications/trust.ts`) reads the _dispatcher_, never
+  the content: `system` (schedules) and `ui` are the user's own words, `agent`
+  and `mcp` are a running model's. Only a user-authored payload may name a
+  permission mode or ask to skip the spawn dialog; from an agent both fall back
+  to the last launch and the dialog. An agent can still offer a Start button —
+  it just cannot decide how much authority the button hands out. The MCP
+  vocabulary is narrower again and rejects those fields outright, so the rule
+  holds at two layers.
+- **`launch: 'direct'` is the difference between Start and "open a form".**
+  Absent means dialog, which is what every schedule saved before this existed
+  says — the app learning a new trick must never re-arm an old reminder.
+- **One definition of how a pinned skill becomes an agent.**
+  `agents/skillLaunch.ts` resolves provider, model and permission mode for every
+  direct launch — a combo step and a notification's Start button both. Two
+  copies would let one skill run under different permissions depending on which
+  button was pressed, and nothing at the button would show it.
+- **The launch defaults are read for the project the agent will run in.** They
+  are stored per working directory; reading them without the path yields
+  whatever was last launched outside any project, which is usually nothing.
+- **Started means visible.** The spawn selects the agent, so the terminal is
+  showing the run the click began. A launch you cannot watch is the same problem
+  as a launch that never happened.
+
 ## Requirements vs. Tickets
 
 Requirements and Tickets serve fundamentally different purposes:

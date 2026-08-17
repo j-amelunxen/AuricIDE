@@ -14,7 +14,9 @@ import {
   WEEKDAY_OPTIONS,
 } from '@/lib/notifications/scheduleFormat';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
-import type { NotificationAction } from '@/lib/notifications/types';
+import type { NotificationAction, NotificationLaunch } from '@/lib/notifications/types';
+import type { PermissionMode } from '@/lib/tauri/agents';
+import type { ProviderInfo } from '@/lib/tauri/providers';
 import { comboPreview } from '@/lib/quickAccess/combo';
 import {
   quickAccessCombos,
@@ -41,6 +43,8 @@ export interface ScheduleEditorProps {
   /** Every project the reminder can be aimed at, in the order they are offered. */
   projectOptions: ProjectPickerOption[];
   discoveredSkills: ProjectSkill[];
+  /** The agent harnesses this machine offers, for the custom-agent launch. */
+  providers: ProviderInfo[];
   onDraftChange: (draft: Schedule) => void;
   onSave: (draft: Schedule) => void;
   onCancel: () => void;
@@ -49,9 +53,22 @@ export interface ScheduleEditorProps {
 type RunSkillAction = Extract<NotificationAction, { kind: 'run-skill' }>;
 type RunComboAction = Extract<NotificationAction, { kind: 'run-combo' }>;
 
+/**
+ * The custom-agent launch, as far as this form owns it. Everything is optional
+ * and an empty provider means "whatever I launched last" — the remembered
+ * defaults stay reachable, so configuring nothing keeps working exactly as it
+ * did. A model or a permission mode without a provider is not offered: both
+ * only mean something relative to one harness.
+ */
+interface TaskLaunchDraft {
+  providerId?: string;
+  model?: string;
+  permissionMode?: PermissionMode;
+}
+
 type ActionDraft =
   | { choice: 'none' }
-  | { choice: 'task'; task: string }
+  | ({ choice: 'task'; task: string } & TaskLaunchDraft)
   | { choice: 'skill'; snapshot?: RunSkillAction }
   | { choice: 'combo'; snapshot?: RunComboAction };
 
@@ -109,11 +126,23 @@ function actionDraftOf(schedule: Schedule | null): ActionDraft {
   const action = parsePayload(schedule?.payload ?? '{}').actions?.[0];
   if (action?.kind === 'run-skill') return { choice: 'skill', snapshot: action };
   if (action?.kind === 'run-combo') return { choice: 'combo', snapshot: action };
-  if (action?.kind === 'spawn-agent') return { choice: 'task', task: action.task };
+  if (action?.kind === 'spawn-agent') {
+    return {
+      choice: 'task',
+      task: action.task,
+      providerId: action.provider,
+      model: action.model,
+      permissionMode: action.permissionMode,
+    };
+  }
   return { choice: 'none' };
 }
 
-function snapshotFromPin(pin: QuickAccessSkill, projectPath: string): RunSkillAction {
+function snapshotFromPin(
+  pin: QuickAccessSkill,
+  projectPath: string,
+  launch: NotificationLaunch
+): RunSkillAction {
   const snapshot: RunSkillAction = {
     id: 'run',
     label: `Start ${pin.label}`,
@@ -122,6 +151,7 @@ function snapshotFromPin(pin: QuickAccessSkill, projectPath: string): RunSkillAc
     skillLabel: pin.label,
     prompt: pin.prompt,
     repoPath: projectPath,
+    launch,
   };
   if (pin.providerId !== undefined) snapshot.providerId = pin.providerId;
   if (pin.model !== undefined) snapshot.model = pin.model;
@@ -130,7 +160,11 @@ function snapshotFromPin(pin: QuickAccessSkill, projectPath: string): RunSkillAc
   return snapshot;
 }
 
-function snapshotFromDiscovered(found: ProjectSkill, projectPath: string): RunSkillAction {
+function snapshotFromDiscovered(
+  found: ProjectSkill,
+  projectPath: string,
+  launch: NotificationLaunch
+): RunSkillAction {
   return {
     id: 'run',
     label: `Start ${found.name}`,
@@ -140,6 +174,7 @@ function snapshotFromDiscovered(found: ProjectSkill, projectPath: string): RunSk
     prompt: found.invocation,
     repoPath: projectPath,
     invocation: found.invocation,
+    launch,
   };
 }
 
@@ -205,6 +240,14 @@ function actionsFromDraft(draft: ActionDraft, projectPath: string | null): Notif
         kind: 'spawn-agent',
         task,
         ...(projectPath !== null ? { repoPath: projectPath } : {}),
+        // Written only where a choice was made. An absent field means "same as
+        // my last launch", which is what the button did before it could be
+        // configured at all.
+        ...(draft.providerId ? { provider: draft.providerId } : {}),
+        ...(draft.providerId && draft.model ? { model: draft.model } : {}),
+        ...(draft.providerId && draft.permissionMode
+          ? { permissionMode: draft.permissionMode }
+          : {}),
       },
     ];
   }
@@ -256,6 +299,7 @@ export function ScheduleEditor({
   starredProjects,
   projectOptions,
   discoveredSkills,
+  providers,
   onDraftChange,
   onSave,
   onCancel,
@@ -301,6 +345,21 @@ export function ScheduleEditor({
   );
   const noQuickAccess =
     projectPath !== null && starred === undefined && discoveredSkills.length === 0;
+
+  /**
+   * Anything picked from now on starts on the click; a schedule saved before
+   * that was possible says nothing, and keeps stopping at the dialog until it
+   * is told otherwise here.
+   */
+  const skillLaunch: NotificationLaunch =
+    actionDraft.choice === 'skill' && actionDraft.snapshot !== undefined
+      ? (actionDraft.snapshot.launch ?? 'dialog')
+      : 'direct';
+
+  const taskProvider =
+    actionDraft.choice === 'task' && actionDraft.providerId
+      ? providers.find((provider) => provider.id === actionDraft.providerId)
+      : undefined;
 
   const liveSkill =
     actionDraft.choice === 'skill' && actionDraft.snapshot
@@ -443,15 +502,22 @@ export function ScheduleEditor({
     });
   };
 
+  /**
+   * A skill picked here starts on the click. That is the whole point of
+   * configuring the launch in advance — and it is still one click by a human,
+   * on a button they wrote themselves. `setSkillLaunch` puts the dialog back
+   * for anyone who wants to look before it runs.
+   */
   const selectSkill = (value: string) => {
     if (projectPath === null) return;
     if (value === '') {
       setActionDraft({ choice: 'skill' });
       return;
     }
+    const launch = actionDraft.choice === 'skill' ? skillLaunch : 'direct';
     const pin = pins.find((item) => item.id === value);
     if (pin) {
-      setActionDraft({ choice: 'skill', snapshot: snapshotFromPin(pin, projectPath) });
+      setActionDraft({ choice: 'skill', snapshot: snapshotFromPin(pin, projectPath, launch) });
       return;
     }
     if (value.startsWith(DISCOVERED_PREFIX)) {
@@ -460,11 +526,38 @@ export function ScheduleEditor({
       if (found) {
         setActionDraft({
           choice: 'skill',
-          snapshot: snapshotFromDiscovered(found, projectPath),
+          snapshot: snapshotFromDiscovered(found, projectPath, launch),
         });
       }
     }
   };
+
+  const setSkillLaunch = (direct: boolean) => {
+    setActionDraft((current) =>
+      current.choice === 'skill' && current.snapshot !== undefined
+        ? {
+            choice: 'skill',
+            snapshot: { ...current.snapshot, launch: direct ? 'direct' : 'dialog' },
+          }
+        : current
+    );
+  };
+
+  const setTaskLaunch = (patch: TaskLaunchDraft) => {
+    setActionDraft((current) => (current.choice === 'task' ? { ...current, ...patch } : current));
+  };
+
+  /**
+   * Changing the harness drops the model and the permission mode with it —
+   * both name something inside the provider they were picked for, and left
+   * standing they would be silently replaced at launch anyway.
+   */
+  const chooseTaskProvider = (providerId: string) =>
+    setTaskLaunch(
+      providerId === ''
+        ? { providerId: undefined, model: undefined, permissionMode: undefined }
+        : { providerId, model: undefined, permissionMode: undefined }
+    );
 
   const selectCombo = (value: string) => {
     if (projectPath === null) return;
@@ -480,7 +573,10 @@ export function ScheduleEditor({
 
   const refreshSkillSnapshot = () => {
     if (projectPath === null || liveSkill === undefined) return;
-    setActionDraft({ choice: 'skill', snapshot: snapshotFromPin(liveSkill, projectPath) });
+    setActionDraft({
+      choice: 'skill',
+      snapshot: snapshotFromPin(liveSkill, projectPath, skillLaunch),
+    });
   };
 
   const refreshComboSnapshot = () => {
@@ -687,13 +783,81 @@ export function ScheduleEditor({
           </p>
 
           {actionDraft.choice === 'task' && (
-            <input
-              data-testid="schedule-task"
-              value={actionDraft.task}
-              onChange={(event) => setActionDraft({ choice: 'task', task: event.target.value })}
-              placeholder="Run a server scan"
-              className={`${INPUT} mt-2`}
-            />
+            <div className="mt-2">
+              <input
+                data-testid="schedule-task"
+                value={actionDraft.task}
+                onChange={(event) =>
+                  setActionDraft((current) =>
+                    current.choice === 'task' ? { ...current, task: event.target.value } : current
+                  )
+                }
+                placeholder="Run a server scan"
+                className={INPUT}
+              />
+
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className={SUBLABEL}>Agent</span>
+                  <select
+                    data-testid="schedule-task-provider"
+                    value={actionDraft.providerId ?? ''}
+                    onChange={(event) => chooseTaskProvider(event.target.value)}
+                    className={INPUT}
+                  >
+                    <option value="">Same as last launch</option>
+                    {providers.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className={SUBLABEL}>Model</span>
+                  <select
+                    data-testid="schedule-task-model"
+                    disabled={taskProvider === undefined}
+                    value={actionDraft.model ?? ''}
+                    onChange={(event) => setTaskLaunch({ model: event.target.value || undefined })}
+                    className={`${INPUT} disabled:opacity-40`}
+                  >
+                    <option value="">{taskProvider?.defaultModel ?? 'Pick an agent first'}</option>
+                    {(taskProvider?.models ?? []).map((model) => (
+                      <option key={model.value} value={model.value}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="mt-2 block">
+                <span className={SUBLABEL}>Permission</span>
+                <select
+                  data-testid="schedule-task-permission"
+                  disabled={taskProvider === undefined}
+                  value={actionDraft.permissionMode ?? ''}
+                  onChange={(event) =>
+                    setTaskLaunch({
+                      permissionMode: (event.target.value || undefined) as PermissionMode,
+                    })
+                  }
+                  className={`${INPUT} disabled:opacity-40`}
+                >
+                  <option value="">Same as last launch</option>
+                  {(taskProvider?.permissionModes ?? []).map((mode) => (
+                    <option key={mode.value} value={mode.value}>
+                      {mode.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[9px] text-foreground-muted/60">
+                  How far the agent gets on its own before it stops to ask you.
+                </p>
+              </label>
+            </div>
           )}
 
           {actionDraft.choice === 'skill' && projectPath !== null && (
@@ -735,6 +899,25 @@ export function ScheduleEditor({
                   );
                 })}
               </select>
+              {actionDraft.snapshot && (
+                <label className="mt-2 flex items-start gap-2 text-[11px] text-foreground">
+                  <input
+                    type="checkbox"
+                    data-testid="schedule-skill-direct"
+                    checked={skillLaunch === 'direct'}
+                    onChange={(event) => setSkillLaunch(event.target.checked)}
+                    className="mt-[2px]"
+                  />
+                  <span>
+                    Start on the click
+                    <span className="mt-0.5 block text-[9px] text-foreground-muted/60">
+                      {skillLaunch === 'direct'
+                        ? 'Runs with the provider, model and permission this skill is pinned to.'
+                        : 'Opens the spawn dialog first, pre-filled — one more click.'}
+                    </span>
+                  </span>
+                </label>
+              )}
               {skillStale && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   <p data-testid="schedule-snapshot-stale" className="text-[9px] text-[#ffce2e]">
@@ -786,6 +969,12 @@ export function ScheduleEditor({
                     label: actionDraft.snapshot.comboLabel,
                     steps: actionDraft.snapshot.steps,
                   })}
+                </p>
+              )}
+              {actionDraft.snapshot && (
+                <p className="mt-1 text-[9px] text-foreground-muted/60">
+                  Starts on the click and runs the steps in order, each with the provider and
+                  permission it is pinned to.
                 </p>
               )}
               {comboStale && (
@@ -881,6 +1070,9 @@ export function ScheduleEditor({
 
 const INPUT =
   'w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-foreground outline-none focus:border-primary/40';
+
+const SUBLABEL =
+  'mb-1 block font-mono text-[9px] uppercase tracking-wider text-foreground-muted/70';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
