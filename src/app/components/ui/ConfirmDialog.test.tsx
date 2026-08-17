@@ -64,6 +64,23 @@ describe('ConfirmDialog', () => {
     expect(screen.getByRole('button', { name: 'Elevate' }).className).toMatch(/amber/);
   });
 
+  it('keeps an answer from reaching a click handler around the caller', () => {
+    // React events travel the component tree, not the DOM tree, so the portal
+    // does not stop them: a caller inside a click-to-close backdrop would see
+    // the Cancel click as a click on itself and close — the question would
+    // take the thing that asked it down with it.
+    const onBackdropClick = vi.fn();
+    render(
+      <div onClick={onBackdropClick}>
+        <ConfirmDialog {...baseProps} />
+      </div>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onBackdropClick).not.toHaveBeenCalled();
+  });
+
   it('keeps Escape from reaching window listeners behind it', () => {
     // Callers such as the agent terminal listen for Escape on window to close
     // themselves. If that listener also sees this key, the thing that asked
