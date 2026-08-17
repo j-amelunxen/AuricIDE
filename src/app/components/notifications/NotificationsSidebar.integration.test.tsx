@@ -157,6 +157,23 @@ function makeNotification(overrides: Partial<Notification>): Notification {
   };
 }
 
+/** One open, unblocked ticket: without work in the backlog a direct launch
+ *  skips the cycle rather than starting a run (see scheduledRun.ts). */
+function readyTicket() {
+  return {
+    id: 't1',
+    epicId: 'e1',
+    name: 'Ready ticket',
+    description: '',
+    status: 'open',
+    statusUpdatedAt: '',
+    sortOrder: 0,
+    priority: 'normal',
+    createdAt: '',
+    updatedAt: '',
+  };
+}
+
 function resetStore() {
   useStore.setState({
     notifications: [],
@@ -480,7 +497,7 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
 describe('NotificationsSidebar — run-conductor click, end to end', () => {
   it('direct, already-open project: starts the run for real, no switch prompt', async () => {
     const user = userEvent.setup();
-    useStore.setState({ rootPath: REPO_PATH } as never);
+    useStore.setState({ rootPath: REPO_PATH, pmDraftTickets: [readyTicket()] } as never);
     const notification = makeNotification({
       origin: 'Nightly A',
       actions: [
@@ -511,8 +528,8 @@ describe('NotificationsSidebar — run-conductor click, end to end', () => {
     expect(onOpenProject).not.toHaveBeenCalled();
     expect(useStore.getState().rootPath).toBe(REPO_PATH);
     // Clicking settled the notification, same as every other action kind.
-    // (The conductor's own "run finished" notification lands at index 0 by
-    // now, since this run has no tickets to work — find ours by uid.)
+    // (The conductor's own run notifications may land at index 0 by now, so
+    // find ours by uid rather than by position.)
     const settled = useStore.getState().notifications.find((n) => n.uid === notification.uid);
     expect(settled?.readAt).not.toBeNull();
   });
@@ -588,7 +605,7 @@ describe('NotificationsSidebar — run-conductor click, end to end', () => {
 
   it('targeting a different project: confirming opens it, then starts', async () => {
     const user = userEvent.setup();
-    useStore.setState({ rootPath: '/repo/other' } as never);
+    useStore.setState({ rootPath: '/repo/other', pmDraftTickets: [readyTicket()] } as never);
     const notification = makeNotification({
       actions: [
         {

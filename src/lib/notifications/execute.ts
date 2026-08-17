@@ -40,6 +40,9 @@ export interface NotificationActionDeps {
     maxConcurrent: number;
     goalId?: string;
     requireReview: boolean;
+    judgeForm?: 'llm' | 'agent';
+    judgeProviderId?: string;
+    judgeModel?: string;
     mode: 'direct' | 'dialog';
     origin?: string;
   }) => Promise<void>;
@@ -245,6 +248,11 @@ export async function executeNotificationAction(
         maxConcurrent: action.maxConcurrent ?? 1,
         goalId: action.goalId,
         requireReview: action.requireReview ?? false,
+        // Passed through as-is, absences included: a schedule that names no
+        // judge leaves the project's own choice standing.
+        judgeForm: action.judgeForm,
+        judgeProviderId: action.judgeProviderId,
+        judgeModel: action.judgeModel,
         mode: conductorLaunchMode(action, context),
         origin: context.origin,
       });

@@ -53,6 +53,9 @@ export interface UISlice {
   /** True when a SEPARATE judge model is configured (judge_llm_settings has an
    * api_key). Gates the LLM-judge review — without it a claim stays blocking. */
   judgeLlmConfigured: boolean;
+  /** The model that judge would call, so the panel can name it where the
+   *  choice is made rather than only in the settings screen that holds it. */
+  judgeLlmModel: string | null;
   agentSettings: AgentSettings;
   enableDeepNlp: boolean;
   importSpecDialogOpen: boolean;
@@ -96,6 +99,7 @@ export interface UISlice {
   setCliConnected: (connected: boolean) => void;
   setLlmConfigured: (configured: boolean) => void;
   setJudgeLlmConfigured: (configured: boolean) => void;
+  setJudgeLlmModel: (model: string | null) => void;
   setEnableDeepNlp: (enabled: boolean) => void;
   updateAgentSettings: (settings: Partial<AgentSettings>) => void;
   /** Replaces the project-scoped agent settings with the ones this project stores. */
@@ -130,6 +134,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   cliConnected: false,
   llmConfigured: false,
   judgeLlmConfigured: false,
+  judgeLlmModel: null,
   enableDeepNlp: false,
   importSpecDialogOpen: false,
   videoImportDialogOpen: false,
@@ -193,6 +198,8 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   setLlmConfigured: (configured) => set({ llmConfigured: configured }),
   setJudgeLlmConfigured: (configured) => set({ judgeLlmConfigured: configured }),
 
+  setJudgeLlmModel: (model) => set({ judgeLlmModel: model || null }),
+
   setEnableDeepNlp: (enabled) => set({ enableDeepNlp: enabled }),
 
   setImportSpecDialogOpen: (open) => set({ importSpecDialogOpen: open }),
@@ -232,9 +239,12 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
         dangerouslyIgnorePermissions: false,
         autoAcceptEdits: false,
       },
-      // Lives in another slice but is loaded here, so one read of the project
+      // Live in another slice but are loaded here, so one read of the project
       // config restores everything it holds.
       conductorProviderId: stored.conductorProviderId || null,
+      conductorJudgeForm: stored.conductorJudgeForm === 'agent' ? 'agent' : 'llm',
+      conductorJudgeProviderId: stored.conductorJudgeProviderId || null,
+      conductorJudgeModel: stored.conductorJudgeModel || null,
     }));
   },
 

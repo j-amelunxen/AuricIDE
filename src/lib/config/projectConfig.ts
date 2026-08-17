@@ -29,6 +29,12 @@ export interface ProjectConfig {
   commitProviderId: string;
   /** Which provider the conductor spawns; empty means the launch default. */
   conductorProviderId: string;
+  /** How a finished ticket is judged: an inline LLM call or a spawned reviewer. */
+  conductorJudgeForm: string;
+  /** Which provider reviews the work; empty means the conductor's own. */
+  conductorJudgeProviderId: string;
+  /** Which model reviews the work; empty means the conductor's own. */
+  conductorJudgeModel: string;
 }
 
 export const PROJECT_CONFIG_DEFAULTS: ProjectConfig = {
@@ -38,6 +44,9 @@ export const PROJECT_CONFIG_DEFAULTS: ProjectConfig = {
   branchTicketPattern: '([A-Z]+-\\d+)',
   commitProviderId: '',
   conductorProviderId: '',
+  conductorJudgeForm: 'llm',
+  conductorJudgeProviderId: '',
+  conductorJudgeModel: '',
 };
 
 /** kv_store holds strings; booleans go in and come back out through here. */

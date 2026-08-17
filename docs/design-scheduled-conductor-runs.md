@@ -89,23 +89,52 @@ requireReview?, launch? }`. Same closed vocabulary, same parser, same trust
   the same inbox row and OS banner a manual finish would, and the run summary
   carries the budget ("5 of 5 tickets started"). The window title's agent
   count covers the rest.
+- **A cycle with nothing ready is skipped, not started.** The nightly run comes
+  round whether or not anyone filed work, so an empty backlog is the ordinary
+  case rather than an error. `launchScheduledConductor` counts the scope's
+  `ready` tickets — the panel's own preflight, so a schedule and the Start
+  button agree on what "there is work" means — and with none it toasts and
+  answers `skipped`. Two reasons it is not left to the tick: a run that
+  immediately reports itself finished raises a notification nobody needs, and a
+  scope holding only blocked or approval-gated tickets never reaches a finished
+  state at all — `workLeft` stays true, the run parks, and every later schedule
+  refuses behind `conductor-running`. The count happens **after** the load wait;
+  before it, a project switch would read an empty backlog and skip every run
+  that needed one. `dialog` mode still pre-fills the panel: an empty scope is a
+  human's to look at.
 
 ## Which settings a run takes from where
 
-| Setting                             | Comes from                                                                                             |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Project                             | the schedule (`repoPath`)                                                                              |
-| Ticket budget, concurrency, review  | the schedule — they belong to _this_ run, not to the project                                           |
-| Scope (goal or all tickets)         | the schedule (`goalId`, optional); the goal is read from that project's DB when the schedule is edited |
-| Provider                            | the project's conductor provider (`conductorProviderId` in project config), as the panel would use     |
-| Model                               | per ticket from `modelPower`, unless the panel has a session override — same as a manual start         |
-| Permission mode of the implementers | whatever the conductor already uses; the schedule does not widen it                                    |
-| Judge form                          | the project's/session's current setting                                                                |
+| Setting                                 | Comes from                                                                                             |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Project                                 | the schedule (`repoPath`)                                                                              |
+| Ticket budget, concurrency, review      | the schedule — they belong to _this_ run, not to the project                                           |
+| Scope (goal or all tickets)             | the schedule (`goalId`, optional); the goal is read from that project's DB when the schedule is edited |
+| Provider                                | the project's conductor provider (`conductorProviderId` in project config), as the panel would use     |
+| Model                                   | per ticket from `modelPower`, unless the panel has a session override — same as a manual start         |
+| Permission mode of the implementers     | whatever the conductor already uses; the schedule does not widen it                                    |
+| Judge form, judge provider, judge model | the schedule when it names them, the project's setting otherwise                                       |
 
-The reason the schedule does not carry provider or model: the conductor's
-provider is a property of the backlog (`setConductorProviderId` persists it per
-project), and a schedule that overrode it would make Tuesday's run differ from
-a Thursday click on the same panel with nothing on either surface showing why.
+The reason the schedule does not carry the _implementer's_ provider or model:
+the conductor's provider is a property of the backlog
+(`setConductorProviderId` persists it per project), and a schedule that
+overrode it would make Tuesday's run differ from a Thursday click on the same
+panel with nothing on either surface showing why.
+
+The **judge** is the exception, and for the reason the judge exists at all: a
+reviewer on the implementer's own harness is not an independent second opinion.
+So `judgeForm`, `judgeProviderId` and `judgeModel` are selectable in the
+Conductor panel (persisted per project, `conductorJudge*` in the project
+config) and overridable per schedule. Absent on the action means "the project's
+setting" — which is what every schedule saved before these fields existed says,
+and what keeps a reminder that is silent about the judge from overwriting a
+choice made in the panel. Like `maxConcurrent` and `requireReview`, a
+schedule's values are restored in `halt()` when the run ends.
+
+Only the LLM judge form needs the judge API key; a review agent is an agent CLI
+like any other. The panel therefore gates the _form_ on the key rather than the
+whole switch — gating the switch locked out the one form that would have worked
+without a key.
 
 ## Ticket budget semantics
 
@@ -136,6 +165,9 @@ a Thursday click on the same panel with nothing on either surface showing why.
     goalId?: string;
     goalName?: string;           // snapshot for the row; the id decides
     requireReview?: boolean;
+    judgeForm?: 'llm' | 'agent';  // absent = the project's setting
+    judgeProviderId?: string;     // absent = the project's setting
+    judgeModel?: string;          // absent = the project's setting
     launch?: 'auto' | 'direct' | 'dialog';   // absent = dialog
   }
 ```
@@ -150,6 +182,9 @@ startConductor(goalId: string | null, options?: {
   ticketBudget?: number;
   maxConcurrent?: number;
   requireReview?: boolean;
+  judgeForm?: 'llm' | 'agent';       // restored in halt(), like the two above
+  judgeProviderId?: string | null;
+  judgeModel?: string | null;
   origin?: string;             // e.g. the schedule name, for the decision log
 }): void;
 conductorTicketBudget: number | null;
@@ -169,8 +204,10 @@ flowchart TD
   Gate -- refused --> Button
   Gate -- open --> Switch{"repoPath = rootPath?"}
   Switch -- no --> Open["open project, wait for<br/>pm + goals loaded"]
-  Switch -- yes --> Start
-  Open --> Start["startConductor(goalId, {budget, concurrency, review})<br/>+ conductorTick()"]
+  Switch -- yes --> Ready
+  Open --> Ready{"any ready tickets<br/>in scope?"}
+  Ready -- no --> Skip["toast · cycle skipped<br/>nothing started"]
+  Ready -- yes --> Start["startConductor(goalId, {budget, concurrency, review, judge})<br/>+ conductorTick()"]
   Button -- click --> Manual["same launcher;<br/>confirm before a switch"]
   Manual --> Start
 ```
@@ -184,4 +221,5 @@ flowchart TD
   change).
 - Rust changes. The runner copies actions through unchanged, as it does for
   every other kind.
-- Provider/model per schedule (see above).
+- The implementer's provider/model per schedule (see above). The judge's is
+  deliberately not out of scope — see the same section for why.

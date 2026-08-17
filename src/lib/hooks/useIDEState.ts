@@ -112,6 +112,7 @@ export function useIDEState() {
   const setLlmConfigured = useStore((s) => s.setLlmConfigured);
   const judgeLlmConfigured = useStore((s) => s.judgeLlmConfigured);
   const setJudgeLlmConfigured = useStore((s) => s.setJudgeLlmConfigured);
+  const setJudgeLlmModel = useStore((s) => s.setJudgeLlmModel);
   const agentSettings = useStore((s) => s.agentSettings);
   const updateAgentSettings = useStore((s) => s.updateAgentSettings);
   const recentProjects = useStore((s) => s.recentProjects);
@@ -339,6 +340,7 @@ export function useIDEState() {
     setLlmConfigured,
     judgeLlmConfigured,
     setJudgeLlmConfigured,
+    setJudgeLlmModel,
     agentSettings,
     updateAgentSettings,
     recentProjects,

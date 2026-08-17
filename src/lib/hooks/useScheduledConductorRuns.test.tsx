@@ -4,6 +4,7 @@ import { UNATTENDED_AFTER_MS } from '@/lib/conductor/scheduledRun';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { Notification } from '@/lib/notifications/types';
 import type { Tab } from '@/lib/store/tabsSlice';
+import type { PmTicket } from '@/lib/tauri/pm';
 
 // idleForMs' own timing behaviour is covered by userActivity.test.ts; here the
 // hook only needs a controllable value to drive the gate.
@@ -63,6 +64,22 @@ function autoNotification(overrides: Partial<Notification> = {}): Notification {
   };
 }
 
+/** One open, unblocked ticket — otherwise every launch below skips the cycle. */
+function readyTicket(): PmTicket {
+  return {
+    id: 't1',
+    epicId: 'e1',
+    name: 'Ready ticket',
+    description: '',
+    status: 'open',
+    statusUpdatedAt: '',
+    sortOrder: 0,
+    priority: 'normal',
+    createdAt: '',
+    updatedAt: '',
+  };
+}
+
 function tab(isDirty: boolean): Tab {
   return { id: 't1', path: '/f.md', name: 'f.md', isDirty };
 }
@@ -94,6 +111,9 @@ describe('useScheduledConductorRuns', () => {
       pmLoading: false,
       goalsLoading: false,
       conductorRunning: false,
+      pmDraftTickets: [readyTicket()],
+      pmDraftDependencies: [],
+      goalsDraft: [],
       agents: [],
       openTabs: [],
       startConductor,
@@ -122,6 +142,22 @@ describe('useScheduledConductorRuns', () => {
     });
     expect(conductorTick).toHaveBeenCalled();
     expect(markNotificationRead).toHaveBeenCalledWith('n1');
+  });
+
+  it('skips the cycle when the backlog has nothing ready, and says so', async () => {
+    // The nightly run comes round whether or not anyone filed work. Starting
+    // anyway would either finish instantly or — with a backlog of nothing but
+    // blocked tickets — park a run that never ends and holds out every later
+    // schedule behind `conductor-running`.
+    useStore.setState({ pmDraftTickets: [], notifications: [autoNotification()] });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalled());
+
+    expect(startConductor).not.toHaveBeenCalled();
+    expect(conductorTick).not.toHaveBeenCalled();
+    // Read all the same: the occurrence was handled, it just had no work.
+    expect(markNotificationRead).toHaveBeenCalledWith('n1');
+    expect(String(showToast.mock.calls[0][0])).toContain('Nightly A');
   });
 
   it('does nothing for a stale occurrence', async () => {

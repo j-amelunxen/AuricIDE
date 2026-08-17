@@ -157,15 +157,27 @@ export interface ScheduledRunDeps {
       ticketBudget?: number;
       maxConcurrent?: number;
       requireReview?: boolean;
+      judgeForm?: 'llm' | 'agent';
+      judgeProviderId?: string | null;
+      judgeModel?: string | null;
       origin?: string;
     }
   ) => void;
   conductorTick: () => Promise<void>;
+  /**
+   * How many tickets in this scope the conductor could actually spawn for right
+   * now — the panel's own preflight `ready`, so the button and the schedule
+   * agree on what "there is work" means.
+   */
+  readyTicketCount: (goalId: string | null) => number;
   /** Pre-fills the Conductor panel for a human to press Start themselves. */
   prepareConductorPanel: (input: {
     goalId: string | null;
     maxConcurrent: number;
     requireReview: boolean;
+    judgeForm?: 'llm' | 'agent';
+    judgeProviderId?: string | null;
+    judgeModel?: string | null;
   }) => void;
   toast: (message: string, variant?: ToastVariant) => void;
 }
@@ -176,6 +188,12 @@ export interface LaunchScheduledConductorInput {
   maxConcurrent: number;
   goalId?: string;
   requireReview: boolean;
+  /** How the run judges finished work; absent leaves the project's setting. */
+  judgeForm?: 'llm' | 'agent';
+  /** Which provider reviews; absent leaves the project's setting. */
+  judgeProviderId?: string | null;
+  /** Which model reviews; absent leaves the project's setting. */
+  judgeModel?: string | null;
   mode: 'direct' | 'dialog';
   origin?: string;
 }
@@ -184,6 +202,11 @@ export interface LaunchScheduledConductorInput {
  * Opens `repoPath` if it is not already the open project, waits for it to
  * finish loading, then either starts the run (`mode: 'direct'`) or pre-fills
  * the Conductor panel for a human to press Start (`mode: 'dialog'`).
+ *
+ * A direct launch also checks there is anything to spawn for, and skips the
+ * cycle when there is not — see the comment at that check. The count happens
+ * after the load wait: before it, a project switch would always read an empty
+ * backlog and skip every run that needed one.
  *
  * A conductor that is already running is never restarted or pulled out from
  * under: `startConductor` resets the run's bookkeeping, which would orphan the
@@ -201,7 +224,7 @@ export interface LaunchScheduledConductorInput {
 export async function launchScheduledConductor(
   input: LaunchScheduledConductorInput,
   deps: ScheduledRunDeps
-): Promise<'started' | 'prepared' | 'timeout' | 'busy'> {
+): Promise<'started' | 'prepared' | 'timeout' | 'busy' | 'skipped'> {
   const before = deps.getState();
   const needsSwitch = before.rootPath !== input.repoPath;
   if (before.conductorRunning && (needsSwitch || input.mode === 'direct')) {
@@ -226,14 +249,31 @@ export async function launchScheduledConductor(
       goalId: input.goalId ?? null,
       maxConcurrent: input.maxConcurrent,
       requireReview: input.requireReview,
+      judgeForm: input.judgeForm,
+      judgeProviderId: input.judgeProviderId,
+      judgeModel: input.judgeModel,
     });
     return 'prepared';
+  }
+
+  // Nothing to spawn is an ordinary night, not a failure: the schedule comes
+  // round whether or not anyone filed work. Skipping keeps it that way — a run
+  // started here would either finish immediately, or, with a scope of nothing
+  // but blocked and approval-gated tickets, never finish at all and hold every
+  // later schedule out behind `conductor-running`.
+  if (deps.readyTicketCount(input.goalId ?? null) === 0) {
+    const who = input.origin ? `"${input.origin}"` : 'The scheduled run';
+    deps.toast(`${who} had no ready tickets — cycle skipped`, 'info');
+    return 'skipped';
   }
 
   deps.startConductor(input.goalId ?? null, {
     ticketBudget: input.ticketBudget,
     maxConcurrent: input.maxConcurrent,
     requireReview: input.requireReview,
+    ...(input.judgeForm !== undefined && { judgeForm: input.judgeForm }),
+    ...(input.judgeProviderId !== undefined && { judgeProviderId: input.judgeProviderId }),
+    ...(input.judgeModel !== undefined && { judgeModel: input.judgeModel }),
     origin: input.origin,
   });
   void deps.conductorTick();
