@@ -6,7 +6,33 @@ import { useStore } from '@/lib/store';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { Schedule, SchedulePayload } from '@/lib/tauri/schedules';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
+import type { ProviderInfo } from '@/lib/tauri/providers';
 import { ScheduleEditor, type ScheduleEditorProps } from './ScheduleEditor';
+
+const PROVIDERS: ProviderInfo[] = [
+  {
+    id: 'claude',
+    name: 'Claude',
+    models: [
+      { value: 'opus', label: 'Opus' },
+      { value: 'sonnet', label: 'Sonnet' },
+    ],
+    permissionModes: [
+      { value: 'default', label: 'Interactive', description: 'Ask for permissions' },
+      { value: 'acceptEdits', label: 'Accept edits', description: 'Edit without asking' },
+    ],
+    defaultModel: 'sonnet',
+    defaultPermissionMode: 'default',
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    models: [{ value: 'gpt', label: 'GPT' }],
+    permissionModes: [{ value: 'auto', label: 'Auto', description: 'Run on its own' }],
+    defaultModel: 'gpt',
+    defaultPermissionMode: 'auto',
+  },
+];
 
 const runSkillAction: Extract<NotificationAction, { kind: 'run-skill' }> = {
   id: 'run',
@@ -122,6 +148,7 @@ function renderEditor(overrides: Partial<ScheduleEditorProps> = {}) {
     starredProjects: [],
     projectOptions: [{ path: '/repo/sample', name: 'sample-project', starred: true }],
     discoveredSkills: [],
+    providers: PROVIDERS,
     onDraftChange: vi.fn(),
     onSave: vi.fn(),
     onCancel: vi.fn(),
@@ -275,6 +302,85 @@ describe('ScheduleEditor', () => {
       expect(payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions).toEqual(
         []
       );
+    });
+
+    it('writes the agent, model and permission the custom launch was given', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      fireEvent.change(screen.getByTestId('schedule-task'), { target: { value: 'Scan' } });
+      fireEvent.change(screen.getByTestId('schedule-task-provider'), {
+        target: { value: 'claude' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-task-model'), { target: { value: 'opus' } });
+      fireEvent.change(screen.getByTestId('schedule-task-permission'), {
+        target: { value: 'acceptEdits' },
+      });
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toEqual({
+        id: 'run',
+        label: 'Start agent',
+        kind: 'spawn-agent',
+        task: 'Scan',
+        repoPath: '/repo/sample',
+        provider: 'claude',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+      });
+    });
+
+    // A model and a permission mode name something inside one harness. Left
+    // standing across a change of agent they would be replaced at launch
+    // anyway — so the form does not keep claiming them.
+    it('drops the model and permission when the agent is changed', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      fireEvent.change(screen.getByTestId('schedule-task'), { target: { value: 'Scan' } });
+      fireEvent.change(screen.getByTestId('schedule-task-provider'), {
+        target: { value: 'claude' },
+      });
+      fireEvent.change(screen.getByTestId('schedule-task-model'), { target: { value: 'opus' } });
+      fireEvent.change(screen.getByTestId('schedule-task-provider'), {
+        target: { value: 'codex' },
+      });
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toEqual({
+        id: 'run',
+        label: 'Start agent',
+        kind: 'spawn-agent',
+        task: 'Scan',
+        repoPath: '/repo/sample',
+        provider: 'codex',
+      });
+    });
+
+    it('offers only the chosen agent’s models and permission modes', () => {
+      renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      fireEvent.change(screen.getByTestId('schedule-task-provider'), {
+        target: { value: 'codex' },
+      });
+
+      const models = screen.getByTestId('schedule-task-model') as HTMLSelectElement;
+      expect([...models.options].map((option) => option.value)).toEqual(['', 'gpt']);
+
+      const modes = screen.getByTestId('schedule-task-permission') as HTMLSelectElement;
+      expect([...modes.options].map((option) => option.value)).toEqual(['', 'auto']);
+    });
+
+    // Configuring nothing has to keep meaning what it always meant.
+    it('names no agent when the launch was left as it was', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      fireEvent.change(screen.getByTestId('schedule-task'), { target: { value: 'Scan' } });
+
+      const action = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>))
+        .actions?.[0];
+      expect(action).not.toHaveProperty('provider');
+      expect(action).not.toHaveProperty('permissionMode');
     });
 
     it('uses the name as the notification title', () => {
@@ -512,6 +618,9 @@ describe('ScheduleEditor', () => {
         prompt: '/changelog-v2',
         repoPath: '/repo/sample',
         invocation: '/changelog',
+        // Refreshing the prompt must not quietly change how the button behaves:
+        // this schedule was saved before direct start existed.
+        launch: 'dialog',
       });
     });
 
@@ -553,9 +662,64 @@ describe('ScheduleEditor', () => {
             prompt: '/review',
             repoPath: '/repo/sample',
             invocation: '/review',
+            launch: 'direct',
           },
         ]
       );
+    });
+
+    // The point of configuring the launch in advance: the notification arrives,
+    // one click, the agent works. A second dialog to confirm what was already
+    // decided is the friction this removes.
+    it('starts a newly picked skill on the click', () => {
+      const props = renderEditor({ starredProjects: [matchingStarred] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'skill-1' },
+      });
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({ launch: 'direct' });
+      expect((screen.getByTestId('schedule-skill-direct') as HTMLInputElement).checked).toBe(true);
+    });
+
+    it('puts the spawn dialog back when the direct start is switched off', () => {
+      const props = renderEditor({ starredProjects: [matchingStarred] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'skill-1' },
+      });
+      fireEvent.click(screen.getByTestId('schedule-skill-direct'));
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({ launch: 'dialog' });
+    });
+
+    // Opening an old schedule must not silently arm it.
+    it('leaves a schedule saved before direct start on the dialog', () => {
+      renderEditor({
+        schedule: scheduleWith(runSkillAction),
+        starredProjects: [matchingStarred],
+      });
+
+      expect((screen.getByTestId('schedule-skill-direct') as HTMLInputElement).checked).toBe(false);
+    });
+
+    it('keeps the direct start when a different skill is picked', () => {
+      const props = renderEditor({
+        schedule: scheduleWith({ ...runSkillAction, launch: 'direct' }),
+        starredProjects: [matchingStarred],
+        discoveredSkills: [reviewSkill],
+      });
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'discovered:/review' },
+      });
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({ skillLabel: 'Review', launch: 'direct' });
     });
 
     it('shows the combo step preview under the picker', () => {

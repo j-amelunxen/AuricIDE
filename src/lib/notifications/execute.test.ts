@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SPAWN_DEFAULTS_KEY } from '@/lib/agents/spawnDefaults';
+import type { ProviderInfo } from '@/lib/tauri/providers';
 import {
   buildSpawnConfig,
   executeNotificationAction,
@@ -39,6 +40,17 @@ const runSkill: Extract<NotificationAction, { kind: 'run-skill' }> = {
   model: 'opus',
   permissionMode: 'plan',
 };
+
+const PROVIDERS: ProviderInfo[] = [
+  {
+    id: 'claude',
+    name: 'Claude',
+    models: [{ value: 'opus', label: 'Opus' }],
+    permissionModes: [{ value: 'plan', label: 'Plan', description: '' }],
+    defaultModel: 'opus',
+    defaultPermissionMode: 'default',
+  },
+];
 
 const runCombo: Extract<NotificationAction, { kind: 'run-combo' }> = {
   id: 'run',
@@ -115,17 +127,38 @@ describe('buildSpawnConfig', () => {
     expect(config.provider).toBe('codex');
   });
 
-  // The payload may have been written by an agent or a schedule. How much
-  // authority the new agent gets is not its call.
-  it('never takes the permission mode from the payload', () => {
+  // The whole point of configuring a schedule: the button starts an agent that
+  // can actually work, without a permission prompt on every step.
+  it('takes the permission mode from a payload the user wrote', () => {
     localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify(REMEMBERED));
 
-    const config = buildSpawnConfig({
-      ...action,
-      permissionMode: 'bypassPermissions',
-    } as never);
+    const config = buildSpawnConfig(
+      { ...action, permissionMode: 'bypassPermissions' },
+      { trust: 'user' }
+    );
+
+    expect(config.permissionMode).toBe('bypassPermissions');
+  });
+
+  // The same payload shape can arrive from a running model. It may still offer
+  // a button; how much authority that button hands out is not its call.
+  it('ignores the permission mode in a payload a model wrote', () => {
+    localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify(REMEMBERED));
+
+    const config = buildSpawnConfig(
+      { ...action, permissionMode: 'bypassPermissions' },
+      { trust: 'foreign' }
+    );
 
     expect(config.permissionMode).toBe('acceptEdits');
+  });
+
+  it('treats an unstated trust as foreign', () => {
+    localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify(REMEMBERED));
+
+    expect(
+      buildSpawnConfig({ ...action, permissionMode: 'bypassPermissions' }).permissionMode
+    ).toBe('acceptEdits');
   });
 
   it('runs in the repo the action names', () => {
@@ -133,7 +166,26 @@ describe('buildSpawnConfig', () => {
   });
 
   it('falls back to the current project when the action names no repo', () => {
-    expect(buildSpawnConfig(action, '/repo/current').cwd).toBe('/repo/current');
+    expect(buildSpawnConfig(action, { fallbackCwd: '/repo/current' }).cwd).toBe('/repo/current');
+  });
+
+  // Launch choices are remembered per working directory. Reading them without
+  // one yields whatever was last launched outside any project — usually
+  // nothing, which is how a configured schedule ended up on a bare default.
+  it('reads the remembered defaults for the project it will run in', () => {
+    localStorage.setItem(
+      SPAWN_DEFAULTS_KEY,
+      JSON.stringify({
+        version: 1,
+        byWorkingDirectory: { '/repo/sample': REMEMBERED },
+      })
+    );
+
+    const config = buildSpawnConfig({ ...action, repoPath: '/repo/sample' });
+
+    expect(config.provider).toBe('claude');
+    expect(config.model).toBe('opus');
+    expect(config.permissionMode).toBe('acceptEdits');
   });
 
   it('carries the ticket and goal provenance through', () => {
@@ -239,6 +291,65 @@ describe('executeNotificationAction', () => {
       repoPath: '/repo/sample',
       preset: null,
     });
+  });
+
+  it('spawns the skill straight away when the user configured a direct start', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runSkill, launch: 'direct' }, deps, {
+      trust: 'user',
+      providers: PROVIDERS,
+    });
+
+    expect(deps.spawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: '/changelog',
+        cwd: '/repo/sample',
+        name: 'Changelog',
+        provider: 'claude',
+        model: 'opus',
+        permissionMode: 'plan',
+      })
+    );
+    expect(deps.openSpawnDialog).not.toHaveBeenCalled();
+  });
+
+  it('still checks the folder before a direct start', async () => {
+    const deps = makeDeps();
+    deps.projectDirExists = vi.fn(async () => false);
+
+    await expectActionError(
+      executeNotificationAction({ ...runSkill, launch: 'direct', repoPath: '/gone' }, deps, {
+        trust: 'user',
+        providers: PROVIDERS,
+      }),
+      'missing-project',
+      'Project folder not found: /gone'
+    );
+
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  // A model can write a payload that looks exactly like a configured schedule.
+  // Skipping the dialog is a decision only the person clicking gets to make.
+  it('falls back to the dialog when a model asked for a direct start', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runSkill, launch: 'direct' }, deps, {
+      trust: 'foreign',
+      providers: PROVIDERS,
+    });
+
+    expect(deps.openSpawnDialog).toHaveBeenCalled();
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+  });
+
+  // Every schedule saved before direct launch existed says nothing at all here,
+  // and must keep behaving the way it did yesterday.
+  it('opens the dialog for a trusted payload that says nothing about launching', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(runSkill, deps, { trust: 'user', providers: PROVIDERS });
+
+    expect(deps.openSpawnDialog).toHaveBeenCalled();
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
   });
 
   it('throws missing-project when the run-skill folder is gone', async () => {

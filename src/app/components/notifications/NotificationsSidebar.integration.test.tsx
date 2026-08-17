@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import type { Notification } from '@/lib/notifications/types';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
+import type { ProviderInfo } from '@/lib/tauri/providers';
 import { NotificationsSidebar } from './NotificationsSidebar';
 
 /**
@@ -81,6 +82,23 @@ vi.mock('@/lib/tauri/notifications', () => ({
 }));
 
 const REPO_PATH = '/repo/sample';
+
+const PROVIDERS: ProviderInfo[] = [
+  {
+    id: 'claude',
+    name: 'Claude',
+    models: [
+      { value: 'opus', label: 'Opus' },
+      { value: 'sonnet', label: 'Sonnet' },
+    ],
+    permissionModes: [
+      { value: 'plan', label: 'Plan', description: 'Plan only' },
+      { value: 'default', label: 'Interactive', description: 'Ask for permissions' },
+    ],
+    defaultModel: 'sonnet',
+    defaultPermissionMode: 'default',
+  },
+];
 
 const starredWithPins: StarredProject = {
   path: REPO_PATH,
@@ -217,6 +235,146 @@ describe('NotificationsSidebar — scheduled skill/combo click, end to end', () 
     // Clicking settled the notification too — the read-effect is not skipped
     // just because the payload effect is a dialog open, not a spawn.
     expect(useStore.getState().notifications[0]?.readAt).not.toBeNull();
+  });
+
+  // The frictionless path, end to end: the reminder arrives, one click, the
+  // agent is running with the permission the skill was pinned to — no second
+  // dialog confirming what the schedule already said.
+  it('run-skill with a direct start: spawns from the snapshot and shows the agent', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ starredProjects: [starredWithPins], providers: PROVIDERS } as never);
+    const notification = makeNotification({
+      actions: [
+        {
+          id: 'run',
+          label: 'Start Changelog',
+          kind: 'run-skill',
+          skillId: 'skill-1',
+          skillLabel: 'Changelog',
+          prompt: '/changelog',
+          repoPath: REPO_PATH,
+          providerId: 'claude',
+          model: 'opus',
+          permissionMode: 'plan',
+          launch: 'direct',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+
+    const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
+    expect(spawnAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: '/changelog',
+        cwd: REPO_PATH,
+        provider: 'claude',
+        model: 'opus',
+        permissionMode: 'plan',
+      })
+    );
+    expect(useStore.getState().spawnDialogOpen).toBe(false);
+
+    // Started and selected: the terminal is showing the run this click began.
+    await waitFor(() =>
+      expect(useStore.getState().selectedAgentId).toBe(useStore.getState().agents[0]?.id)
+    );
+    expect(useStore.getState().selectedAgentId).toBeTruthy();
+  });
+
+  // The same payload shape can arrive from a running model. Skipping the
+  // dialog is a decision only the person clicking gets to make.
+  it('run-skill with a direct start from an agent: falls back to the dialog', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ starredProjects: [starredWithPins], providers: PROVIDERS } as never);
+    const notification = makeNotification({
+      source: 'agent',
+      actions: [
+        {
+          id: 'run',
+          label: 'Start Changelog',
+          kind: 'run-skill',
+          skillId: 'skill-1',
+          skillLabel: 'Changelog',
+          prompt: '/changelog',
+          repoPath: REPO_PATH,
+          providerId: 'claude',
+          launch: 'direct',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+
+    const button = await screen.findByTestId(`notification-action-${notification.uid}-run`);
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    await waitFor(() => expect(useStore.getState().spawnDialogOpen).toBe(true));
+    expect(spawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('spawn-agent from an agent payload: the permission mode in it is ignored', async () => {
+    const user = userEvent.setup();
+    const notification = makeNotification({
+      source: 'agent',
+      actions: [
+        {
+          id: 'run',
+          label: 'Agent starten',
+          kind: 'spawn-agent',
+          task: 'Serverscan durchführen',
+          repoPath: REPO_PATH,
+          permissionMode: 'bypassPermissions',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    await user.click(await screen.findByTestId(`notification-action-${notification.uid}-run`));
+
+    await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
+    expect(spawnAgentMock.mock.calls[0][0]).not.toMatchObject({
+      permissionMode: 'bypassPermissions',
+    });
+  });
+
+  it('spawn-agent from a schedule: runs with the permission the schedule names', async () => {
+    const user = userEvent.setup();
+    const notification = makeNotification({
+      actions: [
+        {
+          id: 'run',
+          label: 'Agent starten',
+          kind: 'spawn-agent',
+          task: 'Serverscan durchführen',
+          repoPath: REPO_PATH,
+          provider: 'claude',
+          model: 'opus',
+          permissionMode: 'acceptEdits',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<NotificationsSidebar onRunCommand={vi.fn()} />);
+    await user.click(await screen.findByTestId(`notification-action-${notification.uid}-run`));
+
+    await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
+    expect(spawnAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'claude',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+      })
+    );
   });
 
   it('run-combo: starts the real chain via startSkillCombo, spawning step 0 for real', async () => {

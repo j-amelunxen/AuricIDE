@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
-import type { AgentConfig, PermissionMode } from '../tauri/agents';
+import type { AgentConfig } from '../tauri/agents';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '../tauri/providers';
+import { resolveSkillLaunch } from '../agents/skillLaunch';
 import {
   comboStepForAgent as lookupComboStep,
   type ComboStepView,
@@ -65,21 +66,18 @@ function resolveStepConfig(
   providers: ProviderInfo[],
   handoff: StepHandoff
 ): AgentConfig {
-  const provider =
-    (step.providerId ? providers.find((p) => p.id === step.providerId) : undefined) ??
-    providers[0] ??
-    FALLBACK_CRUSH_PROVIDER;
+  const launch = resolveSkillLaunch(step, providers);
   const folder = projectPath.split('/').pop() || undefined;
   return {
     name: `${combo.label} · ${step.label || folder || 'step'}`,
-    model: step.model || provider.defaultModel,
+    model: launch.model,
     task: composeStepTask(step.prompt, handoff.context, handoff.fromLabel),
     // Recall is a list of things a person typed — the handoff does not belong
     // in it.
     historyPrompt: step.prompt,
     cwd: projectPath,
-    permissionMode: (step.permissionMode ?? provider.defaultPermissionMode) as PermissionMode,
-    provider: provider.id,
+    permissionMode: launch.permissionMode,
+    provider: launch.provider,
   };
 }
 
