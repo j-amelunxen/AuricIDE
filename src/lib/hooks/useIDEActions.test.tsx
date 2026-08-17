@@ -8,6 +8,7 @@ import { renderHook } from '@testing-library/react';
  */
 
 const flushAgentLog = vi.fn(async () => undefined);
+const mockSetInboxCaptureOpen = vi.fn();
 vi.mock('@/lib/agents/events/persistence', () => ({
   flushAgentLog: () => flushAgentLog(),
 }));
@@ -34,6 +35,7 @@ vi.mock('@/lib/hooks/useActiveDiffLoader', () => ({ useActiveDiffLoader: () => u
 vi.mock('@/lib/hooks/useCloseTabShortcut', () => ({ useCloseTabShortcut: () => undefined }));
 vi.mock('@/lib/hooks/useMenuCommands', () => ({ useMenuCommands: () => undefined }));
 vi.mock('@/lib/hooks/useNotificationInbox', () => ({ useNotificationInbox: () => undefined }));
+vi.mock('@/lib/inbox/useInboxData', () => ({ useInboxData: () => undefined }));
 vi.mock('@/lib/hooks/useTitleBarGutter', () => ({ useTitleBarGutter: () => undefined }));
 
 vi.mock('@/lib/tauri/providers', () => ({ listProviders: vi.fn(async () => []) }));
@@ -53,6 +55,7 @@ vi.mock('@/lib/store', () => ({
       // A non-DB change feeds the evidence lane as well as the tree; with no
       // open stations that lane returns immediately, which is what this is for.
       goalStationsDraft: [],
+      setInboxCaptureOpen: mockSetInboxCaptureOpen,
     }),
   },
 }));
@@ -144,5 +147,15 @@ describe('useIDEActions – the file watcher’s route to the tree refresh', () 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('useIDEActions – global keybindings', () => {
+  it('opens the inbox capture overlay on mod+shift+I', () => {
+    renderHook(() => useIDEActions(state, handlers));
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'I', metaKey: true, shiftKey: true }));
+
+    expect(mockSetInboxCaptureOpen).toHaveBeenCalledWith(true);
   });
 });

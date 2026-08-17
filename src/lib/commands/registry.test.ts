@@ -142,6 +142,23 @@ describe('defaultCommands', () => {
     expect(cmd?.shortcut).toBe('⌘N');
   });
 
+  it('offers Open Inbox, mirroring Open Notifications, reachable with no project open', () => {
+    const cmd = defaultCommands.find((c) => c.id === 'view.inbox');
+    expect(cmd).toBeDefined();
+    expect(cmd?.label).toBe('Open Inbox');
+    expect(cmd?.category).toBe('view');
+    expect(cmd?.requiresProject).toBeFalsy();
+  });
+
+  it('offers Capture to Inbox with its global shortcut, reachable with no project open', () => {
+    const cmd = defaultCommands.find((c) => c.id === 'inbox.capture');
+    expect(cmd).toBeDefined();
+    expect(cmd?.label).toBe('Capture to Inbox');
+    expect(cmd?.category).toBe('view');
+    expect(cmd?.shortcut).toBe('⌘⇧I');
+    expect(cmd?.requiresProject).toBeFalsy();
+  });
+
   it('contains expected categories', () => {
     const categories = new Set(defaultCommands.map((c) => c.category));
     expect(categories).toContain('file');

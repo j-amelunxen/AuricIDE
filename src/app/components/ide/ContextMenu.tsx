@@ -12,8 +12,16 @@ export type ContextMenuOption =
       label: string;
       icon?: string;
       iconColor?: string;
+      /** A custom mark in place of the icon glyph — e.g. a project tile.
+       *  Wrapped decorative (aria-hidden), same as the icon it replaces. */
+      leading?: React.ReactNode;
       action?: () => void;
       danger?: boolean;
+      /** Skip the auto-close after this item's action — for an item that
+       *  leads to a further stage (e.g. a project that opens an epic
+       *  sub-menu) rather than finishing the interaction. Defaults to false:
+       *  every existing call site keeps closing on click. */
+      keepOpen?: boolean;
     };
 
 /** How much of the viewport a menu may claim before it scrolls internally. */
@@ -115,7 +123,7 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
               onClick={(e) => {
                 e.stopPropagation();
                 option.action?.();
-                onClose();
+                if (!option.keepOpen) onClose();
               }}
               className={`flex w-full items-center gap-2 px-3 min-h-11 text-left text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary ${
                 option.danger
@@ -123,14 +131,21 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
                   : 'text-foreground-muted hover:bg-primary/10 hover:text-foreground focus-visible:bg-primary/20'
               }`}
             >
-              {option.icon && (
+              {option.leading ? (
                 /* Decorative — the label speaks for the item. */
-                <AuricIcon
-                  name={option.icon}
-                  aria-hidden="true"
-                  className="text-[14px]"
-                  style={option.iconColor ? { color: option.iconColor } : undefined}
-                />
+                <span aria-hidden="true" className="flex shrink-0 items-center">
+                  {option.leading}
+                </span>
+              ) : (
+                option.icon && (
+                  /* Decorative — the label speaks for the item. */
+                  <AuricIcon
+                    name={option.icon}
+                    aria-hidden="true"
+                    className="text-[14px]"
+                    style={option.iconColor ? { color: option.iconColor } : undefined}
+                  />
+                )
               )}
               {/* title, not a replacement label: the text content still wins
                   as the accessible name, so a truncated skill stays findable. */}

@@ -28,6 +28,8 @@ import { ExtensionsPanel } from './components/ide/ExtensionsPanel';
 import { QAPanel } from './components/qa/QAPanel';
 import { ScratchPanel } from './components/scratch/ScratchPanel';
 import { NotificationsSidebar } from './components/notifications/NotificationsSidebar';
+import { InboxPanel } from './components/inbox/InboxPanel';
+import { InboxCapture } from './components/inbox/InboxCapture';
 import { isScratchPath } from '@/lib/scratch/naming';
 import { ContextMenu, type ContextMenuOption } from './components/ide/ContextMenu';
 import { MissionControl } from './components/cockpit/MissionControl';
@@ -270,6 +272,10 @@ export default function Home() {
         // Self-contained: it reads the store itself and owns the 1-second
         // clock, so the rest of the IDE does not re-render with it.
         return <NotificationsSidebar onRunCommand={handlers.handleCommandExecute} />;
+      case 'inbox':
+        // Also self-contained — its data is kept warm app-wide by
+        // useInboxData, independent of whether this panel is even mounted.
+        return <InboxPanel variant="sidebar" onOpenProject={handlers.handleOpenRecent} />;
       default:
         return null;
     }
@@ -490,8 +496,12 @@ export default function Home() {
                 />
               </div>
             ) : (
-              <div className="flex flex-1 items-center justify-center text-center">
-                <div className="animate-in fade-in zoom-in duration-700">
+              // items-center only (not justify-center): the hero's position
+              // comes from the top padding, not from centering the whole
+              // column's height. A wide inbox summary growing underneath it
+              // must not walk the title around the screen.
+              <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pt-[12vh] pb-12 text-center">
+                <div className="w-full animate-in fade-in zoom-in duration-700">
                   <h1 className="font-display text-5xl font-black text-white tracking-tighter">
                     AURIC
                     <span className="text-primary-light font-thin tracking-widest ml-2">IDE</span>
@@ -499,7 +509,10 @@ export default function Home() {
                   <p className="mt-4 text-sm text-foreground-muted uppercase tracking-[0.3em] font-medium">
                     AI-native Development
                   </p>
-                  <div className="mt-10 flex items-center justify-center gap-3">
+                  <div
+                    data-testid="start-buttons-row"
+                    className="mt-6 flex items-center justify-center gap-3"
+                  >
                     <button
                       onClick={handlers.handleOpenFolder}
                       className="rounded-xl bg-primary/10 border border-primary/20 px-8 py-3 text-sm font-bold text-primary-light transition-[background-color,box-shadow] duration-150 hover:bg-primary/20 hover:shadow-[0_0_30px_rgba(var(--primary-rgb),0.2)] active:scale-[0.98]"
@@ -515,7 +528,10 @@ export default function Home() {
                       New
                     </button>
                   </div>
-                  <div className="mt-10 flex justify-center">
+                  <div data-testid="start-inbox-capture" className="mx-auto mt-6 w-full max-w-3xl">
+                    <InboxCapture autoFocus />
+                  </div>
+                  <div data-testid="start-project-switcher" className="mt-6 flex justify-center">
                     <ProjectSwitcher
                       currentPath={null}
                       onOpenProject={(path) => handlers.handleOpenRecent(path)}
@@ -526,6 +542,16 @@ export default function Home() {
                       clutter. Swaps to a running-agents line the moment
                       there is something more useful to say than a tip. */}
                   <StartScreenAgentsLine dailyTip={handlers.dailyTip} />
+                  {/* Nothing renders here until the inbox holds something —
+                      an empty inbox must leave the splash exactly as calm as
+                      it always was. */}
+                  <div data-testid="start-inbox-panel" className="mx-auto mt-6 w-full max-w-3xl">
+                    <InboxPanel
+                      variant="wide"
+                      hideCapture
+                      onOpenProject={(path) => handlers.handleOpenRecent(path)}
+                    />
+                  </div>
                 </div>
               </div>
             )}

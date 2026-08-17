@@ -57,6 +57,8 @@ export interface UISlice {
   enableDeepNlp: boolean;
   importSpecDialogOpen: boolean;
   videoImportDialogOpen: boolean;
+  /** The Spotlight-style quick-capture overlay for the inbox. */
+  inboxCaptureOpen: boolean;
   referencesPanelOpen: boolean;
   referencesPanelQuery: string;
   referencesPanelResults: ReferenceResult[];
@@ -69,6 +71,7 @@ export interface UISlice {
 
   setImportSpecDialogOpen: (open: boolean) => void;
   setVideoImportDialogOpen: (open: boolean) => void;
+  setInboxCaptureOpen: (open: boolean) => void;
   addTerminalLog: (log: LogEntry) => void;
   clearTerminalLogs: (tab?: string) => void;
   setCursorPos: (line: number, col: number) => void;
@@ -118,6 +121,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   enableDeepNlp: false,
   importSpecDialogOpen: false,
   videoImportDialogOpen: false,
+  inboxCaptureOpen: false,
   referencesPanelOpen: false,
   referencesPanelQuery: '',
   referencesPanelResults: [],
@@ -179,6 +183,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
 
   setImportSpecDialogOpen: (open) => set({ importSpecDialogOpen: open }),
   setVideoImportDialogOpen: (open) => set({ videoImportDialogOpen: open }),
+  setInboxCaptureOpen: (open) => set({ inboxCaptureOpen: open }),
 
   updateAgentSettings: (newSettings) => {
     set((state) => ({

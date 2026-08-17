@@ -141,6 +141,13 @@
     { "id": "view.requirements", "label": "Open Requirements", "category": "view" },
     { "id": "view.goal-lines", "label": "Open Goal Lines", "category": "view" },
     { "id": "view.notifications", "label": "Open Notifications", "category": "view" },
+    { "id": "view.inbox", "label": "Open Inbox", "category": "view" },
+    {
+      "id": "inbox.capture",
+      "label": "Capture to Inbox",
+      "category": "view",
+      "shortcut": "⌘⇧I"
+    },
     {
       "id": "view.agent-console",
       "label": "Toggle Agent Console",

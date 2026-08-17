@@ -3,6 +3,7 @@ import { render, renderHook, screen, waitFor, within } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import type { SetStateAction } from 'react';
 import { CONTEXT_BOUND_COMMANDS, useIDEHandlers } from './useIDEHandlers';
+import { type useIDEState } from './useIDEState';
 import { defaultCommands } from '@/lib/commands/registry';
 
 // Mock Tauri FS
@@ -77,6 +78,7 @@ let mockScratches: { name: string; path: string }[] = [];
 const mockInitScratches = vi.fn(async () => {});
 const mockRefreshScratches = vi.fn(async () => {});
 const mockGetBacklinksFor = vi.fn((_name: string) => [] as string[]);
+const mockSetInboxCaptureOpen = vi.fn();
 vi.mock('@/lib/store', () => {
   const getState = () => ({
     refreshGitStatus: mockRefreshGitStatus,
@@ -111,6 +113,7 @@ vi.mock('@/lib/store', () => {
     ownsEscape: () => false,
     closeWorkPlace: () => undefined,
     openWorkPlace: () => undefined,
+    setInboxCaptureOpen: mockSetInboxCaptureOpen,
   });
   return {
     useStore: Object.assign(
@@ -161,6 +164,7 @@ describe('useIDEHandlers', () => {
     setActiveActivity: vi.fn(),
     fileStatuses: [],
     pmDraftTickets: [],
+    inboxItems: [] as ReturnType<typeof useIDEState>['inboxItems'],
     cursorPos: { line: 0, col: 0 },
     diagnostics: new Map(),
     getDiagnosticCounts: () => ({ errors: 0, warnings: 0 }),
@@ -2016,6 +2020,62 @@ describe('useIDEHandlers', () => {
       result.current.commands.find((c) => c.id === 'file.find-in-files')!.action();
 
       expect(mockState.setFindInFilesOpen).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('inbox', () => {
+    const makeInboxItem = (
+      id: string,
+      projectPath: string | null
+    ): (typeof mockState)['inboxItems'][number] => ({
+      id,
+      title: 'Task',
+      notes: '',
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+      projectPath,
+      projectName: projectPath ? 'alpha' : null,
+      ticketId: projectPath ? 't1' : null,
+      assignedAt: projectPath ? '2026-01-01 00:00:00' : null,
+      dismissedAt: null,
+    });
+
+    it('badges the inbox rail item with the unsorted count only', () => {
+      mockState.inboxItems = [
+        makeInboxItem('a', null),
+        makeInboxItem('b', null),
+        makeInboxItem('c', '/repos/alpha'),
+      ];
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const inboxItem = result.current.itemsWithBadge.find((i) => i.id === 'inbox');
+
+      expect(inboxItem?.badge).toBe(2);
+    });
+
+    it('leaves the inbox badge unset when nothing is unsorted', () => {
+      mockState.inboxItems = [];
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      const inboxItem = result.current.itemsWithBadge.find((i) => i.id === 'inbox');
+
+      expect(inboxItem?.badge).toBeUndefined();
+    });
+
+    it('opens the capture overlay for the inbox.capture command', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'inbox.capture')!.action();
+
+      expect(mockSetInboxCaptureOpen).toHaveBeenCalledWith(true);
+    });
+
+    it('switches to the inbox rail item for the view.inbox command', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'view.inbox')!.action();
+
+      expect(mockState.setActiveActivity).toHaveBeenCalledWith('inbox');
     });
   });
 
