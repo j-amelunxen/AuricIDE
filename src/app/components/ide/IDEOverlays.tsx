@@ -24,6 +24,7 @@ import { type AgentInfo, type AgentConfig } from '@/lib/tauri/agents';
 import { type Command } from '@/lib/commands/registry';
 import { type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import { VideoImportDialog } from '@/app/components/videoImport/VideoImportDialog';
+import { InboxCaptureOverlay } from '@/app/components/inbox/InboxCaptureOverlay';
 
 interface IDEOverlaysProps {
   // Modals state
@@ -204,6 +205,7 @@ export function IDEOverlays({
         workingDirectory={rootPath || ''}
       />
       <VideoImportDialog />
+      <InboxCaptureOverlay />
       <GenerateDiagramDialog
         isOpen={diagramDialogFolder !== null}
         onClose={() => setDiagramDialogFolder(null)}

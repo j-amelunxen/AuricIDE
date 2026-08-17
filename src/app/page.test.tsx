@@ -445,6 +445,34 @@ describe('Home page', () => {
     expect(screen.getByTestId('badge-work')).toHaveTextContent('2');
   });
 
+  it('shows the inbox capture bar on the start screen', () => {
+    render(<Home />);
+    expect(screen.getByPlaceholderText(/capture a task/i)).toBeInTheDocument();
+  });
+
+  it('gives the post-hero blocks one consistent vertical rhythm', () => {
+    render(<Home />);
+    const marginStep = (testId: string) => {
+      const el = screen.getByTestId(testId);
+      return [...el.classList].find((c) => c.startsWith('mt-'));
+    };
+    const steps = [
+      'start-buttons-row',
+      'start-inbox-capture',
+      'start-project-switcher',
+      'start-inbox-panel',
+    ].map(marginStep);
+
+    expect(steps.every((s) => s !== undefined)).toBe(true);
+    expect(new Set(steps).size).toBe(1);
+  });
+
+  it('opens the inbox panel when the Inbox rail item is clicked, with no project open', () => {
+    render(<Home />);
+    fireEvent.click(screen.getByTestId('activity-item-inbox'));
+    expect(screen.getByTestId('inbox-panel')).toBeInTheDocument();
+  });
+
   it('opens Work in the center when the Work rail item is clicked', () => {
     useStore.setState({ rootPath: '/test/project' });
     render(<Home />);

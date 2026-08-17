@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import { createAutosave } from '@/lib/editor/autosave';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { TIPS, activityItems } from '../ide/constants';
+import { unsortedInboxItems } from '@/lib/inbox/unsortedInboxItems';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { collectLoadedDirs, findNodeByPath, type FileNode } from '@/lib/store/fileTreeSlice';
 
@@ -1646,6 +1647,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'view.requirements': () => useStore.getState().openWorkPlace('requirements'),
       'view.goal-lines': () => useStore.getState().openWorkPlace('lines'),
       'view.notifications': () => state.setActiveActivity('notifications'),
+      'view.inbox': () => state.setActiveActivity('inbox'),
+      'inbox.capture': () => useStore.getState().setInboxCaptureOpen(true),
       'view.agent-console': () => useStore.getState().toggleAgentConsole(),
       'excalidraw.new': () => void handleNewDiagram(),
       'excalidraw.browse': () => useStore.getState().setExcalidrawBrowserOpen(true),
@@ -1720,9 +1723,15 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             ...item,
             badge: state.notificationsUnreadCount > 0 ? state.notificationsUnreadCount : undefined,
           };
+        // Unsorted only — an assigned item already shows its status on the
+        // inbox panel itself, so counting it here too would double-report it.
+        if (item.id === 'inbox') {
+          const unsorted = unsortedInboxItems(state.inboxItems ?? []).length;
+          return { ...item, badge: unsorted > 0 ? unsorted : undefined };
+        }
         return item;
       }),
-    [scBadge, openTicketsCount, state.notificationsUnreadCount]
+    [scBadge, openTicketsCount, state.notificationsUnreadCount, state.inboxItems]
   );
 
   const dailyTip = DAILY_TIP;

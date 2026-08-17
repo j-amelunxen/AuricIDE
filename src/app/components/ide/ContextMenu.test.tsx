@@ -45,6 +45,35 @@ describe('ContextMenu', () => {
     expect(action).toHaveBeenCalled();
   });
 
+  it('closes after running an item action by default', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      <ContextMenu x={0} y={0} options={[{ label: 'Red', action: vi.fn() }]} onClose={onClose} />
+    );
+
+    await user.click(screen.getByRole('menuitem', { name: 'Red' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('stays open after running an item marked keepOpen, for a menu that leads to a sub-stage', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const action = vi.fn();
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        options={[{ label: 'Backend', action, keepOpen: true }]}
+        onClose={onClose}
+      />
+    );
+
+    await user.click(screen.getByRole('menuitem', { name: 'Backend' }));
+    expect(action).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('closes on Escape', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -52,5 +81,44 @@ describe('ContextMenu', () => {
 
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('renders a custom leading node in place of the icon glyph', () => {
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        options={[
+          {
+            label: 'Alpha project',
+            leading: <span data-testid="custom-mark">A</span>,
+            action: vi.fn(),
+          },
+        ]}
+        onClose={vi.fn()}
+      />
+    );
+    const item = screen.getByRole('menuitem', { name: 'Alpha project' });
+    expect(item.querySelector('[data-testid="custom-mark"]')).toBeInTheDocument();
+  });
+
+  it('hides a custom leading node from assistive technology, same as the icon glyph', () => {
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        options={[
+          {
+            label: 'Alpha project',
+            leading: <span data-testid="custom-mark">A</span>,
+            action: vi.fn(),
+          },
+        ]}
+        onClose={vi.fn()}
+      />
+    );
+    const item = screen.getByRole('menuitem', { name: 'Alpha project' });
+    const leadingWrapper = item.querySelector('[data-testid="custom-mark"]')!.parentElement;
+    expect(leadingWrapper).toHaveAttribute('aria-hidden', 'true');
   });
 });

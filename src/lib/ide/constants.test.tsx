@@ -15,6 +15,7 @@ describe('activityItems — the rail leads with the loop', () => {
     const tools = activityItems.filter((i) => i.section === 'tools').map((i) => i.id);
     expect(tools).toEqual([
       'notifications',
+      'inbox',
       'outline',
       'scratches',
       'graph',

@@ -17,6 +17,7 @@ import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
+import { useInboxData } from '@/lib/inbox/useInboxData';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import { type useIDEState } from './useIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
@@ -43,6 +44,10 @@ export function useIDEActions(
 
   // The inbox spans projects, so it is not keyed on rootPath like the rest here
   useNotificationInbox();
+
+  // Same reasoning as the notification inbox — the capture badge and the
+  // start-screen summary both need this warm before the panel ever mounts.
+  useInboxData();
 
   // Opens the Agent Console once, in place of the start screen, if the user
   // has asked for that and an agent is already running with no project open.
@@ -336,6 +341,9 @@ export function useIDEActions(
       } else if (mod && e.shiftKey && e.key === 'C') {
         e.preventDefault();
         useStore.getState().toggleAgentConsole();
+      } else if (mod && e.shiftKey && e.key === 'I') {
+        e.preventDefault();
+        useStore.getState().setInboxCaptureOpen(true);
       }
     };
     window.addEventListener('keydown', handler);

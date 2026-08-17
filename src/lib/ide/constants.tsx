@@ -22,6 +22,9 @@ export const activityItems: ActivityItem[] = [
     badge: 0,
     section: 'tools',
   },
+  // The app-wide capture box: what is still unsorted, badge and all — read
+  // this next to Notifications, not with the goal-loop surfaces above it.
+  { id: 'inbox', icon: 'inbox', label: 'Inbox', badge: 0, section: 'tools' },
   { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools' },
   { id: 'scratches', icon: 'sticky_note_2', label: 'Scratches', section: 'tools' },
   { id: 'graph', icon: 'hub', label: 'Link Graph', section: 'tools' },

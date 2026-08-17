@@ -106,6 +106,14 @@ describe('uiSlice – agenticCommit settings', () => {
     expect(store.current.findInFilesOpen).toBe(false);
   });
 
+  it('defaults inboxCaptureOpen to false and toggles via its setter', () => {
+    expect(store.current.inboxCaptureOpen).toBe(false);
+    store.current.setInboxCaptureOpen(true);
+    expect(store.current.inboxCaptureOpen).toBe(true);
+    store.current.setInboxCaptureOpen(false);
+    expect(store.current.inboxCaptureOpen).toBe(false);
+  });
+
   it('preserves other settings when updating agentic fields', () => {
     expect(store.current.agentSettings.autoAcceptEdits).toBe(false);
     expect(store.current.agentSettings.dangerouslyIgnorePermissions).toBe(false);

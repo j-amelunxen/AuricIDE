@@ -35,6 +35,9 @@ vi.mock('@/app/components/dev/PerformanceMonitor', () => ({ PerformanceMonitor: 
 vi.mock('@/app/components/videoImport/VideoImportDialog', () => ({
   VideoImportDialog: () => null,
 }));
+vi.mock('@/app/components/inbox/InboxCaptureOverlay', () => ({
+  InboxCaptureOverlay: () => null,
+}));
 
 type OverlayProps = Parameters<typeof IDEOverlays>[0];
 

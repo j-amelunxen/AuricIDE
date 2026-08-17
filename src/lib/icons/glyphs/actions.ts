@@ -132,4 +132,6 @@ export const actionsGlyphs: GlyphMap = {
     { kind: 'rect', x: 14.5, y: 4.5, w: 4.6, h: 4.6, rx: 1.3, accent: true },
   ],
   title: [l(4.5, 6, 19.5, 6), l(12, 6, 12, 16), l(6.5, 19.5, 15, 19.5), dot(17.5, 19.5, 1.5)],
+  // A row overflow trigger, not an object with a "live point" — no accent.
+  more_horiz: [cFill(6, 12, 1.6), cFill(12, 12, 1.6), cFill(18, 12, 1.6)],
 };

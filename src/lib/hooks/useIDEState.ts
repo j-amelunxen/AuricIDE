@@ -171,6 +171,7 @@ export function useIDEState() {
   const scratchDir = useStore((s) => s.scratchDir);
   const scratches = useStore((s) => s.scratches);
   const notificationsUnreadCount = useStore((s) => s.notificationsUnreadCount);
+  const inboxItems = useStore((s) => s.inboxItems);
   const scratchStatus = useStore((s) => s.scratchStatus);
   const initScratches = useStore((s) => s.initScratches);
   const refreshScratches = useStore((s) => s.refreshScratches);
@@ -391,6 +392,7 @@ export function useIDEState() {
     scratchDir,
     scratches,
     notificationsUnreadCount,
+    inboxItems,
     scratchStatus,
     initScratches,
     refreshScratches,
