@@ -34,8 +34,8 @@ use database::{
 };
 use git::{
     git_blame, git_branch_info, git_commit, git_diff, git_diff_commit, git_diff_file_ref,
-    git_diff_ref_files, git_discard, git_list_branches, git_log_since, git_push, git_stage,
-    git_status, git_unstage,
+    git_diff_ref_files, git_discard, git_discover_repos, git_list_branches, git_log_since,
+    git_push, git_stage, git_status, git_unstage,
 };
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -859,7 +859,7 @@ fn file_modified_at_ms(entry: &walkdir::DirEntry) -> Option<i64> {
     Some(duration.as_millis() as i64)
 }
 
-fn skip_recent_walk_dir(entry: &walkdir::DirEntry) -> bool {
+pub(crate) fn skip_recent_walk_dir(entry: &walkdir::DirEntry) -> bool {
     matches!(
         entry.file_name().to_string_lossy().as_ref(),
         ".git"
@@ -2231,6 +2231,7 @@ pub fn run() {
             shell_write,
             shell_resize,
             git_status,
+            git_discover_repos,
             git_branch_info,
             git_diff,
             git_stage,
