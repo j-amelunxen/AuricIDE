@@ -80,8 +80,9 @@ export function CliQuotaChip() {
   }, [open]);
 
   useEffect(() => {
-    // Stored readings only. A Codex check costs credits, so it waits for the
-    // refresh button rather than running on mount, hover or focus.
+    // Stored readings only. A Codex check costs credits, so mount, hover and
+    // focus never spawn one — the 15-minute poller in Rust writes the store
+    // and we pick the new numbers up through the change event.
     void loadUsageLimits();
   }, [loadUsageLimits]);
 

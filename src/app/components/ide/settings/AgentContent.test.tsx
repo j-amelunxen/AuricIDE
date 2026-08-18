@@ -95,6 +95,11 @@ describe('AgentContent — CLI quota', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  it('says Codex is polled every 15 minutes', () => {
+    render(<AgentContent />);
+    expect(screen.getByText(/codex is checked every 15 minutes/i)).toBeInTheDocument();
+  });
+
   it('refreshes Codex only when the button is pressed', async () => {
     const user = userEvent.setup();
     localStorage.setItem('auric.cli-usage-limits', 'true');

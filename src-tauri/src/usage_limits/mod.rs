@@ -2,7 +2,7 @@
 //!
 //! Opt-in and off by default: switching it on changes how AuricIDE invokes
 //! `claude`, and a Codex check costs credits, so neither should happen unasked.
-//! Codex is queried only when the user presses refresh.
+//! Codex is queried on a 15-minute timer and whenever the user presses refresh.
 //!
 //! The switch itself is an ordinary application setting. It lives in
 //! `localStorage` and is mirrored into `<app_data_dir>/webview-prefs.json`, and
@@ -24,6 +24,14 @@ use store::UsageLimitsState;
 /// The `APP_CONFIG_KEYS.cliUsageLimits` entry from `src/lib/config/appConfig.ts`.
 /// Changing it here without changing it there turns the feature off silently.
 pub const ENABLED_PREF_KEY: &str = "auric.cli-usage-limits";
+
+/// How long a Codex reading counts as current for the background poller.
+/// The refresh button bypasses this — "Refresh quota now" means now.
+const REFRESH_TTL_SECS: i64 = 15 * 60;
+
+/// How often the background timer looks. Matches the TTL so a reading
+/// that nobody has refreshed by hand is replaced every 15 minutes.
+const TIMER_TICK_SECS: u64 = 15 * 60;
 
 /// Everything the commands need, managed by Tauri.
 pub struct UsageLimitsService {
@@ -71,18 +79,43 @@ pub fn enabled_in(prefs: &std::collections::BTreeMap<String, String>) -> bool {
     prefs.get(ENABLED_PREF_KEY).map(String::as_str) == Some("true")
 }
 
+/// Whether a stored Codex reading is old enough for the poller to replace.
+///
+/// Manual refresh does not go through this: a button that says "now" and then
+/// waits out a TTL is a button that lied.
+pub fn needs_refresh(stored: Option<&UsageSnapshot>, now: i64, ttl_secs: i64) -> bool {
+    match stored {
+        None => true,
+        // A reading stamped in the future is a clock that moved, not a fresh
+        // number — refetching is the cheaper of the two wrong answers.
+        Some(snapshot) => now < snapshot.observed_at || now - snapshot.observed_at >= ttl_secs,
+    }
+}
+
 /// All stored readings, in a stable order.
 pub fn snapshots_of(service: &UsageLimitsService) -> Vec<UsageSnapshot> {
     service.store.read().into_values().collect()
 }
 
-/// Asks Codex for a fresh reading. This costs credits, so only the refresh
-/// button should call it.
+/// Asks Codex for a fresh reading. This costs credits: the 15-minute poller
+/// and the refresh button are the two callers that may spend them.
+///
+/// `force` is the refresh button. Without it the stored reading is checked
+/// again inside the lock, so a click a few seconds before the timer tick
+/// does not pay twice.
 pub async fn refresh_codex(
     service: &UsageLimitsService,
     now: i64,
-) -> Result<UsageSnapshot, UsageError> {
+    force: bool,
+) -> Result<Option<UsageSnapshot>, UsageError> {
     let _flight = service.refresh_lock.lock().await;
+
+    if !force {
+        let stored = service.store.read();
+        if !needs_refresh(stored.get("codex"), now, REFRESH_TTL_SECS) {
+            return Ok(None);
+        }
+    }
 
     let env = crate::agents::cached_login_shell_env().await;
     match codex::read_codex_limits(env, now).await {
@@ -92,7 +125,7 @@ pub async fn refresh_codex(
             if let Err(error) = service.store.put(snapshot.clone()) {
                 eprintln!("Usage limits: could not persist the codex reading: {error}");
             }
-            Ok(snapshot)
+            Ok(Some(snapshot))
         }
         Err(error) => {
             // A source that has gone away must stop claiming a number. Leaving
@@ -155,13 +188,45 @@ pub async fn usage_limits_refresh(
     let now = chrono::Utc::now().timestamp();
     // A provider that cannot answer must not hide one that can, so each error
     // is logged and the remaining readings are still returned.
-    if let Err(error) = refresh_codex(&service, now).await {
+    if let Err(error) = refresh_codex(&service, now, true).await {
         eprintln!("Usage limits: {error}");
     }
     if let Err(error) = refresh_claude(&service, now) {
         eprintln!("Usage limits: {error}");
     }
     Ok(snapshots_of(&service))
+}
+
+// ---------------------------------------------------------------------------
+// Background refresh
+// ---------------------------------------------------------------------------
+
+/// Ticks every 15 minutes, refreshing Codex when the stored reading has aged
+/// out.
+///
+/// Fires once immediately so a reading exists before anyone looks, and checks
+/// the setting on every pass rather than at startup — a user who switches the
+/// feature off should not have to restart for the process spawns to stop.
+pub fn spawn_usage_limits_runner(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            {
+                let service = app.state::<UsageLimitsService>();
+                if service.is_enabled() {
+                    let now = chrono::Utc::now().timestamp();
+                    let stored = service.store.read();
+                    if needs_refresh(stored.get("codex"), now, REFRESH_TTL_SECS) {
+                        match refresh_codex(&service, now, false).await {
+                            Ok(Some(_)) => emit_changed(&app),
+                            Ok(None) => {}
+                            Err(error) => eprintln!("Usage limits: {error}"),
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(TIMER_TICK_SECS)).await;
+        }
+    });
 }
 
 pub fn emit_changed(app: &tauri::AppHandle) {
@@ -279,6 +344,66 @@ mod tests {
             let prefs = BTreeMap::from([(ENABLED_PREF_KEY.to_string(), value.to_string())]);
             assert!(!enabled_in(&prefs), "{value:?} must not enable the feature");
         }
+    }
+
+    fn snapshot_at(observed_at: i64) -> UsageSnapshot {
+        UsageSnapshot {
+            provider: "codex".to_string(),
+            plan_label: None,
+            windows: vec![UsageWindow {
+                limit_id: "codex".to_string(),
+                limit_label: None,
+                kind: WindowKind::SevenDay,
+                label: "7 d".to_string(),
+                used_percent: 40.0,
+                resets_at: 1_787_301_067,
+                window_minutes: 10080,
+            }],
+            credits: None,
+            observed_at,
+            source: "app-server".to_string(),
+        }
+    }
+
+    #[test]
+    fn the_poller_looks_every_fifteen_minutes() {
+        // The ticket is the interval: a Codex reading must not sit for longer
+        // than this without the background runner asking again.
+        assert_eq!(TIMER_TICK_SECS, 15 * 60);
+        assert_eq!(REFRESH_TTL_SECS, 15 * 60);
+    }
+
+    #[test]
+    fn an_unread_provider_always_needs_a_refresh() {
+        assert!(needs_refresh(None, 1_000, REFRESH_TTL_SECS));
+    }
+
+    #[test]
+    fn a_recent_reading_is_left_alone() {
+        let stored = snapshot_at(1_000);
+        assert!(!needs_refresh(
+            Some(&stored),
+            1_000 + REFRESH_TTL_SECS - 1,
+            REFRESH_TTL_SECS
+        ));
+    }
+
+    #[test]
+    fn a_reading_at_exactly_the_ttl_is_refreshed() {
+        let stored = snapshot_at(1_000);
+        assert!(needs_refresh(
+            Some(&stored),
+            1_000 + REFRESH_TTL_SECS,
+            REFRESH_TTL_SECS
+        ));
+    }
+
+    #[test]
+    fn a_reading_from_the_future_is_refreshed_rather_than_trusted() {
+        // A clock that jumped backwards would otherwise pin the chip to a
+        // number that never updates again.
+        let stored = snapshot_at(9_000);
+        assert!(needs_refresh(Some(&stored), 1_000, REFRESH_TTL_SECS));
     }
 
     #[test]
