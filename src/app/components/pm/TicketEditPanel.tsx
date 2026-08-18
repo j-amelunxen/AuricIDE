@@ -186,7 +186,7 @@ export function TicketEditPanel({
 
   const isBlocked = dependencies.some((dep) => {
     const item = availableItems.find((i) => i.id === dep.targetId);
-    return item && item.type === 'ticket' && !isClosedTicketStatus(item.status);
+    return item && item.type === 'ticket' && !isClosedTicketStatus(item.status ?? '');
   });
 
   const handleSpawnAgent = async () => {

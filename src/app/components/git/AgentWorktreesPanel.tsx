@@ -28,7 +28,7 @@ export function AgentWorktreesPanel() {
         ? `${tree.branch ?? tree.name} has uncommitted or unmerged work. Removing it deletes that checkout and the auric/ branch.`
         : `Remove ${tree.branch ?? tree.name}? The checkout and its auric/ branch will be deleted.`,
       confirmLabel: 'Remove',
-      variant: 'danger',
+      variant: 'destroy',
     });
     if (!ok) return;
     try {
