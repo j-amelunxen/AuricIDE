@@ -848,6 +848,7 @@ describe('gitSlice', () => {
     expect(state.blameLoading).toBe(false);
     expect(state.hunkNavNonce).toBe(0);
     expect(state.hunkNavDirection).toBeNull();
+    expect(state.reviewComments).toEqual([]);
     expect(state.agentWorktrees).toEqual([]);
   });
 
@@ -877,6 +878,50 @@ describe('gitSlice', () => {
       await expect(store.getState().removeAgentWorktree('/nope', true)).rejects.toThrow(
         'worktree not found'
       );
+    });
+  });
+
+  describe('reviewComments', () => {
+    const draft = {
+      repoPath: '/repo',
+      filePath: 'src/a.ts',
+      lineNo: 4,
+      side: 'new' as const,
+      lineContent: 'const x = 1',
+      body: 'rename x',
+    };
+
+    it('starts empty', () => {
+      expect(store.getState().reviewComments).toEqual([]);
+    });
+
+    it('upserts a comment by file/side/line', () => {
+      store.getState().upsertReviewComment(draft);
+      store.getState().upsertReviewComment({ ...draft, body: 'rename x to count' });
+
+      expect(store.getState().reviewComments).toHaveLength(1);
+      expect(store.getState().reviewComments[0].body).toBe('rename x to count');
+      expect(store.getState().reviewComments[0].lineContent).toBe('const x = 1');
+    });
+
+    it('removes a comment when the body is cleared', () => {
+      store.getState().upsertReviewComment(draft);
+      store.getState().upsertReviewComment({ ...draft, body: '   ' });
+      expect(store.getState().reviewComments).toEqual([]);
+    });
+
+    it('removeReviewComment drops that id', () => {
+      const id = store.getState().upsertReviewComment(draft);
+      store.getState().removeReviewComment(id);
+      expect(store.getState().reviewComments).toEqual([]);
+    });
+
+    it('clearReviewComments can scope to one repo', () => {
+      store.getState().upsertReviewComment(draft);
+      store.getState().upsertReviewComment({ ...draft, repoPath: '/other', filePath: 'b.ts' });
+      store.getState().clearReviewComments('/repo');
+      expect(store.getState().reviewComments).toHaveLength(1);
+      expect(store.getState().reviewComments[0].repoPath).toBe('/other');
     });
   });
 });

@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { DiffTabState } from '../git/diffTab';
+import { reviewCommentId, type ReviewComment } from '../git/reviewComments';
 import { repoForPath } from '../git/repos';
 import { isStaged, isUnstagedTracked, isUntracked } from '../git/statusSplit';
 import type {
@@ -79,6 +80,10 @@ export interface GitSlice {
   requestHunkNav: (dir: HunkNavDirection) => void;
   setDiffTab: (tabId: string, state: DiffTabState) => void;
   clearDiffTab: (tabId: string) => void;
+  reviewComments: ReviewComment[];
+  upsertReviewComment: (comment: Omit<ReviewComment, 'id' | 'createdAt'>) => string;
+  removeReviewComment: (id: string) => void;
+  clearReviewComments: (repoPath?: string) => void;
   resetGitInMemory: () => void;
   stageFile: (repoPath: string, path: string) => Promise<void>;
   /** Stages every changed file except the ignored ones, in one round trip. */
@@ -169,6 +174,7 @@ const EMPTY_REVIEW_STATE = {
   blameLoading: false,
   hunkNavNonce: 0,
   hunkNavDirection: null,
+  reviewComments: [] as ReviewComment[],
 };
 
 /** Merges a fetched status into `states`, keeping that repo's commit-box UI state untouched. */
@@ -487,6 +493,32 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
         delete next[tabId];
         return { diffByTabId: next };
       }),
+
+    upsertReviewComment: (comment) => {
+      const id = reviewCommentId(comment);
+      const body = comment.body.trim();
+      set((s) => {
+        const without = s.reviewComments.filter((c) => c.id !== id);
+        if (!body) return { reviewComments: without };
+        const existing = s.reviewComments.find((c) => c.id === id);
+        const next: ReviewComment = {
+          ...comment,
+          id,
+          body,
+          createdAt: existing?.createdAt ?? Date.now(),
+        };
+        return { reviewComments: [...without, next] };
+      });
+      return id;
+    },
+
+    removeReviewComment: (id) =>
+      set((s) => ({ reviewComments: s.reviewComments.filter((c) => c.id !== id) })),
+
+    clearReviewComments: (repoPath) =>
+      set((s) => ({
+        reviewComments: repoPath ? s.reviewComments.filter((c) => c.repoPath !== repoPath) : [],
+      })),
 
     resetGitInMemory: () =>
       set({

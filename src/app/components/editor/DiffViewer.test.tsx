@@ -1,8 +1,20 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
 import { DiffViewer } from './DiffViewer';
+
+const mockApplyDiffLineEdit = vi.hoisted(() => vi.fn());
+const mockReloadDiffPatch = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/git/applyLineEdit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/git/applyLineEdit')>();
+  return {
+    ...actual,
+    applyDiffLineEdit: (...args: unknown[]) => mockApplyDiffLineEdit(...args),
+    reloadDiffPatch: (...args: unknown[]) => mockReloadDiffPatch(...args),
+  };
+});
 
 const sampleDiff = `--- a/file.txt
 +++ b/file.txt
@@ -273,5 +285,274 @@ describe('DiffViewer hunk navigation', () => {
         viewer.querySelector('[data-hunk-index="0"]')
       );
     });
+  });
+});
+
+const editableProps = {
+  diff: sampleDiff,
+  fileName: 'file.txt',
+  repoPath: '/repo',
+  source: { kind: 'unstaged' as const },
+};
+
+describe('DiffViewer inline edit', () => {
+  beforeEach(() => {
+    mockApplyDiffLineEdit.mockReset();
+    mockReloadDiffPatch.mockReset();
+    mockApplyDiffLineEdit.mockResolvedValue(undefined);
+    mockReloadDiffPatch.mockResolvedValue(sampleDiff);
+    useStore.getState().resetGitInMemory();
+    useStore.getState().showToast = vi.fn();
+    useStore.setState({
+      activeTabId: 'diff:unstaged:/repo:file.txt',
+      refreshRepoStatus: vi.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  it('offers edit on added and context lines of a live worktree diff', () => {
+    render(<DiffViewer {...editableProps} />);
+    expect(screen.getByRole('button', { name: 'Edit line 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit line 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit line 3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Edit line 2 \(removed\)/i })).toBeNull();
+  });
+
+  it('does not offer edit without a repo path', () => {
+    render(<DiffViewer diff={sampleDiff} fileName="file.txt" />);
+    expect(screen.queryByRole('button', { name: /Edit line/ })).toBeNull();
+  });
+
+  it('does not offer edit on a historical revision tab', () => {
+    render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'revision', oid: 'abc', summary: 'old' }}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /Edit line/ })).toBeNull();
+  });
+
+  it('does not offer edit on a staged file that also has unstaged drift', () => {
+    useStore.setState({
+      repoStates: {
+        '/repo': {
+          ref: { path: '/repo', relativePath: '', name: 'repo', kind: 'root' },
+          branchInfo: null,
+          fileStatuses: [
+            { path: 'file.txt', status: 'modified', staged: 'modified', unstaged: 'modified' },
+          ],
+          commitMessage: '',
+          isCommitting: false,
+          isPushing: false,
+        },
+      },
+    });
+    render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'staged' }}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /Edit line/ })).toBeNull();
+  });
+
+  it('opens an editor on double-click of the new-file side', async () => {
+    const user = userEvent.setup();
+    render(<DiffViewer {...editableProps} />);
+    const added = screen.getByTestId('diff-side-by-side').querySelector('.bg-green-900\\/30');
+    expect(added).not.toBeNull();
+    await user.dblClick(added!);
+    const editor = screen.getByTestId('diff-line-editor');
+    expect(editor).toHaveValue('new line');
+  });
+
+  it('opens an editor from the line edit button', async () => {
+    const user = userEvent.setup();
+    render(<DiffViewer {...editableProps} />);
+    await user.click(screen.getByRole('button', { name: 'Edit line 2' }));
+    expect(screen.getByTestId('diff-line-editor')).toHaveValue('new line');
+  });
+
+  it('cancels the editor with Escape and does not write', async () => {
+    const user = userEvent.setup();
+    render(<DiffViewer {...editableProps} />);
+    await user.click(screen.getByRole('button', { name: 'Edit line 2' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('diff-line-editor')).toBeNull();
+    expect(mockApplyDiffLineEdit).not.toHaveBeenCalled();
+  });
+
+  it('writes the line on Enter and reloads the patch', async () => {
+    const user = userEvent.setup();
+    const setDiffTab = vi.fn();
+    useStore.setState({ setDiffTab });
+    useStore.getState().setDiffTab = setDiffTab;
+    useStore.setState({
+      activeTabId: 'diff:unstaged:/repo:file.txt',
+      diffByTabId: {
+        'diff:unstaged:/repo:file.txt': {
+          patch: sampleDiff,
+          filePath: 'file.txt',
+          source: { kind: 'unstaged' },
+          repoPath: '/repo',
+        },
+      },
+    });
+
+    render(<DiffViewer {...editableProps} />);
+    await user.click(screen.getByRole('button', { name: 'Edit line 2' }));
+    const editor = screen.getByTestId('diff-line-editor');
+    await user.clear(editor);
+    await user.type(editor, 'fixed line');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(mockApplyDiffLineEdit).toHaveBeenCalledWith({
+        repoPath: '/repo',
+        filePath: 'file.txt',
+        lineNo: 2,
+        expected: 'new line',
+        nextText: 'fixed line',
+        restage: false,
+      });
+    });
+    expect(mockReloadDiffPatch).toHaveBeenCalledWith('/repo', 'file.txt', { kind: 'unstaged' });
+    expect(setDiffTab).toHaveBeenCalled();
+    expect(screen.queryByTestId('diff-line-editor')).toBeNull();
+  });
+
+  it('restages after editing a staged-only file', async () => {
+    const user = userEvent.setup();
+    render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'staged' }}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Edit line 2' }));
+    const editor = screen.getByTestId('diff-line-editor');
+    await user.clear(editor);
+    await user.type(editor, 'staged fix');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(mockApplyDiffLineEdit).toHaveBeenCalledWith(
+        expect.objectContaining({ restage: true, lineNo: 2, nextText: 'staged fix' })
+      );
+    });
+  });
+
+  it('edits from unified view too', async () => {
+    const user = userEvent.setup();
+    render(<DiffViewer {...editableProps} />);
+    await user.click(screen.getByTestId('diff-view-toggle'));
+    await user.click(screen.getByRole('button', { name: 'Edit line 2' }));
+    expect(screen.getByTestId('diff-line-editor')).toHaveValue('new line');
+  });
+
+  it('toasts when the write fails and keeps the editor open', async () => {
+    const user = userEvent.setup();
+    const showToast = vi.fn();
+    useStore.setState({ showToast });
+    mockApplyDiffLineEdit.mockRejectedValue(new Error('disk full'));
+
+    render(<DiffViewer {...editableProps} />);
+    await user.click(screen.getByRole('button', { name: 'Edit line 2' }));
+    await user.type(screen.getByTestId('diff-line-editor'), '!');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('disk full', 'error');
+    });
+    expect(screen.getByTestId('diff-line-editor')).toBeInTheDocument();
+  });
+});
+
+describe('DiffViewer line comments', () => {
+  beforeEach(() => {
+    useStore.getState().resetGitInMemory();
+    useStore.setState({
+      spawnDialogOpen: false,
+      initialAgentTask: '',
+      spawnAgentRepoPath: null,
+    });
+  });
+
+  it('offers comments on content lines when a repo is known', () => {
+    render(<DiffViewer {...editableProps} />);
+    expect(screen.getByRole('button', { name: 'Comment on line 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Comment on line 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Comment on old line 2' })).toBeInTheDocument();
+  });
+
+  it('does not offer comments without a repo path', () => {
+    render(<DiffViewer diff={sampleDiff} fileName="file.txt" />);
+    expect(screen.queryByRole('button', { name: /Comment on/ })).toBeNull();
+  });
+
+  it('still offers comments on a historical revision tab', () => {
+    render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'revision', oid: 'abc', summary: 'old' }}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Comment on line 2' })).toBeInTheDocument();
+  });
+
+  it('saves a comment under the line', async () => {
+    const user = userEvent.setup();
+    render(<DiffViewer {...editableProps} />);
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2' }));
+    const composer = screen.getByTestId('diff-comment-composer');
+    await user.type(composer, 'rename this');
+    await user.click(screen.getByRole('button', { name: 'Save comment' }));
+
+    expect(screen.getByTestId('diff-line-comment')).toHaveTextContent('rename this');
+    expect(useStore.getState().reviewComments).toHaveLength(1);
+    expect(useStore.getState().reviewComments[0]).toMatchObject({
+      filePath: 'file.txt',
+      lineNo: 2,
+      side: 'new',
+      body: 'rename this',
+      lineContent: 'new line',
+    });
+  });
+
+  it('sends the repo comments to the spawn dialog as a checklist', async () => {
+    const user = userEvent.setup();
+    useStore.getState().upsertReviewComment({
+      repoPath: '/repo',
+      filePath: 'file.txt',
+      lineNo: 2,
+      side: 'new',
+      lineContent: 'new line',
+      body: 'rename this',
+    });
+    useStore.getState().upsertReviewComment({
+      repoPath: '/other',
+      filePath: 'x.ts',
+      lineNo: 1,
+      side: 'new',
+      lineContent: 'x',
+      body: 'ignore me',
+    });
+
+    render(<DiffViewer {...editableProps} />);
+    await user.click(screen.getByTestId('diff-send-comments'));
+
+    expect(useStore.getState().spawnDialogOpen).toBe(true);
+    expect(useStore.getState().spawnAgentRepoPath).toBe('/repo');
+    expect(useStore.getState().initialAgentTask).toContain('rename this');
+    expect(useStore.getState().initialAgentTask).toMatch(/checklist/i);
+    expect(useStore.getState().initialAgentTask).not.toContain('ignore me');
   });
 });

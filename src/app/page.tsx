@@ -442,7 +442,12 @@ export default function Home() {
             ) : state.activeTabId ? (
               <div className="flex-1 overflow-hidden">
                 {handlers.isDiffTab && diffTab ? (
-                  <DiffViewer diff={diffTab.patch} fileName={diffTab.filePath} />
+                  <DiffViewer
+                    diff={diffTab.patch}
+                    fileName={diffTab.filePath}
+                    repoPath={diffTab.repoPath}
+                    source={diffTab.source}
+                  />
                 ) : state.imageData ? (
                   <ImageViewer
                     src={state.imageData}
