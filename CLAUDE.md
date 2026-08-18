@@ -393,6 +393,34 @@ click, so it is fenced — full reasoning in
   schedule does not carry them, so a scheduled Tuesday and a clicked Thursday
   run identically.
 
+## Git across several repositories
+
+The opened folder is not assumed to be a repository. `git_discover_repos`
+walks it (depth ≤ 4, same prune list as the explorer, root never pruned) and
+reports every work-tree root at or below it — the root itself, nested
+checkouts, submodules (`kind` decided by the nearest enclosing discovered
+repo). From there **the repository is resolved per path, never from
+`rootPath`**. What to keep in mind when touching anything git-shaped:
+
+- **`repoPath` is the identity.** `gitSlice` holds `repos` + `repoStates`
+  keyed by it; every store action, panel callback and diff-tab id
+  (`diffTabId(source, filePath, repoPath)`) carries it. `repoForPath` (deepest
+  match) is the one way from a file to its repo; explorer badges, gutter,
+  blame and history all go through it. A nested repo's own folder gets no
+  badge from the outer repo.
+- **A repo has a state the moment it is discovered**, statuses fill in later
+  per repo; rediscovery prunes vanished repos (and their blame) and ignores
+  late writes for them; changing `activeRepoPath` clears the previous repo's
+  history/compare state.
+- **One root repo renders the panel exactly as before.** Otherwise the Changes
+  view is one collapsible section per repo with its own commit box; a section
+  follows its content until the user toggles it. Agentic commit is a project
+  setting but runs with `cwd = repoPath` of the section.
+- **Global git shortcuts** target the active tab's repo, then
+  `activeRepoPath`, then the only repo — never `rootPath`.
+- Left as it was, deliberately: goal-line evidence (`gitLogSince(rootPath)`)
+  and opening a _subfolder_ of a repo (no upward discovery).
+
 ## Requirements vs. Tickets
 
 Requirements and Tickets serve fundamentally different purposes:
