@@ -10,4 +10,6 @@ export interface DiffTabState {
   /** Repo-relative. Never parse this out of the tab id. */
   filePath: string;
   source: DiffSource;
+  /** Absolute work-tree path of the repo the diff belongs to. */
+  repoPath: string;
 }

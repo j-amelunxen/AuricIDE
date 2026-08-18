@@ -5,7 +5,13 @@ import { ContextMenu } from '../ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { isStaged, isUnstagedTracked, isUntracked } from '@/lib/git/statusSplit';
-import type { CommitInfo, GitBranch, GitFileStatus, GitNameStatus } from '@/lib/tauri/git';
+import type {
+  CommitInfo,
+  GitBranch,
+  GitFileStatus,
+  GitNameStatus,
+  GitRepoKind,
+} from '@/lib/tauri/git';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import type { ScmView } from '@/lib/store/gitSlice';
 import { HistoryView } from './HistoryView';
@@ -13,30 +19,41 @@ import { CompareView } from './CompareView';
 
 type DiffSide = 'staged' | 'unstaged';
 
-export interface SourceControlProps {
+export interface RepoView {
+  repoPath: string;
+  label: string;
+  kind: GitRepoKind;
+  branchName: string | null;
+  ticketPrefix?: string;
   fileStatuses: GitFileStatus[];
   commitMessage: string;
   isCommitting: boolean;
-  isPushing?: boolean;
-  /** Pushes the current branch to origin. Omit to hide the button. */
-  onPush?: () => void;
+  isPushing: boolean;
+}
+
+export interface SourceControlProps {
+  repos: RepoView[];
   agenticCommit?: boolean;
-  ticketPrefix?: string;
   providers?: ProviderInfo[];
   selectedProviderId?: string;
-  onCommitMessageChange: (msg: string) => void;
-  onCommit: () => void;
-  onStageFile: (path: string) => void;
-  onUnstageFile: (path: string) => void;
-  onStageAll?: () => void;
-  onUnstageAll?: () => void;
-  onFileClick?: (path: string, side: 'staged' | 'unstaged') => void;
-  onDiscardFile?: (path: string) => void;
+  onCommitMessageChange: (repoPath: string, msg: string) => void;
+  onCommit: (repoPath: string) => void;
+  onStageFile: (repoPath: string, path: string) => void;
+  onUnstageFile: (repoPath: string, path: string) => void;
+  onStageAll?: (repoPath: string) => void;
+  onUnstageAll?: (repoPath: string) => void;
+  /** Pushes the given repo's current branch to origin. Omit to hide the button. */
+  onPush?: (repoPath: string) => void;
+  onFileClick?: (repoPath: string, path: string, side: DiffSide) => void;
+  onDiscardFile?: (repoPath: string, path: string) => void;
   onAgenticToggle?: (value: boolean) => void;
   onProviderChange?: (id: string) => void;
   onRefresh?: () => void;
   scmView?: ScmView;
   onScmViewChange?: (view: ScmView) => void;
+  /** History / Compare target when more than one repo is open. */
+  activeRepoPath?: string | null;
+  onActiveRepoChange?: (repoPath: string) => void;
   historyPath?: string | null;
   historyCommits?: CommitInfo[];
   historySelectedOid?: string | null;
@@ -268,29 +285,353 @@ function FileSection({
   );
 }
 
-export function SourceControlPanel({
-  fileStatuses,
-  commitMessage,
-  isCommitting,
-  isPushing = false,
-  onPush,
-  agenticCommit = false,
-  ticketPrefix,
+function AgenticControls({
+  agenticCommit,
+  providers,
+  selectedProviderId,
+  onAgenticToggle,
+  onProviderChange,
+}: {
+  agenticCommit: boolean;
+  providers: ProviderInfo[];
+  selectedProviderId?: string;
+  onAgenticToggle?: (value: boolean) => void;
+  onProviderChange?: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={agenticCommit}
+          onChange={(e) => onAgenticToggle?.(e.target.checked)}
+          className="h-3.5 w-3.5 accent-primary"
+        />
+        <span className="text-xs text-foreground-muted">Agentic</span>
+      </label>
+
+      {agenticCommit && providers.length > 0 && (
+        <select
+          value={selectedProviderId}
+          onChange={(e) => onProviderChange?.(e.target.value)}
+          className="w-full rounded border border-border-dark bg-editor-bg px-2 py-1 text-[10px] text-foreground-muted outline-none focus:border-primary"
+        >
+          {providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+interface RepoBodyProps {
+  repo: RepoView;
+  agenticCommit: boolean;
+  renderAgenticControls: boolean;
+  providers: ProviderInfo[];
+  selectedProviderId?: string;
+  onAgenticToggle?: (value: boolean) => void;
+  onProviderChange?: (id: string) => void;
+  onCommitMessageChange: (msg: string) => void;
+  onCommit: () => void;
+  onPush?: () => void;
+  onStageFile: (path: string) => void;
+  onUnstageFile: (path: string) => void;
+  onStageAll?: () => void;
+  onUnstageAll?: () => void;
+  onFileClick?: (path: string, side: DiffSide) => void;
+  onDiscardFile?: (path: string) => void;
+}
+
+/** The commit box plus the Staged/Changes/Untracked lists for one repo. */
+function RepoBody({
+  repo,
+  agenticCommit,
+  renderAgenticControls,
+  providers,
+  selectedProviderId,
+  onAgenticToggle,
+  onProviderChange,
   onCommitMessageChange,
   onCommit,
+  onPush,
   onStageFile,
   onUnstageFile,
   onStageAll,
   onUnstageAll,
   onFileClick,
   onDiscardFile,
-  onAgenticToggle,
+}: RepoBodyProps) {
+  const visible = repo.fileStatuses.filter((s) => s.status !== 'ignored');
+  const staged = visible.filter(isStaged);
+  const changed = visible.filter(isUnstagedTracked);
+  const untracked = visible.filter(isUntracked);
+  const hasChanges = staged.length + changed.length + untracked.length > 0;
+
+  return (
+    <>
+      <div className="px-3 pb-3">
+        {repo.ticketPrefix && (
+          <div
+            data-testid="ticket-badge"
+            className="mb-2 inline-flex items-center gap-1.5 rounded bg-primary/10 border border-primary/20 px-2 py-0.5"
+          >
+            <AuricIcon name="confirmation_number" className="text-primary-light text-xs" />
+            <span className="text-[11px] font-mono font-bold text-primary-light">
+              {repo.ticketPrefix}
+            </span>
+          </div>
+        )}
+        <textarea
+          placeholder="Commit message"
+          value={repo.commitMessage}
+          onChange={(e) => onCommitMessageChange(e.target.value)}
+          className="w-full resize-none rounded border border-border-dark bg-editor-bg px-3 py-2 text-xs text-foreground placeholder:text-foreground-muted focus:border-primary focus:outline-none"
+          rows={3}
+        />
+        {renderAgenticControls && (
+          <div className="mt-2">
+            <AgenticControls
+              agenticCommit={agenticCommit}
+              providers={providers}
+              selectedProviderId={selectedProviderId}
+              onAgenticToggle={onAgenticToggle}
+              onProviderChange={onProviderChange}
+            />
+          </div>
+        )}
+        {/* Commit and push are two separate actions, classic-git style: a
+        commit is local and cheap, a push publishes. One button per
+        promise, each label saying exactly what it does. */}
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={onCommit}
+            disabled={
+              agenticCommit ? repo.isCommitting : !repo.commitMessage.trim() || repo.isCommitting
+            }
+            className="flex-1 rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {repo.isCommitting
+              ? agenticCommit
+                ? 'Running Agent...'
+                : 'Committing...'
+              : agenticCommit
+                ? 'Agentic Commit'
+                : 'Commit'}
+          </button>
+          {onPush && (
+            <button
+              onClick={onPush}
+              disabled={repo.isPushing}
+              title="Push the current branch to origin"
+              className="rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary-light transition-colors hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {repo.isPushing ? 'Pushing...' : 'Push'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto border-t border-border-dark">
+        {!hasChanges ? (
+          <p className="p-3 text-xs text-foreground-muted">No changes</p>
+        ) : (
+          <>
+            {staged.length > 0 && (
+              <FileSection
+                title="Staged"
+                testId="staged-files"
+                files={staged}
+                side="staged"
+                actionKind="unstage"
+                onAction={onUnstageFile}
+                headerAction={
+                  onUnstageAll ? { label: 'Unstage All', onClick: onUnstageAll } : undefined
+                }
+                onFileClick={onFileClick}
+                onDiscardFile={onDiscardFile}
+              />
+            )}
+            {changed.length > 0 && (
+              <FileSection
+                title="Changes"
+                testId="changed-files"
+                files={changed}
+                side="unstaged"
+                actionKind="stage"
+                onAction={onStageFile}
+                headerAction={onStageAll ? { label: 'Stage All', onClick: onStageAll } : undefined}
+                bordered={staged.length > 0}
+                onFileClick={onFileClick}
+                onDiscardFile={onDiscardFile}
+              />
+            )}
+            {untracked.length > 0 && (
+              <FileSection
+                title="Untracked"
+                testId="untracked-files"
+                files={untracked}
+                side="unstaged"
+                actionKind="stage"
+                onAction={onStageFile}
+                bordered={staged.length > 0 || changed.length > 0}
+                onFileClick={onFileClick}
+                onDiscardFile={onDiscardFile}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+interface RepoSectionProps {
+  repo: RepoView;
+  agenticCommit: boolean;
+  onCommitMessageChange: (msg: string) => void;
+  onCommit: () => void;
+  onPush?: () => void;
+  onStageFile: (path: string) => void;
+  onUnstageFile: (path: string) => void;
+  onStageAll?: () => void;
+  onUnstageAll?: () => void;
+  onFileClick?: (path: string, side: DiffSide) => void;
+  onDiscardFile?: (path: string) => void;
+}
+
+/** One collapsible repo in the multi-repo Changes view. */
+function RepoSection({
+  repo,
+  agenticCommit,
+  onCommitMessageChange,
+  onCommit,
+  onPush,
+  onStageFile,
+  onUnstageFile,
+  onStageAll,
+  onUnstageAll,
+  onFileClick,
+  onDiscardFile,
+}: RepoSectionProps) {
+  const changeCount = repo.fileStatuses.filter((s) => s.status !== 'ignored').length;
+  // Repos mount before their statuses arrive, so the initial changeCount is
+  // often 0 for a repo that does have changes. A section follows its content
+  // until the user makes an explicit choice, which then sticks regardless of
+  // what arrives afterward.
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
+  const expanded = userExpanded ?? changeCount > 0;
+
+  return (
+    <div
+      data-testid={`repo-section-${repo.repoPath}`}
+      className="border-t border-border-dark first:border-t-0"
+    >
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setUserExpanded(!expanded)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <AuricIcon
+            name={expanded ? 'expand_more' : 'chevron_right'}
+            className="shrink-0 text-sm text-foreground-muted"
+          />
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
+            {repo.label}
+          </span>
+          {repo.kind === 'submodule' && (
+            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-light">
+              Submodule
+            </span>
+          )}
+          {repo.branchName && (
+            <span className="max-w-[40%] shrink-0 truncate text-[10px] text-foreground-muted">
+              {repo.branchName}
+            </span>
+          )}
+        </span>
+        <span
+          className="shrink-0 text-[10px] font-medium text-foreground-muted"
+          aria-label={`${changeCount} changed file${changeCount === 1 ? '' : 's'}`}
+        >
+          {changeCount}
+        </span>
+      </button>
+      {expanded && (
+        <RepoBody
+          repo={repo}
+          agenticCommit={agenticCommit}
+          renderAgenticControls={false}
+          providers={[]}
+          onCommitMessageChange={onCommitMessageChange}
+          onCommit={onCommit}
+          onPush={onPush}
+          onStageFile={onStageFile}
+          onUnstageFile={onUnstageFile}
+          onStageAll={onStageAll}
+          onUnstageAll={onUnstageAll}
+          onFileClick={onFileClick}
+          onDiscardFile={onDiscardFile}
+        />
+      )}
+    </div>
+  );
+}
+
+function RepoPicker({
+  repos,
+  activeRepoPath,
+  onChange,
+}: {
+  repos: RepoView[];
+  activeRepoPath: string | null;
+  onChange?: (repoPath: string) => void;
+}) {
+  return (
+    <div className="px-3 pb-2">
+      <select
+        data-testid="scm-repo-picker"
+        aria-label="Repository"
+        value={activeRepoPath ?? ''}
+        onChange={(e) => onChange?.(e.target.value)}
+        className="w-full rounded border border-border-dark bg-editor-bg px-2 py-1 text-[10px] text-foreground outline-none focus:border-primary"
+      >
+        {repos.map((repo) => (
+          <option key={repo.repoPath} value={repo.repoPath}>
+            {repo.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function SourceControlPanel({
+  repos,
+  agenticCommit = false,
   providers = [],
   selectedProviderId,
+  onCommitMessageChange,
+  onCommit,
+  onStageFile,
+  onUnstageFile,
+  onStageAll,
+  onUnstageAll,
+  onPush,
+  onFileClick,
+  onDiscardFile,
+  onAgenticToggle,
   onProviderChange,
   onRefresh,
   scmView = 'changes',
   onScmViewChange,
+  activeRepoPath = null,
+  onActiveRepoChange,
   historyPath = null,
   historyCommits = [],
   historySelectedOid = null,
@@ -303,11 +644,7 @@ export function SourceControlPanel({
   onCompareRefChange,
   onCompareFileClick,
 }: SourceControlProps) {
-  const visible = fileStatuses.filter((s) => s.status !== 'ignored');
-  const staged = visible.filter(isStaged);
-  const changed = visible.filter(isUnstagedTracked);
-  const untracked = visible.filter(isUntracked);
-  const hasChanges = staged.length + changed.length + untracked.length > 0;
+  const isSingleRoot = repos.length === 1 && repos[0].kind === 'root';
 
   return (
     <div data-testid="source-control-panel" className="flex h-full flex-col bg-panel-bg">
@@ -351,158 +688,109 @@ export function SourceControlPanel({
       </div>
 
       {scmView === 'history' && (
-        <HistoryView
-          historyPath={historyPath}
-          commits={historyCommits}
-          selectedOid={historySelectedOid}
-          loading={historyLoading}
-          onCommitClick={onHistoryCommitClick}
-        />
+        <>
+          {repos.length > 1 && (
+            <RepoPicker
+              repos={repos}
+              activeRepoPath={activeRepoPath}
+              onChange={onActiveRepoChange}
+            />
+          )}
+          <HistoryView
+            historyPath={historyPath}
+            commits={historyCommits}
+            selectedOid={historySelectedOid}
+            loading={historyLoading}
+            onCommitClick={onHistoryCommitClick}
+          />
+        </>
       )}
 
       {scmView === 'compare' && (
-        <CompareView
-          branches={branches}
-          compareRef={compareRef}
-          files={compareFiles}
-          loading={compareLoading}
-          onRefChange={onCompareRefChange}
-          onFileClick={onCompareFileClick}
-        />
-      )}
-
-      {scmView === 'changes' && (
         <>
-          {/* Commit message */}
-          <div className="px-3 pb-3">
-            {ticketPrefix && (
-              <div
-                data-testid="ticket-badge"
-                className="mb-2 inline-flex items-center gap-1.5 rounded bg-primary/10 border border-primary/20 px-2 py-0.5"
-              >
-                <AuricIcon name="confirmation_number" className="text-primary-light text-xs" />
-                <span className="text-[11px] font-mono font-bold text-primary-light">
-                  {ticketPrefix}
-                </span>
-              </div>
-            )}
-            <textarea
-              placeholder="Commit message"
-              value={commitMessage}
-              onChange={(e) => onCommitMessageChange(e.target.value)}
-              className="w-full resize-none rounded border border-border-dark bg-editor-bg px-3 py-2 text-xs text-foreground placeholder:text-foreground-muted focus:border-primary focus:outline-none"
-              rows={3}
+          {repos.length > 1 && (
+            <RepoPicker
+              repos={repos}
+              activeRepoPath={activeRepoPath}
+              onChange={onActiveRepoChange}
             />
-            <div className="mt-2 flex flex-col gap-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={agenticCommit}
-                  onChange={(e) => onAgenticToggle?.(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-primary"
-                />
-                <span className="text-xs text-foreground-muted">Agentic</span>
-              </label>
-
-              {agenticCommit && providers.length > 0 && (
-                <select
-                  value={selectedProviderId}
-                  onChange={(e) => onProviderChange?.(e.target.value)}
-                  className="w-full rounded border border-border-dark bg-editor-bg px-2 py-1 text-[10px] text-foreground-muted outline-none focus:border-primary"
-                >
-                  {providers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {/* Commit and push are two separate actions, classic-git style: a
-            commit is local and cheap, a push publishes. One button per
-            promise, each label saying exactly what it does. */}
-            <div className="mt-2 flex gap-2">
-              <button
-                onClick={onCommit}
-                disabled={agenticCommit ? isCommitting : !commitMessage.trim() || isCommitting}
-                className="flex-1 rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isCommitting
-                  ? agenticCommit
-                    ? 'Running Agent...'
-                    : 'Committing...'
-                  : agenticCommit
-                    ? 'Agentic Commit'
-                    : 'Commit'}
-              </button>
-              {onPush && (
-                <button
-                  onClick={onPush}
-                  disabled={isPushing}
-                  title="Push the current branch to origin"
-                  className="rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary-light transition-colors hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isPushing ? 'Pushing...' : 'Push'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Changed files */}
-          <div className="flex-1 overflow-y-auto border-t border-border-dark">
-            {!hasChanges ? (
-              <p className="p-3 text-xs text-foreground-muted">No changes</p>
-            ) : (
-              <>
-                {staged.length > 0 && (
-                  <FileSection
-                    title="Staged"
-                    testId="staged-files"
-                    files={staged}
-                    side="staged"
-                    actionKind="unstage"
-                    onAction={onUnstageFile}
-                    headerAction={
-                      onUnstageAll ? { label: 'Unstage All', onClick: onUnstageAll } : undefined
-                    }
-                    onFileClick={onFileClick}
-                    onDiscardFile={onDiscardFile}
-                  />
-                )}
-                {changed.length > 0 && (
-                  <FileSection
-                    title="Changes"
-                    testId="changed-files"
-                    files={changed}
-                    side="unstaged"
-                    actionKind="stage"
-                    onAction={onStageFile}
-                    headerAction={
-                      onStageAll ? { label: 'Stage All', onClick: onStageAll } : undefined
-                    }
-                    bordered={staged.length > 0}
-                    onFileClick={onFileClick}
-                    onDiscardFile={onDiscardFile}
-                  />
-                )}
-                {untracked.length > 0 && (
-                  <FileSection
-                    title="Untracked"
-                    testId="untracked-files"
-                    files={untracked}
-                    side="unstaged"
-                    actionKind="stage"
-                    onAction={onStageFile}
-                    bordered={staged.length > 0 || changed.length > 0}
-                    onFileClick={onFileClick}
-                    onDiscardFile={onDiscardFile}
-                  />
-                )}
-              </>
-            )}
-          </div>
+          )}
+          <CompareView
+            branches={branches}
+            compareRef={compareRef}
+            files={compareFiles}
+            loading={compareLoading}
+            onRefChange={onCompareRefChange}
+            onFileClick={onCompareFileClick}
+          />
         </>
       )}
+
+      {scmView === 'changes' &&
+        (repos.length === 0 ? (
+          <div className="flex-1 px-3 py-3">
+            <p className="text-xs text-foreground-muted">
+              No git repository found in this folder or up to 4 levels below it.
+            </p>
+          </div>
+        ) : isSingleRoot ? (
+          <RepoBody
+            repo={repos[0]}
+            agenticCommit={agenticCommit}
+            renderAgenticControls
+            providers={providers}
+            selectedProviderId={selectedProviderId}
+            onAgenticToggle={onAgenticToggle}
+            onProviderChange={onProviderChange}
+            onCommitMessageChange={(msg) => onCommitMessageChange(repos[0].repoPath, msg)}
+            onCommit={() => onCommit(repos[0].repoPath)}
+            onPush={onPush ? () => onPush(repos[0].repoPath) : undefined}
+            onStageFile={(path) => onStageFile(repos[0].repoPath, path)}
+            onUnstageFile={(path) => onUnstageFile(repos[0].repoPath, path)}
+            onStageAll={onStageAll ? () => onStageAll(repos[0].repoPath) : undefined}
+            onUnstageAll={onUnstageAll ? () => onUnstageAll(repos[0].repoPath) : undefined}
+            onFileClick={
+              onFileClick ? (path, side) => onFileClick(repos[0].repoPath, path, side) : undefined
+            }
+            onDiscardFile={
+              onDiscardFile ? (path) => onDiscardFile(repos[0].repoPath, path) : undefined
+            }
+          />
+        ) : (
+          <>
+            <div className="px-3 pb-3">
+              <AgenticControls
+                agenticCommit={agenticCommit}
+                providers={providers}
+                selectedProviderId={selectedProviderId}
+                onAgenticToggle={onAgenticToggle}
+                onProviderChange={onProviderChange}
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {repos.map((repo) => (
+                <RepoSection
+                  key={repo.repoPath}
+                  repo={repo}
+                  agenticCommit={agenticCommit}
+                  onCommitMessageChange={(msg) => onCommitMessageChange(repo.repoPath, msg)}
+                  onCommit={() => onCommit(repo.repoPath)}
+                  onPush={onPush ? () => onPush(repo.repoPath) : undefined}
+                  onStageFile={(path) => onStageFile(repo.repoPath, path)}
+                  onUnstageFile={(path) => onUnstageFile(repo.repoPath, path)}
+                  onStageAll={onStageAll ? () => onStageAll(repo.repoPath) : undefined}
+                  onUnstageAll={onUnstageAll ? () => onUnstageAll(repo.repoPath) : undefined}
+                  onFileClick={
+                    onFileClick ? (path, side) => onFileClick(repo.repoPath, path, side) : undefined
+                  }
+                  onDiscardFile={
+                    onDiscardFile ? (path) => onDiscardFile(repo.repoPath, path) : undefined
+                  }
+                />
+              ))}
+            </div>
+          </>
+        ))}
     </div>
   );
 }

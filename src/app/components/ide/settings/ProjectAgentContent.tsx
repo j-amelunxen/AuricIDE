@@ -2,6 +2,7 @@
 
 import { useStore } from '@/lib/store';
 import { extractTicket } from '@/lib/git/branchTicket';
+import { selectBranchNameForPath } from '@/lib/store/gitSlice';
 import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { SettingsInput } from '../../ui/settings/SettingsInput';
@@ -19,7 +20,7 @@ export function ProjectAgentContent() {
   const agentSettings = useStore((s) => s.agentSettings);
   const updateAgentSettings = useStore((s) => s.updateAgentSettings);
   const providers = useStore((s) => s.providers);
-  const branchName = useStore((s) => s.branchInfo?.name ?? '');
+  const branchName = useStore((s) => selectBranchNameForPath(s, null) ?? '');
   const rootPath = useStore((s) => s.rootPath);
 
   const selectedProviderId = agentSettings.commitProviderId || providers[0]?.id;

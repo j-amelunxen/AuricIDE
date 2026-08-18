@@ -12,8 +12,7 @@ vi.mock('@/lib/tauri/git', () => ({
 const store = vi.hoisted(() => {
   const state = {
     activeTabId: null as string | null,
-    rootPath: '/repo' as string | null,
-    fileStatuses: [] as { path: string; status: string }[],
+    repoStates: {} as Record<string, { fileStatuses: { path: string; status: string }[] }>,
     diffByTabId: {} as Record<string, DiffTabState>,
     setDiffTab: vi.fn((tabId: string, next: DiffTabState) => {
       state.diffByTabId = { ...state.diffByTabId, [tabId]: next };
@@ -34,6 +33,7 @@ const unstagedA: DiffTabState = {
   patch: 'old-a',
   filePath: 'src/a.ts',
   source: { kind: 'unstaged' },
+  repoPath: '/repo',
 };
 
 describe('useActiveDiffLoader', () => {
@@ -42,8 +42,7 @@ describe('useActiveDiffLoader', () => {
     mockGetGitDiff.mockResolvedValue('fresh-patch');
     mockGetGitDiffFileRef.mockResolvedValue('fresh-ref-patch');
     store.activeTabId = null;
-    store.rootPath = '/repo';
-    store.fileStatuses = [];
+    store.repoStates = { '/repo': { fileStatuses: [] } };
     store.diffByTabId = {};
   });
 
@@ -55,10 +54,10 @@ describe('useActiveDiffLoader', () => {
   });
 
   it('refetches an unstaged patch when fileStatuses for that path change', async () => {
-    const id = 'diff:unstaged:src/a.ts';
+    const id = 'diff:unstaged:/repo:src/a.ts';
     store.activeTabId = id;
     store.diffByTabId = { [id]: unstagedA };
-    store.fileStatuses = [{ path: 'src/a.ts', status: 'modified' }];
+    store.repoStates = { '/repo': { fileStatuses: [{ path: 'src/a.ts', status: 'modified' }] } };
 
     const { rerender } = renderHook(() => useActiveDiffLoader());
 
@@ -68,7 +67,7 @@ describe('useActiveDiffLoader', () => {
     mockGetGitDiff.mockClear();
     mockGetGitDiff.mockResolvedValue('after-commit');
 
-    store.fileStatuses = [];
+    store.repoStates = { '/repo': { fileStatuses: [] } };
     rerender();
 
     await vi.waitFor(() => {
@@ -81,19 +80,20 @@ describe('useActiveDiffLoader', () => {
   });
 
   it('does not refetch a revision patch — those are immutable', async () => {
-    const id = 'diff:rev:abcdef1:src/a.ts';
+    const id = 'diff:rev:abcdef1:/repo:src/a.ts';
     store.activeTabId = id;
     store.diffByTabId = {
       [id]: {
         patch: 'at-rev',
         filePath: 'src/a.ts',
         source: { kind: 'revision', oid: 'abcdef1', summary: 'wip' },
+        repoPath: '/repo',
       },
     };
-    store.fileStatuses = [{ path: 'src/a.ts', status: 'modified' }];
+    store.repoStates = { '/repo': { fileStatuses: [{ path: 'src/a.ts', status: 'modified' }] } };
 
     const { rerender } = renderHook(() => useActiveDiffLoader());
-    store.fileStatuses = [];
+    store.repoStates = { '/repo': { fileStatuses: [] } };
     rerender();
 
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -101,16 +101,17 @@ describe('useActiveDiffLoader', () => {
   });
 
   it('refetches a staged patch with side=staged', async () => {
-    const id = 'diff:staged:src/a.ts';
+    const id = 'diff:staged:/repo:src/a.ts';
     store.activeTabId = id;
     store.diffByTabId = {
       [id]: {
         patch: 'old-s',
         filePath: 'src/a.ts',
         source: { kind: 'staged' },
+        repoPath: '/repo',
       },
     };
-    store.fileStatuses = [{ path: 'src/a.ts', status: 'modified' }];
+    store.repoStates = { '/repo': { fileStatuses: [{ path: 'src/a.ts', status: 'modified' }] } };
 
     renderHook(() => useActiveDiffLoader());
 
@@ -121,20 +122,22 @@ describe('useActiveDiffLoader', () => {
       patch: 'fresh-patch',
       filePath: 'src/a.ts',
       source: { kind: 'staged' },
+      repoPath: '/repo',
     });
   });
 
   it('refetches a compare-ref patch via getGitDiffFileRef, not working-tree getGitDiff', async () => {
-    const id = 'diff:ref:origin%2Fmain:src/a.ts';
+    const id = 'diff:ref:origin%2Fmain:/repo:src/a.ts';
     store.activeTabId = id;
     store.diffByTabId = {
       [id]: {
         patch: 'vs-main',
         filePath: 'src/a.ts',
         source: { kind: 'ref', ref: 'origin/main' },
+        repoPath: '/repo',
       },
     };
-    store.fileStatuses = [{ path: 'src/a.ts', status: 'modified' }];
+    store.repoStates = { '/repo': { fileStatuses: [{ path: 'src/a.ts', status: 'modified' }] } };
 
     renderHook(() => useActiveDiffLoader());
 
@@ -146,6 +149,7 @@ describe('useActiveDiffLoader', () => {
       patch: 'fresh-ref-patch',
       filePath: 'src/a.ts',
       source: { kind: 'ref', ref: 'origin/main' },
+      repoPath: '/repo',
     });
   });
 });

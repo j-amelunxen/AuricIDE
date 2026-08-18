@@ -290,13 +290,25 @@ describe('SettingsModal – Ticket Pattern', () => {
     expect(useStore.getState().agentSettings.branchTicketPattern).toBe('(\\d+)');
   });
 
+  const rootRepoStub = {
+    path: '/tmp/project',
+    relativePath: '',
+    name: 'project',
+    kind: 'root' as const,
+  };
+  const repoStateStub = (name: string) => ({
+    ref: rootRepoStub,
+    branchInfo: { name, ahead: 0, behind: 0 },
+    fileStatuses: [],
+    commitMessage: '',
+    isCommitting: false,
+    isPushing: false,
+  });
+
   it('shows live preview when branch info is available', () => {
     useStore.setState({
-      branchInfo: {
-        name: 'feature/AB-1234-your-ticket-text',
-        ahead: 0,
-        behind: 0,
-      },
+      repos: [rootRepoStub],
+      repoStates: { '/tmp/project': repoStateStub('feature/AB-1234-your-ticket-text') },
     });
 
     render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
@@ -306,7 +318,10 @@ describe('SettingsModal – Ticket Pattern', () => {
   });
 
   it('shows "(no match)" in preview when pattern does not match', () => {
-    useStore.setState({ branchInfo: { name: 'main', ahead: 0, behind: 0 } });
+    useStore.setState({
+      repos: [rootRepoStub],
+      repoStates: { '/tmp/project': repoStateStub('main') },
+    });
 
     render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     const preview = screen.getByTestId('ticket-preview');
@@ -314,7 +329,7 @@ describe('SettingsModal – Ticket Pattern', () => {
   });
 
   it('hides preview when no branch info is available', () => {
-    useStore.setState({ branchInfo: null });
+    useStore.setState({ repos: [], repoStates: {} });
 
     render(<SettingsModal isOpen={true} onClose={() => {}} initialCategory="project-agent" />);
     expect(screen.queryByTestId('ticket-preview')).not.toBeInTheDocument();
