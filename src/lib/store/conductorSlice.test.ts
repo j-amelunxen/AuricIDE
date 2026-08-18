@@ -150,6 +150,7 @@ describe('getConductorPreflight', () => {
       needsApproval: 0,
       inProgress: 0,
       inReview: 0,
+      toTest: 0,
       exhausted: 0,
     });
   });
@@ -210,12 +211,18 @@ describe('getConductorPreflight', () => {
     expect(result).toMatchObject({ ready: 0, inProgress: 0, inReview: 1 });
   });
 
-  it('ignores done and archived tickets', () => {
+  it('counts tickets waiting for QA as to_test, never ready', () => {
+    const result = preflight([makeTicket({ id: 'a', status: 'to_test' })]);
+    expect(result).toMatchObject({ ready: 0, inProgress: 0, toTest: 1 });
+  });
+
+  it('ignores done, archived and discarded tickets', () => {
     const result = preflight([
       makeTicket({ id: 'a', status: 'done' }),
       makeTicket({ id: 'b', status: 'archived' }),
+      makeTicket({ id: 'c', status: 'discarded' }),
     ]);
-    expect(result).toMatchObject({ ready: 0, blocked: 0, inProgress: 0 });
+    expect(result).toMatchObject({ ready: 0, blocked: 0, inProgress: 0, toTest: 0 });
   });
 
   it('restricts the scope to the goal subtree', () => {
@@ -306,6 +313,38 @@ describe('conductor pure helpers', () => {
     expect(getUnblockedOpenTickets(all, deps, all).map((t) => t.id)).toEqual(['blocked']);
   });
 
+  it('getUnblockedOpenTickets treats a discarded dependency as closed', () => {
+    const blocker = makeTicket({ id: 'blocker', status: 'discarded' });
+    const blocked = makeTicket({ id: 'blocked' });
+    const deps: PmDependency[] = [
+      {
+        id: 'd1',
+        sourceType: 'ticket',
+        sourceId: 'blocked',
+        targetType: 'ticket',
+        targetId: 'blocker',
+      },
+    ];
+    const all = [blocker, blocked];
+    expect(getUnblockedOpenTickets(all, deps, all).map((t) => t.id)).toEqual(['blocked']);
+  });
+
+  it('getUnblockedOpenTickets keeps a to_test dependency blocking', () => {
+    const blocker = makeTicket({ id: 'blocker', status: 'to_test' });
+    const blocked = makeTicket({ id: 'blocked' });
+    const deps: PmDependency[] = [
+      {
+        id: 'd1',
+        sourceType: 'ticket',
+        sourceId: 'blocked',
+        targetType: 'ticket',
+        targetId: 'blocker',
+      },
+    ];
+    const all = [blocker, blocked];
+    expect(getUnblockedOpenTickets(all, deps, all).map((t) => t.id)).toEqual([]);
+  });
+
   it('modelForPower maps capability tiers to models', () => {
     expect(modelForPower('low')).toBe('haiku');
     expect(modelForPower('medium')).toBe('sonnet');
@@ -357,6 +396,20 @@ describe('conductor pure helpers', () => {
     const ticket = makeTicket({ name: 'Implement login' });
     const prompt = buildConductorPrompt(ticket, undefined, []);
     expect(prompt.startsWith('/goal')).toBe(false);
+  });
+
+  it('writes attached skills in front of the conductor prompt', () => {
+    const ticket = makeTicket({ name: 'Implement login', skills: ['/tdd', '/review'] });
+    const prompt = buildConductorPrompt(ticket, undefined, []);
+    expect(prompt.startsWith('/tdd /review\n\n')).toBe(true);
+    expect(prompt).toContain('# Task: Implement login');
+  });
+
+  it('writes ticket skills in front of /goal', () => {
+    const ticket = makeTicket({ name: 'Implement login', skills: ['/tdd'] });
+    const goal = makeGoal({ id: 'g-42', name: 'Ship auth' });
+    const prompt = buildConductorPrompt(ticket, goal, []);
+    expect(prompt.startsWith('/tdd\n\n/goal\n\n')).toBe(true);
   });
 });
 

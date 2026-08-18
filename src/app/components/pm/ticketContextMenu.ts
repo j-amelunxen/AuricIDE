@@ -36,11 +36,26 @@ export function buildTicketStatusPriorityPowerOptions(
     });
   } else if (ticket.status === 'in_progress') {
     options.push({
+      label: 'Mark to Test',
+      icon: 'science',
+      action: () => onUpdateTicket(ticket.id, { status: 'to_test' }),
+    });
+    options.push({
       label: 'Mark as Done',
       icon: 'check_circle',
       action: () => onUpdateTicket(ticket.id, { status: 'done' }),
     });
-  } else if (ticket.status === 'done' || ticket.status === 'archived') {
+  } else if (ticket.status === 'to_test') {
+    options.push({
+      label: 'Mark as Done',
+      icon: 'check_circle',
+      action: () => onUpdateTicket(ticket.id, { status: 'done' }),
+    });
+  } else if (
+    ticket.status === 'done' ||
+    ticket.status === 'archived' ||
+    ticket.status === 'discarded'
+  ) {
     options.push({
       label: 'Reopen',
       icon: 'history',
@@ -53,6 +68,14 @@ export function buildTicketStatusPriorityPowerOptions(
       label: 'Archive',
       icon: 'archive',
       action: () => onUpdateTicket(ticket.id, { status: 'archived' }),
+    });
+  }
+
+  if (ticket.status !== 'discarded') {
+    options.push({
+      label: 'Discard',
+      icon: 'cancel',
+      action: () => onUpdateTicket(ticket.id, { status: 'discarded' }),
     });
   }
 

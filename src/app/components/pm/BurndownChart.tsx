@@ -13,8 +13,10 @@ import {
 
 interface BurndownDataPoint {
   date: string;
-  remaining: number;
+  scope?: number;
+  remaining: number | null;
   completed: number;
+  forecast?: number | null;
 }
 
 interface BurndownChartProps {
@@ -30,12 +32,19 @@ export function BurndownChart({ data }: BurndownChartProps) {
     );
   }
 
+  const hasForecast = data.some((d) => d.forecast !== null && d.forecast !== undefined);
+  const hasScope = data.some((d) => d.scope !== undefined);
+
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-        <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} />
-        <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} />
+        <XAxis
+          dataKey="date"
+          tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }}
+          minTickGap={24}
+        />
+        <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} allowDecimals={false} />
         <Tooltip
           contentStyle={{
             background: '#1a1a2e',
@@ -45,14 +54,39 @@ export function BurndownChart({ data }: BurndownChartProps) {
           }}
         />
         <Legend wrapperStyle={{ fontSize: '11px' }} />
+        {hasScope && (
+          <Line
+            type="stepAfter"
+            dataKey="scope"
+            stroke="rgba(255,255,255,0.25)"
+            strokeWidth={1}
+            dot={false}
+            name="Scope"
+          />
+        )}
         <Line
           type="monotone"
           dataKey="remaining"
           stroke="#f97316"
           strokeWidth={2}
           dot={false}
+          // The forecast days carry no `remaining`; joining across them would
+          // draw a measured line through days nobody has lived yet.
+          connectNulls={false}
           name="Remaining"
         />
+        {hasForecast && (
+          <Line
+            type="monotone"
+            dataKey="forecast"
+            stroke="#f97316"
+            strokeWidth={2}
+            strokeDasharray="4 4"
+            dot={false}
+            connectNulls={false}
+            name="Forecast"
+          />
+        )}
         <Line
           type="monotone"
           dataKey="completed"

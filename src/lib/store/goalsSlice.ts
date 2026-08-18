@@ -125,7 +125,7 @@ export function getGoalProgress(
   goalId: string
 ): GoalProgress {
   const ids = new Set<string>([goalId, ...getGoalDescendants(goals, goalId).map((g) => g.id)]);
-  const scoped = tickets.filter((t) => !!t.goalId && ids.has(t.goalId));
+  const scoped = tickets.filter((t) => !!t.goalId && ids.has(t.goalId) && t.status !== 'discarded');
   return {
     totalTickets: scoped.length,
     doneTickets: scoped.filter((t) => t.status === 'done').length,
@@ -166,6 +166,8 @@ export function getGoalSatisfaction(
 
   const scopedTickets = tickets.filter((t) => !!t.goalId && subtreeIds.has(t.goalId));
   for (const ticket of scopedTickets) {
+    // Cancelled work is off the board; it is not a remaining obligation.
+    if (ticket.status === 'discarded') continue;
     if (ticket.status !== 'done') {
       blockers.push(`Ticket "${ticket.name}" is ${ticket.status}`);
     }

@@ -6,7 +6,8 @@ import type { AgentSlice } from './agentSlice';
 import type { GoalsSlice } from './goalsSlice';
 import { getGoalDescendants, getGoalSatisfaction } from './goalsSlice';
 import type { PmRequirement } from '../tauri/requirements';
-import type { ModelPower } from '../pm/enums';
+import { isClosedTicketStatus, type ModelPower } from '../pm/enums';
+import { prependTicketSkills } from '../pm/ticketSkills';
 import { notifyConductor } from '../ide/conductorNotifications';
 import { setProjectConfigValue } from '../config/projectConfig';
 import type { NotificationInput } from '../tauri/notifications';
@@ -64,7 +65,7 @@ export interface ConductorRunSummary {
 
 /**
  * Mirrors the MCP `fetch_next_unblocked_task` semantics: a ticket is blocked
- * while any dependency target ticket is not done/archived. Sorted by priority
+ * while any dependency target ticket is still live work. Sorted by priority
  * (critical > high > normal > low), then sortOrder.
  */
 export function getUnblockedOpenTickets(
@@ -77,7 +78,7 @@ export function getUnblockedOpenTickets(
     dependencies.some((d) => {
       if (d.sourceId !== ticket.id || d.targetType !== 'ticket') return false;
       const target = byId.get(d.targetId);
-      return target !== undefined && target.status !== 'done' && target.status !== 'archived';
+      return target !== undefined && !isClosedTicketStatus(target.status);
     });
 
   return scopedTickets
@@ -119,6 +120,8 @@ export interface ConductorPreflight {
   inProgress: number;
   /** Tickets finished by an implementer, awaiting the judge's verdict. */
   inReview: number;
+  /** Tickets waiting for human QA. */
+  toTest: number;
   /** Open tickets that used up their attempts and will not be retried. */
   exhausted: number;
 }
@@ -148,12 +151,17 @@ export function getConductorPreflight(input: {
     needsApproval: 0,
     inProgress: 0,
     inReview: 0,
+    toTest: 0,
     exhausted: 0,
   };
 
   for (const ticket of scoped) {
     if (ticket.status === 'in_progress') {
       result.inProgress++;
+      continue;
+    }
+    if (ticket.status === 'to_test') {
+      result.toTest++;
       continue;
     }
     if (ticket.status === 'in_review') {
@@ -236,7 +244,8 @@ export function buildConductorPrompt(
 
   const prompt = sections.join('\n\n');
   // Ticket work that serves a goal invokes the /goal command first.
-  return goal ? `/goal\n\n${prompt}` : prompt;
+  const withGoal = goal ? `/goal\n\n${prompt}` : prompt;
+  return prependTicketSkills(ticket.skills, withGoal);
 }
 
 interface CrossSlices {

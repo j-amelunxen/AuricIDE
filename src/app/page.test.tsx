@@ -317,6 +317,7 @@ vi.mock('./components/terminal/XtermTerminal', () => ({
 describe('Home page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useStore.setState({ rootPath: null, pmDraftTickets: [] });
   });
 
   it('renders the IDE shell', () => {
@@ -399,8 +400,34 @@ describe('Home page', () => {
     expect(screen.getByText('other')).toBeInTheDocument();
   });
 
+  it('hides project-only rail items when no project is open', () => {
+    render(<Home />);
+    expect(screen.queryByTestId('activity-item-explorer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('activity-item-work')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('activity-item-source-control')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('activity-item-cockpit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('activity-item-outline')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('activity-item-qa')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Explorer' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-inbox')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-notifications')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-settings')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-scratches')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-extensions')).toBeInTheDocument();
+  });
+
+  it('shows the project rail again once a project is open', () => {
+    useStore.setState({ rootPath: '/test/project' });
+    render(<Home />);
+    expect(screen.getByTestId('activity-item-explorer')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-work')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-source-control')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-item-cockpit')).toBeInTheDocument();
+  });
+
   it('displays a badge for open tickets in the activity bar', () => {
     useStore.setState({
+      rootPath: '/test/project',
       pmDraftTickets: [
         {
           id: '1',

@@ -107,6 +107,32 @@ describe('ticket tools', () => {
       expect(ticket.status).toBe('open');
     });
 
+    it('stores a due date when one is given', () => {
+      const ticket = createTicket(db, {
+        epicId: 'epic-1',
+        name: 'Dated',
+        dueDate: '2026-08-20',
+      });
+
+      expect(ticket.due_date).toBe('2026-08-20');
+    });
+
+    it('stores attached skills as a JSON array', () => {
+      const ticket = createTicket(db, {
+        epicId: 'epic-1',
+        name: 'Skilled',
+        skills: ['/tdd', 'review', '/tdd'],
+      });
+
+      expect(JSON.parse(ticket.skills)).toEqual(['/tdd', '/review']);
+    });
+
+    it('rejects an invalid due date', () => {
+      expect(() =>
+        createTicket(db, { epicId: 'epic-1', name: 'Bad date', dueDate: '20.08.2026' })
+      ).toThrow('Invalid due date');
+    });
+
     it('sets sort_order to MAX(sort_order)+1 within the same epic', () => {
       const first = createTicket(db, { epicId: 'epic-1', name: 'First' });
       const second = createTicket(db, { epicId: 'epic-1', name: 'Second' });
@@ -211,6 +237,26 @@ describe('ticket tools', () => {
       expect(updated.priority).toBe('critical');
       expect(updated.name).toBe('Priority Test');
       expect(updated.status).toBe('open');
+    });
+
+    it('sets and clears a due date', () => {
+      const ticket = createTicket(db, { epicId: 'epic-1', name: 'Dated' });
+
+      const dated = updateTicket(db, { id: ticket.id, dueDate: '2026-08-22' });
+      expect(dated.due_date).toBe('2026-08-22');
+
+      const cleared = updateTicket(db, { id: ticket.id, dueDate: null });
+      expect(cleared.due_date).toBeNull();
+    });
+
+    it('replaces and clears attached skills', () => {
+      const ticket = createTicket(db, { epicId: 'epic-1', name: 'Skilled', skills: ['/tdd'] });
+
+      const replaced = updateTicket(db, { id: ticket.id, skills: ['/review'] });
+      expect(JSON.parse(replaced.skills)).toEqual(['/review']);
+
+      const cleared = updateTicket(db, { id: ticket.id, skills: [] });
+      expect(JSON.parse(cleared.skills)).toEqual([]);
     });
 
     it('does not update status_updated_at when status is not changed', () => {

@@ -1,4 +1,6 @@
+import { isClosedTicketStatus } from './enums';
 import type { PmTicket, PmTestCase, PmDependency } from '../tauri/pm';
+import { prependTicketSkills } from './ticketSkills';
 
 export interface AvailableItem {
   id: string;
@@ -75,7 +77,7 @@ ${tc.body}
 
   const unfulfilledDeps = dependencies.filter((dep) => {
     const item = availableItems.find((i) => i.id === dep.targetId);
-    return item && item.type === 'ticket' && item.status !== 'done' && item.status !== 'archived';
+    return item && item.type === 'ticket' && !isClosedTicketStatus(item.status ?? '');
   });
 
   if (unfulfilledDeps.length > 0) {
@@ -92,5 +94,5 @@ ${tc.body}
 `;
   }
 
-  return task.trim();
+  return prependTicketSkills(ticket.skills, task.trim());
 }

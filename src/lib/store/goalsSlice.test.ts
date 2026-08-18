@@ -851,6 +851,22 @@ describe('a ticket in review blocks satisfaction', () => {
     expect(result.satisfied).toBe(false);
     expect(result.blockers.some((b) => b.includes('in_review'))).toBe(true);
   });
+
+  it('a to_test ticket is not done, so the goal is not satisfied', () => {
+    const goal = makeGoal({ id: 'g1', name: 'Ship it' });
+    const tickets = [makeTicket({ id: 't1', goalId: 'g1', status: 'to_test' })];
+    const result = getGoalSatisfaction([goal], tickets, [], [], [], 'g1');
+    expect(result.satisfied).toBe(false);
+    expect(result.blockers.some((b) => b.includes('to_test'))).toBe(true);
+  });
+
+  it('a discarded ticket is cancelled work and does not block the goal', () => {
+    const goal = makeGoal({ id: 'g1', name: 'Ship it' });
+    const tickets = [makeTicket({ id: 't1', goalId: 'g1', status: 'discarded' })];
+    const result = getGoalSatisfaction([goal], tickets, [], [], [], 'g1');
+    expect(result.satisfied).toBe(true);
+    expect(result.blockers).toEqual([]);
+  });
 });
 
 describe('VERIFIED_EVIDENCE_KINDS — the shared satisfaction rule', () => {

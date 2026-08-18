@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TicketCreateModal } from './TicketCreateModal';
 import { useStore } from '@/lib/store';
 
+vi.mock('@/lib/hooks/useProjectSkills', () => ({
+  useProjectSkills: () => ({ discovered: [], ready: true }),
+}));
+
 const mockEpics = [
   { id: 'e1', name: 'Epic One', description: '', sortOrder: 0, createdAt: '', updatedAt: '' },
   { id: 'e2', name: 'Epic Two', description: '', sortOrder: 1, createdAt: '', updatedAt: '' },
@@ -225,6 +229,57 @@ describe('TicketCreateModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('asks before closing a ticket that has been typed into', async () => {
+    const onClose = vi.fn();
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId="e1"
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={onClose}
+      />
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText('What needs to be done?'), 'Leave me');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the new ticket form when discard is declined', async () => {
+    const onClose = vi.fn();
+    render(
+      <TicketCreateModal
+        isOpen={true}
+        epics={mockEpics}
+        allTickets={[]}
+        availableItems={[]}
+        defaultEpicId="e1"
+        onSave={vi.fn()}
+        onSaveAndClose={vi.fn()}
+        onClose={onClose}
+      />
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText('What needs to be done?'), 'Stay');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: /new ticket/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('What needs to be done?')).toHaveValue('Stay');
+  });
+
   it('registers as the ticket-create overlay so Escape closes it', async () => {
     const onClose = vi.fn();
     render(
@@ -277,6 +332,7 @@ describe('TicketCreateModal', () => {
     );
     expect(screen.getByRole('button', { name: 'Open' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'In Progress' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'To Test' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Done' })).toBeDefined();
   });
 
@@ -294,6 +350,7 @@ describe('TicketCreateModal', () => {
       />
     );
     expect(screen.queryByRole('button', { name: 'Archived' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Discarded' })).not.toBeInTheDocument();
   });
 
   it('shows a Create epic button when there are no epics and a handler', () => {

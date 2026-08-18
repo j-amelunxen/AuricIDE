@@ -55,6 +55,10 @@ pub struct PmTicket {
     pub needs_human_supervision: bool,
     #[serde(default)]
     pub goal_id: Option<String>,
+    #[serde(default)]
+    pub due_date: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -665,6 +669,20 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         "ALTER TABLE pm_goal_stations ADD COLUMN source_context TEXT NOT NULL DEFAULT 'null';",
     )?;
 
+    apply_migration(
+        conn,
+        18,
+        "add_ticket_due_date",
+        "ALTER TABLE pm_tickets ADD COLUMN due_date TEXT;",
+    )?;
+
+    apply_migration(
+        conn,
+        19,
+        "add_ticket_skills",
+        "ALTER TABLE pm_tickets ADD COLUMN skills TEXT NOT NULL DEFAULT '[]';",
+    )?;
+
     Ok(())
 }
 
@@ -984,12 +1002,14 @@ pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), St
         for ticket in &payload.tickets {
             let context_json = serde_json::to_string(&ticket.context.as_ref().unwrap_or(&vec![]))
                 .map_err(|e| format!("Failed to serialize context: {}", e))?;
+            let skills_json = serde_json::to_string(&ticket.skills)
+                .map_err(|e| format!("Failed to serialize skills: {}", e))?;
 
             conn.execute(
                 "INSERT INTO pm_tickets (id, epic_id, name, description, status, \
                  status_updated_at, sort_order, working_directory, context, model_power, priority, \
-                 needs_human_supervision, goal_id, created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 needs_human_supervision, goal_id, due_date, skills, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 params![
                     ticket.id,
                     ticket.epic_id,
@@ -1004,6 +1024,8 @@ pub fn pm_save_impl(conn: &Connection, payload: &PmSavePayload) -> Result<(), St
                     ticket.priority,
                     ticket.needs_human_supervision,
                     ticket.goal_id,
+                    ticket.due_date,
+                    skills_json,
                     ticket.created_at,
                     ticket.updated_at
                 ],
@@ -1100,7 +1122,7 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
         .prepare(
             "SELECT id, epic_id, name, description, status, status_updated_at, sort_order, \
              working_directory, context, model_power, priority, needs_human_supervision, \
-             goal_id, created_at, updated_at FROM pm_tickets ORDER BY sort_order",
+             goal_id, due_date, skills, created_at, updated_at FROM pm_tickets ORDER BY sort_order",
         )
         .map_err(|e| format!("Failed to prepare tickets query: {}", e))?;
     let tickets: Vec<PmTicket> = ticket_stmt
@@ -1113,6 +1135,8 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
                     Box::new(e),
                 )
             })?;
+            let skills_json: String = row.get(14)?;
+            let skills: Vec<String> = serde_json::from_str(&skills_json).unwrap_or_default();
 
             Ok(PmTicket {
                 id: row.get(0)?,
@@ -1128,8 +1152,10 @@ pub fn pm_load_impl(conn: &Connection) -> Result<PmState, String> {
                 priority: row.get(10)?,
                 needs_human_supervision: row.get(11)?,
                 goal_id: row.get(12)?,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
+                due_date: row.get(13)?,
+                skills,
+                created_at: row.get(15)?,
+                updated_at: row.get(16)?,
             })
         })
         .map_err(|e| format!("Failed to query tickets: {}", e))?
@@ -1715,7 +1741,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 17);
+        assert_eq!(count, 19);
 
         // kv_store table should exist
         let table_exists: bool = conn
@@ -1737,7 +1763,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 17);
+        assert_eq!(count, 19);
     }
 
     #[test]
@@ -1755,7 +1781,7 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 17);
+        assert_eq!(count, 19);
     }
 
     #[test]
@@ -1882,7 +1908,7 @@ mod tests {
         let migration_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 17);
+        assert_eq!(migration_count, 19);
     }
 
     fn make_test_payload() -> PmSavePayload {
@@ -1913,6 +1939,8 @@ mod tests {
                 priority: "normal".to_string(),
                 needs_human_supervision: false,
                 goal_id: None,
+                due_date: Some("2026-08-20".to_string()),
+                skills: vec!["/tdd".to_string(), "/review".to_string()],
                 created_at: "2026-01-01 00:00:00".to_string(),
                 updated_at: "2026-01-01 00:00:00".to_string(),
             }],
@@ -1956,6 +1984,11 @@ mod tests {
             "some context"
         );
         assert_eq!(state.tickets[0].model_power, Some("high".to_string()));
+        assert_eq!(state.tickets[0].due_date, Some("2026-08-20".to_string()));
+        assert_eq!(
+            state.tickets[0].skills,
+            vec!["/tdd".to_string(), "/review".to_string()]
+        );
 
         assert_eq!(state.test_cases.len(), 1);
         assert_eq!(state.test_cases[0].id, "tc1");

@@ -16,6 +16,17 @@ describe('TicketContextEditor', () => {
     expect(screen.getByDisplayValue('src/main.rs')).toBeDefined();
   });
 
+  it('previews an image file that was transferred from the inbox', () => {
+    render(
+      <TicketContextEditor
+        context={[{ id: '3', type: 'file', value: '.auric/inbox-attachments/t1/shot.png' }]}
+        onUpdate={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('shot.png')).toBeDefined();
+  });
+
   it('calls onUpdate when a snippet value changes', () => {
     const onUpdate = vi.fn();
     render(<TicketContextEditor context={mockContext} onUpdate={onUpdate} />);

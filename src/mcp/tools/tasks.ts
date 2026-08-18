@@ -45,7 +45,7 @@ const FETCH_NEXT_UNBLOCKED_TASK_SQL = `
       SELECT d.source_id
       FROM pm_dependencies d
       JOIN pm_tickets t ON d.target_type = 'ticket' AND d.target_id = t.id
-      WHERE t.status NOT IN ('done', 'archived')
+      WHERE t.status NOT IN ('done', 'archived', 'discarded')
     )
   ORDER BY
     CASE priority

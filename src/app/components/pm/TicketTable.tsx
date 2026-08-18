@@ -15,6 +15,8 @@ import {
   TICKET_STATUS_DOT_CLASS,
   TICKET_STATUS_LABEL,
 } from '@/lib/pm/ticketStatusStyle';
+import { isClosedTicketStatus } from '@/lib/pm/enums';
+import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import { AuricIcon } from '../ui/AuricIcon';
 
 interface TicketTableProps {
@@ -82,7 +84,7 @@ export function TicketTable({
       if (dep.sourceId !== ticketId || dep.targetType !== 'ticket') return false;
       const target = allTickets.find((t) => t.id === dep.targetId);
       if (!target) return false;
-      return target.status !== 'done' && target.status !== 'archived';
+      return !isClosedTicketStatus(target.status);
     });
   };
 
@@ -108,7 +110,7 @@ export function TicketTable({
       if (onSave) {
         await onSave();
       }
-      setInitialAgentTask(task.trim());
+      setInitialAgentTask(prependTicketSkills(ticket.skills, task.trim()));
       setSpawnAgentTicketId(ticket.id);
       setSpawnDialogOpen(true);
     },

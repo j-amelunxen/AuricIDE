@@ -46,6 +46,10 @@ vi.mock('@/lib/hooks/useLLM', () => ({
   }),
 }));
 
+vi.mock('@/lib/hooks/useProjectSkills', () => ({
+  useProjectSkills: () => ({ discovered: [], ready: true }),
+}));
+
 const makeTicket = (overrides: Partial<PmTicket> = {}): PmTicket => ({
   id: 'tk-1',
   epicId: 'epic-1',
@@ -116,6 +120,12 @@ describe('TicketEditPanel', () => {
     expect(inProgressBtn.closest('button')?.className).toContain('bg-yellow-500/10');
   });
 
+  it('offers To Test and Discarded as ticket statuses', () => {
+    render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} />);
+    expect(screen.getByText('To Test')).toBeDefined();
+    expect(screen.getByText('Discarded')).toBeDefined();
+  });
+
   it('calls onUpdateTicket when name changes', () => {
     const onUpdateTicket = vi.fn();
     render(
@@ -133,6 +143,19 @@ describe('TicketEditPanel', () => {
     );
     fireEvent.click(screen.getByText('Done'));
     expect(onUpdateTicket).toHaveBeenCalledWith('tk-1', { status: 'done' });
+  });
+
+  it('calls onUpdateTicket when the due date changes', () => {
+    const onUpdateTicket = vi.fn();
+    render(
+      <TicketEditPanel
+        {...defaultProps}
+        ticket={makeTicket({ dueDate: '2026-08-20' })}
+        onUpdateTicket={onUpdateTicket}
+      />
+    );
+    fireEvent.change(screen.getByLabelText(/due date/i), { target: { value: '2026-08-22' } });
+    expect(onUpdateTicket).toHaveBeenCalledWith('tk-1', { dueDate: '2026-08-22' });
   });
 
   it('calls onUpdateTicket when priority changes', () => {
@@ -288,6 +311,23 @@ describe('TicketEditPanel', () => {
     expect(prompt).toContain('Description:\nSpawn Desc');
     expect(setSpawnDialogOpen).toHaveBeenCalledWith(true);
     expect(setSpawnAgentTicketId).toHaveBeenCalledWith('tk-1');
+  });
+
+  it('writes attached skills in front of the spawn prompt', async () => {
+    const ticket = makeTicket({
+      name: 'Spawn Test',
+      description: 'Spawn Desc',
+      skills: ['/tdd', '/review'],
+    });
+    render(<TicketEditPanel {...defaultProps} ticket={ticket} />);
+    await act(async () => {
+      fireEvent.click(screen.getByText('Start agent'));
+    });
+
+    await vi.waitFor(() => {
+      expect(setInitialAgentTask).toHaveBeenCalled();
+    });
+    expect(setInitialAgentTask.mock.calls[0][0]).toMatch(/^\/tdd \/review\n\n/);
   });
 
   it('copies prompt to clipboard when Copy Prompt clicked', async () => {

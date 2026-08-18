@@ -6,6 +6,7 @@ import { TestCaseEditor } from './TestCaseEditor';
 import { DependencySelector } from './DependencySelector';
 import { TicketContextEditor } from './TicketContextEditor';
 import { useStore } from '@/lib/store';
+import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { generateTicketPrompt } from '@/lib/pm/prompt';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { AuricIcon } from '../ui/AuricIcon';
@@ -20,6 +21,8 @@ import {
   parseTestCaseResponse,
 } from '@/lib/pm/testCaseDerivation';
 import { DependencyProposalModal } from './DependencyProposalModal';
+import { TicketSkillsField } from './TicketSkillsField';
+import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
 
 interface TicketEditPanelProps {
   ticket: PmTicket | null;
@@ -44,9 +47,11 @@ interface TicketEditPanelProps {
 const statusOptions: { value: PmTicket['status']; label: string; className: string }[] = [
   { value: 'open', label: 'Open', className: 'bg-white/10 text-foreground-muted' },
   { value: 'in_progress', label: 'In Progress', className: 'bg-yellow-500/10 text-git-modified' },
+  { value: 'to_test', label: 'To Test', className: 'bg-cyan-500/10 text-cyan-300' },
   { value: 'in_review', label: 'In Review', className: 'bg-indigo-500/10 text-indigo-300' },
   { value: 'done', label: 'Done', className: 'bg-green-500/10 text-git-added' },
   { value: 'archived', label: 'Archived', className: 'bg-purple-500/10 text-purple-400' },
+  { value: 'discarded', label: 'Discarded', className: 'bg-white/5 text-foreground-muted' },
 ];
 
 const priorityOptions: { value: PmTicket['priority']; label: string; className: string }[] = [
@@ -107,6 +112,7 @@ export function TicketEditPanel({
   const rootPath = useStore((s) => s.rootPath);
 
   const { call: llmCall, abort: llmAbort, isLoading: isLlmLoading } = useLLM();
+  const { discovered } = useProjectSkills();
   const [proposalModalOpen, setProposalModalOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<{ id: string; name: string; reason: string }[]>(
     []
@@ -180,7 +186,7 @@ export function TicketEditPanel({
 
   const isBlocked = dependencies.some((dep) => {
     const item = availableItems.find((i) => i.id === dep.targetId);
-    return item && item.type === 'ticket' && item.status !== 'done' && item.status !== 'archived';
+    return item && item.type === 'ticket' && !isClosedTicketStatus(item.status);
   });
 
   const handleSpawnAgent = async () => {
@@ -382,6 +388,24 @@ export function TicketEditPanel({
             </div>
 
             <div>
+              <label className="mb-2 block text-xs text-foreground-muted" htmlFor="ticket-due-date">
+                Due date
+              </label>
+              <input
+                id="ticket-due-date"
+                type="date"
+                aria-label="Due date"
+                value={ticket.dueDate ?? ''}
+                onChange={(e) =>
+                  onUpdateTicket(ticket.id, {
+                    dueDate: e.target.value === '' ? null : e.target.value,
+                  })
+                }
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground focus:border-primary/50 focus:outline-none"
+              />
+            </div>
+
+            <div>
               <label className="mb-2 flex items-center text-xs text-foreground-muted">
                 Agent strength
                 <InfoTooltip description={GUIDANCE.pm.modelPower} label="i" />
@@ -424,6 +448,12 @@ export function TicketEditPanel({
                 rows={8}
               />
             </div>
+
+            <TicketSkillsField
+              skills={ticket.skills}
+              discovered={discovered}
+              onChange={(next) => onUpdateTicket(ticket.id, { skills: next })}
+            />
 
             <div className="flex gap-4 text-xs text-foreground-muted">
               <span>Created: {formatDate(ticket.createdAt)}</span>

@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, type MouseEvent } from 'reac
 import { useStore } from '@/lib/store';
 import { createAutosave } from '@/lib/editor/autosave';
 import { useConfirm } from '@/lib/hooks/useConfirm';
-import { TIPS, activityItems } from '../ide/constants';
+import { TIPS, activityItems, visibleActivityItems } from '../ide/constants';
 import { unsortedInboxItems } from '@/lib/inbox/unsortedInboxItems';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { collectLoadedDirs, findNodeByPath, type FileNode } from '@/lib/store/fileTreeSlice';
@@ -53,6 +53,8 @@ import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { defaultCommands } from '@/lib/commands/registry';
 import { type useIDEState } from './useIDEState';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
+import { isClosedTicketStatus } from '@/lib/pm/enums';
+import { DISCARD_UNSAVED_PM } from '@/lib/pm/unsavedLeave';
 
 /** Label matches each OS's own file manager, following VS Code's convention. */
 function revealInFileManagerLabel(): string {
@@ -144,6 +146,20 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   // without pausing the script, so a delete gated on it ran unasked. The page
   // renders `confirmDialog` for these questions to appear at all.
   const { confirm, confirmDialog } = useConfirm();
+
+  const confirmLeaveUnsavedPm = useCallback(async (): Promise<boolean> => {
+    if (!useStore.getState().pmDirty) return true;
+    const go = await confirm(DISCARD_UNSAVED_PM);
+    if (!go) return false;
+    useStore.getState().discardPmChanges();
+    return true;
+  }, [confirm]);
+
+  const leaveWorkPlace = useCallback(async (): Promise<boolean> => {
+    if (!(await confirmLeaveUnsavedPm())) return false;
+    useStore.getState().closeWorkPlace();
+    return true;
+  }, [confirmLeaveUnsavedPm]);
 
   /**
    * The two things that answer for the whole project rather than for one
@@ -269,6 +285,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleCloseProject = useCallback(() => {
     state.closeProject();
+    useStore.getState().closeWorkPlace();
     state.setBottomCollapsed(true);
     state.closeAllTabs();
     state.setSelectedPaths([]);
@@ -348,15 +365,22 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleFileSelect = useCallback(
     async (path: string) => {
+      // Keep the clean path synchronous. Callers such as New Spec fire this
+      // and immediately assert the tab opened; awaiting a resolved promise
+      // would push that work into the next microtask.
+      if (useStore.getState().pmDirty) {
+        if (!(await leaveWorkPlace())) return;
+      } else {
+        useStore.getState().closeWorkPlace();
+      }
       state.selectFile(path);
       state.setSelectedPaths([path]);
       state.setSelectionAnchor(path);
       // Activating the tab is all it takes — the activeTabId effect loads the
       // content (and skips redundant reloads when the tab is already active).
       state.openTab({ id: path, path, name: path.split('/').pop() ?? path });
-      useStore.getState().closeWorkPlace();
     },
-    [state]
+    [state, leaveWorkPlace]
   );
 
   /** Opens a Find-in-Files result: switch to the tab, then jump to its line. */
@@ -1429,10 +1453,14 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   );
 
   const handleActivitySelect = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (id === 'cockpit') {
         // Home: clear document focus so Mission Control takes the center.
-        useStore.getState().closeWorkPlace();
+        if (useStore.getState().pmDirty) {
+          if (!(await leaveWorkPlace())) return;
+        } else {
+          useStore.getState().closeWorkPlace();
+        }
         state.setActiveTab(null);
         state.setActiveActivity('cockpit');
         return;
@@ -1466,10 +1494,14 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         if (state.rootPath) state.loadBlueprints(state.rootPath);
         return;
       }
-      useStore.getState().closeWorkPlace();
+      if (useStore.getState().pmDirty) {
+        if (!(await leaveWorkPlace())) return;
+      } else {
+        useStore.getState().closeWorkPlace();
+      }
       state.setActiveActivity(id);
     },
-    [state]
+    [state, leaveWorkPlace]
   );
 
   const handleWikiLinkNavigate = useCallback(
@@ -1705,9 +1737,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'view.focus-source-control': () => state.setActiveActivity('source-control'),
       'view.link-graph': () => state.setLinkGraphModalOpen(true),
       'view.cockpit': () => {
-        useStore.getState().closeWorkPlace();
-        state.setActiveTab(null);
-        state.setActiveActivity('cockpit');
+        void (async () => {
+          if (!(await leaveWorkPlace())) return;
+          state.setActiveTab(null);
+          state.setActiveActivity('cockpit');
+        })();
       },
       'view.goals': () => useStore.getState().openWorkPlace('goals'),
       'view.tickets': () => useStore.getState().openWorkPlace('tickets'),
@@ -1746,6 +1780,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       handleCommit,
       handleNewScratch,
       showFileHistory,
+      leaveWorkPlace,
     ]
   );
 
@@ -1777,34 +1812,33 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   // UI calculations
   const scBadge = selectChangedFileCount({ repoStates: state.repoStates });
   const openTicketsCount = useMemo(
-    () => state.pmDraftTickets.filter((t) => t.status !== 'done' && t.status !== 'archived').length,
+    () => state.pmDraftTickets.filter((t) => !isClosedTicketStatus(t.status)).length,
     [state.pmDraftTickets]
   );
-  const itemsWithBadge = useMemo(
-    () =>
-      activityItems.map((item) => {
-        if (item.id === 'source-control')
-          return { ...item, badge: scBadge > 0 ? scBadge : undefined };
-        if (item.id === 'work')
-          return { ...item, badge: openTicketsCount > 0 ? openTicketsCount : undefined };
-        // Unread across every project, never narrowed by the panel's filters —
-        // and deliberately not summed with the agents panel's attention count,
-        // which answers a different question.
-        if (item.id === 'notifications')
-          return {
-            ...item,
-            badge: state.notificationsUnreadCount > 0 ? state.notificationsUnreadCount : undefined,
-          };
-        // Unsorted only — an assigned item already shows its status on the
-        // inbox panel itself, so counting it here too would double-report it.
-        if (item.id === 'inbox') {
-          const unsorted = unsortedInboxItems(state.inboxItems ?? []).length;
-          return { ...item, badge: unsorted > 0 ? unsorted : undefined };
-        }
-        return item;
-      }),
-    [scBadge, openTicketsCount, state.notificationsUnreadCount, state.inboxItems]
-  );
+  const itemsWithBadge = useMemo(() => {
+    const badged = activityItems.map((item) => {
+      if (item.id === 'source-control')
+        return { ...item, badge: scBadge > 0 ? scBadge : undefined };
+      if (item.id === 'work')
+        return { ...item, badge: openTicketsCount > 0 ? openTicketsCount : undefined };
+      // Unread across every project, never narrowed by the panel's filters —
+      // and deliberately not summed with the agents panel's attention count,
+      // which answers a different question.
+      if (item.id === 'notifications')
+        return {
+          ...item,
+          badge: state.notificationsUnreadCount > 0 ? state.notificationsUnreadCount : undefined,
+        };
+      // Unsorted only — an assigned item already shows its status on the
+      // inbox panel itself, so counting it here too would double-report it.
+      if (item.id === 'inbox') {
+        const unsorted = unsortedInboxItems(state.inboxItems ?? []).length;
+        return { ...item, badge: unsorted > 0 ? unsorted : undefined };
+      }
+      return item;
+    });
+    return visibleActivityItems(badged, Boolean(state.rootPath));
+  }, [scBadge, openTicketsCount, state.notificationsUnreadCount, state.inboxItems, state.rootPath]);
 
   const dailyTip = DAILY_TIP;
 
@@ -1920,6 +1954,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleClearSelection,
     handlePaste,
     handleCreateNewItem,
+    leaveWorkPlace,
     handleActivitySelect,
     handleWikiLinkNavigate,
     handleProblemsClick,

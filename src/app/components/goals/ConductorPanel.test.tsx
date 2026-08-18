@@ -298,6 +298,7 @@ describe('ConductorPanel preflight', () => {
     needsApproval: 0,
     inProgress: 0,
     inReview: 0,
+    toTest: 0,
     exhausted: 0,
   };
 
@@ -360,6 +361,11 @@ describe('ConductorPanel preflight', () => {
   it('includes reviews in held work', () => {
     renderPanel({ preflight: { ...preflight, total: 1, inReview: 1 } });
     expect(screen.getByTestId('conductor-preflight')).toHaveTextContent('1 in review');
+  });
+
+  it('names tickets waiting for QA', () => {
+    renderPanel({ preflight: { ...preflight, total: 1, toTest: 1 } });
+    expect(screen.getByTestId('conductor-preflight')).toHaveTextContent('1 to test');
   });
 
   it('says an unscoped run with no work left has nothing to do', () => {

@@ -53,6 +53,22 @@ describe('evaluateGoal — the SQL twin of getGoalSatisfaction', () => {
     expect(result.satisfied).toBe(true);
   });
 
+  it('a to_test ticket is not done, so the goal is not satisfied', () => {
+    const goal = createGoal(db, { name: 'Testing goal' }, 'mcp');
+    seedTicket(db, 't1', goal.id, 'to_test');
+    const result = evaluateGoal(db, goal.id);
+    expect(result.satisfied).toBe(false);
+    expect(result.blockers.some((b) => b.includes('to_test'))).toBe(true);
+  });
+
+  it('a discarded ticket is cancelled work and does not block the goal', () => {
+    const goal = createGoal(db, { name: 'Cancelled goal' }, 'mcp');
+    seedTicket(db, 't1', goal.id, 'discarded');
+    const result = evaluateGoal(db, goal.id);
+    expect(result.satisfied).toBe(true);
+    expect(result.blockers).toEqual([]);
+  });
+
   // The LOCKSTEP FIXTURE: identical scenario asserted on the TS side in
   // src/lib/store/goalsSlice.test.ts ("lockstep: an open human station
   // blocks satisfaction"). If either side is changed without the other,

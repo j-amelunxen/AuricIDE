@@ -2,7 +2,7 @@ export const GUIDANCE = {
   pm: {
     epic: 'Tickets must belong to an Epic, which represents a high-level feature or project goal.',
     status:
-      'The current state of the ticket. Tickets move from Open to In Progress and finally to Done.',
+      'The current state of the ticket. Work moves Open → In Progress → To Test → Review → Done. Discarded tickets leave the board like archived ones.',
     priority:
       'Indicates the urgency. Critical tasks block development, while Low tasks are nice-to-have improvements.',
     modelPower:
@@ -13,6 +13,8 @@ export const GUIDANCE = {
     dependencies: 'Other tickets or epics that must be finished before this task can be started.',
     workingDirectory:
       'The folder where the agent will perform its work. Defaults to the project root.',
+    skills:
+      'Project or personal skills written in front of the agent prompt when this ticket is launched.',
     epicName: 'A clear name for the high-level goal or feature set.',
     epicDescription: 'Detailed breakdown of what this Epic aims to achieve and its overall scope.',
   },

@@ -312,6 +312,18 @@ function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE pm_goal_stations ADD COLUMN source_context TEXT NOT NULL DEFAULT 'null'`);
     record(17, 'add_goal_station_source_context');
   }
+
+  // Migration #18: ticket due dates (keep in sync with src-tauri/src/database.rs).
+  if (!applied(18)) {
+    db.exec('ALTER TABLE pm_tickets ADD COLUMN due_date TEXT');
+    record(18, 'add_ticket_due_date');
+  }
+
+  // Migration #19: ticket-attached skills (keep in sync with src-tauri/src/database.rs).
+  if (!applied(19)) {
+    db.exec("ALTER TABLE pm_tickets ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'");
+    record(19, 'add_ticket_skills');
+  }
 }
 
 export function openDatabase(path: string): Database.Database {

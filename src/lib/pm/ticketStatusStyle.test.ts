@@ -25,4 +25,10 @@ describe('ticket status style', () => {
     expect(TICKET_STATUS_BADGE_CLASS.open).not.toContain('indigo');
     expect(TICKET_STATUS_BADGE_CLASS.done).not.toContain('indigo');
   });
+
+  it('gives to-test its own cyan tone, distinct from review and progress', () => {
+    expect(TICKET_STATUS_BADGE_CLASS.to_test).toContain('cyan');
+    expect(TICKET_STATUS_BADGE_CLASS.in_review).not.toContain('cyan');
+    expect(TICKET_STATUS_BADGE_CLASS.in_progress).not.toContain('cyan');
+  });
 });
