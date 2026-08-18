@@ -107,7 +107,11 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       // draft must move with the inbox row or Save in PM would write the
       // previous title/priority back over what we just stored.
       const cross = get() as unknown as Partial<CrossSlices>;
-      if (item.ticketId !== null && item.projectPath === cross.rootPath) {
+      if (
+        item.ticketId !== null &&
+        item.projectPath !== null &&
+        item.projectPath === cross.rootPath
+      ) {
         const updates = ticketUpdatesFromInboxPatch(patch);
         if (Object.keys(updates).length > 0) {
           cross.updateTicket?.(item.ticketId, updates);
@@ -160,7 +164,11 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
 
       const cross = get() as unknown as Partial<CrossSlices>;
-      if (item.ticketId !== null && item.projectPath === cross.rootPath) {
+      if (
+        item.ticketId !== null &&
+        item.projectPath !== null &&
+        item.projectPath === cross.rootPath
+      ) {
         void cross.refreshPmData?.(item.projectPath);
       }
       return item;
@@ -176,7 +184,11 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
 
       const cross = get() as unknown as Partial<CrossSlices>;
-      if (item.ticketId !== null && item.projectPath === cross.rootPath) {
+      if (
+        item.ticketId !== null &&
+        item.projectPath !== null &&
+        item.projectPath === cross.rootPath
+      ) {
         void cross.refreshPmData?.(item.projectPath);
       }
     } catch (error) {
