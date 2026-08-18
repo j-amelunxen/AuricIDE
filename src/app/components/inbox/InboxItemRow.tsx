@@ -7,9 +7,17 @@ import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/Contex
 import { formatNotificationAge } from '@/lib/notifications/format';
 import { projectIconFor } from '@/lib/quickAccess/icon';
 import { TICKET_STATUS_BADGE_CLASS, TICKET_STATUS_LABEL } from '@/lib/pm/ticketStatusStyle';
-import type { TicketStatus } from '@/lib/pm/enums';
+import { PRIORITIES, type Priority, type TicketStatus } from '@/lib/pm/enums';
+import { formatInboxDueDate, isDueDateOverdue, normalizeDueDate } from '@/lib/inbox/dueDate';
+import { inboxAttachments, pickInboxMediaFiles } from '@/lib/inbox/inboxMedia';
+import { InboxAttachmentPreview } from './InboxAttachmentPreview';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
-import type { InboxAssignRequest, InboxItem, ProjectPmOverview } from '@/lib/tauri/inbox';
+import type {
+  InboxAssignRequest,
+  InboxItem,
+  InboxItemPatch,
+  ProjectPmOverview,
+} from '@/lib/tauri/inbox';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 
 export interface InboxItemRowProps {
@@ -20,12 +28,14 @@ export interface InboxItemRowProps {
   starredProjects: StarredProject[];
   projectOptions: ProjectPickerOption[];
   overview: Record<string, ProjectPmOverview>;
-  onUpdateTitle: (id: string, title: string) => void;
+  onUpdate: (id: string, patch: InboxItemPatch) => void;
   onDismiss: (item: InboxItem) => void;
   onAssign: (request: InboxAssignRequest) => void;
   onUnassign: (item: InboxItem) => void;
   onOpenProject: (path: string) => void;
   onHandToAgent: (item: InboxItem) => void;
+  onAttach: (id: string, sourcePath: string) => void;
+  onDetach: (id: string, attachmentId: string) => void;
 }
 
 type AssignMenuState =
@@ -39,6 +49,20 @@ const ICON_BUTTON_CLASS =
 
 const UNKNOWN_STATUS_BADGE_CLASS = 'bg-white/5 text-foreground-muted/60';
 
+const PRIORITY_LABEL: Record<Priority, string> = {
+  low: 'Low',
+  normal: 'Normal',
+  high: 'High',
+  critical: 'Critical',
+};
+
+const PRIORITY_CHIP_CLASS: Record<Priority, string> = {
+  low: 'text-blue-300 hover:bg-blue-500/10',
+  normal: 'text-foreground-muted hover:bg-white/10',
+  high: 'text-orange-300 hover:bg-orange-500/10',
+  critical: 'text-red-300 hover:bg-red-500/10',
+};
+
 /**
  * One inbox item: a bare capture, or — once assigned — a live mirror of the
  * ticket it became. Every mutating action is a prop; this component decides
@@ -51,17 +75,21 @@ export function InboxItemRow({
   starredProjects,
   projectOptions,
   overview,
-  onUpdateTitle,
+  onUpdate,
   onDismiss,
   onAssign,
   onUnassign,
   onOpenProject,
   onHandToAgent,
+  onAttach,
+  onDetach,
 }: InboxItemRowProps) {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(item.title);
   const [assignMenu, setAssignMenu] = useState<AssignMenuState>(null);
+  const [priorityMenu, setPriorityMenu] = useState<{ x: number; y: number } | null>(null);
   const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const assigned = item.projectPath !== null;
   // A status the project db never wrote (a stale value from an old schema, a
@@ -79,12 +107,25 @@ export function InboxItemRow({
   const commitEdit = () => {
     const trimmed = draftTitle.trim();
     setEditing(false);
-    if (trimmed !== '' && trimmed !== item.title) onUpdateTitle(item.id, trimmed);
+    if (trimmed !== '' && trimmed !== item.title) onUpdate(item.id, { title: trimmed });
   };
 
   const cancelEdit = () => {
     setEditing(false);
     setDraftTitle(item.title);
+  };
+
+  const copyContent = () => {
+    const text = item.notes.trim() === '' ? item.title : `${item.title}\n\n${item.notes}`;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        // Fallback or ignore
+      });
   };
 
   const pickProject = (option: ProjectPickerOption) => {
@@ -163,6 +204,45 @@ export function InboxItemRow({
         )}
 
         <div className="mt-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/50">
+          <button
+            type="button"
+            aria-label={`Priority: ${PRIORITY_LABEL[item.priority]}`}
+            title="Set priority"
+            onClick={(e) => setPriorityMenu({ x: e.clientX, y: e.clientY })}
+            className={`rounded px-1 py-0.5 normal-case tracking-normal ${PRIORITY_CHIP_CLASS[item.priority]}`}
+          >
+            {PRIORITY_LABEL[item.priority]}
+          </button>
+          <span aria-hidden="true">·</span>
+          {item.dueDate !== null && (
+            <>
+              <span
+                className={
+                  isDueDateOverdue(item.dueDate, now)
+                    ? 'normal-case tracking-normal text-[#ff4a4a]/80'
+                    : 'normal-case tracking-normal'
+                }
+              >
+                {isDueDateOverdue(item.dueDate, now) ? 'Overdue' : formatInboxDueDate(item.dueDate)}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          )}
+          <label className="sr-only" htmlFor={`inbox-due-${item.id}`}>
+            Due date
+          </label>
+          <input
+            id={`inbox-due-${item.id}`}
+            type="date"
+            aria-label="Due date"
+            value={item.dueDate ?? ''}
+            onChange={(e) => {
+              const next = normalizeDueDate(e.target.value);
+              if (next !== item.dueDate) onUpdate(item.id, { dueDate: next });
+            }}
+            className="w-[7.5rem] rounded bg-transparent text-[9px] uppercase tracking-wider text-foreground-muted/70 outline-none focus-visible:outline-2 focus-visible:outline-primary"
+          />
+          <span aria-hidden="true">·</span>
           {assigned && (
             <>
               <ProjectTileFace
@@ -184,9 +264,37 @@ export function InboxItemRow({
           )}
           <span>{formatNotificationAge(item.createdAt, now)}</span>
         </div>
+
+        {inboxAttachments(item).length > 0 && (
+          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+            {inboxAttachments(item).map((attachment) => (
+              <li key={attachment.id}>
+                <InboxAttachmentPreview
+                  fileName={attachment.fileName}
+                  kind={attachment.kind}
+                  storedPath={attachment.storedPath}
+                  onRemove={() => onDetach(item.id, attachment.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-1">
+        <button
+          type="button"
+          title="Attach image or video"
+          aria-label="Attach image or video"
+          onClick={() => {
+            void pickInboxMediaFiles().then((paths) => {
+              for (const path of paths) onAttach(item.id, path);
+            });
+          }}
+          className={ICON_BUTTON_CLASS}
+        >
+          <AuricIcon name="image" className="text-[13px]" />
+        </button>
         {assigned ? (
           <>
             <button
@@ -218,14 +326,25 @@ export function InboxItemRow({
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={(e) => setAssignMenu({ stage: 'projects', x: e.clientX, y: e.clientY })}
-            className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-primary"
-          >
-            Assign
-            <AuricIcon name="expand_more" className="text-[12px]" />
-          </button>
+          <>
+            <button
+              type="button"
+              title="Copy to clipboard"
+              aria-label="Copy to clipboard"
+              onClick={copyContent}
+              className={ICON_BUTTON_CLASS}
+            >
+              <AuricIcon name={copied ? 'check' : 'content_copy'} className="text-[13px]" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => setAssignMenu({ stage: 'projects', x: e.clientX, y: e.clientY })}
+              className="flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              Assign
+              <AuricIcon name="expand_more" className="text-[12px]" />
+            </button>
+          </>
         )}
         <button
           type="button"
@@ -252,6 +371,18 @@ export function InboxItemRow({
           y={assignMenu.y}
           options={epicMenuOptions}
           onClose={() => setAssignMenu(null)}
+        />
+      )}
+
+      {priorityMenu && (
+        <ContextMenu
+          x={priorityMenu.x}
+          y={priorityMenu.y}
+          options={PRIORITIES.map((priority) => ({
+            label: PRIORITY_LABEL[priority],
+            action: () => onUpdate(item.id, { priority }),
+          }))}
+          onClose={() => setPriorityMenu(null)}
         />
       )}
 

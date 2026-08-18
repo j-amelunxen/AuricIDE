@@ -2,6 +2,8 @@ import type { StateCreator } from 'zustand';
 import {
   inboxAdd,
   inboxAssign,
+  inboxAttach,
+  inboxDetach,
   inboxDismiss,
   inboxList,
   inboxUnassign,
@@ -12,6 +14,8 @@ import {
   type InboxItemPatch,
   type ProjectPmOverview,
 } from '@/lib/tauri/inbox';
+import { settledInboxItems } from '@/lib/inbox/inboxTicketStatus';
+import { inboxPatchFromNewerDigest, ticketUpdatesFromInboxPatch } from '@/lib/inbox/inboxMirror';
 
 /**
  * The pieces of the wider store this slice reaches into, cast rather than
@@ -25,6 +29,10 @@ import {
 interface CrossSlices {
   rootPath: string | null;
   refreshPmData: (projectPath: string) => Promise<void>;
+  updateTicket: (
+    id: string,
+    updates: { name?: string; description?: string; priority?: string; dueDate?: string | null }
+  ) => void;
 }
 
 /**
@@ -50,6 +58,8 @@ export interface InboxSlice {
   dismissInboxItem: (id: string) => Promise<void>;
   assignInboxItem: (request: InboxAssignRequest) => Promise<void>;
   unassignInboxItem: (id: string) => Promise<void>;
+  attachInboxFile: (itemId: string, sourcePath: string) => Promise<InboxItem | null>;
+  detachInboxFile: (itemId: string, attachmentId: string) => Promise<void>;
   refreshInboxOverview: (projectPaths: string[]) => Promise<void>;
 }
 
@@ -92,6 +102,17 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
     try {
       const item = await inboxUpdate(id, patch);
       set({ inboxItems: replaceItem(get().inboxItems, id, item), inboxError: null });
+
+      // After assign the ticket is the durable record. The open project's
+      // draft must move with the inbox row or Save in PM would write the
+      // previous title/priority back over what we just stored.
+      const cross = get() as unknown as Partial<CrossSlices>;
+      if (item.ticketId !== null && item.projectPath === cross.rootPath) {
+        const updates = ticketUpdatesFromInboxPatch(patch);
+        if (Object.keys(updates).length > 0) {
+          cross.updateTicket?.(item.ticketId, updates);
+        }
+      }
     } catch (error) {
       set({ inboxError: describeError(error) });
     }
@@ -133,6 +154,36 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
     }
   },
 
+  attachInboxFile: async (itemId, sourcePath) => {
+    try {
+      const item = await inboxAttach(itemId, sourcePath);
+      set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
+
+      const cross = get() as unknown as Partial<CrossSlices>;
+      if (item.ticketId !== null && item.projectPath === cross.rootPath) {
+        void cross.refreshPmData?.(item.projectPath);
+      }
+      return item;
+    } catch (error) {
+      set({ inboxError: describeError(error) });
+      return null;
+    }
+  },
+
+  detachInboxFile: async (itemId, attachmentId) => {
+    try {
+      const item = await inboxDetach(itemId, attachmentId);
+      set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
+
+      const cross = get() as unknown as Partial<CrossSlices>;
+      if (item.ticketId !== null && item.projectPath === cross.rootPath) {
+        void cross.refreshPmData?.(item.projectPath);
+      }
+    } catch (error) {
+      set({ inboxError: describeError(error) });
+    }
+  },
+
   unassignInboxItem: async (id) => {
     const previousProjectPath =
       get().inboxItems.find((item) => item.id === id)?.projectPath ?? null;
@@ -164,11 +215,69 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
         inboxOverview[overview.projectPath] = overview;
       }
       set({ inboxOverview, inboxError: null });
+      await persistMirrorsFromOverview(get, set, inboxOverview);
+      await dismissSettledInboxItems(get, set, inboxOverview);
     } catch (error) {
       set({ inboxError: describeError(error) });
     }
   },
 });
+
+/**
+ * Ticket → inbox persist for assigned rows. Only writes when the project
+ * db is ahead of the inbox row, so an edit made here a moment ago is not
+ * overwritten by a stale overview snapshot.
+ */
+async function persistMirrorsFromOverview(
+  get: () => InboxSlice,
+  set: (partial: Partial<InboxSlice>) => void,
+  overview: Record<string, ProjectPmOverview>
+): Promise<void> {
+  let items = get().inboxItems;
+  for (const item of items) {
+    if (item.projectPath === null || item.ticketId === null) continue;
+    const digest = overview[item.projectPath]?.tickets.find(
+      (ticket) => ticket.id === item.ticketId
+    );
+    if (digest === undefined) continue;
+    const patch = inboxPatchFromNewerDigest(item, digest);
+    if (patch === null) continue;
+    try {
+      const updated = await inboxUpdate(item.id, patch);
+      items = replaceItem(items, item.id, updated);
+      set({ inboxItems: items });
+    } catch (error) {
+      set({ inboxError: describeError(error) });
+    }
+  }
+}
+
+/**
+ * The project db is the source of truth after assign. A ticket that is
+ * done or archived — or gone from the active overview list — leaves the
+ * inbox the same way a manual dismiss would, without asking: the user
+ * already finished that work in PM.
+ */
+async function dismissSettledInboxItems(
+  get: () => InboxSlice,
+  set: (partial: Partial<InboxSlice>) => void,
+  overview: Record<string, ProjectPmOverview>
+): Promise<void> {
+  const settled = settledInboxItems(get().inboxItems, overview);
+  if (settled.length === 0) return;
+
+  const dismissed = new Set<string>();
+  for (const item of settled) {
+    try {
+      await inboxDismiss(item.id);
+      dismissed.add(item.id);
+    } catch (error) {
+      set({ inboxError: describeError(error) });
+    }
+  }
+  if (dismissed.size === 0) return;
+  set({ inboxItems: get().inboxItems.filter((item) => !dismissed.has(item.id)) });
+}
 
 /** Every project path already tracked in the overview, plus one more. */
 function trackedOverviewPaths(state: InboxSlice, extra: string): string[] {

@@ -5,11 +5,24 @@ import { InboxCapture } from './InboxCapture';
 import type { InboxItem } from '@/lib/tauri/inbox';
 
 const addInboxItemMock = vi.fn<(title: string, notes?: string) => Promise<InboxItem | null>>();
+const attachInboxFileMock =
+  vi.fn<(itemId: string, sourcePath: string) => Promise<InboxItem | null>>();
+const pickInboxMediaFilesMock = vi.fn(async () => [] as string[]);
 
 const storeState = {
   addInboxItem: (title: string, notes?: string) => addInboxItemMock(title, notes),
+  attachInboxFile: (itemId: string, sourcePath: string) => attachInboxFileMock(itemId, sourcePath),
   inboxError: null as string | null,
 };
+
+vi.mock('@/lib/inbox/inboxMedia', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/lib/inbox/inboxMedia')>('@/lib/inbox/inboxMedia');
+  return {
+    ...actual,
+    pickInboxMediaFiles: () => pickInboxMediaFilesMock(),
+  };
+});
 
 vi.mock('@/lib/store', () => ({
   useStore: Object.assign((selector: (s: typeof storeState) => unknown) => selector(storeState), {
@@ -29,6 +42,8 @@ function makeItem(title: string): InboxItem {
     ticketId: null,
     assignedAt: null,
     dismissedAt: null,
+    priority: 'normal',
+    dueDate: null,
   };
 }
 
@@ -37,6 +52,8 @@ describe('InboxCapture', () => {
     vi.clearAllMocks();
     storeState.inboxError = null;
     addInboxItemMock.mockImplementation(async (title) => makeItem(title));
+    attachInboxFileMock.mockImplementation(async (itemId) => makeItem(itemId));
+    pickInboxMediaFilesMock.mockResolvedValue([]);
   });
 
   it('shows the capture placeholder', () => {
@@ -164,5 +181,28 @@ describe('InboxCapture', () => {
 
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
+  });
+
+  it('stages picked images and videos until the task is captured', async () => {
+    const user = userEvent.setup();
+    pickInboxMediaFilesMock.mockResolvedValue(['/tmp/shot.png', '/tmp/clip.mp4']);
+    render(<InboxCapture />);
+
+    await user.click(screen.getByRole('button', { name: /attach image or video/i }));
+
+    expect(screen.getByText('shot.png')).toBeInTheDocument();
+    expect(screen.getByText('clip.mp4')).toBeInTheDocument();
+  });
+
+  it('attaches staged files to the created item', async () => {
+    const user = userEvent.setup();
+    pickInboxMediaFilesMock.mockResolvedValue(['/tmp/shot.png']);
+    render(<InboxCapture />);
+
+    await user.click(screen.getByRole('button', { name: /attach image or video/i }));
+    await user.type(screen.getByPlaceholderText(/capture a task/i), 'Bug with screenshot{enter}');
+
+    expect(addInboxItemMock).toHaveBeenCalledWith('Bug with screenshot', undefined);
+    expect(attachInboxFileMock).toHaveBeenCalledWith('new-item', '/tmp/shot.png');
   });
 });

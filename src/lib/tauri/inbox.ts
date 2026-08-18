@@ -20,16 +20,38 @@ export interface InboxItem {
   ticketId: string | null;
   assignedAt: string | null;
   dismissedAt: string | null;
+  /** Same vocabulary as tickets. Default on create: `normal`. */
+  priority: Priority;
+  /** Calendar day `YYYY-MM-DD`, or null when nothing is due. */
+  dueDate: string | null;
+  /** Images and videos copied into the app inbox store. Absent on older fixtures. */
+  attachments?: InboxAttachment[];
+}
+
+export type InboxMediaKind = 'image' | 'video';
+
+export interface InboxAttachment {
+  id: string;
+  itemId: string;
+  kind: InboxMediaKind;
+  fileName: string;
+  storedPath: string;
+  createdAt: string;
 }
 
 export interface InboxItemInput {
   title: string;
   notes?: string;
+  priority?: Priority;
+  dueDate?: string | null;
 }
 
 export interface InboxItemPatch {
   title?: string;
   notes?: string;
+  priority?: Priority;
+  /** `null` or `''` clears a previously set date. */
+  dueDate?: string | null;
 }
 
 export interface InboxAssignRequest {
@@ -49,6 +71,10 @@ export interface ProjectTicketDigest {
   epicId: string;
   epicName: string;
   updatedAt: string;
+  /** Calendar day `YYYY-MM-DD`, or null when nothing is due. */
+  dueDate?: string | null;
+  /** Ticket description; omitted by older overview snapshots. */
+  description?: string;
 }
 
 export interface ProjectEpicDigest {
@@ -70,7 +96,7 @@ export interface ProjectPmOverview {
   inReview: number;
   done: number;
   epics: ProjectEpicDigest[];
-  /** Non-done, non-archived tickets only, newest updated first. */
+  /** Live tickets only (not done, archived or discarded), newest updated first. */
   tickets: ProjectTicketDigest[];
   error: string | null;
 }
@@ -81,12 +107,25 @@ export async function inboxList(): Promise<InboxItem[]> {
 
 export async function inboxAdd(input: InboxItemInput): Promise<InboxItem> {
   return invoke<InboxItem>('inbox_add', {
-    input: { title: input.title, notes: input.notes ?? '' },
+    input: {
+      title: input.title,
+      notes: input.notes ?? '',
+      priority: input.priority,
+      dueDate: input.dueDate ?? undefined,
+    },
   });
 }
 
 export async function inboxUpdate(id: string, patch: InboxItemPatch): Promise<InboxItem> {
-  return invoke<InboxItem>('inbox_update', { id, patch });
+  return invoke<InboxItem>('inbox_update', {
+    id,
+    patch: {
+      ...patch,
+      // Rust's Option<String> treats JSON null as "leave alone"; an empty
+      // string is the value that actually clears the date.
+      dueDate: patch.dueDate === null ? '' : patch.dueDate,
+    },
+  });
 }
 
 export async function inboxDismiss(id: string): Promise<void> {
@@ -99,6 +138,14 @@ export async function inboxAssign(request: InboxAssignRequest): Promise<InboxIte
 
 export async function inboxUnassign(id: string): Promise<InboxItem> {
   return invoke<InboxItem>('inbox_unassign', { id });
+}
+
+export async function inboxAttach(itemId: string, sourcePath: string): Promise<InboxItem> {
+  return invoke<InboxItem>('inbox_attach', { itemId, sourcePath });
+}
+
+export async function inboxDetach(itemId: string, attachmentId: string): Promise<InboxItem> {
+  return invoke<InboxItem>('inbox_detach', { itemId, attachmentId });
 }
 
 export async function projectsPmOverview(projectPaths: string[]): Promise<ProjectPmOverview[]> {

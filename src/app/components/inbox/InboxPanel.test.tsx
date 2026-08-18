@@ -21,6 +21,8 @@ function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
     ticketId: null,
     assignedAt: null,
     dismissedAt: null,
+    priority: 'normal',
+    dueDate: null,
     ...overrides,
   };
 }
@@ -34,17 +36,29 @@ const defaultStoreState = {
   recentProjects: [] as { path: string; name: string; openedAt: number }[],
   rootPath: null as string | null,
   addInboxItem: vi.fn(async (title: string) => makeItem({ title })),
-  updateInboxItem: (id: string, patch: { title?: string; notes?: string }) =>
-    updateInboxItemMock(id, patch),
+  updateInboxItem: (
+    id: string,
+    patch: { title?: string; notes?: string; priority?: string; dueDate?: string | null }
+  ) => updateInboxItemMock(id, patch),
   dismissInboxItem: (id: string) => dismissInboxItemMock(id),
   assignInboxItem: (request: unknown) => assignInboxItemMock(request),
   unassignInboxItem: (id: string) => unassignInboxItemMock(id),
+  attachInboxFile: vi.fn(async () => null),
+  detachInboxFile: vi.fn(async () => undefined),
   setSpawnAgentTicketId: vi.fn(),
   setSpawnAgentGoalId: vi.fn(),
   setInitialAgentTask: vi.fn(),
   setSpawnAgentPreset: vi.fn(),
   setSpawnAgentRepoPath: vi.fn(),
   setSpawnDialogOpen: vi.fn(),
+  pmDraftTickets: [] as {
+    id: string;
+    status: string;
+    name?: string;
+    description?: string;
+    priority?: string;
+    dueDate?: string | null;
+  }[],
   overlayStack: { layers: [] as { id: string; kind: string }[] },
   pushOverlay: (entry: { id: string; kind: string }) => {
     if (storeState.overlayStack.layers.some((layer) => layer.id === entry.id)) return;
@@ -66,6 +80,18 @@ vi.mock('@/lib/store', () => ({
   }),
 }));
 
+function openTicket(id = 't1'): ProjectPmOverview['tickets'][number] {
+  return {
+    id,
+    name: 'Fix the bug',
+    status: 'open',
+    priority: 'normal',
+    epicId: 'epic-1',
+    epicName: 'Inbox',
+    updatedAt: '2026-01-01 00:00:00',
+  };
+}
+
 function makeOverview(overrides: Partial<ProjectPmOverview> = {}): ProjectPmOverview {
   return {
     projectPath: '/repos/alpha',
@@ -80,6 +106,18 @@ function makeOverview(overrides: Partial<ProjectPmOverview> = {}): ProjectPmOver
     error: null,
     ...overrides,
   };
+}
+
+function assignedItem(overrides: Partial<InboxItem> = {}): InboxItem {
+  return makeItem({
+    id: 'a',
+    title: 'Fix the bug',
+    projectPath: '/repos/alpha',
+    projectName: 'alpha',
+    ticketId: 't1',
+    assignedAt: '2026-01-01 00:00:00',
+    ...overrides,
+  });
 }
 
 describe('InboxPanel', () => {
@@ -107,17 +145,8 @@ describe('InboxPanel', () => {
   });
 
   it('groups assigned items by project with counts from the overview', () => {
-    storeState.inboxItems = [
-      makeItem({
-        id: 'a',
-        title: 'Fix the bug',
-        projectPath: '/repos/alpha',
-        projectName: 'alpha',
-        ticketId: 't1',
-        assignedAt: '2026-01-01 00:00:00',
-      }),
-    ];
-    storeState.inboxOverview = { '/repos/alpha': makeOverview() };
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [openTicket()] }) };
 
     render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
 
@@ -128,15 +157,7 @@ describe('InboxPanel', () => {
   });
 
   it("shows 'not opened yet' for a project without a database", () => {
-    storeState.inboxItems = [
-      makeItem({
-        id: 'a',
-        projectPath: '/repos/alpha',
-        projectName: 'alpha',
-        ticketId: 't1',
-        assignedAt: '2026-01-01 00:00:00',
-      }),
-    ];
+    storeState.inboxItems = [assignedItem()];
     storeState.inboxOverview = { '/repos/alpha': makeOverview({ hasDb: false }) };
 
     render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
@@ -145,15 +166,7 @@ describe('InboxPanel', () => {
   });
 
   it('shows a muted error line for a project overview that failed to read', () => {
-    storeState.inboxItems = [
-      makeItem({
-        id: 'a',
-        projectPath: '/repos/alpha',
-        projectName: 'alpha',
-        ticketId: 't1',
-        assignedAt: '2026-01-01 00:00:00',
-      }),
-    ];
+    storeState.inboxItems = [assignedItem()];
     storeState.inboxOverview = {
       '/repos/alpha': makeOverview({ error: 'unreadable schema' }),
     };
@@ -185,16 +198,8 @@ describe('InboxPanel', () => {
   it('opens a project when its group header is clicked', async () => {
     const user = userEvent.setup();
     const onOpenProject = vi.fn();
-    storeState.inboxItems = [
-      makeItem({
-        id: 'a',
-        projectPath: '/repos/alpha',
-        projectName: 'alpha',
-        ticketId: 't1',
-        assignedAt: '2026-01-01 00:00:00',
-      }),
-    ];
-    storeState.inboxOverview = { '/repos/alpha': makeOverview() };
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [openTicket()] }) };
 
     render(<InboxPanel variant="sidebar" onOpenProject={onOpenProject} />);
     await user.click(screen.getByTestId('inbox-group-open-/repos/alpha'));
@@ -204,17 +209,8 @@ describe('InboxPanel', () => {
 
   it('collapses and expands a project group', async () => {
     const user = userEvent.setup();
-    storeState.inboxItems = [
-      makeItem({
-        id: 'a',
-        title: 'Fix the bug',
-        projectPath: '/repos/alpha',
-        projectName: 'alpha',
-        ticketId: 't1',
-        assignedAt: '2026-01-01 00:00:00',
-      }),
-    ];
-    storeState.inboxOverview = { '/repos/alpha': makeOverview() };
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [openTicket()] }) };
 
     render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
     expect(screen.getByText('Fix the bug')).toBeInTheDocument();
@@ -265,17 +261,8 @@ describe('InboxPanel', () => {
 
   it('confirms before unassigning an item', async () => {
     const user = userEvent.setup();
-    storeState.inboxItems = [
-      makeItem({
-        id: 'a',
-        title: 'Fix the bug',
-        projectPath: '/repos/alpha',
-        projectName: 'alpha',
-        ticketId: 't1',
-        assignedAt: '2026-01-01 00:00:00',
-      }),
-    ];
-    storeState.inboxOverview = { '/repos/alpha': makeOverview() };
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [openTicket()] }) };
 
     render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /more actions/i }));
@@ -346,5 +333,147 @@ describe('InboxPanel', () => {
     const panel = screen.getByTestId('inbox-panel');
     expect(panel).toHaveClass('h-full');
     expect(panel).not.toHaveClass('glass-card');
+  });
+
+  it('reorders unsorted items when sorting by priority', async () => {
+    const user = userEvent.setup();
+    storeState.inboxItems = [
+      makeItem({
+        id: 'low',
+        title: 'Later',
+        priority: 'low',
+        createdAt: '2026-01-02 00:00:00',
+      }),
+      makeItem({
+        id: 'crit',
+        title: 'Now',
+        priority: 'critical',
+        createdAt: '2026-01-01 00:00:00',
+      }),
+    ];
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    const newestFirst = screen.getAllByTestId(/inbox-item-/);
+    expect(newestFirst[0]).toHaveAttribute('data-testid', 'inbox-item-low');
+
+    await user.selectOptions(screen.getByLabelText(/sort inbox/i), 'priority');
+
+    const byPriority = screen.getAllByTestId(/inbox-item-/);
+    expect(byPriority[0]).toHaveAttribute('data-testid', 'inbox-item-crit');
+    expect(byPriority[1]).toHaveAttribute('data-testid', 'inbox-item-low');
+  });
+
+  it('reorders unsorted items when sorting by due date', async () => {
+    const user = userEvent.setup();
+    storeState.inboxItems = [
+      makeItem({
+        id: 'later',
+        title: 'Later',
+        dueDate: '2026-08-20',
+        createdAt: '2026-01-02 00:00:00',
+      }),
+      makeItem({
+        id: 'sooner',
+        title: 'Sooner',
+        dueDate: '2026-08-10',
+        createdAt: '2026-01-01 00:00:00',
+      }),
+    ];
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText(/sort inbox/i), 'dueDate');
+
+    const rows = screen.getAllByTestId(/inbox-item-/);
+    expect(rows[0]).toHaveAttribute('data-testid', 'inbox-item-sooner');
+    expect(rows[1]).toHaveAttribute('data-testid', 'inbox-item-later');
+  });
+
+  it('hides an assigned item whose ticket has left the live overview (done or archived)', () => {
+    storeState.inboxItems = [assignedItem(), makeItem({ id: 'bare', title: 'Still here' })];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [] }) };
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    expect(screen.queryByText('Fix the bug')).not.toBeInTheDocument();
+    expect(screen.getByText('Still here')).toBeInTheDocument();
+    expect(screen.getByTestId('inbox-count')).toHaveTextContent('1');
+    expect(screen.queryByText('By project')).not.toBeInTheDocument();
+  });
+
+  it('hides an assigned item the moment the open project archives the ticket', () => {
+    storeState.rootPath = '/repos/alpha';
+    storeState.pmDraftTickets = [{ id: 't1', status: 'archived' }];
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [openTicket()] }) };
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    expect(screen.queryByText('Fix the bug')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inbox-count')).not.toBeInTheDocument();
+  });
+
+  it('mirrors title, priority and due date from the open project ticket', () => {
+    storeState.rootPath = '/repos/alpha';
+    storeState.pmDraftTickets = [
+      {
+        id: 't1',
+        status: 'in_progress',
+        name: 'Renamed in PM',
+        description: '',
+        priority: 'critical',
+        dueDate: '2026-09-15',
+      },
+    ];
+    storeState.inboxItems = [
+      assignedItem({ title: 'Stale inbox', priority: 'low', dueDate: '2026-08-01' }),
+    ];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [openTicket()] }) };
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    expect(screen.getByText('Renamed in PM')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /priority: critical/i })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-09-15')).toBeInTheDocument();
+  });
+
+  it('mirrors a newer overview digest when the ticket lives in another project', () => {
+    storeState.inboxItems = [
+      assignedItem({
+        title: 'Stale inbox',
+        priority: 'low',
+        dueDate: null,
+        updatedAt: '2026-01-01 00:00:00',
+      }),
+    ];
+    storeState.inboxOverview = {
+      '/repos/alpha': makeOverview({
+        tickets: [
+          {
+            ...openTicket(),
+            name: 'From the ticket',
+            priority: 'high',
+            dueDate: '2026-10-02',
+            updatedAt: '2026-08-18 00:00:00',
+          },
+        ],
+      }),
+    };
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    expect(screen.getByText('From the ticket')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /priority: high/i })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2026-10-02')).toBeInTheDocument();
+  });
+
+  it('still shows an assigned item when the overview could not be read', () => {
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = {
+      '/repos/alpha': makeOverview({ error: 'unreadable schema', tickets: [] }),
+    };
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    expect(screen.getByText('Fix the bug')).toBeInTheDocument();
   });
 });

@@ -14,6 +14,18 @@ import { groupInboxByProject, type InboxProjectGroup } from '@/lib/inbox/groupIn
 import { inboxProjectOptions } from '@/lib/inbox/inboxProjectOptions';
 import { needsDismissConfirm } from '@/lib/inbox/dismissGate';
 import { projectIconFor } from '@/lib/quickAccess/icon';
+import {
+  INBOX_SORTS,
+  INBOX_SORT_LABEL,
+  sortInboxItems,
+  type InboxSort,
+} from '@/lib/inbox/sortInboxItems';
+import {
+  activeInboxItems,
+  liveTicketStatusFor,
+  resolveInboxTicketStatus,
+} from '@/lib/inbox/inboxTicketStatus';
+import { mirroredInboxItem } from '@/lib/inbox/inboxMirror';
 import type { InboxItem } from '@/lib/tauri/inbox';
 
 export interface InboxPanelProps {
@@ -50,16 +62,25 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
   const starredProjects = useStore((s) => s.starredProjects);
   const recentProjects = useStore((s) => s.recentProjects);
   const rootPath = useStore((s) => s.rootPath);
+  const pmDraftTickets = useStore((s) => s.pmDraftTickets) ?? [];
   const updateInboxItem = useStore((s) => s.updateInboxItem);
   const dismissInboxItem = useStore((s) => s.dismissInboxItem);
   const assignInboxItem = useStore((s) => s.assignInboxItem);
   const unassignInboxItem = useStore((s) => s.unassignInboxItem);
+  const attachInboxFile = useStore((s) => s.attachInboxFile);
+  const detachInboxFile = useStore((s) => s.detachInboxFile);
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<InboxSort>('created');
 
-  const unsorted = unsortedInboxItems(inboxItems);
-  const groups = groupInboxByProject(inboxItems, inboxOverview);
+  const liveTickets = { projectPath: rootPath, tickets: pmDraftTickets };
+  const visibleItems = activeInboxItems(inboxItems, inboxOverview, liveTickets).map((item) =>
+    mirroredInboxItem(item, inboxOverview, liveTickets)
+  );
+  const orderedItems = sortInboxItems(visibleItems, sort);
+  const unsorted = unsortedInboxItems(orderedItems);
+  const groups = groupInboxByProject(orderedItems, inboxOverview);
   const projectOptions = inboxProjectOptions({
     starred: starredProjects,
     recent: recentProjects,
@@ -111,12 +132,12 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
   };
 
   const renderRow = (item: InboxItem) => {
-    const group =
-      item.projectPath !== null
-        ? groups.find((g) => g.projectPath === item.projectPath)
-        : undefined;
-    const ticketStatus =
-      group?.items.find((entry) => entry.item.id === item.id)?.ticketStatus ?? 'unknown';
+    const overview = item.projectPath !== null ? inboxOverview[item.projectPath] : undefined;
+    const ticketStatus = resolveInboxTicketStatus(
+      item,
+      overview,
+      liveTicketStatusFor(item, liveTickets)
+    );
     return (
       <InboxItemRow
         key={item.id}
@@ -126,18 +147,20 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
         starredProjects={starredProjects}
         projectOptions={projectOptions}
         overview={inboxOverview}
-        onUpdateTitle={(id, title) => void updateInboxItem(id, { title })}
+        onUpdate={(id, patch) => void updateInboxItem(id, patch)}
         onDismiss={(target) => void handleDismiss(target)}
         onAssign={(request) => void assignInboxItem(request)}
         onUnassign={(target) => void handleUnassign(target)}
         onOpenProject={onOpenProject}
         onHandToAgent={handleHandToAgent}
+        onAttach={(id, sourcePath) => void attachInboxFile(id, sourcePath)}
+        onDetach={(id, attachmentId) => void detachInboxFile(id, attachmentId)}
       />
     );
   };
 
   const loadingFirstPaint = inboxLoading && inboxItems.length === 0;
-  const empty = !loadingFirstPaint && inboxItems.length === 0;
+  const empty = !loadingFirstPaint && visibleItems.length === 0;
   const wide = variant === 'wide';
 
   // The start screen's own capture bar already sits above this panel; an
@@ -159,15 +182,32 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
       <div className="flex items-center justify-between border-b border-white/5 bg-white/2 p-3">
         <h2 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
           Inbox
-          {inboxItems.length > 0 && (
+          {visibleItems.length > 0 && (
             <span
               data-testid="inbox-count"
               className="rounded-full bg-primary/20 px-1.5 py-0.5 font-mono text-[9px] tracking-normal text-primary-light"
             >
-              {inboxItems.length}
+              {visibleItems.length}
             </span>
           )}
         </h2>
+        {!loadingFirstPaint && !empty && (
+          <label className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-foreground-muted/70">
+            <span className="sr-only">Sort inbox</span>
+            <select
+              aria-label="Sort inbox"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as InboxSort)}
+              className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-foreground-muted outline-none focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              {INBOX_SORTS.map((option) => (
+                <option key={option} value={option}>
+                  {INBOX_SORT_LABEL[option]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-2">

@@ -14,6 +14,8 @@ function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
     ticketId: null,
     assignedAt: null,
     dismissedAt: null,
+    priority: 'normal',
+    dueDate: null,
     ...overrides,
   };
 }

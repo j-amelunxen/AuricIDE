@@ -11,6 +11,7 @@ const storeState = {
   inboxCaptureOpen: true,
   setInboxCaptureOpen: (open: boolean) => setInboxCaptureOpenMock(open),
   addInboxItem: (title: string, notes?: string) => addInboxItemMock(title, notes),
+  attachInboxFile: vi.fn(async () => null),
   inboxError: null as string | null,
   overlayStack: { layers: [] as { id: string; kind: string }[] },
   pushOverlay: (entry: { id: string; kind: string }) => {
@@ -43,6 +44,8 @@ function makeItem(title: string): InboxItem {
     ticketId: null,
     assignedAt: null,
     dismissedAt: null,
+    priority: 'normal',
+    dueDate: null,
   };
 }
 

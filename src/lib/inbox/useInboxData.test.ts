@@ -15,7 +15,20 @@ const projectsPmOverviewMock = vi.fn(async (paths: string[]): Promise<ProjectPmO
     inReview: 0,
     done: 0,
     epics: [],
-    tickets: [],
+    // Assigned fixtures use ticketId `t1`. An empty list would look like
+    // "finished" and auto-dismiss the row — these tests are about refresh
+    // timing, not that cleanup.
+    tickets: [
+      {
+        id: 't1',
+        name: 'Task',
+        status: 'open',
+        priority: 'normal',
+        epicId: 'epic-1',
+        epicName: 'Inbox',
+        updatedAt: '2026-01-01 00:00:00',
+      },
+    ],
     error: null,
   }))
 );
@@ -41,6 +54,8 @@ function assignedItem(id: string, projectPath: string): InboxItem {
     ticketId: 't1',
     assignedAt: '2026-01-01 00:00:00',
     dismissedAt: null,
+    priority: 'normal',
+    dueDate: null,
   };
 }
 
@@ -120,6 +135,8 @@ describe('useInboxData', () => {
           ticketId: null,
           assignedAt: null,
           dismissedAt: null,
+          priority: 'normal',
+          dueDate: null,
         },
       ],
     });
