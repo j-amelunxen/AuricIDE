@@ -348,7 +348,32 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   },
 
   spawnNewAgent: async (config) => {
-    const agent = await spawnAgent(config);
+    let spawnConfig = config;
+    if (config.useWorktree) {
+      const repo = config.cwd;
+      const toast = get() as AgentSlice & {
+        showToast?: (message: string, variant?: 'info' | 'success' | 'error') => number;
+        refreshAgentWorktrees?: () => Promise<void>;
+      };
+      if (!repo) {
+        const msg = 'A git worktree needs a working directory.';
+        toast.showToast?.(msg, 'error');
+        throw new Error(msg);
+      }
+      try {
+        const { addGitWorktree } = await import('../tauri/git');
+        const worktree = await addGitWorktree(repo, config.name);
+        const { useWorktree: _flag, ...rest } = config;
+        spawnConfig = { ...rest, cwd: worktree.path };
+        void toast.refreshAgentWorktrees?.();
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        const msg = `Could not create a git worktree: ${detail}`;
+        toast.showToast?.(msg, 'error');
+        throw err instanceof Error ? err : new Error(msg);
+      }
+    }
+    const agent = await spawnAgent(spawnConfig);
     // Two agents started from the same instruction would otherwise be
     // indistinguishable in the panel.
     const name = uniqueAgentName(
@@ -360,7 +385,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       agents: [...get().agents, named],
       // Kept verbatim for one-click retry — permission mode and headless
       // cannot be reconstructed from the agent's display fields.
-      agentSpawnConfigs: { ...get().agentSpawnConfigs, [agent.id]: config },
+      agentSpawnConfigs: { ...get().agentSpawnConfigs, [agent.id]: spawnConfig },
     });
 
     // Keep the backend's copy in step so the name survives a restart-resume.
@@ -384,7 +409,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         agentName: name,
         model: config.model,
         provider: config.provider ?? agent.provider,
-        cwd: config.cwd ?? agent.repoPath ?? null,
+        cwd: spawnConfig.cwd ?? agent.repoPath ?? null,
         source: config.runSource ?? 'ui',
       }).catch(() => {});
     }

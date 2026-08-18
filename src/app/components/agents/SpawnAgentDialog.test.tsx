@@ -70,7 +70,7 @@ describe('SpawnAgentDialog – remembered launch choices', () => {
       expect(screen.getByLabelText(/model/i)).toHaveValue('moonshotai/kimi-k2-thinking');
     });
     expect(screen.getByLabelText(/permission mode/i)).toHaveValue('yolo');
-    expect(screen.getByRole('checkbox')).toBeChecked();
+    expect(screen.getByLabelText(/headless mode/i)).toBeChecked();
   });
 
   it('falls back to the provider default when the saved model vanished', async () => {
@@ -332,6 +332,25 @@ describe('SpawnAgentDialog', () => {
         provider: DEFAULT_PROVIDER,
       })
     );
+    expect(onSpawn.mock.calls[0][0].useWorktree).toBeUndefined();
+  });
+
+  it('passes useWorktree when the new git worktree box is checked', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    await user.type(screen.getByLabelText(/working directory/i), '/my/repo');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByLabelText(/new git worktree/i));
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ useWorktree: true }));
+  });
+
+  it('disables the worktree checkbox until a working directory is set', () => {
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByLabelText(/new git worktree/i)).toBeDisabled();
   });
 
   it('calls onClose on cancel', async () => {

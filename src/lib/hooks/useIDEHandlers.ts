@@ -714,7 +714,11 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
 
   const handleSpawnNewAgent = useCallback(
     async (config: AgentConfig) => {
-      await state.spawnNewAgent(config);
+      try {
+        await state.spawnNewAgent(config);
+      } catch {
+        return;
+      }
       state.setSpawnDialogOpen(false);
       // Spawning against a goal recorded a goal run — persist it immediately
       // so it isn't lost if the user closes the Goals modal without saving.
