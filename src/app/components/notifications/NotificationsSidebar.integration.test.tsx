@@ -69,6 +69,7 @@ vi.mock('@/lib/tauri/notifications', () => ({
   notificationsMarkAllRead: vi.fn(async () => undefined),
   notificationsAnswer: vi.fn(async () => undefined),
   notificationsClear: vi.fn(async () => undefined),
+  notificationsDelete: vi.fn(async () => undefined),
 }));
 
 const REPO_PATH = '/repo/sample';

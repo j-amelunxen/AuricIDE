@@ -48,6 +48,7 @@ export interface NotificationsSlice {
   markAllNotificationsRead: (projectPath?: NotificationScope) => Promise<void>;
   answerNotification: (uid: string, answer: string) => Promise<void>;
   clearNotifications: (projectPath?: NotificationScope) => Promise<void>;
+  dismissNotification: (uid: string) => Promise<void>;
 }
 
 /** Rows that never reached the database carry this id, so they can never move the cursor. */
@@ -308,6 +309,28 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
       } else {
         await notificationsClear(projectPath);
       }
+    } catch {
+      /* see markNotificationRead */
+    }
+  },
+
+  /**
+   * One row, gone — the "confirm and remove" button on the row itself, so
+   * clearing a single item never requires opening the Command Center.
+   *
+   * Same open-question guard as `clearNotifications`: dismissing is not an
+   * answer, and a question an agent is waiting on must not disappear just
+   * because it was in the way.
+   */
+  dismissNotification: async (uid) => {
+    const target = get().notifications.find((n) => n.uid === uid);
+    if (!target || isOpenQuestion(target)) return;
+
+    const notifications = get().notifications.filter((n) => n.uid !== uid);
+    set({ notifications, notificationsUnreadCount: unreadCount(notifications) });
+
+    try {
+      await notificationsDelete([uid]);
     } catch {
       /* see markNotificationRead */
     }

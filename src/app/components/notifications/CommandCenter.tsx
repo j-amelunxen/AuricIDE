@@ -90,6 +90,7 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
   const selectCommandCenterProject = useStore((s) => s.selectCommandCenterProject);
   const markAllNotificationsRead = useStore((s) => s.markAllNotificationsRead);
   const clearNotifications = useStore((s) => s.clearNotifications);
+  const dismissNotification = useStore((s) => s.dismissNotification);
   const loadSchedules = useStore((s) => s.loadSchedules);
   const saveSchedule = useStore((s) => s.saveSchedule);
   const deleteSchedule = useStore((s) => s.deleteSchedule);
@@ -381,6 +382,7 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
             onDeleteSchedule={(schedule) => void confirmDelete(schedule)}
             onMarkAllRead={() => void markAllNotificationsRead(scope)}
             onClear={() => void clearNotifications(scope)}
+            onDismiss={(uid) => void dismissNotification(uid)}
           />
         </div>
       </div>

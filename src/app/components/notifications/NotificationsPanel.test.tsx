@@ -45,6 +45,7 @@ function renderPanel(overrides: Partial<NotificationsPanelProps> = {}) {
     onAction: vi.fn(),
     onMarkAllRead: vi.fn(),
     onClear: vi.fn(),
+    onDismiss: vi.fn(),
     ...overrides,
   };
   render(<NotificationsPanel {...props} />);
@@ -362,5 +363,39 @@ describe('NotificationRow', () => {
 
     expect(screen.getByTestId(`notification-row-${row.uid}`)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /exec/i })).toBeNull();
+  });
+
+  describe('dismiss', () => {
+    it('reports the row to remove, without opening it', () => {
+      const row = makeNotification();
+      const props = renderPanel({ notifications: [row] });
+
+      fireEvent.click(screen.getByTestId(`notification-dismiss-${row.uid}`));
+
+      expect(props.onDismiss).toHaveBeenCalledWith(row.uid);
+      expect(props.onOpen).not.toHaveBeenCalled();
+    });
+
+    it('dismisses a settled question too', () => {
+      const row = makeNotification({
+        kind: 'ask',
+        answeredAt: '2026-08-12 11:30:00',
+        answer: 'yes',
+      });
+      const props = renderPanel({ notifications: [row] });
+
+      fireEvent.click(screen.getByTestId(`notification-dismiss-${row.uid}`));
+
+      expect(props.onDismiss).toHaveBeenCalledWith(row.uid);
+    });
+
+    // An open question needs an answer, not a quiet removal — a waiting agent
+    // must not have its question vanish from under it.
+    it('offers no dismiss button for an unanswered question', () => {
+      const row = makeNotification({ kind: 'ask' });
+      renderPanel({ notifications: [row] });
+
+      expect(screen.queryByTestId(`notification-dismiss-${row.uid}`)).toBeNull();
+    });
   });
 });

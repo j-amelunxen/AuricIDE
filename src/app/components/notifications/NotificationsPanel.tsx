@@ -21,6 +21,7 @@ export interface NotificationsPanelProps {
   onAction: (notification: Notification, action: NotificationAction) => void;
   onMarkAllRead: () => void;
   onClear: () => void;
+  onDismiss: (uid: string) => void;
 }
 
 type ReadFilter = 'all' | 'unread';
@@ -52,6 +53,7 @@ export function NotificationsPanel({
   onAction,
   onMarkAllRead,
   onClear,
+  onDismiss,
 }: NotificationsPanelProps) {
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
 
@@ -129,6 +131,7 @@ export function NotificationsPanel({
               starredProjects={starredProjects}
               onOpen={onOpen}
               onAction={onAction}
+              onDismiss={onDismiss}
             />
           ))
         )}
