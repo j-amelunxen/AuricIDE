@@ -35,6 +35,7 @@ import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { SkillWheel, useSkillWheel } from './SkillWheel';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { useProjectDirty } from '@/lib/hooks/useProjectDirty';
 
 /** Hold-to-confirm threshold for unstarring — long enough to rule out an
  * accidental tap, short enough to still feel immediate once committed to. */
@@ -61,6 +62,7 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 interface ProjectTileProps {
   project: StarredProject;
   active: boolean;
+  dirty: boolean;
   wheelSuppressed: boolean;
   onSwitch: () => void;
   onUnstar: () => void;
@@ -74,6 +76,7 @@ interface ProjectTileProps {
 function ProjectTile({
   project,
   active,
+  dirty,
   wheelSuppressed,
   onSwitch,
   onUnstar,
@@ -83,7 +86,12 @@ function ProjectTile({
   onOpenSettings,
   onWheelActivity,
 }: ProjectTileProps) {
-  const label = active ? `${project.name} (current)` : `Switch to ${project.name}`;
+  const label = [
+    active ? `${project.name} (current)` : `Switch to ${project.name}`,
+    dirty ? 'uncommitted changes' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
   const [holding, setHolding] = useState(false);
   const [removing, setRemoving] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -315,6 +323,17 @@ function ProjectTile({
           }`}
         >
           <ProjectTileFace path={project.path} icon={project.icon} />
+          {dirty && (
+            <span
+              data-testid={`quick-access-dirty-${project.path}`}
+              title="Uncommitted changes"
+              aria-hidden="true"
+              // Top-right: bottom-left is the combo mark, bottom-right is the
+              // remove ×. A status pip belongs on the free corner, and a ring
+              // of the tile's own background keeps amber readable on any hue.
+              className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_0_2px_var(--background)]"
+            />
+          )}
           {quickAccessCombos(project).length > 0 && (
             <span
               data-testid={`quick-access-combo-mark-${project.path}`}
@@ -560,6 +579,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const sortedProjects = [...starredProjects].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
   );
+  const dirtyByProject = useProjectDirty(sortedProjects.map((project) => project.path));
 
   const currentStarred =
     currentPath !== null && starredProjects.some((p) => p.path === currentPath);
@@ -580,6 +600,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
             key={project.path}
             project={project}
             active={project.path === currentPath}
+            dirty={dirtyByProject[project.path] === true}
             wheelSuppressed={wheelPath !== null && wheelPath !== project.path}
             onSwitch={() => {
               if (project.path !== currentPath) onSwitchProject?.(project.path);
