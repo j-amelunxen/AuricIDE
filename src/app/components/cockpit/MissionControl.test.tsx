@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import type { PmGoal } from '@/lib/tauri/goals';
 
 function makeTicket(overrides: Partial<PmTicket>): PmTicket {
   return {
@@ -37,6 +38,25 @@ function makeRequirement(overrides: Partial<PmRequirement>): PmRequirement {
     source: '',
     lastVerifiedAt: new Date().toISOString(),
     appliesTo: [],
+    sortOrder: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
+  return {
+    id: 'goal-1',
+    parentId: null,
+    name: 'Ship it',
+    description: '',
+    successCriteria: '',
+    status: 'draft',
+    priority: 'normal',
+    goalPrompt: '',
+    createdBy: 'ui',
+    achievedAt: null,
     sortOrder: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -77,6 +97,13 @@ describe('MissionControl', () => {
     expect(screen.getByTestId('mc-station-plan')).toBeInTheDocument();
     expect(screen.getByTestId('mc-station-execute')).toBeInTheDocument();
     expect(screen.getByTestId('mc-station-verify')).toBeInTheDocument();
+  });
+
+  it('keeps the station layout single-column before the responsive breakpoints', () => {
+    render(<MissionControl />);
+    const stationLayout = screen.getByTestId('mc-station-spec').parentElement;
+
+    expect(stationLayout).toHaveClass('grid-cols-1', 'md:grid-cols-2', 'sm:flex');
   });
 
   it('counts only markdown documents under specs/ at the spec station', () => {
@@ -217,17 +244,19 @@ describe('MissionControl', () => {
     expect(screen.queryByTestId('mc-spec-picker')).not.toBeInTheDocument();
   });
 
-  it('counts open tickets at the plan station, ignoring done and archived', () => {
+  it('counts open tickets at the plan station, ignoring done, archived and discarded', () => {
     useStore.setState({
       pmDraftTickets: [
         makeTicket({ status: 'open' }),
         makeTicket({ status: 'in_progress' }),
+        makeTicket({ status: 'to_test' }),
         makeTicket({ status: 'done' }),
         makeTicket({ status: 'archived' }),
+        makeTicket({ status: 'discarded' }),
       ],
     });
     render(<MissionControl />);
-    expect(screen.getByTestId('mc-station-plan')).toHaveTextContent('2');
+    expect(screen.getByTestId('mc-station-plan')).toHaveTextContent('3');
   });
 
   it('counts running agents at the execute station', () => {
@@ -284,15 +313,40 @@ describe('MissionControl', () => {
 
   it('offers the first-run path while the project has no plan yet', () => {
     render(<MissionControl />);
+    expect(screen.getByRole('heading', { name: 'Start with an outcome' })).toBeInTheDocument();
+    expect(screen.getByText(/AuricIDE turns an outcome into verified work/)).toBeInTheDocument();
+    expect(screen.getByRole('list')).toHaveTextContent(
+      '1 Define an outcome or goal2 Add work from a spec or process video3 Let the conductor execute and verify'
+    );
     const cta = screen.getByTestId('mc-import-spec');
     fireEvent.click(cta);
     expect(useStore.getState().importSpecDialogOpen).toBe(true);
+
+    fireEvent.click(screen.getByTestId('mc-import-video'));
+    expect(useStore.getState().videoImportDialogOpen).toBe(true);
+
+    fireEvent.click(screen.getByTestId('mc-new-goal'));
+    expect(useStore.getState().workTab).toBe('goals');
+    expect(screen.getByTestId('mc-new-goal')).toHaveTextContent('Open Goals');
   });
 
-  it('hides the first-run hint once tickets exist', () => {
+  it('keeps the first-run hint while tickets exist but no goals exist', () => {
     useStore.setState({ pmDraftTickets: [makeTicket({})] });
     render(<MissionControl />);
+    expect(screen.getByTestId('mc-import-spec')).toBeInTheDocument();
+  });
+
+  it('hides the first-run hint once a goal exists', () => {
+    useStore.setState({ goalsDraft: [makeGoal()] });
+    render(<MissionControl />);
     expect(screen.queryByTestId('mc-import-spec')).not.toBeInTheDocument();
+  });
+
+  it('makes all first-run actions keyboard-visible on focus', () => {
+    render(<MissionControl />);
+    for (const testId of ['mc-new-goal', 'mc-import-spec', 'mc-import-video']) {
+      expect(screen.getByTestId(testId)).toHaveClass('focus-visible:outline-2');
+    }
   });
 
   it('keeps video import discoverable after first run', () => {
