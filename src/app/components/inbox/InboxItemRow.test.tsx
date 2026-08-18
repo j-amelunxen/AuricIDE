@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InboxItemRow, type InboxItemRowProps } from './InboxItemRow';
@@ -37,6 +37,8 @@ function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
     ticketId: null,
     assignedAt: null,
     dismissedAt: null,
+    priority: 'normal',
+    dueDate: null,
     ...overrides,
   };
 }
@@ -50,12 +52,14 @@ const now = new Date('2026-01-01T00:05:00Z').getTime();
 
 function renderRow(overrides: Partial<React.ComponentProps<typeof InboxItemRow>> = {}) {
   const handlers = {
-    onUpdateTitle: vi.fn(),
+    onUpdate: vi.fn(),
     onDismiss: vi.fn(),
     onAssign: vi.fn(),
     onUnassign: vi.fn(),
     onOpenProject: vi.fn(),
     onHandToAgent: vi.fn(),
+    onAttach: vi.fn(),
+    onDetach: vi.fn(),
   };
   const props: React.ComponentProps<typeof InboxItemRow> = {
     item: makeItem(),
@@ -84,26 +88,26 @@ describe('InboxItemRow', () => {
   describe('inline title editing', () => {
     it('enters edit mode on double-click and commits on Enter', async () => {
       const user = userEvent.setup();
-      const { onUpdateTitle } = renderRow();
+      const { onUpdate } = renderRow();
 
       await user.dblClick(screen.getByText('Write the report'));
       const input = screen.getByDisplayValue('Write the report');
       await user.clear(input);
       await user.type(input, 'Write the final report{enter}');
 
-      expect(onUpdateTitle).toHaveBeenCalledWith('item-1', 'Write the final report');
+      expect(onUpdate).toHaveBeenCalledWith('item-1', { title: 'Write the final report' });
       expect(screen.queryByDisplayValue('Write the final report')).not.toBeInTheDocument();
     });
 
     it('cancels the edit on Escape without updating', async () => {
       const user = userEvent.setup();
-      const { onUpdateTitle } = renderRow();
+      const { onUpdate } = renderRow();
 
       await user.dblClick(screen.getByText('Write the report'));
       const input = screen.getByDisplayValue('Write the report');
       await user.type(input, ' more{escape}');
 
-      expect(onUpdateTitle).not.toHaveBeenCalled();
+      expect(onUpdate).not.toHaveBeenCalled();
       expect(screen.getByText('Write the report')).toBeInTheDocument();
     });
   });
@@ -221,6 +225,30 @@ describe('InboxItemRow', () => {
 
       expect(onDismiss).toHaveBeenCalledWith(expect.objectContaining({ id: 'item-1' }));
     });
+
+    it('copies the title to the clipboard from the copy button next to Assign', async () => {
+      const user = userEvent.setup();
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      renderRow();
+
+      await user.click(screen.getByRole('button', { name: /copy/i }));
+
+      expect(writeText).toHaveBeenCalledWith('Write the report');
+    });
+
+    it('includes the notes when copying an item that has them', async () => {
+      const user = userEvent.setup();
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      renderRow({ item: makeItem({ notes: 'Ask the client for the invoice number.' }) });
+
+      await user.click(screen.getByRole('button', { name: /copy/i }));
+
+      expect(writeText).toHaveBeenCalledWith(
+        'Write the report\n\nAsk the client for the invoice number.'
+      );
+    });
   });
 
   describe('an assigned item', () => {
@@ -272,6 +300,11 @@ describe('InboxItemRow', () => {
       expect(screen.getByText(/unknown/i)).toBeInTheDocument();
     });
 
+    it('still shows the stored priority after assign', () => {
+      renderRow({ item: assigned, ticketStatus: 'open' });
+      expect(screen.getByRole('button', { name: /priority: normal/i })).toBeInTheDocument();
+    });
+
     it('falls back to Unknown for a status the vocabulary does not recognise', () => {
       // A status string the project db never should have written (an old
       // schema, a hand-edited row) must not render as a blank chip.
@@ -280,6 +313,74 @@ describe('InboxItemRow', () => {
         ticketStatus: 'blocked' as unknown as InboxItemRowProps['ticketStatus'],
       });
       expect(screen.getByText('Unknown')).toBeInTheDocument();
+    });
+  });
+
+  describe('priority and due date', () => {
+    it('shows the current priority and lets it be changed', async () => {
+      const user = userEvent.setup();
+      const { onUpdate } = renderRow({ item: makeItem({ priority: 'high' }) });
+
+      await user.click(screen.getByRole('button', { name: /priority: high/i }));
+      await user.click(screen.getByRole('menuitem', { name: /critical/i }));
+
+      expect(onUpdate).toHaveBeenCalledWith('item-1', { priority: 'critical' });
+    });
+
+    it('shows a due date and lets it be changed', () => {
+      const { onUpdate } = renderRow({ item: makeItem({ dueDate: '2026-08-20' }) });
+
+      expect(screen.getByText('20 Aug')).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText(/due date/i), { target: { value: '2026-08-22' } });
+
+      expect(onUpdate).toHaveBeenCalledWith('item-1', { dueDate: '2026-08-22' });
+    });
+
+    it('marks an overdue item', () => {
+      renderRow({
+        item: makeItem({ dueDate: '2025-12-01' }),
+        now: new Date('2026-01-01T00:05:00Z').getTime(),
+      });
+      expect(screen.getByText(/overdue/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('attachments', () => {
+    const shot = {
+      id: 'att-1',
+      itemId: 'item-1',
+      kind: 'image' as const,
+      fileName: 'shot.png',
+      storedPath: '/tmp/shot.png',
+      createdAt: '2026-08-18 00:00:00',
+    };
+    const clip = {
+      id: 'att-2',
+      itemId: 'item-1',
+      kind: 'video' as const,
+      fileName: 'clip.mp4',
+      storedPath: '/tmp/clip.mp4',
+      createdAt: '2026-08-18 00:00:00',
+    };
+
+    it('shows image and video names when the item has attachments', () => {
+      renderRow({ item: makeItem({ attachments: [shot, clip] }) });
+      expect(screen.getByText('shot.png')).toBeInTheDocument();
+      expect(screen.getByText('clip.mp4')).toBeInTheDocument();
+    });
+
+    it('removes an attachment from the item', async () => {
+      const user = userEvent.setup();
+      const { onDetach } = renderRow({ item: makeItem({ attachments: [shot] }) });
+
+      await user.click(screen.getByRole('button', { name: /remove shot.png/i }));
+
+      expect(onDetach).toHaveBeenCalledWith('item-1', 'att-1');
+    });
+
+    it('offers an attach control', () => {
+      renderRow();
+      expect(screen.getByRole('button', { name: /attach image or video/i })).toBeInTheDocument();
     });
   });
 });

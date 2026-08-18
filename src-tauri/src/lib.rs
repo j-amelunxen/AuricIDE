@@ -1705,6 +1705,31 @@ fn inbox_unassign(
     inbox::unassign_impl(&conn, &id)
 }
 
+#[tauri::command]
+fn inbox_attach(
+    item_id: String,
+    source_path: String,
+    state: tauri::State<'_, inbox::InboxState>,
+) -> Result<inbox::InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::attach_impl(
+        &conn,
+        &state.attachments_dir,
+        &item_id,
+        std::path::Path::new(&source_path),
+    )
+}
+
+#[tauri::command]
+fn inbox_detach(
+    item_id: String,
+    attachment_id: String,
+    state: tauri::State<'_, inbox::InboxState>,
+) -> Result<inbox::InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::detach_impl(&conn, &item_id, &attachment_id)
+}
+
 /// Reads several projects' `.auric/project.db` files read-only, so a
 /// possibly large batch does not block the main thread.
 #[tauri::command]
@@ -2113,6 +2138,9 @@ pub fn run() {
                 Ok(conn) => {
                     app.manage(inbox::InboxState {
                         conn: std::sync::Mutex::new(conn),
+                        attachments_dir: inbox::attachments_dir_in(
+                            &app.path().app_data_dir().map_err(|e| e.to_string())?,
+                        ),
                     });
                 }
                 // A missing inbox must not stop the IDE from opening either.
@@ -2302,6 +2330,8 @@ pub fn run() {
             inbox_dismiss,
             inbox_assign,
             inbox_unassign,
+            inbox_attach,
+            inbox_detach,
             projects_pm_overview,
             agent_log_append,
             agent_log_load,

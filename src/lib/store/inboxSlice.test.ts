@@ -8,6 +8,8 @@ const mockUpdate = vi.fn();
 const mockDismiss = vi.fn();
 const mockAssign = vi.fn();
 const mockUnassign = vi.fn();
+const mockAttach = vi.fn();
+const mockDetach = vi.fn();
 const mockOverview = vi.fn();
 
 vi.mock('@/lib/tauri/inbox', () => ({
@@ -17,6 +19,8 @@ vi.mock('@/lib/tauri/inbox', () => ({
   inboxDismiss: (...args: unknown[]) => mockDismiss(...args),
   inboxAssign: (...args: unknown[]) => mockAssign(...args),
   inboxUnassign: (...args: unknown[]) => mockUnassign(...args),
+  inboxAttach: (...args: unknown[]) => mockAttach(...args),
+  inboxDetach: (...args: unknown[]) => mockDetach(...args),
   projectsPmOverview: (...args: unknown[]) => mockOverview(...args),
 }));
 
@@ -37,6 +41,8 @@ function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
     ticketId: null,
     assignedAt: null,
     dismissedAt: null,
+    priority: 'normal',
+    dueDate: null,
     ...overrides,
   };
 }
@@ -149,6 +155,49 @@ describe('inboxSlice', () => {
       expect(store.getState().inboxItems).toEqual([original]);
       expect(store.getState().inboxError).toBe('not found');
     });
+
+    it('writes an assigned item onto the open project ticket so the draft stays in step', async () => {
+      const assigned = makeItem({
+        projectPath: '/repo/alpha',
+        projectName: 'alpha',
+        ticketId: 'ticket-1',
+        assignedAt: '2026-08-17T10:00:00Z',
+      });
+      const updated = { ...assigned, title: 'Renamed', priority: 'high' as const };
+      const updateTicket = vi.fn();
+      store.setState({
+        inboxItems: [assigned],
+        rootPath: '/repo/alpha',
+        updateTicket,
+      } as unknown as Partial<InboxSlice>);
+      mockUpdate.mockResolvedValue(updated);
+
+      await store.getState().updateInboxItem(assigned.id, {
+        title: 'Renamed',
+        priority: 'high',
+      });
+
+      expect(updateTicket).toHaveBeenCalledWith('ticket-1', {
+        name: 'Renamed',
+        priority: 'high',
+      });
+    });
+
+    it('does not touch PM drafts for an unassigned item', async () => {
+      const original = makeItem({ title: 'old' });
+      const updated = { ...original, title: 'new' };
+      const updateTicket = vi.fn();
+      store.setState({
+        inboxItems: [original],
+        rootPath: '/repo/alpha',
+        updateTicket,
+      } as unknown as Partial<InboxSlice>);
+      mockUpdate.mockResolvedValue(updated);
+
+      await store.getState().updateInboxItem(original.id, { title: 'new' });
+
+      expect(updateTicket).not.toHaveBeenCalled();
+    });
   });
 
   describe('dismissInboxItem', () => {
@@ -173,6 +222,90 @@ describe('inboxSlice', () => {
 
       expect(store.getState().inboxItems).toEqual([a]);
       expect(store.getState().inboxError).toBe('gone');
+    });
+  });
+
+  describe('attachInboxFile', () => {
+    it('replaces the item with the backend response that carries the new attachment', async () => {
+      const original = makeItem();
+      const updated = {
+        ...original,
+        attachments: [
+          {
+            id: 'att-1',
+            itemId: original.id,
+            kind: 'image' as const,
+            fileName: 'shot.png',
+            storedPath: '/tmp/shot.png',
+            createdAt: '2026-08-18 00:00:00',
+          },
+        ],
+      };
+      store.setState({ inboxItems: [original] });
+      mockAttach.mockResolvedValue(updated);
+
+      const result = await store.getState().attachInboxFile(original.id, '/tmp/source.png');
+
+      expect(mockAttach).toHaveBeenCalledWith(original.id, '/tmp/source.png');
+      expect(result).toEqual(updated);
+      expect(store.getState().inboxItems).toEqual([updated]);
+    });
+
+    it('returns null and sets inboxError without throwing on failure', async () => {
+      const original = makeItem();
+      store.setState({ inboxItems: [original] });
+      mockAttach.mockRejectedValue(new Error('not an image'));
+
+      const result = await store.getState().attachInboxFile(original.id, '/tmp/notes.md');
+
+      expect(result).toBeNull();
+      expect(store.getState().inboxItems).toEqual([original]);
+      expect(store.getState().inboxError).toBe('not an image');
+    });
+
+    it('refreshes the open project PM draft when the item is already a ticket there', async () => {
+      const assigned = makeItem({
+        projectPath: '/repo/alpha',
+        projectName: 'alpha',
+        ticketId: 'ticket-1',
+        assignedAt: '2026-08-17T10:00:00Z',
+      });
+      const refreshPmData = vi.fn();
+      store.setState({
+        inboxItems: [assigned],
+        rootPath: '/repo/alpha',
+        refreshPmData,
+      } as unknown as Partial<InboxSlice>);
+      mockAttach.mockResolvedValue(assigned);
+
+      await store.getState().attachInboxFile(assigned.id, '/tmp/shot.png');
+
+      expect(refreshPmData).toHaveBeenCalledWith('/repo/alpha');
+    });
+  });
+
+  describe('detachInboxFile', () => {
+    it('replaces the item with the backend response after detach', async () => {
+      const original = makeItem({
+        attachments: [
+          {
+            id: 'att-1',
+            itemId: 'item-1',
+            kind: 'image',
+            fileName: 'shot.png',
+            storedPath: '/tmp/shot.png',
+            createdAt: '2026-08-18 00:00:00',
+          },
+        ],
+      });
+      const updated = { ...original, attachments: [] };
+      store.setState({ inboxItems: [original] });
+      mockDetach.mockResolvedValue(updated);
+
+      await store.getState().detachInboxFile(original.id, 'att-1');
+
+      expect(mockDetach).toHaveBeenCalledWith(original.id, 'att-1');
+      expect(store.getState().inboxItems).toEqual([updated]);
     });
   });
 
@@ -396,6 +529,114 @@ describe('inboxSlice', () => {
 
       expect(store.getState().inboxOverview).toEqual({ '/repo/alpha': alpha });
       expect(store.getState().inboxError).toBe('unreachable');
+    });
+
+    it('dismisses assigned items whose tickets the overview can confirm as finished', async () => {
+      const finished = makeItem({
+        projectPath: '/repo/alpha',
+        projectName: 'alpha',
+        ticketId: 'ticket-done',
+        assignedAt: '2026-08-17T10:00:00Z',
+      });
+      const stillOpen = makeItem({
+        projectPath: '/repo/alpha',
+        projectName: 'alpha',
+        ticketId: 'ticket-open',
+        assignedAt: '2026-08-17T10:00:00Z',
+      });
+      const unsorted = makeItem();
+      store.setState({ inboxItems: [finished, stillOpen, unsorted] });
+      mockOverview.mockResolvedValue([
+        makeOverview({
+          tickets: [
+            {
+              id: 'ticket-open',
+              name: 'Still going',
+              status: 'open',
+              priority: 'normal',
+              epicId: 'epic-1',
+              epicName: 'Inbox',
+              updatedAt: '2026-08-17T10:00:00Z',
+            },
+          ],
+        }),
+      ]);
+      mockDismiss.mockResolvedValue(undefined);
+
+      await store.getState().refreshInboxOverview(['/repo/alpha']);
+
+      expect(mockDismiss).toHaveBeenCalledTimes(1);
+      expect(mockDismiss).toHaveBeenCalledWith(finished.id);
+      expect(store.getState().inboxItems.map((item) => item.id)).toEqual([
+        stillOpen.id,
+        unsorted.id,
+      ]);
+    });
+
+    it('writes a newer ticket digest back onto the inbox row', async () => {
+      const assigned = makeItem({
+        title: 'Stale',
+        notes: 'old',
+        priority: 'low',
+        dueDate: null,
+        projectPath: '/repo/alpha',
+        projectName: 'alpha',
+        ticketId: 'ticket-open',
+        assignedAt: '2026-08-17T10:00:00Z',
+        updatedAt: '2026-08-17T10:00:00Z',
+      });
+      store.setState({ inboxItems: [assigned] });
+      mockOverview.mockResolvedValue([
+        makeOverview({
+          tickets: [
+            {
+              id: 'ticket-open',
+              name: 'From ticket',
+              status: 'open',
+              priority: 'high',
+              epicId: 'epic-1',
+              epicName: 'Inbox',
+              updatedAt: '2026-08-19T10:00:00Z',
+              dueDate: '2026-09-01',
+              description: 'ticket notes',
+            },
+          ],
+        }),
+      ]);
+      const pulled = {
+        ...assigned,
+        title: 'From ticket',
+        notes: 'ticket notes',
+        priority: 'high' as const,
+        dueDate: '2026-09-01',
+      };
+      mockUpdate.mockResolvedValue(pulled);
+
+      await store.getState().refreshInboxOverview(['/repo/alpha']);
+
+      expect(mockUpdate).toHaveBeenCalledWith(assigned.id, {
+        title: 'From ticket',
+        notes: 'ticket notes',
+        priority: 'high',
+        dueDate: '2026-09-01',
+      });
+      expect(store.getState().inboxItems[0]).toEqual(pulled);
+    });
+
+    it('does not dismiss an assigned item when the overview failed to read', async () => {
+      const assigned = makeItem({
+        projectPath: '/repo/alpha',
+        projectName: 'alpha',
+        ticketId: 'ticket-1',
+        assignedAt: '2026-08-17T10:00:00Z',
+      });
+      store.setState({ inboxItems: [assigned] });
+      mockOverview.mockResolvedValue([makeOverview({ error: 'locked', tickets: [] })]);
+
+      await store.getState().refreshInboxOverview(['/repo/alpha']);
+
+      expect(mockDismiss).not.toHaveBeenCalled();
+      expect(store.getState().inboxItems).toEqual([assigned]);
     });
   });
 });

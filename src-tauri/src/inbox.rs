@@ -33,6 +33,7 @@ use std::sync::Mutex;
 
 pub struct InboxState {
     pub conn: Mutex<Connection>,
+    pub attachments_dir: std::path::PathBuf,
 }
 
 /// Where the inbox lives inside the app data directory.
@@ -53,6 +54,21 @@ pub struct InboxItem {
     pub ticket_id: Option<String>,
     pub assigned_at: Option<String>,
     pub dismissed_at: Option<String>,
+    pub priority: String,
+    pub due_date: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<InboxAttachment>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxAttachment {
+    pub id: String,
+    pub item_id: String,
+    pub kind: String,
+    pub file_name: String,
+    pub stored_path: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -61,6 +77,10 @@ pub struct InboxItemInput {
     pub title: String,
     #[serde(default)]
     pub notes: String,
+    #[serde(default)]
+    pub priority: Option<String>,
+    #[serde(default)]
+    pub due_date: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -68,6 +88,9 @@ pub struct InboxItemInput {
 pub struct InboxItemPatch {
     pub title: Option<String>,
     pub notes: Option<String>,
+    pub priority: Option<String>,
+    /// `None` leaves the date alone; `Some("")` clears it; a calendar day sets it.
+    pub due_date: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -91,6 +114,8 @@ pub struct ProjectTicketDigest {
     pub epic_id: String,
     pub epic_name: String,
     pub updated_at: String,
+    pub due_date: Option<String>,
+    pub description: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -147,7 +172,35 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         CREATE INDEX idx_inbox_items_active ON inbox_items(dismissed_at, created_at DESC);",
     )?;
 
+    apply_migration(
+        conn,
+        2,
+        "add_inbox_item_priority_due_date",
+        "ALTER TABLE inbox_items ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';
+         ALTER TABLE inbox_items ADD COLUMN due_date TEXT;",
+    )?;
+
+    apply_migration(
+        conn,
+        3,
+        "create_inbox_attachments",
+        "CREATE TABLE inbox_attachments (
+            id          TEXT PRIMARY KEY,
+            item_id     TEXT NOT NULL,
+            kind        TEXT NOT NULL,
+            file_name   TEXT NOT NULL,
+            stored_path TEXT NOT NULL,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_inbox_attachments_item ON inbox_attachments(item_id);",
+    )?;
+
     Ok(())
+}
+
+/// Where copied inbox media lives inside the app data directory.
+pub fn attachments_dir_in(app_data_dir: &Path) -> std::path::PathBuf {
+    app_data_dir.join("inbox-attachments")
 }
 
 /// Opens (creating if needed) the inbox database at `path`.
@@ -168,7 +221,8 @@ pub fn init_db(path: &Path) -> Result<Connection, String> {
 }
 
 const SELECT_COLUMNS: &str = "id, title, notes, created_at, updated_at, \
-     project_path, project_name, ticket_id, assigned_at, dismissed_at";
+     project_path, project_name, ticket_id, assigned_at, dismissed_at, \
+     priority, due_date";
 
 fn row_to_item(row: &rusqlite::Row) -> rusqlite::Result<InboxItem> {
     Ok(InboxItem {
@@ -182,13 +236,72 @@ fn row_to_item(row: &rusqlite::Row) -> rusqlite::Result<InboxItem> {
         ticket_id: row.get(7)?,
         assigned_at: row.get(8)?,
         dismissed_at: row.get(9)?,
+        priority: row.get(10)?,
+        due_date: row.get(11)?,
+        attachments: Vec::new(),
     })
+}
+
+fn attachment_from_row(row: &rusqlite::Row) -> rusqlite::Result<InboxAttachment> {
+    Ok(InboxAttachment {
+        id: row.get(0)?,
+        item_id: row.get(1)?,
+        kind: row.get(2)?,
+        file_name: row.get(3)?,
+        stored_path: row.get(4)?,
+        created_at: row.get(5)?,
+    })
+}
+
+fn load_attachments(conn: &Connection, item_id: &str) -> Result<Vec<InboxAttachment>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, item_id, kind, file_name, stored_path, created_at
+             FROM inbox_attachments WHERE item_id = ?1
+             ORDER BY created_at ASC, rowid ASC",
+        )
+        .map_err(|e| format!("Failed to prepare inbox attachments query: {}", e))?;
+    let rows = stmt
+        .query_map(params![item_id], attachment_from_row)
+        .map_err(|e| format!("Failed to query inbox attachments: {}", e))?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| format!("Failed to read inbox attachments: {}", e))
+}
+
+fn hydrate_item(conn: &Connection, mut item: InboxItem) -> Result<InboxItem, String> {
+    item.attachments = load_attachments(conn, &item.id)?;
+    Ok(item)
+}
+
+fn resolve_priority(value: Option<&str>) -> Result<String, String> {
+    let priority = value.unwrap_or("normal");
+    if !VALID_PRIORITIES.contains(&priority) {
+        return Err(format!("Invalid priority: {}", priority));
+    }
+    Ok(priority.to_string())
+}
+
+/// Blank becomes `None`. Anything else must be a real `YYYY-MM-DD` day.
+fn parse_due_date(value: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d").is_err() {
+        return Err(format!("Invalid due date: {}", trimmed));
+    }
+    Ok(Some(trimmed.to_string()))
 }
 
 fn get_impl(conn: &Connection, id: &str) -> Result<InboxItem, String> {
     let sql = format!("SELECT {} FROM inbox_items WHERE id = ?1", SELECT_COLUMNS);
-    conn.query_row(&sql, params![id], row_to_item)
-        .map_err(|_| format!("Inbox item not found: {}", id))
+    let item = conn
+        .query_row(&sql, params![id], row_to_item)
+        .map_err(|_| format!("Inbox item not found: {}", id))?;
+    hydrate_item(conn, item)
 }
 
 /// Non-dismissed items, newest first.
@@ -204,8 +317,13 @@ pub fn list_impl(conn: &Connection) -> Result<Vec<InboxItem>, String> {
         .query_map([], row_to_item)
         .map_err(|e| format!("Failed to query inbox items: {}", e))?;
 
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|e| format!("Failed to read inbox items: {}", e))
+    let items = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| format!("Failed to read inbox items: {}", e))?;
+    items
+        .into_iter()
+        .map(|item| hydrate_item(conn, item))
+        .collect()
 }
 
 /// Trims the title; a blank title is rejected rather than stored.
@@ -215,9 +333,13 @@ pub fn add_impl(conn: &Connection, input: &InboxItemInput) -> Result<InboxItem, 
         return Err("Title must not be empty".to_string());
     }
 
+    let priority = resolve_priority(input.priority.as_deref())?;
+    let due_date = parse_due_date(input.due_date.as_deref())?;
+
     conn.execute(
-        "INSERT INTO inbox_items (id, title, notes) VALUES (hex(randomblob(16)), ?1, ?2)",
-        params![title, input.notes],
+        "INSERT INTO inbox_items (id, title, notes, priority, due_date)
+         VALUES (hex(randomblob(16)), ?1, ?2, ?3, ?4)",
+        params![title, input.notes, priority, due_date],
     )
     .map_err(|e| format!("Failed to add inbox item: {}", e))?;
 
@@ -225,8 +347,89 @@ pub fn add_impl(conn: &Connection, input: &InboxItemInput) -> Result<InboxItem, 
         "SELECT {} FROM inbox_items WHERE rowid = ?1",
         SELECT_COLUMNS
     );
-    conn.query_row(&sql, params![conn.last_insert_rowid()], row_to_item)
-        .map_err(|e| format!("Failed to read back inbox item: {}", e))
+    let item = conn
+        .query_row(&sql, params![conn.last_insert_rowid()], row_to_item)
+        .map_err(|e| format!("Failed to read back inbox item: {}", e))?;
+    hydrate_item(conn, item)
+}
+
+fn patch_touches_ticket(patch: &InboxItemPatch) -> bool {
+    patch.title.is_some()
+        || patch.notes.is_some()
+        || patch.priority.is_some()
+        || patch.due_date.is_some()
+}
+
+/// After assign the ticket is the durable record. An inbox edit of title,
+/// notes, priority or due date writes through to that project's ticket so
+/// the two copies cannot drift.
+fn apply_patch_to_ticket(
+    project_path: &str,
+    ticket_id: &str,
+    patch: &InboxItemPatch,
+) -> Result<(), String> {
+    if !patch_touches_ticket(patch) {
+        return Ok(());
+    }
+    if !Path::new(project_path).is_dir() {
+        return Err(format!("Project folder does not exist: {}", project_path));
+    }
+
+    let conn = crate::database::init_db(project_path)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
+
+    let (name, description, priority, due_date): (String, String, String, Option<String>) = conn
+        .query_row(
+            "SELECT name, description, priority, due_date FROM pm_tickets WHERE id = ?1",
+            params![ticket_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .map_err(|e| format!("Failed to read ticket {}: {}", ticket_id, e))?;
+
+    let next_name = match &patch.title {
+        Some(title) => {
+            let trimmed = title.trim();
+            if trimmed.is_empty() {
+                return Err("Title must not be empty".to_string());
+            }
+            trimmed.to_string()
+        }
+        None => name.clone(),
+    };
+    let next_description = patch.notes.clone().unwrap_or_else(|| description.clone());
+    let next_priority = match &patch.priority {
+        Some(value) => resolve_priority(Some(value.as_str()))?,
+        None => priority.clone(),
+    };
+    let next_due_date = match &patch.due_date {
+        Some(value) => parse_due_date(Some(value.as_str()))?,
+        None => due_date.clone(),
+    };
+
+    if next_name == name
+        && next_description == description
+        && next_priority == priority
+        && next_due_date == due_date
+    {
+        return Ok(());
+    }
+
+    conn.execute(
+        "UPDATE pm_tickets
+         SET name = ?1, description = ?2, priority = ?3, due_date = ?4,
+             updated_at = datetime('now')
+         WHERE id = ?5",
+        params![
+            next_name,
+            next_description,
+            next_priority,
+            next_due_date,
+            ticket_id
+        ],
+    )
+    .map_err(|e| format!("Failed to update ticket {}: {}", ticket_id, e))?;
+    Ok(())
 }
 
 pub fn update_impl(
@@ -234,6 +437,11 @@ pub fn update_impl(
     id: &str,
     patch: &InboxItemPatch,
 ) -> Result<InboxItem, String> {
+    let current = get_impl(conn, id)?;
+    if let (Some(project_path), Some(ticket_id)) = (&current.project_path, &current.ticket_id) {
+        apply_patch_to_ticket(project_path, ticket_id, patch)?;
+    }
+
     if let Some(title) = &patch.title {
         let trimmed = title.trim();
         if trimmed.is_empty() {
@@ -252,6 +460,24 @@ pub fn update_impl(
             params![notes, id],
         )
         .map_err(|e| format!("Failed to update inbox item notes: {}", e))?;
+    }
+
+    if let Some(priority) = &patch.priority {
+        let resolved = resolve_priority(Some(priority.as_str()))?;
+        conn.execute(
+            "UPDATE inbox_items SET priority = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![resolved, id],
+        )
+        .map_err(|e| format!("Failed to update inbox item priority: {}", e))?;
+    }
+
+    if let Some(due_date) = &patch.due_date {
+        let parsed = parse_due_date(Some(due_date.as_str()))?;
+        conn.execute(
+            "UPDATE inbox_items SET due_date = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![parsed, id],
+        )
+        .map_err(|e| format!("Failed to update inbox item due date: {}", e))?;
     }
 
     get_impl(conn, id)
@@ -282,6 +508,250 @@ pub fn unassign_impl(conn: &Connection, id: &str) -> Result<InboxItem, String> {
     )
     .map_err(|e| format!("Failed to unassign inbox item: {}", e))?;
     get_impl(conn, id)
+}
+
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "avif",
+];
+const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov", "m4v", "ogv"];
+
+fn file_extension(path: &Path) -> String {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+fn media_kind_for(path: &Path) -> Option<&'static str> {
+    let ext = file_extension(path);
+    if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+        return Some("image");
+    }
+    if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
+        return Some("video");
+    }
+    None
+}
+
+fn sanitize_file_name(path: &Path) -> String {
+    let raw = path
+        .file_name()
+        .map(|name| name.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|| "attachment".to_string());
+    let base = raw.split('/').next_back().unwrap_or("attachment");
+    let trimmed = base.trim();
+    if trimmed.is_empty() {
+        "attachment".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn unique_dest(dir: &Path, file_name: &str) -> std::path::PathBuf {
+    let candidate = dir.join(file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let stem = Path::new(file_name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "attachment".to_string());
+    let ext = Path::new(file_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    for n in 2..10_000 {
+        let next = if ext.is_empty() {
+            dir.join(format!("{}-{}", stem, n))
+        } else {
+            dir.join(format!("{}-{}.{}", stem, n, ext))
+        };
+        if !next.exists() {
+            return next;
+        }
+    }
+    dir.join(format!("{}-{}", stem, uuid_fallback()))
+}
+
+fn uuid_fallback() -> String {
+    format!(
+        "{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )
+}
+
+/// Copies an image or video next to the inbox database and records it on the item.
+pub fn attach_impl(
+    conn: &Connection,
+    attachments_dir: &Path,
+    item_id: &str,
+    source_path: &Path,
+) -> Result<InboxItem, String> {
+    let item = get_impl(conn, item_id)?;
+    let kind = media_kind_for(source_path).ok_or_else(|| {
+        format!(
+            "Only images and videos can be attached to the inbox: {}",
+            source_path.display()
+        )
+    })?;
+    if !source_path.is_file() {
+        return Err(format!(
+            "Attachment is not a file: {}",
+            source_path.display()
+        ));
+    }
+
+    let file_name = sanitize_file_name(source_path);
+    let dest_dir = attachments_dir.join(item_id);
+    std::fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("Failed to create inbox attachments dir: {}", e))?;
+    let dest = unique_dest(&dest_dir, &file_name);
+    std::fs::copy(source_path, &dest).map_err(|e| format!("Failed to copy attachment: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO inbox_attachments (id, item_id, kind, file_name, stored_path)
+         VALUES (hex(randomblob(16)), ?1, ?2, ?3, ?4)",
+        params![
+            item_id,
+            kind,
+            dest.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or(file_name),
+            dest.to_string_lossy().to_string()
+        ],
+    )
+    .map_err(|e| {
+        let _ = std::fs::remove_file(&dest);
+        format!("Failed to record inbox attachment: {}", e)
+    })?;
+
+    if let (Some(project_path), Some(ticket_id)) = (&item.project_path, &item.ticket_id) {
+        let hydrated = get_impl(conn, item_id)?;
+        write_ticket_attachments(project_path, ticket_id, &hydrated.attachments)?;
+    }
+
+    get_impl(conn, item_id)
+}
+
+/// Removes one attachment from the item and deletes the stored file.
+pub fn detach_impl(
+    conn: &Connection,
+    item_id: &str,
+    attachment_id: &str,
+) -> Result<InboxItem, String> {
+    let item = get_impl(conn, item_id)?;
+    let Some(attachment) = item
+        .attachments
+        .iter()
+        .find(|candidate| candidate.id == attachment_id)
+        .cloned()
+    else {
+        return Err(format!("Inbox attachment not found: {}", attachment_id));
+    };
+
+    conn.execute(
+        "DELETE FROM inbox_attachments WHERE id = ?1 AND item_id = ?2",
+        params![attachment_id, item_id],
+    )
+    .map_err(|e| format!("Failed to detach inbox attachment: {}", e))?;
+
+    if !attachment.stored_path.is_empty() {
+        let _ = std::fs::remove_file(&attachment.stored_path);
+    }
+
+    if let (Some(project_path), Some(ticket_id)) = (&item.project_path, &item.ticket_id) {
+        let remaining: Vec<InboxAttachment> = item
+            .attachments
+            .into_iter()
+            .filter(|candidate| candidate.id != attachment_id)
+            .collect();
+        write_ticket_attachments(project_path, ticket_id, &remaining)?;
+    }
+
+    get_impl(conn, item_id)
+}
+
+fn ticket_attachment_rel_path(ticket_id: &str, file_name: &str) -> String {
+    format!(".auric/inbox-attachments/{}/{}", ticket_id, file_name)
+}
+
+fn copy_attachments_into_project(
+    project_path: &Path,
+    ticket_id: &str,
+    attachments: &[InboxAttachment],
+) -> Result<Vec<crate::database::PmContextItem>, String> {
+    if attachments.is_empty() {
+        return Ok(Vec::new());
+    }
+    let dest_dir = project_path
+        .join(".auric")
+        .join("inbox-attachments")
+        .join(ticket_id);
+    std::fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("Failed to create project inbox attachments dir: {}", e))?;
+
+    let mut context = Vec::with_capacity(attachments.len());
+    for attachment in attachments {
+        let source = Path::new(&attachment.stored_path);
+        if !source.is_file() {
+            return Err(format!(
+                "Inbox attachment is missing on disk: {}",
+                attachment.stored_path
+            ));
+        }
+        let dest = dest_dir.join(&attachment.file_name);
+        std::fs::copy(source, &dest)
+            .map_err(|e| format!("Failed to copy attachment into the project: {}", e))?;
+        context.push(crate::database::PmContextItem {
+            id: attachment.id.clone(),
+            r#type: "file".to_string(),
+            value: ticket_attachment_rel_path(ticket_id, &attachment.file_name),
+        });
+    }
+    Ok(context)
+}
+
+fn write_ticket_attachments(
+    project_path: &str,
+    ticket_id: &str,
+    attachments: &[InboxAttachment],
+) -> Result<(), String> {
+    if !Path::new(project_path).is_dir() {
+        return Err(format!("Project folder does not exist: {}", project_path));
+    }
+    let copied = copy_attachments_into_project(Path::new(project_path), ticket_id, attachments)?;
+
+    let conn = crate::database::init_db(project_path)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
+
+    let existing_json: String = conn
+        .query_row(
+            "SELECT context FROM pm_tickets WHERE id = ?1",
+            params![ticket_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to read ticket {}: {}", ticket_id, e))?;
+    let existing: Vec<crate::database::PmContextItem> =
+        serde_json::from_str(&existing_json).unwrap_or_default();
+    let prefix = format!(".auric/inbox-attachments/{}/", ticket_id);
+    let mut next: Vec<crate::database::PmContextItem> = existing
+        .into_iter()
+        .filter(|item| !(item.r#type == "file" && item.value.starts_with(&prefix)))
+        .collect();
+    next.extend(copied);
+
+    let context_json = serde_json::to_string(&next)
+        .map_err(|e| format!("Failed to serialize ticket context: {}", e))?;
+    conn.execute(
+        "UPDATE pm_tickets SET context = ?1, updated_at = datetime('now') WHERE id = ?2",
+        params![context_json, ticket_id],
+    )
+    .map_err(|e| format!("Failed to write ticket attachments: {}", e))?;
+    Ok(())
 }
 
 /// Finds the epic named "Inbox" (case-sensitive, SQLite's default `=`
@@ -343,6 +813,8 @@ fn create_ticket_from_inbox(
     title: &str,
     notes: &str,
     priority: &str,
+    due_date: Option<&str>,
+    context_json: &str,
 ) -> Result<String, String> {
     let max_sort: i32 = conn
         .query_row(
@@ -354,9 +826,18 @@ fn create_ticket_from_inbox(
 
     conn.execute(
         "INSERT INTO pm_tickets
-            (id, epic_id, name, description, status, sort_order, priority, goal_id, needs_human_supervision)
-         VALUES (hex(randomblob(16)), ?1, ?2, ?3, 'open', ?4, ?5, NULL, 0)",
-        params![epic_id, title, notes, max_sort + 1, priority],
+            (id, epic_id, name, description, status, sort_order, priority, goal_id,
+             needs_human_supervision, due_date, context)
+         VALUES (hex(randomblob(16)), ?1, ?2, ?3, 'open', ?4, ?5, NULL, 0, ?6, ?7)",
+        params![
+            epic_id,
+            title,
+            notes,
+            max_sort + 1,
+            priority,
+            due_date,
+            context_json
+        ],
     )
     .map_err(|e| format!("Failed to create ticket: {}", e))?;
 
@@ -388,13 +869,9 @@ pub fn assign_impl(conn: &Connection, request: &InboxAssignRequest) -> Result<In
         return Err("Item is already assigned".to_string());
     }
 
-    let priority = request
-        .priority
-        .clone()
-        .unwrap_or_else(|| "normal".to_string());
-    if !VALID_PRIORITIES.contains(&priority.as_str()) {
-        return Err(format!("Invalid priority: {}", priority));
-    }
+    // An explicit assign-time priority still wins; otherwise the value stored
+    // on the inbox item is what the ticket inherits.
+    let priority = resolve_priority(request.priority.as_deref().or(Some(item.priority.as_str())))?;
 
     // `database::init_db` -> `ensure_auric_dir` calls `create_dir_all`, which
     // recreates a folder that was deleted or lives on an unmounted volume
@@ -449,7 +926,30 @@ pub fn assign_impl(conn: &Connection, request: &InboxAssignRequest) -> Result<In
         None => find_or_create_inbox_epic(&tx)?,
     };
 
-    let ticket_id = create_ticket_from_inbox(&tx, &epic_id, &item.title, &item.notes, &priority)?;
+    let ticket_id = create_ticket_from_inbox(
+        &tx,
+        &epic_id,
+        &item.title,
+        &item.notes,
+        &priority,
+        item.due_date.as_deref(),
+        "[]",
+    )?;
+
+    if !item.attachments.is_empty() {
+        let context = copy_attachments_into_project(
+            Path::new(&request.project_path),
+            &ticket_id,
+            &item.attachments,
+        )?;
+        let context_json = serde_json::to_string(&context)
+            .map_err(|e| format!("Failed to serialize ticket context: {}", e))?;
+        tx.execute(
+            "UPDATE pm_tickets SET context = ?1 WHERE id = ?2",
+            params![context_json, ticket_id],
+        )
+        .map_err(|e| format!("Failed to write ticket attachments: {}", e))?;
+    }
 
     tx.commit()
         .map_err(|e| format!("Failed to commit project transaction: {}", e))?;
@@ -571,7 +1071,10 @@ fn read_project_pm_overview(
     let mut counts: StatusCounts = (0, 0, 0, 0);
     {
         let mut stmt = conn
-            .prepare("SELECT status, COUNT(*) FROM pm_tickets WHERE status != 'archived' GROUP BY status")
+            .prepare(
+                "SELECT status, COUNT(*) FROM pm_tickets \
+                 WHERE status NOT IN ('archived', 'discarded') GROUP BY status",
+            )
             .map_err(|e| format!("Failed to read ticket counts: {}", e))?;
         let rows = stmt
             .query_map([], |row| {
@@ -611,10 +1114,11 @@ fn read_project_pm_overview(
     let tickets = {
         let mut stmt = conn
             .prepare(
-                "SELECT t.id, t.name, t.status, t.priority, t.epic_id, e.name, t.updated_at
+                "SELECT t.id, t.name, t.status, t.priority, t.epic_id, e.name, t.updated_at,
+                        t.due_date, t.description
                  FROM pm_tickets t
                  JOIN pm_epics e ON e.id = t.epic_id
-                 WHERE t.status NOT IN ('done', 'archived')
+                 WHERE t.status NOT IN ('done', 'archived', 'discarded')
                  ORDER BY t.updated_at DESC",
             )
             .map_err(|e| format!("Failed to read tickets: {}", e))?;
@@ -628,6 +1132,8 @@ fn read_project_pm_overview(
                     epic_id: row.get(4)?,
                     epic_name: row.get(5)?,
                     updated_at: row.get(6)?,
+                    due_date: row.get(7)?,
+                    description: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Failed to read tickets: {}", e))?
@@ -654,6 +1160,8 @@ mod tests {
         InboxItemInput {
             title: title.to_string(),
             notes: String::new(),
+            priority: None,
+            due_date: None,
         }
     }
 
@@ -676,6 +1184,8 @@ mod tests {
         let item = add_impl(&conn, &input("  Buy milk  ")).expect("add");
         assert_eq!(item.title, "Buy milk");
         assert_eq!(item.notes, "");
+        assert_eq!(item.priority, "normal");
+        assert_eq!(item.due_date, None);
         assert!(item.project_path.is_none());
         assert!(item.dismissed_at.is_none());
     }
@@ -720,6 +1230,7 @@ mod tests {
             &InboxItemPatch {
                 title: Some(" final ".to_string()),
                 notes: Some("more context".to_string()),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -737,7 +1248,7 @@ mod tests {
             &item.id,
             &InboxItemPatch {
                 title: Some("   ".to_string()),
-                notes: None,
+                ..Default::default()
             },
         )
         .unwrap_err();
@@ -752,8 +1263,8 @@ mod tests {
             &conn,
             &item.id,
             &InboxItemPatch {
-                title: None,
                 notes: Some("only notes".to_string()),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -785,6 +1296,203 @@ mod tests {
 
     fn open_project_db(dir: &TempDir) -> Connection {
         Connection::open(dir.path().join(".auric").join("project.db")).unwrap()
+    }
+
+    #[test]
+    fn add_stores_priority_and_due_date() {
+        let conn = test_db();
+        let item = add_impl(
+            &conn,
+            &InboxItemInput {
+                title: "Ship it".to_string(),
+                notes: String::new(),
+                priority: Some("high".to_string()),
+                due_date: Some("2026-08-20".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(item.priority, "high");
+        assert_eq!(item.due_date.as_deref(), Some("2026-08-20"));
+    }
+
+    #[test]
+    fn add_rejects_an_invalid_priority() {
+        let conn = test_db();
+        let err = add_impl(
+            &conn,
+            &InboxItemInput {
+                title: "Ship it".to_string(),
+                notes: String::new(),
+                priority: Some("urgent".to_string()),
+                due_date: None,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("Invalid priority"));
+    }
+
+    #[test]
+    fn add_rejects_an_invalid_due_date() {
+        let conn = test_db();
+        let err = add_impl(
+            &conn,
+            &InboxItemInput {
+                title: "Ship it".to_string(),
+                notes: String::new(),
+                priority: None,
+                due_date: Some("20.08.2026".to_string()),
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("Invalid due date"));
+    }
+
+    #[test]
+    fn update_changes_priority_and_due_date() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("draft")).unwrap();
+
+        let updated = update_impl(
+            &conn,
+            &item.id,
+            &InboxItemPatch {
+                priority: Some("critical".to_string()),
+                due_date: Some("2026-09-01".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(updated.priority, "critical");
+        assert_eq!(updated.due_date.as_deref(), Some("2026-09-01"));
+    }
+
+    #[test]
+    fn update_clears_a_due_date_with_a_blank_value() {
+        let conn = test_db();
+        let item = add_impl(
+            &conn,
+            &InboxItemInput {
+                title: "dated".to_string(),
+                notes: String::new(),
+                priority: None,
+                due_date: Some("2026-08-20".to_string()),
+            },
+        )
+        .unwrap();
+
+        let updated = update_impl(
+            &conn,
+            &item.id,
+            &InboxItemPatch {
+                due_date: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(updated.due_date, None);
+    }
+
+    #[test]
+    fn update_of_an_assigned_item_writes_through_to_the_ticket() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let item = add_impl(
+            &inbox_conn,
+            &InboxItemInput {
+                title: "Captured".to_string(),
+                notes: "inbox notes".to_string(),
+                priority: Some("normal".to_string()),
+                due_date: None,
+            },
+        )
+        .unwrap();
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+
+        update_impl(
+            &inbox_conn,
+            &assigned.id,
+            &InboxItemPatch {
+                title: Some("Renamed".to_string()),
+                notes: Some("ticket notes".to_string()),
+                priority: Some("high".to_string()),
+                due_date: Some("2026-09-01".to_string()),
+            },
+        )
+        .unwrap();
+
+        let ticket_id = assigned.ticket_id.unwrap();
+        let project_conn = open_project_db(&project);
+        let (name, description, priority, due_date): (String, String, String, Option<String>) =
+            project_conn
+                .query_row(
+                    "SELECT name, description, priority, due_date FROM pm_tickets WHERE id = ?1",
+                    params![ticket_id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .expect("ticket exists");
+        assert_eq!(name, "Renamed");
+        assert_eq!(description, "ticket notes");
+        assert_eq!(priority, "high");
+        assert_eq!(due_date.as_deref(), Some("2026-09-01"));
+    }
+
+    #[test]
+    fn update_of_an_assigned_item_skips_the_ticket_write_when_fields_already_match() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let item = add_impl(&inbox_conn, &input("Same title")).unwrap();
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+
+        let ticket_id = assigned.ticket_id.clone().unwrap();
+        let project_conn = open_project_db(&project);
+        let before: String = project_conn
+            .query_row(
+                "SELECT updated_at FROM pm_tickets WHERE id = ?1",
+                params![ticket_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        drop(project_conn);
+
+        update_impl(
+            &inbox_conn,
+            &assigned.id,
+            &InboxItemPatch {
+                title: Some("Same title".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let project_conn = open_project_db(&project);
+        let after: String = project_conn
+            .query_row(
+                "SELECT updated_at FROM pm_tickets WHERE id = ?1",
+                params![ticket_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(before, after);
     }
 
     #[test]
@@ -820,17 +1528,24 @@ mod tests {
         assert_eq!(epic_name, "Inbox");
 
         let ticket_id = assigned.ticket_id.clone().unwrap();
-        let (name, description, status, priority): (String, String, String, String) = project_conn
+        let (name, description, status, priority, due_date): (
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+        ) = project_conn
             .query_row(
-                "SELECT name, description, status, priority FROM pm_tickets WHERE id = ?1",
+                "SELECT name, description, status, priority, due_date FROM pm_tickets WHERE id = ?1",
                 params![ticket_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .expect("ticket exists");
         assert_eq!(name, "Write the changelog");
         assert_eq!(description, "");
         assert_eq!(status, "open");
         assert_eq!(priority, "normal");
+        assert_eq!(due_date, None);
 
         let (from_status, to_status, source): (Option<String>, String, String) = project_conn
             .query_row(
@@ -917,6 +1632,45 @@ mod tests {
             .unwrap();
         assert_eq!(epic_id, "epic-1");
         assert_eq!(priority, "high");
+    }
+
+    #[test]
+    fn assign_transfers_the_item_priority_and_due_date_onto_the_ticket() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let item = add_impl(
+            &inbox_conn,
+            &InboxItemInput {
+                title: "Pay the invoice".to_string(),
+                notes: "Ask accounting first".to_string(),
+                priority: Some("critical".to_string()),
+                due_date: Some("2026-08-22".to_string()),
+            },
+        )
+        .unwrap();
+
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+
+        let project_conn = open_project_db(&project);
+        let (priority, due_date, description): (String, Option<String>, String) = project_conn
+            .query_row(
+                "SELECT priority, due_date, description FROM pm_tickets WHERE id = ?1",
+                params![assigned.ticket_id.unwrap()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(priority, "critical");
+        assert_eq!(due_date.as_deref(), Some("2026-08-22"));
+        assert_eq!(description, "Ask accounting first");
     }
 
     #[test]
@@ -1091,6 +1845,8 @@ mod tests {
             ("t4", "in_review"),
             ("t5", "done"),
             ("t6", "archived"),
+            ("t7", "discarded"),
+            ("t8", "to_test"),
         ] {
             conn.execute(
                 "INSERT INTO pm_tickets (id, epic_id, name, status) VALUES (?1, 'e1', ?1, ?2)",
@@ -1313,5 +2069,152 @@ mod tests {
         assert_eq!(overview[1].project_path, paths[1]);
         assert!(!overview[0].has_db);
         assert!(overview[1].has_db);
+    }
+
+    fn write_media(dir: &Path, name: &str) -> std::path::PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, b"not-a-real-media-file").unwrap();
+        path
+    }
+
+    #[test]
+    fn attach_copies_an_image_and_lists_it_on_the_item() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Screenshot the bug")).unwrap();
+        let root = TempDir::new().unwrap();
+        let source = write_media(root.path(), "shot.png");
+        let attachments_dir = root.path().join("store");
+
+        let updated = attach_impl(&conn, &attachments_dir, &item.id, &source).unwrap();
+
+        assert_eq!(updated.attachments.len(), 1);
+        assert_eq!(updated.attachments[0].kind, "image");
+        assert_eq!(updated.attachments[0].file_name, "shot.png");
+        assert!(Path::new(&updated.attachments[0].stored_path).exists());
+        assert_eq!(
+            list_impl(&conn).unwrap()[0].attachments.len(),
+            1,
+            "list must hydrate attachments too"
+        );
+    }
+
+    #[test]
+    fn attach_copies_a_video() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Walkthrough")).unwrap();
+        let root = TempDir::new().unwrap();
+        let source = write_media(root.path(), "clip.mp4");
+
+        let updated = attach_impl(&conn, &root.path().join("store"), &item.id, &source).unwrap();
+
+        assert_eq!(updated.attachments[0].kind, "video");
+        assert_eq!(updated.attachments[0].file_name, "clip.mp4");
+    }
+
+    #[test]
+    fn attach_rejects_a_non_media_file() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Notes")).unwrap();
+        let root = TempDir::new().unwrap();
+        let source = write_media(root.path(), "notes.md");
+
+        let err = attach_impl(&conn, &root.path().join("store"), &item.id, &source).unwrap_err();
+        assert!(
+            err.contains("image") || err.contains("video") || err.contains("media"),
+            "unexpected error: {err}"
+        );
+        assert!(list_impl(&conn).unwrap()[0].attachments.is_empty());
+    }
+
+    #[test]
+    fn detach_removes_the_file_and_the_row() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("bug")).unwrap();
+        let root = TempDir::new().unwrap();
+        let source = write_media(root.path(), "shot.png");
+        let attachments_dir = root.path().join("store");
+        let attached = attach_impl(&conn, &attachments_dir, &item.id, &source).unwrap();
+        let stored = attached.attachments[0].stored_path.clone();
+        let attachment_id = attached.attachments[0].id.clone();
+
+        let updated = detach_impl(&conn, &item.id, &attachment_id).unwrap();
+
+        assert!(updated.attachments.is_empty());
+        assert!(!Path::new(&stored).exists());
+    }
+
+    #[test]
+    fn assign_copies_attachments_into_the_project_and_onto_ticket_context() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let root = TempDir::new().unwrap();
+        let item = add_impl(&inbox_conn, &input("Bug with footage")).unwrap();
+        attach_impl(
+            &inbox_conn,
+            &root.path().join("store"),
+            &item.id,
+            &write_media(root.path(), "shot.png"),
+        )
+        .unwrap();
+        attach_impl(
+            &inbox_conn,
+            &root.path().join("store"),
+            &item.id,
+            &write_media(root.path(), "clip.mp4"),
+        )
+        .unwrap();
+
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+
+        let ticket_id = assigned.ticket_id.clone().unwrap();
+        let image_dest = project
+            .path()
+            .join(".auric")
+            .join("inbox-attachments")
+            .join(&ticket_id)
+            .join("shot.png");
+        let video_dest = project
+            .path()
+            .join(".auric")
+            .join("inbox-attachments")
+            .join(&ticket_id)
+            .join("clip.mp4");
+        assert!(
+            image_dest.exists(),
+            "image should be copied into the project"
+        );
+        assert!(
+            video_dest.exists(),
+            "video should be copied into the project"
+        );
+
+        let project_conn = open_project_db(&project);
+        let context_json: String = project_conn
+            .query_row(
+                "SELECT context FROM pm_tickets WHERE id = ?1",
+                params![ticket_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            context_json.contains(".auric/inbox-attachments/")
+                && context_json.contains("shot.png")
+                && context_json.contains("clip.mp4"),
+            "ticket context should list both transferred files, got {context_json}"
+        );
+        assert!(
+            context_json.contains("\"type\":\"file\"")
+                || context_json.contains("\"type\": \"file\""),
+            "transferred media must be file context items: {context_json}"
+        );
     }
 }
