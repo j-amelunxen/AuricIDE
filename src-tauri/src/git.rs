@@ -3,7 +3,8 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 #[derive(Debug, Serialize)]
 pub struct GitFileStatus {
@@ -60,9 +61,35 @@ pub struct BlameHunk {
     pub line_count: u32,
 }
 
+/// A git work-tree root found under a project's root path.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRepoRef {
+    /// Absolute work-tree path.
+    pub path: String,
+    /// Relative to the project root, "" when the root itself is the repo. `/`-separated.
+    pub relative_path: String,
+    /// Basename of the work tree (the project folder's name for the root repo).
+    pub name: String,
+    /// "root" | "nested" | "submodule"
+    pub kind: String,
+}
+
+/// How far below the project root discovery looks for a `.git`. Bounded so
+/// opening a huge unrelated folder as a project never turns into a full-disk
+/// walk.
+const GIT_DISCOVERY_MAX_DEPTH: usize = 4;
+
 #[tauri::command]
 pub fn git_status(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
     git_status_impl(repo_path)
+}
+
+// `async` so Tauri runs this off the IPC thread: a walk of the project tree
+// (even pruned and depth-capped) should never block the window.
+#[tauri::command(async)]
+pub fn git_discover_repos(root_path: String) -> Result<Vec<GitRepoRef>, String> {
+    git_discover_repos_impl(Path::new(&root_path))
 }
 
 #[tauri::command]
@@ -927,6 +954,114 @@ pub fn git_diff_file_ref_impl(
     print_diff(&diff)
 }
 
+/// A directory is a repo root when it carries a `.git` — worktree checkouts
+/// and submodules keep a `.git` file, an ordinary clone a `.git` directory.
+fn is_git_repo_dir(dir: &Path) -> bool {
+    let git_marker = dir.join(".git");
+    git_marker.is_dir() || git_marker.is_file()
+}
+
+/// `path` relative to `root`, `/`-separated regardless of platform, empty
+/// when `path` is `root` itself.
+fn relative_to_root(root: &Path, path: &Path) -> String {
+    if path == root {
+        return String::new();
+    }
+    path.strip_prefix(root)
+        .map(|rel| {
+            rel.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        })
+        .unwrap_or_default()
+}
+
+/// `submodule` iff the nearest enclosing discovered repo declares `path` at
+/// that relative location; `nested` otherwise (including a `path` with no
+/// enclosing discovered repo at all, and an enclosing repo that fails to open
+/// or has no submodules).
+fn classify_kind(path: &Path, discovered: &[PathBuf]) -> String {
+    let enclosing = discovered
+        .iter()
+        .filter(|candidate| candidate.as_path() != path && path.starts_with(candidate))
+        .max_by_key(|candidate| candidate.components().count());
+
+    let Some(enclosing) = enclosing else {
+        return "nested".to_string();
+    };
+    let Ok(repo) = Repository::open(enclosing) else {
+        return "nested".to_string();
+    };
+    let Ok(submodules) = repo.submodules() else {
+        return "nested".to_string();
+    };
+    let Ok(relative_to_enclosing) = path.strip_prefix(enclosing) else {
+        return "nested".to_string();
+    };
+    let relative_to_enclosing = relative_to_enclosing.to_string_lossy().replace('\\', "/");
+
+    let is_declared_submodule = submodules
+        .iter()
+        .any(|sm| sm.path().to_string_lossy().replace('\\', "/") == relative_to_enclosing);
+
+    if is_declared_submodule {
+        "submodule".to_string()
+    } else {
+        "nested".to_string()
+    }
+}
+
+pub fn git_discover_repos_impl(root_path: &Path) -> Result<Vec<GitRepoRef>, String> {
+    if !root_path.is_dir() {
+        return Err(format!(
+            "{} is not a readable directory",
+            root_path.display()
+        ));
+    }
+
+    let repo_dirs: Vec<PathBuf> = WalkDir::new(root_path)
+        .max_depth(GIT_DISCOVERY_MAX_DEPTH)
+        .into_iter()
+        // Depth 0 is the root itself, chosen by the caller — a project
+        // legitimately checked out into a folder named `target` or `dist`
+        // must still be discovered even though that name is pruned below it.
+        .filter_entry(|e| e.depth() == 0 || !crate::skip_recent_walk_dir(e))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_dir())
+        .map(|e| e.path().to_path_buf())
+        .filter(|dir| is_git_repo_dir(dir))
+        .collect();
+
+    let mut repos: Vec<GitRepoRef> = repo_dirs
+        .iter()
+        .map(|path| {
+            let relative_path = relative_to_root(root_path, path);
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let kind = if path == root_path {
+                "root".to_string()
+            } else {
+                classify_kind(path, &repo_dirs)
+            };
+            GitRepoRef {
+                path: path.to_string_lossy().into_owned(),
+                relative_path,
+                name,
+                kind,
+            }
+        })
+        .collect();
+
+    // Root first ("" sorts before any non-empty string), then relative path
+    // ascending — deterministic regardless of the walk's own visiting order.
+    repos.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+
+    Ok(repos)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1002,6 +1137,9 @@ mod tests {
     /// those beat `current_dir` — so under `pre-commit` these helpers operated
     /// on the real repository instead of the temporary one, and the tests that
     /// depend on their own history failed there while passing everywhere else.
+    /// `git commit` also hands its hooks `GIT_AUTHOR_*` / `GIT_COMMITTER_*`,
+    /// which beat the `user.name` these repos configure — so a blame test
+    /// read the committing person's name instead of "Test".
     fn git_command(dir: &std::path::Path) -> StdCommand {
         let mut command = StdCommand::new("git");
         command
@@ -1010,7 +1148,13 @@ mod tests {
             .env_remove("GIT_INDEX_FILE")
             .env_remove("GIT_WORK_TREE")
             .env_remove("GIT_OBJECT_DIRECTORY")
-            .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES");
+            .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+            .env_remove("GIT_AUTHOR_NAME")
+            .env_remove("GIT_AUTHOR_EMAIL")
+            .env_remove("GIT_AUTHOR_DATE")
+            .env_remove("GIT_COMMITTER_NAME")
+            .env_remove("GIT_COMMITTER_EMAIL")
+            .env_remove("GIT_COMMITTER_DATE");
         command
     }
 
@@ -1820,5 +1964,295 @@ mod tests {
         let patch = git_diff_commit_impl(repo_path, &log[0].oid, "a.txt").unwrap();
         assert!(patch.contains("-v1"), "patch={patch}");
         assert!(patch.contains("+v2"), "patch={patch}");
+    }
+
+    /// `git init` at `path`, creating the directory first — `git_command`
+    /// requires it to already exist as a `current_dir`.
+    fn init_repo(path: &Path) {
+        fs::create_dir_all(path).unwrap();
+        git_command(path).args(["init"]).output().unwrap();
+    }
+
+    fn configure_repo_identity(path: &Path) {
+        git_command(path)
+            .args(["config", "user.email", "test@test.com"])
+            .output()
+            .unwrap();
+        git_command(path)
+            .args(["config", "user.name", "Test"])
+            .output()
+            .unwrap();
+    }
+
+    fn commit_all(path: &Path, message: &str) {
+        git_command(path).args(["add", "."]).output().unwrap();
+        git_command(path)
+            .args(["commit", "-m", message])
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    fn root_repo_reports_one_entry_with_empty_relative_path() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].kind, "root");
+        assert_eq!(repos[0].relative_path, "");
+        assert_eq!(repos[0].path, dir.path().to_str().unwrap());
+        assert_eq!(
+            repos[0].name,
+            dir.path().file_name().unwrap().to_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn two_nested_repos_under_a_non_repo_root_are_sorted_and_root_is_absent() {
+        let dir = TempDir::new().unwrap();
+        init_repo(&dir.path().join("web"));
+        init_repo(&dir.path().join("api"));
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        let relative_paths: Vec<&str> = repos.iter().map(|r| r.relative_path.as_str()).collect();
+        assert_eq!(relative_paths, vec!["api", "web"]);
+        assert!(repos.iter().all(|r| r.kind == "nested"));
+    }
+
+    #[test]
+    fn a_repo_below_a_root_repo_lists_root_first_then_the_nested_repo() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        init_repo(&dir.path().join("service"));
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        assert_eq!(repos.len(), 2);
+        assert_eq!(repos[0].kind, "root");
+        assert_eq!(repos[0].relative_path, "");
+        assert_eq!(repos[1].kind, "nested");
+        assert_eq!(repos[1].relative_path, "service");
+    }
+
+    #[test]
+    fn discovery_prunes_node_modules_and_stops_past_the_max_depth() {
+        let dir = TempDir::new().unwrap();
+        init_repo(&dir.path().join("node_modules/some-package"));
+        init_repo(&dir.path().join("a/b/c/service-a")); // depth 4 — included
+        init_repo(&dir.path().join("a/b/c/d/service-b")); // depth 5 — excluded
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        let relative_paths: Vec<&str> = repos.iter().map(|r| r.relative_path.as_str()).collect();
+        assert_eq!(relative_paths, vec!["a/b/c/service-a"]);
+    }
+
+    #[test]
+    fn a_dot_git_file_counts_as_a_repo() {
+        let dir = TempDir::new().unwrap();
+        let checkout = dir.path().join("worktree-checkout");
+        fs::create_dir_all(&checkout).unwrap();
+        fs::write(checkout.join(".git"), "gitdir: ../actual/.git\n").unwrap();
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].relative_path, "worktree-checkout");
+    }
+
+    #[test]
+    fn a_declared_submodule_is_kind_submodule_a_plain_checkout_is_kind_nested() {
+        let root = TempDir::new().unwrap();
+        let source = TempDir::new().unwrap();
+
+        init_repo(source.path());
+        configure_repo_identity(source.path());
+        fs::write(source.path().join("readme.md"), "hi").unwrap();
+        commit_all(source.path(), "init");
+
+        init_repo(root.path());
+        configure_repo_identity(root.path());
+        fs::write(root.path().join("readme.md"), "hi").unwrap();
+        commit_all(root.path(), "init");
+
+        let submodule_add = git_command(root.path())
+            .args([
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                source.path().to_str().unwrap(),
+                "lib/nested",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            submodule_add.status.success(),
+            "git submodule add failed: {}",
+            String::from_utf8_lossy(&submodule_add.stderr)
+        );
+
+        // A plain, unrelated checkout sitting next to the submodule — same
+        // depth, same parent, not declared in .gitmodules.
+        init_repo(&root.path().join("lib/plain-checkout"));
+
+        let repos = git_discover_repos_impl(root.path()).unwrap();
+
+        let submodule = repos
+            .iter()
+            .find(|r| r.relative_path == "lib/nested")
+            .expect("submodule not discovered");
+        assert_eq!(submodule.kind, "submodule");
+
+        let plain = repos
+            .iter()
+            .find(|r| r.relative_path == "lib/plain-checkout")
+            .expect("plain nested checkout not discovered");
+        assert_eq!(plain.kind, "nested");
+    }
+
+    #[test]
+    fn a_missing_or_non_directory_root_is_an_error() {
+        let dir = TempDir::new().unwrap();
+
+        let missing = dir.path().join("does-not-exist");
+        assert!(git_discover_repos_impl(&missing).is_err());
+
+        let file_root = dir.path().join("just-a-file");
+        fs::write(&file_root, "hi").unwrap();
+        assert!(git_discover_repos_impl(&file_root).is_err());
+    }
+
+    #[test]
+    fn a_root_with_no_repos_anywhere_returns_an_empty_ok() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("just-a-folder")).unwrap();
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        assert!(repos.is_empty());
+    }
+
+    #[test]
+    fn a_root_directory_named_like_a_pruned_dir_is_still_discovered() {
+        // The prune list is about what NOT to descend into below the root —
+        // it must never veto the root itself just because a project happens
+        // to be checked out into a folder named "target".
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().join("target");
+        init_repo(&root);
+
+        let repos = git_discover_repos_impl(&root).unwrap();
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].kind, "root");
+        assert_eq!(repos[0].relative_path, "");
+    }
+
+    #[test]
+    fn a_repo_inside_a_pruned_directory_below_the_root_is_not_reported() {
+        let dir = TempDir::new().unwrap();
+        init_repo(&dir.path().join("target/nested-build-artifact"));
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        assert!(repos.is_empty());
+    }
+
+    /// `classify_kind` must resolve through the NEAREST enclosing discovered
+    /// repo, not any ancestor that happens to declare a matching submodule
+    /// path. Two independent trees, one per direction of the bug:
+    ///
+    /// - `nearest_declares_it`: the nearest repo (`mid`) declares `leaf` as
+    ///   its submodule → "submodule".
+    /// - `only_a_grandparent_declares_it`: the root declares `mid/leaf` as
+    ///   its submodule, but `mid` sits between them as its own discovered
+    ///   repo and does NOT declare `leaf` → "nested", because `mid` — not
+    ///   the root — is nearest.
+    #[test]
+    fn classify_kind_resolves_through_the_nearest_enclosing_repo_not_any_ancestor() {
+        let source = TempDir::new().unwrap();
+        init_repo(source.path());
+        configure_repo_identity(source.path());
+        fs::write(source.path().join("readme.md"), "hi").unwrap();
+        commit_all(source.path(), "init");
+        let source_path = source.path().to_str().unwrap();
+
+        // --- nearest repo declares it: "submodule" ---
+        let nearest_declares_it = TempDir::new().unwrap();
+        let root_a = nearest_declares_it.path().join("root");
+        init_repo(&root_a);
+        configure_repo_identity(&root_a);
+        fs::write(root_a.join("readme.md"), "hi").unwrap();
+        commit_all(&root_a, "init");
+
+        let mid_a = root_a.join("mid");
+        init_repo(&mid_a);
+        configure_repo_identity(&mid_a);
+        fs::write(mid_a.join("readme.md"), "hi").unwrap();
+        commit_all(&mid_a, "init");
+        let add_leaf_to_mid = git_command(&mid_a)
+            .args([
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                source_path,
+                "leaf",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            add_leaf_to_mid.status.success(),
+            "git submodule add (mid) failed: {}",
+            String::from_utf8_lossy(&add_leaf_to_mid.stderr)
+        );
+
+        let repos_a = git_discover_repos_impl(&root_a).unwrap();
+        let leaf_a = repos_a
+            .iter()
+            .find(|r| r.relative_path == "mid/leaf")
+            .expect("mid/leaf not discovered");
+        assert_eq!(leaf_a.kind, "submodule");
+
+        // --- only a grandparent declares it, an intervening repo does not: "nested" ---
+        let only_a_grandparent_declares_it = TempDir::new().unwrap();
+        let root_b = only_a_grandparent_declares_it.path().join("root");
+        init_repo(&root_b);
+        configure_repo_identity(&root_b);
+        fs::write(root_b.join("readme.md"), "hi").unwrap();
+        commit_all(&root_b, "init");
+
+        let add_leaf_to_root = git_command(&root_b)
+            .args([
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                source_path,
+                "mid/leaf",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            add_leaf_to_root.status.success(),
+            "git submodule add (root) failed: {}",
+            String::from_utf8_lossy(&add_leaf_to_root.stderr)
+        );
+        // `mid` becomes its own discovered repo too — an ordinary nested
+        // checkout that happens to hold the root's submodule as an untracked
+        // child. It does not declare `leaf`, so it must win over the root as
+        // the nearest enclosing repo.
+        init_repo(&root_b.join("mid"));
+
+        let repos_b = git_discover_repos_impl(&root_b).unwrap();
+        let leaf_b = repos_b
+            .iter()
+            .find(|r| r.relative_path == "mid/leaf")
+            .expect("mid/leaf not discovered");
+        assert_eq!(leaf_b.kind, "nested");
     }
 }
