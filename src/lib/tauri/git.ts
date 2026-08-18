@@ -146,3 +146,30 @@ export async function getGitDiffFileRef(
 ): Promise<string> {
   return await invoke<string>('git_diff_file_ref', { repoPath, refName, filePath });
 }
+
+/** A linked worktree, usually an Auric-managed agent checkout. */
+export interface GitWorktree {
+  path: string;
+  name: string;
+  branch: string | null;
+  sourceRepo: string;
+  isAuric: boolean;
+  dirty: boolean;
+  branchAhead: boolean;
+}
+
+export async function addGitWorktree(repoPath: string, name: string): Promise<GitWorktree> {
+  return await invoke<GitWorktree>('git_worktree_add', { repoPath, name });
+}
+
+export async function listGitWorktrees(repoPath: string): Promise<GitWorktree[]> {
+  return await invoke<GitWorktree[]>('git_worktree_list', { repoPath });
+}
+
+export async function removeGitWorktree(
+  repoPath: string,
+  worktreePath: string,
+  force: boolean
+): Promise<void> {
+  await invoke('git_worktree_remove', { repoPath, worktreePath, force });
+}

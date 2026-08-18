@@ -1,4 +1,4 @@
-use git2::{Repository, StatusOptions};
+use git2::{Repository, StatusOptions, WorktreeAddOptions, WorktreePruneOptions};
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -61,6 +61,14 @@ pub struct BlameHunk {
     pub line_count: u32,
 }
 
+/// Whether a project folder (or a git repo inside it) has uncommitted work.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDirty {
+    pub path: String,
+    pub dirty: bool,
+}
+
 /// A git work-tree root found under a project's root path.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -74,6 +82,24 @@ pub struct GitRepoRef {
     /// "root" | "nested" | "submodule"
     pub kind: String,
 }
+
+/// One linked worktree belonging to a repository. Auric-managed ones live in a
+/// sibling `*.auric-wt` folder on a branch named `auric/…`.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorktree {
+    pub path: String,
+    pub name: String,
+    pub branch: Option<String>,
+    pub source_repo: String,
+    pub is_auric: bool,
+    pub dirty: bool,
+    /// True when the worktree branch has commits the source HEAD does not.
+    pub branch_ahead: bool,
+}
+
+const AURIC_WORKTREE_DIR_SUFFIX: &str = ".auric-wt";
+const AURIC_WORKTREE_BRANCH_PREFIX: &str = "auric/";
 
 /// How far below the project root discovery looks for a `.git`. Bounded so
 /// opening a huge unrelated folder as a project never turns into a full-disk
@@ -90,6 +116,13 @@ pub fn git_status(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
 #[tauri::command(async)]
 pub fn git_discover_repos(root_path: String) -> Result<Vec<GitRepoRef>, String> {
     git_discover_repos_impl(Path::new(&root_path))
+}
+
+// Same reason as discover: N project trees plus a status walk each. Splash
+// paints first; the dots arrive when this finishes.
+#[tauri::command(async)]
+pub fn git_projects_dirty(paths: Vec<String>) -> Vec<ProjectDirty> {
+    git_projects_dirty_impl(&paths)
 }
 
 #[tauri::command]
@@ -187,6 +220,28 @@ pub fn git_diff_file_ref(
     file_path: String,
 ) -> Result<String, String> {
     git_diff_file_ref_impl(&repo_path, &ref_name, &file_path)
+}
+
+/// Checkout a new linked worktree on a fresh `auric/…` branch. The agent
+/// then runs with that path as its cwd so it cannot dirty the user's checkout.
+#[tauri::command(async)]
+pub fn git_worktree_add(repo_path: String, name: String) -> Result<GitWorktree, String> {
+    git_worktree_add_impl(&repo_path, &name)
+}
+
+#[tauri::command(async)]
+pub fn git_worktree_list(repo_path: String) -> Result<Vec<GitWorktree>, String> {
+    git_worktree_list_impl(&repo_path)
+}
+
+/// Removes an Auric-managed worktree. Refuses a dirty checkout unless `force`.
+#[tauri::command(async)]
+pub fn git_worktree_remove(
+    repo_path: String,
+    worktree_path: String,
+    force: bool,
+) -> Result<(), String> {
+    git_worktree_remove_impl(&repo_path, &worktree_path, force)
 }
 
 /// Walks history from HEAD, newest first, stopping below `since_iso`, at
@@ -1060,6 +1115,321 @@ pub fn git_discover_repos_impl(root_path: &Path) -> Result<Vec<GitRepoRef>, Stri
     repos.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
     Ok(repos)
+}
+
+/// The primary checkout that owns `path`'s git directory. A linked worktree
+/// resolves to the main working tree, so MCP / provider policy still read the
+/// project's `.auric` rather than a missing copy under the worktree.
+pub fn primary_project_path(path: &Path) -> Option<PathBuf> {
+    let repo = Repository::open(path).ok()?;
+    let git_dir = repo.path();
+    // Linked worktrees live at `<main>/.git/worktrees/<name>`. git2 0.19 has
+    // no `commondir()`, so walk that known layout.
+    if git_dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .is_some_and(|name| name == "worktrees")
+    {
+        return git_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .map(|p| trim_trailing_slash(p.to_path_buf()));
+    }
+    repo.workdir()
+        .map(|dir| trim_trailing_slash(dir.to_path_buf()))
+}
+
+fn trim_trailing_slash(path: PathBuf) -> PathBuf {
+    let raw = path.to_string_lossy();
+    let Some(stripped) = raw.strip_suffix('/') else {
+        return path;
+    };
+    if stripped.is_empty() {
+        path
+    } else {
+        PathBuf::from(stripped)
+    }
+}
+
+fn slugify_worktree_name(name: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash && !slug.is_empty() {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if slug.len() > 32 {
+        slug.truncate(32);
+        while slug.ends_with('-') {
+            slug.pop();
+        }
+    }
+    if slug.is_empty() {
+        "agent".to_string()
+    } else {
+        slug
+    }
+}
+
+fn unique_worktree_id(base: &str, parent: &Path) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    for i in 0..32 {
+        let suffix = format!("{:x}", (nanos.wrapping_add(i as u128) % 0xFFFF_FFFF) as u32);
+        let id = format!("{base}-{suffix}");
+        if !parent.join(&id).exists() {
+            return id;
+        }
+    }
+    format!("{base}-{}", nanos)
+}
+
+fn auric_worktree_parent(workdir: &Path) -> Result<PathBuf, String> {
+    let parent = workdir
+        .parent()
+        .ok_or_else(|| "repository has no parent directory for a worktree".to_string())?;
+    let repo_name = workdir
+        .file_name()
+        .ok_or_else(|| "repository path has no folder name".to_string())?;
+    Ok(parent.join(format!(
+        "{}{AURIC_WORKTREE_DIR_SUFFIX}",
+        repo_name.to_string_lossy()
+    )))
+}
+
+fn path_is_auric_worktree(path: &Path) -> bool {
+    path.components().any(|c| {
+        c.as_os_str()
+            .to_string_lossy()
+            .ends_with(AURIC_WORKTREE_DIR_SUFFIX)
+    })
+}
+
+fn branch_is_auric(branch: Option<&str>) -> bool {
+    branch.is_some_and(|b| b.starts_with(AURIC_WORKTREE_BRANCH_PREFIX))
+}
+
+fn open_main_repo(repo_path: &str) -> Result<(Repository, PathBuf), String> {
+    let opened = Repository::open(repo_path).map_err(|e| format!("not a git repository: {e}"))?;
+    let source = primary_project_path(Path::new(repo_path))
+        .ok_or_else(|| "could not resolve the repository's main working tree".to_string())?;
+    if source.as_os_str() == Path::new(repo_path).as_os_str() {
+        return Ok((opened, source));
+    }
+    let main = Repository::open(&source).map_err(|e| e.to_string())?;
+    Ok((main, source))
+}
+
+fn worktree_branch_name(path: &Path) -> Option<String> {
+    let repo = Repository::open(path).ok()?;
+    let head = repo.head().ok()?;
+    head.shorthand().map(|s| s.to_string())
+}
+
+fn describe_worktree(source_repo: &Path, name: &str, path: &Path) -> GitWorktree {
+    let path_str = path.to_string_lossy().into_owned();
+    let branch = worktree_branch_name(path);
+    let dirty = repo_is_dirty(path);
+    let branch_ahead = worktree_branch_is_ahead(source_repo, path);
+    GitWorktree {
+        path: path_str,
+        name: name.to_string(),
+        is_auric: path_is_auric_worktree(path) || branch_is_auric(branch.as_deref()),
+        branch,
+        source_repo: source_repo.to_string_lossy().into_owned(),
+        dirty,
+        branch_ahead,
+    }
+}
+
+fn worktree_branch_is_ahead(source_repo: &Path, worktree_path: &Path) -> bool {
+    let Ok(main) = Repository::open(source_repo) else {
+        return false;
+    };
+    let Ok(wt) = Repository::open(worktree_path) else {
+        return false;
+    };
+    let Ok(main_oid) = main.head().and_then(|h| h.peel_to_commit()).map(|c| c.id()) else {
+        return false;
+    };
+    let Ok(wt_oid) = wt.head().and_then(|h| h.peel_to_commit()).map(|c| c.id()) else {
+        return false;
+    };
+    if main_oid == wt_oid {
+        return false;
+    }
+    // Unique work if main is not a descendant of the worktree commit — i.e. the
+    // worktree introduced commits main does not have.
+    !main.graph_descendant_of(main_oid, wt_oid).unwrap_or(false)
+}
+
+pub fn git_worktree_add_impl(repo_path: &str, name: &str) -> Result<GitWorktree, String> {
+    let (repo, source) = open_main_repo(repo_path)?;
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| "repository has no working tree".to_string())?
+        .to_path_buf();
+    let parent = auric_worktree_parent(&workdir)?;
+    fs::create_dir_all(&parent).map_err(|e| format!("could not create worktree folder: {e}"))?;
+
+    let slug = slugify_worktree_name(name);
+    let id = unique_worktree_id(&slug, &parent);
+    let dest = parent.join(&id);
+    let branch_name = format!("{AURIC_WORKTREE_BRANCH_PREFIX}{id}");
+
+    let commit = repo
+        .head()
+        .map_err(|e| format!("repository has no HEAD: {e}"))?
+        .peel_to_commit()
+        .map_err(|e| format!("HEAD is not a commit: {e}"))?;
+    let branch = repo
+        .branch(&branch_name, &commit, false)
+        .map_err(|e| format!("could not create branch {branch_name}: {e}"))?;
+    let reference = branch.into_reference();
+
+    let mut opts = WorktreeAddOptions::new();
+    opts.reference(Some(&reference));
+    repo.worktree(&id, &dest, Some(&opts))
+        .map_err(|e| format!("could not add worktree: {e}"))?;
+
+    Ok(describe_worktree(&source, &id, &dest))
+}
+
+pub fn git_worktree_list_impl(repo_path: &str) -> Result<Vec<GitWorktree>, String> {
+    let (repo, source) = open_main_repo(repo_path)?;
+    let names = repo.worktrees().map_err(|e| e.to_string())?;
+    let mut trees: Vec<GitWorktree> = names
+        .iter()
+        .flatten()
+        .filter_map(|name| {
+            let wt = repo.find_worktree(name).ok()?;
+            Some(describe_worktree(&source, name, wt.path()))
+        })
+        .filter(|wt| wt.is_auric)
+        .collect();
+    trees.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(trees)
+}
+
+pub fn git_worktree_remove_impl(
+    repo_path: &str,
+    worktree_path: &str,
+    force: bool,
+) -> Result<(), String> {
+    let (repo, source) = open_main_repo(repo_path)?;
+    let target = Path::new(worktree_path);
+    if !path_is_auric_worktree(target) {
+        return Err("only Auric-managed worktrees can be removed here".to_string());
+    }
+
+    let names = repo.worktrees().map_err(|e| e.to_string())?;
+    let mut found = None;
+    for name in names.iter().flatten() {
+        if let Ok(wt) = repo.find_worktree(name) {
+            if same_path(wt.path(), target) {
+                found = Some((name.to_string(), wt));
+                break;
+            }
+        }
+    }
+    let (name, wt) = found.ok_or_else(|| "worktree not found".to_string())?;
+
+    let described = describe_worktree(&source, &name, wt.path());
+    if described.dirty && !force {
+        return Err("worktree has uncommitted changes".to_string());
+    }
+
+    let branch = described.branch.clone();
+
+    let mut prune = WorktreePruneOptions::new();
+    prune.valid(true).working_tree(true).locked(true);
+    wt.prune(Some(&mut prune))
+        .map_err(|e| format!("could not remove worktree: {e}"))?;
+
+    if let Some(branch_name) = branch.filter(|b| branch_is_auric(Some(b))) {
+        if let Ok(mut b) = repo.find_branch(&branch_name, git2::BranchType::Local) {
+            let _ = b.delete();
+        }
+    }
+
+    Ok(())
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(aa), Ok(bb)) => aa == bb,
+        _ => a.to_string_lossy() == b.to_string_lossy(),
+    }
+}
+
+/// One row per input path, in the same order, echoing the path the caller
+/// sent. Canonicalising would break the match against starred-project keys.
+pub fn git_projects_dirty_impl(paths: &[String]) -> Vec<ProjectDirty> {
+    paths
+        .iter()
+        .map(|path| ProjectDirty {
+            path: path.clone(),
+            dirty: project_is_dirty(Path::new(path)),
+        })
+        .collect()
+}
+
+fn project_is_dirty(root: &Path) -> bool {
+    let repos = match git_discover_repos_impl(root) {
+        Ok(repos) => repos,
+        Err(_) => return false,
+    };
+    repos
+        .iter()
+        .any(|repo| repo_is_dirty(Path::new(&repo.path)))
+}
+
+/// Uncommitted work only: staged, unstaged, or untracked. Ignored files do
+/// not count — a `node_modules` sitting on disk is not "you have a commit
+/// waiting".
+fn repo_is_dirty(repo_path: &Path) -> bool {
+    let repo = match Repository::open(repo_path) {
+        Ok(repo) => repo,
+        Err(_) => return false,
+    };
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
+
+    let statuses = match repo.statuses(Some(&mut opts)) {
+        Ok(statuses) => statuses,
+        Err(_) => return false,
+    };
+    statuses.iter().any(|entry| {
+        let status = entry.status();
+        !status.is_ignored()
+            && (status.is_index_new()
+                || status.is_index_modified()
+                || status.is_index_deleted()
+                || status.is_index_typechange()
+                || status.is_index_renamed()
+                || status.is_wt_new()
+                || status.is_wt_modified()
+                || status.is_wt_deleted()
+                || status.is_wt_typechange()
+                || status.is_wt_renamed()
+                || status.is_conflicted())
+    })
 }
 
 #[cfg(test)]
@@ -2162,6 +2532,18 @@ mod tests {
         assert!(repos.is_empty());
     }
 
+    #[test]
+    fn discovery_skips_auric_worktree_sibling_folders() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        init_repo(&dir.path().join("project.auric-wt/fix-ab12"));
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].kind, "root");
+    }
+
     /// `classify_kind` must resolve through the NEAREST enclosing discovered
     /// repo, not any ancestor that happens to declare a matching submodule
     /// path. Two independent trees, one per direction of the bug:
@@ -2254,5 +2636,199 @@ mod tests {
             .find(|r| r.relative_path == "mid/leaf")
             .expect("mid/leaf not discovered");
         assert_eq!(leaf_b.kind, "nested");
+    }
+
+    fn dirty_for(path: &str) -> bool {
+        git_projects_dirty_impl(&[path.to_string()])
+            .into_iter()
+            .find(|row| row.path == path)
+            .expect("batch must echo every input path")
+            .dirty
+    }
+
+    #[test]
+    fn git_projects_dirty_is_false_for_a_clean_committed_repo() {
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        assert!(!dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_is_true_for_an_unstaged_edit() {
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        fs::write(dir.path().join("a.txt"), "changed").unwrap();
+        assert!(dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_is_true_for_a_staged_new_file() {
+        let dir = init_test_repo();
+        let path = dir.path().to_str().unwrap();
+        commit_file(&dir, "kept.txt", "ok\n", "init");
+        fs::write(dir.path().join("new.txt"), "hi\n").unwrap();
+        git_stage_impl(path, &["new.txt".to_string()]).unwrap();
+        assert!(dirty_for(path));
+    }
+
+    #[test]
+    fn git_projects_dirty_is_true_for_an_untracked_file() {
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        fs::write(dir.path().join("scratch.txt"), "wip").unwrap();
+        assert!(dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_ignores_gitignored_files() {
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        fs::write(dir.path().join(".gitignore"), "secret.txt\n").unwrap();
+        git_stage_impl(dir.path().to_str().unwrap(), &[".gitignore".to_string()]).unwrap();
+        git_commit_impl(dir.path().to_str().unwrap(), "ignore secret").unwrap();
+        fs::write(dir.path().join("secret.txt"), "s").unwrap();
+        assert!(!dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_is_false_when_the_path_is_not_a_repo() {
+        let plain = TempDir::new().unwrap();
+        assert!(!dirty_for(plain.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_is_false_when_the_path_does_not_exist() {
+        assert!(!dirty_for("/definitely/not/a/real/project/path"));
+    }
+
+    #[test]
+    fn git_projects_dirty_sees_a_dirty_repo_nested_under_the_project() {
+        let root = TempDir::new().unwrap();
+        let nested = root.path().join("pkg");
+        fs::create_dir(&nested).unwrap();
+        let repo = Repository::init(&nested).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@example.com").unwrap();
+        fs::write(nested.join("a.txt"), "hi").unwrap();
+        git_stage_impl(nested.to_str().unwrap(), &["a.txt".to_string()]).unwrap();
+        git_commit_impl(nested.to_str().unwrap(), "init").unwrap();
+        fs::write(nested.join("a.txt"), "dirty").unwrap();
+
+        assert!(dirty_for(root.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_returns_one_row_per_input_in_order() {
+        let clean = TempDir::new().unwrap();
+        committed_repo(&clean);
+        let dirty = TempDir::new().unwrap();
+        committed_repo(&dirty);
+        fs::write(dirty.path().join("a.txt"), "changed").unwrap();
+        let missing = "/no/such/project".to_string();
+
+        let clean_path = clean.path().to_str().unwrap().to_string();
+        let dirty_path = dirty.path().to_str().unwrap().to_string();
+        let rows =
+            git_projects_dirty_impl(&[clean_path.clone(), missing.clone(), dirty_path.clone()]);
+
+        assert_eq!(
+            rows,
+            vec![
+                ProjectDirty {
+                    path: clean_path,
+                    dirty: false,
+                },
+                ProjectDirty {
+                    path: missing,
+                    dirty: false,
+                },
+                ProjectDirty {
+                    path: dirty_path,
+                    dirty: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn worktree_add_checks_out_a_sibling_auric_branch() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        let wt = git_worktree_add_impl(&path, "Fix login!!!").unwrap();
+
+        assert!(wt.is_auric);
+        assert!(!wt.dirty);
+        assert!(!wt.branch_ahead);
+        assert!(wt.path.contains(".auric-wt"));
+        assert!(wt
+            .branch
+            .as_deref()
+            .unwrap()
+            .starts_with("auric/fix-login-"));
+        assert!(Path::new(&wt.path).join("a.txt").is_file());
+        assert_eq!(
+            fs::canonicalize(&wt.source_repo).unwrap(),
+            fs::canonicalize(&path).unwrap()
+        );
+
+        let listed = git_worktree_list_impl(&path).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].path, wt.path);
+    }
+
+    #[test]
+    fn worktree_list_hides_foreign_worktrees() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        let repo = Repository::open(&path).unwrap();
+        let foreign = dir.path().join("foreign-wt");
+        repo.worktree("foreign", &foreign, None).unwrap();
+
+        assert!(git_worktree_list_impl(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn worktree_remove_refuses_a_dirty_checkout_until_forced() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        let wt = git_worktree_add_impl(&path, "edit").unwrap();
+        fs::write(Path::new(&wt.path).join("a.txt"), "dirty").unwrap();
+
+        let err = git_worktree_remove_impl(&path, &wt.path, false).unwrap_err();
+        assert!(err.contains("uncommitted"), "{err}");
+        assert!(Path::new(&wt.path).exists());
+
+        git_worktree_remove_impl(&path, &wt.path, true).unwrap();
+        assert!(!Path::new(&wt.path).exists());
+        assert!(git_worktree_list_impl(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn worktree_remove_rejects_a_path_we_did_not_create() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        let err = git_worktree_remove_impl(&path, &path, true).unwrap_err();
+        assert!(err.contains("Auric-managed"), "{err}");
+    }
+
+    #[test]
+    fn worktree_add_needs_a_commit() {
+        let dir = TempDir::new().unwrap();
+        Repository::init(dir.path()).unwrap();
+        let err = git_worktree_add_impl(dir.path().to_str().unwrap(), "x").unwrap_err();
+        assert!(err.contains("HEAD"), "{err}");
+    }
+
+    #[test]
+    fn primary_project_path_resolves_a_worktree_to_the_main_checkout() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        let wt = git_worktree_add_impl(&path, "policy").unwrap();
+        let resolved = primary_project_path(Path::new(&wt.path)).unwrap();
+        assert_eq!(
+            fs::canonicalize(&resolved).unwrap(),
+            fs::canonicalize(&path).unwrap()
+        );
     }
 }

@@ -10,6 +10,7 @@ import type {
   GitFileStatus,
   GitNameStatus,
   GitRepoRef,
+  GitWorktree,
 } from '../tauri/git';
 import {
   discoverGitRepos,
@@ -23,6 +24,8 @@ import {
   listGitBranches,
   getGitDiffRefFiles,
   gitBlame,
+  listGitWorktrees,
+  removeGitWorktree,
 } from '../tauri/git';
 
 export type ScmView = 'changes' | 'history' | 'compare';
@@ -86,6 +89,10 @@ export interface GitSlice {
   /** Pushes the current branch to origin. Rethrows so the caller can report. */
   push: (repoPath: string) => Promise<void>;
   setCommitMessage: (repoPath: string, msg: string) => void;
+  /** Auric-managed worktrees across every discovered repo. */
+  agentWorktrees: GitWorktree[];
+  refreshAgentWorktrees: () => Promise<void>;
+  removeAgentWorktree: (worktreePath: string, force: boolean) => Promise<void>;
 }
 
 /**
@@ -362,6 +369,7 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
     repoStates: {},
     activeRepoPath: null,
     diffByTabId: {},
+    agentWorktrees: [],
     ...EMPTY_REVIEW_STATE,
 
     setActiveRepoPath: (repoPath) => {
@@ -397,6 +405,7 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
           writeRepoStatus(ref, fileStatuses, branchInfo);
         })
       );
+      await get().refreshAgentWorktrees();
     },
 
     refreshGitStatus: async () => {
@@ -407,6 +416,7 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
           writeRepoStatus(ref, fileStatuses, branchInfo);
         })
       );
+      await get().refreshAgentWorktrees();
     },
 
     refreshRepoStatus: async (repoPath) => {
@@ -484,8 +494,41 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
         repos: [],
         repoStates: {},
         activeRepoPath: null,
+        agentWorktrees: [],
         ...EMPTY_REVIEW_STATE,
       }),
+
+    refreshAgentWorktrees: async () => {
+      const { repos } = get();
+      const listed = await Promise.all(
+        repos.map(async (ref) => {
+          try {
+            return await listGitWorktrees(ref.path);
+          } catch {
+            return [] as GitWorktree[];
+          }
+        })
+      );
+      const seen = new Set<string>();
+      const agentWorktrees: GitWorktree[] = [];
+      for (const tree of listed.flat()) {
+        if (seen.has(tree.path)) continue;
+        seen.add(tree.path);
+        agentWorktrees.push(tree);
+      }
+      agentWorktrees.sort((a, b) => a.name.localeCompare(b.name));
+      set({ agentWorktrees });
+    },
+
+    removeAgentWorktree: async (worktreePath, force) => {
+      const tree = get().agentWorktrees.find((wt) => wt.path === worktreePath);
+      const repoPath = tree?.sourceRepo;
+      if (!repoPath) {
+        throw new Error('worktree not found');
+      }
+      await removeGitWorktree(repoPath, worktreePath, force);
+      await get().refreshAgentWorktrees();
+    },
 
     stageFile: async (repoPath, path) => {
       await stageFiles(repoPath, [path]);

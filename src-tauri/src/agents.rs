@@ -409,7 +409,11 @@ pub async fn spawn_agent_impl(
     // this is the one path every agent takes — the conductor, a retry, a
     // resumed run and a notification action all arrive here too.
     let policy = match config.cwd.as_deref() {
-        Some(cwd) => crate::provider_policy::policy_for_project(std::path::Path::new(cwd)),
+        Some(cwd) => {
+            let project = crate::git::primary_project_path(std::path::Path::new(cwd))
+                .unwrap_or_else(|| std::path::PathBuf::from(cwd));
+            crate::provider_policy::policy_for_project(&project)
+        }
         None => crate::provider_policy::ProviderPolicy::default(),
     };
     let (provider_id, provider) =
@@ -446,8 +450,11 @@ pub async fn spawn_agent_impl(
         if std::path::Path::new(cwd).is_dir() {
             cmd.cwd(cwd);
         }
-        // Expose the project DB path so spawned agents can connect via MCP
-        let db_path = std::path::Path::new(cwd).join(".auric").join("project.db");
+        // A worktree cwd must still see the main project's DB — the checkout
+        // next door has no `.auric` of its own.
+        let project = crate::git::primary_project_path(std::path::Path::new(cwd))
+            .unwrap_or_else(|| std::path::PathBuf::from(cwd));
+        let db_path = project.join(".auric").join("project.db");
         cmd.env("AURIC_MCP_DB_PATH", db_path.to_string_lossy().as_ref());
     }
 

@@ -16,6 +16,7 @@ import type { ProviderInfo } from '@/lib/tauri/providers';
 import type { ScmView } from '@/lib/store/gitSlice';
 import { HistoryView } from './HistoryView';
 import { CompareView } from './CompareView';
+import { AgentWorktreesPanel } from './AgentWorktreesPanel';
 
 type DiffSide = 'staged' | 'unstaged';
 
@@ -791,6 +792,7 @@ export function SourceControlPanel({
             </div>
           </>
         ))}
+      {scmView === 'changes' && <AgentWorktreesPanel />}
     </div>
   );
 }
