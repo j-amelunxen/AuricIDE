@@ -345,8 +345,9 @@ describe('CliQuotaChip', () => {
   });
 
   it('loads whatever is already stored and does not spend a Codex check', async () => {
-    // Hover, focus and a 30-minute timer used to spawn `codex app-server`.
-    // That reading costs credits, so the chip only reads the cache on mount.
+    // Hover and focus used to spawn `codex app-server`. That reading costs
+    // credits, so the chip only reads the cache on mount. The 15-minute
+    // Codex poller lives in Rust, not here.
     usageLimitsRead.mockResolvedValue([snapshot()]);
     setSnapshots([]);
     render(<CliQuotaChip />);

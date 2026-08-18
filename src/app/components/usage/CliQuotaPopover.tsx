@@ -30,8 +30,9 @@ const TONE_BAR: Record<QuotaTone, string> = {
  * part that is not decoration — how old the reading is.
  *
  * Nothing here is live. The Claude figure only arrives while one of AuricIDE's
- * own agents is running, and the Codex one is re-read when you ask, so a bare
- * percentage with no age next to it would be a claim the data cannot support.
+ * own agents is running, and the Codex one is re-read every 15 minutes (or
+ * when you ask), so a bare percentage with no age next to it would be a claim
+ * the data cannot support.
  */
 export function CliQuotaPopover({
   id,

@@ -92,9 +92,10 @@ export interface AppConfig {
    *
    * Off by default because switching it on has an effect beyond the chip:
    * AuricIDE then passes `--settings` to every `claude` it starts, so the
-   * status line can report the numbers. Codex is only queried when you
-   * refresh — that check costs credits. Also read from Rust, out of the
-   * `webview-prefs.json` mirror — see `src-tauri/src/usage_limits/mod.rs`.
+   * status line can report the numbers. Codex is queried every 15 minutes
+   * and when you refresh — that check costs credits. Also read from Rust,
+   * out of the `webview-prefs.json` mirror — see
+   * `src-tauri/src/usage_limits/mod.rs`.
    */
   cliUsageLimits: boolean;
   /** Point size for agent terminal sessions in the dock and fullscreen dialog. */

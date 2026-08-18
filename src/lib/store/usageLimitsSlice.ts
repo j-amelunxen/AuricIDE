@@ -41,8 +41,9 @@ export const createUsageLimitsSlice: StateCreator<UsageLimitsSlice> = (set) => (
   /**
    * Asks the backend to spend a Codex check and re-read Claude's drop file.
    *
-   * Manual only: that Codex process costs credits, so hover, focus and a
-   * timer must not land here.
+   * Hover and focus must not land here — that process costs credits. The
+   * 15-minute poller lives in Rust and writes the store itself; this path
+   * is the refresh button.
    */
   refreshUsageLimits: async () => {
     set({ usageStatus: 'loading' });

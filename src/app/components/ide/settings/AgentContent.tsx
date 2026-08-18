@@ -167,8 +167,8 @@ export function AgentContent() {
       <SettingsSection title="CLI Quota" icon="speed">
         <p className="text-xs text-foreground-muted leading-relaxed">
           Show remaining Claude Code and Codex usage in the status bar. Enabling this adds a
-          settings file when AuricIDE starts a Claude Code agent. Codex is checked only when you
-          refresh — that query costs credits.
+          settings file when AuricIDE starts a Claude Code agent. Codex is checked every 15 minutes,
+          and whenever you refresh — that query costs credits.
         </p>
         <SettingsToggle
           label="Show CLI Quota in the Status Bar"
