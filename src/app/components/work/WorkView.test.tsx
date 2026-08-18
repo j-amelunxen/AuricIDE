@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
@@ -56,5 +56,76 @@ describe('WorkView', () => {
     render(<WorkView />);
     expect(screen.getByTestId('work-view')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  describe('leaving Tickets with unsaved PM changes', () => {
+    it('switches freely when Plan is clean', async () => {
+      useStore.setState({ workTab: 'tickets', pmDirty: false });
+      const user = userEvent.setup();
+      render(<WorkView />);
+
+      await user.click(screen.getByRole('tab', { name: 'Goals' }));
+
+      expect(useStore.getState().workTab).toBe('goals');
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).not.toBeInTheDocument();
+    });
+
+    it('asks before leaving Tickets and stays put until the question is answered', async () => {
+      useStore.setState({ workTab: 'tickets', pmDirty: true });
+      const user = userEvent.setup();
+      render(<WorkView />);
+
+      await user.click(screen.getByRole('tab', { name: 'Goals' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Discard changes?' })).toBeInTheDocument();
+      expect(useStore.getState().workTab).toBe('tickets');
+      expect(useStore.getState().pmDirty).toBe(true);
+    });
+
+    it('discards and switches once Discard is confirmed', async () => {
+      useStore.setState({
+        workTab: 'tickets',
+        pmDirty: true,
+        pmTickets: [],
+        pmDraftTickets: [
+          {
+            id: 't-new',
+            epicId: 'e1',
+            name: 'Unsaved ticket',
+            description: '',
+            status: 'open',
+            statusUpdatedAt: '',
+            priority: 'normal',
+            sortOrder: 0,
+            createdAt: '',
+            updatedAt: '',
+          },
+        ],
+      });
+      const user = userEvent.setup();
+      render(<WorkView />);
+
+      await user.click(screen.getByRole('tab', { name: 'Goals' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
+
+      expect(useStore.getState().workTab).toBe('goals');
+      expect(useStore.getState().pmDirty).toBe(false);
+      expect(useStore.getState().pmDraftTickets).toEqual([]);
+    });
+
+    it('keeps the unsaved ticket when discard is declined', async () => {
+      useStore.setState({ workTab: 'tickets', pmDirty: true });
+      const user = userEvent.setup();
+      render(<WorkView />);
+
+      await user.click(screen.getByRole('tab', { name: 'Goals' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(useStore.getState().workTab).toBe('tickets');
+      expect(useStore.getState().pmDirty).toBe(true);
+      expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).not.toBeInTheDocument();
+    });
   });
 });

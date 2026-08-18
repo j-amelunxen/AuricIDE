@@ -118,6 +118,31 @@ describe('task tools', () => {
       expect(result!.id).toBe('was-blocked');
     });
 
+    it('returns blocked ticket once its dependency is discarded', () => {
+      seedTicket(db, {
+        id: 'blocker',
+        epicId: 'epic-1',
+        name: 'Blocker',
+        status: 'discarded',
+        priority: 'low',
+      });
+      seedTicket(db, {
+        id: 'was-blocked',
+        epicId: 'epic-1',
+        name: 'Was blocked',
+        priority: 'high',
+      });
+
+      db.prepare(
+        `INSERT INTO pm_dependencies (id, source_type, source_id, target_type, target_id)
+         VALUES (?, 'ticket', ?, 'ticket', ?)`
+      ).run('dep-1', 'was-blocked', 'blocker');
+
+      const result = fetchNextUnblockedTask(db);
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('was-blocked');
+    });
+
     it('returns blocked ticket once its dependency is archived', () => {
       seedTicket(db, {
         id: 'blocker',

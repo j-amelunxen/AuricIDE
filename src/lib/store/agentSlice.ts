@@ -41,6 +41,8 @@ import { MAX_TICKET_ATTEMPTS } from './conductorSlice';
 import type { GoalsSlice } from './goalsSlice';
 import type { NotificationInput } from '../tauri/notifications';
 import type { PmGoalRun } from '../tauri/goals';
+import type { PmTicket } from '../tauri/pm';
+import { prependTicketSkills } from '../pm/ticketSkills';
 import type { EndedStep } from './skillComboSlice';
 
 export const MAX_AGENT_LOGS = 5_000;
@@ -371,6 +373,16 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
         const msg = `Could not create a git worktree: ${detail}`;
         toast.showToast?.(msg, 'error');
         throw err instanceof Error ? err : new Error(msg);
+      }
+    }
+    if (spawnConfig.spawnedByTicketId) {
+      const tickets = (get() as AgentSlice & { pmDraftTickets?: PmTicket[] }).pmDraftTickets ?? [];
+      const ticket = tickets.find((entry) => entry.id === spawnConfig.spawnedByTicketId);
+      if (ticket) {
+        spawnConfig = {
+          ...spawnConfig,
+          task: prependTicketSkills(ticket.skills, spawnConfig.task),
+        };
       }
     }
     const agent = await spawnAgent(spawnConfig);

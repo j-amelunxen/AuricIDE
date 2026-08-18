@@ -14,6 +14,13 @@ interface SkillInvocationInputProps {
   onChange: (value: string) => void;
   /** Only when a known skill was chosen, so a caller can fill in its name too. */
   onPick: (skill: ProjectSkill) => void;
+  /**
+   * When true this field is only for naming a skill, so the list opens on an
+   * empty value instead of waiting for a slash. Prompt fields leave this off.
+   */
+  suggestWhenEmpty?: boolean;
+  /** Enter with no highlighted option — typed text the caller may accept. */
+  onEnterWithoutPick?: (value: string) => void;
 }
 
 /**
@@ -34,6 +41,8 @@ export function SkillInvocationInput({
   className = '',
   onChange,
   onPick,
+  suggestWhenEmpty = false,
+  onEnterWithoutPick,
 }: SkillInvocationInputProps) {
   const listboxId = useId();
   const [open, setOpen] = useState(false);
@@ -42,10 +51,14 @@ export function SkillInvocationInput({
 
   // A prompt is prose until a slash says otherwise. Suggesting against every
   // keystroke would put a popup over the field for people writing sentences.
-  const suggestions = useMemo(
-    () => (value.trim().startsWith('/') ? suggestSkills(value, discovered) : []),
-    [value, discovered]
-  );
+  // A dedicated skill picker is the other case: the field only ever names a
+  // skill, so an empty value is "show me the catalogue".
+  const suggestions = useMemo(() => {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('/')) return suggestSkills(value, discovered);
+    if (suggestWhenEmpty) return suggestSkills(trimmed ? `/${trimmed}` : '/', discovered);
+    return [];
+  }, [value, discovered, suggestWhenEmpty]);
   const expanded = open && suggestions.length > 0;
 
   useEffect(() => {
@@ -88,6 +101,11 @@ export function SkillInvocationInput({
     if (event.key === 'Enter' && expanded && active >= 0) {
       event.preventDefault();
       pick(suggestions[active]);
+      return;
+    }
+    if (event.key === 'Enter' && onEnterWithoutPick && value.trim()) {
+      event.preventDefault();
+      onEnterWithoutPick(value.trim());
     }
   };
 

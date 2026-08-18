@@ -1,8 +1,10 @@
 'use client';
 
 import { useStore } from '@/lib/store';
+import { inboxMediaKind } from '@/lib/inbox/inboxMedia';
 import type { PmContextItem } from '@/lib/tauri/pm';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { InboxAttachmentPreview } from '@/app/components/inbox/InboxAttachmentPreview';
 
 interface TicketContextEditorProps {
   context: PmContextItem[] | undefined;
@@ -136,42 +138,55 @@ export function TicketContextEditor({ context = [], onUpdate }: TicketContextEdi
                   </span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 bg-black/20 border border-white/5 rounded px-2 py-1.5">
-                  <input
-                    type="text"
-                    value={item.value}
-                    onChange={(e) => handleUpdateItem(item.id, e.target.value)}
-                    placeholder="Path/to/file"
-                    className="flex-1 bg-transparent border-none text-xs text-foreground focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const { open } = await import('@tauri-apps/plugin-dialog');
-                        const selected = await open({
-                          multiple: false,
-                          directory: false,
-                        });
-
-                        if (selected && typeof selected === 'string') {
-                          let relPath = selected;
-                          if (rootPath && selected.startsWith(rootPath)) {
-                            relPath = selected.substring(rootPath.length);
-                            if (relPath.startsWith('/') || relPath.startsWith('')) {
-                              relPath = relPath.substring(1);
-                            }
-                          }
-                          handleUpdateItem(item.id, relPath);
-                        }
-                      } catch (err) {
-                        console.error('Failed to open file dialog:', err);
+                <div className="flex flex-col gap-2 bg-black/20 border border-white/5 rounded px-2 py-1.5">
+                  {inboxMediaKind(item.value) !== null && (
+                    <InboxAttachmentPreview
+                      fileName={item.value.split('/').pop() || item.value}
+                      kind={inboxMediaKind(item.value) as 'image' | 'video'}
+                      storedPath={
+                        rootPath && !item.value.startsWith('/')
+                          ? `${rootPath.replace(/\/$/, '')}/${item.value}`
+                          : item.value
                       }
-                    }}
-                    className="text-foreground-muted hover:text-foreground transition-colors"
-                  >
-                    <AuricIcon name="folder_open" className="text-[16px]" />
-                  </button>
+                    />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={item.value}
+                      onChange={(e) => handleUpdateItem(item.id, e.target.value)}
+                      placeholder="Path/to/file"
+                      className="flex-1 bg-transparent border-none text-xs text-foreground focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const { open } = await import('@tauri-apps/plugin-dialog');
+                          const selected = await open({
+                            multiple: false,
+                            directory: false,
+                          });
+
+                          if (selected && typeof selected === 'string') {
+                            let relPath = selected;
+                            if (rootPath && selected.startsWith(rootPath)) {
+                              relPath = selected.substring(rootPath.length);
+                              if (relPath.startsWith('/') || relPath.startsWith('')) {
+                                relPath = relPath.substring(1);
+                              }
+                            }
+                            handleUpdateItem(item.id, relPath);
+                          }
+                        } catch (err) {
+                          console.error('Failed to open file dialog:', err);
+                        }
+                      }}
+                      className="text-foreground-muted hover:text-foreground transition-colors"
+                    >
+                      <AuricIcon name="folder_open" className="text-[16px]" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

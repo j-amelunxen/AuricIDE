@@ -15,6 +15,7 @@ import { TicketCreateModal } from './TicketCreateModal';
 import { DependencyTreeView } from './DependencyTreeView';
 import { MetricsView } from './MetricsView';
 import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
+import { isHiddenTicketStatus } from '@/lib/pm/enums';
 import { generateTicketPrompt } from '@/lib/pm/prompt';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
@@ -142,7 +143,9 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
 
   const filteredTickets = (
     selectedEpicId === null ? draftTickets : draftTickets.filter((t) => t.epicId === selectedEpicId)
-  ).filter((t) => (showArchived ? t.status === 'archived' : t.status !== 'archived'));
+  ).filter((t) =>
+    showArchived ? isHiddenTicketStatus(t.status) : !isHiddenTicketStatus(t.status)
+  );
 
   const selectedTicket = draftTickets.find((t) => t.id === selectedTicketId) ?? null;
 

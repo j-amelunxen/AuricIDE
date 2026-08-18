@@ -97,12 +97,16 @@ function getStatusColor(status: string) {
       return 'text-gray-400 border-gray-400/30 bg-gray-400/5';
     case 'in_progress':
       return 'text-blue-400 border-blue-400/30 bg-blue-400/5';
+    case 'to_test':
+      return 'text-cyan-300 border-cyan-400/30 bg-cyan-400/5';
     case 'in_review':
       return 'text-indigo-300 border-indigo-400/30 bg-indigo-400/5';
     case 'done':
       return 'text-green-400 border-green-400/30 bg-green-400/5';
     case 'archived':
       return 'text-purple-400 border-purple-400/30 bg-purple-400/5';
+    case 'discarded':
+      return 'text-white/40 border-white/15 bg-white/5';
     default:
       return 'text-white/50 border-white/10 bg-white/5';
   }

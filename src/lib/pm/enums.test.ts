@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   GOAL_STATUSES,
+  isClosedTicketStatus,
+  isHiddenTicketStatus,
   MODEL_POWERS,
   PRIORITIES,
   REQUIREMENT_STATUSES,
@@ -18,7 +20,32 @@ describe('project state vocabulary', () => {
   // the implementer is finished, the sign-off is not. Dropping it would make
   // work in review look either still-running or already satisfied.
   it('pins the ticket statuses the conductor loop depends on', () => {
-    expect([...TICKET_STATUSES]).toEqual(['open', 'in_progress', 'in_review', 'done', 'archived']);
+    expect([...TICKET_STATUSES]).toEqual([
+      'open',
+      'in_progress',
+      'to_test',
+      'in_review',
+      'done',
+      'archived',
+      'discarded',
+    ]);
+  });
+
+  it('hides discarded the same way archived is hidden from the default board', () => {
+    expect(isHiddenTicketStatus('archived')).toBe(true);
+    expect(isHiddenTicketStatus('discarded')).toBe(true);
+    expect(isHiddenTicketStatus('open')).toBe(false);
+    expect(isHiddenTicketStatus('to_test')).toBe(false);
+    expect(isHiddenTicketStatus('in_review')).toBe(false);
+    expect(isHiddenTicketStatus('done')).toBe(false);
+  });
+
+  it('treats discarded as closed work, not leftover obligation', () => {
+    expect(isClosedTicketStatus('done')).toBe(true);
+    expect(isClosedTicketStatus('archived')).toBe(true);
+    expect(isClosedTicketStatus('discarded')).toBe(true);
+    expect(isClosedTicketStatus('to_test')).toBe(false);
+    expect(isClosedTicketStatus('in_progress')).toBe(false);
   });
 
   it('pins the priority ladder', () => {

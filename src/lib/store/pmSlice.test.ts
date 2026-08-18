@@ -277,6 +277,25 @@ describe('pmSlice', () => {
     expect(store.getState().pmDirty).toBe(false);
   });
 
+  it('loadPmData does not wipe unsaved drafts', async () => {
+    const persisted = makeTicket({ id: 't-saved', name: 'Saved' });
+    mockPmLoad.mockResolvedValue({
+      epics: [],
+      tickets: [persisted],
+      testCases: [],
+      dependencies: [],
+    });
+
+    const store = createTestStore();
+    await store.getState().loadPmData('/project');
+    store.getState().addTicket(makeTicket({ id: 't-new', name: 'Unsaved' }));
+
+    await store.getState().loadPmData('/project');
+
+    expect(store.getState().pmDirty).toBe(true);
+    expect(store.getState().pmDraftTickets.map((t) => t.id)).toEqual(['t-saved', 't-new']);
+  });
+
   it('loadPmData archives done tickets older than 24 hours', async () => {
     const now = new Date();
     const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
@@ -322,6 +341,47 @@ describe('pmSlice', () => {
     });
     expect(store.getState().pmDirty).toBe(false);
     expect(store.getState().pmEpics).toEqual(store.getState().pmDraftEpics);
+  });
+
+  it('refreshes the inbox overview after a successful save so ticket status flows back', async () => {
+    const store = createTestStore();
+    const refreshInboxOverview = vi.fn().mockResolvedValue(undefined);
+    store.setState({
+      inboxItems: [{ id: 'i1' }],
+      inboxOverview: { '/project': { projectPath: '/project' } },
+      refreshInboxOverview,
+    } as unknown as Partial<PmSlice>);
+
+    await store.getState().savePmData('/project');
+
+    expect(refreshInboxOverview).toHaveBeenCalledWith(['/project']);
+  });
+
+  it('does not refresh the inbox when nothing is captured', async () => {
+    const store = createTestStore();
+    const refreshInboxOverview = vi.fn().mockResolvedValue(undefined);
+    store.setState({
+      inboxItems: [],
+      refreshInboxOverview,
+    } as unknown as Partial<PmSlice>);
+
+    await store.getState().savePmData('/project');
+
+    expect(refreshInboxOverview).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the inbox overview after a PM reload picks up agent status changes', async () => {
+    const store = createTestStore();
+    const refreshInboxOverview = vi.fn().mockResolvedValue(undefined);
+    store.setState({
+      inboxItems: [{ id: 'i1' }],
+      inboxOverview: { '/project': { projectPath: '/project' } },
+      refreshInboxOverview,
+    } as unknown as Partial<PmSlice>);
+
+    await store.getState().refreshPmData('/project');
+
+    expect(refreshInboxOverview).toHaveBeenCalledWith(['/project']);
   });
 
   it('discardPmChanges restores persisted state', () => {

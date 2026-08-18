@@ -171,6 +171,11 @@ export default function Home() {
   };
 
   const leftPanelContent = useMemo(() => {
+    const activeItem = handlers.itemsWithBadge.find((item) => item.id === state.activeActivity);
+    // Default activity is explorer. Without a project that destination is
+    // gone from the rail — keep the left pane empty rather than a hollow tree.
+    if (!activeItem) return null;
+
     switch (state.activeActivity) {
       case 'explorer':
         return (
@@ -427,6 +432,13 @@ export default function Home() {
               tabs={tabsWithIcons}
               activeTabId={state.workPlaceOpen ? null : state.activeTabId}
               onSelect={(id) => {
+                if (useStore.getState().pmDirty) {
+                  void (async () => {
+                    if (!(await handlers.leaveWorkPlace())) return;
+                    state.setActiveTab(id);
+                  })();
+                  return;
+                }
                 useStore.getState().closeWorkPlace();
                 state.setActiveTab(id);
               }}

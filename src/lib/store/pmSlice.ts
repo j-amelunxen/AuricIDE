@@ -77,6 +77,24 @@ interface Identifiable {
   updatedAt: string;
 }
 
+/**
+ * Inbox lives in its own slice. Cast rather than import — an isolated
+ * pmSlice test store has none of these fields, and every access is optional.
+ */
+interface InboxCrossSlices {
+  inboxItems: { id: string }[];
+  inboxOverview: Record<string, unknown>;
+  refreshInboxOverview: (projectPaths: string[]) => Promise<void>;
+}
+
+function refreshInboxAfterPmWrite(get: () => PmSlice, projectPath: string): void {
+  const cross = get() as unknown as Partial<InboxCrossSlices>;
+  if ((cross.inboxItems?.length ?? 0) === 0) return;
+  const paths = new Set<string>(Object.keys(cross.inboxOverview ?? {}));
+  paths.add(projectPath);
+  void cross.refreshInboxOverview?.([...paths]);
+}
+
 function mergeItems<T extends Identifiable>(fresh: T[], old: T[], draft: T[]): T[] {
   const oldMap = new Map(old.map((item) => [item.id, item]));
   const freshMap = new Map(fresh.map((item) => [item.id, item]));
@@ -179,6 +197,10 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
     trackLoad(
       (s) => set({ pmLoading: s.loading, pmLoadError: s.error }),
       async () => {
+        // A remount (Work tab switch, Goals panel load) must not throw away
+        // a ticket the user just created and has not saved yet.
+        if (get().pmDirty) return;
+
         await initProjectDb(projectPath);
         const state = await ipcPmLoad(projectPath);
 
@@ -249,8 +271,9 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
         pmStatusHistory: history,
         pmDirty,
       });
+      refreshInboxAfterPmWrite(get, projectPath);
     } catch {
-      // Silently catch errors — next poll will retry
+      // Next poll will retry.
     }
   },
 
@@ -271,6 +294,7 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
         pmDependencies: pmDraftDependencies,
         pmDirty: false,
       });
+      refreshInboxAfterPmWrite(get, projectPath);
     }),
 
   clearPmData: async (projectPath) => {

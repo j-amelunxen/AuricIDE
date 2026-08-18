@@ -95,6 +95,9 @@ const mockInitScratches = vi.fn(async () => {});
 const mockRefreshScratches = vi.fn(async () => {});
 const mockGetBacklinksFor = vi.fn((_name: string) => [] as string[]);
 const mockSetInboxCaptureOpen = vi.fn();
+const mockCloseWorkPlace = vi.fn();
+const mockDiscardPmChanges = vi.fn();
+let mockPmDirty = false;
 vi.mock('@/lib/store', () => {
   const getState = () => ({
     refreshGitStatus: mockRefreshGitStatus,
@@ -144,7 +147,9 @@ vi.mock('@/lib/store', () => {
     pushOverlay: () => undefined,
     removeOverlay: () => undefined,
     ownsEscape: () => false,
-    closeWorkPlace: () => undefined,
+    closeWorkPlace: mockCloseWorkPlace,
+    discardPmChanges: mockDiscardPmChanges,
+    pmDirty: mockPmDirty,
     openWorkPlace: () => undefined,
     setInboxCaptureOpen: mockSetInboxCaptureOpen,
   });
@@ -194,6 +199,7 @@ describe('useIDEHandlers', () => {
     setMindmapData: vi.fn(),
     setDiffTab: vi.fn(),
     resetGitInMemory: vi.fn(),
+    closeProject: vi.fn(),
     setActiveActivity: vi.fn(),
     pmDraftTickets: [],
     inboxItems: [] as ReturnType<typeof useIDEState>['inboxItems'],
@@ -285,6 +291,7 @@ describe('useIDEHandlers', () => {
     mockHistoryPath = null;
     mockHistoryCommits = [];
     mockCompareRef = null;
+    mockPmDirty = false;
   });
 
   describe('handleDiffFileClick', () => {
@@ -1777,6 +1784,59 @@ describe('useIDEHandlers', () => {
       expect(mockReadFile).not.toHaveBeenCalled();
     });
 
+    function FileSelectHarness() {
+      const handlers = useIDEHandlers(mockState);
+      return (
+        <div>
+          <button onClick={() => void handlers.handleFileSelect('/project/notes.md')}>Open</button>
+          {handlers.confirmDialog}
+        </div>
+      );
+    }
+
+    it('asks before opening a file when Plan is dirty', async () => {
+      mockPmDirty = true;
+      const user = userEvent.setup();
+      render(<FileSelectHarness />);
+
+      await user.click(screen.getByRole('button', { name: 'Open' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Discard changes?' })).toBeInTheDocument();
+      expect(mockState.openTab).not.toHaveBeenCalled();
+      expect(mockCloseWorkPlace).not.toHaveBeenCalled();
+    });
+
+    it('opens the file and discards Plan after the leave is confirmed', async () => {
+      mockPmDirty = true;
+      const user = userEvent.setup();
+      render(<FileSelectHarness />);
+
+      await user.click(screen.getByRole('button', { name: 'Open' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
+
+      await waitFor(() => expect(mockState.openTab).toHaveBeenCalled());
+      expect(mockDiscardPmChanges).toHaveBeenCalled();
+      expect(mockCloseWorkPlace).toHaveBeenCalled();
+    });
+
+    it('stays in Plan when the leave is declined', async () => {
+      mockPmDirty = true;
+      const user = userEvent.setup();
+      render(<FileSelectHarness />);
+
+      await user.click(screen.getByRole('button', { name: 'Open' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Discard changes?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Discard changes?' })).not.toBeInTheDocument()
+      );
+      expect(mockState.openTab).not.toHaveBeenCalled();
+      expect(mockDiscardPmChanges).not.toHaveBeenCalled();
+      expect(mockCloseWorkPlace).not.toHaveBeenCalled();
+    });
+
     it('loadTabContent reads a text file and shows it in the editor', async () => {
       mockActiveTabId = '/project/notes.md';
       mockReadFile.mockResolvedValue('# Notes');
@@ -2252,6 +2312,48 @@ describe('useIDEHandlers', () => {
     });
   });
 
+  describe('activity rail', () => {
+    it('closes Work when the project is closed', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      result.current.handleCloseProject();
+      expect(mockCloseWorkPlace).toHaveBeenCalled();
+    });
+
+    it('hides project-bound rail items when no project is open', () => {
+      mockState.rootPath = null;
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      expect(result.current.itemsWithBadge.map((i) => i.id)).toEqual([
+        'notifications',
+        'inbox',
+        'scratches',
+        'extensions',
+        'settings',
+      ]);
+    });
+
+    it('keeps the full rail when a project is open', () => {
+      mockState.rootPath = '/repos/alpha';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      expect(result.current.itemsWithBadge.map((i) => i.id)).toEqual([
+        'cockpit',
+        'explorer',
+        'source-control',
+        'work',
+        'notifications',
+        'inbox',
+        'outline',
+        'scratches',
+        'graph',
+        'qa',
+        'blueprints',
+        'extensions',
+        'settings',
+      ]);
+    });
+  });
+
   describe('inbox', () => {
     const makeInboxItem = (
       id: string,
@@ -2267,6 +2369,8 @@ describe('useIDEHandlers', () => {
       ticketId: projectPath ? 't1' : null,
       assignedAt: projectPath ? '2026-01-01 00:00:00' : null,
       dismissedAt: null,
+      priority: 'normal',
+      dueDate: null,
     });
 
     it('badges the inbox rail item with the unsorted count only', () => {

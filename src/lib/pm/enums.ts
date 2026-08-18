@@ -9,11 +9,29 @@
  * TypeScript types derive from them, and the MCP schemas validate against them.
  */
 
-// 'in_review' sits between in_progress and done: an implementer finished, but
-// an independent judge has not signed the work off yet. The conductor owns the
-// transition; a ticket in review is still work-in-flight, never satisfied.
-export const TICKET_STATUSES = ['open', 'in_progress', 'in_review', 'done', 'archived'] as const;
+// 'to_test' is ready for QA after implementation. 'in_review' is the
+// conductor handing work to the judge. 'discarded' is cancelled work: off the
+// default board exactly like archived, and no longer an obligation.
+export const TICKET_STATUSES = [
+  'open',
+  'in_progress',
+  'to_test',
+  'in_review',
+  'done',
+  'archived',
+  'discarded',
+] as const;
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+/** Off the default ticket board — only the archive view shows these. */
+export function isHiddenTicketStatus(status: string): boolean {
+  return status === 'archived' || status === 'discarded';
+}
+
+/** Finished or cancelled: no longer live work, no longer a blocker. */
+export function isClosedTicketStatus(status: string): boolean {
+  return status === 'done' || isHiddenTicketStatus(status);
+}
 
 export const PRIORITIES = ['low', 'normal', 'high', 'critical'] as const;
 export type Priority = (typeof PRIORITIES)[number];

@@ -2,6 +2,10 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
+vi.mock('@/lib/hooks/useProjectSkills', () => ({
+  useProjectSkills: () => ({ discovered: [], ready: true }),
+}));
+
 // Stands in for the real panel, but keeps the one wire this file tests: the
 // delete button the panel renders and the handler the modal hands it.
 vi.mock('./TicketEditPanel', () => ({

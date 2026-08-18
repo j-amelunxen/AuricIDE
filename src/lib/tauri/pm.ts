@@ -28,6 +28,13 @@ export interface PmTicket {
   priority: Priority;
   needsHumanSupervision?: boolean;
   goalId?: string | null;
+  /** Calendar day `YYYY-MM-DD`. Absent or null means nothing is due. */
+  dueDate?: string | null;
+  /**
+   * Skill invocations to write in front of the agent prompt when this ticket
+   * is launched (`/tdd`, `/frontend:component`). Empty means none.
+   */
+  skills?: string[];
   createdAt: string;
   updatedAt: string;
 }

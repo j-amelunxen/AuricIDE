@@ -1,3 +1,4 @@
+import { isClosedTicketStatus, isHiddenTicketStatus } from '../pm/enums';
 import type {
   PmGoal,
   PmGoalRequirementLink,
@@ -97,7 +98,7 @@ function isBlocked(
     if (dep.sourceType !== 'ticket' || dep.sourceId !== ticket.id) continue;
     if (dep.targetType !== 'ticket') continue;
     const target = ticketsById.get(dep.targetId);
-    if (target && target.status !== 'done' && target.status !== 'archived') {
+    if (target && !isClosedTicketStatus(target.status)) {
       return target;
     }
   }
@@ -137,7 +138,7 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
     ...getGoalDescendants(goals, goalId).map((g) => g.id),
   ]);
   const scopedTickets = tickets.filter(
-    (t) => !!t.goalId && subtreeIds.has(t.goalId) && t.status !== 'archived'
+    (t) => !!t.goalId && subtreeIds.has(t.goalId) && !isHiddenTicketStatus(t.status)
   );
   const scopedLinks = requirementLinks.filter((l) => subtreeIds.has(l.goalId));
   // Subtree stations count toward satisfaction; drawn on the line are the

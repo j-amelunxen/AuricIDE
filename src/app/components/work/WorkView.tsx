@@ -1,6 +1,9 @@
 'use client';
 
+import { useCallback } from 'react';
 import { useStore } from '@/lib/store';
+import { useConfirm } from '@/lib/hooks/useConfirm';
+import { DISCARD_UNSAVED_PM } from '@/lib/pm/unsavedLeave';
 import { WORK_TABS, type WorkTab } from '@/lib/work/tabs';
 import { GoalsPanel } from '@/app/components/goals/GoalsModal';
 import { TicketsPanel } from '@/app/components/pm/ProjectManagerModal';
@@ -13,6 +16,22 @@ const LINES_HINT = 'The same goals, seen over time.';
 export function WorkView() {
   const workTab = useStore((s) => s.workTab);
   const setWorkTab = useStore((s) => s.setWorkTab);
+  const pmDirty = useStore((s) => s.pmDirty);
+  const discardPmChanges = useStore((s) => s.discardPmChanges);
+  const { confirm, confirmDialog } = useConfirm();
+
+  const handleSelectTab = useCallback(
+    async (tab: WorkTab) => {
+      if (tab === workTab) return;
+      if (workTab === 'tickets' && pmDirty) {
+        const go = await confirm(DISCARD_UNSAVED_PM);
+        if (!go) return;
+        discardPmChanges();
+      }
+      setWorkTab(tab);
+    },
+    [workTab, pmDirty, confirm, discardPmChanges, setWorkTab]
+  );
 
   return (
     <div data-testid="work-view" className="flex h-full flex-col bg-background-dark">
@@ -32,7 +51,7 @@ export function WorkView() {
                 aria-selected={selected}
                 data-testid={`work-tab-${tab.id}`}
                 title={isLines ? LINES_HINT : undefined}
-                onClick={() => setWorkTab(tab.id)}
+                onClick={() => void handleSelectTab(tab.id)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   selected
                     ? 'bg-white/10 text-foreground'
@@ -47,6 +66,7 @@ export function WorkView() {
         })}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">{renderWorkPanel(workTab)}</div>
+      {confirmDialog}
     </div>
   );
 }

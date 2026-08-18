@@ -339,6 +339,7 @@ export function evaluateGoal(
     .prepare(`SELECT id, name, status FROM pm_tickets WHERE goal_id IN (${placeholders})`)
     .all(...subtree) as { id: string; name: string; status: string }[];
   for (const t of tickets) {
+    if (t.status === 'discarded') continue;
     if (t.status !== 'done') blockers.push(`Ticket ${t.id} "${t.name}" is ${t.status}`);
   }
 
@@ -394,7 +395,7 @@ export function evaluateGoal(
     satisfied: blockers.length === 0,
     blockers,
     progress: {
-      totalTickets: tickets.length,
+      totalTickets: tickets.filter((t) => t.status !== 'discarded').length,
       doneTickets: tickets.filter((t) => t.status === 'done').length,
     },
   };

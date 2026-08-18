@@ -3,7 +3,9 @@ import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { insertStatusHistory } from './history';
 import { resolveEpicId, resolveGoalId, resolveTicketId } from './resolve';
+import { isValidDueDate } from '@/lib/inbox/dueDate';
 import { assertOneOf, PRIORITIES, TICKET_STATUSES } from '@/lib/pm/enums';
+import { normalizeTicketSkills } from '@/lib/pm/ticketSkills';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,6 +25,9 @@ export interface Ticket {
   model_power: string | null;
   needs_human_supervision: number;
   goal_id: string | null;
+  due_date: string | null;
+  /** JSON array of skill invocations, e.g. `["/tdd","/review"]`. */
+  skills: string;
   created_at: string;
   updated_at: string;
 }
@@ -37,9 +42,13 @@ export interface CreateTicketParams {
   name: string;
   description?: string;
   priority?: string;
+  /** Calendar day `YYYY-MM-DD`. */
+  dueDate?: string | null;
   /** Goal this ticket serves; the ticket counts toward that goal's satisfaction. */
   goalId?: string;
   needsHumanSupervision?: boolean;
+  /** Skill invocations written in front of the agent prompt on launch. */
+  skills?: string[];
 }
 
 export interface UpdateTicketParams {
@@ -48,7 +57,19 @@ export interface UpdateTicketParams {
   name?: string;
   description?: string;
   priority?: string;
+  /** Calendar day `YYYY-MM-DD`. Pass null or '' to clear. */
+  dueDate?: string | null;
   needsHumanSupervision?: boolean;
+  /** Replace the attached skills. Pass [] to clear. */
+  skills?: string[];
+}
+
+function parseDueDate(value: string | null | undefined): string | null {
+  if (value === undefined || value === null || value.trim() === '') return null;
+  if (!isValidDueDate(value)) {
+    throw new Error(`Invalid due date: ${value}`);
+  }
+  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,10 +111,14 @@ export function createTicket(db: Database.Database, params: CreateTicketParams):
     .get(params.epicId) as { max_sort: number };
   const sortOrder = maxRow.max_sort + 1;
 
+  const dueDate = parseDueDate(params.dueDate);
+  const skills = JSON.stringify(normalizeTicketSkills(params.skills));
+
   db.prepare(
     `INSERT INTO pm_tickets
-     (id, epic_id, name, description, status, sort_order, priority, goal_id, needs_human_supervision)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (id, epic_id, name, description, status, sort_order, priority, goal_id,
+      needs_human_supervision, due_date, skills)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     params.epicId,
@@ -103,7 +128,9 @@ export function createTicket(db: Database.Database, params: CreateTicketParams):
     sortOrder,
     priority,
     params.goalId ?? null,
-    params.needsHumanSupervision ? 1 : 0
+    params.needsHumanSupervision ? 1 : 0,
+    dueDate,
+    skills
   );
 
   insertStatusHistory(db, id, null, 'open', 'mcp');
@@ -153,6 +180,16 @@ export function updateTicket(db: Database.Database, params: UpdateTicketParams):
     values.push(params.needsHumanSupervision ? 1 : 0);
   }
 
+  if (params.dueDate !== undefined) {
+    setClauses.push('due_date = ?');
+    values.push(parseDueDate(params.dueDate));
+  }
+
+  if (params.skills !== undefined) {
+    setClauses.push('skills = ?');
+    values.push(JSON.stringify(normalizeTicketSkills(params.skills)));
+  }
+
   if (setClauses.length > 0) {
     setClauses.push("updated_at = datetime('now')");
     const sql = `UPDATE pm_tickets SET ${setClauses.join(', ')} WHERE id = ?`;
@@ -188,7 +225,7 @@ export function getUnfinishedOverview(db: Database.Database): UnfinishedOverview
     .prepare(
       `SELECT id, epic_id, name, status
        FROM pm_tickets
-       WHERE status NOT IN ('done', 'archived')
+       WHERE status NOT IN ('done', 'archived', 'discarded')
        ORDER BY sort_order`
     )
     .all() as { id: string; epic_id: string; name: string; status: string }[];
@@ -283,6 +320,11 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
       name: z.string().describe('Ticket name'),
       description: z.string().optional().describe('Ticket description'),
       priority: z.enum(PRIORITIES).optional().describe('Ticket priority (default: normal)'),
+      dueDate: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Calendar day YYYY-MM-DD. Null or empty means nothing is due.'),
       goalId: z
         .string()
         .optional()
@@ -291,6 +333,10 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
         .boolean()
         .optional()
         .describe('Require a person to approve the ticket before conductor launch'),
+      skills: z
+        .array(z.string())
+        .optional()
+        .describe('Skill invocations to write in front of the agent prompt (e.g. /tdd)'),
     }),
     execute: async (params) => {
       const epicId = resolveEpicId(db, params.epicId);
@@ -309,10 +355,19 @@ export function registerTicketTools(server: FastMCP, db: Database.Database): voi
       name: z.string().optional().describe('New name'),
       description: z.string().optional().describe('New description'),
       priority: z.enum(PRIORITIES).optional().describe('New priority'),
+      dueDate: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Calendar day YYYY-MM-DD. Null or empty clears the date.'),
       needsHumanSupervision: z
         .boolean()
         .optional()
         .describe('Flag to require human supervision (skipped by automatic task fetching)'),
+      skills: z
+        .array(z.string())
+        .optional()
+        .describe('Replace attached skill invocations. Pass [] to clear.'),
     }),
     execute: async (params) => {
       const id = resolveTicketId(db, params.id);

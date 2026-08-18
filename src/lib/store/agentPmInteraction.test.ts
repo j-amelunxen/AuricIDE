@@ -64,6 +64,7 @@ describe('Agent and PM Interaction', () => {
     });
 
     expect(store.getState().agents[0].spawnedByTicketId).toBe('ticket-1');
+    expect(store.getState().agents[0].currentTask).toBe('task');
 
     // 3. Kill the agent
     await store.getState().killRunningAgent('mock-agent-1');
@@ -71,5 +72,34 @@ describe('Agent and PM Interaction', () => {
     // 4. Check if ticket status is 'done'
     const updatedTicket = store.getState().pmDraftTickets.find((t) => t.id === 'ticket-1');
     expect(updatedTicket?.status).toBe('done');
+  });
+
+  it('writes the ticket skills in front of the spawn task', async () => {
+    store.setState({
+      pmDraftTickets: [
+        {
+          id: 'ticket-1',
+          epicId: 'epic-1',
+          name: 'Test Ticket',
+          description: 'Desc',
+          status: 'open',
+          statusUpdatedAt: '',
+          priority: 'normal',
+          sortOrder: 0,
+          createdAt: '',
+          updatedAt: '',
+          skills: ['/tdd', '/review'],
+        },
+      ],
+    });
+
+    await store.getState().spawnNewAgent({
+      name: 'Agent',
+      model: 'model',
+      task: 'Implement the ticket',
+      spawnedByTicketId: 'ticket-1',
+    });
+
+    expect(store.getState().agents[0].currentTask).toBe('/tdd /review\n\nImplement the ticket');
   });
 });

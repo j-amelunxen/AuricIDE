@@ -1,18 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { PmEpic, PmTicket, PmDependency, PmContextItem } from '@/lib/tauri/pm';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { AuricIcon } from '../ui/AuricIcon';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { useLLM } from '@/lib/hooks/useLLM';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
+import { useConfirm } from '@/lib/hooks/useConfirm';
 import {
   generateDependencyProposalPrompt,
   parseDependencyResponse,
 } from '@/lib/pm/dependencyProposal';
+import { DISCARD_UNSAVED_PM, ticketCreateFormIsDirty } from '@/lib/pm/unsavedLeave';
 import { DependencyProposalModal } from './DependencyProposalModal';
 import { DependencySelector } from './DependencySelector';
+import { TicketSkillsField } from './TicketSkillsField';
+import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 
 interface TicketCreateModalProps {
@@ -44,6 +48,11 @@ const statusConfig: { value: PmTicket['status']; label: string; activeClass: str
     value: 'in_progress',
     label: 'In Progress',
     activeClass: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/25',
+  },
+  {
+    value: 'to_test',
+    label: 'To Test',
+    activeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/25',
   },
   {
     value: 'done',
@@ -85,23 +94,54 @@ function TicketCreateForm({
   const [status, setStatus] = useState<PmTicket['status']>('open');
   const [priority, setPriority] = useState<PmTicket['priority']>('normal');
   const [description, setDescription] = useState(initialValues?.description ?? '');
+  const [skills, setSkills] = useState<string[]>([]);
   const [context] = useState<PmContextItem[]>(initialValues?.context ?? []);
   const [localDependencies, setLocalDependencies] = useState<PmDependency[]>([]);
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const dialogRef = useDialogA11y<HTMLDivElement>();
 
   const { call: llmCall, abort: llmAbort, isLoading: isLlmLoading } = useLLM();
+  const { discovered } = useProjectSkills();
   const [proposalModalOpen, setProposalModalOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<{ id: string; name: string; reason: string }[]>(
     []
   );
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
+  const { confirm, confirmDialog } = useConfirm();
+
+  const handleRequestClose = useCallback(async () => {
+    const dirty = ticketCreateFormIsDirty({
+      name,
+      description,
+      status,
+      priority,
+      dependencyCount: localDependencies.length,
+      skillCount: skills.length,
+      initialName: initialValues?.name,
+      initialDescription: initialValues?.description,
+    });
+    if (dirty) {
+      const go = await confirm(DISCARD_UNSAVED_PM);
+      if (!go) return;
+    }
+    onClose();
+  }, [
+    name,
+    description,
+    status,
+    priority,
+    localDependencies.length,
+    skills.length,
+    initialValues,
+    confirm,
+    onClose,
+  ]);
 
   useOverlayLayer({
     id: 'ticket-create',
     kind: 'tool',
     active: true,
-    onEscape: proposalModalOpen ? undefined : onClose,
+    onEscape: proposalModalOpen ? undefined : () => void handleRequestClose(),
   });
 
   const getTicketData = () => ({
@@ -113,6 +153,7 @@ function TicketCreateForm({
     description,
     modelPower: undefined,
     context,
+    skills,
     needsHumanSupervision: false,
   });
 
@@ -173,7 +214,10 @@ function TicketCreateForm({
 
   return (
     <div className="fixed inset-0 z-[var(--z-tool-nested)] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={() => void handleRequestClose()}
+      />
       <div
         ref={dialogRef}
         role="dialog"
@@ -188,7 +232,7 @@ function TicketCreateForm({
           </h3>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void handleRequestClose()}
             aria-label="Close dialog"
             className="rounded-lg p-1 text-foreground-muted hover:bg-white/10 hover:text-foreground transition-colors"
           >
@@ -343,6 +387,8 @@ function TicketCreateForm({
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-muted/40 focus:border-primary/50 focus:outline-none resize-none transition-colors"
                 />
               </div>
+
+              <TicketSkillsField skills={skills} discovered={discovered} onChange={setSkills} />
             </>
           ) : (
             <div className="flex flex-col gap-4">
@@ -373,7 +419,7 @@ function TicketCreateForm({
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-white/10 shrink-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void handleRequestClose()}
             className="rounded-lg px-4 py-2 text-xs font-medium text-foreground-muted hover:bg-white/5 transition-colors"
           >
             Cancel
@@ -405,6 +451,7 @@ function TicketCreateForm({
         }
         isLoading={isLlmLoading}
       />
+      {confirmDialog}
     </div>
   );
 }

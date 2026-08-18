@@ -115,6 +115,7 @@ function preflightLabel(preflight: ConductorPreflight, selectedGoalName: string 
   if (preflight.blocked > 0) held.push(`${preflight.blocked} blocked`);
   if (preflight.needsApproval > 0) held.push(`${preflight.needsApproval} need approval`);
   if (preflight.inProgress > 0) held.push(`${preflight.inProgress} in progress`);
+  if (preflight.toTest > 0) held.push(`${preflight.toTest} to test`);
   if (preflight.inReview > 0) held.push(`${preflight.inReview} in review`);
   if (preflight.exhausted > 0) held.push(`${preflight.exhausted} out of attempts`);
 

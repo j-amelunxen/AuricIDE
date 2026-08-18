@@ -180,4 +180,18 @@ describe('SkillInvocationInput', () => {
     fireEvent.change(input, { target: { value: '/' } });
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
+
+  it('opens the catalogue on focus when the field is only for picking skills', () => {
+    const { input } = setup({ suggestWhenEmpty: true });
+    fireEvent.focus(input);
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(3);
+  });
+
+  it('hands typed text to onEnterWithoutPick when nothing is highlighted', () => {
+    const onEnterWithoutPick = vi.fn();
+    const { input } = setup({ onEnterWithoutPick });
+    fireEvent.change(input, { target: { value: '/custom' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onEnterWithoutPick).toHaveBeenCalledWith('/custom');
+  });
 });

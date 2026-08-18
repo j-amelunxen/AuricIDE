@@ -104,7 +104,15 @@ describe('ticket state validation', () => {
 
   it('accepts every status the app can reason about', () => {
     const ticket = createTicket(db, { epicId: 'e1', name: 'Do the thing' });
-    for (const status of ['open', 'in_progress', 'done', 'archived']) {
+    for (const status of [
+      'open',
+      'in_progress',
+      'to_test',
+      'in_review',
+      'done',
+      'archived',
+      'discarded',
+    ]) {
       expect(() => updateTicket(db, { id: ticket.id, status })).not.toThrow();
     }
   });

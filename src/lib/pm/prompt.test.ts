@@ -93,4 +93,15 @@ describe('generateTicketPrompt', () => {
 
     expect(prompt).not.toContain('Dependencies');
   });
+
+  it('writes attached skills in front of the prompt', async () => {
+    const prompt = await generateTicketPrompt(
+      { ...mockTicket, skills: ['/tdd', '/review'] },
+      [],
+      [],
+      []
+    );
+    expect(prompt.startsWith('/tdd /review\n\n')).toBe(true);
+    expect(prompt).toContain('Implementation of ticket: Test Ticket');
+  });
 });

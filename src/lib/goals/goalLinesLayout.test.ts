@@ -273,6 +273,14 @@ describe('station ordering and states', () => {
     const line = buildGoalLine(makeInput({ goals: [goal], tickets: [archived, open] }), goal.id)!;
     expect(line.stations.some((s) => s.ticketId === archived.id)).toBe(false);
   });
+
+  it('excludes discarded tickets entirely', () => {
+    const goal = makeGoal();
+    const discarded = makeTicket({ goalId: goal.id, status: 'discarded' });
+    const open = makeTicket({ goalId: goal.id, status: 'open' });
+    const line = buildGoalLine(makeInput({ goals: [goal], tickets: [discarded, open] }), goal.id)!;
+    expect(line.stations.some((s) => s.ticketId === discarded.id)).toBe(false);
+  });
 });
 
 describe('evidence classes', () => {
