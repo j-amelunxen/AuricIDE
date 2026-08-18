@@ -76,6 +76,7 @@ function renderTray(overrides: Partial<NotificationTrayProps> = {}) {
     onOpen: vi.fn(),
     onAction: vi.fn(),
     onOpenCenter: vi.fn(),
+    onDismiss: vi.fn(),
     ...overrides,
   };
   return { ...render(<NotificationTray {...props} />), props };
@@ -276,6 +277,19 @@ describe('NotificationTray — clicks go back out', () => {
 
     await user.click(screen.getByTestId(`notification-action-${notification.uid}-run`));
     expect(props.onAction).toHaveBeenCalledWith(notification, action);
+  });
+
+  // The whole point: dismissing right from the tray, no trip to the Command
+  // Center required.
+  it('delegates dismissing a row without opening it', async () => {
+    const user = userEvent.setup();
+    const notification = makeNotification({ title: 'Conductor run finished' });
+    const { props } = renderTray({ latest: [notification] });
+
+    await user.click(screen.getByTestId(`notification-dismiss-${notification.uid}`));
+
+    expect(props.onDismiss).toHaveBeenCalledWith(notification.uid);
+    expect(props.onOpen).not.toHaveBeenCalled();
   });
 });
 

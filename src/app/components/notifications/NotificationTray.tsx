@@ -31,6 +31,8 @@ export interface NotificationTrayProps {
   onOpen: (uid: string) => void;
   onAction: (notification: Notification, action: NotificationAction) => void;
   onOpenCenter: () => void;
+  /** Confirms and removes this one row, right where it is shown. */
+  onDismiss: (uid: string) => void;
 }
 
 /**
@@ -61,6 +63,7 @@ export function NotificationTray({
   onOpen,
   onAction,
   onOpenCenter,
+  onDismiss,
 }: NotificationTrayProps) {
   const rows = [...pinned, ...latest];
   const arrived = useArrivals(rows.map((notification) => notification.uid));
@@ -77,6 +80,7 @@ export function NotificationTray({
         starredProjects={starredProjects}
         onOpen={onOpen}
         onAction={onAction}
+        onDismiss={onDismiss}
       />
     </div>
   );

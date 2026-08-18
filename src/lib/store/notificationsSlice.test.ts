@@ -294,6 +294,64 @@ describe('notificationsSlice', () => {
       expect(mockClear).toHaveBeenCalled();
     });
   });
+
+  describe('dismissNotification', () => {
+    it('removes the row and persists the deletion', async () => {
+      const row = makeNotification();
+      store.setState({ notifications: [row], notificationsUnreadCount: 1 });
+
+      await store.getState().dismissNotification(row.uid);
+
+      expect(store.getState().notifications).toHaveLength(0);
+      expect(store.getState().notificationsUnreadCount).toBe(0);
+      expect(mockDelete).toHaveBeenCalledWith([row.uid]);
+    });
+
+    it('drops the unread count when the dismissed row was unread', async () => {
+      const row = makeNotification({ readAt: null });
+      const other = makeNotification({ readAt: null });
+      store.setState({ notifications: [row, other], notificationsUnreadCount: 2 });
+
+      await store.getState().dismissNotification(row.uid);
+
+      expect(store.getState().notificationsUnreadCount).toBe(1);
+    });
+
+    // Dismissing is not an answer — a waiting agent must not have its question
+    // vanish from under it. Same guard as clearNotifications.
+    it('refuses to dismiss an unanswered question', async () => {
+      const row = makeNotification({ kind: 'ask' });
+      store.setState({ notifications: [row] });
+
+      await store.getState().dismissNotification(row.uid);
+
+      expect(store.getState().notifications).toHaveLength(1);
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+
+    it('does dismiss a settled question', async () => {
+      const row = makeNotification({
+        kind: 'ask',
+        answeredAt: '2026-08-12 09:00:00',
+        answer: 'yes',
+      });
+      store.setState({ notifications: [row] });
+
+      await store.getState().dismissNotification(row.uid);
+
+      expect(store.getState().notifications).toHaveLength(0);
+    });
+
+    it('stays removed locally when persisting fails', async () => {
+      mockDelete.mockRejectedValueOnce(new Error('nope'));
+      const row = makeNotification();
+      store.setState({ notifications: [row], notificationsUnreadCount: 1 });
+
+      await store.getState().dismissNotification(row.uid);
+
+      expect(store.getState().notifications).toHaveLength(0);
+    });
+  });
 });
 
 describe('mergeNotifications', () => {

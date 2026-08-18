@@ -37,6 +37,7 @@ export interface ProjectDetailProps {
   /** Already scoped by the caller to this pane's project. */
   onMarkAllRead: () => void;
   onClear: () => void;
+  onDismiss: (uid: string) => void;
 }
 
 /**
@@ -82,6 +83,7 @@ export function ProjectDetail({
   onDeleteSchedule,
   onMarkAllRead,
   onClear,
+  onDismiss,
 }: ProjectDetailProps) {
   const rows = group === null ? notifications : group.notifications;
   const unread = group === null ? totals.unread : group.unread;
@@ -193,6 +195,7 @@ export function ProjectDetail({
             onAction={onAction}
             onMarkAllRead={onMarkAllRead}
             onClear={onClear}
+            onDismiss={onDismiss}
           />
         </div>
       </div>

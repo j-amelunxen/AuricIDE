@@ -56,6 +56,7 @@ vi.mock('@/lib/tauri/notifications', () => ({
   notificationsMarkAllRead: vi.fn(async () => undefined),
   notificationsAnswer: vi.fn(async () => undefined),
   notificationsClear: vi.fn(async () => undefined),
+  notificationsDelete: vi.fn(async () => undefined),
 }));
 
 const ALPHA = '/repo/alpha';
@@ -367,6 +368,24 @@ describe('CommandCenter', () => {
       await user.click(screen.getByTestId('notifications-clear'));
 
       expect(clearNotifications).toHaveBeenCalledWith(undefined);
+    });
+
+    // The per-row dismiss button — confirm and remove one notification,
+    // without a bulk Clear that also has to walk past every other row.
+    it('dismisses a single row from the pane', async () => {
+      const user = userEvent.setup();
+      const row = makeNotification();
+      const dismissNotification = vi.fn(async () => undefined);
+      useStore.setState({
+        notifications: [row],
+        starredProjects: STARRED,
+        dismissNotification,
+      } as never);
+
+      renderCenter();
+      await user.click(screen.getByTestId(`notification-dismiss-${row.uid}`));
+
+      expect(dismissNotification).toHaveBeenCalledWith(row.uid);
     });
   });
 

@@ -93,6 +93,7 @@ function renderDetail(overrides: Partial<ProjectDetailProps> = {}) {
     onDeleteSchedule: vi.fn(),
     onMarkAllRead: vi.fn(),
     onClear: vi.fn(),
+    onDismiss: vi.fn(),
     ...overrides,
   };
   render(<ProjectDetail {...props} />);

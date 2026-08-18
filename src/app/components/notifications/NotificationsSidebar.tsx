@@ -37,6 +37,7 @@ export function NotificationsSidebar({ onRunCommand, onOpenProject }: Notificati
   const schedules = useStore((s) => s.schedules);
   const loadSchedules = useStore((s) => s.loadSchedules);
   const openCommandCenter = useStore((s) => s.openCommandCenter);
+  const dismissNotification = useStore((s) => s.dismissNotification);
 
   // The schedules are app-global, and the tray states the next one out loud —
   // so they load with the panel rather than with a project. Without this the
@@ -74,6 +75,7 @@ export function NotificationsSidebar({ onRunCommand, onOpenProject }: Notificati
         onOpen={handleOpen}
         onAction={(notification, action) => void handleAction(notification, action)}
         onOpenCenter={() => openCommandCenter()}
+        onDismiss={(uid) => void dismissNotification(uid)}
       />
       {confirmDialog}
     </div>

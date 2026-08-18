@@ -159,6 +159,7 @@ function Harness({
           starredProjects={[]}
           onOpen={handleOpen}
           onAction={(n, a) => void handleAction(n, a)}
+          onDismiss={() => {}}
         />
       ))}
       {confirmDialog}

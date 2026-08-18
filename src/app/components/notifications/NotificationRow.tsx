@@ -20,6 +20,8 @@ export interface NotificationRowProps {
   starredProjects: StarredProject[];
   onOpen: (uid: string) => void;
   onAction: (notification: Notification, action: NotificationAction) => void;
+  /** Confirms and removes this one row, without opening the Command Center. */
+  onDismiss: (uid: string) => void;
 }
 
 /**
@@ -40,6 +42,7 @@ export function NotificationRow({
   starredProjects,
   onOpen,
   onAction,
+  onDismiss,
 }: NotificationRowProps) {
   const tone = severityTone(notification.severity);
   const unread = notification.readAt === null;
@@ -48,12 +51,15 @@ export function NotificationRow({
     ? (actions.find((p) => p.action.id === notification.answer)?.action.label ??
       notification.answer)
     : null;
+  // An open question needs an answer, not a quiet removal — the same guard
+  // `clearNotifications`/`dismissNotification` enforce on the store side.
+  const openQuestion = notification.kind === 'ask' && notification.answeredAt === null;
 
   return (
     <div
       data-testid={`notification-row-${notification.uid}`}
       data-unread={unread}
-      className={`relative overflow-hidden rounded-xl border border-white/5 pl-3 transition-colors ${
+      className={`group relative overflow-hidden rounded-xl border border-white/5 pl-3 transition-colors ${
         unread ? 'bg-white/[0.06]' : 'bg-white/[0.02]'
       }`}
     >
@@ -61,7 +67,7 @@ export function NotificationRow({
 
       <button
         onClick={() => onOpen(notification.uid)}
-        className="flex w-full items-start gap-2 p-2.5 text-left"
+        className="flex w-full items-start gap-2 p-2.5 pr-8 text-left"
       >
         <AuricIcon name={tone.icon} className={`mt-[1px] flex-shrink-0 text-sm ${tone.color}`} />
 
@@ -110,6 +116,21 @@ export function NotificationRow({
           </span>
         </span>
       </button>
+
+      {!openQuestion && (
+        <button
+          data-testid={`notification-dismiss-${notification.uid}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDismiss(notification.uid);
+          }}
+          aria-label="Confirm and remove"
+          title="Confirm and remove"
+          className="press-feedback absolute right-1.5 top-1.5 z-10 rounded-lg p-1 text-foreground-muted/50 opacity-0 transition-opacity hover:bg-white/10 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <AuricIcon name="close" className="text-xs" />
+        </button>
+      )}
 
       {/* A settled question shows what was chosen instead of the buttons: it
           must not be answerable twice, and the record of the decision is the
