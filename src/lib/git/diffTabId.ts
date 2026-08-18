@@ -1,17 +1,17 @@
 import type { DiffSource } from './diffTab';
 
-export function diffTabId(source: DiffSource, filePath: string): string {
+export function diffTabId(source: DiffSource, filePath: string, repoPath: string): string {
   switch (source.kind) {
     case 'unstaged':
-      return `diff:unstaged:${filePath}`;
+      return `diff:unstaged:${repoPath}:${filePath}`;
     case 'staged':
-      return `diff:staged:${filePath}`;
+      return `diff:staged:${repoPath}:${filePath}`;
     case 'combined':
-      return `diff:combined:${filePath}`;
+      return `diff:combined:${repoPath}:${filePath}`;
     case 'revision':
-      return `diff:rev:${source.oid}:${filePath}`;
+      return `diff:rev:${source.oid}:${repoPath}:${filePath}`;
     case 'ref':
-      return `diff:ref:${encodeURIComponent(source.ref)}:${filePath}`;
+      return `diff:ref:${encodeURIComponent(source.ref)}:${repoPath}:${filePath}`;
   }
 }
 

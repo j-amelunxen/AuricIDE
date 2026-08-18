@@ -14,7 +14,7 @@ import { type WorkflowNode, serializeWorkflow } from '@/lib/canvas/markdownParse
 import { serializeObsidianCanvas } from '@/lib/obsidian-canvas/canvasParser';
 import type { ObsidianNode, ObsidianEdge, ObsidianColor } from '@/lib/obsidian-canvas/types';
 import type { PmTicket, PmDependency } from '@/lib/tauri/pm';
-import type { GitFileStatus } from '@/lib/tauri/git';
+import type { GitFileStatus, GitRepoRef } from '@/lib/tauri/git';
 import {
   exists,
   readFile,
@@ -31,7 +31,9 @@ import {
 import { nextScratchName } from '@/lib/scratch/naming';
 import { imageDataUri, localFileSrc, previewKind } from '@/lib/media/preview';
 import { appendGitignoreEntry, toGitignoreEntry } from '@/lib/git/gitignore';
-import { resolveGitStatus } from '@/lib/git/resolveGitStatus';
+import { resolveGitStatusForPath } from '@/lib/git/resolveGitStatus';
+import { relativeToRepo } from '@/lib/git/repos';
+import { selectChangedFileCount, selectRepoForPath, type GitRepoState } from '@/lib/store/gitSlice';
 import { newItemParentDir } from '@/lib/explorer/newItemTarget';
 import {
   joinProjectPath,
@@ -80,9 +82,33 @@ export const CONTEXT_BOUND_COMMANDS: Record<string, string> = {
   'markdown.extract-section': 'Put the cursor in the section you want to extract, in the editor.',
 };
 
-function relativeToRoot(path: string, rootPath: string): string {
-  const root = rootPath.endsWith('/') ? rootPath : rootPath + '/';
-  return path.replace(root, '');
+/** repoPath -> that repo's fileStatuses, built once per refresh rather than once per tree node. */
+function statusesByRepo(repoStates: Record<string, GitRepoState>): Record<string, GitFileStatus[]> {
+  const result: Record<string, GitFileStatus[]> = {};
+  for (const path in repoStates) result[path] = repoStates[path].fileStatuses;
+  return result;
+}
+
+/**
+ * The repo a project-wide git command (a keyboard shortcut, not a click
+ * inside a repo's own section) should act on. The active tab wins when it
+ * names a real file inside a known repo — `activeRepoPath` moves as a side
+ * effect of following a file's history (see `editorHistoryPath`), so a
+ * shortcut that trusted it alone could silently act on a repo the user never
+ * chose. Falls back to `activeRepoPath`, then to the only repo when there is
+ * nothing left to choose between.
+ */
+function repoForGlobalGitAction(store: {
+  activeTabId: string | null;
+  repos: GitRepoRef[];
+  activeRepoPath: string | null;
+}): string | null {
+  if (store.activeTabId && !isDiffTabId(store.activeTabId)) {
+    const repo = selectRepoForPath(store, store.activeTabId);
+    if (repo) return repo.path;
+  }
+  if (store.activeRepoPath) return store.activeRepoPath;
+  return store.repos.length === 1 ? store.repos[0].path : null;
 }
 
 function contextBoundAction(id: string): () => void {
@@ -127,17 +153,16 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
    * — once per event, however many directories that event touched.
    */
   const refreshProjectIndexes = useCallback(
-    async (rootPath: string): Promise<GitFileStatus[]> => {
-      const [statuses, allFiles] = await Promise.all([
-        useStore
-          .getState()
-          .refreshGitStatus(rootPath)
-          .then(() => useStore.getState().fileStatuses)
-          .catch(() => []),
+    async (rootPath: string, isRootRefresh: boolean): Promise<void> => {
+      const store = useStore.getState();
+      const gitRefresh = isRootRefresh
+        ? store.discoverAndRefreshGit(rootPath)
+        : store.refreshGitStatus();
+      const [, allFiles] = await Promise.all([
+        gitRefresh.catch(() => undefined),
         listAllFiles(rootPath).catch(() => null),
       ]);
       if (allFiles) state.setAllFiles(allFiles);
-      return statuses;
     },
     [state]
   );
@@ -150,10 +175,12 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       if (!dir || isRoot || dir === state.rootPath) {
         // Building the root tree — the entries and the project-wide indexes are
         // independent reads, so they run side by side.
-        const [entries, statuses] = await Promise.all([
+        const [entries] = await Promise.all([
           readDirectory(path),
-          refreshProjectIndexes(path),
+          refreshProjectIndexes(path, true),
         ]);
+        const { repos, repoStates } = useStore.getState();
+        const statuses = statusesByRepo(repoStates);
         const currentTree = useStore.getState().fileTree ?? [];
         const existingByPath = new Map<string, FileNode>(currentTree.map((n) => [n.path, n]));
         const tree: FileNode[] = entries.map((e) => {
@@ -164,7 +191,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             isDirectory: e.isDirectory,
             expanded: existing?.expanded ?? false,
             children: existing?.children ?? (e.isDirectory ? [] : undefined),
-            gitStatus: resolveGitStatus(relativeToRoot(e.path, path), statuses),
+            gitStatus: resolveGitStatusForPath(e.path, repos, statuses),
             createdAt: e.createdAt,
             newestFileCreatedAt: e.newestFileCreatedAt,
             modifiedAt: e.modifiedAt,
@@ -177,12 +204,12 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         // Lazy-loaded children need the same git-status treatment as the root
         // tree gets, or a freshly expanded folder shows every file as
         // untouched — including ones `.gitignore` already dims at the root.
-        const rootPath = state.rootPath;
-        const statuses = useStore.getState().fileStatuses;
         // Carried over exactly like the root branch does: this runs on a
         // watcher-driven refresh too, not only on first expand, and a refresh
         // that reset `expanded`/`children` would collapse the subtree the user
         // is working in every time a file changed.
+        const { repos, repoStates } = useStore.getState();
+        const statuses = statusesByRepo(repoStates);
         const existing = findNodeByPath(useStore.getState().fileTree ?? [], path)?.children ?? [];
         const existingByPath = new Map<string, FileNode>(existing.map((n) => [n.path, n]));
         const children: FileNode[] = entries.map((e) => {
@@ -193,9 +220,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
             isDirectory: e.isDirectory,
             expanded: prev?.expanded ?? false,
             children: prev?.children ?? (e.isDirectory ? [] : undefined),
-            gitStatus: rootPath
-              ? resolveGitStatus(relativeToRoot(e.path, rootPath), statuses)
-              : undefined,
+            gitStatus: resolveGitStatusForPath(e.path, repos, statuses),
             createdAt: e.createdAt,
             newestFileCreatedAt: e.newestFileCreatedAt,
             modifiedAt: e.modifiedAt,
@@ -232,7 +257,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         return;
       }
 
-      await refreshProjectIndexes(rootPath);
+      await refreshProjectIndexes(rootPath, false);
 
       const loaded = collectLoadedDirs(useStore.getState().fileTree ?? []);
       const targets = changedDirs.filter((dir) => loaded.has(dir));
@@ -399,17 +424,15 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       // Lazy-loaded children need the same git-status treatment as the root
       // tree gets, or a freshly expanded folder shows every file as
       // untouched — including ones `.gitignore` already dims at the root.
-      const rootPath = state.rootPath;
-      const statuses = useStore.getState().fileStatuses;
+      const { repos, repoStates } = useStore.getState();
+      const statuses = statusesByRepo(repoStates);
       const children: FileNode[] = entries.map((e) => ({
         name: e.name,
         path: e.path,
         isDirectory: e.isDirectory,
         expanded: false,
         children: e.isDirectory ? [] : undefined,
-        gitStatus: rootPath
-          ? resolveGitStatus(relativeToRoot(e.path, rootPath), statuses)
-          : undefined,
+        gitStatus: resolveGitStatusForPath(e.path, repos, statuses),
         createdAt: e.createdAt,
         newestFileCreatedAt: e.newestFileCreatedAt,
         modifiedAt: e.modifiedAt,
@@ -1010,68 +1033,69 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     store.openWorkPlace('tickets');
   }, []);
 
-  const handleCommit = useCallback(async () => {
-    if (!state.rootPath) return;
+  const handleCommit = useCallback(
+    async (repoPath: string) => {
+      if (state.agentSettings.agenticCommit) {
+        const providerId = state.agentSettings.commitProviderId || state.defaultProvider.id;
+        const provider =
+          state.providers.find((p) => p.id === providerId) ??
+          state.providers[0] ??
+          state.defaultProvider;
+        const branchName = state.repoStates[repoPath]?.branchInfo?.name ?? '';
+        const ticketPrefix =
+          extractTicket(branchName, state.agentSettings.branchTicketPattern) ?? '';
+        const task = state.agentSettings.agenticCommitPrompt.replaceAll('{ticket}', ticketPrefix);
 
-    if (state.agentSettings.agenticCommit) {
-      const providerId = state.agentSettings.commitProviderId || state.defaultProvider.id;
-      const provider =
-        state.providers.find((p) => p.id === providerId) ??
-        state.providers[0] ??
-        state.defaultProvider;
-      const ticketPrefix =
-        extractTicket(state.branchInfo?.name ?? '', state.agentSettings.branchTicketPattern) ?? '';
-      const task = state.agentSettings.agenticCommitPrompt.replaceAll('{ticket}', ticketPrefix);
+        await state.spawnNewAgent({
+          name: `commit:${repoPath.split('/').pop() ?? 'repo'}`,
+          model: provider.defaultModel,
+          provider: provider.id,
+          task,
+          cwd: repoPath,
+        });
+        state.setCommitMessage(repoPath, '');
+        return;
+      }
 
-      await state.spawnNewAgent({
-        name: `commit:${state.rootPath.split('/').pop() ?? 'repo'}`,
-        model: provider.defaultModel,
-        provider: provider.id,
-        task,
-        cwd: state.rootPath,
-      });
-      state.setCommitMessage('');
-      return;
-    }
+      await state.commit(repoPath);
+      handleRefresh();
+    },
+    [state, handleRefresh]
+  );
 
-    await state.commitChanges(state.rootPath);
-    state.setCommitMessage('');
-    handleRefresh();
-  }, [state, handleRefresh]);
-
-  const handlePush = useCallback(async () => {
-    if (!state.rootPath) return;
-    const { showToast } = useStore.getState();
-    try {
-      await state.pushBranch(state.rootPath);
-      showToast('Pushed to origin', 'success');
-    } catch (e) {
-      // The error names the fix (no remote, no credentials) — surface it
-      // instead of leaving a button that silently did nothing.
-      showToast(String(e), 'error');
-    }
-  }, [state]);
+  const handlePush = useCallback(
+    async (repoPath: string) => {
+      const { showToast } = useStore.getState();
+      try {
+        await state.push(repoPath);
+        showToast('Pushed to origin', 'success');
+      } catch (e) {
+        // The error names the fix (no remote, no credentials) — surface it
+        // instead of leaving a button that silently did nothing.
+        showToast(String(e), 'error');
+      }
+    },
+    [state]
+  );
 
   const handleDiscardFile = useCallback(
-    async (filePath: string) => {
-      if (!state.rootPath) return;
+    async (repoPath: string, filePath: string) => {
       const { discardChanges } = await import('@/lib/tauri/git');
-      await discardChanges(state.rootPath, filePath);
+      await discardChanges(repoPath, filePath);
       handleRefresh();
-      const fullPath = `${state.rootPath}/${filePath}`;
+      const fullPath = `${repoPath}/${filePath}`;
       if (state.activeTabId === fullPath) state.closeTab(fullPath);
     },
     [state, handleRefresh]
   );
 
   const handleDiffFileClick = useCallback(
-    async (path: string, side: 'staged' | 'unstaged' = 'unstaged') => {
-      if (!state.rootPath) return;
+    async (repoPath: string, path: string, side: 'staged' | 'unstaged' = 'unstaged') => {
       const { getGitDiff } = await import('@/lib/tauri/git');
-      const patch = await getGitDiff(state.rootPath, path, side);
+      const patch = await getGitDiff(repoPath, path, side);
       const source = { kind: side };
-      const id = diffTabId(source, path);
-      state.setDiffTab(id, { patch, filePath: path, source });
+      const id = diffTabId(source, path, repoPath);
+      state.setDiffTab(id, { patch, filePath: path, source, repoPath });
       state.openTab({
         id,
         path,
@@ -1081,51 +1105,89 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state]
   );
 
+  /**
+   * The path history is currently showing, in the repo it belongs to.
+   * Following the active tab also makes that tab's repo the History/Compare
+   * target (`activeRepoPath`), so a later history-only action — clicking a
+   * commit, switching the Compare ref — can rely on it without re-deriving
+   * the repo from a file it may no longer have.
+   */
   const editorHistoryPath = useCallback((): string | null => {
     const store = useStore.getState();
-    if (store.historyPath) return store.historyPath;
-    const root = state.rootPath ?? store.rootPath;
     const tabId = store.activeTabId;
-    if (!root || !tabId || isDiffTabId(tabId)) return null;
-    return relativeToRoot(tabId, root);
-  }, [state]);
+    if (tabId && !isDiffTabId(tabId)) {
+      const repo = selectRepoForPath(store, tabId);
+      if (repo) {
+        if (store.activeRepoPath !== repo.path) store.setActiveRepoPath(repo.path);
+        return relativeToRepo(tabId, repo.path);
+      }
+    }
+    return store.historyPath;
+  }, []);
 
   const showFileHistory = useCallback(() => {
     const store = useStore.getState();
     store.setScmView('history');
-    const root = state.rootPath ?? store.rootPath;
     const path = editorHistoryPath();
-    if (root && path) void store.loadFileHistory(root, path);
-  }, [state, editorHistoryPath]);
+    const repoPath = useStore.getState().activeRepoPath;
+    if (repoPath && path) void store.loadFileHistory(repoPath, path);
+  }, [editorHistoryPath]);
 
   const handleScmViewChange = useCallback(
     (view: 'changes' | 'history' | 'compare') => {
       const store = useStore.getState();
       store.setScmView(view);
-      const root = state.rootPath ?? store.rootPath;
       if (view === 'history') {
         const path = editorHistoryPath();
-        if (root && path) void store.loadFileHistory(root, path);
+        const repoPath = useStore.getState().activeRepoPath;
+        if (repoPath && path) void store.loadFileHistory(repoPath, path);
       }
-      if (view === 'compare' && root) {
-        void store.loadBranches(root);
+      if (view === 'compare' && store.activeRepoPath) {
+        void store.loadBranches(store.activeRepoPath);
       }
     },
-    [state, editorHistoryPath]
+    [editorHistoryPath]
   );
+
+  /**
+   * The repo picker in History/Compare. Deliberately does not go through
+   * `editorHistoryPath` — that function re-points `activeRepoPath` at the
+   * active tab's repo, which would undo the very pick this handler just made.
+   * History has nothing to reload for a repo switch on its own — a file's
+   * history is a property of the file, not of a repo selection — unless the
+   * active tab already happens to live in the newly picked repo, in which
+   * case there's a natural next file to show rather than an empty list.
+   * Compare reloads the branch list for whichever repo is now active.
+   */
+  const handleActiveRepoChange = useCallback((repoPath: string) => {
+    const store = useStore.getState();
+    store.setActiveRepoPath(repoPath);
+    if (store.scmView === 'compare') {
+      void store.loadBranches(repoPath);
+    }
+    if (store.scmView === 'history') {
+      const tabId = store.activeTabId;
+      if (tabId && !isDiffTabId(tabId)) {
+        const repo = selectRepoForPath(store, tabId);
+        if (repo && repo.path === repoPath) {
+          void store.loadFileHistory(repoPath, relativeToRepo(tabId, repoPath));
+        }
+      }
+    }
+  }, []);
 
   const handleHistoryCommitClick = useCallback(
     async (oid: string) => {
       const store = useStore.getState();
-      const root = state.rootPath ?? store.rootPath;
+      const repoPath = store.activeRepoPath;
       const path = store.historyPath;
-      if (!root || !path) return;
+      if (!repoPath || !path) return;
       const { getGitDiffCommit } = await import('@/lib/tauri/git');
-      const patch = await getGitDiffCommit(root, oid, path);
+      const patch = await getGitDiffCommit(repoPath, oid, path);
       const summary = store.historyCommits.find((c) => c.oid === oid)?.summary ?? '';
       const source = { kind: 'revision' as const, oid, summary };
-      const id = diffTabId(source, path);
-      state.setDiffTab(id, { patch, filePath: path, source });
+      const id = diffTabId(source, path, repoPath);
+      state.setDiffTab(id, { patch, filePath: path, source, repoPath });
       state.openTab({
         id,
         path,
@@ -1136,27 +1198,24 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state]
   );
 
-  const handleCompareRefChange = useCallback(
-    (ref: string) => {
-      const store = useStore.getState();
-      const root = state.rootPath ?? store.rootPath;
-      if (!root) return;
-      void store.loadCompare(root, ref);
-    },
-    [state]
-  );
+  const handleCompareRefChange = useCallback((ref: string) => {
+    const store = useStore.getState();
+    const repoPath = store.activeRepoPath;
+    if (!repoPath) return;
+    void store.loadCompare(repoPath, ref);
+  }, []);
 
   const handleCompareFileClick = useCallback(
     async (path: string) => {
       const store = useStore.getState();
-      const root = state.rootPath ?? store.rootPath;
+      const repoPath = store.activeRepoPath;
       const ref = store.compareRef;
-      if (!root || !ref) return;
+      if (!repoPath || !ref) return;
       const { getGitDiffFileRef } = await import('@/lib/tauri/git');
-      const patch = await getGitDiffFileRef(root, ref, path);
+      const patch = await getGitDiffFileRef(repoPath, ref, path);
       const source = { kind: 'ref' as const, ref };
-      const id = diffTabId(source, path);
-      state.setDiffTab(id, { patch, filePath: path, source });
+      const id = diffTabId(source, path, repoPath);
+      state.setDiffTab(id, { patch, filePath: path, source, repoPath });
       state.openTab({
         id,
         path,
@@ -1593,16 +1652,19 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       'file.new-scratch': () => void handleNewScratch(),
       'file.import-spec': () => state.setImportSpecDialogOpen(true),
       'file.import-video': () => state.setVideoImportDialogOpen(true),
-      'git.commit': handleCommit,
+      'git.commit': () => {
+        const repoPath = repoForGlobalGitAction(useStore.getState());
+        if (repoPath) void handleCommit(repoPath);
+      },
       'git.stage-all': () => {
         const store = useStore.getState();
-        if (!store.rootPath) return;
-        void store.stageAll(store.rootPath);
+        const repoPath = repoForGlobalGitAction(store);
+        if (repoPath) void store.stageAll(repoPath);
       },
       'git.unstage-all': () => {
         const store = useStore.getState();
-        if (!store.rootPath) return;
-        void store.unstageAll(store.rootPath);
+        const repoPath = repoForGlobalGitAction(store);
+        if (repoPath) void store.unstageAll(repoPath);
       },
       'git.show-changes': () => state.setActiveActivity('source-control'),
       'git.file-history': () => {
@@ -1613,7 +1675,8 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         state.setActiveActivity('source-control');
         const store = useStore.getState();
         store.setScmView('compare');
-        if (store.rootPath) void store.loadBranches(store.rootPath);
+        const repoPath = repoForGlobalGitAction(store);
+        if (repoPath) void store.loadBranches(repoPath);
       },
       'git.toggle-blame': () => useStore.getState().toggleBlame(),
       'git.next-hunk': () => useStore.getState().requestHunkNav('next'),
@@ -1708,7 +1771,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   );
 
   // UI calculations
-  const scBadge = state.fileStatuses.filter((s) => s.status !== 'ignored').length;
+  const scBadge = selectChangedFileCount({ repoStates: state.repoStates });
   const openTicketsCount = useMemo(
     () => state.pmDraftTickets.filter((t) => t.status !== 'done' && t.status !== 'archived').length,
     [state.pmDraftTickets]
@@ -1836,6 +1899,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleDiscardFile,
     handleDiffFileClick,
     handleScmViewChange,
+    handleActiveRepoChange,
     handleHistoryCommitClick,
     handleCompareRefChange,
     handleCompareFileClick,

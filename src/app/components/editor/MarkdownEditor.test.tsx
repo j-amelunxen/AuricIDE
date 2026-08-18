@@ -173,10 +173,12 @@ vi.mock('@/lib/editor/blameGutterExtension', () => ({
   },
 }));
 
+const ROOT_REPO = { path: '/proj', relativePath: '', name: 'proj', kind: 'root' as const };
+
 const mockStoreState = vi.hoisted(() => ({
-  rootPath: null as string | null,
+  repos: [] as { path: string; relativePath: string; name: string; kind: string }[],
+  repoStates: {} as Record<string, { fileStatuses: { path: string; status: string }[] }>,
   openTabs: [] as { id: string; path: string; name: string; isDirty?: boolean }[],
-  fileStatuses: [] as { path: string; status: string }[],
   blameVisible: false,
   blameByPath: {} as Record<string, unknown[]>,
   loadBlame: vi.fn(async () => {}),
@@ -192,9 +194,9 @@ vi.mock('@/lib/store', () => {
     lintConfig: { enabled: true, disabledRules: new Set() },
     enableDeepNlp: false,
     setDiagnostics: () => {},
-    rootPath: mockStoreState.rootPath,
+    repos: mockStoreState.repos,
+    repoStates: mockStoreState.repoStates,
     openTabs: mockStoreState.openTabs,
-    fileStatuses: mockStoreState.fileStatuses,
     blameVisible: mockStoreState.blameVisible,
     blameByPath: mockStoreState.blameByPath,
     loadBlame: mockStoreState.loadBlame,
@@ -318,9 +320,9 @@ vi.mock('@codemirror/search', () => ({
 describe('MarkdownEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStoreState.rootPath = null;
+    mockStoreState.repos = [];
+    mockStoreState.repoStates = {};
     mockStoreState.openTabs = [];
-    mockStoreState.fileStatuses = [];
     mockStoreState.blameVisible = false;
     mockStoreState.blameByPath = {};
     mockGetGitDiff.mockResolvedValue('');
@@ -379,7 +381,7 @@ describe('MarkdownEditor', () => {
     });
 
     it('fetches the diff for the open file relative to the project root and applies it', async () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       mockGetGitDiff.mockResolvedValue('some diff');
 
       render(
@@ -395,7 +397,7 @@ describe('MarkdownEditor', () => {
     });
 
     it('clears the gutter when fetching the diff fails', async () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       mockGetGitDiff.mockRejectedValue(new Error('not a git repo'));
 
       render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
@@ -406,7 +408,7 @@ describe('MarkdownEditor', () => {
     });
 
     it('does not refetch while the tab is dirty', async () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       mockStoreState.openTabs = [
         { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: false },
       ];
@@ -431,8 +433,10 @@ describe('MarkdownEditor', () => {
     });
 
     it('refetches when git status for the file changes', async () => {
-      mockStoreState.rootPath = '/proj';
-      mockStoreState.fileStatuses = [{ path: 'note.md', status: 'modified' }];
+      mockStoreState.repos = [ROOT_REPO];
+      mockStoreState.repoStates = {
+        '/proj': { fileStatuses: [{ path: 'note.md', status: 'modified' }] },
+      };
       mockGetGitDiff.mockResolvedValue('some diff');
 
       const { rerender } = render(
@@ -444,7 +448,7 @@ describe('MarkdownEditor', () => {
       });
 
       mockGetGitDiff.mockClear();
-      mockStoreState.fileStatuses = [];
+      mockStoreState.repoStates = { '/proj': { fileStatuses: [] } };
       rerender(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
 
       await vi.waitFor(() => {
@@ -453,7 +457,7 @@ describe('MarkdownEditor', () => {
     });
 
     it('refetches when isDirty becomes false after save', async () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       mockStoreState.openTabs = [
         { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: true },
       ];
@@ -478,7 +482,7 @@ describe('MarkdownEditor', () => {
 
   describe('blame toggle', () => {
     it('shows the blame toggle on a real file tab when a project is open', () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       render(<MarkdownEditor content="# Hello" filePath="/proj/note.md" onChange={vi.fn()} />);
       expect(screen.getByTestId('blame-toggle')).toBeInTheDocument();
     });
@@ -489,13 +493,13 @@ describe('MarkdownEditor', () => {
     });
 
     it('hides the blame toggle on a diff tab', () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       render(<MarkdownEditor content="diff" filePath="diff:unstaged:note.md" onChange={vi.fn()} />);
       expect(screen.queryByTestId('blame-toggle')).not.toBeInTheDocument();
     });
 
     it('does not load blame while the tab is dirty', async () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       mockStoreState.blameVisible = true;
       mockStoreState.openTabs = [
         { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: true },
@@ -508,7 +512,7 @@ describe('MarkdownEditor', () => {
     });
 
     it('loads blame when visible and the file is clean', async () => {
-      mockStoreState.rootPath = '/proj';
+      mockStoreState.repos = [ROOT_REPO];
       mockStoreState.blameVisible = true;
       mockStoreState.openTabs = [
         { id: '/proj/note.md', path: '/proj/note.md', name: 'note.md', isDirty: false },

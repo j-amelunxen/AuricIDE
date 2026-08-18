@@ -124,6 +124,20 @@ describe('git IPC wrappers', () => {
     });
   });
 
+  it('discoverGitRepos invokes git_discover_repos and returns the repo refs', async () => {
+    mockInvoke.mockResolvedValueOnce([
+      { path: '/w', relativePath: '', name: 'w', kind: 'root' },
+      { path: '/w/api', relativePath: 'api', name: 'api', kind: 'nested' },
+    ]);
+    const { discoverGitRepos } = await import('./git');
+    const result = await discoverGitRepos('/w');
+    expect(result).toEqual([
+      { path: '/w', relativePath: '', name: 'w', kind: 'root' },
+      { path: '/w/api', relativePath: 'api', name: 'api', kind: 'nested' },
+    ]);
+    expect(mockInvoke).toHaveBeenCalledWith('git_discover_repos', { rootPath: '/w' });
+  });
+
   it('getGitDiffFileRef invokes git_diff_file_ref', async () => {
     mockInvoke.mockResolvedValueOnce('ref-diff');
     const { getGitDiffFileRef } = await import('./git');

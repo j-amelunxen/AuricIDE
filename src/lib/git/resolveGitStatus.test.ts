@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { resolveGitStatus } from './resolveGitStatus';
-import type { GitFileStatus } from '@/lib/tauri/git';
+import { resolveGitStatus, resolveGitStatusForPath } from './resolveGitStatus';
+import type { GitFileStatus, GitRepoRef } from '@/lib/tauri/git';
 
 function row(
   path: string,
@@ -55,5 +55,51 @@ describe('resolveGitStatus', () => {
 
   it('returns undefined when nothing matches', () => {
     expect(resolveGitStatus('src/clean.ts', statuses([]))).toBeUndefined();
+  });
+});
+
+describe('resolveGitStatusForPath', () => {
+  function repo(
+    path: string,
+    relativePath: string,
+    name: string,
+    kind: GitRepoRef['kind']
+  ): GitRepoRef {
+    return { path, relativePath, name, kind };
+  }
+
+  const workspace = repo('/w', '', 'w', 'root');
+  const api = repo('/w/api', 'api', 'api', 'nested');
+  const repos = [workspace, api];
+
+  it('resolves a file in the root repo through that repo statuses', () => {
+    const statusesByRepo = {
+      '/w': [row('README.md', 'modified', null, 'modified')],
+    };
+    expect(resolveGitStatusForPath('/w/README.md', repos, statusesByRepo)).toBe('modified');
+  });
+
+  it('resolves a file in a nested repo through that repo statuses, not the outer repo', () => {
+    const statusesByRepo = {
+      '/w': [row('api/', 'untracked')],
+      '/w/api': [row('src/main.rs', 'modified', null, 'modified')],
+    };
+    expect(resolveGitStatusForPath('/w/api/src/main.rs', repos, statusesByRepo)).toBe('modified');
+  });
+
+  it('gives a nested repo own directory no badge from the enclosing repo', () => {
+    const statusesByRepo = {
+      '/w': [row('api/', 'untracked')],
+      '/w/api': [],
+    };
+    expect(resolveGitStatusForPath('/w/api', repos, statusesByRepo)).toBeUndefined();
+  });
+
+  it('returns undefined when the path is outside every known repo', () => {
+    expect(resolveGitStatusForPath('/elsewhere/file.ts', repos, {})).toBeUndefined();
+  });
+
+  it('returns undefined when the repo has no status entry recorded yet', () => {
+    expect(resolveGitStatusForPath('/w/README.md', repos, {})).toBeUndefined();
   });
 });

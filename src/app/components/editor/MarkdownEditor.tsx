@@ -7,6 +7,7 @@ import { brokenLinksSetFacet } from '@/lib/editor/wikiLinkBrokenExtension';
 import { fileListFacet, headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
 import { useStore } from '@/lib/store';
 import { selectBlameHunks } from '@/lib/store/gitSlice';
+import { repoForPath, relativeToRepo } from '@/lib/git/repos';
 import {
   slashCommandsFacet,
   mergeSlashCommands,
@@ -274,12 +275,12 @@ export function MarkdownEditor({
 
   const isDirty = useStore((s) => s.openTabs.find((t) => t.id === filePath)?.isDirty ?? false);
   const statusSignature = useStore((s) => {
-    const root = s.rootPath;
-    if (!root || !filePath) return '';
-    const relativePath = filePath.startsWith(`${root}/`)
-      ? filePath.slice(root.length + 1)
-      : filePath;
-    return s.fileStatuses
+    if (!filePath) return '';
+    const repo = repoForPath(filePath, s.repos);
+    if (!repo) return '';
+    const relativePath = relativeToRepo(filePath, repo.path);
+    const fileStatuses = s.repoStates[repo.path]?.fileStatuses ?? [];
+    return fileStatuses
       .filter((f) => f.path === relativePath)
       .map((f) => f.status)
       .join(',');
@@ -291,15 +292,14 @@ export function MarkdownEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const rootPath = useStore.getState().rootPath;
-    if (!rootPath || !filePath) {
+    const repos = useStore.getState().repos;
+    const repo = filePath ? repoForPath(filePath, repos) : null;
+    if (!repo || !filePath) {
       view.dispatch({ effects: compartments.current.gitGutter.reconfigure(createGitGutter([])) });
       return;
     }
     if (isDirty) return;
-    const relativePath = filePath.startsWith(`${rootPath}/`)
-      ? filePath.slice(rootPath.length + 1)
-      : filePath;
+    const relativePath = relativeToRepo(filePath, repo.path);
     let cancelled = false;
 
     (async () => {
@@ -308,7 +308,7 @@ export function MarkdownEditor({
           import('@/lib/tauri/git'),
           import('@/lib/git/parseDiff'),
         ]);
-        const diff = await getGitDiff(rootPath, relativePath);
+        const diff = await getGitDiff(repo.path, relativePath);
         const changes = diffToLineChanges(parseDiff(diff));
         if (!cancelled && viewRef.current) {
           viewRef.current.dispatch({
@@ -332,21 +332,21 @@ export function MarkdownEditor({
   const blameVisible = useStore((s) => s.blameVisible);
   const blameHunks = useStore((s) => selectBlameHunks(s, filePath));
   const isFileTab = !!filePath && !isDiffTabId(filePath);
-  const showBlameToggle = !!useStore((s) => s.rootPath) && isFileTab;
+  const repoForFile = useStore((s) => (filePath ? repoForPath(filePath, s.repos) : null));
+  const showBlameToggle = !!repoForFile && isFileTab;
 
   const openBlameHunk = useCallback(
     async (hunk: { oid: string; summary: string }) => {
       const store = useStore.getState();
-      const root = store.rootPath;
-      if (!root || !filePath || isDiffTabId(filePath)) return;
-      const relativePath = filePath.startsWith(`${root}/`)
-        ? filePath.slice(root.length + 1)
-        : filePath;
+      if (!filePath || isDiffTabId(filePath)) return;
+      const repo = repoForPath(filePath, store.repos);
+      if (!repo) return;
+      const relativePath = relativeToRepo(filePath, repo.path);
       const { getGitDiffCommit } = await import('@/lib/tauri/git');
-      const patch = await getGitDiffCommit(root, hunk.oid, relativePath);
+      const patch = await getGitDiffCommit(repo.path, hunk.oid, relativePath);
       const source = { kind: 'revision' as const, oid: hunk.oid, summary: hunk.summary };
-      const id = diffTabId(source, relativePath);
-      store.setDiffTab(id, { patch, filePath: relativePath, source });
+      const id = diffTabId(source, relativePath, repo.path);
+      store.setDiffTab(id, { patch, filePath: relativePath, source, repoPath: repo.path });
       store.openTab({
         id,
         path: relativePath,
@@ -362,16 +362,15 @@ export function MarkdownEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const rootPath = useStore.getState().rootPath;
-    if (!blameVisible || !rootPath || !filePath || isDiffTabId(filePath)) {
+    const repos = useStore.getState().repos;
+    const repo = filePath ? repoForPath(filePath, repos) : null;
+    if (!blameVisible || !repo || !filePath || isDiffTabId(filePath)) {
       view.dispatch({ effects: compartments.current.blameGutter.reconfigure([]) });
       return;
     }
     if (isDirty) return;
-    const relativePath = filePath.startsWith(`${rootPath}/`)
-      ? filePath.slice(rootPath.length + 1)
-      : filePath;
-    void useStore.getState().loadBlame(rootPath, relativePath);
+    const relativePath = relativeToRepo(filePath, repo.path);
+    void useStore.getState().loadBlame(repo.path, relativePath);
   }, [blameVisible, filePath, isDirty]);
 
   useEffect(() => {

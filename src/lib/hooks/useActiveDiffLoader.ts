@@ -4,11 +4,17 @@ import { useStore } from '@/lib/store';
 /**
  * Keeps the active staged/unstaged/combined/ref diff tab in sync with git
  * status. Compare-ref tabs refetch against that ref, not HEAD. Revision
- * patches are snapshots and are never refetched.
+ * patches are snapshots and are never refetched. The repo the diff belongs
+ * to travels with the tab (`DiffTabState.repoPath`) — two repos can hold a
+ * file at the same relative path, so the tab, not the project root, is what
+ * decides which repo to ask.
  */
 export function useActiveDiffLoader() {
   const activeTabId = useStore((s) => s.activeTabId);
-  const rootPath = useStore((s) => s.rootPath);
+  const repoPath = useStore((s) => {
+    if (!s.activeTabId) return undefined;
+    return s.diffByTabId[s.activeTabId]?.repoPath;
+  });
   const sourceKind = useStore((s) => {
     if (!s.activeTabId) return undefined;
     return s.diffByTabId[s.activeTabId]?.source.kind;
@@ -18,15 +24,16 @@ export function useActiveDiffLoader() {
     return s.diffByTabId[s.activeTabId]?.filePath;
   });
   const statusSignature = useStore((s) => {
-    if (!filePath) return '';
-    return s.fileStatuses
+    if (!filePath || !repoPath) return '';
+    const fileStatuses = s.repoStates[repoPath]?.fileStatuses ?? [];
+    return fileStatuses
       .filter((f) => f.path === filePath)
       .map((f) => f.status)
       .join(',');
   });
 
   useEffect(() => {
-    if (!rootPath || !activeTabId || !filePath || !sourceKind) return;
+    if (!repoPath || !activeTabId || !filePath || !sourceKind) return;
     if (sourceKind === 'revision') return;
 
     let cancelled = false;
@@ -36,9 +43,9 @@ export function useActiveDiffLoader() {
       const { getGitDiff, getGitDiffFileRef } = await import('@/lib/tauri/git');
       const patch =
         latest.source.kind === 'ref'
-          ? await getGitDiffFileRef(rootPath, latest.source.ref, filePath)
+          ? await getGitDiffFileRef(repoPath, latest.source.ref, filePath)
           : await getGitDiff(
-              rootPath,
+              repoPath,
               filePath,
               latest.source.kind === 'staged' || latest.source.kind === 'unstaged'
                 ? latest.source.kind
@@ -53,5 +60,5 @@ export function useActiveDiffLoader() {
     return () => {
       cancelled = true;
     };
-  }, [activeTabId, rootPath, statusSignature, sourceKind, filePath]);
+  }, [activeTabId, repoPath, statusSignature, sourceKind, filePath]);
 }

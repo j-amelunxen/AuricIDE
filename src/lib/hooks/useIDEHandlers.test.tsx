@@ -41,10 +41,12 @@ vi.mock('@/lib/tauri/opener', () => ({
 const mockGetGitDiff = vi.fn();
 const mockGetGitDiffCommit = vi.fn();
 const mockGetGitDiffFileRef = vi.fn();
+const mockDiscardChanges = vi.fn();
 vi.mock('@/lib/tauri/git', () => ({
   getGitDiff: (...args: unknown[]) => mockGetGitDiff(...args),
   getGitDiffCommit: (...args: unknown[]) => mockGetGitDiffCommit(...args),
   getGitDiffFileRef: (...args: unknown[]) => mockGetGitDiffFileRef(...args),
+  discardChanges: (...args: unknown[]) => mockDiscardChanges(...args),
 }));
 
 // Mock Store
@@ -73,6 +75,20 @@ let mockFileStatuses: {
   staged: string | null;
   unstaged: string | null;
 }[] = [];
+// Reactive git-repo fixtures. Most tests never touch these — a single root
+// repo at '/p' mirrors the store's old hardcoded `rootPath: '/p'`, and
+// `mockFileStatuses` (already used everywhere) feeds that repo's status.
+// Tests that need a second/nested repo add it to `mockRepos` and give it its
+// own entry in `mockRepoStatuses`.
+type MockGitRepoRef = { path: string; relativePath: string; name: string; kind: string };
+let mockRepos: MockGitRepoRef[] = [{ path: '/p', relativePath: '', name: 'p', kind: 'root' }];
+let mockRepoStatuses: Record<string, typeof mockFileStatuses> = {};
+let mockActiveRepoPath: string | null = '/p';
+const mockSetActiveRepoPath = vi.fn((path: string | null) => {
+  mockActiveRepoPath = path;
+});
+const mockDiscoverAndRefreshGit = vi.fn(async () => {});
+let mockScmView: 'changes' | 'history' | 'compare' = 'changes';
 let mockScratchDir: string | null = null;
 let mockScratches: { name: string; path: string }[] = [];
 const mockInitScratches = vi.fn(async () => {});
@@ -82,6 +98,7 @@ const mockSetInboxCaptureOpen = vi.fn();
 vi.mock('@/lib/store', () => {
   const getState = () => ({
     refreshGitStatus: mockRefreshGitStatus,
+    discoverAndRefreshGit: mockDiscoverAndRefreshGit,
     stageAll: mockStageAll,
     unstageAll: mockUnstageAll,
     setScmView: mockSetScmView,
@@ -94,8 +111,24 @@ vi.mock('@/lib/store', () => {
     historyPath: mockHistoryPath,
     historyCommits: mockHistoryCommits,
     compareRef: mockCompareRef,
+    repos: mockRepos,
+    repoStates: Object.fromEntries(
+      mockRepos.map((ref) => [
+        ref.path,
+        {
+          ref,
+          branchInfo: null,
+          fileStatuses: ref.path === '/p' ? mockFileStatuses : (mockRepoStatuses[ref.path] ?? []),
+          commitMessage: '',
+          isCommitting: false,
+          isPushing: false,
+        },
+      ])
+    ),
+    activeRepoPath: mockActiveRepoPath,
+    setActiveRepoPath: mockSetActiveRepoPath,
+    scmView: mockScmView,
     rootPath: '/p',
-    fileStatuses: mockFileStatuses,
     activeTabId: mockActiveTabId,
     fileTree: mockFileTree,
     saveGoals: mockSaveGoals,
@@ -162,7 +195,6 @@ describe('useIDEHandlers', () => {
     setDiffTab: vi.fn(),
     resetGitInMemory: vi.fn(),
     setActiveActivity: vi.fn(),
-    fileStatuses: [],
     pmDraftTickets: [],
     inboxItems: [] as ReturnType<typeof useIDEState>['inboxItems'],
     cursorPos: { line: 0, col: 0 },
@@ -186,9 +218,13 @@ describe('useIDEHandlers', () => {
     spawnNewAgent: vi.fn(async () => ({ id: 'a1', provider: 'claude' })),
     setSpawnDialogOpen: vi.fn(),
     setBottomCollapsed: vi.fn(),
-    commitChanges: vi.fn(async () => 'abc123'),
+    commit: vi.fn(async () => 'abc123'),
+    push: vi.fn(async () => undefined),
     setCommitMessage: vi.fn(),
-    branchInfo: null as { name: string; ahead: number; behind: number } | null,
+    repoStates: {} as Record<
+      string,
+      { branchInfo: { name: string; ahead: number; behind: number } | null }
+    >,
     providers: [
       { id: 'claude', name: 'Claude', defaultModel: 'sonnet' },
       { id: 'gemini', name: 'Gemini', defaultModel: 'flash' },
@@ -203,6 +239,16 @@ describe('useIDEHandlers', () => {
       commitProviderId: undefined as string | undefined,
     },
   } as unknown as Parameters<typeof useIDEHandlers>[0];
+
+  /** A minimal `GitRepoState` stub — only `branchInfo` is ever read by these handlers. */
+  const repoStateStub = (branchName: string) => ({
+    ref: { path: '', relativePath: '', name: '', kind: 'root' as const },
+    branchInfo: { name: branchName, ahead: 0, behind: 0 },
+    fileStatuses: [],
+    commitMessage: '',
+    isCommitting: false,
+    isPushing: false,
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -219,7 +265,11 @@ describe('useIDEHandlers', () => {
     mockFileTree = [];
     mockActiveTabId = null;
     mockFileStatuses = [];
-    mockState.branchInfo = null;
+    mockRepos = [{ path: '/p', relativePath: '', name: 'p', kind: 'root' }];
+    mockRepoStatuses = {};
+    mockActiveRepoPath = '/p';
+    mockScmView = 'changes';
+    mockState.repoStates = {};
     mockGetBacklinksFor.mockImplementation(() => []);
     mockState.agentSettings = {
       dangerouslyIgnorePermissions: false,
@@ -239,7 +289,6 @@ describe('useIDEHandlers', () => {
 
   describe('handleDiffFileClick', () => {
     it('stores a separate patch per tab so activating the first still reads A', async () => {
-      mockState.rootPath = '/repo';
       mockGetGitDiff.mockResolvedValueOnce('patch-a').mockResolvedValueOnce('patch-b');
       const payloads: Record<string, { patch: string; filePath: string }> = {};
       (mockState.setDiffTab as ReturnType<typeof vi.fn>).mockImplementation(
@@ -250,45 +299,73 @@ describe('useIDEHandlers', () => {
 
       const { result } = renderHook(() => useIDEHandlers(mockState));
 
-      await result.current.handleDiffFileClick('src/a.ts');
-      await result.current.handleDiffFileClick('src/b.ts');
+      await result.current.handleDiffFileClick('/repo', 'src/a.ts');
+      await result.current.handleDiffFileClick('/repo', 'src/b.ts');
 
-      expect(payloads['diff:unstaged:src/a.ts']?.patch).toBe('patch-a');
-      expect(payloads['diff:unstaged:src/b.ts']?.patch).toBe('patch-b');
+      expect(payloads['diff:unstaged:/repo:src/a.ts']?.patch).toBe('patch-a');
+      expect(payloads['diff:unstaged:/repo:src/b.ts']?.patch).toBe('patch-b');
 
       expect(mockState.openTab).toHaveBeenNthCalledWith(1, {
-        id: 'diff:unstaged:src/a.ts',
+        id: 'diff:unstaged:/repo:src/a.ts',
         path: 'src/a.ts',
         name: 'a.ts (diff)',
       });
       expect(mockState.openTab).toHaveBeenNthCalledWith(2, {
-        id: 'diff:unstaged:src/b.ts',
+        id: 'diff:unstaged:/repo:src/b.ts',
         path: 'src/b.ts',
         name: 'b.ts (diff)',
       });
 
-      const activeId = 'diff:unstaged:src/a.ts';
+      const activeId = 'diff:unstaged:/repo:src/a.ts';
       expect(payloads[activeId]?.patch).toBe('patch-a');
       expect(payloads[activeId]?.filePath).toBe('src/a.ts');
     });
 
     it('opens a staged diff when side is staged', async () => {
-      mockState.rootPath = '/repo';
       mockGetGitDiff.mockResolvedValue('patch-staged');
 
       const { result } = renderHook(() => useIDEHandlers(mockState));
-      await result.current.handleDiffFileClick('src/a.ts', 'staged');
+      await result.current.handleDiffFileClick('/repo', 'src/a.ts', 'staged');
 
       expect(mockGetGitDiff).toHaveBeenCalledWith('/repo', 'src/a.ts', 'staged');
-      expect(mockState.setDiffTab).toHaveBeenCalledWith('diff:staged:src/a.ts', {
+      expect(mockState.setDiffTab).toHaveBeenCalledWith('diff:staged:/repo:src/a.ts', {
         patch: 'patch-staged',
         filePath: 'src/a.ts',
         source: { kind: 'staged' },
+        repoPath: '/repo',
       });
       expect(mockState.openTab).toHaveBeenCalledWith({
-        id: 'diff:staged:src/a.ts',
+        id: 'diff:staged:/repo:src/a.ts',
         path: 'src/a.ts',
         name: 'a.ts (staged)',
+      });
+    });
+
+    it('opens two distinct tabs for the same relative file in two different repos', async () => {
+      mockGetGitDiff.mockResolvedValueOnce('patch-api').mockResolvedValueOnce('patch-web');
+      const payloads: Record<string, { patch: string }> = {};
+      (mockState.setDiffTab as ReturnType<typeof vi.fn>).mockImplementation(
+        (tabId: string, state: { patch: string }) => {
+          payloads[tabId] = state;
+        }
+      );
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleDiffFileClick('/w/api', 'README.md');
+      await result.current.handleDiffFileClick('/w/web', 'README.md');
+
+      expect(payloads['diff:unstaged:/w/api:README.md']?.patch).toBe('patch-api');
+      expect(payloads['diff:unstaged:/w/web:README.md']?.patch).toBe('patch-web');
+      expect(mockState.openTab).toHaveBeenNthCalledWith(1, {
+        id: 'diff:unstaged:/w/api:README.md',
+        path: 'README.md',
+        name: 'README.md (diff)',
+      });
+      expect(mockState.openTab).toHaveBeenNthCalledWith(2, {
+        id: 'diff:unstaged:/w/web:README.md',
+        path: 'README.md',
+        name: 'README.md (diff)',
       });
     });
   });
@@ -714,9 +791,60 @@ describe('useIDEHandlers', () => {
         expect.objectContaining({ path: '/p/docs/clean.md', gitStatus: undefined }),
       ]);
     });
+
+    it("resolves a nested repo's own folder as bare, while a file inside it resolves against that repo", async () => {
+      mockState.rootPath = '/p';
+      mockRepos = [
+        { path: '/p', relativePath: '', name: 'p', kind: 'root' },
+        { path: '/p/api', relativePath: 'api', name: 'api', kind: 'nested' },
+      ];
+      // The outer repo lists the nested repo's directory as untracked — that
+      // must not leak onto the folder, which belongs to the inner repo now.
+      mockFileStatuses = [
+        { path: 'api', status: 'untracked', staged: null, unstaged: 'untracked' },
+      ];
+      mockRepoStatuses = {
+        '/p/api': [
+          { path: 'src/index.ts', status: 'modified', staged: null, unstaged: 'modified' },
+        ],
+      };
+      mockReadDirectory.mockResolvedValueOnce([{ name: 'api', path: '/p/api', isDirectory: true }]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefresh('/p', true);
+
+      expect(mockState.setFileTree).toHaveBeenCalledWith([
+        expect.objectContaining({ path: '/p/api', gitStatus: undefined }),
+      ]);
+
+      mockReadDirectory.mockResolvedValueOnce([
+        { name: 'index.ts', path: '/p/api/src/index.ts', isDirectory: false },
+      ]);
+      await result.current.handleToggleDir('/p/api/src');
+
+      expect(mockState.setDirectoryChildren).toHaveBeenCalledWith('/p/api/src', [
+        expect.objectContaining({ path: '/p/api/src/index.ts', gitStatus: 'modified' }),
+      ]);
+    });
   });
 
   describe('handleRefreshDirs', () => {
+    it('rediscovers repos on a root refresh, but only refreshes status (no rediscovery) for a nested watcher event', async () => {
+      mockState.rootPath = '/p';
+      mockReadDirectory.mockResolvedValue([]);
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleRefresh('/p', true);
+      expect(mockDiscoverAndRefreshGit).toHaveBeenCalledWith('/p');
+      expect(mockRefreshGitStatus).not.toHaveBeenCalled();
+
+      mockDiscoverAndRefreshGit.mockClear();
+      mockFileTree = [{ path: '/p/src/lib', name: 'lib', isDirectory: true, children: [] }];
+      await result.current.handleRefreshDirs(['/p/src/lib']);
+      expect(mockRefreshGitStatus).toHaveBeenCalledWith();
+      expect(mockDiscoverAndRefreshGit).not.toHaveBeenCalled();
+    });
+
     it('re-reads only the changed directories that are actually loaded', async () => {
       mockState.rootPath = '/p';
       mockFileStatuses = [];
@@ -753,7 +881,7 @@ describe('useIDEHandlers', () => {
       const { result } = renderHook(() => useIDEHandlers(mockState));
       await result.current.handleRefreshDirs(['/p/src/lib']);
 
-      expect(mockRefreshGitStatus).toHaveBeenCalledWith('/p');
+      expect(mockRefreshGitStatus).toHaveBeenCalledWith();
       expect(mockState.setAllFiles).toHaveBeenCalledWith(['/p/src/lib/a.ts']);
     });
 
@@ -1499,8 +1627,7 @@ describe('useIDEHandlers', () => {
 
   describe('handleCommit', () => {
     it('spawns an agent with the templated prompt when agentic commit is on, instead of committing directly', async () => {
-      mockState.rootPath = '/p';
-      mockState.branchInfo = { name: 'feature/AUR-42-thing', ahead: 0, behind: 0 };
+      mockState.repoStates = { '/p': repoStateStub('feature/AUR-42-thing') };
       mockState.agentSettings = {
         ...mockState.agentSettings,
         agenticCommit: true,
@@ -1508,29 +1635,82 @@ describe('useIDEHandlers', () => {
       };
       const { result } = renderHook(() => useIDEHandlers(mockState));
 
-      await result.current.handleCommit();
+      await result.current.handleCommit('/p');
 
       expect(mockState.spawnNewAgent).toHaveBeenCalledWith(
         expect.objectContaining({
+          name: 'commit:p',
           provider: 'gemini',
           model: 'flash',
           cwd: '/p',
           task: 'commit and push. Prefix: AUR-42:',
         })
       );
-      expect(mockState.commitChanges).not.toHaveBeenCalled();
+      expect(mockState.commit).not.toHaveBeenCalled();
       expect(mockStageAll).not.toHaveBeenCalled();
     });
 
     it('falls back to a plain manual commit when agentic commit is off', async () => {
-      mockState.rootPath = '/p';
       mockState.agentSettings = { ...mockState.agentSettings, agenticCommit: false };
       const { result } = renderHook(() => useIDEHandlers(mockState));
 
-      await result.current.handleCommit();
+      await result.current.handleCommit('/p');
 
-      expect(mockState.commitChanges).toHaveBeenCalledWith('/p');
+      expect(mockState.commit).toHaveBeenCalledWith('/p');
       expect(mockState.spawnNewAgent).not.toHaveBeenCalled();
+    });
+
+    it('commits a specific repo (agentic), keyed and run from that repo — never the project root', async () => {
+      mockState.repoStates = { '/w/api': repoStateStub('feature/AUR-9-thing') };
+      mockState.agentSettings = {
+        ...mockState.agentSettings,
+        agenticCommit: true,
+        commitProviderId: 'gemini',
+      };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCommit('/w/api');
+
+      expect(mockState.spawnNewAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'commit:api',
+          cwd: '/w/api',
+          task: 'commit and push. Prefix: AUR-9:',
+        })
+      );
+    });
+
+    it('commits a specific repo directly (manual), never the project root', async () => {
+      mockState.agentSettings = { ...mockState.agentSettings, agenticCommit: false };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCommit('/w/api');
+
+      expect(mockState.commit).toHaveBeenCalledWith('/w/api');
+    });
+  });
+
+  describe('handlePush', () => {
+    it('pushes a specific repo, not necessarily the project root', async () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handlePush('/w/api');
+
+      expect(mockState.push).toHaveBeenCalledWith('/w/api');
+    });
+  });
+
+  describe('handleDiscardFile', () => {
+    it('discards a file in a specific repo and closes its tab when it is the active one', async () => {
+      mockDiscardChanges.mockResolvedValue(undefined);
+      mockReadDirectory.mockResolvedValue([]);
+      const openState = { ...mockState, activeTabId: '/w/api/README.md' };
+      const { result } = renderHook(() => useIDEHandlers(openState));
+
+      await result.current.handleDiscardFile('/w/api', 'README.md');
+
+      expect(mockDiscardChanges).toHaveBeenCalledWith('/w/api', 'README.md');
+      expect(openState.closeTab).toHaveBeenCalledWith('/w/api/README.md');
     });
   });
 
@@ -1884,7 +2064,6 @@ describe('useIDEHandlers', () => {
     });
 
     it('unstages every staged file for git.unstage-all', () => {
-      mockState.rootPath = '/p';
       const { result } = renderHook(() => useIDEHandlers(mockState));
 
       result.current.commands.find((c) => c.id === 'git.unstage-all')!.action();
@@ -1892,8 +2071,47 @@ describe('useIDEHandlers', () => {
       expect(mockUnstageAll).toHaveBeenCalledWith('/p');
     });
 
+    it('stage-all/unstage-all/commit act on activeRepoPath, not necessarily the first repo', () => {
+      mockRepos = [
+        { path: '/p', relativePath: '', name: 'p', kind: 'root' },
+        { path: '/p/api', relativePath: 'api', name: 'api', kind: 'nested' },
+      ];
+      mockActiveRepoPath = '/p/api';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'git.stage-all')!.action();
+
+      expect(mockStageAll).toHaveBeenCalledWith('/p/api');
+    });
+
+    it('stage-all does nothing when several repos are open and none is designated active', () => {
+      mockRepos = [
+        { path: '/p', relativePath: '', name: 'p', kind: 'root' },
+        { path: '/p/api', relativePath: 'api', name: 'api', kind: 'nested' },
+      ];
+      mockActiveRepoPath = null;
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'git.stage-all')!.action();
+
+      expect(mockStageAll).not.toHaveBeenCalled();
+    });
+
+    it("targets the active tab's repo over activeRepoPath, since activeRepoPath can move as a side effect of viewing another file's history", () => {
+      mockRepos = [
+        { path: '/w/api', relativePath: 'api', name: 'api', kind: 'root' },
+        { path: '/w/web', relativePath: 'web', name: 'web', kind: 'root' },
+      ];
+      mockActiveRepoPath = '/w/api';
+      mockActiveTabId = '/w/web/README.md';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'git.stage-all')!.action();
+
+      expect(mockStageAll).toHaveBeenCalledWith('/w/web');
+    });
+
     it('git.file-history focuses source control and loads the active file', () => {
-      mockState.rootPath = '/p';
       mockActiveTabId = '/p/src/a.ts';
       mockHistoryPath = null;
       const { result } = renderHook(() => useIDEHandlers(mockState));
@@ -1905,9 +2123,20 @@ describe('useIDEHandlers', () => {
       expect(mockLoadFileHistory).toHaveBeenCalledWith('/p', 'src/a.ts');
     });
 
-    it('git.file-history uses historyPath when it is already known', () => {
-      mockState.rootPath = '/p';
+    it('git.file-history follows the active tab even when a historyPath is already known', () => {
+      // The active tab now governs — a previously loaded history no longer
+      // "sticks" once the user has moved to a different file.
       mockActiveTabId = '/p/src/a.ts';
+      mockHistoryPath = 'docs/readme.md';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'git.file-history')!.action();
+
+      expect(mockLoadFileHistory).toHaveBeenCalledWith('/p', 'src/a.ts');
+    });
+
+    it('git.file-history falls back to the known historyPath when the active tab has no resolvable file', () => {
+      mockActiveTabId = 'diff:unstaged:src/a.ts';
       mockHistoryPath = 'docs/readme.md';
       const { result } = renderHook(() => useIDEHandlers(mockState));
 
@@ -1917,7 +2146,6 @@ describe('useIDEHandlers', () => {
     });
 
     it('git.file-history does not load for a diff tab when no history path is set', () => {
-      mockState.rootPath = '/p';
       mockActiveTabId = 'diff:unstaged:src/a.ts';
       mockHistoryPath = null;
       const { result } = renderHook(() => useIDEHandlers(mockState));
@@ -1929,7 +2157,6 @@ describe('useIDEHandlers', () => {
     });
 
     it('git.compare-with-branch focuses source control and loads branches', () => {
-      mockState.rootPath = '/p';
       const { result } = renderHook(() => useIDEHandlers(mockState));
 
       result.current.commands.find((c) => c.id === 'git.compare-with-branch')!.action();
@@ -1957,8 +2184,8 @@ describe('useIDEHandlers', () => {
       expect(mockRequestHunkNav).toHaveBeenCalledWith('prev');
     });
 
-    it('handleHistoryCommitClick opens a revision diff tab', async () => {
-      mockState.rootPath = '/repo';
+    it('handleHistoryCommitClick opens a revision diff tab for activeRepoPath', async () => {
+      mockActiveRepoPath = '/repo';
       mockHistoryPath = 'src/a.ts';
       mockHistoryCommits = [{ oid: 'abc123def456', summary: 'fix the thing' }];
       mockGetGitDiffCommit.mockResolvedValue('rev-patch');
@@ -1967,21 +2194,22 @@ describe('useIDEHandlers', () => {
       await result.current.handleHistoryCommitClick('abc123def456');
 
       expect(mockGetGitDiffCommit).toHaveBeenCalledWith('/repo', 'abc123def456', 'src/a.ts');
-      expect(mockState.setDiffTab).toHaveBeenCalledWith('diff:rev:abc123def456:src/a.ts', {
+      expect(mockState.setDiffTab).toHaveBeenCalledWith('diff:rev:abc123def456:/repo:src/a.ts', {
         patch: 'rev-patch',
         filePath: 'src/a.ts',
         source: { kind: 'revision', oid: 'abc123def456', summary: 'fix the thing' },
+        repoPath: '/repo',
       });
       expect(mockState.openTab).toHaveBeenCalledWith({
-        id: 'diff:rev:abc123def456:src/a.ts',
+        id: 'diff:rev:abc123def456:/repo:src/a.ts',
         path: 'src/a.ts',
         name: 'a.ts @ abc123d',
       });
       expect(mockSetHistorySelectedOid).toHaveBeenCalledWith('abc123def456');
     });
 
-    it('handleCompareFileClick opens a ref diff tab', async () => {
-      mockState.rootPath = '/repo';
+    it('handleCompareFileClick opens a ref diff tab for activeRepoPath', async () => {
+      mockActiveRepoPath = '/repo';
       mockCompareRef = 'feature';
       mockGetGitDiffFileRef.mockResolvedValue('ref-patch');
       const { result } = renderHook(() => useIDEHandlers(mockState));
@@ -1990,15 +2218,16 @@ describe('useIDEHandlers', () => {
 
       expect(mockGetGitDiffFileRef).toHaveBeenCalledWith('/repo', 'feature', 'src/a.ts');
       expect(mockState.setDiffTab).toHaveBeenCalledWith(
-        `diff:ref:${encodeURIComponent('feature')}:src/a.ts`,
+        `diff:ref:${encodeURIComponent('feature')}:/repo:src/a.ts`,
         {
           patch: 'ref-patch',
           filePath: 'src/a.ts',
           source: { kind: 'ref', ref: 'feature' },
+          repoPath: '/repo',
         }
       );
       expect(mockState.openTab).toHaveBeenCalledWith({
-        id: `diff:ref:${encodeURIComponent('feature')}:src/a.ts`,
+        id: `diff:ref:${encodeURIComponent('feature')}:/repo:src/a.ts`,
         path: 'src/a.ts',
         name: 'a.ts ↔ feature',
       });
@@ -2076,6 +2305,74 @@ describe('useIDEHandlers', () => {
       result.current.commands.find((c) => c.id === 'view.inbox')!.action();
 
       expect(mockState.setActiveActivity).toHaveBeenCalledWith('inbox');
+    });
+  });
+
+  describe('handleActiveRepoChange', () => {
+    it('reloads branches for the picked repo while the Compare view is open', () => {
+      mockScmView = 'compare';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleActiveRepoChange('/w/web');
+
+      expect(mockSetActiveRepoPath).toHaveBeenCalledWith('/w/web');
+      expect(mockLoadBranches).toHaveBeenCalledWith('/w/web');
+    });
+
+    it('only switches the active repo while the Changes view is open — nothing to reload', () => {
+      mockScmView = 'changes';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleActiveRepoChange('/w/web');
+
+      expect(mockSetActiveRepoPath).toHaveBeenCalledWith('/w/web');
+      expect(mockLoadBranches).not.toHaveBeenCalled();
+      expect(mockLoadFileHistory).not.toHaveBeenCalled();
+    });
+
+    it('does not follow the active tab while the History view is open — a manual pick must stick', () => {
+      // If a picker change routed through editorHistoryPath (as showFileHistory
+      // and handleScmViewChange('history') do), it would immediately re-point
+      // activeRepoPath at whatever repo the active tab belongs to, undoing the
+      // very pick the user just made.
+      mockScmView = 'history';
+      mockActiveTabId = '/p/src/a.ts';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleActiveRepoChange('/w/web');
+
+      expect(mockSetActiveRepoPath).toHaveBeenCalledWith('/w/web');
+      expect(mockSetActiveRepoPath).not.toHaveBeenCalledWith('/p');
+      expect(mockLoadFileHistory).not.toHaveBeenCalled();
+    });
+
+    it('does not load history when the active tab belongs to a different repo than the one just picked', () => {
+      // The tab still points at /p — picking /w/web must not load history
+      // for a file that isn't even in that repo.
+      mockScmView = 'history';
+      mockActiveTabId = '/p/src/a.ts';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleActiveRepoChange('/w/web');
+
+      expect(mockLoadFileHistory).not.toHaveBeenCalled();
+    });
+
+    it("loads the active tab's file history when the tab already belongs to the newly picked repo", () => {
+      // History was left empty by the plain repo-switch case above; when the
+      // active tab already lives in the picked repo there is somewhere to go
+      // instead of stranding the user on an empty list.
+      mockScmView = 'history';
+      mockRepos = [
+        { path: '/p', relativePath: '', name: 'p', kind: 'root' },
+        { path: '/w/web', relativePath: 'web', name: 'web', kind: 'root' },
+      ];
+      mockActiveTabId = '/w/web/src/a.ts';
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleActiveRepoChange('/w/web');
+
+      expect(mockLoadFileHistory).toHaveBeenCalledWith('/w/web', 'src/a.ts');
     });
   });
 

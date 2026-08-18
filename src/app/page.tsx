@@ -45,6 +45,9 @@ import { WorkView } from './components/work/WorkView';
 import { NewProjectModal, type NewProjectOptions } from './components/ide/NewProjectModal';
 import { AuricIcon } from './components/ui/AuricIcon';
 import { extractTicket } from '@/lib/git/branchTicket';
+import { repoLabel } from '@/lib/git/repos';
+import { selectBranchNameForPath } from '@/lib/store/gitSlice';
+import type { RepoView } from './components/git/SourceControlPanel';
 import { useIDEState } from '@/lib/hooks/useIDEState';
 import { type SettingsCategory } from './components/ide/SettingsModal';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
@@ -138,6 +141,28 @@ export default function Home() {
   const compareRef = useStore((s) => s.compareRef);
   const compareFiles = useStore((s) => s.compareFiles);
   const compareLoading = useStore((s) => s.compareLoading);
+  const branchName = useStore((s) => selectBranchNameForPath(s, state.activeTabId));
+
+  const repoViews = useMemo<RepoView[]>(
+    () =>
+      state.repos.map((repo) => {
+        const repoState = state.repoStates[repo.path];
+        const branchName = repoState?.branchInfo?.name ?? null;
+        return {
+          repoPath: repo.path,
+          label: repoLabel(repo),
+          kind: repo.kind,
+          branchName,
+          ticketPrefix:
+            extractTicket(branchName ?? '', state.agentSettings.branchTicketPattern) ?? undefined,
+          fileStatuses: (repoState?.fileStatuses ?? []).filter((s) => s.status !== 'ignored'),
+          commitMessage: repoState?.commitMessage ?? '',
+          isCommitting: repoState?.isCommitting ?? false,
+          isPushing: repoState?.isPushing ?? false,
+        };
+      }),
+    [state.repos, state.repoStates, state.agentSettings.branchTicketPattern]
+  );
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const handleCreateProject = async (options: NewProjectOptions) => {
@@ -198,27 +223,20 @@ export default function Home() {
       case 'source-control':
         return (
           <SourceControlPanel
-            fileStatuses={state.fileStatuses.filter((s) => s.status !== 'ignored')}
-            commitMessage={state.commitMessage}
-            isCommitting={state.isCommitting}
+            repos={repoViews}
             agenticCommit={state.agentSettings.agenticCommit}
-            ticketPrefix={
-              extractTicket(
-                state.branchInfo?.name ?? '',
-                state.agentSettings.branchTicketPattern
-              ) ?? undefined
-            }
             onCommitMessageChange={state.setCommitMessage}
             onCommit={handlers.handleCommit}
-            isPushing={state.isPushing}
             onPush={handlers.handlePush}
-            onStageFile={(path) => state.rootPath && state.stageFile(state.rootPath, path)}
-            onUnstageFile={(path) => state.rootPath && state.unstageFile(state.rootPath, path)}
-            onStageAll={() => state.rootPath && state.stageAll(state.rootPath)}
-            onUnstageAll={() => state.rootPath && state.unstageAll(state.rootPath)}
+            onStageFile={state.stageFile}
+            onUnstageFile={state.unstageFile}
+            onStageAll={state.stageAll}
+            onUnstageAll={state.unstageAll}
             onFileClick={handlers.handleDiffFileClick}
             scmView={scmView}
             onScmViewChange={handlers.handleScmViewChange}
+            activeRepoPath={state.activeRepoPath}
+            onActiveRepoChange={handlers.handleActiveRepoChange}
             historyPath={historyPath}
             historyCommits={historyCommits}
             historySelectedOid={historySelectedOid}
@@ -287,6 +305,7 @@ export default function Home() {
   }, [
     state,
     handlers,
+    repoViews,
     scmView,
     historyPath,
     historyCommits,
@@ -622,7 +641,7 @@ export default function Home() {
         }
         statusBar={
           <MemoizedStatusBar
-            branch={state.branchInfo?.name ?? 'main'}
+            branch={branchName ?? 'main'}
             encoding="UTF-8"
             language={handlers.activeLanguage}
             cursorPos={state.cursorPos}

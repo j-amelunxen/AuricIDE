@@ -49,18 +49,16 @@ export function useIDEState() {
   const markDirty = useStore((s) => s.markDirty);
   const renamePath = useStore((s) => s.renamePath);
   const showToast = useStore((s) => s.showToast);
-  const branchInfo = useStore((s) => s.branchInfo);
-  const fileStatuses = useStore((s) => s.fileStatuses);
-  const commitMessage = useStore((s) => s.commitMessage);
-  const isCommitting = useStore((s) => s.isCommitting);
-  const isPushing = useStore((s) => s.isPushing);
-  const pushBranch = useStore((s) => s.push);
+  const repos = useStore((s) => s.repos);
+  const repoStates = useStore((s) => s.repoStates);
+  const activeRepoPath = useStore((s) => s.activeRepoPath);
   const setCommitMessage = useStore((s) => s.setCommitMessage);
   const stageFile = useStore((s) => s.stageFile);
   const unstageFile = useStore((s) => s.unstageFile);
   const stageAll = useStore((s) => s.stageAll);
   const unstageAll = useStore((s) => s.unstageAll);
-  const commitChanges = useStore((s) => s.commit);
+  const commit = useStore((s) => s.commit);
+  const push = useStore((s) => s.push);
   const agents = useStore((s) => s.agents);
   const spawnNewAgent = useStore((s) => s.spawnNewAgent);
   const killRunningAgent = useStore((s) => s.killRunningAgent);
@@ -166,7 +164,6 @@ export function useIDEState() {
   const spawnAgentRepoPath = useStore((s) => s.spawnAgentRepoPath);
   const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
   const spawnAgentPreset = useStore((s) => s.spawnAgentPreset);
-  const refreshGitStatus = useStore((s) => s.refreshGitStatus);
   const setDiffTab = useStore((s) => s.setDiffTab);
   const resetGitInMemory = useStore((s) => s.resetGitInMemory);
   const scratchDir = useStore((s) => s.scratchDir);
@@ -277,18 +274,16 @@ export function useIDEState() {
     markDirty,
     renamePath,
     showToast,
-    branchInfo,
-    fileStatuses,
-    commitMessage,
-    isCommitting,
-    isPushing,
-    pushBranch,
+    repos,
+    repoStates,
+    activeRepoPath,
     setCommitMessage,
     stageFile,
     unstageFile,
     stageAll,
     unstageAll,
-    commitChanges,
+    commit,
+    push,
     agents,
     spawnNewAgent,
     killRunningAgent,
@@ -388,7 +383,6 @@ export function useIDEState() {
     spawnAgentRepoPath,
     setSpawnAgentPreset,
     spawnAgentPreset,
-    refreshGitStatus,
     setDiffTab,
     resetGitInMemory,
     scratchDir,

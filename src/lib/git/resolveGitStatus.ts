@@ -1,5 +1,6 @@
-import type { GitFileStatus } from '@/lib/tauri/git';
+import type { GitFileStatus, GitRepoRef } from '@/lib/tauri/git';
 import type { FileNode } from '@/lib/store/fileTreeSlice';
+import { relativeToRepo, repoForPath } from './repos';
 
 function stripSlash(path: string): string {
   return path.endsWith('/') ? path.slice(0, -1) : path;
@@ -35,4 +36,24 @@ export function resolveGitStatus(
     return target.startsWith(`${dir}/`);
   });
   return underIgnored ? 'ignored' : undefined;
+}
+
+/**
+ * Multi-repo entry point the explorer uses: resolves `absPath` to its deepest
+ * repo, then maps it through that repo's own statuses only. A nested repo's
+ * own directory therefore never inherits a badge from the enclosing repo —
+ * the outer repo may list `api/` as untracked, but `api` resolves to the
+ * `api` repo itself (relative path `""`), whose own status list has no entry
+ * for its own root.
+ */
+export function resolveGitStatusForPath(
+  absPath: string,
+  repos: readonly GitRepoRef[],
+  statusesByRepo: Readonly<Record<string, GitFileStatus[]>>
+): FileNode['gitStatus'] {
+  const repo = repoForPath(absPath, repos);
+  if (!repo) return undefined;
+  const relativePath = relativeToRepo(absPath, repo.path);
+  const statuses = statusesByRepo[repo.path] ?? [];
+  return resolveGitStatus(relativePath, statuses);
 }

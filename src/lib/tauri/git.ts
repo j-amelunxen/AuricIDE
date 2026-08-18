@@ -16,6 +16,23 @@ export interface BranchInfo {
   behind: number;
 }
 
+export type GitRepoKind = 'root' | 'nested' | 'submodule';
+
+export interface GitRepoRef {
+  /** Absolute work-tree path. The identity of a repo everywhere. */
+  path: string;
+  /** Relative to the project root, "" when the root itself is the repo. `/`-separated. */
+  relativePath: string;
+  /** Basename of the work tree (the project folder's name for the root repo). */
+  name: string;
+  kind: GitRepoKind;
+}
+
+/** Every git repo at or below `rootPath`, up to 4 levels deep. `[]` when none is found. */
+export async function discoverGitRepos(rootPath: string): Promise<GitRepoRef[]> {
+  return await invoke<GitRepoRef[]>('git_discover_repos', { rootPath });
+}
+
 export async function getGitStatus(repoPath: string): Promise<GitFileStatus[]> {
   return await invoke<GitFileStatus[]>('git_status', { repoPath });
 }

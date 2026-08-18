@@ -193,6 +193,7 @@ describe('tabsSlice - diff payload cleanup on tab close', () => {
     patch: 'diff --git a/a.ts b/a.ts\n+one',
     filePath: 'src/a.ts',
     source: { kind: 'unstaged' as const },
+    repoPath: '/repo',
   };
 
   beforeEach(() => {
