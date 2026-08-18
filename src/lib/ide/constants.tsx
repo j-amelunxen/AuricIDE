@@ -8,10 +8,16 @@ import { type ActivityItem } from '@/app/components/ide/ActivityBar';
  * a tool: a means, reachable but not shouting.
  */
 export const activityItems: ActivityItem[] = [
-  { id: 'cockpit', icon: 'space_dashboard', label: 'Mission Control' },
-  { id: 'explorer', icon: 'folder', label: 'Explorer' },
-  { id: 'source-control', icon: 'commit', label: 'Source Control', badge: 0 },
-  { id: 'work', icon: 'task_alt', label: 'Work' },
+  { id: 'cockpit', icon: 'space_dashboard', label: 'Mission Control', requiresProject: true },
+  { id: 'explorer', icon: 'folder', label: 'Explorer', requiresProject: true },
+  {
+    id: 'source-control',
+    icon: 'commit',
+    label: 'Source Control',
+    badge: 0,
+    requiresProject: true,
+  },
+  { id: 'work', icon: 'task_alt', label: 'Work', requiresProject: true },
   // Not primary: the top of the rail states the goal loop, and the inbox cuts
   // across it rather than being a step in it. Its badge shows here either way,
   // which is what actually brings you to it.
@@ -25,14 +31,26 @@ export const activityItems: ActivityItem[] = [
   // The app-wide capture box: what is still unsorted, badge and all — read
   // this next to Notifications, not with the goal-loop surfaces above it.
   { id: 'inbox', icon: 'inbox', label: 'Inbox', badge: 0, section: 'tools' },
-  { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools' },
+  { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools', requiresProject: true },
   { id: 'scratches', icon: 'sticky_note_2', label: 'Scratches', section: 'tools' },
-  { id: 'graph', icon: 'hub', label: 'Link Graph', section: 'tools' },
-  { id: 'qa', icon: 'fact_check', label: 'QA', section: 'tools' },
-  { id: 'blueprints', icon: 'library_books', label: 'Blueprints', section: 'tools' },
+  { id: 'graph', icon: 'hub', label: 'Link Graph', section: 'tools', requiresProject: true },
+  { id: 'qa', icon: 'fact_check', label: 'QA', section: 'tools', requiresProject: true },
+  {
+    id: 'blueprints',
+    icon: 'library_books',
+    label: 'Blueprints',
+    section: 'tools',
+    requiresProject: true,
+  },
   { id: 'extensions', icon: 'extension', label: 'Extensions', section: 'tools' },
   { id: 'settings', icon: 'settings', label: 'Settings', section: 'tools' },
 ];
+
+/** The rail without destinations that only exist inside an open project. */
+export function visibleActivityItems(items: ActivityItem[], hasProject: boolean): ActivityItem[] {
+  if (hasProject) return items;
+  return items.filter((item) => !item.requiresProject);
+}
 
 export const KBD = 'px-1.5 py-0.5 rounded bg-white/10 text-primary-light font-mono text-[11px]';
 

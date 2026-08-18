@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityItems } from './constants';
+import { activityItems, visibleActivityItems } from './constants';
 
 describe('activityItems — the rail leads with the loop', () => {
   it('puts Mission Control first', () => {
@@ -39,5 +39,40 @@ describe('activityItems — the rail leads with the loop', () => {
 
   it('labels the work place Work', () => {
     expect(activityItems.find((i) => i.id === 'work')?.label).toBe('Work');
+  });
+
+  it('marks only project-bound destinations as requiring a project', () => {
+    const flagged = activityItems.filter((i) => i.requiresProject).map((i) => i.id);
+    expect(flagged).toEqual([
+      'cockpit',
+      'explorer',
+      'source-control',
+      'work',
+      'outline',
+      'graph',
+      'qa',
+      'blueprints',
+    ]);
+  });
+
+  it('leaves app-wide tools usable without a project', () => {
+    const always = activityItems.filter((i) => !i.requiresProject).map((i) => i.id);
+    expect(always).toEqual(['notifications', 'inbox', 'scratches', 'extensions', 'settings']);
+  });
+});
+
+describe('visibleActivityItems', () => {
+  it('returns every item when a project is open', () => {
+    expect(visibleActivityItems(activityItems, true)).toEqual(activityItems);
+  });
+
+  it('hides project-bound items when no project is open', () => {
+    expect(visibleActivityItems(activityItems, false).map((i) => i.id)).toEqual([
+      'notifications',
+      'inbox',
+      'scratches',
+      'extensions',
+      'settings',
+    ]);
   });
 });
