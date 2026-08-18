@@ -35,7 +35,8 @@ use database::{
 use git::{
     git_blame, git_branch_info, git_commit, git_diff, git_diff_commit, git_diff_file_ref,
     git_diff_ref_files, git_discard, git_discover_repos, git_list_branches, git_log_since,
-    git_push, git_stage, git_status, git_unstage,
+    git_projects_dirty, git_push, git_stage, git_status, git_unstage, git_worktree_add,
+    git_worktree_list, git_worktree_remove,
 };
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -860,26 +861,28 @@ fn file_modified_at_ms(entry: &walkdir::DirEntry) -> Option<i64> {
 }
 
 pub(crate) fn skip_recent_walk_dir(entry: &walkdir::DirEntry) -> bool {
-    matches!(
-        entry.file_name().to_string_lossy().as_ref(),
-        ".git"
-            | "node_modules"
-            | "target"
-            | ".next"
-            | ".turbo"
-            | "__pycache__"
-            | ".venv"
-            | "venv"
-            | ".pytest_cache"
-            | ".mypy_cache"
-            | ".ruff_cache"
-            | "coverage"
-            | "playwright-report"
-            | "test-results"
-            | "out"
-            | "dist"
-            | ".cache"
-    )
+    let name = entry.file_name().to_string_lossy();
+    name.ends_with(".auric-wt")
+        || matches!(
+            name.as_ref(),
+            ".git"
+                | "node_modules"
+                | "target"
+                | ".next"
+                | ".turbo"
+                | "__pycache__"
+                | ".venv"
+                | "venv"
+                | ".pytest_cache"
+                | ".mypy_cache"
+                | ".ruff_cache"
+                | "coverage"
+                | "playwright-report"
+                | "test-results"
+                | "out"
+                | "dist"
+                | ".cache"
+        )
 }
 
 /// Every file under `root` with its birth time, pruned exactly like the
@@ -2232,6 +2235,7 @@ pub fn run() {
             shell_resize,
             git_status,
             git_discover_repos,
+            git_projects_dirty,
             git_branch_info,
             git_diff,
             git_stage,
@@ -2245,6 +2249,9 @@ pub fn run() {
             git_diff_commit,
             git_diff_ref_files,
             git_diff_file_ref,
+            git_worktree_add,
+            git_worktree_list,
+            git_worktree_remove,
             list_agents,
             spawn_agent,
             kill_agent,

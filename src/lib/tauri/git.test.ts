@@ -148,4 +148,41 @@ describe('git IPC wrappers', () => {
       filePath: 'file.md',
     });
   });
+
+  it('addGitWorktree invokes git_worktree_add', async () => {
+    const tree = {
+      path: '/tmp/repo.auric-wt/fix-ab12',
+      name: 'fix-ab12',
+      branch: 'auric/fix-ab12',
+      sourceRepo: '/tmp/repo',
+      isAuric: true,
+      dirty: false,
+      branchAhead: false,
+    };
+    mockInvoke.mockResolvedValueOnce(tree);
+    const { addGitWorktree } = await import('./git');
+    await expect(addGitWorktree('/tmp/repo', 'Fix')).resolves.toEqual(tree);
+    expect(mockInvoke).toHaveBeenCalledWith('git_worktree_add', {
+      repoPath: '/tmp/repo',
+      name: 'Fix',
+    });
+  });
+
+  it('listGitWorktrees invokes git_worktree_list', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    const { listGitWorktrees } = await import('./git');
+    await expect(listGitWorktrees('/tmp/repo')).resolves.toEqual([]);
+    expect(mockInvoke).toHaveBeenCalledWith('git_worktree_list', { repoPath: '/tmp/repo' });
+  });
+
+  it('removeGitWorktree invokes git_worktree_remove', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const { removeGitWorktree } = await import('./git');
+    await removeGitWorktree('/tmp/repo', '/tmp/repo.auric-wt/fix', true);
+    expect(mockInvoke).toHaveBeenCalledWith('git_worktree_remove', {
+      repoPath: '/tmp/repo',
+      worktreePath: '/tmp/repo.auric-wt/fix',
+      force: true,
+    });
+  });
 });

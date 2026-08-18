@@ -65,6 +65,8 @@ vi.mock('../tauri/git', () => ({
   ]),
   getGitDiffRefFiles: vi.fn(async () => [{ path: 'src/a.ts', status: 'modified' }]),
   gitBlame: vi.fn(async () => [sampleBlame]),
+  listGitWorktrees: vi.fn(async () => []),
+  removeGitWorktree: vi.fn(async () => undefined),
 }));
 
 describe('gitSlice', () => {
@@ -81,6 +83,7 @@ describe('gitSlice', () => {
     expect(state.repoStates).toEqual({});
     expect(state.activeRepoPath).toBeNull();
     expect(state.diffByTabId).toEqual({});
+    expect(state.agentWorktrees).toEqual([]);
   });
 
   describe('discoverAndRefreshGit', () => {
@@ -101,6 +104,34 @@ describe('gitSlice', () => {
         behind: 0,
       });
       expect(state.repoStates[repoApi.path]?.ref).toEqual(repoApi);
+    });
+
+    it('loads Auric worktrees for every discovered repo', async () => {
+      const { discoverGitRepos, listGitWorktrees } = await import('../tauri/git');
+      vi.mocked(discoverGitRepos).mockResolvedValue([repoRoot, repoApi]);
+      vi.mocked(listGitWorktrees).mockImplementation(async (repoPath: string) =>
+        repoPath === repoRoot.path
+          ? [
+              {
+                path: '/w.auric-wt/fix-ab12',
+                name: 'fix-ab12',
+                branch: 'auric/fix-ab12',
+                sourceRepo: repoRoot.path,
+                isAuric: true,
+                dirty: false,
+                branchAhead: false,
+              },
+            ]
+          : []
+      );
+
+      await store.getState().discoverAndRefreshGit('/w');
+
+      expect(listGitWorktrees).toHaveBeenCalledWith(repoRoot.path);
+      expect(listGitWorktrees).toHaveBeenCalledWith(repoApi.path);
+      expect(store.getState().agentWorktrees).toEqual([
+        expect.objectContaining({ path: '/w.auric-wt/fix-ab12' }),
+      ]);
     });
 
     it('sets repos to an empty answer when discovery fails, not an error', async () => {
@@ -817,6 +848,36 @@ describe('gitSlice', () => {
     expect(state.blameLoading).toBe(false);
     expect(state.hunkNavNonce).toBe(0);
     expect(state.hunkNavDirection).toBeNull();
+    expect(state.agentWorktrees).toEqual([]);
+  });
+
+  describe('agent worktrees', () => {
+    const tree = {
+      path: '/w.auric-wt/fix-ab12',
+      name: 'fix-ab12',
+      branch: 'auric/fix-ab12',
+      sourceRepo: '/w',
+      isAuric: true,
+      dirty: false,
+      branchAhead: false,
+    };
+
+    it('removeAgentWorktree deletes then reloads', async () => {
+      const { removeGitWorktree, listGitWorktrees } = await import('../tauri/git');
+      store.setState({ agentWorktrees: [tree], repos: [repoRoot] });
+      vi.mocked(listGitWorktrees).mockResolvedValueOnce([]);
+
+      await store.getState().removeAgentWorktree(tree.path, false);
+
+      expect(removeGitWorktree).toHaveBeenCalledWith('/w', tree.path, false);
+      expect(store.getState().agentWorktrees).toEqual([]);
+    });
+
+    it('removeAgentWorktree refuses an unknown path', async () => {
+      await expect(store.getState().removeAgentWorktree('/nope', true)).rejects.toThrow(
+        'worktree not found'
+      );
+    });
   });
 });
 
