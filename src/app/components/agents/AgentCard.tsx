@@ -13,6 +13,7 @@ import { scrollBehavior } from '@/lib/motion';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { agentDisplayIdentity } from '@/lib/agents/displayName';
 import { ComboProgressBadge } from './ComboProgressBadge';
+import { isAuricWorktreePath } from '@/lib/git/agentWorktree';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -311,6 +312,14 @@ export function AgentCard({
                   {displayName}
                 </h3>
                 <ComboProgressBadge agentId={agent.id} />
+                {agent.repoPath && isAuricWorktreePath(agent.repoPath) && (
+                  <span
+                    data-testid="agent-worktree-badge"
+                    className="shrink-0 rounded border border-white/10 bg-white/5 px-1 text-[9px] font-medium uppercase tracking-wide text-foreground-muted"
+                  >
+                    worktree
+                  </span>
+                )}
               </div>
             )}
             {/* One quiet line of context: which model, and the single duration

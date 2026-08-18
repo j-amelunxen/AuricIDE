@@ -30,6 +30,20 @@ vi.mock('../tauri/agentLog', () => ({
   agentLogPurge: vi.fn(async () => undefined),
 }));
 
+vi.mock('../tauri/git', () => ({
+  addGitWorktree: vi.fn(async () => ({
+    path: '/repo.auric-wt/writer-ab12',
+    name: 'writer-ab12',
+    branch: 'auric/writer-ab12',
+    sourceRepo: '/repo',
+    isAuric: true,
+    dirty: false,
+    branchAhead: false,
+  })),
+  listGitWorktrees: vi.fn(async () => []),
+  removeGitWorktree: vi.fn(async () => undefined),
+}));
+
 vi.mock('../tauri/agents', () => ({
   spawnAgent: vi.fn(async (config: { name: string; model: string; task: string }) => ({
     id: 'mock-agent-1',
@@ -428,6 +442,51 @@ describe('agentSlice', () => {
     expect(replacement?.id).toBe('mock-agent-2');
     // The failed run is answered by its retry — it leaves the review pile.
     expect(store.getState().agents.map((a) => a.id)).toEqual(['mock-agent-2']);
+  });
+
+  it('creates a worktree and spawns with that cwd when asked', async () => {
+    const { spawnAgent } = await import('../tauri/agents');
+    const { addGitWorktree } = await import('../tauri/git');
+
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+      cwd: '/repo',
+      useWorktree: true,
+    });
+
+    expect(addGitWorktree).toHaveBeenCalledWith('/repo', 'Writer');
+    expect(spawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/repo.auric-wt/writer-ab12',
+        name: 'Writer',
+        task: 'Write docs',
+      })
+    );
+    expect(vi.mocked(spawnAgent).mock.calls[0][0]).not.toHaveProperty('useWorktree');
+    expect(store.getState().agentSpawnConfigs['mock-agent-1'].cwd).toBe(
+      '/repo.auric-wt/writer-ab12'
+    );
+    expect(store.getState().agentSpawnConfigs['mock-agent-1'].useWorktree).toBeUndefined();
+  });
+
+  it('does not spawn when worktree creation fails', async () => {
+    const { spawnAgent } = await import('../tauri/agents');
+    const { addGitWorktree } = await import('../tauri/git');
+    vi.mocked(addGitWorktree).mockRejectedValueOnce(new Error('not a git repository'));
+    vi.mocked(spawnAgent).mockClear();
+
+    await expect(
+      store.getState().spawnNewAgent({
+        name: 'Writer',
+        model: 'claude-opus-4-6',
+        task: 'Write docs',
+        cwd: '/repo',
+        useWorktree: true,
+      })
+    ).rejects.toThrow('not a git repository');
+    expect(spawnAgent).not.toHaveBeenCalled();
   });
 
   it('refuses to retry an agent that is not in error', async () => {

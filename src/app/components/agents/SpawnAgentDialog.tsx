@@ -97,6 +97,7 @@ function SpawnAgentDialogPanel({
   const [headless, setHeadless] = useState(
     () => loadSpawnDefaults(initialRepoPath)?.headless ?? false
   );
+  const [useWorktree, setUseWorktree] = useState(false);
   // The last launch's choices, applied once when their provider becomes
   // current — four decisions per agent become zero for a same-as-last-time
   // fleet, while an explicit provider switch still resets to that
@@ -136,6 +137,7 @@ function SpawnAgentDialogPanel({
       setRepoPath(initialRepoPath);
       setGoalId(initialGoalId ?? '');
       setHistoryIndex(-1);
+      setUseWorktree(false);
     }
   }
 
@@ -213,6 +215,7 @@ function SpawnAgentDialogPanel({
       headless: headless || undefined,
       spawnedByTicketId: spawnedByTicketId ?? undefined,
       spawnedByGoalId: goalId || undefined,
+      useWorktree: useWorktree || undefined,
     });
     setRepoPath('');
     setTask('');
@@ -496,6 +499,23 @@ function SpawnAgentDialogPanel({
                 <InfoTooltip description={GUIDANCE.agents.headless} label="i" />
                 <span className="text-[10px] ml-1 opacity-60">
                   Agent runs unattended and exits after completion
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer -mt-1">
+              <input
+                type="checkbox"
+                checked={useWorktree}
+                onChange={(e) => setUseWorktree(e.target.checked)}
+                disabled={!repoPath}
+                className="accent-primary h-3.5 w-3.5"
+              />
+              <span className="flex items-center text-xs text-foreground-muted">
+                New git worktree
+                <InfoTooltip description={GUIDANCE.agents.worktree} label="i" />
+                <span className="text-[10px] ml-1 opacity-60">
+                  Isolated branch, leaves your checkout alone
                 </span>
               </span>
             </label>

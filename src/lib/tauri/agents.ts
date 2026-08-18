@@ -62,6 +62,12 @@ export interface AgentConfig {
   historyPrompt?: string;
   /** Frontend-only: the ticket this agent was spawned to review. */
   spawnedForReviewOfTicketId?: string;
+  /**
+   * Frontend-only: create a linked git worktree and run the agent there.
+   * Consumed by `spawnNewAgent` before the Rust spawn — the backend never
+   * sees this flag.
+   */
+  useWorktree?: boolean;
 }
 
 /** One remembered agent start prompt in the per-project history (capped at 100). */
