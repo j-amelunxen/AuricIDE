@@ -5,8 +5,19 @@ import { DWELL_DOTS_MS, DWELL_OPEN_MS } from '@/lib/quickAccess/wheel';
 import { useStore } from '@/lib/store';
 import { saveAuricSkills } from '@/lib/settings/auricSkills';
 
+const mockLoadProjectsDirty = vi.hoisted(() =>
+  vi.fn(async (_paths: string[]) => ({}) as Record<string, boolean>)
+);
+
+vi.mock('@/lib/git/projectDirty', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/git/projectDirty')>();
+  return { ...actual, loadProjectsDirty: mockLoadProjectsDirty };
+});
+
 describe('QuickAccess', () => {
   beforeEach(() => {
+    mockLoadProjectsDirty.mockReset();
+    mockLoadProjectsDirty.mockResolvedValue({});
     useStore.setState({ starredProjects: [], toasts: [] });
   });
 
@@ -262,6 +273,68 @@ describe('QuickAccess', () => {
     render(<QuickAccess currentPath={null} />);
     expect(screen.getByText('Open a project, then star it.')).toBeInTheDocument();
     expect(screen.queryByText(/star one from recent projects/i)).not.toBeInTheDocument();
+  });
+
+  describe('git dirty mark', () => {
+    it('marks a tile whose repo has uncommitted changes', async () => {
+      mockLoadProjectsDirty.mockResolvedValue({ '/a/website': true, '/a/apps': false });
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/website', name: 'website', starredAt: 1 },
+          { path: '/a/apps', name: 'apps', starredAt: 2 },
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      expect(await screen.findByTestId('quick-access-dirty-/a/website')).toBeInTheDocument();
+      expect(screen.queryByTestId('quick-access-dirty-/a/apps')).not.toBeInTheDocument();
+      expect(mockLoadProjectsDirty).toHaveBeenCalledWith(['/a/apps', '/a/website']);
+    });
+
+    it('names the uncommitted work on the tile so a screen reader hears it', async () => {
+      mockLoadProjectsDirty.mockResolvedValue({ '/a/website': true });
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath={null} />);
+      await screen.findByTestId('quick-access-dirty-/a/website');
+      expect(screen.getByTestId('quick-access-tile-/a/website')).toHaveAccessibleName(
+        /website.*uncommitted changes/i
+      );
+    });
+
+    it('leaves the tile unmarked until the probe answers, and on a clean repo', async () => {
+      mockLoadProjectsDirty.mockResolvedValue({ '/a/website': false });
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath={null} />);
+      expect(screen.queryByTestId('quick-access-dirty-/a/website')).not.toBeInTheDocument();
+      await waitFor(() => expect(mockLoadProjectsDirty).toHaveBeenCalled());
+      expect(screen.queryByTestId('quick-access-dirty-/a/website')).not.toBeInTheDocument();
+    });
+
+    it('can sit next to the combo mark without replacing it', async () => {
+      mockLoadProjectsDirty.mockResolvedValue({ '/a/website': true });
+      useStore.setState({
+        starredProjects: [
+          {
+            path: '/a/website',
+            name: 'website',
+            starredAt: 1,
+            combos: [
+              {
+                id: 'c1',
+                label: 'Write',
+                steps: [{ id: 's1', label: 'Draft', prompt: '/draft' }],
+              },
+            ],
+          },
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      expect(await screen.findByTestId('quick-access-dirty-/a/website')).toBeInTheDocument();
+      expect(screen.getByTestId('quick-access-combo-mark-/a/website')).toBeInTheDocument();
+    });
   });
 
   describe('context menu — Start Agent', () => {

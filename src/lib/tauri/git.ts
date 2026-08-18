@@ -33,6 +33,17 @@ export async function discoverGitRepos(rootPath: string): Promise<GitRepoRef[]> 
   return await invoke<GitRepoRef[]>('git_discover_repos', { rootPath });
 }
 
+/** Whether a project folder (or a git repo inside it) has uncommitted work. */
+export interface ProjectDirty {
+  path: string;
+  dirty: boolean;
+}
+
+/** One row per input path, in the same order, echoing the path that was asked. */
+export async function getProjectsDirty(paths: string[]): Promise<ProjectDirty[]> {
+  return await invoke<ProjectDirty[]>('git_projects_dirty', { paths });
+}
+
 export async function getGitStatus(repoPath: string): Promise<GitFileStatus[]> {
   return await invoke<GitFileStatus[]>('git_status', { repoPath });
 }

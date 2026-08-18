@@ -138,6 +138,22 @@ describe('git IPC wrappers', () => {
     expect(mockInvoke).toHaveBeenCalledWith('git_discover_repos', { rootPath: '/w' });
   });
 
+  it('getProjectsDirty invokes git_projects_dirty and returns the rows', async () => {
+    mockInvoke.mockResolvedValueOnce([
+      { path: '/a/website', dirty: true },
+      { path: '/a/apps', dirty: false },
+    ]);
+    const { getProjectsDirty } = await import('./git');
+    const result = await getProjectsDirty(['/a/website', '/a/apps']);
+    expect(result).toEqual([
+      { path: '/a/website', dirty: true },
+      { path: '/a/apps', dirty: false },
+    ]);
+    expect(mockInvoke).toHaveBeenCalledWith('git_projects_dirty', {
+      paths: ['/a/website', '/a/apps'],
+    });
+  });
+
   it('getGitDiffFileRef invokes git_diff_file_ref', async () => {
     mockInvoke.mockResolvedValueOnce('ref-diff');
     const { getGitDiffFileRef } = await import('./git');
