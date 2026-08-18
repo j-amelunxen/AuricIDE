@@ -14,6 +14,8 @@ export interface ActivityItem {
    * means, not destinations. Omitted = primary loop surface.
    */
   section?: 'primary' | 'tools';
+  /** Hidden from the rail when no project is open. */
+  requiresProject?: boolean;
 }
 
 export interface ActivityBarProps {
