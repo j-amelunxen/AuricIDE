@@ -109,6 +109,15 @@ describe('TicketEditPanel', () => {
     expect(screen.getByDisplayValue('Login feature')).toBeDefined();
   });
 
+  it('lets the ticket toolbar wrap when the agents bar steals width', () => {
+    render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} />);
+    const toolbar = screen.getByTestId('ticket-edit-toolbar');
+    expect(toolbar).toHaveClass('flex-wrap');
+    expect(screen.getByLabelText('Ticket name')).toHaveClass('min-w-0', 'basis-full');
+    expect(screen.getByTestId('ticket-status-pills')).toHaveClass('flex-wrap');
+    expect(screen.getByTestId('ticket-edit-actions')).toHaveClass('shrink-0');
+  });
+
   it('renders description in details tab', () => {
     render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} />);
     expect(screen.getByDisplayValue('Implement login flow')).toBeDefined();

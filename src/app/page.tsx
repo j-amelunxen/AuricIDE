@@ -428,7 +428,7 @@ export default function Home() {
         }
         leftPanel={leftPanelContent}
         centerContent={
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-w-0 flex-col">
             <MemoizedTabBar
               tabs={tabsWithIcons}
               activeTabId={state.workPlaceOpen ? null : state.activeTabId}
@@ -449,11 +449,11 @@ export default function Home() {
               onCloseToRight={state.closeTabsToRight}
             />
             {state.workPlaceOpen ? (
-              <div className="flex-1 overflow-hidden">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <WorkView />
               </div>
             ) : state.activeTabId ? (
-              <div className="flex-1 overflow-hidden">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 {handlers.isDiffTab && diffTab ? (
                   <DiffViewer
                     diff={diffTab.patch}
@@ -530,7 +530,7 @@ export default function Home() {
                 )}
               </div>
             ) : state.rootPath ? (
-              <div className="flex-1 overflow-hidden">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <MissionControl
                   onCreateSpec={() => void handlers.handleNewSpec()}
                   onOpenAgents={() => state.setRightCollapsed(false)}
@@ -542,9 +542,9 @@ export default function Home() {
               // comes from the top padding, not from centering the whole
               // column's height. A wide inbox summary growing underneath it
               // must not walk the title around the screen.
-              <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pt-[12vh] pb-12 text-center">
-                <div className="w-full animate-in fade-in zoom-in duration-700">
-                  <h1 className="font-display text-5xl font-black text-white tracking-tighter">
+              <div className="@container flex min-w-0 flex-1 flex-col items-center overflow-y-auto px-4 pt-[12vh] pb-12 text-center">
+                <div className="w-full min-w-0 animate-in fade-in zoom-in duration-700">
+                  <h1 className="font-display text-4xl font-black tracking-tighter text-white @2xl:text-5xl">
                     AURIC
                     <span className="text-primary-light font-thin tracking-widest ml-2">IDE</span>
                   </h1>
@@ -553,7 +553,7 @@ export default function Home() {
                   </p>
                   <div
                     data-testid="start-buttons-row"
-                    className="mt-6 flex items-center justify-center gap-3"
+                    className="mt-6 flex flex-wrap items-center justify-center gap-3"
                   >
                     <button
                       onClick={handlers.handleOpenFolder}
@@ -570,10 +570,16 @@ export default function Home() {
                       New
                     </button>
                   </div>
-                  <div data-testid="start-inbox-capture" className="mx-auto mt-6 w-full max-w-3xl">
+                  <div
+                    data-testid="start-inbox-capture"
+                    className="mx-auto mt-6 w-full min-w-0 max-w-3xl"
+                  >
                     <InboxCapture autoFocus />
                   </div>
-                  <div data-testid="start-project-switcher" className="mt-6 flex justify-center">
+                  <div
+                    data-testid="start-project-switcher"
+                    className="mt-6 flex w-full min-w-0 justify-center"
+                  >
                     <ProjectSwitcher
                       currentPath={null}
                       onOpenProject={(path) => handlers.handleOpenRecent(path)}
@@ -587,7 +593,10 @@ export default function Home() {
                   {/* Nothing renders here until the inbox holds something —
                       an empty inbox must leave the splash exactly as calm as
                       it always was. */}
-                  <div data-testid="start-inbox-panel" className="mx-auto mt-6 w-full max-w-3xl">
+                  <div
+                    data-testid="start-inbox-panel"
+                    className="mx-auto mt-6 w-full min-w-0 max-w-3xl"
+                  >
                     <InboxPanel
                       variant="wide"
                       hideCapture

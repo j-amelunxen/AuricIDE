@@ -12,6 +12,9 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 const STALE_DAYS = 30;
 
+const quietLinkClass =
+  'flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light';
+
 interface StationProps {
   id: string;
   icon: string;
@@ -27,7 +30,7 @@ function Station({ id, icon, label, value, hint, onClick }: StationProps) {
       data-testid={`mc-station-${id}`}
       onClick={onClick}
       title={hint}
-      className="group flex w-full flex-col items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.03] px-5 py-5 transition-[background-color,border-color,box-shadow] duration-150 hover:border-primary/30 hover:bg-primary/5 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.12)] active:scale-[0.98] sm:w-40"
+      className="group flex w-full min-w-0 flex-col items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.03] px-5 py-5 transition-[background-color,border-color,box-shadow] duration-150 hover:border-primary/30 hover:bg-primary/5 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.12)] active:scale-[0.98] @3xl:w-40"
     >
       <AuricIcon
         name={icon}
@@ -44,11 +47,10 @@ function Station({ id, icon, label, value, hint, onClick }: StationProps) {
 
 function StationArrow() {
   return (
-    <AuricIcon
-      name="arrow_forward"
-      aria-hidden="true"
-      className="hidden text-lg text-foreground-muted/40 sm:block"
-    />
+    // Wrapper, not the icon: `.auric-icon` sets display and beats `hidden`.
+    <span data-testid="mc-station-arrow" className="hidden @3xl:block" aria-hidden="true">
+      <AuricIcon name="arrow_forward" className="text-lg text-foreground-muted/40" />
+    </span>
   );
 }
 
@@ -177,7 +179,9 @@ export function MissionControl({
   const heldTruths = relevantTruths.length - needProof;
 
   const projectName = rootPath?.split('/').pop() ?? '';
-  const firstRun = goals.length === 0;
+  // Teaching copy is for an empty cockpit. Specs, tickets or goals mean the
+  // project is already in the loop — keep the actions, drop the lecture.
+  const firstRun = goals.length === 0 && tickets.length === 0 && specDocs === 0;
 
   const openTicketsPlace = () => {
     openWorkPlace('tickets');
@@ -207,170 +211,195 @@ export function MissionControl({
   };
 
   return (
-    <div
-      data-testid="mission-control"
-      className="flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-8"
-    >
-      <div className="text-center animate-in fade-in zoom-in duration-500">
-        <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-foreground-muted">
-          Mission Control
-        </p>
-        <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-white">
-          {projectName}
-        </h1>
-      </div>
+    <div data-testid="mission-control" className="@container h-full overflow-y-auto">
+      {/* Inner min-h-full keeps the cockpit vertically centred when it fits,
+          and still scrollable from the top when wrapping makes it taller —
+          justify-center on the scroller itself would clip the heading. */}
+      <div className="flex min-h-full w-full min-w-0 flex-col items-center justify-center gap-8 p-8">
+        <div className="text-center animate-in fade-in zoom-in duration-500">
+          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-foreground-muted">
+            Mission Control
+          </p>
+          <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-white">
+            {projectName}
+          </h1>
+        </div>
 
-      {/* The loop */}
-      <div className="relative grid w-full max-w-2xl grid-cols-1 gap-3 sm:flex sm:items-center sm:justify-center md:grid-cols-2">
-        <Station
-          id="spec"
-          icon="description"
-          label="Spec"
-          value={String(specDocs)}
-          hint="Specs under specs/"
-          onClick={openSpecStation}
-        />
-        {specPickerOpen && (
-          <SpecPicker
-            specPaths={specPaths}
-            onPick={openSpecFile}
-            onCreate={() => {
-              setSpecPickerOpen(false);
-              onCreateSpec?.();
-            }}
-            onDismiss={() => setSpecPickerOpen(false)}
+        {/* The loop. Container queries follow the editor pane, so opening the
+          agents bar reflows this instead of clipping it. */}
+        <div
+          data-testid="mc-loop"
+          className="relative grid w-full max-w-2xl grid-cols-1 gap-3 @lg:grid-cols-2 @3xl:flex @3xl:max-w-4xl @3xl:items-center @3xl:justify-center"
+        >
+          <Station
+            id="spec"
+            icon="description"
+            label="Spec"
+            value={String(specDocs)}
+            hint="Specs under specs/"
+            onClick={openSpecStation}
           />
+          {specPickerOpen && (
+            <SpecPicker
+              specPaths={specPaths}
+              onPick={openSpecFile}
+              onCreate={() => {
+                setSpecPickerOpen(false);
+                onCreateSpec?.();
+              }}
+              onDismiss={() => setSpecPickerOpen(false)}
+            />
+          )}
+          <StationArrow />
+          <Station
+            id="plan"
+            icon="task_alt"
+            label="Plan"
+            value={String(openTickets)}
+            hint="Open tickets"
+            onClick={openTicketsPlace}
+          />
+          <StationArrow />
+          <Station
+            id="execute"
+            icon="smart_toy"
+            label="Execute"
+            value={String(runningAgents)}
+            hint="Running agents"
+            onClick={() => onOpenAgents?.()}
+          />
+          <StationArrow />
+          <Station
+            id="verify"
+            icon="verified"
+            label="Verify"
+            value={relevantTruths.length > 0 ? `${heldTruths}/${relevantTruths.length}` : '-'}
+            hint="Verified / total"
+            onClick={openTruths}
+          />
+        </div>
+
+        {/* Quiet secondary path into the spec station */}
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+          {!firstRun && (
+            <>
+              <button
+                data-testid="mc-new-goal-persistent"
+                onClick={() => openWorkPlace('goals')}
+                className={quietLinkClass}
+              >
+                <AuricIcon name="flag" aria-hidden="true" className="text-sm" />
+                Open Goals
+              </button>
+              <button
+                data-testid="mc-import-spec-persistent"
+                onClick={() => setImportSpecDialogOpen(true)}
+                className={quietLinkClass}
+              >
+                Import Spec
+              </button>
+            </>
+          )}
+          <button
+            data-testid="mc-import-video-persistent"
+            onClick={() => setVideoImportDialogOpen(true)}
+            className={quietLinkClass}
+          >
+            <AuricIcon name="video_file" aria-hidden="true" className="text-sm" />
+            Import process video
+          </button>
+          <button
+            data-testid="mc-excalidraw-browse"
+            onClick={() => setExcalidrawBrowserOpen(true)}
+            className={quietLinkClass}
+          >
+            <AuricIcon name="draw" aria-hidden="true" className="text-sm" />
+            Import diagrams from Excalidraw+
+          </button>
+        </div>
+
+        {needProof > 0 && (
+          <button
+            data-testid="mc-truths-warning"
+            onClick={openTruths}
+            className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-2 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
+          >
+            <AuricIcon name="warning" aria-hidden="true" className="text-sm" />
+            {needProof} stale/unverified
+          </button>
         )}
-        <StationArrow />
-        <Station
-          id="plan"
-          icon="task_alt"
-          label="Plan"
-          value={String(openTickets)}
-          hint="Open tickets"
-          onClick={openTicketsPlace}
-        />
-        <StationArrow />
-        <Station
-          id="execute"
-          icon="smart_toy"
-          label="Execute"
-          value={String(runningAgents)}
-          hint="Running agents"
-          onClick={() => onOpenAgents?.()}
-        />
-        <StationArrow />
-        <Station
-          id="verify"
-          icon="verified"
-          label="Verify"
-          value={relevantTruths.length > 0 ? `${heldTruths}/${relevantTruths.length}` : '-'}
-          hint="Verified / total"
-          onClick={openTruths}
-        />
-      </div>
 
-      {/* Quiet secondary path into the spec station */}
-      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
-        <button
-          data-testid="mc-import-video-persistent"
-          onClick={() => setVideoImportDialogOpen(true)}
-          className="flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
-        >
-          <AuricIcon name="video_file" aria-hidden="true" className="text-sm" />
-          Import process video
-        </button>
-        <button
-          data-testid="mc-excalidraw-browse"
-          onClick={() => setExcalidrawBrowserOpen(true)}
-          className="flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
-        >
-          <AuricIcon name="draw" aria-hidden="true" className="text-sm" />
-          Import diagrams from Excalidraw+
-        </button>
-      </div>
+        {firstRun && (
+          <section
+            aria-labelledby="mission-control-start-heading"
+            className="flex max-w-2xl flex-col items-center gap-4 text-center"
+          >
+            <div>
+              <h2
+                id="mission-control-start-heading"
+                className="font-display text-lg font-bold text-foreground"
+              >
+                Start with an outcome
+              </h2>
+              <p className="mt-1 max-w-xl text-sm leading-relaxed text-foreground-muted">
+                AuricIDE turns an outcome into verified work: define what success looks like, add
+                the work that gets you there, then let the conductor coordinate execution and proof.
+              </p>
+            </div>
+            <ol className="grid w-full gap-3 text-left @2xl:grid-cols-3">
+              <li className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-foreground-muted">
+                <span className="font-bold text-primary-light">1</span>{' '}
+                <span className="font-semibold text-foreground">Define an outcome or goal</span>
+              </li>
+              <li className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-foreground-muted">
+                <span className="font-bold text-primary-light">2</span>{' '}
+                <span className="font-semibold text-foreground">
+                  Add work from a spec or process video
+                </span>
+              </li>
+              <li className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-foreground-muted">
+                <span className="font-bold text-primary-light">3</span>{' '}
+                <span className="font-semibold text-foreground">
+                  Let the conductor execute and verify
+                </span>
+              </li>
+            </ol>
+            <div className="flex w-full flex-wrap items-center justify-center gap-3">
+              <button
+                data-testid="mc-new-goal"
+                onClick={() => openWorkPlace('goals')}
+                className="order-first min-w-36 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground transition-[background-color,box-shadow] duration-150 hover:bg-primary/90 hover:shadow-[0_0_25px_rgba(var(--primary-rgb),0.2)] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+              >
+                Open Goals
+              </button>
+              <button
+                data-testid="mc-import-spec"
+                onClick={() => setImportSpecDialogOpen(true)}
+                className="min-w-36 rounded-xl border border-primary/20 bg-primary/10 px-6 py-2.5 text-xs font-bold text-primary-light transition-[background-color,box-shadow] duration-150 hover:bg-primary/20 hover:shadow-[0_0_25px_rgba(var(--primary-rgb),0.2)] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+              >
+                Import Spec
+              </button>
+              <button
+                data-testid="mc-import-video"
+                onClick={() => setVideoImportDialogOpen(true)}
+                className="flex min-w-36 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-2.5 text-xs font-bold text-foreground transition-[background-color,border-color] duration-150 hover:border-white/20 hover:bg-white/5 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+              >
+                <AuricIcon name="video_file" aria-hidden="true" className="text-sm" />
+                Import Video
+              </button>
+            </div>
+          </section>
+        )}
 
-      {needProof > 0 && (
-        <button
-          data-testid="mc-truths-warning"
-          onClick={openTruths}
-          className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-2 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
-        >
-          <AuricIcon name="warning" aria-hidden="true" className="text-sm" />
-          {needProof} stale/unverified
-        </button>
-      )}
+        {/* The conductor, on the table — not in a drawer */}
+        <div className="glass-card w-full min-w-0 max-w-3xl overflow-hidden rounded-2xl">
+          <ConductorPanel {...conductor} />
+        </div>
 
-      {firstRun && (
-        <section
-          aria-labelledby="mission-control-start-heading"
-          className="flex max-w-2xl flex-col items-center gap-4 text-center"
-        >
-          <div>
-            <h2
-              id="mission-control-start-heading"
-              className="font-display text-lg font-bold text-foreground"
-            >
-              Start with an outcome
-            </h2>
-            <p className="mt-1 max-w-xl text-sm leading-relaxed text-foreground-muted">
-              AuricIDE turns an outcome into verified work: define what success looks like, add the
-              work that gets you there, then let the conductor coordinate execution and proof.
-            </p>
-          </div>
-          <ol className="grid w-full gap-3 text-left sm:grid-cols-3">
-            <li className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-foreground-muted">
-              <span className="font-bold text-primary-light">1</span>{' '}
-              <span className="font-semibold text-foreground">Define an outcome or goal</span>
-            </li>
-            <li className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-foreground-muted">
-              <span className="font-bold text-primary-light">2</span>{' '}
-              <span className="font-semibold text-foreground">
-                Add work from a spec or process video
-              </span>
-            </li>
-            <li className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-foreground-muted">
-              <span className="font-bold text-primary-light">3</span>{' '}
-              <span className="font-semibold text-foreground">
-                Let the conductor execute and verify
-              </span>
-            </li>
-          </ol>
-          <div className="flex w-full flex-wrap items-center justify-center gap-3">
-            <button
-              data-testid="mc-new-goal"
-              onClick={() => openWorkPlace('goals')}
-              className="order-first min-w-36 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground transition-[background-color,box-shadow] duration-150 hover:bg-primary/90 hover:shadow-[0_0_25px_rgba(var(--primary-rgb),0.2)] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
-            >
-              Open Goals
-            </button>
-            <button
-              data-testid="mc-import-spec"
-              onClick={() => setImportSpecDialogOpen(true)}
-              className="min-w-36 rounded-xl border border-primary/20 bg-primary/10 px-6 py-2.5 text-xs font-bold text-primary-light transition-[background-color,box-shadow] duration-150 hover:bg-primary/20 hover:shadow-[0_0_25px_rgba(var(--primary-rgb),0.2)] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
-            >
-              Import Spec
-            </button>
-            <button
-              data-testid="mc-import-video"
-              onClick={() => setVideoImportDialogOpen(true)}
-              className="flex min-w-36 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-2.5 text-xs font-bold text-foreground transition-[background-color,border-color] duration-150 hover:border-white/20 hover:bg-white/5 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
-            >
-              <AuricIcon name="video_file" aria-hidden="true" className="text-sm" />
-              Import Video
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* The conductor, on the table — not in a drawer */}
-      <div className="glass-card w-full max-w-3xl overflow-hidden rounded-2xl">
-        <ConductorPanel {...conductor} />
-      </div>
-
-      {/* One surface for "take me elsewhere": starred workspaces up front,
+        {/* One surface for "take me elsewhere": starred workspaces up front,
           recents a tab away — starring happens over there, so it is not a hunt. */}
-      <ProjectSwitcher currentPath={rootPath} onOpenProject={onSwitchProject} />
+        <ProjectSwitcher currentPath={rootPath} onOpenProject={onSwitchProject} />
+      </div>
     </div>
   );
 }

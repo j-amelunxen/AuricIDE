@@ -358,8 +358,8 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
         }
       >
         {/* ── Header ─────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-white/[0.015] shrink-0">
-          <div className="flex items-center gap-2.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] bg-white/[0.015] px-5 py-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <AuricIcon name="checklist" className="text-[15px] text-primary-light/40 select-none" />
             <h2
               id="project-manager-title"
@@ -485,9 +485,13 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
             />
           </div>
         ) : (
-          <div className="flex flex-1 overflow-hidden">
-            {/* Epics panel */}
-            <div className="w-[220px] shrink-0">
+          <div
+            data-testid="tickets-columns"
+            className="@container flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          >
+            {/* Epics + list shrink when the agents bar is open, so the
+                detail pane keeps a usable width instead of clipping. */}
+            <div data-testid="tickets-epics-col" className="w-40 min-w-0 shrink-0 @4xl:w-[220px]">
               <EpicSidebar
                 epics={draftEpics}
                 tickets={draftTickets}
@@ -500,7 +504,10 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
             </div>
 
             {/* Ticket list */}
-            <div className="w-[280px] shrink-0 border-l border-r border-white/[0.08]">
+            <div
+              data-testid="tickets-list-col"
+              className="w-52 min-w-0 shrink-0 border-l border-r border-white/[0.08] @4xl:w-[280px]"
+            >
               <TicketTable
                 loading={pmLoading}
                 loadError={pmLoadError}
@@ -519,7 +526,7 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
             </div>
 
             {/* Detail panel */}
-            <div className="flex-1 min-w-0">
+            <div data-testid="tickets-detail-col" className="min-w-0 flex-1">
               <TicketEditPanel
                 ticket={selectedTicket}
                 epics={draftEpics}

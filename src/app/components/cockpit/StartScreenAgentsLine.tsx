@@ -31,7 +31,7 @@ export function StartScreenAgentsLine({ dailyTip }: { dailyTip: DailyTip }) {
 
   if (runningAgents.length === 0) {
     return (
-      <div className="mt-6 w-full max-w-3xl mx-auto text-left" data-testid="tip-of-the-day">
+      <div className="mx-auto mt-6 w-full min-w-0 max-w-3xl text-left" data-testid="tip-of-the-day">
         <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted mb-2">
           Tip of the Day
         </h2>
@@ -51,7 +51,7 @@ export function StartScreenAgentsLine({ dailyTip }: { dailyTip: DailyTip }) {
 
   return (
     <div
-      className="mt-6 flex w-full max-w-3xl items-center justify-center gap-2 text-[12px] text-foreground-muted"
+      className="mt-6 flex w-full min-w-0 max-w-3xl flex-wrap items-center justify-center gap-2 text-[12px] text-foreground-muted"
       data-testid="start-screen-agents-line"
     >
       <span>
