@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, type DragEvent } from 'react';
 import type { AgentConfig, PermissionMode } from '@/lib/tauri/agents';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
@@ -18,6 +18,12 @@ import {
 } from '@/lib/agents/spawnDefaults';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { attachPathDrop, attachSavedImagePaste, saveTempImage } from '@/lib/terminal/imageInsert';
+import {
+  composeTaskWithAttachments,
+  mergeAttachmentPaths,
+  spawnAttachmentLabel,
+} from '@/lib/agents/spawnAttachments';
 
 const YOLO_ELEVATE_ACK_KEY = 'auric.yolo-elevate-acknowledged';
 
@@ -98,6 +104,8 @@ function SpawnAgentDialogPanel({
     () => loadSpawnDefaults(initialRepoPath)?.headless ?? false
   );
   const [useWorktree, setUseWorktree] = useState(false);
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [isDropTarget, setIsDropTarget] = useState(false);
   // The last launch's choices, applied once when their provider becomes
   // current — four decisions per agent become zero for a same-as-last-time
   // fleet, while an explicit provider switch still resets to that
@@ -138,8 +146,25 @@ function SpawnAgentDialogPanel({
       setGoalId(initialGoalId ?? '');
       setHistoryIndex(-1);
       setUseWorktree(false);
+      setAttachments([]);
+      setIsDropTarget(false);
     }
   }
+
+  const addAttachments = useCallback((paths: string[]) => {
+    setAttachments((current) => mergeAttachmentPaths(current, paths));
+  }, []);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const detachDrop = attachPathDrop(el, addAttachments, setIsDropTarget);
+    const detachPaste = attachSavedImagePaste(el, addAttachments);
+    return () => {
+      detachDrop();
+      detachPaste();
+    };
+  }, [addAttachments, dialogRef]);
 
   // The instruction is what the user came here to write — start there, with the
   // caret behind any prefilled text so a handed-over prompt can just be extended.
@@ -208,7 +233,7 @@ function SpawnAgentDialogPanel({
     onSpawn({
       name,
       model,
-      task: instruction,
+      task: composeTaskWithAttachments(instruction, attachments),
       cwd: repoPath || undefined,
       permissionMode,
       provider: selectedProviderId,
@@ -216,9 +241,11 @@ function SpawnAgentDialogPanel({
       spawnedByTicketId: spawnedByTicketId ?? undefined,
       spawnedByGoalId: goalId || undefined,
       useWorktree: useWorktree || undefined,
+      historyPrompt: attachments.length > 0 ? instruction : undefined,
     });
     setRepoPath('');
     setTask('');
+    setAttachments([]);
     setModel(currentProvider.defaultModel);
     setPermissionMode(currentProvider.defaultPermissionMode as PermissionMode);
     onClose();
@@ -258,6 +285,38 @@ function SpawnAgentDialogPanel({
     }
   };
 
+  const handleHtml5DragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    setIsDropTarget(true);
+  };
+
+  const handleHtml5DragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDropTarget(false);
+  };
+
+  const handleHtml5Drop = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    setIsDropTarget(false);
+    const files = Array.from(e.dataTransfer.files);
+    const nativePaths = files
+      .map((file) => (file as File & { path?: string }).path)
+      .filter((path): path is string => !!path);
+    if (nativePaths.length > 0) {
+      addAttachments(nativePaths);
+      return;
+    }
+    const images = files.filter((file) => file.type.startsWith('image/'));
+    if (images.length === 0) return;
+    Promise.all(images.map(saveTempImage))
+      .then(addAttachments)
+      .catch(() => {
+        // Browser mode / IPC failure — nothing to attach
+      });
+  };
+
   return (
     <>
       <div
@@ -277,9 +336,22 @@ function SpawnAgentDialogPanel({
           role="dialog"
           aria-modal="true"
           aria-labelledby="spawn-agent-title"
-          className="glass-card w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
+          className="glass-card relative w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
           onClick={(e) => e.stopPropagation()}
+          onDragOver={handleHtml5DragOver}
+          onDragLeave={handleHtml5DragLeave}
+          onDrop={handleHtml5Drop}
         >
+          {isDropTarget && (
+            <div
+              data-testid="spawn-drop-overlay"
+              className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center rounded-xl border-2 border-primary/60 bg-primary/10"
+            >
+              <span className="rounded-full bg-black/60 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary">
+                Drop to attach
+              </span>
+            </div>
+          )}
           <div className="mb-6 flex items-center gap-2">
             <AuricIcon name="rocket_launch" className="text-primary" />
             <h2
@@ -359,11 +431,37 @@ function SpawnAgentDialogPanel({
                 className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors resize-none min-h-[100px]"
                 placeholder="What should the agent achieve?"
               />
-              {promptHistory.length > 0 && (
-                <p data-testid="prompt-history-hint" className="text-[10px] text-foreground-muted">
-                  ↑ recalls an earlier prompt
-                </p>
+              {attachments.length > 0 && (
+                <ul className="flex flex-wrap gap-1.5 pt-1">
+                  {attachments.map((path) => (
+                    <li
+                      key={path}
+                      className="flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-foreground"
+                    >
+                      <AuricIcon name="image" className="text-[12px] text-foreground-muted" />
+                      <span className="max-w-[10rem] truncate">{spawnAttachmentLabel(path)}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${spawnAttachmentLabel(path)}`}
+                        onClick={() =>
+                          setAttachments((current) =>
+                            current.filter((candidate) => candidate !== path)
+                          )
+                        }
+                        className="text-foreground-muted hover:text-foreground"
+                      >
+                        <AuricIcon name="close" className="text-[12px]" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
+              <p className="text-[10px] text-foreground-muted">
+                Drop or paste an image — it goes out with the prompt
+                {promptHistory.length > 0 && (
+                  <span data-testid="prompt-history-hint"> · ↑ recalls an earlier prompt</span>
+                )}
+              </p>
             </div>
 
             {goals.length > 0 && (
