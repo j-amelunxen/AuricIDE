@@ -18,6 +18,8 @@ import {
 } from '@/lib/agents/spawnDefaults';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import { useStore } from '@/lib/store';
+import { isGitRepoRoot, workingDirectoryHasGitRepo } from '@/lib/git/worktreeDefault';
 
 const YOLO_ELEVATE_ACK_KEY = 'auric.yolo-elevate-acknowledged';
 
@@ -97,7 +99,10 @@ function SpawnAgentDialogPanel({
   const [headless, setHeadless] = useState(
     () => loadSpawnDefaults(initialRepoPath)?.headless ?? false
   );
-  const [useWorktree, setUseWorktree] = useState(false);
+  const repos = useStore((s) => s.repos);
+  const [worktreeOverride, setWorktreeOverride] = useState<boolean | null>(null);
+  const [probedHasGit, setProbedHasGit] = useState<boolean | null>(null);
+  const [worktreeForPath, setWorktreeForPath] = useState(initialRepoPath);
   // The last launch's choices, applied once when their provider becomes
   // current — four decisions per agent become zero for a same-as-last-time
   // fleet, while an explicit provider switch still resets to that
@@ -137,9 +142,34 @@ function SpawnAgentDialogPanel({
       setRepoPath(initialRepoPath);
       setGoalId(initialGoalId ?? '');
       setHistoryIndex(-1);
-      setUseWorktree(false);
+      setWorktreeOverride(null);
+      setProbedHasGit(null);
+      setWorktreeForPath(initialRepoPath);
     }
   }
+
+  // A new working directory drops the previous toggle and the previous probe.
+  if (worktreeForPath !== repoPath) {
+    setWorktreeForPath(repoPath);
+    setWorktreeOverride(null);
+    setProbedHasGit(null);
+  }
+
+  const knownGitRepo = isGitRepoRoot(repoPath, repos);
+  const useWorktree = worktreeOverride ?? (knownGitRepo || probedHasGit === true);
+
+  // Only the disk probe lives here — known roots are derived above, so a
+  // discovered repo never waits on IPC and never writes the same boolean back.
+  useEffect(() => {
+    if (knownGitRepo || !repoPath.trim()) return;
+    let cancelled = false;
+    void workingDirectoryHasGitRepo(repoPath).then((hasRepo) => {
+      if (!cancelled) setProbedHasGit(hasRepo);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [knownGitRepo, repoPath]);
 
   // The instruction is what the user came here to write — start there, with the
   // caret behind any prefilled text so a handed-over prompt can just be extended.
@@ -507,7 +537,7 @@ function SpawnAgentDialogPanel({
               <input
                 type="checkbox"
                 checked={useWorktree}
-                onChange={(e) => setUseWorktree(e.target.checked)}
+                onChange={(e) => setWorktreeOverride(e.target.checked)}
                 disabled={!repoPath}
                 className="accent-primary h-3.5 w-3.5"
               />
