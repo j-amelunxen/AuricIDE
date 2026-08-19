@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
@@ -31,6 +31,27 @@ vi.mock('@/lib/tauri/providers', async (importOriginal) => {
   };
 });
 
+const mockInvoke = vi.fn();
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+
+let dragDropHandler: ((event: { payload: DragDropPayload }) => void) | null = null;
+type DragDropPayload =
+  | { type: 'enter'; paths: string[]; position: { x: number; y: number } }
+  | { type: 'over'; position: { x: number; y: number } }
+  | { type: 'drop'; paths: string[]; position: { x: number; y: number } }
+  | { type: 'leave' };
+
+vi.mock('@tauri-apps/api/webview', () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: vi.fn(async (handler: (event: { payload: DragDropPayload }) => void) => {
+      dragDropHandler = handler;
+      return vi.fn();
+    }),
+  }),
+}));
+
 type User = ReturnType<typeof userEvent.setup>;
 
 /** Answers the first-use YOLO elevate question. */
@@ -43,6 +64,8 @@ async function answerYoloElevate(user: User, button: string) {
 beforeEach(() => {
   mockListProviders.mockRejectedValue(new Error('browser mode'));
   mockProviderPolicy.mockResolvedValue({ allow: null, deny: [] });
+  mockInvoke.mockReset();
+  dragDropHandler = null;
   localStorage.clear();
   sessionStorage.clear();
   useStore.setState({ overlayStack: { layers: [] } });
@@ -870,5 +893,133 @@ describe('SpawnAgentDialog – the project provider policy', () => {
     expect(await screen.findByText(/permits no agent provider/i)).toBeInTheDocument();
     await userEvent.setup().type(screen.getByLabelText(/what should it do/i), 'Try anyway');
     expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
+  });
+});
+
+describe('SpawnAgentDialog – image attachments', () => {
+  function dropNativeFile(target: HTMLElement, path: string) {
+    const file = new File([new Uint8Array([137, 80, 78, 71])], path.split('/').pop()!, {
+      type: 'image/png',
+    });
+    Object.defineProperty(file, 'path', { value: path });
+    fireEvent.drop(target, {
+      dataTransfer: {
+        types: ['Files'],
+        files: [file],
+      },
+    });
+  }
+
+  it('shows a dropped file as a chip and sends its path with the prompt', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    dropNativeFile(screen.getByRole('dialog'), '/Users/jen/Desktop/shot.png');
+
+    expect(screen.getByText('shot.png')).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/what should it do/i), 'What is in this screenshot?');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'What is in this screenshot?\n\n/Users/jen/Desktop/shot.png',
+        historyPrompt: 'What is in this screenshot?',
+      })
+    );
+  });
+
+  it('attaches a file dropped onto the dialog via the native webview event', async () => {
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    const dialog = screen.getByRole('dialog');
+    dialog.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        right: 500,
+        bottom: 500,
+        width: 500,
+        height: 500,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      }) as DOMRect;
+    const previousHitTest = document.elementFromPoint;
+    document.elementFromPoint = () => dialog;
+
+    try {
+      await waitFor(() => expect(dragDropHandler).not.toBeNull());
+      act(() => {
+        dragDropHandler!({
+          payload: { type: 'drop', paths: ['/tmp/my shot.png'], position: { x: 80, y: 80 } },
+        });
+      });
+
+      expect(screen.getByText('my shot.png')).toBeInTheDocument();
+    } finally {
+      document.elementFromPoint = previousHitTest;
+    }
+  });
+
+  it('saves a pasted screenshot and attaches the cache path', async () => {
+    mockInvoke.mockResolvedValue('/cache/screenshot_1.png');
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    const file = new File([new Uint8Array([137, 80, 78, 71])], 'clip.png', { type: 'image/png' });
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+      },
+    });
+    screen.getByLabelText(/what should it do/i).dispatchEvent(event);
+
+    expect(await screen.findByText('screenshot_1.png')).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/what should it do/i), 'Describe this');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Describe this\n\n/cache/screenshot_1.png',
+        historyPrompt: 'Describe this',
+      })
+    );
+  });
+
+  it('removes an attached file before spawn so it is not sent', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    dropNativeFile(screen.getByRole('dialog'), '/tmp/shot.png');
+    await user.click(screen.getByRole('button', { name: 'Remove shot.png' }));
+    expect(screen.queryByText('shot.png')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/what should it do/i), 'Just text');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Just text',
+      })
+    );
+    expect(onSpawn.mock.calls[0][0].historyPrompt).toBeUndefined();
+  });
+
+  it('does not attach the same path twice', () => {
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    const dialog = screen.getByRole('dialog');
+    dropNativeFile(dialog, '/tmp/shot.png');
+    dropNativeFile(dialog, '/tmp/shot.png');
+    expect(screen.getAllByText('shot.png')).toHaveLength(1);
+  });
+
+  it('highlights the dialog while a file is dragged over it', () => {
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    const dialog = screen.getByRole('dialog');
+    fireEvent.dragOver(dialog, { dataTransfer: { types: ['Files'] } });
+    expect(screen.getByTestId('spawn-drop-overlay')).toBeInTheDocument();
   });
 });

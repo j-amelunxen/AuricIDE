@@ -30,6 +30,8 @@ import {
   saveTempImage,
   attachImagePaste,
   attachFileDrop,
+  attachPathDrop,
+  attachSavedImagePaste,
 } from './imageInsert';
 
 function makeImageFile(name = 'shot.png', type = 'image/png'): File {
@@ -295,5 +297,57 @@ describe('attachFileDrop', () => {
       expect(onInsert).not.toHaveBeenCalled();
       detach();
     });
+  });
+});
+
+describe('attachPathDrop', () => {
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    dragDropHandler = null;
+    container = document.createElement('div');
+    container.getBoundingClientRect = () =>
+      ({ left: 0, top: 100, right: 400, bottom: 300 }) as DOMRect;
+    document.body.appendChild(container);
+  });
+
+  it('hands the raw paths to the caller, including names with spaces', async () => {
+    const onPaths = vi.fn<(paths: string[]) => void>();
+    const detach = attachPathDrop(container, onPaths);
+    await vi.waitFor(() => expect(dragDropHandler).not.toBeNull());
+
+    dragDropHandler!({
+      payload: {
+        type: 'drop',
+        paths: ['/tmp/a.png', '/tmp/my shot.png'],
+        position: { x: 50, y: 200 },
+      },
+    });
+
+    expect(onPaths).toHaveBeenCalledWith(['/tmp/a.png', '/tmp/my shot.png']);
+    detach();
+  });
+});
+
+describe('attachSavedImagePaste', () => {
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  it('saves pasted images and reports their cache paths', async () => {
+    mockInvoke.mockResolvedValue('/cache/screenshot_1.png');
+    const onPaths = vi.fn<(paths: string[]) => void>();
+    const detach = attachSavedImagePaste(container, onPaths);
+
+    container.dispatchEvent(makePasteEvent(makeClipboardData([makeImageFile()])));
+
+    await vi.waitFor(() => {
+      expect(onPaths).toHaveBeenCalledWith(['/cache/screenshot_1.png']);
+    });
+    detach();
   });
 });
