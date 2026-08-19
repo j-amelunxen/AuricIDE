@@ -1,3 +1,5 @@
+import type { GitRepoRef } from '@/lib/tauri/git';
+
 /** Sibling folder next to a repo that holds Auric-managed agent worktrees. */
 export const AURIC_WORKTREE_DIR_SUFFIX = '.auric-wt';
 
@@ -38,4 +40,35 @@ export function worktreeIsOccupied(
   agents: readonly { status: string; repoPath?: string }[]
 ): boolean {
   return agents.some((agent) => agent.status === 'running' && agent.repoPath === path);
+}
+
+function stripSlash(path: string): string {
+  return path.endsWith('/') ? path.slice(0, -1) : path;
+}
+
+/**
+ * Repos an agent worktree can be created from, given the working directory
+ * and the git repos discovered under it.
+ *
+ * If the working directory itself is a repo, that is the only source — nested
+ * checkouts stay inside it. Otherwise every discovered repo is offered so the
+ * user can pick which one to branch.
+ */
+export function worktreeSourceRepos(cwd: string, repos: readonly GitRepoRef[]): GitRepoRef[] {
+  const target = stripSlash(cwd);
+  if (!target) return [];
+  const self = repos.find((repo) => stripSlash(repo.path) === target);
+  if (self) return [self];
+  return repos.filter((repo) => {
+    const path = stripSlash(repo.path);
+    return path === target || path.startsWith(`${target}/`);
+  });
+}
+
+/** True when cwd is not a git repo but at least one nested repo can be branched. */
+export function needsWorktreeRepoPicker(cwd: string, repos: readonly GitRepoRef[]): boolean {
+  const sources = worktreeSourceRepos(cwd, repos);
+  const target = stripSlash(cwd);
+  if (!target || sources.length === 0) return false;
+  return sources.every((repo) => stripSlash(repo.path) !== target);
 }

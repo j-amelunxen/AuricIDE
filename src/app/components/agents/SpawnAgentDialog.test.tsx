@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
+import type { GitRepoRef } from '@/lib/tauri/git';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { useStore } from '@/lib/store';
@@ -31,6 +32,28 @@ vi.mock('@/lib/tauri/providers', async (importOriginal) => {
   };
 });
 
+const mockDiscoverGitRepos = vi.fn<(rootPath: string) => Promise<GitRepoRef[]>>();
+
+vi.mock('@/lib/tauri/git', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/tauri/git')>();
+  return {
+    ...actual,
+    discoverGitRepos: (rootPath: string) => mockDiscoverGitRepos(rootPath),
+  };
+});
+
+function cwdAsRootRepo(rootPath: string): GitRepoRef[] {
+  const normalized = rootPath.replace(/\/$/, '');
+  return [
+    {
+      path: normalized,
+      relativePath: '',
+      name: normalized.split('/').pop() || 'repo',
+      kind: 'root',
+    },
+  ];
+}
+
 type User = ReturnType<typeof userEvent.setup>;
 
 /** Answers the first-use YOLO elevate question. */
@@ -43,6 +66,7 @@ async function answerYoloElevate(user: User, button: string) {
 beforeEach(() => {
   mockListProviders.mockRejectedValue(new Error('browser mode'));
   mockProviderPolicy.mockResolvedValue({ allow: null, deny: [] });
+  mockDiscoverGitRepos.mockImplementation(async (rootPath) => cwdAsRootRepo(rootPath));
   localStorage.clear();
   sessionStorage.clear();
   useStore.setState({ overlayStack: { layers: [] } });
@@ -351,6 +375,87 @@ describe('SpawnAgentDialog', () => {
   it('disables the worktree checkbox until a working directory is set', () => {
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
     expect(screen.getByLabelText(/new git worktree/i)).toBeDisabled();
+  });
+
+  it('asks which repo to check out when the working directory is not itself a git repo', async () => {
+    mockDiscoverGitRepos.mockResolvedValue([
+      { path: '/ws/api', relativePath: 'api', name: 'api', kind: 'nested' },
+      { path: '/ws/web', relativePath: 'web', name: 'web', kind: 'submodule' },
+    ]);
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    await user.type(screen.getByLabelText(/working directory/i), '/ws');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByLabelText(/new git worktree/i));
+
+    const picker = await screen.findByLabelText(/git repository/i);
+    expect(picker).toBeInTheDocument();
+    await user.selectOptions(picker, '/ws/api');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        useWorktree: true,
+        cwd: '/ws',
+        worktreeRepoPath: '/ws/api',
+      })
+    );
+  });
+
+  it('does not spawn a worktree until a nested repo is chosen', async () => {
+    mockDiscoverGitRepos.mockResolvedValue([
+      { path: '/ws/api', relativePath: 'api', name: 'api', kind: 'nested' },
+      { path: '/ws/web', relativePath: 'web', name: 'web', kind: 'nested' },
+    ]);
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    await user.type(screen.getByLabelText(/working directory/i), '/ws');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByLabelText(/new git worktree/i));
+    await screen.findByLabelText(/git repository/i);
+
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
+    expect(onSpawn).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: /start agent/i })).toBeInTheDocument();
+  });
+
+  it('does not ask which repo when the working directory itself is a git repo', async () => {
+    mockDiscoverGitRepos.mockResolvedValue([
+      { path: '/my/repo', relativePath: '', name: 'repo', kind: 'root' },
+      { path: '/my/repo/vendor/lib', relativePath: 'vendor/lib', name: 'lib', kind: 'submodule' },
+    ]);
+    const user = userEvent.setup();
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/my/repo"
+      />
+    );
+
+    await user.click(screen.getByLabelText(/new git worktree/i));
+    await waitFor(() => expect(mockDiscoverGitRepos).toHaveBeenCalledWith('/my/repo'));
+    expect(screen.queryByLabelText(/git repository/i)).not.toBeInTheDocument();
+  });
+
+  it('says so when a worktree is requested from a folder with no git repo', async () => {
+    mockDiscoverGitRepos.mockResolvedValue([]);
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+
+    await user.type(screen.getByLabelText(/working directory/i), '/empty');
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByLabelText(/new git worktree/i));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not a git repository/i);
+    expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
+    expect(onSpawn).not.toHaveBeenCalled();
   });
 
   it('calls onClose on cancel', async () => {

@@ -68,6 +68,11 @@ export interface AgentConfig {
    * sees this flag.
    */
   useWorktree?: boolean;
+  /**
+   * Frontend-only: git repo to create the worktree from when `cwd` itself is
+   * not a repository (a workspace with nested checkouts or submodules).
+   */
+  worktreeRepoPath?: string;
 }
 
 /** One remembered agent start prompt in the per-project history (capped at 100). */
