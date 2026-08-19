@@ -27,7 +27,7 @@ export const GUIDANCE = {
     headless:
       'If enabled, the agent runs in the background without a terminal interface and exits automatically.',
     worktree:
-      'Checks the agent out onto a new git branch in a sibling folder, so it cannot dirty your current files. Remove the worktree from Source Control when you are done.',
+      'Checks the agent out onto a new git branch in a sibling folder, so it cannot dirty your current files. When the agent ends you can merge that branch into main or master, which also removes the worktree.',
   },
   settings: {
     autoAcceptEdits: 'If enabled, the agent will apply file changes without asking for permission.',

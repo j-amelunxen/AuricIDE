@@ -12,6 +12,7 @@ import { isAgentLive } from '@/lib/agents/liveness';
 import { agentColorHex, type AgentColor } from '@/lib/agents/colors';
 import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';
 import { useStore } from '@/lib/store';
 import { parsePermissionMenu, promptTailLines } from '@/lib/agents/permissionMenu';
 import { Heartbeat, CONSOLE_STATE_HEARTBEAT_TONE } from './Heartbeat';
@@ -93,6 +94,7 @@ export function ConsoleAgentCard({
 }: ConsoleAgentCardProps) {
   const now = useNow();
   const { confirm, confirmDialog } = useConfirm();
+  const offerMerge = useWorktreeMergeOffer(confirm);
   const sendAgentInput = useStore((s) => s.sendAgentInput);
   const showToast = useStore((s) => s.showToast);
   // Scoped to this one agent's id, so a chunk streamed for any other agent in
@@ -126,7 +128,14 @@ export function ConsoleAgentCard({
       message: `Stop ${agent.name}? Its work in progress is lost.`,
       confirmLabel: 'Stop',
     });
-    if (go) onStop?.(agent.id);
+    if (!go) return;
+    await Promise.resolve(onStop?.(agent.id));
+    await offerMerge(agent);
+  };
+
+  const handleDismiss = () => {
+    onDismiss?.(agent.id);
+    void offerMerge(agent);
   };
 
   const send = (text: string) => {
@@ -305,7 +314,7 @@ export function ConsoleAgentCard({
         {(state === 'done' || state === 'error') && onDismiss && (
           <button
             type="button"
-            onClick={() => onDismiss(agent.id)}
+            onClick={handleDismiss}
             className="ml-auto rounded px-2 py-1 text-[11px] text-foreground-muted transition-colors hover:text-red-400"
           >
             Dismiss

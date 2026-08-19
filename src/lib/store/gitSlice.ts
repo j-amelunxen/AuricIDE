@@ -12,6 +12,7 @@ import type {
   GitNameStatus,
   GitRepoRef,
   GitWorktree,
+  WorktreeMergeResult,
 } from '../tauri/git';
 import {
   discoverGitRepos,
@@ -27,6 +28,8 @@ import {
   gitBlame,
   listGitWorktrees,
   removeGitWorktree,
+  gitDefaultBranch,
+  mergeGitWorktreeIntoDefault,
 } from '../tauri/git';
 
 export type ScmView = 'changes' | 'history' | 'compare';
@@ -98,6 +101,16 @@ export interface GitSlice {
   agentWorktrees: GitWorktree[];
   refreshAgentWorktrees: () => Promise<void>;
   removeAgentWorktree: (worktreePath: string, force: boolean) => Promise<void>;
+  /** `main` or `master` for this repo. Throws if neither exists. */
+  defaultBranchFor: (repoPath: string) => Promise<string>;
+  /**
+   * Merge an Auric worktree into the repo's default branch, then remove it.
+   * Uncommitted worktree files are committed first.
+   */
+  mergeAgentWorktree: (
+    worktreePath: string,
+    commitMessage?: string
+  ) => Promise<WorktreeMergeResult>;
 }
 
 /**
@@ -560,6 +573,19 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
       }
       await removeGitWorktree(repoPath, worktreePath, force);
       await get().refreshAgentWorktrees();
+    },
+
+    defaultBranchFor: async (repoPath) => gitDefaultBranch(repoPath),
+
+    mergeAgentWorktree: async (worktreePath, commitMessage) => {
+      const tree = get().agentWorktrees.find((wt) => wt.path === worktreePath);
+      const repoPath = tree?.sourceRepo ?? worktreePath;
+      const result = await mergeGitWorktreeIntoDefault(repoPath, worktreePath, commitMessage);
+      await get().refreshAgentWorktrees();
+      if (tree?.sourceRepo) {
+        await get().refreshRepoStatus(tree.sourceRepo);
+      }
+      return result;
     },
 
     stageFile: async (repoPath, path) => {

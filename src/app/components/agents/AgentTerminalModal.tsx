@@ -10,6 +10,7 @@ import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { agentState, AGENT_STATE_LABEL } from '@/lib/agents/state';
@@ -370,6 +371,7 @@ function AgentTerminalDialog({
 }: AgentTerminalDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const { confirm, confirmDialog } = useConfirm();
+  const offerMerge = useWorktreeMergeOffer(confirm);
   useOverlayLayer({ id: 'agent-terminal', kind: 'tool', active: true, onEscape: onClose });
 
   // One project is not a grouping: with the whole fleet in one repository the
@@ -403,9 +405,10 @@ function AgentTerminalDialog({
       }
 
       if (finished) onDismiss?.(target.id);
-      else onKill?.(target.id);
+      else await Promise.resolve(onKill?.(target.id));
+      await offerMerge(target);
     },
-    [agent.id, tabOrder, confirm, onClose, onDismiss, onKill, onSwitchAgent]
+    [agent.id, tabOrder, confirm, offerMerge, onClose, onDismiss, onKill, onSwitchAgent]
   );
 
   const now = useNow();
