@@ -416,6 +416,16 @@ describe('Home page', () => {
     expect(screen.getByTestId('activity-item-extensions')).toBeInTheDocument();
   });
 
+  it('returns to the start screen from Mission Control', () => {
+    useStore.setState({ rootPath: '/test/project', activeTabId: null, openTabs: [] });
+    render(<Home />);
+    expect(screen.getByTestId('mission-control')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('mc-leave-project'));
+    expect(screen.queryByTestId('mission-control')).not.toBeInTheDocument();
+    expect(screen.getByText('Open Project Folder')).toBeInTheDocument();
+    expect(useStore.getState().rootPath).toBeNull();
+  });
+
   it('shows the project rail again once a project is open', () => {
     useStore.setState({ rootPath: '/test/project' });
     render(<Home />);

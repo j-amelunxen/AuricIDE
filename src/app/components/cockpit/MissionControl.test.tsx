@@ -464,6 +464,23 @@ describe('MissionControl', () => {
     expect(useStore.getState().isProjectStarred('/tmp/other-project')).toBe(true);
   });
 
+  it('offers a leave-project control under the project name', () => {
+    render(<MissionControl />);
+    const leave = screen.getByTestId('mc-leave-project');
+    expect(leave).toHaveAccessibleName(/leave project/i);
+    expect(leave).toHaveClass('focus-visible:outline-2');
+    expect(
+      leave.compareDocumentPosition(screen.getByRole('heading', { name: 'demo-project' }))
+    ).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+  });
+
+  it('leaves the project when the leave-project control is pressed', () => {
+    const onCloseProject = vi.fn();
+    render(<MissionControl onCloseProject={onCloseProject} />);
+    fireEvent.click(screen.getByTestId('mc-leave-project'));
+    expect(onCloseProject).toHaveBeenCalledTimes(1);
+  });
+
   it('flags decaying truths with a review shortcut', () => {
     useStore.setState({
       pmDraftTickets: [makeTicket({})],
