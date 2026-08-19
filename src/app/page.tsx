@@ -254,6 +254,7 @@ export default function Home() {
             onCompareRefChange={handlers.handleCompareRefChange}
             onCompareFileClick={handlers.handleCompareFileClick}
             onDiscardFile={handlers.handleDiscardFile}
+            onIgnoreRepo={handlers.handleIgnoreGitRepo}
             onAgenticToggle={(value) => state.updateAgentSettings({ agenticCommit: value })}
             providers={state.providers}
             selectedProviderId={state.agentSettings.commitProviderId || state.defaultProvider.id}

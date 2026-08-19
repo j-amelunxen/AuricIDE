@@ -4,7 +4,11 @@ import type { ReferenceResult } from '@/lib/refactoring/findReferences';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import type { SpawnPreset } from '@/lib/agents/spawnDefaults';
 import type { WorkTab } from '@/lib/work/tabs';
-import { loadProjectConfig, setProjectConfigValue } from '@/lib/config/projectConfig';
+import {
+  loadProjectConfig,
+  setProjectConfigValue,
+  PROJECT_CONFIG_DEFAULTS,
+} from '@/lib/config/projectConfig';
 
 export const MAX_TERMINAL_LOGS = 10_000;
 
@@ -151,10 +155,9 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   agentSettings: {
     dangerouslyIgnorePermissions: false,
     autoAcceptEdits: false,
-    agenticCommit: true,
-    agenticCommitPrompt:
-      'commit and push on the current branch. Do not switch branches. Commit message prefix: {ticket}:',
-    branchTicketPattern: '([A-Z]+-\\d+)',
+    agenticCommit: PROJECT_CONFIG_DEFAULTS.agenticCommit,
+    agenticCommitPrompt: PROJECT_CONFIG_DEFAULTS.agenticCommitPrompt,
+    branchTicketPattern: PROJECT_CONFIG_DEFAULTS.branchTicketPattern,
   },
 
   addTerminalLog: (log) =>

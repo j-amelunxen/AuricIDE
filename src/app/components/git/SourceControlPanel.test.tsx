@@ -237,9 +237,12 @@ describe('SourceControlPanel', () => {
     expect(screen.getByLabelText('Agentic')).toBeInTheDocument();
   });
 
-  it('shows "Agentic Commit" button text when agentic is ON', () => {
-    render(<SourceControlPanel {...defaultProps} agenticCommit />);
-    expect(screen.getByText('Agentic Commit')).toBeInTheDocument();
+  it('offers Commit and Commit & Push as two clicks when agentic is ON', () => {
+    render(<SourceControlPanel {...defaultProps} agenticCommit onPush={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Commit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Commit & Push' })).toBeInTheDocument();
+    // Already-committed work still has a cheap publish of its own.
+    expect(screen.getByRole('button', { name: 'Push' })).toBeInTheDocument();
   });
 
   it('shows a plain "Commit" button when agentic is OFF', () => {
@@ -247,6 +250,26 @@ describe('SourceControlPanel', () => {
     // The plain path is exactly a commit — the backend has no push, and a
     // button must not claim work it does not do.
     expect(screen.getByText('Commit')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Commit & Push' })).not.toBeInTheDocument();
+  });
+
+  it('calls onCommit without push when the agentic Commit button is clicked', async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<SourceControlPanel {...defaultProps} agenticCommit onCommit={onCommit} />);
+
+    await user.click(screen.getByRole('button', { name: 'Commit' }));
+    expect(onCommit).toHaveBeenCalledWith(ROOT_PATH);
+    expect(onCommit).not.toHaveBeenCalledWith(ROOT_PATH, expect.anything());
+  });
+
+  it('calls onCommit with push when Commit & Push is clicked', async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<SourceControlPanel {...defaultProps} agenticCommit onCommit={onCommit} />);
+
+    await user.click(screen.getByRole('button', { name: 'Commit & Push' }));
+    expect(onCommit).toHaveBeenCalledWith(ROOT_PATH, { push: true });
   });
 
   it('shows "Running Agent..." spinner text when agentic committing', () => {
@@ -279,7 +302,8 @@ describe('SourceControlPanel', () => {
         repos={[singleRootRepo({ commitMessage: '' })]}
       />
     );
-    expect(screen.getByText('Agentic Commit')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Commit' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Commit & Push' })).not.toBeDisabled();
   });
 
   it('still disables button when committing even with agentic ON', () => {
@@ -912,6 +936,18 @@ describe('SourceControlPanel – multi-repo', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('commits-and-pushes only the clicked repo when agentic is on', async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<SourceControlPanel {...multiRepoProps} agenticCommit onCommit={onCommit} />);
+
+    const apiSection = screen.getByTestId(`repo-section-${OTHER_PATH}`);
+    await user.click(within(apiSection).getByRole('button', { name: 'Commit & Push' }));
+
+    expect(onCommit).toHaveBeenCalledWith(OTHER_PATH, { push: true });
+    expect(onCommit).not.toHaveBeenCalledWith(ROOT_PATH, expect.anything());
+  });
+
   it('shows the empty state with no repos, and Refresh stays available', () => {
     const onRefresh = vi.fn();
     render(<SourceControlPanel {...defaultProps} repos={[]} onRefresh={onRefresh} />);
@@ -949,5 +985,23 @@ describe('SourceControlPanel – multi-repo', () => {
       />
     );
     expect(screen.getByTestId('scm-repo-picker')).toBeInTheDocument();
+  });
+
+  it('offers Ignore on a nested repo and never on the project root', async () => {
+    const user = userEvent.setup();
+    const onIgnoreRepo = vi.fn();
+    render(<SourceControlPanel {...multiRepoProps} onIgnoreRepo={onIgnoreRepo} />);
+
+    expect(screen.queryByTestId(`ignore-repo-${ROOT_PATH}`)).not.toBeInTheDocument();
+    const ignore = screen.getByTestId(`ignore-repo-${OTHER_PATH}`);
+    expect(ignore).toHaveTextContent('Ignore');
+    await user.click(ignore);
+    expect(onIgnoreRepo).toHaveBeenCalledWith(OTHER_PATH);
+  });
+
+  it('hides Ignore when the caller cannot ignore a repo', () => {
+    render(<SourceControlPanel {...multiRepoProps} />);
+
+    expect(screen.queryByLabelText('Ignore this repository')).not.toBeInTheDocument();
   });
 });

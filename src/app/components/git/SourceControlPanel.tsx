@@ -38,7 +38,7 @@ export interface SourceControlProps {
   providers?: ProviderInfo[];
   selectedProviderId?: string;
   onCommitMessageChange: (repoPath: string, msg: string) => void;
-  onCommit: (repoPath: string) => void;
+  onCommit: (repoPath: string, options?: { push?: boolean }) => void;
   onStageFile: (repoPath: string, path: string) => void;
   onUnstageFile: (repoPath: string, path: string) => void;
   onStageAll?: (repoPath: string) => void;
@@ -66,6 +66,8 @@ export interface SourceControlProps {
   compareLoading?: boolean;
   onCompareRefChange?: (ref: string) => void;
   onCompareFileClick?: (path: string) => void;
+  /** Hide a nested repo from discovery and the dirty probe. Omit for the root. */
+  onIgnoreRepo?: (repoPath: string) => void;
 }
 
 const statusBadge: Record<string, { label: string; className: string }> = {
@@ -337,7 +339,7 @@ interface RepoBodyProps {
   onAgenticToggle?: (value: boolean) => void;
   onProviderChange?: (id: string) => void;
   onCommitMessageChange: (msg: string) => void;
-  onCommit: () => void;
+  onCommit: (options?: { push?: boolean }) => void;
   onPush?: () => void;
   onStageFile: (path: string) => void;
   onUnstageFile: (path: string) => void;
@@ -371,6 +373,17 @@ function RepoBody({
   const changed = visible.filter(isUnstagedTracked);
   const untracked = visible.filter(isUntracked);
   const hasChanges = staged.length + changed.length + untracked.length > 0;
+  const pushButton = onPush ? (
+    <button
+      type="button"
+      onClick={onPush}
+      disabled={repo.isPushing}
+      title="Push the current branch to origin"
+      className="rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary-light transition-[transform,background-color,opacity] duration-100 ease-out hover:bg-primary/20 active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+    >
+      {repo.isPushing ? 'Pushing...' : 'Push'}
+    </button>
+  ) : null;
 
   return (
     <>
@@ -404,35 +417,48 @@ function RepoBody({
             />
           </div>
         )}
-        {/* Commit and push are two separate actions, classic-git style: a
-        commit is local and cheap, a push publishes. One button per
-        promise, each label saying exactly what it does. */}
-        <div className="mt-2 flex gap-2">
-          <button
-            onClick={onCommit}
-            disabled={
-              agenticCommit ? repo.isCommitting : !repo.commitMessage.trim() || repo.isCommitting
-            }
-            className="flex-1 rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {repo.isCommitting
-              ? agenticCommit
-                ? 'Running Agent...'
-                : 'Committing...'
-              : agenticCommit
-                ? 'Agentic Commit'
-                : 'Commit'}
-          </button>
-          {onPush && (
+        {/* Commit stays local. Commit & Push publishes. In agentic mode both
+        are one click each; the agent prompt is the same, the last sentence
+        is not. Push of already-committed work stays its own button. */}
+        <div className="mt-2 flex flex-col gap-2">
+          {agenticCommit && repo.isCommitting ? (
             <button
-              onClick={onPush}
-              disabled={repo.isPushing}
-              title="Push the current branch to origin"
-              className="rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary-light transition-colors hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              disabled
+              className="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white opacity-50 cursor-not-allowed"
             >
-              {repo.isPushing ? 'Pushing...' : 'Push'}
+              Running Agent...
             </button>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onCommit()}
+                disabled={
+                  agenticCommit
+                    ? repo.isCommitting
+                    : !repo.commitMessage.trim() || repo.isCommitting
+                }
+                title={agenticCommit ? 'Agent writes the commit. Stays local.' : undefined}
+                className="flex-1 whitespace-nowrap rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color,opacity] duration-100 ease-out hover:bg-primary/90 active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+              >
+                {repo.isCommitting ? 'Committing...' : 'Commit'}
+              </button>
+              {agenticCommit && (
+                <button
+                  type="button"
+                  onClick={() => onCommit({ push: true })}
+                  disabled={repo.isCommitting}
+                  title="Agent writes the commit and pushes to origin."
+                  className="flex-1 whitespace-nowrap rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color,opacity] duration-100 ease-out hover:bg-primary/90 active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                >
+                  Commit & Push
+                </button>
+              )}
+              {!agenticCommit && pushButton}
+            </div>
           )}
+          {agenticCommit && pushButton}
         </div>
       </div>
 
@@ -494,7 +520,7 @@ interface RepoSectionProps {
   repo: RepoView;
   agenticCommit: boolean;
   onCommitMessageChange: (msg: string) => void;
-  onCommit: () => void;
+  onCommit: (options?: { push?: boolean }) => void;
   onPush?: () => void;
   onStageFile: (path: string) => void;
   onUnstageFile: (path: string) => void;
@@ -502,6 +528,7 @@ interface RepoSectionProps {
   onUnstageAll?: () => void;
   onFileClick?: (path: string, side: DiffSide) => void;
   onDiscardFile?: (path: string) => void;
+  onIgnoreRepo?: (repoPath: string) => void;
 }
 
 /** One collapsible repo in the multi-repo Changes view. */
@@ -517,6 +544,7 @@ function RepoSection({
   onUnstageAll,
   onFileClick,
   onDiscardFile,
+  onIgnoreRepo,
 }: RepoSectionProps) {
   const changeCount = repo.fileStatuses.filter((s) => s.status !== 'ignored').length;
   // Repos mount before their statuses arrive, so the initial changeCount is
@@ -525,44 +553,59 @@ function RepoSection({
   // what arrives afterward.
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const expanded = userExpanded ?? changeCount > 0;
+  const canIgnore = repo.kind !== 'root' && !!onIgnoreRepo;
 
   return (
     <div
       data-testid={`repo-section-${repo.repoPath}`}
       className="border-t border-border-dark first:border-t-0"
     >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setUserExpanded(!expanded)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
-      >
-        <span className="flex min-w-0 flex-1 items-center gap-2">
-          <AuricIcon
-            name={expanded ? 'expand_more' : 'chevron_right'}
-            className="shrink-0 text-sm text-foreground-muted"
-          />
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
-            {repo.label}
-          </span>
-          {repo.kind === 'submodule' && (
-            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-light">
-              Submodule
-            </span>
-          )}
-          {repo.branchName && (
-            <span className="max-w-[40%] shrink-0 truncate text-[10px] text-foreground-muted">
-              {repo.branchName}
-            </span>
-          )}
-        </span>
-        <span
-          className="shrink-0 text-[10px] font-medium text-foreground-muted"
-          aria-label={`${changeCount} changed file${changeCount === 1 ? '' : 's'}`}
+      <div className="flex items-center">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setUserExpanded(!expanded)}
+          className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-left hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
         >
-          {changeCount}
-        </span>
-      </button>
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <AuricIcon
+              name={expanded ? 'expand_more' : 'chevron_right'}
+              className="shrink-0 text-sm text-foreground-muted"
+            />
+            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
+              {repo.label}
+            </span>
+            {repo.kind === 'submodule' && (
+              <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary-light">
+                Submodule
+              </span>
+            )}
+            {repo.branchName && (
+              <span className="max-w-[40%] shrink-0 truncate text-[10px] text-foreground-muted">
+                {repo.branchName}
+              </span>
+            )}
+          </span>
+          <span
+            className="shrink-0 text-[10px] font-medium text-foreground-muted"
+            aria-label={`${changeCount} changed file${changeCount === 1 ? '' : 's'}`}
+          >
+            {changeCount}
+          </span>
+        </button>
+        {canIgnore && (
+          <button
+            type="button"
+            data-testid={`ignore-repo-${repo.repoPath}`}
+            aria-label="Ignore this repository"
+            title="Hide this repository from Source Control and Quick Access"
+            onClick={() => onIgnoreRepo?.(repo.repoPath)}
+            className="mr-2 shrink-0 rounded px-1.5 py-1 text-[10px] font-medium text-foreground-muted hover:bg-primary/10 hover:text-primary active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"
+          >
+            Ignore
+          </button>
+        )}
+      </div>
       {expanded && (
         <RepoBody
           repo={repo}
@@ -644,6 +687,7 @@ export function SourceControlPanel({
   compareLoading = false,
   onCompareRefChange,
   onCompareFileClick,
+  onIgnoreRepo,
 }: SourceControlProps) {
   const isSingleRoot = repos.length === 1 && repos[0].kind === 'root';
 
@@ -744,7 +788,9 @@ export function SourceControlPanel({
             onAgenticToggle={onAgenticToggle}
             onProviderChange={onProviderChange}
             onCommitMessageChange={(msg) => onCommitMessageChange(repos[0].repoPath, msg)}
-            onCommit={() => onCommit(repos[0].repoPath)}
+            onCommit={(opts) =>
+              opts?.push ? onCommit(repos[0].repoPath, { push: true }) : onCommit(repos[0].repoPath)
+            }
             onPush={onPush ? () => onPush(repos[0].repoPath) : undefined}
             onStageFile={(path) => onStageFile(repos[0].repoPath, path)}
             onUnstageFile={(path) => onUnstageFile(repos[0].repoPath, path)}
@@ -775,7 +821,9 @@ export function SourceControlPanel({
                   repo={repo}
                   agenticCommit={agenticCommit}
                   onCommitMessageChange={(msg) => onCommitMessageChange(repo.repoPath, msg)}
-                  onCommit={() => onCommit(repo.repoPath)}
+                  onCommit={(opts) =>
+                    opts?.push ? onCommit(repo.repoPath, { push: true }) : onCommit(repo.repoPath)
+                  }
                   onPush={onPush ? () => onPush(repo.repoPath) : undefined}
                   onStageFile={(path) => onStageFile(repo.repoPath, path)}
                   onUnstageFile={(path) => onUnstageFile(repo.repoPath, path)}
@@ -787,6 +835,7 @@ export function SourceControlPanel({
                   onDiscardFile={
                     onDiscardFile ? (path) => onDiscardFile(repo.repoPath, path) : undefined
                   }
+                  onIgnoreRepo={onIgnoreRepo}
                 />
               ))}
             </div>
