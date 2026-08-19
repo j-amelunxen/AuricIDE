@@ -34,10 +34,10 @@ use database::{
     RequirementsState,
 };
 use git::{
-    git_blame, git_branch_info, git_commit, git_diff, git_diff_commit, git_diff_file_ref,
-    git_diff_ref_files, git_discard, git_discover_repos, git_list_branches, git_log_since,
-    git_projects_dirty, git_push, git_stage, git_status, git_unstage, git_worktree_add,
-    git_worktree_list, git_worktree_remove,
+    git_blame, git_branch_info, git_commit, git_default_branch, git_diff, git_diff_commit,
+    git_diff_file_ref, git_diff_ref_files, git_discard, git_discover_repos, git_list_branches,
+    git_log_since, git_projects_dirty, git_push, git_stage, git_status, git_unstage,
+    git_worktree_add, git_worktree_list, git_worktree_merge_into_default, git_worktree_remove,
 };
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -2282,6 +2282,8 @@ pub fn run() {
             git_worktree_add,
             git_worktree_list,
             git_worktree_remove,
+            git_default_branch,
+            git_worktree_merge_into_default,
             list_agents,
             spawn_agent,
             kill_agent,

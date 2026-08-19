@@ -273,7 +273,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
     agentColors,
     onFocus: setFocusedAgentId,
     onOpenTerminal,
-    onStop: (id) => void killRunningAgent(id),
+    onStop: (id) => killRunningAgent(id),
     onRetry: (id) => void retryFailedAgent(id),
     onMarkReviewed: markAgentReviewed,
     onDismiss: dismissFinishedAgent,

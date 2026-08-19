@@ -27,7 +27,7 @@ export const GUIDANCE = {
     headless:
       'If enabled, the agent runs in the background without a terminal interface and exits automatically.',
     worktree:
-      'Checks the agent out onto a new git branch in a sibling folder, so it cannot dirty your current files. If this folder is not itself a git repo, you choose which nested repo to branch. Remove the worktree from Source Control when you are done.',
+      'Checks the agent out onto a new git branch in a sibling folder, so it cannot dirty your current files. If this folder is not itself a git repo, you choose which nested repo to branch. When the agent ends you can merge that branch into main or master, which also removes the worktree.',
     worktreeRepo:
       'This folder contains git repositories in subfolders. Choose which one the agent should check out into a worktree.',
   },
