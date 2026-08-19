@@ -7,6 +7,7 @@ pub mod crashlog;
 mod database;
 mod excalidraw;
 mod git;
+mod ignored_repos;
 mod inbox;
 mod llm;
 mod mcp;

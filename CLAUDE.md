@@ -418,6 +418,13 @@ repo). From there **the repository is resolved per path, never from
   setting but runs with `cwd = repoPath` of the section.
 - **Global git shortcuts** target the active tab's repo, then
   `activeRepoPath`, then the only repo — never `rootPath`.
+- **Ignored nested repos** live in the project database (`ignored_repos` /
+  `paths`), same twin pattern as the provider policy. Discovery does not
+  walk them, `git_projects_dirty` does not count them (so Quick Access stays
+  quiet), and the parent repo's status treats those paths as ignored. The
+  opened folder itself cannot be ignored. TypeScript:
+  `src/lib/config/ignoredRepos.ts`; Rust: `src-tauri/src/ignored_repos.rs`;
+  both tested against `ignoredRepos.fixtures.json`.
 - Left as it was, deliberately: goal-line evidence (`gitLogSince(rootPath)`)
   and opening a _subfolder_ of a repo (no upward discovery).
 

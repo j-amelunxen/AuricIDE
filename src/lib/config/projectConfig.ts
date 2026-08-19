@@ -1,4 +1,5 @@
 import { dbGet, dbList, dbSet } from '@/lib/tauri/db';
+import { parseIgnoredRepos, serializeIgnoredRepos } from './ignoredRepos';
 import {
   DEFAULT_PROVIDER_POLICY,
   parseProviderPolicy,
@@ -40,7 +41,7 @@ export interface ProjectConfig {
 export const PROJECT_CONFIG_DEFAULTS: ProjectConfig = {
   agenticCommit: true,
   agenticCommitPrompt:
-    'commit and push on the current branch. Do not switch branches. Commit message prefix: {ticket}:',
+    'commit on the current branch. Do not switch branches. Commit message prefix: {ticket}:',
   branchTicketPattern: '([A-Z]+-\\d+)',
   commitProviderId: '',
   conductorProviderId: '',
@@ -130,6 +131,32 @@ export async function saveProviderPolicy(rootPath: string, policy: ProviderPolic
     PROVIDER_POLICY_KEY,
     serializeProviderPolicy(policy)
   );
+}
+
+// ── Ignored nested git repos ───────────────────────────────────────
+
+/** Its own namespace: Rust reads this on discovery and the dirty probe. */
+const IGNORED_REPOS_NAMESPACE = 'ignored_repos';
+const IGNORED_REPOS_KEY = 'paths';
+
+/**
+ * Nested work-trees this project does not want to see. Missing, unreadable
+ * or corrupt storage comes back as "ignore nothing" — hiding every repo
+ * because the settings blob broke would be worse than showing a noisy one.
+ */
+export async function loadIgnoredRepos(rootPath: string): Promise<string[]> {
+  if (!rootPath) return [];
+  try {
+    const raw = await dbGet(rootPath, IGNORED_REPOS_NAMESPACE, IGNORED_REPOS_KEY);
+    return parseIgnoredRepos(raw);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveIgnoredRepos(rootPath: string, paths: readonly string[]): Promise<void> {
+  if (!rootPath) return;
+  await dbSet(rootPath, IGNORED_REPOS_NAMESPACE, IGNORED_REPOS_KEY, serializeIgnoredRepos(paths));
 }
 
 // ── Credential overrides ───────────────────────────────────────────

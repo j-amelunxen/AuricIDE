@@ -8,6 +8,7 @@ import { LlmContent } from './settings/LlmContent';
 import { JudgeLlmContent } from './settings/JudgeLlmContent';
 import { AgentContent } from './settings/AgentContent';
 import { ProjectAgentContent } from './settings/ProjectAgentContent';
+import { GitContent } from './settings/GitContent';
 import { CredentialsContent } from './settings/CredentialsContent';
 import { ProviderPolicyContent } from './settings/ProviderPolicyContent';
 import { CommandsContent } from './settings/CommandsContent';
@@ -40,7 +41,8 @@ export type SettingsCategory =
   | 'excalidraw'
   | 'video-import'
   | 'providers'
-  | 'project-agent';
+  | 'project-agent'
+  | 'git';
 
 /**
  * Which layer a setting belongs to. The split is the whole point of this
@@ -138,7 +140,10 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     id: 'project-system',
     label: 'System',
     scope: 'project',
-    items: [{ id: 'system', icon: 'info', label: 'System' }],
+    items: [
+      { id: 'git', icon: 'visibility_off', label: 'Git' },
+      { id: 'system', icon: 'info', label: 'System' },
+    ],
   },
 ];
 
@@ -189,6 +194,8 @@ function SettingsDialog({
         return <EditorContent />;
       case 'appearance':
         return <AppearanceContent />;
+      case 'git':
+        return <GitContent />;
       case 'system':
         return <SystemContent />;
       case 'mcp':
