@@ -15,6 +15,7 @@ vi.mock('@/app/components/ui/InfoTooltip', () => ({
 
 const mockListProviders = vi.fn<() => Promise<ProviderInfo[]>>();
 const mockProviderPolicy = vi.fn();
+const mockExists = vi.fn<(path: string) => Promise<boolean>>();
 
 vi.mock('@/lib/config/projectConfig', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/config/projectConfig')>();
@@ -75,6 +76,10 @@ vi.mock('@tauri-apps/api/webview', () => ({
   }),
 }));
 
+vi.mock('@/lib/tauri/fs', () => ({
+  exists: (path: string) => mockExists(path),
+}));
+
 type User = ReturnType<typeof userEvent.setup>;
 
 /** Answers the first-use YOLO elevate question. */
@@ -90,9 +95,10 @@ beforeEach(() => {
   mockDiscoverGitRepos.mockImplementation(async (rootPath) => cwdAsRootRepo(rootPath));
   mockInvoke.mockReset();
   dragDropHandler = null;
+  mockExists.mockResolvedValue(false);
   localStorage.clear();
   sessionStorage.clear();
-  useStore.setState({ overlayStack: { layers: [] } });
+  useStore.setState({ overlayStack: { layers: [] }, repos: [] });
 });
 
 // Helpers matching the FALLBACK_CRUSH_PROVIDER constants
@@ -479,6 +485,111 @@ describe('SpawnAgentDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/not a git repository/i);
     expect(screen.getByRole('button', { name: /start agent/i })).toBeDisabled();
     expect(onSpawn).not.toHaveBeenCalled();
+  });
+
+  it('checks new git worktree when the working directory is a git repo', () => {
+    useStore.setState({
+      repos: [{ path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' }],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/work/frontend"
+      />
+    );
+    expect(screen.getByLabelText(/new git worktree/i)).toBeChecked();
+  });
+
+  it('leaves new git worktree off when the working directory is not a git repo', () => {
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/tmp/notes"
+      />
+    );
+    expect(screen.getByLabelText(/new git worktree/i)).not.toBeChecked();
+  });
+
+  it('spawns with a worktree by default when the working directory is a git repo', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    useStore.setState({
+      repos: [{ path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' }],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={onSpawn}
+        initialRepoPath="/work/frontend"
+      />
+    );
+
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ useWorktree: true }));
+  });
+
+  it('lets the user turn the worktree off even in a git repo', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    useStore.setState({
+      repos: [{ path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' }],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={onSpawn}
+        initialRepoPath="/work/frontend"
+      />
+    );
+
+    await user.click(screen.getByLabelText(/new git worktree/i));
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn.mock.calls[0][0].useWorktree).toBeUndefined();
+  });
+
+  it('checks new git worktree when .git is on disk even if the repo is not yet discovered', async () => {
+    mockExists.mockImplementation(async (path) => path === '/other/repo/.git');
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/other/repo"
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText(/new git worktree/i)).toBeChecked();
+    });
+  });
+
+  it('turns the worktree on when the working directory is switched to a git repo', async () => {
+    const user = userEvent.setup();
+    useStore.setState({
+      repos: [{ path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' }],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/tmp/notes"
+        recentPaths={['/work/frontend']}
+      />
+    );
+    expect(screen.getByLabelText(/new git worktree/i)).not.toBeChecked();
+
+    await user.selectOptions(screen.getByTestId('recent-dirs'), '/work/frontend');
+    expect(screen.getByLabelText(/new git worktree/i)).toBeChecked();
   });
 
   it('calls onClose on cancel', async () => {

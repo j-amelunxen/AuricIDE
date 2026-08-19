@@ -28,6 +28,8 @@ import {
   mergeAttachmentPaths,
   spawnAttachmentLabel,
 } from '@/lib/agents/spawnAttachments';
+import { useStore } from '@/lib/store';
+import { isGitRepoRoot, workingDirectoryHasGitRepo } from '@/lib/git/worktreeDefault';
 
 const YOLO_ELEVATE_ACK_KEY = 'auric.yolo-elevate-acknowledged';
 
@@ -107,7 +109,10 @@ function SpawnAgentDialogPanel({
   const [headless, setHeadless] = useState(
     () => loadSpawnDefaults(initialRepoPath)?.headless ?? false
   );
-  const [useWorktree, setUseWorktree] = useState(false);
+  const repos = useStore((s) => s.repos);
+  const [worktreeOverride, setWorktreeOverride] = useState<boolean | null>(null);
+  const [probedHasGit, setProbedHasGit] = useState<boolean | null>(null);
+  const [worktreeForPath, setWorktreeForPath] = useState(initialRepoPath);
   const [discoveredRepos, setDiscoveredRepos] = useState<GitRepoRef[]>([]);
   const [worktreeRepoPath, setWorktreeRepoPath] = useState('');
   const [worktreeError, setWorktreeError] = useState<string | null>(null);
@@ -152,7 +157,9 @@ function SpawnAgentDialogPanel({
       setRepoPath(initialRepoPath);
       setGoalId(initialGoalId ?? '');
       setHistoryIndex(-1);
-      setUseWorktree(false);
+      setWorktreeOverride(null);
+      setProbedHasGit(null);
+      setWorktreeForPath(initialRepoPath);
       setDiscoveredRepos([]);
       setWorktreeRepoPath('');
       setWorktreeError(null);
@@ -161,6 +168,29 @@ function SpawnAgentDialogPanel({
     }
   }
 
+  // A new working directory drops the previous toggle and the previous probe.
+  if (worktreeForPath !== repoPath) {
+    setWorktreeForPath(repoPath);
+    setWorktreeOverride(null);
+    setProbedHasGit(null);
+  }
+
+  const knownGitRepo = isGitRepoRoot(repoPath, repos);
+  const useWorktree = worktreeOverride ?? (knownGitRepo || probedHasGit === true);
+
+  // Only the disk probe lives here — known roots are derived above, so a
+  // discovered repo never waits on IPC and never writes the same boolean back.
+  useEffect(() => {
+    if (knownGitRepo || !repoPath.trim()) return;
+    let cancelled = false;
+    void workingDirectoryHasGitRepo(repoPath).then((hasRepo) => {
+      if (!cancelled) setProbedHasGit(hasRepo);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [knownGitRepo, repoPath]);
+
   // When the agent will run in a worktree, find the git repos under the
   // working directory so we can ask which one to branch — a workspace that
   // is not itself a repo used to throw from git_worktree_add.
@@ -168,17 +198,17 @@ function SpawnAgentDialogPanel({
     if (!useWorktree || !repoPath) return;
     let cancelled = false;
     void discoverGitRepos(repoPath)
-      .then((repos) => {
+      .then((foundRepos) => {
         if (cancelled) return;
-        setDiscoveredRepos(repos);
-        const sources = worktreeSourceRepos(repoPath, repos);
+        setDiscoveredRepos(foundRepos);
+        const sources = worktreeSourceRepos(repoPath, foundRepos);
         if (sources.length === 0) {
           setWorktreeRepoPath('');
           setWorktreeError('This folder is not a git repository.');
           return;
         }
         setWorktreeError(null);
-        if (needsWorktreeRepoPicker(repoPath, repos)) {
+        if (needsWorktreeRepoPicker(repoPath, foundRepos)) {
           setWorktreeRepoPath((current) => {
             if (sources.some((source) => source.path === current)) return current;
             return sources.length === 1 ? sources[0].path : '';
@@ -697,7 +727,7 @@ function SpawnAgentDialogPanel({
                 checked={useWorktree}
                 onChange={(e) => {
                   const on = e.target.checked;
-                  setUseWorktree(on);
+                  setWorktreeOverride(on);
                   if (!on) {
                     setDiscoveredRepos([]);
                     setWorktreeRepoPath('');
