@@ -9,17 +9,21 @@ const loadProjectConfig = vi.fn(async () => ({
   conductorProviderId: '',
 }));
 
-vi.mock('@/lib/config/projectConfig', () => ({
-  setProjectConfigValue: (...args: unknown[]) => setProjectConfigValue(...(args as [])),
-  loadProjectConfig: (...args: unknown[]) => loadProjectConfig(...(args as [])),
-}));
+vi.mock('@/lib/config/projectConfig', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/config/projectConfig')>();
+  return {
+    ...actual,
+    setProjectConfigValue: (...args: unknown[]) => setProjectConfigValue(...(args as [])),
+    loadProjectConfig: (...args: unknown[]) => loadProjectConfig(...(args as [])),
+  };
+});
 
 import { createUISlice, MAX_TERMINAL_LOGS, type UISlice } from './uiSlice';
 import { useStore } from '@/lib/store';
 import type { ReferenceResult } from '@/lib/refactoring/findReferences';
 
 const DEFAULT_PROMPT =
-  'commit and push on the current branch. Do not switch branches. Commit message prefix: {ticket}:';
+  'commit on the current branch. Do not switch branches. Commit message prefix: {ticket}:';
 
 function createTestStore() {
   let state: UISlice;

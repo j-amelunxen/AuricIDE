@@ -46,7 +46,7 @@ export function ProjectAgentContent() {
 
         <SettingsToggle
           label="Agentic Commit"
-          description="Use a CLI agent for commit &amp; push"
+          description="Use a CLI agent to write the commit. Push is a separate click."
           tooltip={GUIDANCE.settings.agenticCommit}
           checked={agentSettings.agenticCommit}
           onChange={(checked) => updateAgentSettings({ agenticCommit: checked })}

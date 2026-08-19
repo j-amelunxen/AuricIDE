@@ -31,6 +31,8 @@ import {
 import { nextScratchName } from '@/lib/scratch/naming';
 import { imageDataUri, localFileSrc, previewKind } from '@/lib/media/preview';
 import { appendGitignoreEntry, toGitignoreEntry } from '@/lib/git/gitignore';
+import { addIgnoredRepo, relativePathForIgnore } from '@/lib/config/ignoredRepos';
+import { loadIgnoredRepos, saveIgnoredRepos } from '@/lib/config/projectConfig';
 import { resolveGitStatusForPath } from '@/lib/git/resolveGitStatus';
 import { relativeToRepo } from '@/lib/git/repos';
 import { selectChangedFileCount, selectRepoForPath, type GitRepoState } from '@/lib/store/gitSlice';
@@ -42,7 +44,7 @@ import {
 } from '@/lib/project/newProject';
 import { type AgentConfig } from '@/lib/tauri/agents';
 import { openExternalUrl, revealInFileManager } from '@/lib/tauri/opener';
-import { extractTicket } from '@/lib/git/branchTicket';
+import { buildAgenticCommitTask } from '@/lib/git/agenticCommit';
 import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
 import { computeBacklinkWarning } from '@/lib/refactoring/backlinkWarning';
 import { computeFileRenameChanges } from '@/lib/refactoring/renameFile';
@@ -1062,7 +1064,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
   }, []);
 
   const handleCommit = useCallback(
-    async (repoPath: string) => {
+    async (repoPath: string, options?: { push?: boolean }) => {
       if (state.agentSettings.agenticCommit) {
         const providerId = state.agentSettings.commitProviderId || state.defaultProvider.id;
         const provider =
@@ -1070,9 +1072,12 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
           state.providers[0] ??
           state.defaultProvider;
         const branchName = state.repoStates[repoPath]?.branchInfo?.name ?? '';
-        const ticketPrefix =
-          extractTicket(branchName, state.agentSettings.branchTicketPattern) ?? '';
-        const task = state.agentSettings.agenticCommitPrompt.replaceAll('{ticket}', ticketPrefix);
+        const task = buildAgenticCommitTask(
+          state.agentSettings.agenticCommitPrompt,
+          branchName,
+          state.agentSettings.branchTicketPattern,
+          { push: options?.push === true }
+        );
 
         await state.spawnNewAgent({
           name: `commit:${repoPath.split('/').pop() ?? 'repo'}`,
@@ -1394,6 +1399,32 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state, handleRefresh]
   );
 
+  /**
+   * Hide a nested work-tree from discovery and the dirty probe. The root
+   * cannot be ignored — that would turn the opened folder into "no git".
+   */
+  const handleIgnoreGitRepo = useCallback(
+    async (absPath: string) => {
+      const root = state.rootPath;
+      if (!root) return;
+      const relative = relativePathForIgnore(root, absPath);
+      if (!relative) {
+        state.showToast('The opened folder cannot be ignored', 'info');
+        return;
+      }
+      try {
+        const current = await loadIgnoredRepos(root);
+        await saveIgnoredRepos(root, addIgnoredRepo(current, relative));
+        await useStore.getState().discoverAndRefreshGit(root);
+      } catch {
+        state.showToast('Could not ignore this repository', 'error');
+        return;
+      }
+      state.showToast(`Ignored "${relative}". Undo in Settings → Git.`, 'success');
+    },
+    [state]
+  );
+
   /** Handles both a single delete and a bulk multi-select delete — one confirm either way. */
   const handleDeleteSelection = useCallback(
     async (paths: string[]) => {
@@ -1644,6 +1675,17 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
         });
       }
 
+      const ignoreableRepo = node.isDirectory
+        ? state.repos.find((repo) => repo.path === node.path && repo.kind !== 'root')
+        : undefined;
+      if (ignoreableRepo) {
+        options.push({
+          label: 'Ignore this Git repository',
+          icon: 'visibility_off',
+          action: () => void handleIgnoreGitRepo(node.path),
+        });
+      }
+
       options.push({
         label: 'Rename',
         icon: 'edit',
@@ -1672,6 +1714,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleNewDiagram,
     handleCreateTicketFromMarkdown,
     handleAddToGitignore,
+    handleIgnoreGitRepo,
   ]);
 
   // Command palette
@@ -1946,6 +1989,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleCopyPath,
     handleRenameConfirm,
     handleAddToGitignore,
+    handleIgnoreGitRepo,
     handleDeleteSelection,
     handleRenameRequest,
     handleFocusNode,

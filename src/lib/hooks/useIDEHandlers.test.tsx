@@ -49,6 +49,13 @@ vi.mock('@/lib/tauri/git', () => ({
   discardChanges: (...args: unknown[]) => mockDiscardChanges(...args),
 }));
 
+const mockLoadIgnoredRepos = vi.fn(async () => [] as string[]);
+const mockSaveIgnoredRepos = vi.fn(async () => {});
+vi.mock('@/lib/config/projectConfig', () => ({
+  loadIgnoredRepos: (...args: unknown[]) => mockLoadIgnoredRepos(...(args as [])),
+  saveIgnoredRepos: (...args: unknown[]) => mockSaveIgnoredRepos(...(args as [])),
+}));
+
 // Mock Store
 const mockRefreshGitStatus = vi.fn();
 const mockStageAll = vi.fn();
@@ -272,6 +279,9 @@ describe('useIDEHandlers', () => {
     mockActiveTabId = null;
     mockFileStatuses = [];
     mockRepos = [{ path: '/p', relativePath: '', name: 'p', kind: 'root' }];
+    mockState.repos = mockRepos;
+    mockLoadIgnoredRepos.mockResolvedValue([]);
+    mockSaveIgnoredRepos.mockResolvedValue(undefined);
     mockRepoStatuses = {};
     mockActiveRepoPath = '/p';
     mockScmView = 'changes';
@@ -1526,6 +1536,73 @@ describe('useIDEHandlers', () => {
       ).toBe(true);
     });
 
+    it('persists a nested repo on Ignore this Git repository and rediscovers', async () => {
+      mockState.rootPath = '/p';
+      mockLoadIgnoredRepos.mockResolvedValue([]);
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleIgnoreGitRepo('/p/vendor');
+
+      expect(mockSaveIgnoredRepos).toHaveBeenCalledWith('/p', ['vendor']);
+      expect(mockDiscoverAndRefreshGit).toHaveBeenCalledWith('/p');
+      expect(mockState.showToast).toHaveBeenCalledWith(
+        'Ignored "vendor". Undo in Settings → Git.',
+        'success'
+      );
+    });
+
+    it('offers Ignore this Git repository for a nested repo folder', () => {
+      mockState.rootPath = '/p';
+      mockState.repos = [
+        { path: '/p', relativePath: '', name: 'p', kind: 'root' },
+        { path: '/p/vendor', relativePath: 'vendor', name: 'vendor', kind: 'nested' },
+      ];
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'vendor', path: '/p/vendor', isDirectory: true },
+      };
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      expect(
+        result.current.contextMenuOptions.some(
+          (o) => 'label' in o && o.label === 'Ignore this Git repository'
+        )
+      ).toBe(true);
+    });
+
+    it('hides Ignore this Git repository for the project root and for files', () => {
+      mockState.rootPath = '/p';
+      mockState.repos = [
+        { path: '/p', relativePath: '', name: 'p', kind: 'root' },
+        { path: '/p/vendor', relativePath: 'vendor', name: 'vendor', kind: 'nested' },
+      ];
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: '', path: '/p', isDirectory: true },
+      };
+      const { result: rootResult } = renderHook(() => useIDEHandlers(mockState));
+      expect(
+        rootResult.current.contextMenuOptions.some(
+          (o) => 'label' in o && o.label === 'Ignore this Git repository'
+        )
+      ).toBe(false);
+
+      mockState.contextMenu = {
+        x: 0,
+        y: 0,
+        node: { name: 'notes.md', path: '/p/vendor/notes.md', isDirectory: false },
+      };
+      const { result: fileResult } = renderHook(() => useIDEHandlers(mockState));
+      expect(
+        fileResult.current.contextMenuOptions.some(
+          (o) => 'label' in o && o.label === 'Ignore this Git repository'
+        )
+      ).toBe(false);
+    });
+
     it('hides the option for the .gitignore file itself', () => {
       mockState.rootPath = '/p';
       mockState.contextMenu = {
@@ -1633,7 +1710,7 @@ describe('useIDEHandlers', () => {
   });
 
   describe('handleCommit', () => {
-    it('spawns an agent with the templated prompt when agentic commit is on, instead of committing directly', async () => {
+    it('spawns an agent that commits locally when agentic commit is on', async () => {
       mockState.repoStates = { '/p': repoStateStub('feature/AUR-42-thing') };
       mockState.agentSettings = {
         ...mockState.agentSettings,
@@ -1650,11 +1727,30 @@ describe('useIDEHandlers', () => {
           provider: 'gemini',
           model: 'flash',
           cwd: '/p',
-          task: 'commit and push. Prefix: AUR-42:',
         })
       );
+      const task = mockState.spawnNewAgent.mock.calls[0][0].task as string;
+      expect(task).toContain('Prefix: AUR-42:');
+      expect(task).toMatch(/do not push/i);
       expect(mockState.commit).not.toHaveBeenCalled();
       expect(mockStageAll).not.toHaveBeenCalled();
+    });
+
+    it('spawns an agent that also pushes when asked', async () => {
+      mockState.repoStates = { '/p': repoStateStub('feature/AUR-42-thing') };
+      mockState.agentSettings = {
+        ...mockState.agentSettings,
+        agenticCommit: true,
+        commitProviderId: 'gemini',
+      };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCommit('/p', { push: true });
+
+      const task = mockState.spawnNewAgent.mock.calls[0][0].task as string;
+      expect(task).toContain('Prefix: AUR-42:');
+      expect(task).toMatch(/push the current branch to origin/i);
+      expect(mockState.commit).not.toHaveBeenCalled();
     });
 
     it('falls back to a plain manual commit when agentic commit is off', async () => {
@@ -1682,9 +1778,11 @@ describe('useIDEHandlers', () => {
         expect.objectContaining({
           name: 'commit:api',
           cwd: '/w/api',
-          task: 'commit and push. Prefix: AUR-9:',
         })
       );
+      const task = mockState.spawnNewAgent.mock.calls[0][0].task as string;
+      expect(task).toContain('Prefix: AUR-9:');
+      expect(task).toMatch(/do not push/i);
     });
 
     it('commits a specific repo directly (manual), never the project root', async () => {
