@@ -352,7 +352,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   spawnNewAgent: async (config) => {
     let spawnConfig = config;
     if (config.useWorktree) {
-      const repo = config.cwd;
+      const repo = config.worktreeRepoPath || config.cwd;
       const toast = get() as AgentSlice & {
         showToast?: (message: string, variant?: 'info' | 'success' | 'error') => number;
         refreshAgentWorktrees?: () => Promise<void>;
@@ -365,7 +365,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       try {
         const { addGitWorktree } = await import('../tauri/git');
         const worktree = await addGitWorktree(repo, config.name);
-        const { useWorktree: _flag, ...rest } = config;
+        const { useWorktree: _flag, worktreeRepoPath: _source, ...rest } = config;
         spawnConfig = { ...rest, cwd: worktree.path };
         void toast.refreshAgentWorktrees?.();
       } catch (err) {

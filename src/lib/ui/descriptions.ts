@@ -27,13 +27,16 @@ export const GUIDANCE = {
     headless:
       'If enabled, the agent runs in the background without a terminal interface and exits automatically.',
     worktree:
-      'Checks the agent out onto a new git branch in a sibling folder, so it cannot dirty your current files. Remove the worktree from Source Control when you are done.',
+      'Checks the agent out onto a new git branch in a sibling folder, so it cannot dirty your current files. If this folder is not itself a git repo, you choose which nested repo to branch. Remove the worktree from Source Control when you are done.',
+    worktreeRepo:
+      'This folder contains git repositories in subfolders. Choose which one the agent should check out into a worktree.',
   },
   settings: {
     autoAcceptEdits: 'If enabled, the agent will apply file changes without asking for permission.',
     dangerouslyIgnorePermissions:
       'Skips permission prompts. The agent can run commands and access files without asking. Use only for work you trust.',
-    agenticCommit: 'Use an AI agent to automatically generate commit messages and push changes.',
+    agenticCommit:
+      'Use an AI agent to write the commit. Push is a separate click — Commit stays local, Commit & Push publishes.',
     deepNlp:
       'Enables advanced natural language processing for the editor. Requires downloading ~300MB of models.',
     linting: 'Shows real-time warnings and errors for your Markdown files.',

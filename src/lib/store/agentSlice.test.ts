@@ -471,6 +471,27 @@ describe('agentSlice', () => {
     expect(store.getState().agentSpawnConfigs['mock-agent-1'].useWorktree).toBeUndefined();
   });
 
+  it('creates the worktree from worktreeRepoPath when cwd is a workspace', async () => {
+    const { spawnAgent } = await import('../tauri/agents');
+    const { addGitWorktree } = await import('../tauri/git');
+
+    await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+      cwd: '/ws',
+      worktreeRepoPath: '/ws/api',
+      useWorktree: true,
+    });
+
+    expect(addGitWorktree).toHaveBeenCalledWith('/ws/api', 'Writer');
+    expect(spawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/repo.auric-wt/writer-ab12' })
+    );
+    expect(vi.mocked(spawnAgent).mock.calls[0][0]).not.toHaveProperty('worktreeRepoPath');
+    expect(vi.mocked(spawnAgent).mock.calls[0][0]).not.toHaveProperty('useWorktree');
+  });
+
   it('does not spawn when worktree creation fails', async () => {
     const { spawnAgent } = await import('../tauri/agents');
     const { addGitWorktree } = await import('../tauri/git');

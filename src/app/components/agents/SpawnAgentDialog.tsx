@@ -18,6 +18,10 @@ import {
 } from '@/lib/agents/spawnDefaults';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
+import type { GitRepoRef } from '@/lib/tauri/git';
+import { discoverGitRepos } from '@/lib/tauri/git';
+import { repoLabel } from '@/lib/git/repos';
+import { needsWorktreeRepoPicker, worktreeSourceRepos } from '@/lib/git/agentWorktree';
 
 const YOLO_ELEVATE_ACK_KEY = 'auric.yolo-elevate-acknowledged';
 
@@ -98,6 +102,9 @@ function SpawnAgentDialogPanel({
     () => loadSpawnDefaults(initialRepoPath)?.headless ?? false
   );
   const [useWorktree, setUseWorktree] = useState(false);
+  const [discoveredRepos, setDiscoveredRepos] = useState<GitRepoRef[]>([]);
+  const [worktreeRepoPath, setWorktreeRepoPath] = useState('');
+  const [worktreeError, setWorktreeError] = useState<string | null>(null);
   // The last launch's choices, applied once when their provider becomes
   // current — four decisions per agent become zero for a same-as-last-time
   // fleet, while an explicit provider switch still resets to that
@@ -138,8 +145,48 @@ function SpawnAgentDialogPanel({
       setGoalId(initialGoalId ?? '');
       setHistoryIndex(-1);
       setUseWorktree(false);
+      setDiscoveredRepos([]);
+      setWorktreeRepoPath('');
+      setWorktreeError(null);
     }
   }
+
+  // When the agent will run in a worktree, find the git repos under the
+  // working directory so we can ask which one to branch — a workspace that
+  // is not itself a repo used to throw from git_worktree_add.
+  useEffect(() => {
+    if (!useWorktree || !repoPath) return;
+    let cancelled = false;
+    void discoverGitRepos(repoPath)
+      .then((repos) => {
+        if (cancelled) return;
+        setDiscoveredRepos(repos);
+        const sources = worktreeSourceRepos(repoPath, repos);
+        if (sources.length === 0) {
+          setWorktreeRepoPath('');
+          setWorktreeError('This folder is not a git repository.');
+          return;
+        }
+        setWorktreeError(null);
+        if (needsWorktreeRepoPicker(repoPath, repos)) {
+          setWorktreeRepoPath((current) => {
+            if (sources.some((source) => source.path === current)) return current;
+            return sources.length === 1 ? sources[0].path : '';
+          });
+          return;
+        }
+        setWorktreeRepoPath('');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDiscoveredRepos([]);
+        setWorktreeRepoPath('');
+        setWorktreeError('This folder is not a git repository.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [useWorktree, repoPath]);
 
   // The instruction is what the user came here to write — start there, with the
   // caret behind any prefilled text so a handed-over prompt can just be extended.
@@ -174,9 +221,40 @@ function SpawnAgentDialogPanel({
   }, [currentProvider]);
 
   const instruction = task.trim();
+  const worktreeSources = worktreeSourceRepos(repoPath, discoveredRepos);
+  const showWorktreePicker = useWorktree && needsWorktreeRepoPicker(repoPath, discoveredRepos);
 
   const handleDeploy = async () => {
     if (!instruction) return;
+    let resolvedWorktreeRepo: string | undefined;
+    if (useWorktree) {
+      if (!repoPath) {
+        setWorktreeError('A git worktree needs a working directory.');
+        return;
+      }
+      let repos = discoveredRepos;
+      try {
+        repos = await discoverGitRepos(repoPath);
+      } catch {
+        repos = [];
+      }
+      setDiscoveredRepos(repos);
+      const sources = worktreeSourceRepos(repoPath, repos);
+      if (sources.length === 0) {
+        setWorktreeError('This folder is not a git repository.');
+        return;
+      }
+      if (needsWorktreeRepoPicker(repoPath, repos)) {
+        const chosen = sources.find((source) => source.path === worktreeRepoPath);
+        if (!chosen) {
+          setWorktreeError('Choose which repository to check the agent out from.');
+          return;
+        }
+        resolvedWorktreeRepo = chosen.path;
+      } else {
+        resolvedWorktreeRepo = sources[0].path;
+      }
+    }
     if (permissionMode === 'yolo' && sessionStorage.getItem(YOLO_ELEVATE_ACK_KEY) !== '1') {
       const go = await confirm({
         title: 'Act without asking?',
@@ -216,6 +294,10 @@ function SpawnAgentDialogPanel({
       spawnedByTicketId: spawnedByTicketId ?? undefined,
       spawnedByGoalId: goalId || undefined,
       useWorktree: useWorktree || undefined,
+      worktreeRepoPath:
+        useWorktree && resolvedWorktreeRepo && resolvedWorktreeRepo !== repoPath
+          ? resolvedWorktreeRepo
+          : undefined,
     });
     setRepoPath('');
     setTask('');
@@ -304,7 +386,15 @@ function SpawnAgentDialogPanel({
                   id="repo-path"
                   type="text"
                   value={repoPath}
-                  onChange={(e) => setRepoPath(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setRepoPath(next);
+                    if (!next) {
+                      setDiscoveredRepos([]);
+                      setWorktreeRepoPath('');
+                      setWorktreeError(null);
+                    }
+                  }}
                   className="flex-1 rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors"
                   placeholder="/path/to/repo"
                 />
@@ -507,7 +597,15 @@ function SpawnAgentDialogPanel({
               <input
                 type="checkbox"
                 checked={useWorktree}
-                onChange={(e) => setUseWorktree(e.target.checked)}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setUseWorktree(on);
+                  if (!on) {
+                    setDiscoveredRepos([]);
+                    setWorktreeRepoPath('');
+                    setWorktreeError(null);
+                  }
+                }}
                 disabled={!repoPath}
                 className="accent-primary h-3.5 w-3.5"
               />
@@ -520,6 +618,44 @@ function SpawnAgentDialogPanel({
               </span>
             </label>
 
+            {showWorktreePicker && (
+              <div className="space-y-1.5 -mt-1">
+                <label
+                  htmlFor="worktree-repo"
+                  className="flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider"
+                >
+                  Git repository
+                  <InfoTooltip description={GUIDANCE.agents.worktreeRepo} label="i" />
+                </label>
+                <div className="relative">
+                  <select
+                    id="worktree-repo"
+                    value={worktreeRepoPath}
+                    onChange={(e) => {
+                      setWorktreeRepoPath(e.target.value);
+                      setWorktreeError(null);
+                    }}
+                    className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
+                  >
+                    <option value="">Choose a repository…</option>
+                    {worktreeSources.map((source) => (
+                      <option key={source.path} value={source.path}>
+                        {repoLabel(source)}
+                        {source.kind === 'submodule' ? ' (submodule)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevron />
+                </div>
+              </div>
+            )}
+
+            {worktreeError && (
+              <p role="alert" className="text-[11px] text-red-400 -mt-2">
+                {worktreeError}
+              </p>
+            )}
+
             <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
               <button
                 type="button"
@@ -531,7 +667,11 @@ function SpawnAgentDialogPanel({
               <button
                 type="button"
                 onClick={handleDeploy}
-                disabled={!instruction || noProviderPermitted}
+                disabled={
+                  !instruction ||
+                  noProviderPermitted ||
+                  (useWorktree && (!!worktreeError || (showWorktreePicker && !worktreeRepoPath)))
+                }
                 className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
               >
                 Start Agent
