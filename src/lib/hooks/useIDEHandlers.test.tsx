@@ -87,7 +87,12 @@ let mockFileStatuses: {
 // `mockFileStatuses` (already used everywhere) feeds that repo's status.
 // Tests that need a second/nested repo add it to `mockRepos` and give it its
 // own entry in `mockRepoStatuses`.
-type MockGitRepoRef = { path: string; relativePath: string; name: string; kind: string };
+type MockGitRepoRef = {
+  path: string;
+  relativePath: string;
+  name: string;
+  kind: import('@/lib/tauri/git').GitRepoKind;
+};
 let mockRepos: MockGitRepoRef[] = [{ path: '/p', relativePath: '', name: 'p', kind: 'root' }];
 let mockRepoStatuses: Record<string, typeof mockFileStatuses> = {};
 let mockActiveRepoPath: string | null = '/p';
@@ -1729,7 +1734,8 @@ describe('useIDEHandlers', () => {
           cwd: '/p',
         })
       );
-      const task = mockState.spawnNewAgent.mock.calls[0][0].task as string;
+      const task = (mockState.spawnNewAgent as ReturnType<typeof vi.fn>).mock.calls[0][0]
+        .task as string;
       expect(task).toContain('Prefix: AUR-42:');
       expect(task).toMatch(/do not push/i);
       expect(mockState.commit).not.toHaveBeenCalled();
@@ -1747,7 +1753,8 @@ describe('useIDEHandlers', () => {
 
       await result.current.handleCommit('/p', { push: true });
 
-      const task = mockState.spawnNewAgent.mock.calls[0][0].task as string;
+      const task = (mockState.spawnNewAgent as ReturnType<typeof vi.fn>).mock.calls[0][0]
+        .task as string;
       expect(task).toContain('Prefix: AUR-42:');
       expect(task).toMatch(/push the current branch to origin/i);
       expect(mockState.commit).not.toHaveBeenCalled();
@@ -1780,7 +1787,8 @@ describe('useIDEHandlers', () => {
           cwd: '/w/api',
         })
       );
-      const task = mockState.spawnNewAgent.mock.calls[0][0].task as string;
+      const task = (mockState.spawnNewAgent as ReturnType<typeof vi.fn>).mock.calls[0][0]
+        .task as string;
       expect(task).toContain('Prefix: AUR-9:');
       expect(task).toMatch(/do not push/i);
     });
