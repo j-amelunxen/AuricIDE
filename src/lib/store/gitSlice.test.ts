@@ -67,6 +67,14 @@ vi.mock('../tauri/git', () => ({
   gitBlame: vi.fn(async () => [sampleBlame]),
   listGitWorktrees: vi.fn(async () => []),
   removeGitWorktree: vi.fn(async () => undefined),
+  gitDefaultBranch: vi.fn(async () => 'main'),
+  mergeGitWorktreeIntoDefault: vi.fn(async () => ({
+    defaultBranch: 'main',
+    merged: true,
+    fastForward: true,
+    cleanedUp: true,
+    oid: 'abc',
+  })),
 }));
 
 describe('gitSlice', () => {
@@ -878,6 +886,31 @@ describe('gitSlice', () => {
       await expect(store.getState().removeAgentWorktree('/nope', true)).rejects.toThrow(
         'worktree not found'
       );
+    });
+
+    it('mergeAgentWorktree merges then reloads worktrees and status', async () => {
+      const { mergeGitWorktreeIntoDefault, listGitWorktrees } = await import('../tauri/git');
+      store.setState({ agentWorktrees: [tree], repos: [repoRoot] });
+      vi.mocked(listGitWorktrees).mockResolvedValueOnce([]);
+
+      const result = await store.getState().mergeAgentWorktree(tree.path, 'Agent work: Writer');
+
+      expect(mergeGitWorktreeIntoDefault).toHaveBeenCalledWith(
+        '/w',
+        tree.path,
+        'Agent work: Writer'
+      );
+      expect(result.cleanedUp).toBe(true);
+      expect(store.getState().agentWorktrees).toEqual([]);
+    });
+
+    it('mergeAgentWorktree still runs when the list has not caught up', async () => {
+      const { mergeGitWorktreeIntoDefault } = await import('../tauri/git');
+      store.setState({ agentWorktrees: [] });
+
+      await store.getState().mergeAgentWorktree(tree.path);
+
+      expect(mergeGitWorktreeIntoDefault).toHaveBeenCalledWith(tree.path, tree.path, undefined);
     });
   });
 

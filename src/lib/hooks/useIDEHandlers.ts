@@ -753,12 +753,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state]
   );
 
-  const handleKillAgent = useCallback(
-    (id: string) => {
-      state.killRunningAgent(id);
-    },
-    [state]
-  );
+  const handleKillAgent = useCallback((id: string) => state.killRunningAgent(id), [state]);
 
   const handleSelectAgent = useCallback(
     (id: string | null) => {

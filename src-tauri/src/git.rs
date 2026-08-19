@@ -1,4 +1,7 @@
-use git2::{Repository, StatusOptions, WorktreeAddOptions, WorktreePruneOptions};
+use git2::{
+    build::CheckoutBuilder, BranchType, Repository, StatusOptions, WorktreeAddOptions,
+    WorktreePruneOptions,
+};
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -98,8 +101,19 @@ pub struct GitWorktree {
     pub branch_ahead: bool,
 }
 
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeMergeResult {
+    pub default_branch: String,
+    pub merged: bool,
+    pub fast_forward: bool,
+    pub cleaned_up: bool,
+    pub oid: Option<String>,
+}
+
 const AURIC_WORKTREE_DIR_SUFFIX: &str = ".auric-wt";
 const AURIC_WORKTREE_BRANCH_PREFIX: &str = "auric/";
+const DEFAULT_BRANCH_CANDIDATES: [&str; 2] = ["main", "master"];
 
 /// How far below the project root discovery looks for a `.git`. Bounded so
 /// opening a huge unrelated folder as a project never turns into a full-disk
@@ -242,6 +256,23 @@ pub fn git_worktree_remove(
     force: bool,
 ) -> Result<(), String> {
     git_worktree_remove_impl(&repo_path, &worktree_path, force)
+}
+
+/// `main` or `master` — whichever this repository actually uses.
+#[tauri::command(async)]
+pub fn git_default_branch(repo_path: String) -> Result<String, String> {
+    git_default_branch_impl(&repo_path)
+}
+
+/// Commit leftover worktree changes if needed, merge into main/master, then
+/// remove the worktree.
+#[tauri::command(async)]
+pub fn git_worktree_merge_into_default(
+    repo_path: String,
+    worktree_path: String,
+    commit_message: Option<String>,
+) -> Result<WorktreeMergeResult, String> {
+    git_worktree_merge_into_default_impl(&repo_path, &worktree_path, commit_message.as_deref())
 }
 
 /// Walks history from HEAD, newest first, stopping below `since_iso`, at
@@ -1364,6 +1395,220 @@ pub fn git_worktree_remove_impl(
     }
 
     Ok(())
+}
+
+pub fn git_default_branch_impl(repo_path: &str) -> Result<String, String> {
+    let (repo, _) = open_main_repo(repo_path)?;
+    resolve_default_branch(&repo)
+}
+
+fn origin_head_branch(repo: &Repository) -> Option<String> {
+    let reference = repo.find_reference("refs/remotes/origin/HEAD").ok()?;
+    let target = reference.symbolic_target()?;
+    target
+        .strip_prefix("refs/remotes/origin/")
+        .map(|s| s.to_string())
+}
+
+fn local_branch_exists(repo: &Repository, name: &str) -> bool {
+    repo.find_branch(name, BranchType::Local).is_ok()
+}
+
+fn resolve_default_branch(repo: &Repository) -> Result<String, String> {
+    if let Some(origin) = origin_head_branch(repo) {
+        if DEFAULT_BRANCH_CANDIDATES.contains(&origin.as_str())
+            && local_branch_exists(repo, &origin)
+        {
+            return Ok(origin);
+        }
+    }
+    for name in DEFAULT_BRANCH_CANDIDATES {
+        if local_branch_exists(repo, name) {
+            return Ok(name.to_string());
+        }
+    }
+    Err("could not determine default branch (main or master)".to_string())
+}
+
+fn commit_worktree_if_dirty(worktree_path: &str, message: &str) -> Result<Option<String>, String> {
+    let paths: Vec<String> = git_status_impl(worktree_path)?
+        .into_iter()
+        .filter(|s| s.status != "ignored")
+        .map(|s| s.path)
+        .collect();
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    git_stage_impl(worktree_path, &paths)?;
+    match git_commit_impl(worktree_path, message) {
+        Ok(oid) => Ok(Some(oid)),
+        Err(e) if e.contains("Nothing to commit") => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+fn head_is_branch(repo: &Repository, name: &str) -> bool {
+    repo.head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s == name))
+        .unwrap_or(false)
+}
+
+fn branch_commit_id(repo: &Repository, name: &str) -> Result<git2::Oid, String> {
+    let branch = repo
+        .find_branch(name, BranchType::Local)
+        .map_err(|e| format!("branch {name} not found: {e}"))?;
+    branch
+        .get()
+        .peel_to_commit()
+        .map(|c| c.id())
+        .map_err(|e| format!("branch {name} is not a commit: {e}"))
+}
+
+fn fast_forward_branch(
+    repo: &Repository,
+    branch_name: &str,
+    oid: git2::Oid,
+    checkout: bool,
+) -> Result<(), String> {
+    let mut reference = repo
+        .find_reference(&format!("refs/heads/{branch_name}"))
+        .map_err(|e| format!("could not open {branch_name}: {e}"))?;
+    reference
+        .set_target(oid, "fast-forward merge of agent worktree")
+        .map_err(|e| format!("could not fast-forward {branch_name}: {e}"))?;
+    if checkout {
+        repo.set_head(&format!("refs/heads/{branch_name}"))
+            .map_err(|e| e.to_string())?;
+        repo.checkout_head(Some(CheckoutBuilder::default().force()))
+            .map_err(|e| format!("could not update working tree: {e}"))?;
+    }
+    Ok(())
+}
+
+fn merge_commits_onto_branch(
+    repo: &Repository,
+    default_branch: &str,
+    theirs_branch: &str,
+    ours_id: git2::Oid,
+    theirs_id: git2::Oid,
+    checkout: bool,
+) -> Result<git2::Oid, String> {
+    let ours = repo
+        .find_commit(ours_id)
+        .map_err(|e| format!("could not read {default_branch}: {e}"))?;
+    let theirs = repo
+        .find_commit(theirs_id)
+        .map_err(|e| format!("could not read {theirs_branch}: {e}"))?;
+    let mut index = repo
+        .merge_commits(&ours, &theirs, None)
+        .map_err(|e| format!("could not merge: {e}"))?;
+    if index.has_conflicts() {
+        return Err(
+            "merge conflict — the worktree was left in place so you can resolve it".to_string(),
+        );
+    }
+    let tree_oid = index
+        .write_tree_to(repo)
+        .map_err(|e| format!("could not write merge tree: {e}"))?;
+    let tree = repo
+        .find_tree(tree_oid)
+        .map_err(|e| format!("could not read merge tree: {e}"))?;
+    let sig = repo.signature().map_err(|e| {
+        format!(
+            "Failed to get git signature: {}. Please configure git user.name and user.email.",
+            e
+        )
+    })?;
+    let msg = format!("Merge branch '{theirs_branch}' into {default_branch}");
+    let refname = if checkout {
+        "HEAD".to_string()
+    } else {
+        format!("refs/heads/{default_branch}")
+    };
+    let oid = repo
+        .commit(Some(&refname), &sig, &sig, &msg, &tree, &[&ours, &theirs])
+        .map_err(|e| format!("could not create merge commit: {e}"))?;
+    if checkout {
+        repo.checkout_head(Some(CheckoutBuilder::default().force()))
+            .map_err(|e| format!("could not update working tree: {e}"))?;
+    }
+    Ok(oid)
+}
+
+pub fn git_worktree_merge_into_default_impl(
+    repo_path: &str,
+    worktree_path: &str,
+    commit_message: Option<&str>,
+) -> Result<WorktreeMergeResult, String> {
+    let target = Path::new(worktree_path);
+    if !path_is_auric_worktree(target) {
+        return Err("only Auric-managed worktrees can be merged here".to_string());
+    }
+
+    let message = commit_message.unwrap_or("Auric worktree");
+    commit_worktree_if_dirty(worktree_path, message)?;
+
+    let theirs_branch = worktree_branch_name(target)
+        .filter(|b| branch_is_auric(Some(b)))
+        .ok_or_else(|| "worktree is not on an auric/ branch".to_string())?;
+
+    let (repo, _) = open_main_repo(repo_path)?;
+    let default_branch = resolve_default_branch(&repo)?;
+    let ours_id = branch_commit_id(&repo, &default_branch)?;
+    let theirs_id = branch_commit_id(&repo, &theirs_branch)?;
+    let on_default = head_is_branch(&repo, &default_branch);
+
+    let already_contains = ours_id == theirs_id
+        || repo
+            .graph_descendant_of(ours_id, theirs_id)
+            .unwrap_or(false);
+    if already_contains {
+        git_worktree_remove_impl(repo_path, worktree_path, true)?;
+        return Ok(WorktreeMergeResult {
+            default_branch,
+            merged: false,
+            fast_forward: false,
+            cleaned_up: true,
+            oid: Some(ours_id.to_string()),
+        });
+    }
+
+    if on_default {
+        if let Some(dir) = repo.workdir() {
+            if repo_is_dirty(dir) {
+                return Err(format!(
+                    "{default_branch} has uncommitted changes — commit or stash them before merging"
+                ));
+            }
+        }
+    }
+
+    let can_ff = repo
+        .graph_descendant_of(theirs_id, ours_id)
+        .unwrap_or(false);
+    let oid = if can_ff {
+        fast_forward_branch(&repo, &default_branch, theirs_id, on_default)?;
+        theirs_id
+    } else {
+        merge_commits_onto_branch(
+            &repo,
+            &default_branch,
+            &theirs_branch,
+            ours_id,
+            theirs_id,
+            on_default,
+        )?
+    };
+
+    let cleaned_up = git_worktree_remove_impl(repo_path, worktree_path, true).is_ok();
+    Ok(WorktreeMergeResult {
+        default_branch,
+        merged: true,
+        fast_forward: can_ff,
+        cleaned_up,
+        oid: Some(oid.to_string()),
+    })
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {
@@ -2830,5 +3075,125 @@ mod tests {
             fs::canonicalize(&resolved).unwrap(),
             fs::canonicalize(&path).unwrap()
         );
+    }
+
+    fn rename_head_branch(path: &str, new_name: &str) {
+        let repo = Repository::open(path).unwrap();
+        let current = repo.head().unwrap().shorthand().unwrap().to_string();
+        if current == new_name {
+            return;
+        }
+        {
+            let mut branch = repo.find_branch(&current, BranchType::Local).unwrap();
+            branch.rename(new_name, true).unwrap();
+        }
+        repo.set_head(&format!("refs/heads/{new_name}")).unwrap();
+    }
+
+    fn delete_local_branch(path: &str, name: &str) {
+        let repo = Repository::open(path).unwrap();
+        if let Ok(mut b) = repo.find_branch(name, BranchType::Local) {
+            b.delete().unwrap();
+        };
+    }
+
+    fn force_default_branch(path: &str, name: &str) {
+        rename_head_branch(path, name);
+        for other in ["main", "master"] {
+            if other != name {
+                delete_local_branch(path, other);
+            }
+        }
+    }
+
+    fn commit_in(repo_path: &str, file: &str, contents: &str, message: &str) {
+        fs::write(Path::new(repo_path).join(file), contents).unwrap();
+        git_stage_impl(repo_path, &[file.to_string()]).unwrap();
+        git_commit_impl(repo_path, message).unwrap();
+    }
+
+    #[test]
+    fn default_branch_is_main_or_master_from_the_repo() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        force_default_branch(&path, "main");
+        assert_eq!(git_default_branch_impl(&path).unwrap(), "main");
+
+        force_default_branch(&path, "master");
+        assert_eq!(git_default_branch_impl(&path).unwrap(), "master");
+    }
+
+    #[test]
+    fn default_branch_prefers_main_when_both_exist() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        force_default_branch(&path, "main");
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("master", &commit, false).unwrap();
+        assert_eq!(git_default_branch_impl(&path).unwrap(), "main");
+    }
+
+    #[test]
+    fn worktree_merge_fast_forwards_main_and_removes_the_checkout() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        force_default_branch(&path, "main");
+        let wt = git_worktree_add_impl(&path, "feat").unwrap();
+        commit_in(&wt.path, "b.txt", "from agent", "agent work");
+
+        let result = git_worktree_merge_into_default_impl(&path, &wt.path, None).unwrap();
+        assert_eq!(result.default_branch, "main");
+        assert!(result.merged);
+        assert!(result.fast_forward);
+        assert!(result.cleaned_up);
+        assert!(!Path::new(&wt.path).exists());
+        assert_eq!(
+            fs::read_to_string(Path::new(&path).join("b.txt")).unwrap(),
+            "from agent"
+        );
+        assert!(git_worktree_list_impl(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn worktree_merge_commits_dirty_files_first() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        force_default_branch(&path, "master");
+        let wt = git_worktree_add_impl(&path, "dirty").unwrap();
+        fs::write(Path::new(&wt.path).join("c.txt"), "leftover").unwrap();
+
+        let result =
+            git_worktree_merge_into_default_impl(&path, &wt.path, Some("Agent work: Writer"))
+                .unwrap();
+        assert_eq!(result.default_branch, "master");
+        assert!(result.merged);
+        assert!(result.cleaned_up);
+        assert_eq!(
+            fs::read_to_string(Path::new(&path).join("c.txt")).unwrap(),
+            "leftover"
+        );
+    }
+
+    #[test]
+    fn worktree_merge_refuses_a_conflict_and_keeps_the_worktree() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        force_default_branch(&path, "main");
+        let wt = git_worktree_add_impl(&path, "clash").unwrap();
+        commit_in(&path, "a.txt", "on main", "main edit");
+        commit_in(&wt.path, "a.txt", "on worktree", "wt edit");
+
+        let err = git_worktree_merge_into_default_impl(&path, &wt.path, None).unwrap_err();
+        assert!(err.contains("conflict"), "{err}");
+        assert!(Path::new(&wt.path).exists());
+    }
+
+    #[test]
+    fn worktree_merge_rejects_a_path_we_did_not_create() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        let err = git_worktree_merge_into_default_impl(&path, &path, None).unwrap_err();
+        assert!(err.contains("Auric-managed"), "{err}");
     }
 }

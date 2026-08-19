@@ -1,8 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
 import { AgentsPanel } from './AgentsPanel';
+import { useStore } from '@/lib/store';
 
 type User = ReturnType<typeof userEvent.setup>;
 
@@ -1073,6 +1074,98 @@ describe('AgentsPanel – killing a single agent', () => {
     // There is no work left to lose, so a question would just be friction.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(onKill).toHaveBeenCalledWith('a1');
+  });
+});
+
+describe('AgentsPanel – merge worktree after ending', () => {
+  const worktreePath = '/w.auric-wt/fix-ab12';
+  const wtAgent: AgentInfo = {
+    ...agents[0],
+    id: 'a1',
+    name: 'Writer',
+    status: 'running',
+    repoPath: worktreePath,
+  };
+  const mergeAgentWorktree = vi.fn(async () => ({
+    defaultBranch: 'main',
+    merged: true,
+    fastForward: true,
+    cleanedUp: true,
+    oid: 'abc',
+  }));
+
+  beforeEach(() => {
+    mergeAgentWorktree.mockClear();
+    useStore.setState({
+      agentWorktrees: [
+        {
+          path: worktreePath,
+          name: 'fix-ab12',
+          branch: 'auric/fix-ab12',
+          sourceRepo: '/w',
+          isAuric: true,
+          dirty: false,
+          branchAhead: true,
+        },
+      ],
+      defaultBranchFor: async () => 'main',
+      mergeAgentWorktree,
+      showToast: vi.fn(),
+    });
+  });
+
+  it('asks to merge into main after the agent is stopped', async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn(async () => undefined);
+
+    render(<AgentsPanel agents={[wtAgent]} onSpawn={vi.fn()} onKill={onKill} />);
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+    await answer(user, 'Stop');
+
+    expect(onKill).toHaveBeenCalledWith('a1');
+    expect(await question()).toContain('Merge into main?');
+    expect(mergeAgentWorktree).not.toHaveBeenCalled();
+
+    await answer(user, 'Merge');
+    expect(mergeAgentWorktree).toHaveBeenCalledWith(worktreePath, 'Agent work: Writer');
+  });
+
+  it('keeps the worktree when merge is declined', async () => {
+    const user = userEvent.setup();
+    render(<AgentsPanel agents={[wtAgent]} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+    await answer(user, 'Stop');
+    await answer(user, 'Cancel');
+
+    expect(mergeAgentWorktree).not.toHaveBeenCalled();
+  });
+
+  it('asks using master when that is the repo default', async () => {
+    useStore.setState({ defaultBranchFor: async () => 'master' });
+    const user = userEvent.setup();
+    render(<AgentsPanel agents={[wtAgent]} onSpawn={vi.fn()} onKill={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Terminate Agent' }));
+    await answer(user, 'Stop');
+
+    expect(await question()).toContain('Merge into master?');
+  });
+
+  it('asks to merge when a finished worktree agent is dismissed', async () => {
+    const user = userEvent.setup();
+    const finished = { ...wtAgent, status: 'idle' as const };
+    const onDismissFinished = vi.fn();
+    render(
+      <AgentsPanel
+        agents={[finished]}
+        onSpawn={vi.fn()}
+        onKill={vi.fn()}
+        onDismissFinished={onDismissFinished}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Dismiss Writer' }));
+
+    expect(onDismissFinished).toHaveBeenCalledWith('a1');
+    expect(await question()).toContain('Merge into main?');
   });
 });
 
