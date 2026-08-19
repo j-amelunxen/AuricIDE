@@ -23,9 +23,11 @@ vi.mock('@/lib/tauri/db', () => ({
 
 import {
   PROJECT_CONFIG_DEFAULTS,
+  loadIgnoredRepos,
   loadProjectConfig,
   loadProviderPolicy,
   loadProjectCredentials,
+  saveIgnoredRepos,
   saveProviderPolicy,
   setProjectConfigValue,
 } from './projectConfig';
@@ -114,6 +116,43 @@ describe('provider policy storage', () => {
     vi.mocked(dbGet).mockRejectedValueOnce(new Error('no IPC'));
 
     await expect(loadProviderPolicy(ROOT)).resolves.toEqual(DEFAULT_PROVIDER_POLICY);
+  });
+});
+
+describe('ignored repos storage', () => {
+  it('reads an empty list when nothing was ever saved', async () => {
+    await expect(loadIgnoredRepos(ROOT)).resolves.toEqual([]);
+  });
+
+  it('round-trips a list', async () => {
+    await saveIgnoredRepos(ROOT, ['web', 'vendor/lib']);
+
+    await expect(loadIgnoredRepos(ROOT)).resolves.toEqual(['vendor/lib', 'web']);
+  });
+
+  it('reads an empty list when the stored value is corrupt', async () => {
+    store.set('ignored_repos::paths', '{ broken');
+
+    await expect(loadIgnoredRepos(ROOT)).resolves.toEqual([]);
+  });
+
+  it('reads an empty list without a project', async () => {
+    await expect(loadIgnoredRepos('')).resolves.toEqual([]);
+  });
+
+  it('reads an empty list when the database call fails', async () => {
+    const { dbGet } = await import('@/lib/tauri/db');
+    vi.mocked(dbGet).mockRejectedValueOnce(new Error('no IPC'));
+
+    await expect(loadIgnoredRepos(ROOT)).resolves.toEqual([]);
+  });
+
+  it('refuses to write without a project', async () => {
+    const { dbSet } = await import('@/lib/tauri/db');
+
+    await saveIgnoredRepos('', ['vendor']);
+
+    expect(dbSet).not.toHaveBeenCalled();
   });
 });
 

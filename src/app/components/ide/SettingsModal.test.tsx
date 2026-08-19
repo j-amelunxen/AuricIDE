@@ -24,7 +24,7 @@ vi.mock('@/lib/tauri/db', () => ({
 import { SettingsModal } from './SettingsModal';
 
 const DEFAULT_PROMPT =
-  'commit and push on the current branch. Do not switch branches. Commit message prefix: {ticket}:';
+  'commit on the current branch. Do not switch branches. Commit message prefix: {ticket}:';
 
 // ─── Visibility ────────────────────────────────────────────────────────────────
 
@@ -120,6 +120,7 @@ describe('SettingsModal – Grouped nav', () => {
     // …the provider policy and the commit conventions are the repository's.
     expect(within(project).getByTestId('settings-nav-providers')).toBeInTheDocument();
     expect(within(project).getByTestId('settings-nav-project-agent')).toBeInTheDocument();
+    expect(within(project).getByTestId('settings-nav-git')).toBeInTheDocument();
   });
 
   it('says so when there is no project to configure', () => {
@@ -178,6 +179,7 @@ describe('SettingsModal – Category Navigation', () => {
     expect(screen.getByTestId('settings-nav-editor')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-appearance')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-system')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-nav-git')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-video-import')).toBeInTheDocument();
   });
 

@@ -1,0 +1,139 @@
+{
+  "_comment": [
+    "The single source of truth for which nested git repos a project hides.",
+    "Two implementations read this file: src/lib/config/ignoredRepos.ts (Vitest) and",
+    "src-tauri/src/ignored_repos.rs (cargo test, via include_str!). Discovery, the",
+    "dirty probe that lights Quick Access, and the parent repo's status all go",
+    "through the Rust side; the settings screen and the context menu go through",
+    "TypeScript. Add a case here before changing either implementation."
+  ],
+  "parse": [
+    {
+      "name": "absent list — nothing configured yet",
+      "raw": null,
+      "expected": []
+    },
+    {
+      "name": "empty string",
+      "raw": "",
+      "expected": []
+    },
+    {
+      "name": "malformed JSON never hides every repo",
+      "raw": "{ this is not json",
+      "expected": []
+    },
+    {
+      "name": "JSON that is not an array",
+      "raw": "{\"paths\":[\"vendor\"]}",
+      "expected": []
+    },
+    {
+      "name": "empty array",
+      "raw": "[]",
+      "expected": []
+    },
+    {
+      "name": "plain relative paths, sorted",
+      "raw": "[\"web\",\"api\"]",
+      "expected": ["api", "web"]
+    },
+    {
+      "name": "trims whitespace and drops blanks",
+      "raw": "[\"  vendor/lib  \", \"\", \"   \"]",
+      "expected": ["vendor/lib"]
+    },
+    {
+      "name": "strips trailing slashes and a leading ./",
+      "raw": "[\"./vendor/\", \"lib/nested/\"]",
+      "expected": ["lib/nested", "vendor"]
+    },
+    {
+      "name": "normalises backslashes",
+      "raw": "[\"vendor\\\\lib\"]",
+      "expected": ["vendor/lib"]
+    },
+    {
+      "name": "the project root cannot be ignored",
+      "raw": "[\"\", \".\", \"./\", \"/\"]",
+      "expected": []
+    },
+    {
+      "name": "paths that climb out of the project are dropped",
+      "raw": "[\"../sibling\", \"vendor/../escape\", \"ok\"]",
+      "expected": ["ok"]
+    },
+    {
+      "name": "dedupes after normalisation",
+      "raw": "[\"vendor/\", \"./vendor\", \"vendor\"]",
+      "expected": ["vendor"]
+    },
+    {
+      "name": "non-string entries are skipped",
+      "raw": "[1, null, true, \"vendor\"]",
+      "expected": ["vendor"]
+    }
+  ],
+  "match": [
+    {
+      "name": "nothing is ignored when the list is empty",
+      "ignored": [],
+      "path": "vendor/lib",
+      "matches": false
+    },
+    {
+      "name": "exact relative path",
+      "ignored": ["vendor/lib"],
+      "path": "vendor/lib",
+      "matches": true
+    },
+    {
+      "name": "a child of an ignored path is ignored",
+      "ignored": ["vendor"],
+      "path": "vendor/lib",
+      "matches": true
+    },
+    {
+      "name": "a nested descendant of an ignored path is ignored",
+      "ignored": ["vendor"],
+      "path": "vendor/lib/nested",
+      "matches": true
+    },
+    {
+      "name": "a sibling prefix is not an ignore",
+      "ignored": ["vendor"],
+      "path": "vendors",
+      "matches": false
+    },
+    {
+      "name": "the parent of an ignored path is not itself ignored",
+      "ignored": ["vendor/lib"],
+      "path": "vendor",
+      "matches": false
+    },
+    {
+      "name": "an unrelated path is not ignored",
+      "ignored": ["vendor"],
+      "path": "api",
+      "matches": false
+    },
+    {
+      "name": "the project root is never ignored",
+      "ignored": ["vendor"],
+      "path": "",
+      "matches": false
+    },
+    {
+      "name": "a trailing slash on the candidate still matches",
+      "ignored": ["vendor"],
+      "path": "vendor/",
+      "matches": true
+    },
+    {
+      "name": "a trailing slash on a child still matches",
+      "ignored": ["vendor"],
+      "path": "vendor/lib/",
+      "matches": true
+    }
+  ]
+}

@@ -350,6 +350,7 @@ pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
         Ok(r) => r,
         Err(_) => return Ok(Vec::new()), // Return empty if not a git repo
     };
+    let ignored = crate::ignored_repos::ignored_repos_for_project(Path::new(repo_path));
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
@@ -364,7 +365,7 @@ pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
         let path = entry.path().unwrap_or("").to_string();
         let status = entry.status();
 
-        if status.is_ignored() {
+        if status.is_ignored() || crate::ignored_repos::is_ignored_repo_path(&path, &ignored) {
             result.push(GitFileStatus {
                 path,
                 status: "ignored".to_string(),
@@ -1075,13 +1076,31 @@ pub fn git_discover_repos_impl(root_path: &Path) -> Result<Vec<GitRepoRef>, Stri
         ));
     }
 
+    let ignored = crate::ignored_repos::ignored_repos_for_project(root_path);
+
     let repo_dirs: Vec<PathBuf> = WalkDir::new(root_path)
         .max_depth(GIT_DISCOVERY_MAX_DEPTH)
         .into_iter()
         // Depth 0 is the root itself, chosen by the caller — a project
         // legitimately checked out into a folder named `target` or `dist`
         // must still be discovered even though that name is pruned below it.
-        .filter_entry(|e| e.depth() == 0 || !crate::skip_recent_walk_dir(e))
+        // Ignored relative paths are skipped the same way: we do not walk
+        // into a folder the project asked us not to treat as a repo.
+        .filter_entry(|e| {
+            if e.depth() == 0 {
+                return true;
+            }
+            if crate::skip_recent_walk_dir(e) {
+                return false;
+            }
+            if e.file_type().is_dir() {
+                let relative = relative_to_root(root_path, e.path());
+                if crate::ignored_repos::is_ignored_repo_path(&relative, &ignored) {
+                    return false;
+                }
+            }
+            true
+        })
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_dir())
         .map(|e| e.path().to_path_buf())
@@ -1415,7 +1434,12 @@ fn repo_is_dirty(repo_path: &Path) -> bool {
         Ok(statuses) => statuses,
         Err(_) => return false,
     };
+    let ignored = crate::ignored_repos::ignored_repos_for_project(repo_path);
     statuses.iter().any(|entry| {
+        let path = entry.path().unwrap_or("");
+        if crate::ignored_repos::is_ignored_repo_path(path, &ignored) {
+            return false;
+        }
         let status = entry.status();
         !status.is_ignored()
             && (status.is_index_new()
@@ -2421,6 +2445,45 @@ mod tests {
     }
 
     #[test]
+    fn discovery_omits_an_ignored_nested_repo() {
+        let dir = TempDir::new().unwrap();
+        init_repo(&dir.path().join("keep"));
+        init_repo(&dir.path().join("noise"));
+        crate::ignored_repos::write_ignored_repos_for_test(dir.path(), r#"["noise"]"#);
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        let relative_paths: Vec<&str> = repos.iter().map(|r| r.relative_path.as_str()).collect();
+        assert_eq!(relative_paths, vec!["keep"]);
+    }
+
+    #[test]
+    fn discovery_omits_every_repo_under_an_ignored_prefix() {
+        let dir = TempDir::new().unwrap();
+        init_repo(&dir.path().join("keep"));
+        init_repo(&dir.path().join("vendor/lib-a"));
+        init_repo(&dir.path().join("vendor/lib-b"));
+        crate::ignored_repos::write_ignored_repos_for_test(dir.path(), r#"["vendor"]"#);
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        let relative_paths: Vec<&str> = repos.iter().map(|r| r.relative_path.as_str()).collect();
+        assert_eq!(relative_paths, vec!["keep"]);
+    }
+
+    #[test]
+    fn discovery_never_hides_the_project_root_repo() {
+        let dir = TempDir::new().unwrap();
+        init_repo(dir.path());
+        crate::ignored_repos::write_ignored_repos_for_test(dir.path(), r#"[""]"#);
+
+        let repos = git_discover_repos_impl(dir.path()).unwrap();
+
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].kind, "root");
+    }
+
+    #[test]
     fn a_dot_git_file_counts_as_a_repo() {
         let dir = TempDir::new().unwrap();
         let checkout = dir.path().join("worktree-checkout");
@@ -2716,6 +2779,47 @@ mod tests {
         fs::write(nested.join("a.txt"), "dirty").unwrap();
 
         assert!(dirty_for(root.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_ignores_a_dirty_nested_repo_the_project_hid() {
+        let root = TempDir::new().unwrap();
+        let nested = root.path().join("pkg");
+        fs::create_dir(&nested).unwrap();
+        let repo = Repository::init(&nested).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@example.com").unwrap();
+        fs::write(nested.join("a.txt"), "hi").unwrap();
+        git_stage_impl(nested.to_str().unwrap(), &["a.txt".to_string()]).unwrap();
+        git_commit_impl(nested.to_str().unwrap(), "init").unwrap();
+        fs::write(nested.join("a.txt"), "dirty").unwrap();
+        crate::ignored_repos::write_ignored_repos_for_test(root.path(), r#"["pkg"]"#);
+
+        assert!(!dirty_for(root.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_status_treats_an_ignored_nested_repo_as_ignored_in_the_parent() {
+        let dir = TempDir::new().unwrap();
+        let path = committed_repo(&dir);
+        init_repo(&dir.path().join("noise"));
+        fs::write(dir.path().join("noise").join("wip.txt"), "x").unwrap();
+        crate::ignored_repos::write_ignored_repos_for_test(dir.path(), r#"["noise"]"#);
+
+        let statuses = git_status_impl(&path).unwrap();
+        let noise: Vec<&GitFileStatus> = statuses
+            .iter()
+            .filter(|s| s.path == "noise" || s.path == "noise/" || s.path.starts_with("noise/"))
+            .collect();
+        assert!(
+            !noise.is_empty(),
+            "the ignored nested repo must still appear so the explorer can grey it out, got {statuses:?}"
+        );
+        assert!(
+            noise.iter().all(|s| s.status == "ignored"),
+            "ignored nested-repo paths must not stay untracked, got {noise:?}"
+        );
     }
 
     #[test]
