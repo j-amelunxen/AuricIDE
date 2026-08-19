@@ -184,3 +184,32 @@ export async function removeGitWorktree(
 ): Promise<void> {
   await invoke('git_worktree_remove', { repoPath, worktreePath, force });
 }
+
+/** `main` or `master` — whichever this repository actually uses. */
+export async function gitDefaultBranch(repoPath: string): Promise<string> {
+  return await invoke<string>('git_default_branch', { repoPath });
+}
+
+export interface WorktreeMergeResult {
+  defaultBranch: string;
+  merged: boolean;
+  fastForward: boolean;
+  cleanedUp: boolean;
+  oid: string | null;
+}
+
+/**
+ * Commit leftover worktree changes if needed, merge into main/master, then
+ * remove the worktree. The backend picks the default branch.
+ */
+export async function mergeGitWorktreeIntoDefault(
+  repoPath: string,
+  worktreePath: string,
+  commitMessage?: string
+): Promise<WorktreeMergeResult> {
+  return await invoke<WorktreeMergeResult>('git_worktree_merge_into_default', {
+    repoPath,
+    worktreePath,
+    commitMessage: commitMessage ?? null,
+  });
+}

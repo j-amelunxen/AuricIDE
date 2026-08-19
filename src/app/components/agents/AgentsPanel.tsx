@@ -3,6 +3,7 @@
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { groupAgentsByRepo, UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { useConfirm } from '@/lib/hooks/useConfirm';
+import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';
 import type { InterruptedAgent } from '@/lib/tauri/agents';
 import { useState } from 'react';
 import { useNow } from '@/lib/hooks/useNow';
@@ -167,6 +168,7 @@ export function AgentsPanel({
   // Asked in-app and awaited. The browser's confirm() keeps running the script
   // inside the Tauri webview, which let a kill happen before the user answered.
   const { confirm, confirmDialog } = useConfirm();
+  const offerMerge = useWorktreeMergeOffer(confirm);
 
   /**
    * The terminate control sits a few pixels from the terminal toggle and only
@@ -184,7 +186,14 @@ export function AgentsPanel({
       });
       if (!go) return;
     }
-    onKill(agentId);
+    await Promise.resolve(onKill(agentId));
+    await offerMerge(agent);
+  };
+
+  const dismissFinished = (agentId: string) => {
+    const agent = agents.find((a) => a.id === agentId);
+    onDismissFinished?.(agentId);
+    void offerMerge(agent);
   };
 
   /**
@@ -309,7 +318,7 @@ export function AgentsPanel({
                 dismissIcon={agent.status === 'error' ? 'close' : 'power_settings_new'}
                 onDismiss={
                   agent.status === 'error'
-                    ? (id) => onDismissFinished?.(id)
+                    ? (id) => dismissFinished(id)
                     : (id) => void confirmKill(id)
                 }
                 color={agentColors[agent.id]}
@@ -496,7 +505,7 @@ export function AgentsPanel({
                 onActivate={(id) => onSelectAgent?.(id)}
                 dismissLabel="Dismiss"
                 dismissIcon="close"
-                onDismiss={(id) => onDismissFinished?.(id)}
+                onDismiss={(id) => dismissFinished(id)}
                 color={agentColors[agent.id]}
                 onContextMenu={onSetColor && openColorMenu}
                 unseen={!reviewedAgentIds.includes(agent.id)}
