@@ -43,12 +43,12 @@ export async function saveTempImage(file: File): Promise<string> {
 }
 
 /**
- * Intercept image pastes on a terminal container (capture phase, so it runs
- * before xterm's own paste handler). Text pastes pass through untouched.
+ * Intercept image pastes (capture phase) and report the saved cache paths.
+ * Text pastes pass through untouched.
  */
-export function attachImagePaste(
+export function attachSavedImagePaste(
   container: HTMLElement,
-  sendText: (text: string) => void
+  onPaths: (paths: string[]) => void
 ): () => void {
   const onPaste = (event: Event) => {
     const images = extractImageFiles((event as ClipboardEvent).clipboardData);
@@ -56,7 +56,7 @@ export function attachImagePaste(
     event.preventDefault();
     event.stopImmediatePropagation();
     Promise.all(images.map(saveTempImage))
-      .then((paths) => sendText(buildPathInsert(paths)))
+      .then((paths) => onPaths(paths))
       .catch(() => {
         // Browser mode / IPC failure — nothing sensible to insert
       });
@@ -65,24 +65,29 @@ export function attachImagePaste(
   return () => container.removeEventListener('paste', onPaste, true);
 }
 
+/**
+ * Intercept image pastes on a terminal container (capture phase, so it runs
+ * before xterm's own paste handler). Text pastes pass through untouched.
+ */
+export function attachImagePaste(
+  container: HTMLElement,
+  sendText: (text: string) => void
+): () => void {
+  return attachSavedImagePaste(container, (paths) => sendText(buildPathInsert(paths)));
+}
+
 interface DragDropPosition {
   x: number;
   y: number;
 }
 
 /**
- * Insert dropped file paths into the terminal. Tauri swallows HTML5 file
- * drops, so this listens to the webview drag-drop event and hit-tests the
- * (physical-pixel) drop position against the container.
- *
- * `onInsert` fires only when a path actually went in — a native drag moves no
- * keyboard focus, so the caller uses it to hand the keyboard to the terminal
- * the path landed in. Without that, the prompt holds the path but Enter goes
- * elsewhere until the user clicks in.
+ * Listen for native webview file drops that land inside `container`.
+ * Tauri swallows HTML5 file drops, so this is the production path.
  */
-export function attachFileDrop(
+export function attachPathDrop(
   container: HTMLElement,
-  sendText: (text: string) => void,
+  onPaths: (paths: string[]) => void,
   onDragState?: (inside: boolean) => void,
   onInsert?: () => void
 ): () => void {
@@ -112,7 +117,7 @@ export function attachFileDrop(
         } else if (payload.type === 'drop') {
           onDragState?.(false);
           if (payload.paths.length > 0 && isInside(payload.position)) {
-            sendText(buildPathInsert(payload.paths));
+            onPaths(payload.paths);
             onInsert?.();
           }
         } else {
@@ -130,4 +135,28 @@ export function attachFileDrop(
     disposed = true;
     unlisten?.();
   };
+}
+
+/**
+ * Insert dropped file paths into the terminal. Tauri swallows HTML5 file
+ * drops, so this listens to the webview drag-drop event and hit-tests the
+ * (physical-pixel) drop position against the container.
+ *
+ * `onInsert` fires only when a path actually went in — a native drag moves no
+ * keyboard focus, so the caller uses it to hand the keyboard to the terminal
+ * the path landed in. Without that, the prompt holds the path but Enter goes
+ * elsewhere until the user clicks in.
+ */
+export function attachFileDrop(
+  container: HTMLElement,
+  sendText: (text: string) => void,
+  onDragState?: (inside: boolean) => void,
+  onInsert?: () => void
+): () => void {
+  return attachPathDrop(
+    container,
+    (paths) => sendText(buildPathInsert(paths)),
+    onDragState,
+    onInsert
+  );
 }
