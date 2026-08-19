@@ -132,12 +132,15 @@ export interface MissionControlProps {
   onOpenAgents?: () => void;
   /** Switches to another (starred) project by path. */
   onSwitchProject?: (path: string) => void;
+  /** Leaves the open project and returns to the start screen. */
+  onCloseProject?: () => void;
 }
 
 export function MissionControl({
   onCreateSpec,
   onOpenAgents,
   onSwitchProject,
+  onCloseProject,
 }: MissionControlProps) {
   const rootPath = useStore((s) => s.rootPath);
   const allFilePaths = useStore((s) => s.allFilePaths);
@@ -218,6 +221,15 @@ export function MissionControl({
         <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-white">
           {projectName}
         </h1>
+        <button
+          type="button"
+          data-testid="mc-leave-project"
+          onClick={() => onCloseProject?.()}
+          className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+        >
+          <AuricIcon name="arrow_back" aria-hidden="true" className="text-sm" />
+          Leave project
+        </button>
       </div>
 
       {/* The loop */}

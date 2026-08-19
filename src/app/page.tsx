@@ -534,6 +534,7 @@ export default function Home() {
                   onCreateSpec={() => void handlers.handleNewSpec()}
                   onOpenAgents={() => state.setRightCollapsed(false)}
                   onSwitchProject={(path) => handlers.handleOpenRecent(path)}
+                  onCloseProject={handlers.handleCloseProject}
                 />
               </div>
             ) : (
