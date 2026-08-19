@@ -99,11 +99,19 @@ describe('MissionControl', () => {
     expect(screen.getByTestId('mc-station-verify')).toBeInTheDocument();
   });
 
-  it('keeps the station layout single-column before the responsive breakpoints', () => {
+  it('sizes the loop to the editor pane, not the window', () => {
     render(<MissionControl />);
-    const stationLayout = screen.getByTestId('mc-station-spec').parentElement;
-
-    expect(stationLayout).toHaveClass('grid-cols-1', 'md:grid-cols-2', 'sm:flex');
+    // Viewport `sm:`/`md:` never see the agents bar. Container queries do:
+    // two-up once two stations fit, the row only once the pane is wide
+    // enough that the right bar being open would not clip it.
+    expect(screen.getByTestId('mission-control')).toHaveClass('@container');
+    const loop = screen.getByTestId('mc-loop');
+    expect(loop).toHaveClass('grid-cols-1', '@lg:grid-cols-2', '@3xl:flex');
+    expect(loop).not.toHaveClass('sm:flex', 'md:grid-cols-2');
+    for (const arrow of screen.getAllByTestId('mc-station-arrow')) {
+      expect(arrow).toHaveClass('hidden', '@3xl:block');
+      expect(arrow).not.toHaveClass('sm:block');
+    }
   });
 
   it('counts only markdown documents under specs/ at the spec station', () => {
@@ -330,16 +338,46 @@ describe('MissionControl', () => {
     expect(screen.getByTestId('mc-new-goal')).toHaveTextContent('Open Goals');
   });
 
-  it('keeps the first-run hint while tickets exist but no goals exist', () => {
+  it('hides the first-run teaching once tickets exist', () => {
     useStore.setState({ pmDraftTickets: [makeTicket({})] });
     render(<MissionControl />);
-    expect(screen.getByTestId('mc-import-spec')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Start with an outcome' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/AuricIDE turns an outcome into verified work/)
+    ).not.toBeInTheDocument();
   });
 
-  it('hides the first-run hint once a goal exists', () => {
+  it('hides the first-run teaching once specs exist', () => {
+    useStore.setState({ allFilePaths: ['/tmp/demo-project/specs/auth.md'] });
+    render(<MissionControl />);
+    expect(
+      screen.queryByRole('heading', { name: 'Start with an outcome' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides the first-run teaching once a goal exists', () => {
     useStore.setState({ goalsDraft: [makeGoal()] });
     render(<MissionControl />);
-    expect(screen.queryByTestId('mc-import-spec')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Start with an outcome' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps Open Goals and Import Spec as quiet actions after first run', () => {
+    useStore.setState({ pmDraftTickets: [makeTicket({})] });
+    render(<MissionControl />);
+    fireEvent.click(screen.getByTestId('mc-new-goal-persistent'));
+    expect(useStore.getState().workTab).toBe('goals');
+    fireEvent.click(screen.getByTestId('mc-import-spec-persistent'));
+    expect(useStore.getState().importSpecDialogOpen).toBe(true);
+  });
+
+  it('does not duplicate first-run CTAs in the quiet row', () => {
+    render(<MissionControl />);
+    expect(screen.queryByTestId('mc-new-goal-persistent')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('mc-import-spec-persistent')).not.toBeInTheDocument();
   });
 
   it('makes all first-run actions keyboard-visible on focus', () => {

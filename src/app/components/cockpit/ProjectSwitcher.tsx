@@ -58,7 +58,7 @@ export function ProjectSwitcher({ currentPath, onOpenProject }: ProjectSwitcherP
       // `glass-card` rather than a hand-rolled border+background, because that
       // is the app's material: it already answers prefers-reduced-transparency
       // and prefers-contrast in globals.css. A private copy would not.
-      className="glass-card w-full max-w-3xl rounded-2xl"
+      className="glass-card w-full min-w-0 max-w-3xl rounded-2xl"
     >
       <div className="flex items-center justify-between gap-3 border-b border-white/5 px-3 py-2">
         <div role="tablist" aria-label="Projects" className="flex items-center gap-1">

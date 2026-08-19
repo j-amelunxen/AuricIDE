@@ -120,6 +120,17 @@ describe('ProjectManagerModal', () => {
     expect(screen.getByText('Project Management')).toBeDefined();
   });
 
+  it('sizes ticket columns to the work pane, not the window', () => {
+    mockStore.pmModalOpen = true;
+    render(<ProjectManagerModal />);
+    // Viewport breakpoints never see the agents bar. Container queries do:
+    // epics + list go compact below @4xl so the detail is not clipped.
+    expect(screen.getByTestId('tickets-columns')).toHaveClass('@container');
+    expect(screen.getByTestId('tickets-epics-col')).toHaveClass('w-40', '@4xl:w-[220px]');
+    expect(screen.getByTestId('tickets-list-col')).toHaveClass('w-52', '@4xl:w-[280px]');
+    expect(screen.getByTestId('tickets-detail-col')).toHaveClass('min-w-0', 'flex-1');
+  });
+
   it('exposes an accessible dialog when open', () => {
     mockStore.pmModalOpen = true;
     render(<ProjectManagerModal />);

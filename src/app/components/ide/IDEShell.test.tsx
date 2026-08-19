@@ -131,6 +131,22 @@ describe('IDEShell', () => {
     expect(panel.style.width).not.toBe('0px');
   });
 
+  it('lets the center pane shrink when the right panel takes width', () => {
+    render(
+      <IDEShell
+        header={<div />}
+        centerContent={<div data-testid="center">Editor</div>}
+        rightPanel={<div>Agents</div>}
+        rightCollapsed={false}
+        statusBar={<div />}
+      />
+    );
+
+    // Flex items default to min-width: auto, so a wide cockpit would refuse
+    // to yield and the agents bar would clip it instead of compressing it.
+    expect(screen.getByTestId('center-pane')).toHaveClass('min-w-0');
+  });
+
   it('notifies onRightToggle when the right panel toggle is clicked', async () => {
     const onRightToggle = vi.fn();
     const user = userEvent.setup();

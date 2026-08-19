@@ -85,10 +85,11 @@ export function IDEShell({
           </ResizablePanel>
         )}
 
-        {/* Center + Bottom */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Center + Bottom. min-w-0 so a wide cockpit yields to the agents
+            bar instead of overflowing the row and getting clipped. */}
+        <div data-testid="center-pane" className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Center Content */}
-          <div className="flex-1 overflow-hidden bg-editor-bg">{centerContent}</div>
+          <div className="min-w-0 flex-1 overflow-hidden bg-editor-bg">{centerContent}</div>
 
           {/* Bottom Panel */}
           {bottomPanel && (

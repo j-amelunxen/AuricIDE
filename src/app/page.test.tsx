@@ -477,6 +477,13 @@ describe('Home page', () => {
     expect(screen.getByPlaceholderText(/capture a task/i)).toBeInTheDocument();
   });
 
+  it('lets the start screen shrink when the right panel takes width', () => {
+    render(<Home />);
+    expect(screen.getByTestId('center-pane')).toHaveClass('min-w-0');
+    expect(screen.getByTestId('start-project-switcher')).toHaveClass('w-full', 'min-w-0');
+    expect(screen.getByTestId('start-buttons-row')).toHaveClass('flex-wrap');
+  });
+
   it('gives the post-hero blocks one consistent vertical rhythm', () => {
     render(<Home />);
     const marginStep = (testId: string) => {
