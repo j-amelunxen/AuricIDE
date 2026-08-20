@@ -67,6 +67,13 @@ export type NotificationAction =
       label: string;
       kind: 'spawn-agent';
       task: string;
+      /**
+       * Extra instruction from the schedule form's Note. Folded into the
+       * prompt at click, only for a user-authored payload — see `trust.ts`.
+       * Lives on the action so catch-up text on `notification.body` cannot
+       * become part of what the agent is told to do.
+       */
+      note?: string;
       repoPath?: string;
       ticketId?: string;
       goalId?: string;
@@ -199,6 +206,7 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     ...identity,
     kind: z.literal('spawn-agent'),
     task: nonEmpty,
+    note: z.string().optional(),
     repoPath: z.string().optional(),
     ticketId: z.string().optional(),
     goalId: z.string().optional(),
