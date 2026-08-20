@@ -45,6 +45,7 @@ export function GitContent() {
       try {
         await saveIgnoredRepos(rootPath, next);
         await discoverAndRefreshGit(rootPath);
+        useStore.getState().bumpProjectDirtyEpoch();
       } catch {
         showToast('Could not save ignored repositories', 'error');
       }

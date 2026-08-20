@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { loadProjectsDirty } from '@/lib/git/projectDirty';
+import { useStore } from '@/lib/store';
 
 function sameDirtyMap(a: Record<string, boolean>, b: Record<string, boolean>): boolean {
   const keys = Object.keys(a);
@@ -13,12 +14,14 @@ function sameDirtyMap(a: Record<string, boolean>, b: Record<string, boolean>): b
  * Dirty flags for a list of project folders, keyed by path. Missing keys are
  * clean: a tile must not light up before the probe answers, or after it fails.
  *
- * Refreshes when the path list changes and when the window is shown again —
- * coming back to the splash after a commit should drop the dot.
+ * Refreshes when the path list changes, when ignored nested repos change,
+ * and when the window is shown again — coming back to the splash after a
+ * commit should drop the dot.
  */
 export function useProjectDirty(paths: readonly string[]): Record<string, boolean> {
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const key = paths.join('\0');
+  const epoch = useStore((s) => s.projectDirtyEpoch);
 
   useEffect(() => {
     const asked = key.length === 0 ? [] : key.split('\0');
@@ -51,7 +54,7 @@ export function useProjectDirty(paths: readonly string[]): Record<string, boolea
       cancelled = true;
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [key]);
+  }, [key, epoch]);
 
   return dirty;
 }

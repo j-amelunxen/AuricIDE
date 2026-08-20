@@ -32,6 +32,7 @@ beforeEach(() => {
     ],
     discoverAndRefreshGit: vi.fn(async () => {}),
     showToast: vi.fn(),
+    projectDirtyEpoch: 0,
   });
 });
 
@@ -56,6 +57,7 @@ describe('GitContent', () => {
 
     expect(saveIgnoredRepos).toHaveBeenCalledWith(ROOT, ['vendor']);
     expect(discoverAndRefreshGit).toHaveBeenCalledWith(ROOT);
+    expect(useStore.getState().projectDirtyEpoch).toBeGreaterThan(0);
     expect(await screen.findByTestId('unignore-repo-vendor')).toBeInTheDocument();
   });
 

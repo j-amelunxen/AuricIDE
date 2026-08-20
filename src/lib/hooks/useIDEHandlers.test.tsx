@@ -100,6 +100,7 @@ const mockSetActiveRepoPath = vi.fn((path: string | null) => {
   mockActiveRepoPath = path;
 });
 const mockDiscoverAndRefreshGit = vi.fn(async () => {});
+const mockBumpProjectDirtyEpoch = vi.fn();
 let mockScmView: 'changes' | 'history' | 'compare' = 'changes';
 let mockScratchDir: string | null = null;
 let mockScratches: { name: string; path: string }[] = [];
@@ -114,6 +115,7 @@ vi.mock('@/lib/store', () => {
   const getState = () => ({
     refreshGitStatus: mockRefreshGitStatus,
     discoverAndRefreshGit: mockDiscoverAndRefreshGit,
+    bumpProjectDirtyEpoch: mockBumpProjectDirtyEpoch,
     stageAll: mockStageAll,
     unstageAll: mockUnstageAll,
     setScmView: mockSetScmView,
@@ -1550,6 +1552,7 @@ describe('useIDEHandlers', () => {
 
       expect(mockSaveIgnoredRepos).toHaveBeenCalledWith('/p', ['vendor']);
       expect(mockDiscoverAndRefreshGit).toHaveBeenCalledWith('/p');
+      expect(mockBumpProjectDirtyEpoch).toHaveBeenCalled();
       expect(mockState.showToast).toHaveBeenCalledWith(
         'Ignored "vendor". Undo in Settings → Git.',
         'success'

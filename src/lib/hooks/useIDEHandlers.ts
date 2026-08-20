@@ -1410,7 +1410,9 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
       try {
         const current = await loadIgnoredRepos(root);
         await saveIgnoredRepos(root, addIgnoredRepo(current, relative));
-        await useStore.getState().discoverAndRefreshGit(root);
+        const store = useStore.getState();
+        await store.discoverAndRefreshGit(root);
+        store.bumpProjectDirtyEpoch();
       } catch {
         state.showToast('Could not ignore this repository', 'error');
         return;

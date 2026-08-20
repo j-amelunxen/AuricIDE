@@ -53,6 +53,13 @@ export interface GitSlice {
   setActiveRepoPath: (repoPath: string | null) => void;
   /** Discovers repos under rootPath, then refreshes every repo's status + branch. */
   discoverAndRefreshGit: (rootPath: string) => Promise<void>;
+  /**
+   * Bumped when nested-repo ignores change so Quick Access re-probes dirty
+   * flags. Discovery already hid the repo in Source Control; the splash tiles
+   * would otherwise keep the old amber pip until the window was hidden.
+   */
+  projectDirtyEpoch: number;
+  bumpProjectDirtyEpoch: () => void;
   /** Status + branch for every known repo (no rediscovery). */
   refreshGitStatus: () => Promise<void>;
   /** One repo only — after a stage/commit in that repo. */
@@ -387,6 +394,8 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
     repos: [],
     repoStates: {},
     activeRepoPath: null,
+    projectDirtyEpoch: 0,
+    bumpProjectDirtyEpoch: () => set((s) => ({ projectDirtyEpoch: s.projectDirtyEpoch + 1 })),
     diffByTabId: {},
     agentWorktrees: [],
     ...EMPTY_REVIEW_STATE,
