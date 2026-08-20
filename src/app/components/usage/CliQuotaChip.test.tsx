@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useStore } from '@/lib/store';
-import type { UsageSnapshot } from '@/lib/usage/types';
+import type { UsageSample, UsageSnapshot } from '@/lib/usage/types';
 
 const usageLimitsRead = vi.fn(async () => [] as UsageSnapshot[]);
 const usageLimitsRefresh = vi.fn(async () => [] as UsageSnapshot[]);
@@ -56,8 +56,12 @@ function focus(element: HTMLElement) {
   act(() => element.focus());
 }
 
-function setSnapshots(snapshots: UsageSnapshot[]) {
-  useStore.setState({ usageSnapshots: snapshots, usageStatus: 'ready' });
+function setSnapshots(snapshots: UsageSnapshot[], history: UsageSample[] = []) {
+  useStore.setState({
+    usageSnapshots: snapshots,
+    usageHistory: history,
+    usageStatus: 'ready',
+  });
 }
 
 const originalRefresh = useStore.getState().refreshUsageLimits;
@@ -73,6 +77,7 @@ describe('CliQuotaChip', () => {
   afterEach(() => {
     useStore.setState({
       usageSnapshots: [],
+      usageHistory: [],
       usageStatus: 'idle',
       refreshUsageLimits: originalRefresh,
     });
@@ -403,5 +408,49 @@ describe('CliQuotaChip', () => {
     fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
 
     expect(screen.getByTestId('cli-quota-popover')).toHaveTextContent('reset due');
+  });
+
+  it('hatches the rest of the bar when the current pace would overshoot', () => {
+    // 20 % used in the last day, 40 % now, four days left: the same workload
+    // would need 120 % of the week. The chip still states the measured 40 %;
+    // the forecast is the hatch and the line under the bar, not a second
+    // figure pretending to be a reading.
+    usageLimitsRead.mockImplementation(() => new Promise(() => {}));
+    const resetsAt = OBSERVED_AT + 4 * 24 * 3600;
+    const current = snapshot({
+      windows: [{ ...snapshot().windows[0], usedPercent: 40, resetsAt }],
+    });
+    const earlier: UsageSample = {
+      provider: 'codex',
+      observedAt: OBSERVED_AT - 24 * 3600,
+      windows: [
+        {
+          limitId: 'codex',
+          kind: '7d',
+          usedPercent: 20,
+          resetsAt,
+          windowMinutes: 10080,
+        },
+      ],
+    };
+    setSnapshots([current], [earlier]);
+    render(<CliQuotaChip />);
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+
+    expect(screen.getByTestId('cli-quota-chip')).toHaveTextContent('CX 7d 40%');
+    expect(screen.getByTestId('cli-quota-chip')).not.toHaveTextContent('120');
+    expect(screen.getByTestId('cli-quota-hatch-codex-7d')).toBeInTheDocument();
+    expect(screen.getByTestId('cli-quota-pace-codex-7d')).toHaveTextContent(
+      'on this pace, 120% of this window'
+    );
+  });
+
+  it('draws no hatch when there is no trail to project from', () => {
+    setSnapshots([snapshot()]);
+    render(<CliQuotaChip />);
+    fireEvent.mouseEnter(screen.getByTestId('cli-quota-chip').parentElement!);
+
+    expect(screen.queryByTestId('cli-quota-hatch-codex-7d')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('cli-quota-pace-codex-7d')).not.toBeInTheDocument();
   });
 });

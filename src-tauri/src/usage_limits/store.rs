@@ -1,10 +1,13 @@
 //! Where the last reading of each provider is kept.
 //!
-//! Two files, on purpose:
+//! Three files, on purpose:
 //!
 //! * `usage-limits.json` — normalized snapshots, written only by Rust. This is
 //!   what the status bar reads, and it survives a restart so the chip has
 //!   something to show before the first refresh comes back.
+//! * `usage-limits-history.json` — the trail of those same readings, kept by
+//!   `history.rs`. A forecast needs earlier percentages; this file is that
+//!   trail, and overwriting the last snapshot must not throw it away.
 //! * `claude-statusline.json` — the raw stdin payload, written by the generated
 //!   statusLine script. That script does exactly one thing: drop what it was
 //!   handed. Every bit of parsing and validation stays on this side, where it

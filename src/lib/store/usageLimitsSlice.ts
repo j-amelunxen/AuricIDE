@@ -1,9 +1,13 @@
 import type { StateCreator } from 'zustand';
 
-import type { UsageSnapshot } from '@/lib/usage/types';
+import type { UsageLimitsView } from '../tauri/usageLimits';
+import type { UsageSample, UsageSnapshot } from '@/lib/usage/types';
 
 export interface UsageLimitsSlice {
   usageSnapshots: UsageSnapshot[];
+  /** Earlier readings of the same windows, oldest first. Empty until a
+   *  second sample has been kept — a forecast needs a trail. */
+  usageHistory: UsageSample[];
   /** `idle` until something has been asked for, so the chip can stay away
    *  rather than flashing an empty state on every launch. */
   usageStatus: 'idle' | 'loading' | 'ready' | 'error';
@@ -12,29 +16,46 @@ export interface UsageLimitsSlice {
 }
 
 /**
- * The state only ever holds a list.
- *
  * Whatever comes back over IPC is someone else's promise, and a status-bar chip
  * is the last place that should throw on it — this is the boundary where the
  * shape stops being assumed.
+ *
+ * An older backend still answers a bare list of snapshots; that is readings
+ * without a trail, not a crash.
  */
-function toSnapshots(value: unknown): UsageSnapshot[] {
-  return Array.isArray(value) ? (value as UsageSnapshot[]) : [];
+function toView(value: unknown): UsageLimitsView {
+  if (Array.isArray(value)) {
+    return { snapshots: value as UsageSnapshot[], history: [] };
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return {
+      snapshots: Array.isArray(record.snapshots) ? (record.snapshots as UsageSnapshot[]) : [],
+      history: Array.isArray(record.history) ? (record.history as UsageSample[]) : [],
+    };
+  }
+  return { snapshots: [], history: [] };
 }
 
 export const createUsageLimitsSlice: StateCreator<UsageLimitsSlice> = (set) => ({
   usageSnapshots: [],
+  usageHistory: [],
   usageStatus: 'idle',
 
   /** The cheap read: whatever is already stored, no process started. */
   loadUsageLimits: async () => {
     try {
       const { usageLimitsRead } = await import('../tauri/usageLimits');
-      set({ usageSnapshots: toSnapshots(await usageLimitsRead()), usageStatus: 'ready' });
+      const view = toView(await usageLimitsRead());
+      set({
+        usageSnapshots: view.snapshots,
+        usageHistory: view.history,
+        usageStatus: 'ready',
+      });
     } catch {
       // Browser mode, or a backend that has not come up. An empty list is the
       // honest answer, and the chip renders nothing for it.
-      set({ usageSnapshots: [], usageStatus: 'error' });
+      set({ usageSnapshots: [], usageHistory: [], usageStatus: 'error' });
     }
   },
 
@@ -49,9 +70,14 @@ export const createUsageLimitsSlice: StateCreator<UsageLimitsSlice> = (set) => (
     set({ usageStatus: 'loading' });
     try {
       const { usageLimitsRefresh } = await import('../tauri/usageLimits');
-      set({ usageSnapshots: toSnapshots(await usageLimitsRefresh()), usageStatus: 'ready' });
+      const view = toView(await usageLimitsRefresh());
+      set({
+        usageSnapshots: view.snapshots,
+        usageHistory: view.history,
+        usageStatus: 'ready',
+      });
     } catch {
-      set({ usageSnapshots: [], usageStatus: 'error' });
+      set({ usageSnapshots: [], usageHistory: [], usageStatus: 'error' });
     }
   },
 });

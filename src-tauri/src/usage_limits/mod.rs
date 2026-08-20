@@ -3,6 +3,8 @@
 //! Opt-in and off by default: switching it on changes how AuricIDE invokes
 //! `claude`, and a Codex check costs credits, so neither should happen unasked.
 //! Codex is queried on a 15-minute timer and whenever the user presses refresh.
+//! Each reading is also appended to a trail (`history.rs`) so a later one can
+//! be a rate, not just a percentage. The CLIs do not offer that history.
 //!
 //! The switch itself is an ordinary application setting. It lives in
 //! `localStorage` and is mirrored into `<app_data_dir>/webview-prefs.json`, and
@@ -12,13 +14,16 @@
 pub mod claude;
 pub mod codex;
 pub mod contract;
+pub mod history;
 pub mod store;
 
 use std::path::PathBuf;
 
+use serde::Serialize;
 use tauri::Manager;
 
 use contract::{UsageError, UsageSnapshot};
+use history::{UsageHistoryState, UsageSample};
 use store::UsageLimitsState;
 
 /// The `APP_CONFIG_KEYS.cliUsageLimits` entry from `src/lib/config/appConfig.ts`.
@@ -36,6 +41,7 @@ const TIMER_TICK_SECS: u64 = 15 * 60;
 /// Everything the commands need, managed by Tauri.
 pub struct UsageLimitsService {
     pub store: UsageLimitsState,
+    pub history: UsageHistoryState,
     app_data_dir: PathBuf,
     /// Single-flight. Without it, a double-click on refresh forks one `codex`
     /// per press.
@@ -48,6 +54,7 @@ impl UsageLimitsService {
     pub fn new(app_data_dir: PathBuf) -> Self {
         Self {
             store: UsageLimitsState::new(store::store_path_in(&app_data_dir)),
+            history: UsageHistoryState::new(history::history_path_in(&app_data_dir)),
             app_data_dir,
             refresh_lock: tokio::sync::Mutex::new(()),
             watcher: std::sync::Mutex::new(None),
@@ -97,6 +104,40 @@ pub fn snapshots_of(service: &UsageLimitsService) -> Vec<UsageSnapshot> {
     service.store.read().into_values().collect()
 }
 
+/// What the status bar actually consumes: the last reading per provider, plus
+/// the trail a forecast needs. Kept as one payload so a chip load cannot see
+/// a snapshot whose history has not arrived yet.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageLimitsView {
+    pub snapshots: Vec<UsageSnapshot>,
+    pub history: Vec<UsageSample>,
+}
+
+pub fn view_of(service: &UsageLimitsService) -> UsageLimitsView {
+    UsageLimitsView {
+        snapshots: snapshots_of(service),
+        history: service.history.read(),
+    }
+}
+
+/// Writes the last reading and appends it to the trail. Either file failing
+/// costs that file, not the other, and not the reading the caller still holds.
+fn persist_snapshot(service: &UsageLimitsService, snapshot: &UsageSnapshot) {
+    if let Err(error) = service.store.put(snapshot.clone()) {
+        eprintln!(
+            "Usage limits: could not persist the {} reading: {error}",
+            snapshot.provider
+        );
+    }
+    if let Err(error) = service.history.record(snapshot) {
+        eprintln!(
+            "Usage limits: could not record the {} reading: {error}",
+            snapshot.provider
+        );
+    }
+}
+
 /// Asks Codex for a fresh reading. This costs credits: the 15-minute poller
 /// and the refresh button are the two callers that may spend them.
 ///
@@ -122,9 +163,7 @@ pub async fn refresh_codex(
         Ok(snapshot) => {
             // A store that will not take the value costs the persistence, not
             // the reading — the caller still gets it.
-            if let Err(error) = service.store.put(snapshot.clone()) {
-                eprintln!("Usage limits: could not persist the codex reading: {error}");
-            }
+            persist_snapshot(service, &snapshot);
             Ok(Some(snapshot))
         }
         Err(error) => {
@@ -145,9 +184,7 @@ pub async fn refresh_codex(
 pub fn refresh_claude(service: &UsageLimitsService, now: i64) -> Result<UsageSnapshot, UsageError> {
     match claude::ingest_drop(&service.claude_drop_path(), now) {
         Ok(snapshot) => {
-            if let Err(error) = service.store.put(snapshot.clone()) {
-                eprintln!("Usage limits: could not persist the claude reading: {error}");
-            }
+            persist_snapshot(service, &snapshot);
             Ok(snapshot)
         }
         Err(error) => {
@@ -171,19 +208,25 @@ pub fn refresh_claude(service: &UsageLimitsService, now: i64) -> Result<UsageSna
 #[tauri::command]
 pub async fn usage_limits_read(
     service: tauri::State<'_, UsageLimitsService>,
-) -> Result<Vec<UsageSnapshot>, String> {
+) -> Result<UsageLimitsView, String> {
     if !service.is_enabled() {
-        return Ok(Vec::new());
+        return Ok(UsageLimitsView {
+            snapshots: Vec::new(),
+            history: Vec::new(),
+        });
     }
-    Ok(snapshots_of(&service))
+    Ok(view_of(&service))
 }
 
 #[tauri::command]
 pub async fn usage_limits_refresh(
     service: tauri::State<'_, UsageLimitsService>,
-) -> Result<Vec<UsageSnapshot>, String> {
+) -> Result<UsageLimitsView, String> {
     if !service.is_enabled() {
-        return Ok(Vec::new());
+        return Ok(UsageLimitsView {
+            snapshots: Vec::new(),
+            history: Vec::new(),
+        });
     }
     let now = chrono::Utc::now().timestamp();
     // A provider that cannot answer must not hide one that can, so each error
@@ -194,7 +237,7 @@ pub async fn usage_limits_refresh(
     if let Err(error) = refresh_claude(&service, now) {
         eprintln!("Usage limits: {error}");
     }
-    Ok(snapshots_of(&service))
+    Ok(view_of(&service))
 }
 
 // ---------------------------------------------------------------------------
@@ -440,5 +483,21 @@ mod tests {
         );
         let stored = service.store.read();
         assert_eq!(stored["claude"].windows[0].used_percent, 12.0);
+    }
+
+    #[test]
+    fn a_persisted_reading_is_on_the_history_trail() {
+        // The chip used to overwrite the last snapshot and throw the trail
+        // away. A forecast needs those earlier percentages, and the reading
+        // we already paid for is the one to keep.
+        let dir = tempfile::tempdir().unwrap();
+        let service = UsageLimitsService::new(dir.path().to_path_buf());
+        persist_snapshot(&service, &snapshot_at(1_000));
+
+        let trail = service.history.read();
+        assert_eq!(trail.len(), 1);
+        assert_eq!(trail[0].provider, "codex");
+        assert_eq!(trail[0].windows[0].used_percent, 40.0);
+        assert_eq!(service.store.read()["codex"].windows[0].used_percent, 40.0);
     }
 }
