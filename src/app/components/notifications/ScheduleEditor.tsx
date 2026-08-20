@@ -328,17 +328,26 @@ function comboSnapshotStale(snapshot: RunComboAction, live: QuickAccessCombo): b
   });
 }
 
-function actionsFromDraft(draft: ActionDraft, projectPath: string | null): NotificationAction[] {
+function actionsFromDraft(
+  draft: ActionDraft,
+  projectPath: string | null,
+  note: string
+): NotificationAction[] {
   if (draft.choice === 'none') return [];
   if (draft.choice === 'task') {
     const task = draft.task.trim();
     if (task === '') return [];
+    const extra = note.trim();
     return [
       {
         id: 'run',
         label: 'Start agent',
         kind: 'spawn-agent',
         task,
+        // The Note field is also inbox copy (`payload.body`). The prompt
+        // reads `note` on the action, so catch-up text that later rewrites
+        // the notification body cannot become part of what the agent runs.
+        ...(extra !== '' ? { note: extra } : {}),
         ...(projectPath !== null ? { repoPath: projectPath } : {}),
         // Written only where a choice was made. An absent field means "same as
         // my last launch", which is what the button did before it could be
@@ -543,7 +552,7 @@ export function ScheduleEditor({
       severity: 'info',
       // The only action a schedule offers is the one you asked for. It is a
       // button, never an automatic launch.
-      actions: actionsFromDraft(actionDraft, projectPath),
+      actions: actionsFromDraft(actionDraft, projectPath, body),
     };
 
     const base = {
@@ -1511,6 +1520,14 @@ export function ScheduleEditor({
             placeholder="Optional extra text"
             className={INPUT}
           />
+          {actionDraft.choice === 'task' && (
+            <p
+              data-testid="schedule-body-prompt-hint"
+              className="mt-1 text-[9px] text-foreground-muted/60"
+            >
+              Also added to the agent&apos;s prompt.
+            </p>
+          )}
         </Field>
 
         <Field label="If AuricIDE was closed">

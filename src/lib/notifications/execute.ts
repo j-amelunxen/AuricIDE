@@ -60,6 +60,13 @@ export class NotificationActionError extends Error {
 /** Model of last resort when nothing has been launched on this machine yet. */
 const FALLBACK_MODEL = 'sonnet';
 
+/** The instruction, plus the reminder's Note when there is one. */
+function taskWithNote(task: string, note: string | null | undefined): string {
+  const extra = note?.trim();
+  if (!extra) return task;
+  return `${task}\n\n${extra}`;
+}
+
 /**
  * What the click knows beyond the action itself.
  *
@@ -91,6 +98,11 @@ export interface NotificationActionContext {
  * in, not globally — the launch choices are stored per project, and reading
  * them without the path yields whatever was last launched outside any project,
  * which is usually nothing at all.
+ *
+ * A trusted reminder's Note (`action.note`) is folded into `task` here, not
+ * baked into the stored task, so re-editing the form does not show the same
+ * text twice. The notification body is not the source: catch-up rewrites that
+ * field, and an agent's display copy must not become a second prompt channel.
  */
 export function buildSpawnConfig(
   action: Extract<NotificationAction, { kind: 'spawn-agent' }>,
@@ -103,7 +115,7 @@ export function buildSpawnConfig(
   return {
     name: deriveAgentName(action.task, cwd?.split('/').filter(Boolean).pop()),
     model: action.model ?? defaults?.model ?? FALLBACK_MODEL,
-    task: action.task,
+    task: trusted ? taskWithNote(action.task, action.note) : action.task,
     cwd,
     provider: action.provider ?? defaults?.providerId,
     permissionMode: (trusted ? action.permissionMode : undefined) ?? defaults?.permissionMode,

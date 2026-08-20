@@ -425,6 +425,37 @@ describe('ScheduleEditor', () => {
         'Weekly digest'
       );
     });
+
+    // The Note stays inbox copy (`body`) and is also copied onto the action
+    // so the click can fold it into the prompt. Baking it into `task` here
+    // would show it twice on edit.
+    it('stores the note as inbox copy and on the spawn action, not inside the task', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      fireEvent.change(screen.getByTestId('schedule-task'), { target: { value: 'Scan' } });
+      fireEvent.change(screen.getByTestId('schedule-body'), {
+        target: { value: 'Focus on auth' },
+      });
+
+      const payload = payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>));
+      expect(payload.body).toBe('Focus on auth');
+      expect(payload.actions?.[0]).toMatchObject({
+        kind: 'spawn-agent',
+        task: 'Scan',
+        note: 'Focus on auth',
+      });
+    });
+
+    it('says the note also goes into the prompt when a custom agent is chosen', () => {
+      renderEditor();
+      expect(screen.queryByTestId('schedule-body-prompt-hint')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      expect(screen.getByTestId('schedule-body-prompt-hint').textContent).toMatch(/prompt/i);
+
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      expect(screen.queryByTestId('schedule-body-prompt-hint')).toBeNull();
+    });
   });
 
   describe('the preview', () => {
@@ -506,6 +537,28 @@ describe('ScheduleEditor', () => {
     it('selects the custom-agent choice when the stored action is spawn-agent', () => {
       renderEditor({ schedule: existing });
       expect(screen.getByTestId<HTMLInputElement>('schedule-action-task').checked).toBe(true);
+    });
+
+    it('shows a stored note in the Note field and writes it onto the action on save', () => {
+      const stored: Schedule = {
+        ...existing,
+        payload: JSON.stringify({
+          title: 'Security-Scan',
+          body: 'Focus on auth',
+          actions: [{ id: 'run', label: 'Start agent', kind: 'spawn-agent', task: 'scan' }],
+        }),
+      };
+      const props = renderEditor({ schedule: stored });
+
+      expect(screen.getByTestId<HTMLInputElement>('schedule-body').value).toBe('Focus on auth');
+      expect(screen.getByTestId<HTMLInputElement>('schedule-task').value).toBe('scan');
+
+      fireEvent.click(screen.getByTestId('schedule-save'));
+      expect(payloadOf(lastSaved(props.onSave)).actions?.[0]).toMatchObject({
+        kind: 'spawn-agent',
+        task: 'scan',
+        note: 'Focus on auth',
+      });
     });
   });
 

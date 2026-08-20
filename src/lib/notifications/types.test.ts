@@ -34,6 +34,7 @@ describe('parseNotificationActions', () => {
         label: 'Agent starten',
         kind: 'spawn-agent',
         task: 'scan',
+        note: 'Focus on auth',
         repoPath: '/repo',
         ticketId: 't1',
         goalId: 'g1',
