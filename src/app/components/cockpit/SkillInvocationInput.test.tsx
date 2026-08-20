@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { SkillInvocationInput } from './SkillInvocationInput';
@@ -193,5 +194,59 @@ describe('SkillInvocationInput', () => {
     fireEvent.change(input, { target: { value: '/custom' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onEnterWithoutPick).toHaveBeenCalledWith('/custom');
+  });
+});
+
+describe('SkillInvocationInput in a prompt (token + multiline)', () => {
+  it('renders a textarea so a prompt can be more than one line', () => {
+    const { input } = setup({ completeToken: true, multiline: true });
+    expect(input.tagName).toBe('TEXTAREA');
+  });
+
+  it('does not open the list while the prompt is prose', async () => {
+    const user = userEvent.setup();
+    const { input } = setup({ completeToken: true, multiline: true });
+    await user.type(input, 'just a prompt');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('opens the list when a slash is typed in the prompt', async () => {
+    const user = userEvent.setup();
+    const { input } = setup({ completeToken: true, multiline: true });
+    await user.type(input, '/');
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(3);
+  });
+
+  it('opens the list for a slash after existing words', async () => {
+    const user = userEvent.setup();
+    const { input } = setup({ completeToken: true, multiline: true });
+    await user.type(input, 'please /');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('inserts the picked skill at the slash and leaves a space', async () => {
+    const user = userEvent.setup();
+    const { input, onChange, onPick } = setup({ completeToken: true, multiline: true });
+    await user.type(input, 'please /comm');
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ invocation: '/commit' }));
+    expect(onChange).toHaveBeenLastCalledWith('please /commit ');
+    expect(input).toHaveValue('please /commit ');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('lets a plain Enter insert a newline when nothing is highlighted', async () => {
+    const user = userEvent.setup();
+    const { input } = setup({ completeToken: true, multiline: true });
+    await user.type(input, 'line one{Enter}line two');
+    expect(input).toHaveValue('line one\nline two');
+  });
+
+  it('does not steal ArrowUp while the list is closed', () => {
+    const onKeyDown = vi.fn();
+    const { input } = setup({ completeToken: true, multiline: true, onKeyDown });
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(onKeyDown).toHaveBeenCalled();
+    expect(onKeyDown.mock.calls[0][0].defaultPrevented).toBe(false);
   });
 });

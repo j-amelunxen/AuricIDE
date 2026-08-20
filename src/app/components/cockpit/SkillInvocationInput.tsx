@@ -1,8 +1,14 @@
 'use client';
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectSkill } from '@/lib/tauri/projectSkills';
-import { suggestSkills } from '@/lib/quickAccess/skillSuggest';
+import {
+  applySkillInvocation,
+  skillTokenAtCursor,
+  suggestSkills,
+} from '@/lib/quickAccess/skillSuggest';
+
+type FieldElement = HTMLInputElement | HTMLTextAreaElement;
 
 interface SkillInvocationInputProps {
   value: string;
@@ -10,10 +16,11 @@ interface SkillInvocationInputProps {
   ariaLabel: string;
   placeholder?: string;
   className?: string;
+  id?: string;
   /** Every keystroke, picked or typed — the field never blocks free text. */
   onChange: (value: string) => void;
   /** Only when a known skill was chosen, so a caller can fill in its name too. */
-  onPick: (skill: ProjectSkill) => void;
+  onPick?: (skill: ProjectSkill) => void;
   /**
    * When true this field is only for naming a skill, so the list opens on an
    * empty value instead of waiting for a slash. Prompt fields leave this off.
@@ -21,6 +28,21 @@ interface SkillInvocationInputProps {
   suggestWhenEmpty?: boolean;
   /** Enter with no highlighted option — typed text the caller may accept. */
   onEnterWithoutPick?: (value: string) => void;
+  /**
+   * Complete the `/skill` word at the cursor instead of replacing the whole
+   * field. For a prompt that may hold a skill plus the rest of the instruction.
+   */
+  completeToken?: boolean;
+  /** Render a textarea so the value can be more than one line. */
+  multiline?: boolean;
+  fieldRef?: React.Ref<FieldElement | null>;
+  onKeyDown?: React.KeyboardEventHandler<FieldElement>;
+}
+
+function assignRef<T>(ref: React.Ref<T> | undefined, value: T) {
+  if (!ref) return;
+  if (typeof ref === 'function') ref(value);
+  else (ref as React.MutableRefObject<T>).current = value;
 }
 
 /**
@@ -39,26 +61,42 @@ export function SkillInvocationInput({
   ariaLabel,
   placeholder,
   className = '',
+  id,
   onChange,
   onPick,
   suggestWhenEmpty = false,
   onEnterWithoutPick,
+  completeToken = false,
+  multiline = false,
+  fieldRef,
+  onKeyDown,
 }: SkillInvocationInputProps) {
   const listboxId = useId();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  const [cursor, setCursor] = useState(value.length);
   const optionRefs = useRef(new Map<number, HTMLLIElement>());
+  const innerRef = useRef<FieldElement | null>(null);
+  const pendingCursor = useRef<number | null>(null);
+
+  const token = useMemo(
+    () => (completeToken ? skillTokenAtCursor(value, cursor) : null),
+    [completeToken, value, cursor]
+  );
 
   // A prompt is prose until a slash says otherwise. Suggesting against every
   // keystroke would put a popup over the field for people writing sentences.
   // A dedicated skill picker is the other case: the field only ever names a
   // skill, so an empty value is "show me the catalogue".
   const suggestions = useMemo(() => {
+    if (completeToken) {
+      return token ? suggestSkills(token.query, discovered) : [];
+    }
     const trimmed = value.trim();
     if (trimmed.startsWith('/')) return suggestSkills(value, discovered);
     if (suggestWhenEmpty) return suggestSkills(trimmed ? `/${trimmed}` : '/', discovered);
     return [];
-  }, [value, discovered, suggestWhenEmpty]);
+  }, [value, discovered, suggestWhenEmpty, completeToken, token]);
   const expanded = open && suggestions.length > 0;
 
   useEffect(() => {
@@ -66,9 +104,28 @@ export function SkillInvocationInput({
     optionRefs.current.get(active)?.scrollIntoView?.({ block: 'nearest' });
   }, [expanded, active]);
 
+  useLayoutEffect(() => {
+    if (pendingCursor.current === null) return;
+    const next = pendingCursor.current;
+    pendingCursor.current = null;
+    innerRef.current?.setSelectionRange(next, next);
+    setCursor(next);
+  }, [value]);
+
+  const setFieldRef = (element: FieldElement | null) => {
+    innerRef.current = element;
+    assignRef(fieldRef, element);
+  };
+
   const pick = (skill: ProjectSkill) => {
-    onChange(skill.invocation);
-    onPick(skill);
+    if (completeToken && token) {
+      const next = applySkillInvocation(value, token, skill.invocation);
+      pendingCursor.current = next.cursor;
+      onChange(next.text);
+    } else {
+      onChange(skill.invocation);
+    }
+    onPick?.(skill);
     setOpen(false);
     setActive(-1);
   };
@@ -79,16 +136,25 @@ export function SkillInvocationInput({
       return (current + offset + suggestions.length) % suggestions.length;
     });
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (event: React.KeyboardEvent<FieldElement>) => {
     if (event.key === 'Escape') {
-      if (!expanded) return;
+      if (!expanded) {
+        onKeyDown?.(event);
+        return;
+      }
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
       setActive(-1);
       return;
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      if (suggestions.length === 0) return;
+      // A prompt's ArrowUp recalls earlier instructions while the list is
+      // closed. Steal the keys only once the popup is actually showing.
+      if (suggestions.length === 0 || (completeToken && !open)) {
+        onKeyDown?.(event);
+        return;
+      }
       event.preventDefault();
       if (!open) {
         setOpen(true);
@@ -106,41 +172,54 @@ export function SkillInvocationInput({
     if (event.key === 'Enter' && onEnterWithoutPick && value.trim()) {
       event.preventDefault();
       onEnterWithoutPick(value.trim());
+      return;
     }
+    onKeyDown?.(event);
+  };
+
+  const fieldProps = {
+    id,
+    role: 'combobox' as const,
+    'aria-label': ariaLabel,
+    'aria-expanded': expanded,
+    'aria-controls': expanded ? listboxId : undefined,
+    'aria-activedescendant': expanded && active >= 0 ? `${listboxId}-${active}` : undefined,
+    'aria-autocomplete': 'list' as const,
+    autoComplete: 'off',
+    value,
+    placeholder,
+    onChange: (event: React.ChangeEvent<FieldElement>) => {
+      onChange(event.target.value);
+      setCursor(event.target.selectionStart ?? event.target.value.length);
+      setOpen(true);
+      setActive(-1);
+    },
+    onSelect: (event: React.SyntheticEvent<FieldElement>) => {
+      setCursor(event.currentTarget.selectionStart ?? event.currentTarget.value.length);
+    },
+    onFocus: () => setOpen(true),
+    onBlur: () => {
+      setOpen(false);
+      setActive(-1);
+    },
+    onKeyDown: handleKeyDown,
+    className,
   };
 
   return (
     <div className="relative min-w-0 flex-1">
-      <input
-        role="combobox"
-        aria-label={ariaLabel}
-        aria-expanded={expanded}
-        aria-controls={expanded ? listboxId : undefined}
-        aria-activedescendant={expanded && active >= 0 ? `${listboxId}-${active}` : undefined}
-        aria-autocomplete="list"
-        autoComplete="off"
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => {
-          onChange(event.target.value);
-          setOpen(true);
-          setActive(-1);
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => {
-          setOpen(false);
-          setActive(-1);
-        }}
-        onKeyDown={handleKeyDown}
-        className={className}
-      />
+      {multiline ? (
+        <textarea ref={setFieldRef} aria-multiline="true" {...fieldProps} />
+      ) : (
+        <input ref={setFieldRef} {...fieldProps} />
+      )}
 
       {expanded && (
         <ul
           id={listboxId}
           role="listbox"
           aria-label={`${ariaLabel} suggestions`}
-          className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-lg border border-white/10 bg-surface-raised py-1 shadow-lg shadow-black/40"
+          className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-lg border border-white/10 bg-surface-raised py-1 shadow-lg shadow-black/40"
         >
           {suggestions.map((skill, index) => (
             <li
