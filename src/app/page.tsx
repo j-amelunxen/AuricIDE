@@ -53,6 +53,7 @@ import { type SettingsCategory } from './components/ide/SettingsModal';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
 import { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
 import { useAttentionTitle } from '@/lib/hooks/useAttentionTitle';
+import { CloseWindowGuard } from '@/lib/hooks/useCloseWindowGuard';
 import { useStore } from '@/lib/store';
 import type { AgentInfo } from '@/lib/tauri/agents';
 
@@ -335,6 +336,7 @@ export default function Home() {
 
   return (
     <>
+      <CloseWindowGuard />
       <IDEOverlays {...state} {...handlers} />
       <ToastHost />
       {state.canvasContextMenu && (
