@@ -92,6 +92,13 @@ describe('gitSlice', () => {
     expect(state.activeRepoPath).toBeNull();
     expect(state.diffByTabId).toEqual({});
     expect(state.agentWorktrees).toEqual([]);
+    expect(state.projectDirtyEpoch).toBe(0);
+  });
+
+  it('bumpProjectDirtyEpoch advances the probe generation', () => {
+    store.getState().bumpProjectDirtyEpoch();
+    store.getState().bumpProjectDirtyEpoch();
+    expect(store.getState().projectDirtyEpoch).toBe(2);
   });
 
   describe('discoverAndRefreshGit', () => {

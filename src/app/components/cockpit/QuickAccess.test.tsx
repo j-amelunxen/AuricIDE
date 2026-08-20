@@ -18,7 +18,7 @@ describe('QuickAccess', () => {
   beforeEach(() => {
     mockLoadProjectsDirty.mockReset();
     mockLoadProjectsDirty.mockResolvedValue({});
-    useStore.setState({ starredProjects: [], toasts: [] });
+    useStore.setState({ starredProjects: [], toasts: [], projectDirtyEpoch: 0 });
   });
 
   it('renders a tile for each starred project, sorted alphabetically by name', () => {
@@ -300,6 +300,25 @@ describe('QuickAccess', () => {
       expect(screen.getByTestId('quick-access-tile-/a/website')).toHaveAccessibleName(
         /website.*uncommitted changes/i
       );
+    });
+
+    it('drops the mark when ignored nested repos make the project clean', async () => {
+      mockLoadProjectsDirty
+        .mockResolvedValueOnce({ '/a/website': true })
+        .mockResolvedValueOnce({ '/a/website': false });
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath={null} />);
+      expect(await screen.findByTestId('quick-access-dirty-/a/website')).toBeInTheDocument();
+
+      await act(async () => {
+        useStore.getState().bumpProjectDirtyEpoch();
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('quick-access-dirty-/a/website')).not.toBeInTheDocument();
+      });
     });
 
     it('leaves the tile unmarked until the probe answers, and on a clean repo', async () => {

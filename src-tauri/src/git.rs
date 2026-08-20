@@ -3044,6 +3044,122 @@ mod tests {
         assert!(!dirty_for(root.path().to_str().unwrap()));
     }
 
+    fn dirty_nested_repo_at(parent: &Path, name: &str) {
+        let nested = parent.join(name);
+        fs::create_dir(&nested).unwrap();
+        let repo = Repository::init(&nested).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@example.com").unwrap();
+        fs::write(nested.join("a.txt"), "hi").unwrap();
+        git_stage_impl(nested.to_str().unwrap(), &["a.txt".to_string()]).unwrap();
+        git_commit_impl(nested.to_str().unwrap(), "init").unwrap();
+        fs::write(nested.join("a.txt"), "dirty").unwrap();
+    }
+
+    #[test]
+    fn git_projects_dirty_is_true_when_a_root_repo_contains_a_dirty_nested_repo() {
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        dirty_nested_repo_at(dir.path(), "pkg");
+
+        assert!(dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_ignores_a_dirty_nested_repo_inside_a_root_repo() {
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        fs::write(dir.path().join(".gitignore"), ".auric/\n").unwrap();
+        git_stage_impl(dir.path().to_str().unwrap(), &[".gitignore".to_string()]).unwrap();
+        git_commit_impl(dir.path().to_str().unwrap(), "ignore auric").unwrap();
+        dirty_nested_repo_at(dir.path(), "pkg");
+        crate::ignored_repos::write_ignored_repos_for_test(dir.path(), r#"["pkg"]"#);
+
+        assert!(!dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    fn committed_origin_repo() -> TempDir {
+        let origin = TempDir::new().unwrap();
+        committed_repo(&origin);
+        origin
+    }
+
+    fn add_submodule(parent: &Path, origin: &Path, name: &str) {
+        let add = git_command(parent)
+            .args(["submodule", "add", origin.to_str().unwrap(), name])
+            .output()
+            .unwrap();
+        assert!(
+            add.status.success(),
+            "git submodule add failed: {}",
+            String::from_utf8_lossy(&add.stderr)
+        );
+        git_command(parent)
+            .args(["commit", "-m", "add submodule"])
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    fn git_projects_dirty_is_true_when_a_submodule_is_dirty() {
+        let origin = committed_origin_repo();
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        add_submodule(dir.path(), origin.path(), "pkg");
+        fs::write(dir.path().join("pkg").join("a.txt"), "dirty").unwrap();
+
+        assert!(dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_ignores_a_dirty_submodule_the_project_hid() {
+        let origin = committed_origin_repo();
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        fs::write(dir.path().join(".gitignore"), ".auric/\n").unwrap();
+        git_stage_impl(dir.path().to_str().unwrap(), &[".gitignore".to_string()]).unwrap();
+        git_commit_impl(dir.path().to_str().unwrap(), "ignore auric").unwrap();
+        add_submodule(dir.path(), origin.path(), "pkg");
+        fs::write(dir.path().join("pkg").join("a.txt"), "dirty").unwrap();
+        crate::ignored_repos::write_ignored_repos_for_test(dir.path(), r#"["pkg"]"#);
+
+        assert!(!dirty_for(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn git_projects_dirty_sees_an_ignore_list_while_the_project_db_stays_open() {
+        let dir = TempDir::new().unwrap();
+        committed_repo(&dir);
+        fs::write(dir.path().join(".gitignore"), ".auric/\n").unwrap();
+        git_stage_impl(dir.path().to_str().unwrap(), &[".gitignore".to_string()]).unwrap();
+        git_commit_impl(dir.path().to_str().unwrap(), "ignore auric").unwrap();
+        dirty_nested_repo_at(dir.path(), "pkg");
+
+        let auric = dir.path().join(".auric");
+        fs::create_dir_all(&auric).unwrap();
+        let conn = rusqlite::Connection::open(auric.join("project.db")).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS kv_store (namespace TEXT, key TEXT, value TEXT,
+             updated_at TEXT, PRIMARY KEY (namespace, key))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO kv_store (namespace, key, value, updated_at)
+             VALUES ('ignored_repos', 'paths', '[\"pkg\"]', datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        assert!(
+            !dirty_for(dir.path().to_str().unwrap()),
+            "the dirty probe must see an ignore list written on a still-open WAL connection"
+        );
+        drop(conn);
+    }
+
     #[test]
     fn git_status_treats_an_ignored_nested_repo_as_ignored_in_the_parent() {
         let dir = TempDir::new().unwrap();
