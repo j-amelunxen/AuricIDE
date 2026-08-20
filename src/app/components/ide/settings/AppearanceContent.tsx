@@ -4,7 +4,6 @@ import { SettingsSection } from '../../ui/settings/SettingsSection';
 import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { useTheme } from '@/lib/theme/catalog/useTheme';
 import { importCustomTheme } from '@/lib/theme/catalog/importTheme';
-import { useAttribution } from '@/lib/settings/attribution';
 import { useStatusBarClock } from '@/lib/settings/statusBarClock';
 import { useStore } from '@/lib/store';
 import type { ThemeMeta } from '@/lib/theme/catalog/types';
@@ -58,7 +57,6 @@ function ThemeOption({
 
 export function AppearanceContent() {
   const { id, list, skippedCount, select, reload } = useTheme();
-  const [showAttribution, setShowAttribution] = useAttribution();
   const [showStatusBarClock, setShowStatusBarClock] = useStatusBarClock();
   const showToast = useStore((s) => s.showToast);
 
@@ -169,16 +167,6 @@ export function AppearanceContent() {
           checked={showStatusBarClock}
           onChange={setShowStatusBarClock}
           testId="status-bar-clock-toggle"
-        />
-      </SettingsSection>
-
-      <SettingsSection title="Attribution" icon="favorite">
-        <SettingsToggle
-          label="Show attribution"
-          description={'Show "Made with ♥ by software-architecture.ai" in the status bar.'}
-          checked={showAttribution}
-          onChange={setShowAttribution}
-          testId="attribution-toggle"
         />
       </SettingsSection>
 

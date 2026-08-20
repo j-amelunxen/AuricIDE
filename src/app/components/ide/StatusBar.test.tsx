@@ -1,13 +1,11 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StatusBar } from './StatusBar';
-import { ATTRIBUTION_STORAGE_KEY } from '@/lib/settings/attribution';
 import { STATUS_BAR_CLOCK_STORAGE_KEY } from '@/lib/settings/statusBarClock';
 import { useStore } from '@/lib/store';
 
 describe('StatusBar', () => {
   afterEach(() => {
-    localStorage.removeItem(ATTRIBUTION_STORAGE_KEY);
     localStorage.removeItem(STATUS_BAR_CLOCK_STORAGE_KEY);
     useStore.setState({ requirementsDraft: [] });
   });
@@ -77,24 +75,10 @@ describe('StatusBar', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it('hides the attribution credit by default', () => {
+  it('does not show an attribution credit', () => {
     render(<StatusBar />);
     expect(screen.queryByTestId('made-with-credit')).not.toBeInTheDocument();
-  });
-
-  it('shows the software-architecture.ai credit when attribution is enabled', () => {
-    localStorage.setItem(ATTRIBUTION_STORAGE_KEY, 'true');
-    render(<StatusBar />);
-    const credit = screen.getByTestId('made-with-credit');
-    expect(credit).toHaveTextContent('Made with');
-    expect(credit).toHaveTextContent('by software-architecture.ai');
-  });
-
-  it('hides the credit heart glyph from assistive technology', () => {
-    localStorage.setItem(ATTRIBUTION_STORAGE_KEY, 'true');
-    render(<StatusBar />);
-    const heart = screen.getByTestId('made-with-credit').querySelector('[aria-hidden="true"]');
-    expect(heart).not.toBeNull();
+    expect(screen.queryByText(/software-architecture\.ai/i)).not.toBeInTheDocument();
   });
 
   it('shows the truths light once requirements exist', () => {

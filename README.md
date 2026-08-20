@@ -218,7 +218,3 @@ docs/                  # assets, brand, automation surface notes
 ## License
 
 **AGPL-3.0-only.** Commercial licensing on request.
-
----
-
-Driven by: [software-architecture.ai](https://software-architecture.ai)

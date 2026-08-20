@@ -8,7 +8,7 @@ export const STATUS_BAR_CLOCK_STORAGE_KEY = APP_CONFIG_KEYS.statusBarClock;
 
 const STATUS_BAR_CLOCK_CHANGE_EVENT = 'auric-status-bar-clock-change';
 
-/** Default is ON — unlike attribution, this is a utility, not opt-in advertising. */
+/** Default is ON — the clock is a utility, not something you have to ask for. */
 export function loadShowStatusBarClock(): boolean {
   return readAppPref(STATUS_BAR_CLOCK_STORAGE_KEY) !== 'false';
 }
@@ -30,7 +30,7 @@ function subscribe(callback: () => void): () => void {
 
 /**
  * Subscribes to the persisted clock flag (localStorage + a custom event for
- * same-tab updates, same pattern as useAttribution). SSR renders the default.
+ * same-tab updates). SSR renders the default.
  */
 export function useStatusBarClock(): [boolean, (value: boolean) => void] {
   const show = useSyncExternalStore(subscribe, loadShowStatusBarClock, () => true);

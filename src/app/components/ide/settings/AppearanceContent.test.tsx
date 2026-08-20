@@ -3,7 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AppearanceContent } from './AppearanceContent';
 import { ACCENTS, ACCENT_STORAGE_KEY } from '@/lib/theme/accent';
-import { loadShowAttribution } from '@/lib/settings/attribution';
 import { loadShowStatusBarClock } from '@/lib/settings/statusBarClock';
 import { clearThemeOverrides } from '@/lib/theme/catalog/apply';
 import { resetThemeForTests } from '@/lib/theme/catalog/controller';
@@ -168,7 +167,7 @@ describe('AppearanceContent — theme picker', () => {
   });
 });
 
-describe('AppearanceContent — attribution toggle', () => {
+describe('AppearanceContent — no attribution', () => {
   beforeEach(() => {
     localStorage.clear();
     clearThemeOverrides();
@@ -181,25 +180,14 @@ describe('AppearanceContent — attribution toggle', () => {
     resetThemeForTests();
   });
 
-  it('renders the attribution toggle switched off by default', async () => {
+  it('does not offer an attribution toggle', async () => {
     render(<AppearanceContent />);
     await waitFor(() => {
-      expect(screen.getByTestId('attribution-toggle')).not.toBeChecked();
+      expect(screen.getByTestId('status-bar-clock-toggle')).toBeInTheDocument();
     });
-  });
-
-  it('persists the attribution setting when toggled on', async () => {
-    const user = userEvent.setup();
-    render(<AppearanceContent />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('attribution-toggle')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByTestId('attribution-toggle'));
-
-    expect(screen.getByTestId('attribution-toggle')).toBeChecked();
-    expect(loadShowAttribution()).toBe(true);
+    expect(screen.queryByTestId('attribution-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByText(/software-architecture\.ai/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/attribution/i)).not.toBeInTheDocument();
   });
 });
 
