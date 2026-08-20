@@ -80,6 +80,31 @@ vi.mock('@/lib/tauri/fs', () => ({
   exists: (path: string) => mockExists(path),
 }));
 
+const SPAWN_SKILLS = [
+  {
+    invocation: '/commit',
+    name: 'Commit',
+    description: 'Write a commit',
+    source: 'skill' as const,
+    scope: 'project' as const,
+    path: '/repo/.claude/skills/commit/SKILL.md',
+    sourceId: 'claude',
+  },
+  {
+    invocation: '/changelog',
+    name: 'Changelog',
+    description: null,
+    source: 'skill' as const,
+    scope: 'project' as const,
+    path: '/repo/.claude/skills/changelog/SKILL.md',
+    sourceId: 'claude',
+  },
+];
+
+vi.mock('@/lib/hooks/useProjectSkills', () => ({
+  useProjectSkills: () => ({ discovered: SPAWN_SKILLS, ready: true }),
+}));
+
 type User = ReturnType<typeof userEvent.setup>;
 
 /** Answers the first-use YOLO elevate question. */
@@ -967,6 +992,48 @@ describe('SpawnAgentDialog keyboard and prompt recall', () => {
     const { task } = open();
     await user.type(task, '{ArrowUp}');
     expect(task).toHaveValue('');
+  });
+
+  it('hints that a slash picks a skill when any were discovered', () => {
+    open();
+    expect(screen.getByTestId('skill-complete-hint')).toHaveTextContent('/ picks a skill');
+  });
+
+  it('opens skill suggestions when a slash is typed', async () => {
+    const user = userEvent.setup();
+    const { task } = open();
+    await user.type(task, '/');
+    const options = within(screen.getByRole('listbox')).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining('/commit')])
+    );
+  });
+
+  it('inserts the picked skill into the prompt', async () => {
+    const user = userEvent.setup();
+    const { task } = open();
+    await user.type(task, '/comm');
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(task).toHaveValue('/commit ');
+  });
+
+  it('closes suggestions on Escape without closing the dialog', async () => {
+    const user = userEvent.setup();
+    const { onClose, task } = open();
+    await user.type(task, '/');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: /start agent/i })).toBeInTheDocument();
+  });
+
+  it('still recalls prompt history with ArrowUp in an empty field when skills exist', async () => {
+    const user = userEvent.setup();
+    const { task } = open({ promptHistory: ['newest prompt'] });
+    await user.type(task, '{ArrowUp}');
+    expect(task).toHaveValue('newest prompt');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 });
 

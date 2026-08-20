@@ -30,6 +30,8 @@ import {
 } from '@/lib/agents/spawnAttachments';
 import { useStore } from '@/lib/store';
 import { isGitRepoRoot, workingDirectoryHasGitRepo } from '@/lib/git/worktreeDefault';
+import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
+import { SkillInvocationInput } from '@/app/components/cockpit/SkillInvocationInput';
 
 const YOLO_ELEVATE_ACK_KEY = 'auric.yolo-elevate-acknowledged';
 
@@ -87,9 +89,10 @@ function SpawnAgentDialogPanel({
   const dialogRef = useDialogA11y<HTMLDivElement>();
   useOverlayLayer({ id: 'spawn', kind: 'tool', active: true, onEscape: onClose });
   const { confirm, confirmDialog } = useConfirm();
-  const taskRef = useRef<HTMLTextAreaElement>(null);
+  const taskRef = useRef<HTMLTextAreaElement | HTMLInputElement>(null);
   const [repoPath, setRepoPath] = useState(initialRepoPath);
   const [task, setTask] = useState(initialTask);
+  const { discovered } = useProjectSkills(repoPath || undefined);
   /** -1 = composing a fresh prompt; >= 0 = showing promptHistory[historyIndex]. */
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [goalId, setGoalId] = useState<string>(initialGoalId ?? '');
@@ -368,7 +371,8 @@ function SpawnAgentDialogPanel({
    * walks forward again. Only active while the field holds a recalled prompt or
    * nothing at all, so it never hijacks the arrow keys during real editing.
    */
-  const handleTaskKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleTaskKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    if (e.defaultPrevented) return;
     if (promptHistory.length === 0) return;
 
     if (e.key === 'ArrowUp' && (historyIndex >= 0 || task === '')) {
@@ -448,7 +452,7 @@ function SpawnAgentDialogPanel({
           role="dialog"
           aria-modal="true"
           aria-labelledby="spawn-agent-title"
-          className="glass-card relative w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
+          className="glass-card relative w-full max-w-md overflow-visible rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
           onClick={(e) => e.stopPropagation()}
           onDragOver={handleHtml5DragOver}
           onDragLeave={handleHtml5DragLeave}
@@ -538,18 +542,22 @@ function SpawnAgentDialogPanel({
                 What should it do?
                 <InfoTooltip description={GUIDANCE.agents.task} label="i" />
               </label>
-              <textarea
+              <SkillInvocationInput
                 id="task-desc"
-                ref={taskRef}
+                multiline
+                completeToken
+                fieldRef={taskRef}
                 value={task}
-                onChange={(e) => {
-                  setTask(e.target.value);
+                discovered={discovered}
+                ariaLabel="What should it do?"
+                placeholder="What should the agent achieve?"
+                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors resize-none min-h-[100px]"
+                onChange={(next) => {
+                  setTask(next);
                   // Typing means the user owns this text now, not the history.
                   setHistoryIndex(-1);
                 }}
                 onKeyDown={handleTaskKeyDown}
-                className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs text-foreground outline-none focus:border-primary/50 transition-colors resize-none min-h-[100px]"
-                placeholder="What should the agent achieve?"
               />
               {attachments.length > 0 && (
                 <ul className="flex flex-wrap gap-1.5 pt-1">
@@ -578,6 +586,9 @@ function SpawnAgentDialogPanel({
               )}
               <p className="text-[10px] text-foreground-muted">
                 Drop or paste an image — it goes out with the prompt
+                {discovered.length > 0 && (
+                  <span data-testid="skill-complete-hint"> · / picks a skill</span>
+                )}
                 {promptHistory.length > 0 && (
                   <span data-testid="prompt-history-hint"> · ↑ recalls an earlier prompt</span>
                 )}

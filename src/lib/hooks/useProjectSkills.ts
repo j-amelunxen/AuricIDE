@@ -4,27 +4,33 @@ import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills'
 import { useStore } from '@/lib/store';
 
 /**
- * The project's skill catalogue (project-scoped first, then the user's).
- * Empty when no project is open; the picker then still accepts typed invocations.
+ * The skill catalogue for a working directory (project-scoped first, then the
+ * user's). Empty when no path is known; the picker then still accepts typed
+ * invocations. Pass a path to list the skills the agent will actually see —
+ * spawn's working directory, not necessarily the open project.
  */
-export function useProjectSkills(): { discovered: ProjectSkill[]; ready: boolean } {
+export function useProjectSkills(projectPath?: string | null): {
+  discovered: ProjectSkill[];
+  ready: boolean;
+} {
   const rootPath = useStore((s) => s.rootPath);
+  const path = (projectPath && projectPath.trim()) || rootPath;
   const [loaded, setLoaded] = useState<{ path: string; skills: ProjectSkill[] } | null>(null);
 
   useEffect(() => {
-    if (!rootPath) return;
-    const path = rootPath;
+    if (!path) return;
+    const requested = path;
     let cancelled = false;
-    void listProjectSkills(path, enabledSkillSources(loadSkillSources())).then((found) => {
+    void listProjectSkills(requested, enabledSkillSources(loadSkillSources())).then((found) => {
       if (cancelled) return;
-      setLoaded({ path, skills: found });
+      setLoaded({ path: requested, skills: found });
     });
     return () => {
       cancelled = true;
     };
-  }, [rootPath]);
+  }, [path]);
 
-  if (!rootPath) return { discovered: [], ready: true };
-  if (loaded?.path !== rootPath) return { discovered: [], ready: false };
+  if (!path) return { discovered: [], ready: true };
+  if (loaded?.path !== path) return { discovered: [], ready: false };
   return { discovered: loaded.skills, ready: true };
 }

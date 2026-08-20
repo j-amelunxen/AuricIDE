@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectSkill } from '../tauri/projectSkills';
-import { suggestSkills, SKILL_SUGGESTION_LIMIT } from './skillSuggest';
+import {
+  suggestSkills,
+  SKILL_SUGGESTION_LIMIT,
+  skillTokenAtCursor,
+  applySkillInvocation,
+} from './skillSuggest';
 
 function skill(overrides: Partial<ProjectSkill> & { invocation: string }): ProjectSkill {
   return {
@@ -77,5 +82,95 @@ describe('suggestSkills', () => {
 
   it('survives an empty catalogue', () => {
     expect(suggestSkills('anything', [])).toEqual([]);
+  });
+});
+
+describe('skillTokenAtCursor', () => {
+  it('returns nothing in an empty field', () => {
+    expect(skillTokenAtCursor('', 0)).toBeNull();
+  });
+
+  it('returns nothing while writing a sentence', () => {
+    expect(skillTokenAtCursor('fix the tests', 13)).toBeNull();
+  });
+
+  it('treats a lone slash as a query', () => {
+    expect(skillTokenAtCursor('/', 1)).toEqual({
+      start: 0,
+      end: 1,
+      query: '/',
+      tokenEnd: 1,
+    });
+  });
+
+  it('captures the slash-token the cursor is in', () => {
+    expect(skillTokenAtCursor('/comm', 5)).toEqual({
+      start: 0,
+      end: 5,
+      query: '/comm',
+      tokenEnd: 5,
+    });
+  });
+
+  it('finds a slash-token after other words', () => {
+    const text = 'please /cha';
+    expect(skillTokenAtCursor(text, text.length)).toEqual({
+      start: 7,
+      end: 11,
+      query: '/cha',
+      tokenEnd: 11,
+    });
+  });
+
+  it('finds a slash-token at the start of a new line', () => {
+    const text = 'intro\n/tdd';
+    expect(skillTokenAtCursor(text, text.length)).toEqual({
+      start: 6,
+      end: 10,
+      query: '/tdd',
+      tokenEnd: 10,
+    });
+  });
+
+  it('keeps the whole token as the replacement range when the cursor is in the middle', () => {
+    const text = '/changelog now';
+    expect(skillTokenAtCursor(text, 4)).toEqual({
+      start: 0,
+      end: 4,
+      query: '/cha',
+      tokenEnd: 10,
+    });
+  });
+
+  it('returns nothing once a space has closed the token', () => {
+    expect(skillTokenAtCursor('/changelog now', 14)).toBeNull();
+  });
+
+  it('does not treat a slash inside a word as a skill', () => {
+    expect(skillTokenAtCursor('http://github.com', 17)).toBeNull();
+  });
+});
+
+describe('applySkillInvocation', () => {
+  it('replaces a partial token and adds a trailing space', () => {
+    expect(applySkillInvocation('/comm', skillTokenAtCursor('/comm', 5)!, '/commit')).toEqual({
+      text: '/commit ',
+      cursor: 8,
+    });
+  });
+
+  it('keeps the rest of the prompt around the token', () => {
+    const text = 'please /cha extra';
+    const token = skillTokenAtCursor(text, 11)!;
+    expect(applySkillInvocation(text, token, '/changelog')).toEqual({
+      text: 'please /changelog extra',
+      cursor: 18, // after the inserted invocation and its trailing space
+    });
+  });
+
+  it('does not add a second space when one already follows the token', () => {
+    const text = '/cha extra';
+    const token = skillTokenAtCursor(text, 4)!;
+    expect(applySkillInvocation(text, token, '/changelog').text).toBe('/changelog extra');
   });
 });
