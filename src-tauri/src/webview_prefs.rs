@@ -313,7 +313,7 @@ mod tests {
         let path = dir.path().join("webview-prefs.json");
         let entries = map(&[
             ("auric.theme", "aurora"),
-            ("auric-show-attribution", "true"),
+            ("auric.status-bar.clock", "true"),
         ]);
         write_prefs_atomic(&path, &entries).unwrap();
         assert_eq!(read_prefs(&path), entries);

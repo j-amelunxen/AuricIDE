@@ -1,6 +1,5 @@
 'use client';
 
-import { useAttribution } from '@/lib/settings/attribution';
 import { TruthsLight } from '../requirements/TruthsLight';
 import { CliQuotaChip } from '../usage/CliQuotaChip';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -27,8 +26,6 @@ export function StatusBar({
   warningCount = 0,
   onProblemsClick,
 }: StatusBarProps) {
-  const [showAttribution] = useAttribution();
-
   return (
     <footer
       data-testid="status-bar"
@@ -81,18 +78,6 @@ export function StatusBar({
           >
             <kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[9px]">/</kbd> commands
           </span>
-        )}
-        {showAttribution && (
-          <>
-            <div className="h-3 w-[1px] bg-white/10" />
-            <span data-testid="made-with-credit" className="opacity-50 text-[9px] tracking-wide">
-              Made with{' '}
-              <span aria-hidden="true" className="text-primary">
-                ♥
-              </span>{' '}
-              by software-architecture.ai
-            </span>
-          </>
         )}
         <StatusBarClock />
       </div>
