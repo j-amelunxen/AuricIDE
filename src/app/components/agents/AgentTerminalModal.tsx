@@ -521,7 +521,18 @@ function AgentTerminalDialog({
               <div
                 key={group.repoPath ?? UNGROUPED_REPO_KEY}
                 data-testid={`agent-tab-group-${group.repoPath ?? UNGROUPED_REPO_KEY}`}
-                className={`flex items-center gap-1 ${
+                // Grow with tab count so leftover strip width stays equal per tab.
+                // minWidth is the floor (10rem/tab, plus the project label); past
+                // that the strip scrolls instead of crushing names.
+                style={{
+                  flexGrow: group.agents.length,
+                  flexShrink: 0,
+                  flexBasis: 0,
+                  minWidth: showTabGroupLabels
+                    ? `calc(${group.agents.length} * 10rem + 8rem)`
+                    : `calc(${group.agents.length} * 10rem)`,
+                }}
+                className={`flex items-center gap-1 overflow-hidden ${
                   groupIndex > 0 ? 'ml-1 border-l border-white/10 pl-2' : ''
                 }`}
               >

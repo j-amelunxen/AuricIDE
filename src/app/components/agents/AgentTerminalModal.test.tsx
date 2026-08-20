@@ -516,6 +516,35 @@ describe('AgentTerminalModal', () => {
         expect(within(alpha).getByTestId('agent-tab-agent-2')).toBeInTheDocument();
       });
 
+      it('grows each group by its tab count so leftover strip width is shared equally', () => {
+        render(
+          <AgentTerminalModal agent={here} agents={[here, alsoHere, elsewhere]} onClose={vi.fn()} />
+        );
+        expect(screen.getByTestId('agent-tab-group-/work/alpha')).toHaveStyle({
+          flexGrow: 2,
+          flexShrink: 0,
+          flexBasis: 0,
+          minWidth: 'calc(2 * 10rem + 8rem)',
+        });
+        expect(screen.getByTestId('agent-tab-group-/work/beta')).toHaveStyle({
+          flexGrow: 1,
+          flexShrink: 0,
+          flexBasis: 0,
+          minWidth: 'calc(1 * 10rem + 8rem)',
+        });
+        expect(screen.getByRole('tablist', { name: 'Active agents' })).toHaveClass(
+          'overflow-x-auto'
+        );
+      });
+
+      it('keeps the group floor to just the tabs when the fleet is one project', () => {
+        render(<AgentTerminalModal agent={here} agents={[here, alsoHere]} onClose={vi.fn()} />);
+        expect(screen.getByTestId('agent-tab-group-/work/alpha')).toHaveStyle({
+          flexGrow: 2,
+          minWidth: 'calc(2 * 10rem)',
+        });
+      });
+
       /** One project is not a grouping — a heading there is pure noise. */
       it('shows no project heading while the fleet is all one project', () => {
         render(<AgentTerminalModal agent={here} agents={[here, alsoHere]} onClose={vi.fn()} />);

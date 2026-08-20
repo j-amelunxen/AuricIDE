@@ -182,6 +182,18 @@ describe('AgentTab – the tab itself', () => {
     expect(tab).toHaveAttribute('data-state', 'working');
   });
 
+  it('grows to share leftover strip width, truncating the name instead of capping it', () => {
+    renderTab();
+    expect(screen.getByTestId('agent-tab-shell-agent-1')).toHaveClass(
+      'flex-1',
+      'min-w-40',
+      'overflow-hidden'
+    );
+    const name = screen.getByText('Testing choochoo image recyling');
+    expect(name).toHaveClass('min-w-0', 'flex-1', 'truncate');
+    expect(name).not.toHaveClass('max-w-[140px]');
+  });
+
   it('marks the shown agent as the selected tab', () => {
     renderTab({}, { isActive: true });
     expect(screen.getByTestId('agent-tab-agent-1')).toHaveAttribute('aria-selected', 'true');
