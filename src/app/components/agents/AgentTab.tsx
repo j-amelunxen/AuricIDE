@@ -176,7 +176,7 @@ export function AgentTab({ agent, isActive, now, onSelect, onEnd }: AgentTabProp
       data-testid={`agent-tab-shell-${agent.id}`}
       onMouseEnter={open}
       onMouseLeave={close}
-      className={`group flex items-center rounded-lg border whitespace-nowrap transition-colors ${
+      className={`group flex min-w-40 flex-1 items-center overflow-hidden rounded-lg border whitespace-nowrap transition-colors ${
         isActive
           ? 'border-primary/40 bg-primary/15 text-white'
           : 'border-white/5 bg-white/[0.02] text-foreground-muted hover:bg-white/5 hover:text-foreground'
@@ -206,14 +206,14 @@ export function AgentTab({ agent, isActive, now, onSelect, onEnd }: AgentTabProp
             onEnd?.();
           }
         }}
-        className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider"
+        className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider"
       >
         <span
           aria-hidden="true"
           className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
         />
-        <span className="max-w-[140px] truncate">{agent.name}</span>
-        <span className={`text-[8px] font-black tracking-widest ${style.label}`}>
+        <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+        <span className={`flex-shrink-0 text-[8px] font-black tracking-widest ${style.label}`}>
           {AGENT_STATE_LABEL[state]}
         </span>
       </button>
