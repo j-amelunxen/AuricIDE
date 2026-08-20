@@ -38,3 +38,22 @@ export interface UsageSnapshot {
   observedAt: number;
   source: string;
 }
+
+/**
+ * One stored reading, kept so a later one can be a delta rather than a lone
+ * percentage. Slimmer than a snapshot: the plan label and the credit balance
+ * do not change the rate.
+ */
+export interface UsageSampleWindow {
+  limitId: string;
+  kind: WindowKind;
+  usedPercent: number;
+  resetsAt: number;
+  windowMinutes: number;
+}
+
+export interface UsageSample {
+  provider: string;
+  observedAt: number;
+  windows: UsageSampleWindow[];
+}

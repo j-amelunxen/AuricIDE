@@ -50,6 +50,7 @@ const POPOVER_ID = 'cli-quota-detail';
  */
 export function CliQuotaChip() {
   const snapshots = useStore((s) => s.usageSnapshots);
+  const history = useStore((s) => s.usageHistory);
   const usageStatus = useStore((s) => s.usageStatus);
   const loadUsageLimits = useStore((s) => s.loadUsageLimits);
   const refreshUsageLimits = useStore((s) => s.refreshUsageLimits);
@@ -188,6 +189,7 @@ export function CliQuotaChip() {
             <CliQuotaPopover
               id={POPOVER_ID}
               snapshots={withWindows}
+              history={history}
               refreshing={usageStatus === 'loading'}
               onRefresh={() => void refreshUsageLimits()}
             />

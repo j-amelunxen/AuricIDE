@@ -3,6 +3,7 @@
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { useNow } from '@/lib/hooks/useNow';
+import { hatchSpan, paceCaption, projectWindow } from '@/lib/usage/projection';
 import {
   ageMs,
   formatPercent,
@@ -11,7 +12,7 @@ import {
   quotaTone,
   type QuotaTone,
 } from '@/lib/usage/quota';
-import type { UsageSnapshot } from '@/lib/usage/types';
+import type { UsageSample, UsageSnapshot } from '@/lib/usage/types';
 
 const TONE_TEXT: Record<QuotaTone, string> = {
   calm: 'text-foreground',
@@ -25,9 +26,20 @@ const TONE_BAR: Record<QuotaTone, string> = {
   critical: 'bg-red-400/70',
 };
 
+const TONE_HATCH: Record<QuotaTone, string> = {
+  calm: 'text-primary/55',
+  warn: 'text-amber-400/70',
+  critical: 'text-red-400/70',
+};
+
 /**
  * The detail behind the chip: every window, when each one resets, and — the
  * part that is not decoration — how old the reading is.
+ *
+ * When a trail of earlier readings exists, the bar grows a hatched forecast
+ * to the right of the measured fill: where this pace would land at reset.
+ * An overshoot is a label (`120% of this window`), never a bar past 100.
+ * The chip itself stays the measured percentage; a forecast is not a reading.
  *
  * Nothing here is live. The Claude figure only arrives while one of AuricIDE's
  * own agents is running, and the Codex one is re-read every 15 minutes (or
@@ -37,11 +49,13 @@ const TONE_BAR: Record<QuotaTone, string> = {
 export function CliQuotaPopover({
   id,
   snapshots,
+  history,
   refreshing,
   onRefresh,
 }: {
   id: string;
   snapshots: UsageSnapshot[];
+  history: UsageSample[];
   refreshing: boolean;
   onRefresh: () => void;
 }) {
@@ -90,6 +104,18 @@ export function CliQuotaPopover({
             {snapshot.windows.map((window) => {
               const tone = quotaTone(window.usedPercent);
               const remaining = msUntilReset(window.resetsAt, now);
+              const projection = projectWindow(
+                window,
+                { provider: snapshot.provider, observedAt: snapshot.observedAt },
+                history,
+                now
+              );
+              const hatch = projection
+                ? hatchSpan(window.usedPercent, projection.projectedPercent)
+                : null;
+              const hatchTone = projection ? quotaTone(projection.projectedPercent) : tone;
+              const overshoot =
+                projection !== null && Math.round(projection.projectedPercent) > 100;
               return (
                 <div
                   key={`${window.limitId}-${window.windowMinutes}`}
@@ -103,10 +129,25 @@ export function CliQuotaPopover({
                       {formatPercent(window.usedPercent)}
                     </span>
                   </div>
-                  <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+                  <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    {hatch && (
+                      <div
+                        data-testid={`cli-quota-hatch-${snapshot.provider}-${window.kind}`}
+                        aria-hidden="true"
+                        className={`absolute inset-y-0 ${TONE_HATCH[hatchTone]}`}
+                        style={{
+                          left: `${hatch.start}%`,
+                          width: `${hatch.end - hatch.start}%`,
+                          backgroundImage:
+                            'repeating-linear-gradient(-45deg, currentColor 0 1.5px, transparent 1.5px 4px)',
+                        }}
+                      />
+                    )}
                     <div
-                      className={`h-full rounded-full ${TONE_BAR[tone]}`}
-                      style={{ width: `${Math.min(100, Math.max(0, window.usedPercent))}%` }}
+                      className={`relative h-full rounded-full ${TONE_BAR[tone]}`}
+                      style={{
+                        width: `${Math.min(100, Math.max(0, window.usedPercent))}%`,
+                      }}
                     />
                   </div>
                   <span className="text-[9px] text-foreground-muted">
@@ -114,6 +155,16 @@ export function CliQuotaPopover({
                         re-read yet — saying "due" beats a countdown at zero. */}
                     {remaining > 0 ? `resets in ${formatAgentDuration(remaining)}` : 'reset due'}
                   </span>
+                  {projection && (
+                    <span
+                      data-testid={`cli-quota-pace-${snapshot.provider}-${window.kind}`}
+                      className={`text-[9px] ${
+                        overshoot ? TONE_TEXT[hatchTone] : 'text-foreground-muted/80'
+                      }`}
+                    >
+                      {paceCaption(projection)}
+                    </span>
+                  )}
                 </div>
               );
             })}
