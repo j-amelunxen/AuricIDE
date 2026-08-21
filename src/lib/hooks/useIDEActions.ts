@@ -47,7 +47,7 @@ export function useIDEActions(
   useNotificationInbox();
 
   // A schedule's `launch: 'auto'` action arrives through the same inbox; this
-  // is the zero-click half of it, watching for one it may start by itself.
+  // is the zero-click half of it — conductor, custom agent, and skill.
   useScheduledConductorRuns(handlers.handleOpenRecent);
 
   // Same reasoning as the notification inbox — the capture badge and the
