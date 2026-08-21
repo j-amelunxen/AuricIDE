@@ -40,9 +40,25 @@ describe('parseNotificationActions', () => {
         goalId: 'g1',
         provider: 'claude',
         model: 'opus',
+        launch: 'auto',
+        headless: true,
       };
       expect(parse([action])).toEqual([action]);
     });
+
+    it.each(['auto', 'direct', 'dialog'] as const)(
+      'parses a spawn-agent action with launch %s',
+      (launch) => {
+        const action = {
+          id: 'run',
+          label: 'Agent starten',
+          kind: 'spawn-agent',
+          task: 'scan',
+          launch,
+        };
+        expect(parse([action])).toEqual([action]);
+      }
+    );
 
     it.each([
       ['file', { type: 'file', path: '/a/b.md' }],
@@ -86,9 +102,28 @@ describe('parseNotificationActions', () => {
         model: 'opus',
         permissionMode: 'acceptEdits',
         invocation: '/changelog',
+        launch: 'auto',
+        headless: true,
       };
       expect(parse([action])).toEqual([action]);
     });
+
+    it.each(['auto', 'direct', 'dialog'] as const)(
+      'parses a run-skill action with launch %s',
+      (launch) => {
+        const action = {
+          id: 'skill',
+          label: 'Changelog starten',
+          kind: 'run-skill',
+          skillId: 's1',
+          skillLabel: 'Changelog',
+          prompt: '/changelog',
+          repoPath: '/repo',
+          launch,
+        };
+        expect(parse([action])).toEqual([action]);
+      }
+    );
 
     it('keeps Crush yolo as a permissionMode on run-skill', () => {
       const action = {
@@ -180,6 +215,14 @@ describe('parseNotificationActions', () => {
 
     it('drops a spawn-agent action with an empty task', () => {
       expect(parse([{ id: 'r', label: 'Start', kind: 'spawn-agent', task: '   ' }])).toEqual([]);
+    });
+
+    it('drops a spawn-agent action with an unknown launch value', () => {
+      expect(
+        parse([
+          { id: 'r', label: 'Start', kind: 'spawn-agent', task: 'scan', launch: 'immediately' },
+        ])
+      ).toEqual([]);
     });
 
     it.each([
@@ -282,6 +325,23 @@ describe('parseNotificationActions', () => {
             comboLabel: 'Blog-Write',
             repoPath: '/repo',
             steps: [{ id: 's1', label: 'Draft', prompt: '/draft', permissionMode: 'sudo' }],
+          },
+        ])
+      ).toEqual([]);
+    });
+
+    it('drops a run-skill action with an unknown launch value', () => {
+      expect(
+        parse([
+          {
+            id: 'skill',
+            label: 'Changelog starten',
+            kind: 'run-skill',
+            skillId: 's1',
+            skillLabel: 'Changelog',
+            prompt: '/changelog',
+            repoPath: '/repo',
+            launch: 'immediately',
           },
         ])
       ).toEqual([]);

@@ -71,7 +71,11 @@ type RunConductorAction = Extract<NotificationAction, { kind: 'run-conductor' }>
  * A skill's launch is the same three values in the same shape — the one both
  * the notification's Start button and a combo step resolve through.
  */
-type TaskLaunchDraft = SkillLaunchPins;
+type TaskLaunchDraft = SkillLaunchPins & {
+  /** Absent means start on the click — the behaviour before auto existed. */
+  launch?: 'auto' | 'direct';
+  headless?: boolean;
+};
 
 /**
  * The conductor's run parameters. Unlike a skill or combo, nothing here names
@@ -202,6 +206,8 @@ function actionDraftOf(schedule: Schedule | null): ActionDraft {
       providerId: action.provider,
       model: action.model,
       permissionMode: action.permissionMode,
+      launch: action.launch === 'auto' ? 'auto' : 'direct',
+      headless: action.headless === true,
     };
   }
   return { choice: 'none' };
@@ -357,6 +363,12 @@ function actionsFromDraft(
         ...(draft.providerId && draft.permissionMode
           ? { permissionMode: draft.permissionMode }
           : {}),
+        ...(draft.launch === 'auto' ? { launch: 'auto' as const } : {}),
+        ...(draft.launch === 'auto'
+          ? { headless: draft.headless !== false }
+          : draft.headless === true
+            ? { headless: true }
+            : {}),
       },
     ];
   }
@@ -550,8 +562,7 @@ export function ScheduleEditor({
       title: name.trim() || 'Reminder',
       body: body.trim() || undefined,
       severity: 'info',
-      // The only action a schedule offers is the one you asked for. It is a
-      // button, never an automatic launch.
+      // The only action a schedule offers is the one you asked for.
       actions: actionsFromDraft(actionDraft, projectPath, body),
     };
 
@@ -728,9 +739,15 @@ export function ScheduleEditor({
       return;
     }
     const launch = actionDraft.choice === 'skill' ? skillLaunch : 'direct';
+    const headless = actionDraft.choice === 'skill' ? actionDraft.snapshot?.headless : undefined;
+    const withHeadless = (snapshot: RunSkillAction): RunSkillAction =>
+      headless === undefined ? snapshot : { ...snapshot, headless };
     const pin = pins.find((item) => item.id === value);
     if (pin) {
-      setActionDraft({ choice: 'skill', snapshot: snapshotFromPin(pin, projectPath, launch) });
+      setActionDraft({
+        choice: 'skill',
+        snapshot: withHeadless(snapshotFromPin(pin, projectPath, launch)),
+      });
       return;
     }
     if (value.startsWith(DISCOVERED_PREFIX)) {
@@ -739,19 +756,31 @@ export function ScheduleEditor({
       if (found) {
         setActionDraft({
           choice: 'skill',
-          snapshot: snapshotFromDiscovered(found, projectPath, launch),
+          snapshot: withHeadless(snapshotFromDiscovered(found, projectPath, launch)),
         });
       }
     }
   };
 
-  const setSkillLaunch = (direct: boolean) => {
+  const setSkillLaunch = (launch: NotificationLaunch) => {
     setActionDraft((current) =>
       current.choice === 'skill' && current.snapshot !== undefined
         ? {
             choice: 'skill',
-            snapshot: { ...current.snapshot, launch: direct ? 'direct' : 'dialog' },
+            snapshot: {
+              ...current.snapshot,
+              launch,
+              ...(launch === 'auto' ? { headless: true } : {}),
+            },
           }
+        : current
+    );
+  };
+
+  const setSkillHeadless = (headless: boolean) => {
+    setActionDraft((current) =>
+      current.choice === 'skill' && current.snapshot !== undefined
+        ? { choice: 'skill', snapshot: { ...current.snapshot, headless } }
         : current
     );
   };
@@ -1030,7 +1059,10 @@ export function ScheduleEditor({
           <p className="mt-1 text-[9px] text-foreground-muted/60">
             {actionDraft.choice === 'conductor' && actionDraft.launch === 'auto'
               ? 'Starts on its own when the IDE is unattended — see the hint above.'
-              : 'Offered as a button. Nothing runs without your click.'}
+              : (actionDraft.choice === 'task' && actionDraft.launch === 'auto') ||
+                  (actionDraft.choice === 'skill' && actionDraft.snapshot?.launch === 'auto')
+                ? 'Starts on its own in the background — no click, no project switch.'
+                : 'Offered as a button. Nothing runs without your click.'}
           </p>
 
           {actionDraft.choice === 'task' && (
@@ -1107,6 +1139,51 @@ export function ScheduleEditor({
                 <p className="mt-1 text-[9px] text-foreground-muted/60">
                   How far the agent gets on its own before it stops to ask you.
                 </p>
+              </label>
+
+              <fieldset className="mt-2">
+                <legend className={SUBLABEL}>Launch</legend>
+                <div className="flex flex-col gap-1">
+                  <Choice
+                    name="schedule-task-launch"
+                    testId="schedule-task-launch-auto"
+                    label="Start by itself"
+                    checked={actionDraft.launch === 'auto'}
+                    onSelect={() => setTaskLaunch({ launch: 'auto', headless: true })}
+                  />
+                  <Choice
+                    name="schedule-task-launch"
+                    testId="schedule-task-launch-direct"
+                    label="Start on click"
+                    checked={actionDraft.launch !== 'auto'}
+                    onSelect={() => setTaskLaunch({ launch: 'direct' })}
+                  />
+                </div>
+                {actionDraft.launch === 'auto' && (
+                  <p
+                    data-testid="schedule-task-auto-hint"
+                    className="mt-1 text-[9px] text-foreground-muted/60"
+                  >
+                    Runs in the named folder even while you are working. Does not switch project or
+                    steal the terminal.
+                  </p>
+                )}
+              </fieldset>
+
+              <label className="mt-2 flex items-start gap-2 text-[11px] text-foreground">
+                <input
+                  type="checkbox"
+                  data-testid="schedule-task-headless"
+                  checked={actionDraft.headless === true}
+                  onChange={(event) => setTaskLaunch({ headless: event.target.checked })}
+                  className="mt-[2px]"
+                />
+                <span>
+                  Headless
+                  <span className="mt-0.5 block text-[9px] text-foreground-muted/60">
+                    Runs unattended and exits when the work is done.
+                  </span>
+                </span>
               </label>
             </div>
           )}
@@ -1219,20 +1296,54 @@ export function ScheduleEditor({
                     </p>
                   </label>
 
+                  <fieldset className="mt-2">
+                    <legend className={SUBLABEL}>Launch</legend>
+                    <div className="flex flex-col gap-1">
+                      <Choice
+                        name="schedule-skill-launch"
+                        testId="schedule-skill-launch-auto"
+                        label="Start by itself"
+                        checked={skillLaunch === 'auto'}
+                        onSelect={() => setSkillLaunch('auto')}
+                      />
+                      <Choice
+                        name="schedule-skill-launch"
+                        testId="schedule-skill-launch-direct"
+                        label="Start on click"
+                        checked={skillLaunch === 'direct'}
+                        onSelect={() => setSkillLaunch('direct')}
+                      />
+                      <Choice
+                        name="schedule-skill-launch"
+                        testId="schedule-skill-launch-dialog"
+                        label="Open the dialog first"
+                        checked={skillLaunch === 'dialog'}
+                        onSelect={() => setSkillLaunch('dialog')}
+                      />
+                    </div>
+                    {skillLaunch === 'auto' && (
+                      <p
+                        data-testid="schedule-skill-auto-hint"
+                        className="mt-1 text-[9px] text-foreground-muted/60"
+                      >
+                        Runs in the named folder even while you are working. Does not switch project
+                        or steal the terminal.
+                      </p>
+                    )}
+                  </fieldset>
+
                   <label className="mt-2 flex items-start gap-2 text-[11px] text-foreground">
                     <input
                       type="checkbox"
-                      data-testid="schedule-skill-direct"
-                      checked={skillLaunch === 'direct'}
-                      onChange={(event) => setSkillLaunch(event.target.checked)}
+                      data-testid="schedule-skill-headless"
+                      checked={actionDraft.snapshot.headless === true}
+                      onChange={(event) => setSkillHeadless(event.target.checked)}
                       className="mt-[2px]"
                     />
                     <span>
-                      Start on the click
+                      Headless
                       <span className="mt-0.5 block text-[9px] text-foreground-muted/60">
-                        {skillLaunch === 'direct'
-                          ? 'Runs with the agent, model and permission chosen above.'
-                          : 'Opens the spawn dialog first, pre-filled — one more click.'}
+                        Runs unattended and exits when the work is done.
                       </span>
                     </span>
                   </label>

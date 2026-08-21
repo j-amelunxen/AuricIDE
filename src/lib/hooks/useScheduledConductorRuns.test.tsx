@@ -16,6 +16,11 @@ vi.mock('@/lib/ide/userActivity', () => ({
   idleForMs: () => mockIdleForMs(),
 }));
 
+const mockIsDir = vi.fn(async () => true);
+vi.mock('@/lib/tauri/fs', () => ({
+  isDir: (path: string) => mockIsDir(path),
+}));
+
 import { useStore } from '@/lib/store';
 import { useScheduledConductorRuns } from './useScheduledConductorRuns';
 
@@ -28,6 +33,41 @@ const OTHER_REPO = '/tmp/project-b';
 function freshDedupeKey(): string {
   const iso = new Date().toISOString(); // 'YYYY-MM-DDTHH:MM:SS.sssZ'
   return `schedule:s1:${iso.slice(0, 19).replace('T', ' ')}`;
+}
+
+function autoAgentNotification(overrides: Partial<Notification> = {}): Notification {
+  return {
+    id: 2,
+    uid: 'n-agent',
+    createdAt: '2026-08-17 09:30:00',
+    projectPath: null,
+    projectName: null,
+    source: 'system',
+    origin: 'Nightly scan',
+    kind: 'info',
+    severity: 'info',
+    title: 'Scheduled agent',
+    body: null,
+    actions: [
+      {
+        id: 'run',
+        label: 'Start agent',
+        kind: 'spawn-agent',
+        task: 'scan',
+        repoPath: REPO,
+        launch: 'auto',
+        headless: true,
+      },
+    ],
+    dedupeKey: freshDedupeKey(),
+    refKind: null,
+    refId: null,
+    readAt: null,
+    answeredAt: null,
+    answer: null,
+    expiresAt: null,
+    ...overrides,
+  };
 }
 
 function autoNotification(overrides: Partial<Notification> = {}): Notification {
@@ -94,16 +134,21 @@ describe('useScheduledConductorRuns', () => {
   let markNotificationRead: Mock<() => Promise<void>>;
   let showToast: Mock;
   let openProject: Mock<(path: string) => Promise<void>>;
+  let spawnNewAgent: Mock;
+  let selectAgent: Mock;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockIdleForMs.mockReturnValue(UNATTENDED_AFTER_MS);
+    mockIsDir.mockResolvedValue(true);
 
     startConductor = vi.fn();
     conductorTick = vi.fn(async () => undefined);
     markNotificationRead = vi.fn(async () => undefined);
     showToast = vi.fn();
     openProject = vi.fn(async () => undefined);
+    spawnNewAgent = vi.fn(async () => ({ id: 'spawned-1', name: 'scan' }));
+    selectAgent = vi.fn();
 
     useStore.setState({
       notifications: [],
@@ -116,10 +161,13 @@ describe('useScheduledConductorRuns', () => {
       goalsDraft: [],
       agents: [],
       openTabs: [],
+      providers: [],
       startConductor,
       conductorTick,
       markNotificationRead,
       showToast,
+      spawnNewAgent,
+      selectAgent,
     });
   });
 
@@ -248,5 +296,80 @@ describe('useScheduledConductorRuns', () => {
     rerender();
 
     expect(startConductor).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a trusted, fresh spawn-agent auto launch without switching project', async () => {
+    useStore.setState({
+      rootPath: OTHER_REPO,
+      idleForMs: 0,
+      notifications: [autoAgentNotification()],
+    });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalled());
+
+    expect(openProject).not.toHaveBeenCalled();
+    expect(startConductor).not.toHaveBeenCalled();
+    expect(spawnNewAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ task: 'scan', cwd: REPO, headless: true })
+    );
+    expect(selectAgent).not.toHaveBeenCalled();
+    expect(markNotificationRead).toHaveBeenCalledWith('n-agent');
+  });
+
+  it('starts an agent auto launch even while you are typing and another agent runs', async () => {
+    mockIdleForMs.mockReturnValue(0);
+    useStore.setState({
+      agents: [agent('running')],
+      openTabs: [tab(true)],
+      conductorRunning: true,
+      notifications: [autoAgentNotification()],
+    });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalled());
+
+    expect(openProject).not.toHaveBeenCalled();
+    expect(selectAgent).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-start a stale agent occurrence', async () => {
+    useStore.setState({
+      notifications: [autoAgentNotification({ dedupeKey: 'schedule:s1:2020-01-01 00:00:00' })],
+    });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await Promise.resolve();
+
+    expect(spawnNewAgent).not.toHaveBeenCalled();
+    expect(markNotificationRead).not.toHaveBeenCalled();
+  });
+
+  it('starts a run-skill auto launch without opening the spawn dialog', async () => {
+    useStore.setState({
+      notifications: [
+        autoAgentNotification({
+          uid: 'n-skill',
+          actions: [
+            {
+              id: 'run',
+              label: 'Start Changelog',
+              kind: 'run-skill',
+              skillId: 's1',
+              skillLabel: 'Changelog',
+              prompt: '/changelog',
+              repoPath: REPO,
+              launch: 'auto',
+              headless: true,
+            },
+          ],
+        }),
+      ],
+    });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalled());
+
+    expect(spawnNewAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ task: '/changelog', cwd: REPO, headless: true })
+    );
+    expect(selectAgent).not.toHaveBeenCalled();
+    expect(markNotificationRead).toHaveBeenCalledWith('n-skill');
   });
 });

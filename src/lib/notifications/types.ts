@@ -81,6 +81,14 @@ export type NotificationAction =
       model?: string;
       /** Honoured only for a user-authored payload — see `trust.ts`. */
       permissionMode?: PermissionMode;
+      /**
+       * `auto` starts on arrival. Absent and `direct` both spawn on the click —
+       * spawn-agent never opened a dialog. Honoured only for a user-authored
+       * payload; see `trust.ts`.
+       */
+      launch?: NotificationLaunch;
+      /** Honoured only for a user-authored payload — see `trust.ts`. */
+      headless?: boolean;
     }
   | {
       id: string;
@@ -95,11 +103,14 @@ export type NotificationAction =
       permissionMode?: PermissionMode;
       invocation?: string;
       /**
-       * `direct` spawns the agent on the click; `dialog` (and absent, which is
-       * every payload written before this existed) opens the spawn dialog
-       * first. Honoured only for a user-authored payload — see `trust.ts`.
+       * `auto` starts on arrival; `direct` spawns on the click; `dialog` (and
+       * absent, which is every payload written before this existed) opens the
+       * spawn dialog first. Honoured only for a user-authored payload — see
+       * `trust.ts`.
        */
       launch?: NotificationLaunch;
+      /** Honoured only for a user-authored payload — see `trust.ts`. */
+      headless?: boolean;
     }
   | {
       id: string;
@@ -137,24 +148,26 @@ export type NotificationAction =
       /** Model for a spawned reviewer; absent = the project's. */
       judgeModel?: string;
       /**
-       * `auto` starts on arrival, within the gate in `scheduledRun.ts` — the
-       * only launch mode that is not itself a click. Honoured only for a
-       * user-authored payload; see `trust.ts`.
+       * `auto` starts on arrival, within the gate in `scheduledRun.ts`.
+       * Honoured only for a user-authored payload; see `trust.ts`.
        */
       launch?: ConductorLaunch;
     }
   | { id: string; label: string; kind: 'open'; target: NotificationOpenTarget }
   | { id: string; label: string; kind: 'command'; commandId: string };
 
-/** Whether a configured launch still stops at the spawn dialog. */
-export type NotificationLaunch = 'direct' | 'dialog';
-
 /**
- * A conductor run adds a third mode, `auto`, that a skill launch does not
- * offer — kept as its own type so `run-skill`'s vocabulary cannot silently
- * grow a launch mode that skill has no gate for.
+ * How a configured launch starts.
+ *
+ * `auto` is the arrival itself: no click. `direct` is one click on a button
+ * the user wrote. `dialog` (and absent, for payloads saved before launch
+ * could be configured) still stops for a look. Skill and custom-agent `auto`
+ * do not switch the open project and do not wait for the IDE to go idle;
+ * conductor `auto` still does — see `scheduledRun.ts`.
  */
-export type ConductorLaunch = 'auto' | 'direct' | 'dialog';
+export type NotificationLaunch = 'auto' | 'direct' | 'dialog';
+
+export type ConductorLaunch = NotificationLaunch;
 
 export type NotificationOpenTarget =
   | { type: 'file'; path: string; line?: number }
@@ -213,6 +226,8 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     provider: z.string().optional(),
     model: z.string().optional(),
     permissionMode: permissionModeSchema.optional(),
+    launch: z.enum(['auto', 'direct', 'dialog']).optional(),
+    headless: z.boolean().optional(),
   }),
   z.object({
     ...identity,
@@ -225,7 +240,8 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     model: z.string().optional(),
     permissionMode: permissionModeSchema.optional(),
     invocation: z.string().optional(),
-    launch: z.enum(['direct', 'dialog']).optional(),
+    launch: z.enum(['auto', 'direct', 'dialog']).optional(),
+    headless: z.boolean().optional(),
   }),
   z.object({
     ...identity,
