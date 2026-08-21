@@ -247,6 +247,29 @@ describe('buildSpawnConfig', () => {
   it('treats an unstated trust as foreign for the note as well', () => {
     expect(buildSpawnConfig({ ...action, note: 'extra' }).task).toBe(action.task);
   });
+
+  it('takes headless from a payload the user wrote, over the last launch', () => {
+    localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify({ ...REMEMBERED, headless: false }));
+
+    expect(buildSpawnConfig({ ...action, headless: true }, { trust: 'user' }).headless).toBe(true);
+    expect(buildSpawnConfig({ ...action, headless: false }, { trust: 'user' }).headless).toBe(
+      false
+    );
+  });
+
+  it('falls back to the last launch when a trusted payload says nothing about headless', () => {
+    localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify(REMEMBERED));
+
+    expect(buildSpawnConfig(action, { trust: 'user' }).headless).toBe(true);
+  });
+
+  it('ignores headless in a payload a model wrote', () => {
+    localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify({ ...REMEMBERED, headless: false }));
+
+    expect(buildSpawnConfig({ ...action, headless: true }, { trust: 'foreign' }).headless).toBe(
+      false
+    );
+  });
 });
 
 describe('executeNotificationAction', () => {
@@ -380,6 +403,35 @@ describe('executeNotificationAction', () => {
     expect(deps.openSpawnDialog).not.toHaveBeenCalled();
   });
 
+  // `auto` reaching execute means a click already happened — same as
+  // conductor — so it starts the skill the way `direct` does.
+  it('spawns the skill straight away for an auto launch the user configured', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runSkill, launch: 'auto', headless: true }, deps, {
+      trust: 'user',
+      providers: PROVIDERS,
+    });
+
+    expect(deps.spawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: '/changelog',
+        cwd: '/repo/sample',
+        headless: true,
+      })
+    );
+    expect(deps.openSpawnDialog).not.toHaveBeenCalled();
+  });
+
+  it('carries an explicit not-headless through a direct skill start', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runSkill, launch: 'direct', headless: false }, deps, {
+      trust: 'user',
+      providers: PROVIDERS,
+    });
+
+    expect(deps.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ headless: false }));
+  });
+
   it('still checks the folder before a direct start', async () => {
     const deps = makeDeps();
     deps.projectDirExists = vi.fn(async () => false);
@@ -398,6 +450,17 @@ describe('executeNotificationAction', () => {
 
   // A model can write a payload that looks exactly like a configured schedule.
   // Skipping the dialog is a decision only the person clicking gets to make.
+  it('falls back to the dialog when a model asked for an auto start', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runSkill, launch: 'auto', headless: true }, deps, {
+      trust: 'foreign',
+      providers: PROVIDERS,
+    });
+
+    expect(deps.openSpawnDialog).toHaveBeenCalled();
+    expect(deps.spawnAgent).not.toHaveBeenCalled();
+  });
+
   it('falls back to the dialog when a model asked for a direct start', async () => {
     const deps = makeDeps();
     await executeNotificationAction({ ...runSkill, launch: 'direct' }, deps, {

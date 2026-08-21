@@ -313,9 +313,18 @@ one click honest.
   it just cannot decide how much authority the button hands out. The MCP
   vocabulary is narrower again and rejects those fields outright, so the rule
   holds at two layers.
-- **`launch: 'direct'` is the difference between Start and "open a form".**
-  Absent means dialog, which is what every schedule saved before this existed
-  says — the app learning a new trick must never re-arm an old reminder.
+- **`launch` is how much of a click the reminder still needs.** `direct` is
+  Start without a form. `auto` is the arrival itself. Absent means dialog for
+  a skill (every schedule saved before this existed) and a click-start for a
+  custom agent. The app learning a new trick must never re-arm an old
+  reminder. Conductor `auto` still waits for an unattended IDE because it may
+  switch projects. Custom-agent and skill `auto` do not: they spawn in the
+  named folder, leave the open project alone, and do not steal the terminal,
+  even while you are typing. `headless` on those two is a choice the reminder
+  owns; a trusted payload's value beats the last-launch default.
+- **Started means visible — on a click.** The spawn selects the agent, so the
+  terminal is showing the run the click began. An automatic start does not:
+  you may already be looking at something else.
 - **One definition of how a pinned skill becomes an agent.**
   `agents/skillLaunch.ts` resolves provider, model and permission mode for every
   direct launch — a combo step and a notification's Start button both. Two
@@ -332,9 +341,6 @@ one click honest.
 - **The launch defaults are read for the project the agent will run in.** They
   are stored per working directory; reading them without the path yields
   whatever was last launched outside any project, which is usually nothing.
-- **Started means visible.** The spawn selects the agent, so the terminal is
-  showing the run the click began. A launch you cannot watch is the same problem
-  as a launch that never happened.
 
 ### The tray and the Command Center — one inbox, two sizes
 
@@ -365,13 +371,13 @@ upcoming strip across all projects. Rules that keep the two honest:
   the Agent Console and the terminal — DOM order decides who paints on top; the
   schedule editor and confirms live on higher layers and own Esc first.
 
-### Scheduled conductor runs — the one launch nobody clicked
+### Scheduled conductor runs — a launch nobody clicked, with a project switch
 
 A schedule may carry a `run-conductor` action ("open project A, work up to five
 tickets, one at a time"), and with `launch: 'auto'` the run starts when the
-notification arrives. That is the only place in the app where arrival is the
-click, so it is fenced — full reasoning in
-`docs/design-scheduled-conductor-runs.md`:
+notification arrives. Custom-agent and skill `auto` also start on arrival, but
+they never switch the open project. Conductor auto may, so it is fenced —
+full reasoning in `docs/design-scheduled-conductor-runs.md`:
 
 - **The conductor stays bound to the open project.** A run for another project
   has to open it, and opening closes every tab. The button says so ("Open
