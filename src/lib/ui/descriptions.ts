@@ -12,7 +12,7 @@ export const GUIDANCE = {
       'Specific requirements and checks that must pass for this ticket to be considered complete.',
     dependencies: 'Other tickets or epics that must be finished before this task can be started.',
     workingDirectory:
-      'The folder where the agent will perform its work. Defaults to the project root.',
+      'The folder where the agent will perform its work. Defaults to the project root. Quick Access pins can send the same setup to several projects at once.',
     skills:
       'Project or personal skills written in front of the agent prompt when this ticket is launched.',
     epicName: 'A clear name for the high-level goal or feature set.',

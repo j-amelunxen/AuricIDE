@@ -32,13 +32,20 @@ import { useStore } from '@/lib/store';
 import { isGitRepoRoot, workingDirectoryHasGitRepo } from '@/lib/git/worktreeDefault';
 import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
 import { SkillInvocationInput } from '@/app/components/cockpit/SkillInvocationInput';
+import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
+import {
+  initialQuickAccessSelection,
+  sortQuickAccessProjects,
+  spawnCwdTargets,
+  ticketAndGoalForCwd,
+} from '@/lib/agents/spawnTargets';
 
 const YOLO_ELEVATE_ACK_KEY = 'auric.yolo-elevate-acknowledged';
 
 interface SpawnAgentDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSpawn: (config: AgentConfig) => void;
+  onSpawn: (config: AgentConfig) => void | Promise<void>;
   initialTask?: string;
   spawnedByTicketId?: string | null;
   initialRepoPath?: string;
@@ -113,6 +120,10 @@ function SpawnAgentDialogPanel({
     () => loadSpawnDefaults(initialRepoPath)?.headless ?? false
   );
   const repos = useStore((s) => s.repos);
+  const starredProjects = useStore((s) => s.starredProjects);
+  const [selectedPaths, setSelectedPaths] = useState(() =>
+    initialQuickAccessSelection(starredProjects, initialRepoPath)
+  );
   const [worktreeOverride, setWorktreeOverride] = useState<boolean | null>(null);
   const [probedHasGit, setProbedHasGit] = useState<boolean | null>(null);
   const [worktreeForPath, setWorktreeForPath] = useState(initialRepoPath);
@@ -158,6 +169,7 @@ function SpawnAgentDialogPanel({
     if (isOpen) {
       setTask(initialTask);
       setRepoPath(initialRepoPath);
+      setSelectedPaths(initialQuickAccessSelection(starredProjects, initialRepoPath));
       setGoalId(initialGoalId ?? '');
       setHistoryIndex(-1);
       setWorktreeOverride(null);
@@ -279,38 +291,87 @@ function SpawnAgentDialogPanel({
   }, [currentProvider]);
 
   const instruction = task.trim();
+  const sortedQuickAccess = sortQuickAccessProjects(starredProjects);
+  const cwdTargets = spawnCwdTargets(selectedPaths, starredProjects, repoPath);
+  const fanoutCount = cwdTargets.length;
+  const allPinnedSelected =
+    sortedQuickAccess.length > 0 &&
+    sortedQuickAccess.every((project) => selectedPaths.includes(project.path));
   const worktreeSources = worktreeSourceRepos(repoPath, discoveredRepos);
-  const showWorktreePicker = useWorktree && needsWorktreeRepoPicker(repoPath, discoveredRepos);
+  const showWorktreePicker =
+    useWorktree && selectedPaths.length <= 1 && needsWorktreeRepoPicker(repoPath, discoveredRepos);
+
+  const syncTypedPath = (next: string) => {
+    setRepoPath(next);
+    const match = starredProjects.find((project) => project.path === next);
+    setSelectedPaths(match ? [match.path] : []);
+  };
+
+  const toggleQuickAccess = (path: string) => {
+    setSelectedPaths((current) => {
+      const has = current.includes(path);
+      const next = has ? current.filter((entry) => entry !== path) : [...current, path];
+      if (!has) {
+        setRepoPath(path);
+      } else if (repoPath === path) {
+        setRepoPath(next[0] ?? '');
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allPinnedSelected) {
+      setSelectedPaths([]);
+      return;
+    }
+    const allPaths = sortedQuickAccess.map((project) => project.path);
+    setSelectedPaths(allPaths);
+    if (!allPaths.includes(repoPath)) {
+      setRepoPath(allPaths[0] ?? '');
+    }
+  };
 
   const handleDeploy = async () => {
     if (!instruction) return;
-    let resolvedWorktreeRepo: string | undefined;
+    const worktreeByCwd = new Map<string, string | undefined>();
     if (useWorktree) {
-      if (!repoPath) {
-        setWorktreeError('A git worktree needs a working directory.');
-        return;
-      }
-      let repos = discoveredRepos;
-      try {
-        repos = await discoverGitRepos(repoPath);
-      } catch {
-        repos = [];
-      }
-      setDiscoveredRepos(repos);
-      const sources = worktreeSourceRepos(repoPath, repos);
-      if (sources.length === 0) {
-        setWorktreeError('This folder is not a git repository.');
-        return;
-      }
-      if (needsWorktreeRepoPicker(repoPath, repos)) {
-        const chosen = sources.find((source) => source.path === worktreeRepoPath);
-        if (!chosen) {
-          setWorktreeError('Choose which repository to check the agent out from.');
+      for (const cwd of cwdTargets) {
+        if (!cwd) {
+          setWorktreeError('A git worktree needs a working directory.');
           return;
         }
-        resolvedWorktreeRepo = chosen.path;
-      } else {
-        resolvedWorktreeRepo = sources[0].path;
+        let foundRepos: GitRepoRef[];
+        try {
+          foundRepos = await discoverGitRepos(cwd);
+        } catch {
+          foundRepos = [];
+        }
+        if (cwdTargets.length === 1) setDiscoveredRepos(foundRepos);
+        const sources = worktreeSourceRepos(cwd, foundRepos);
+        if (sources.length === 0) {
+          const folder = cwd.split('/').pop() || cwd;
+          setWorktreeError(
+            cwdTargets.length === 1
+              ? 'This folder is not a git repository.'
+              : `${folder} is not a git repository.`
+          );
+          return;
+        }
+        if (needsWorktreeRepoPicker(cwd, foundRepos)) {
+          if (cwdTargets.length > 1) {
+            setWorktreeError('A nested git repo has to be chosen one project at a time.');
+            return;
+          }
+          const chosen = sources.find((source) => source.path === worktreeRepoPath);
+          if (!chosen) {
+            setWorktreeError('Choose which repository to check the agent out from.');
+            return;
+          }
+          worktreeByCwd.set(cwd, chosen.path);
+        } else {
+          worktreeByCwd.set(cwd, sources[0].path);
+        }
       }
     }
     if (permissionMode === 'yolo' && sessionStorage.getItem(YOLO_ELEVATE_ACK_KEY) !== '1') {
@@ -323,14 +384,12 @@ function SpawnAgentDialogPanel({
       if (!go) return;
       sessionStorage.setItem(YOLO_ELEVATE_ACK_KEY, '1');
     }
-    const folderName = repoPath ? repoPath.split('/').pop() : '';
-    // Named after the instruction, so a fleet in one repo doesn't turn into a
-    // column of identical labels. Editable afterwards from the agent card.
-    const name = deriveAgentName(task, folderName || undefined);
     // A preset is the project's opinion about one recurring task, not the
     // user's baseline. Letting it write remembered defaults would mean a skill
     // pinned to `plan` quietly redefines later hand-written launches in the project.
-    if (!presetDefaults) {
+    // Fan-out is a one-shot across several repos — it must not become each
+    // project's remembered launch.
+    if (!presetDefaults && fanoutCount <= 1) {
       saveSpawnDefaults(
         {
           providerId: selectedProviderId,
@@ -338,28 +397,43 @@ function SpawnAgentDialogPanel({
           permissionMode,
           headless,
         },
-        repoPath
+        cwdTargets[0] || repoPath
       );
     }
-    onSpawn({
-      name,
-      model,
-      task: composeTaskWithAttachments(instruction, attachments),
-      cwd: repoPath || undefined,
-      permissionMode,
-      provider: selectedProviderId,
-      headless: headless || undefined,
-      spawnedByTicketId: spawnedByTicketId ?? undefined,
-      spawnedByGoalId: goalId || undefined,
-      useWorktree: useWorktree || undefined,
-      worktreeRepoPath:
-        useWorktree && resolvedWorktreeRepo && resolvedWorktreeRepo !== repoPath
-          ? resolvedWorktreeRepo
-          : undefined,
-      historyPrompt: attachments.length > 0 ? instruction : undefined,
-    });
+    const composedTask = composeTaskWithAttachments(instruction, attachments);
+    for (const cwd of cwdTargets) {
+      const folderName = cwd ? cwd.split('/').pop() : '';
+      // Named after the instruction, so a fleet in one repo doesn't turn into a
+      // column of identical labels. Editable afterwards from the agent card.
+      const name = deriveAgentName(task, folderName || undefined);
+      const resolvedWorktreeRepo = worktreeByCwd.get(cwd);
+      const binding = ticketAndGoalForCwd(
+        cwd,
+        initialRepoPath,
+        spawnedByTicketId,
+        goalId,
+        fanoutCount > 1
+      );
+      await onSpawn({
+        name,
+        model,
+        task: composedTask,
+        cwd: cwd || undefined,
+        permissionMode,
+        provider: selectedProviderId,
+        headless: headless || undefined,
+        ...binding,
+        useWorktree: useWorktree || undefined,
+        worktreeRepoPath:
+          useWorktree && resolvedWorktreeRepo && resolvedWorktreeRepo !== cwd
+            ? resolvedWorktreeRepo
+            : undefined,
+        historyPrompt: attachments.length > 0 ? instruction : undefined,
+      });
+    }
     setRepoPath('');
     setTask('');
+    setSelectedPaths([]);
     setAttachments([]);
     setModel(currentProvider.defaultModel);
     setPermissionMode(currentProvider.defaultPermissionMode as PermissionMode);
@@ -395,7 +469,7 @@ function SpawnAgentDialogPanel({
     try {
       const mod = await import('@tauri-apps/plugin-dialog');
       const selected = await mod.open({ directory: true });
-      if (selected) setRepoPath(selected as string);
+      if (selected) syncTypedPath(selected as string);
     } catch {
       // no-op in browser mode
     }
@@ -494,7 +568,7 @@ function SpawnAgentDialogPanel({
                   value={repoPath}
                   onChange={(e) => {
                     const next = e.target.value;
-                    setRepoPath(next);
+                    syncTypedPath(next);
                     if (!next) {
                       setDiscoveredRepos([]);
                       setWorktreeRepoPath('');
@@ -518,7 +592,7 @@ function SpawnAgentDialogPanel({
                     data-testid="recent-dirs"
                     value=""
                     onChange={(e) => {
-                      if (e.target.value) setRepoPath(e.target.value);
+                      if (e.target.value) syncTypedPath(e.target.value);
                     }}
                     className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground-muted outline-none focus:border-primary/50 transition-colors appearance-none"
                   >
@@ -530,6 +604,62 @@ function SpawnAgentDialogPanel({
                     ))}
                   </select>
                   <SelectChevron />
+                </div>
+              )}
+              {sortedQuickAccess.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center gap-2">
+                    <p className="flex-1 text-[10px] font-bold uppercase tracking-wider text-foreground-muted">
+                      Quick Access
+                    </p>
+                    {selectedPaths.length > 1 && (
+                      <span className="tabular-nums text-[10px] text-foreground-muted/70">
+                        {selectedPaths.length} selected
+                      </span>
+                    )}
+                    {sortedQuickAccess.length >= 2 && (
+                      <button
+                        type="button"
+                        data-testid="spawn-select-all"
+                        onClick={toggleSelectAll}
+                        className="-mr-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary/80 transition-[color,transform] hover:text-primary active:scale-[0.96]"
+                      >
+                        {allPinnedSelected ? 'Clear' : 'Select all'}
+                      </button>
+                    )}
+                  </div>
+                  <div
+                    data-testid="spawn-quick-access"
+                    role="group"
+                    aria-label="Quick Access projects"
+                    className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto"
+                  >
+                    {sortedQuickAccess.map((project) => {
+                      const selected = selectedPaths.includes(project.path);
+                      return (
+                        <button
+                          key={project.path}
+                          type="button"
+                          aria-pressed={selected}
+                          aria-label={project.name}
+                          onClick={() => toggleQuickAccess(project.path)}
+                          className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] transition-[color,background-color,box-shadow,transform] active:scale-[0.96] ${
+                            selected
+                              ? 'bg-primary/15 text-foreground ring-1 ring-primary/50'
+                              : 'bg-white/5 text-foreground-muted hover:bg-white/10 hover:text-foreground'
+                          }`}
+                        >
+                          <ProjectTileFace
+                            path={project.path}
+                            icon={project.icon}
+                            size="xs"
+                            className="flex-shrink-0"
+                          />
+                          <span className="max-w-[7rem] truncate">{project.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -813,7 +943,7 @@ function SpawnAgentDialogPanel({
                 }
                 className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-white shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] hover:brightness-110 transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
               >
-                Start Agent
+                {fanoutCount > 1 ? `Start ${fanoutCount} agents` : 'Start Agent'}
                 <span aria-hidden="true" className="text-[10px] font-medium opacity-70">
                   ⌘↵
                 </span>

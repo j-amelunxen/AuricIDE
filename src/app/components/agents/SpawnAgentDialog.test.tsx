@@ -123,7 +123,7 @@ beforeEach(() => {
   mockExists.mockResolvedValue(false);
   localStorage.clear();
   sessionStorage.clear();
-  useStore.setState({ overlayStack: { layers: [] }, repos: [] });
+  useStore.setState({ overlayStack: { layers: [] }, repos: [], starredProjects: [] });
 });
 
 // Helpers matching the FALLBACK_CRUSH_PROVIDER constants
@@ -1304,5 +1304,196 @@ describe('SpawnAgentDialog – image attachments', () => {
     const dialog = screen.getByRole('dialog');
     fireEvent.dragOver(dialog, { dataTransfer: { types: ['Files'] } });
     expect(screen.getByTestId('spawn-drop-overlay')).toBeInTheDocument();
+  });
+});
+
+function starProjects(...entries: { path: string; name: string }[]) {
+  useStore.setState({
+    starredProjects: entries.map((entry, index) => ({
+      path: entry.path,
+      name: entry.name,
+      starredAt: index + 1,
+    })),
+  });
+}
+
+describe('SpawnAgentDialog – Quick Access multi-select', () => {
+  const website = { path: '/a/website', name: 'website' };
+  const shop = { path: '/b/shop', name: 'shop' };
+  const api = { path: '/c/api', name: 'api' };
+
+  it('hides the Quick Access row when nothing is pinned', () => {
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.queryByTestId('spawn-quick-access')).not.toBeInTheDocument();
+  });
+
+  it('lists pinned projects in Quick Access order', () => {
+    starProjects(website, shop, api);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    const chips = within(screen.getByTestId('spawn-quick-access')).getAllByRole('button');
+    expect(chips.map((chip) => chip.getAttribute('aria-label'))).toEqual([
+      'api',
+      'shop',
+      'website',
+    ]);
+  });
+
+  it('hides Select all when only one project is pinned', () => {
+    starProjects(website);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByTestId('spawn-quick-access')).toBeInTheDocument();
+    expect(screen.queryByTestId('spawn-select-all')).not.toBeInTheDocument();
+  });
+
+  it('offers Select all when two or more projects are pinned', () => {
+    starProjects(website, shop);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    expect(screen.getByTestId('spawn-select-all')).toHaveTextContent('Select all');
+  });
+
+  it('pre-selects the opening path when it is pinned', () => {
+    starProjects(website, shop);
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/a/website"
+      />
+    );
+    expect(screen.getByRole('button', { name: 'website' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'shop' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('toggles a pin into the selection without dropping the others', async () => {
+    const user = userEvent.setup();
+    starProjects(website, shop);
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/a/website"
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'shop' }));
+    expect(screen.getByRole('button', { name: 'website' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'shop' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('Select all selects every pin, and Clear drops them again', async () => {
+    const user = userEvent.setup();
+    starProjects(website, shop, api);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    await user.click(screen.getByTestId('spawn-select-all'));
+    expect(screen.getByRole('button', { name: 'api' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'shop' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'website' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('spawn-select-all')).toHaveTextContent('Clear');
+    await user.click(screen.getByTestId('spawn-select-all'));
+    expect(screen.getByRole('button', { name: 'api' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('spawn-select-all')).toHaveTextContent('Select all');
+  });
+
+  it('says how many agents Start will launch', async () => {
+    const user = userEvent.setup();
+    starProjects(website, shop);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    await user.click(screen.getByTestId('spawn-select-all'));
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    expect(screen.getByRole('button', { name: /start 2 agents/i })).toBeEnabled();
+  });
+
+  it('spawns one agent per selected pin with the same instruction', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    starProjects(website, shop, api);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+    await user.click(screen.getByRole('button', { name: 'shop' }));
+    await user.click(screen.getByRole('button', { name: 'api' }));
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByRole('button', { name: /start 2 agents/i }));
+
+    expect(onSpawn).toHaveBeenCalledTimes(2);
+    expect(onSpawn.mock.calls.map((call) => call[0].cwd)).toEqual(['/c/api', '/b/shop']);
+    expect(onSpawn.mock.calls.every((call) => call[0].task === 'Fix bugs')).toBe(true);
+    expect(onSpawn.mock.calls.every((call) => call[0].model === DEFAULT_MODEL)).toBe(true);
+    expect(onSpawn.mock.calls.every((call) => call[0].provider === DEFAULT_PROVIDER)).toBe(true);
+  });
+
+  it('Select all then Start fans out to every pin', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    starProjects(website, shop);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+    await user.click(screen.getByTestId('spawn-select-all'));
+    await user.type(screen.getByLabelText(/what should it do/i), 'Ship it');
+    await user.click(screen.getByRole('button', { name: /start 2 agents/i }));
+    expect(onSpawn.mock.calls.map((call) => call[0].cwd)).toEqual(['/b/shop', '/a/website']);
+  });
+
+  it('keeps a ticket and goal on the home project only', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    starProjects(website, shop);
+    const goals: PmGoal[] = [
+      {
+        id: 'g1',
+        parentId: null,
+        name: 'Ship',
+        description: '',
+        successCriteria: '',
+        status: 'active',
+        priority: 'normal',
+        goalPrompt: '',
+        createdBy: 'ui',
+        achievedAt: null,
+        sortOrder: 0,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={onSpawn}
+        initialRepoPath="/a/website"
+        spawnedByTicketId="t1"
+        initialGoalId="g1"
+        goals={goals}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'shop' }));
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByRole('button', { name: /start 2 agents/i }));
+
+    const byCwd = Object.fromEntries(onSpawn.mock.calls.map((call) => [call[0].cwd, call[0]]));
+    expect(byCwd['/a/website']).toEqual(
+      expect.objectContaining({ spawnedByTicketId: 't1', spawnedByGoalId: 'g1' })
+    );
+    expect(byCwd['/b/shop'].spawnedByTicketId).toBeUndefined();
+    expect(byCwd['/b/shop'].spawnedByGoalId).toBeUndefined();
+  });
+
+  it('hides the nested-repo picker while more than one pin is selected', async () => {
+    mockDiscoverGitRepos.mockResolvedValue([
+      { path: '/a/website/api', relativePath: 'api', name: 'api', kind: 'nested' },
+      { path: '/a/website/web', relativePath: 'web', name: 'web', kind: 'nested' },
+    ]);
+    const user = userEvent.setup();
+    starProjects(website, shop);
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/a/website"
+      />
+    );
+    await user.click(screen.getByLabelText(/new git worktree/i));
+    expect(await screen.findByLabelText(/git repository/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'shop' }));
+    expect(screen.queryByLabelText(/git repository/i)).not.toBeInTheDocument();
   });
 });
