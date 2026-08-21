@@ -135,6 +135,23 @@ describe('notification MCP tools', () => {
       expect(notifyActionSchema.safeParse(runConductor).success).toBe(false);
     });
 
+    // launch:'auto' and headless are the zero-click path. An agent that can
+    // mint them would start work nobody asked for.
+    it('strips launch and headless off a spawn-agent action', () => {
+      const parsed = notifyActionSchema.safeParse({
+        id: 'run',
+        label: 'Start',
+        kind: 'spawn-agent',
+        task: 'scan',
+        launch: 'auto',
+        headless: true,
+      });
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) return;
+      expect(parsed.data).not.toHaveProperty('launch');
+      expect(parsed.data).not.toHaveProperty('headless');
+    });
+
     // The UI spawn-agent may carry a Note for the prompt. An agent must not
     // mint that field — it would look like display copy and become instruction.
     it('strips a note off a spawn-agent action', () => {

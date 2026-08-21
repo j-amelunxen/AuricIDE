@@ -311,7 +311,7 @@ describe('ScheduleEditor', () => {
 
   describe('the notification it will raise', () => {
     // The whole point of the "remind only" decision: the reminder offers a
-    // button, it never launches anything itself.
+    // button, it never launches anything itself — until you pick auto.
     it('turns the task into a spawn button, not an automatic launch', () => {
       const props = renderEditor();
       fireEvent.click(screen.getByTestId('schedule-action-task'));
@@ -329,6 +329,57 @@ describe('ScheduleEditor', () => {
           repoPath: '/repo/sample',
         },
       ]);
+      expect((screen.getByTestId('schedule-task-launch-direct') as HTMLInputElement).checked).toBe(
+        true
+      );
+    });
+
+    it('writes auto and headless when the custom agent is told to start by itself', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      fireEvent.change(screen.getByTestId('schedule-task'), { target: { value: 'Scan' } });
+      fireEvent.click(screen.getByTestId('schedule-task-launch-auto'));
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({
+        kind: 'spawn-agent',
+        task: 'Scan',
+        launch: 'auto',
+        headless: true,
+      });
+    });
+
+    it('can start a custom agent by itself without headless', () => {
+      const props = renderEditor();
+      fireEvent.click(screen.getByTestId('schedule-action-task'));
+      fireEvent.change(screen.getByTestId('schedule-task'), { target: { value: 'Scan' } });
+      fireEvent.click(screen.getByTestId('schedule-task-launch-auto'));
+      fireEvent.click(screen.getByTestId('schedule-task-headless'));
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({ launch: 'auto', headless: false });
+    });
+
+    it('restores auto and headless on a saved custom agent', () => {
+      renderEditor({
+        schedule: scheduleWith({
+          id: 'run',
+          label: 'Start agent',
+          kind: 'spawn-agent',
+          task: 'Scan',
+          repoPath: '/repo/sample',
+          launch: 'auto',
+          headless: true,
+        }),
+      });
+
+      expect((screen.getByTestId('schedule-action-task') as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByTestId('schedule-task-launch-auto') as HTMLInputElement).checked).toBe(
+        true
+      );
+      expect((screen.getByTestId('schedule-task-headless') as HTMLInputElement).checked).toBe(true);
     });
 
     it('offers no action at all when no task was named', () => {
@@ -773,16 +824,18 @@ describe('ScheduleEditor', () => {
       expect(
         payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
       ).toMatchObject({ launch: 'direct' });
-      expect((screen.getByTestId('schedule-skill-direct') as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByTestId('schedule-skill-launch-direct') as HTMLInputElement).checked).toBe(
+        true
+      );
     });
 
-    it('puts the spawn dialog back when the direct start is switched off', () => {
+    it('puts the spawn dialog back when the dialog launch is chosen', () => {
       const props = renderEditor({ starredProjects: [matchingStarred] });
       fireEvent.click(screen.getByTestId('schedule-action-skill'));
       fireEvent.change(screen.getByTestId('schedule-skill-select'), {
         target: { value: 'skill-1' },
       });
-      fireEvent.click(screen.getByTestId('schedule-skill-direct'));
+      fireEvent.click(screen.getByTestId('schedule-skill-launch-dialog'));
 
       expect(
         payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
@@ -796,7 +849,39 @@ describe('ScheduleEditor', () => {
         starredProjects: [matchingStarred],
       });
 
-      expect((screen.getByTestId('schedule-skill-direct') as HTMLInputElement).checked).toBe(false);
+      expect((screen.getByTestId('schedule-skill-launch-dialog') as HTMLInputElement).checked).toBe(
+        true
+      );
+    });
+
+    it('writes auto and headless when the skill is told to start by itself', () => {
+      const props = renderEditor({ starredProjects: [matchingStarred] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'skill-1' },
+      });
+      fireEvent.click(screen.getByTestId('schedule-skill-launch-auto'));
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({ launch: 'auto', headless: true });
+      expect((screen.getByTestId('schedule-skill-headless') as HTMLInputElement).checked).toBe(
+        true
+      );
+    });
+
+    it('can start by itself without headless', () => {
+      const props = renderEditor({ starredProjects: [matchingStarred] });
+      fireEvent.click(screen.getByTestId('schedule-action-skill'));
+      fireEvent.change(screen.getByTestId('schedule-skill-select'), {
+        target: { value: 'skill-1' },
+      });
+      fireEvent.click(screen.getByTestId('schedule-skill-launch-auto'));
+      fireEvent.click(screen.getByTestId('schedule-skill-headless'));
+
+      expect(
+        payloadOf(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>)).actions?.[0]
+      ).toMatchObject({ launch: 'auto', headless: false });
     });
 
     it('keeps the direct start when a different skill is picked', () => {

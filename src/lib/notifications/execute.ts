@@ -119,7 +119,7 @@ export function buildSpawnConfig(
     cwd,
     provider: action.provider ?? defaults?.providerId,
     permissionMode: (trusted ? action.permissionMode : undefined) ?? defaults?.permissionMode,
-    headless: defaults?.headless,
+    headless: (trusted ? action.headless : undefined) ?? defaults?.headless,
     spawnedByTicketId: action.ticketId,
     spawnedByGoalId: action.goalId,
     runSource: 'ui',
@@ -146,6 +146,7 @@ export function buildSkillSpawnConfig(
     cwd: action.repoPath,
     provider: launch.provider,
     permissionMode: launch.permissionMode,
+    headless: action.headless,
     runSource: 'ui',
   };
 }
@@ -153,7 +154,10 @@ export function buildSkillSpawnConfig(
 /**
  * Whether the click starts the skill outright or fills in the spawn dialog.
  *
- * Absent means dialog, which is what every payload written before direct launch
+ * `auto` reaching this function means a click already happened — the
+ * unattended path in the auto-start hook calls `spawnAgent` through here
+ * too — so on a click `auto` is just another way of saying `direct`. Absent
+ * means dialog, which is what every payload written before direct launch
  * existed says — an old schedule must not start behaving differently because
  * the app learned a new trick.
  */
@@ -161,7 +165,7 @@ function startsDirectly(
   action: Extract<NotificationAction, { kind: 'run-skill' }>,
   context: NotificationActionContext
 ): boolean {
-  return action.launch === 'direct' && context.trust === 'user';
+  return (action.launch === 'direct' || action.launch === 'auto') && context.trust === 'user';
 }
 
 /**
