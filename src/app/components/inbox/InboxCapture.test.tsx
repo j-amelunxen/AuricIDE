@@ -7,11 +7,15 @@ import type { InboxItem } from '@/lib/tauri/inbox';
 const addInboxItemMock = vi.fn<(title: string, notes?: string) => Promise<InboxItem | null>>();
 const attachInboxFileMock =
   vi.fn<(itemId: string, sourcePath: string) => Promise<InboxItem | null>>();
+const attachInboxTextMock =
+  vi.fn<(itemId: string, fileName: string, body: string) => Promise<InboxItem | null>>();
 const pickInboxMediaFilesMock = vi.fn(async () => [] as string[]);
 
 const storeState = {
   addInboxItem: (title: string, notes?: string) => addInboxItemMock(title, notes),
   attachInboxFile: (itemId: string, sourcePath: string) => attachInboxFileMock(itemId, sourcePath),
+  attachInboxText: (itemId: string, fileName: string, body: string) =>
+    attachInboxTextMock(itemId, fileName, body),
   inboxError: null as string | null,
 };
 
@@ -23,6 +27,8 @@ vi.mock('@/lib/inbox/inboxMedia', async () => {
     pickInboxMediaFiles: () => pickInboxMediaFilesMock(),
   };
 });
+
+vi.mock('@/lib/overlays/useOverlayLayer', () => ({ useOverlayLayer: vi.fn() }));
 
 vi.mock('@/lib/store', () => ({
   useStore: Object.assign((selector: (s: typeof storeState) => unknown) => selector(storeState), {
@@ -53,6 +59,7 @@ describe('InboxCapture', () => {
     storeState.inboxError = null;
     addInboxItemMock.mockImplementation(async (title) => makeItem(title));
     attachInboxFileMock.mockImplementation(async (itemId) => makeItem(itemId));
+    attachInboxTextMock.mockImplementation(async (itemId) => makeItem(itemId));
     pickInboxMediaFilesMock.mockResolvedValue([]);
   });
 
@@ -204,5 +211,104 @@ describe('InboxCapture', () => {
 
     expect(addInboxItemMock).toHaveBeenCalledWith('Bug with screenshot', undefined);
     expect(attachInboxFileMock).toHaveBeenCalledWith('new-item', '/tmp/shot.png');
+  });
+});
+
+describe('InboxCapture: pasting a whole text', () => {
+  const MAIL = [
+    'From: client@example.com',
+    'Subject: Invoice 2024-118 is overdue',
+    '',
+    'Hi, the invoice from January is still open. Can you check?',
+  ].join('\n');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storeState.inboxError = null;
+    addInboxItemMock.mockImplementation(async (title) => makeItem(title));
+    attachInboxFileMock.mockImplementation(async (itemId) => makeItem(itemId));
+    attachInboxTextMock.mockImplementation(async (itemId) => makeItem(itemId));
+    pickInboxMediaFilesMock.mockResolvedValue([]);
+  });
+
+  it('keeps a pasted mail out of the one-line field and stages it instead', async () => {
+    const user = userEvent.setup();
+    render(<InboxCapture />);
+    const field = screen.getByPlaceholderText(/capture a task/i);
+
+    await user.click(field);
+    await user.paste(MAIL);
+
+    expect(field).toHaveValue('Invoice 2024-118 is overdue');
+    expect(screen.getByText('invoice-2024-118-is-overdue.md')).toBeInTheDocument();
+  });
+
+  it('attaches the staged text to the item the capture creates', async () => {
+    const user = userEvent.setup();
+    render(<InboxCapture />);
+    const field = screen.getByPlaceholderText(/capture a task/i);
+
+    await user.click(field);
+    await user.paste(MAIL);
+    await user.keyboard('{Enter}');
+
+    expect(addInboxItemMock).toHaveBeenCalledWith('Invoice 2024-118 is overdue', undefined);
+    expect(attachInboxTextMock).toHaveBeenCalledWith(
+      'new-item',
+      'invoice-2024-118-is-overdue.md',
+      MAIL
+    );
+  });
+
+  it('does not overwrite a title the user already typed', async () => {
+    const user = userEvent.setup();
+    render(<InboxCapture />);
+    const field = screen.getByPlaceholderText(/capture a task/i);
+
+    await user.type(field, 'Chase the invoice');
+    await user.paste(MAIL);
+
+    expect(field).toHaveValue('Chase the invoice');
+    expect(screen.getByText('invoice-2024-118-is-overdue.md')).toBeInTheDocument();
+  });
+
+  it('leaves a short paste as ordinary typing', async () => {
+    const user = userEvent.setup();
+    render(<InboxCapture />);
+    const field = screen.getByPlaceholderText(/capture a task/i);
+
+    await user.click(field);
+    await user.paste('Call the tax office');
+
+    expect(field).toHaveValue('Call the tax office');
+    expect(screen.queryByText(/\.md$/)).not.toBeInTheDocument();
+  });
+
+  it('lets a staged text be removed again before capture', async () => {
+    const user = userEvent.setup();
+    render(<InboxCapture />);
+    const field = screen.getByPlaceholderText(/capture a task/i);
+
+    await user.click(field);
+    await user.paste(MAIL);
+    await user.click(screen.getByRole('button', { name: /remove invoice-2024-118/i }));
+    await user.click(field);
+    await user.keyboard('{Enter}');
+
+    expect(attachInboxTextMock).not.toHaveBeenCalled();
+    expect(addInboxItemMock).toHaveBeenCalled();
+  });
+
+  it('opens a sheet from the attach-text button and stages what it returns', async () => {
+    const user = userEvent.setup();
+    render(<InboxCapture />);
+
+    await user.click(screen.getByRole('button', { name: /attach text/i }));
+    await user.click(screen.getByLabelText(/^text$/i));
+    await user.paste(MAIL);
+    await user.click(screen.getByRole('button', { name: /^attach$/i }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('invoice-2024-118-is-overdue.md')).toBeInTheDocument();
   });
 });

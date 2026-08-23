@@ -68,6 +68,7 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
   const assignInboxItem = useStore((s) => s.assignInboxItem);
   const unassignInboxItem = useStore((s) => s.unassignInboxItem);
   const attachInboxFile = useStore((s) => s.attachInboxFile);
+  const attachInboxText = useStore((s) => s.attachInboxText);
   const detachInboxFile = useStore((s) => s.detachInboxFile);
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
 
@@ -154,6 +155,7 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
         onOpenProject={onOpenProject}
         onHandToAgent={handleHandToAgent}
         onAttach={(id, sourcePath) => void attachInboxFile(id, sourcePath)}
+        onAttachText={(id, fileName, body) => void attachInboxText(id, fileName, body)}
         onDetach={(id, attachmentId) => void detachInboxFile(id, attachmentId)}
       />
     );
