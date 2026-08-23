@@ -23,6 +23,15 @@ export const objectsGlyphs: GlyphMap = {
     l(13.4, 10.4, 15, 10.4),
     dot(11.2, 10.4, 1.8),
   ],
+  // A conical flask: neck, shoulders, a filled level and one rising bubble.
+  // The bubble is the accent because it is the live point — the thing that
+  // says an experiment is running rather than a vessel standing still.
+  science: [
+    p('M10 3.5V9.3L5.6 17.8a2 2 0 0 0 1.8 2.9h9.2a2 2 0 0 0 1.8-2.9L14 9.3V3.5'),
+    l(9, 3.5, 15, 3.5),
+    l(6.9, 15.5, 17.1, 15.5),
+    dot(14.2, 17.7, 1.4),
+  ],
   lightbulb: [
     p('M9 15.3a5.5 5.5 0 1 1 6 0v1.3h-6Z'),
     r(9.7, 16.6, 4.6, 2.6, 0.8),
