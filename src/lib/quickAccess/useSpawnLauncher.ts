@@ -7,7 +7,7 @@ import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
 /**
  * Opens the spawn dialog for a repo, optionally seeded from a skill.
  *
- * `openSkillSpawnDialog` needs six store setters gathered into one object —
+ * `openSkillSpawnDialog` needs seven store setters gathered into one object —
  * boilerplate that Quick Access and the Agent Console both need to launch a
  * skill the same way. Sharing this hook, rather than each entry point
  * re-selecting the six setters itself, is what keeps "start an agent from
@@ -19,6 +19,7 @@ export function useSpawnLauncher() {
   const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
   const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
   const setSpawnAgentRepoPath = useStore((s) => s.setSpawnAgentRepoPath);
+  const setSpawnAgentWorktree = useStore((s) => s.setSpawnAgentWorktree);
   const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
 
   return (
@@ -36,6 +37,7 @@ export function useSpawnLauncher() {
         setInitialAgentTask,
         setSpawnAgentPreset,
         setSpawnAgentRepoPath,
+        setSpawnAgentWorktree,
         setSpawnDialogOpen,
       },
       repoPath,

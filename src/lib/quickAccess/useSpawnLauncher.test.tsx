@@ -11,6 +11,7 @@ function resetStore() {
     initialAgentTask: 'stale task',
     spawnAgentPreset: { providerId: 'stale', model: 'stale', permissionMode: 'auto' },
     spawnAgentRepoPath: null,
+    spawnAgentWorktree: false,
   } as Partial<ReturnType<typeof useStore.getState>>);
 }
 
@@ -29,6 +30,20 @@ describe('useSpawnLauncher', () => {
     expect(state.spawnAgentGoalId).toBeNull();
     expect(state.initialAgentTask).toBe('');
     expect(state.spawnAgentPreset).toBeNull();
+    expect(state.spawnAgentWorktree).toBeNull();
+  });
+
+  it('pins the worktree box off when a skill is what was launched', () => {
+    const { result } = renderHook(() => useSpawnLauncher());
+
+    act(() =>
+      result.current('/repos/acme-app', {
+        label: 'Ship it',
+        prompt: 'Run the release checklist',
+      })
+    );
+
+    expect(useStore.getState().spawnAgentWorktree).toBe(false);
   });
 
   it('seeds the initial task from a given skill', () => {

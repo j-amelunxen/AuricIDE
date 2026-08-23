@@ -36,3 +36,21 @@ export async function workingDirectoryHasGitRepo(
     return false;
   }
 }
+
+/**
+ * What the "New git worktree" box shows. Three answers, in the order they
+ * outrank each other: the user's own toggle, then a pin from whatever opened
+ * the dialog, then whether the working directory is a git repo at all.
+ *
+ * The pin exists because a skill launched from Quick Access is aimed at the
+ * repository the user is looking at — `/commit` in a fresh detached worktree
+ * commits nothing they will see. Only the launch knows that; the folder looks
+ * the same either way.
+ */
+export function resolveUseWorktree(input: {
+  override?: boolean | null;
+  pinned?: boolean | null;
+  hasGitRepo: boolean;
+}): boolean {
+  return input.override ?? input.pinned ?? input.hasGitRepo;
+}
