@@ -582,6 +582,91 @@ describe('SpawnAgentDialog', () => {
     expect(onSpawn.mock.calls[0][0].useWorktree).toBeUndefined();
   });
 
+  it('leaves new git worktree off in a git repo when the launch pinned it off', () => {
+    useStore.setState({
+      repos: [{ path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' }],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/work/frontend"
+        worktreeDefault={false}
+      />
+    );
+    expect(screen.getByLabelText(/new git worktree/i)).not.toBeChecked();
+  });
+
+  it('spawns without a worktree when the launch pinned the box off', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    useStore.setState({
+      repos: [{ path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' }],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={onSpawn}
+        initialRepoPath="/work/frontend"
+        worktreeDefault={false}
+      />
+    );
+
+    await user.type(screen.getByLabelText(/what should it do/i), '/commit');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn.mock.calls[0][0].useWorktree).toBeUndefined();
+  });
+
+  it('still lets the user turn a pinned-off worktree back on', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    useStore.setState({
+      repos: [{ path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' }],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={onSpawn}
+        initialRepoPath="/work/frontend"
+        worktreeDefault={false}
+      />
+    );
+
+    await user.click(screen.getByLabelText(/new git worktree/i));
+    await user.type(screen.getByLabelText(/what should it do/i), '/commit');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ useWorktree: true }));
+  });
+
+  it('drops the pin once the working directory is switched', async () => {
+    const user = userEvent.setup();
+    useStore.setState({
+      repos: [
+        { path: '/work/frontend', relativePath: '', name: 'frontend', kind: 'root' },
+        { path: '/work/api', relativePath: '', name: 'api', kind: 'root' },
+      ],
+    });
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/work/frontend"
+        worktreeDefault={false}
+        recentPaths={['/work/api']}
+      />
+    );
+    expect(screen.getByLabelText(/new git worktree/i)).not.toBeChecked();
+
+    await user.selectOptions(screen.getByTestId('recent-dirs'), '/work/api');
+    expect(screen.getByLabelText(/new git worktree/i)).toBeChecked();
+  });
+
   it('checks new git worktree when .git is on disk even if the repo is not yet discovered', async () => {
     mockExists.mockImplementation(async (path) => path === '/other/repo/.git');
     render(

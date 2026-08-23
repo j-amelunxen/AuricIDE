@@ -14,6 +14,7 @@ export function openSkillSpawnDialog(
     setInitialAgentTask: (task: string) => void;
     setSpawnAgentPreset: (preset: SpawnPreset | null) => void;
     setSpawnAgentRepoPath: (path: string) => void;
+    setSpawnAgentWorktree: (pinned: boolean | null) => void;
     setSpawnDialogOpen: (open: boolean) => void;
   },
   repoPath: string,
@@ -38,6 +39,12 @@ export function openSkillSpawnDialog(
         }
       : null
   );
+  // A skill is started for the repository the user is pointing at, so the
+  // worktree box starts off however git-shaped that folder is — a skill run
+  // against a fresh detached checkout leaves the work where nobody looks.
+  // Without a skill this is a plain "start an agent here" and the box keeps
+  // following the folder.
+  store.setSpawnAgentWorktree(resolved ? false : null);
   store.setSpawnAgentRepoPath(repoPath);
   store.setSpawnDialogOpen(true);
 }

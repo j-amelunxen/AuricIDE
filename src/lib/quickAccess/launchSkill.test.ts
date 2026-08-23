@@ -9,6 +9,7 @@ function makeStore() {
     setInitialAgentTask: vi.fn(),
     setSpawnAgentPreset: vi.fn(),
     setSpawnAgentRepoPath: vi.fn(),
+    setSpawnAgentWorktree: vi.fn(),
     setSpawnDialogOpen: vi.fn(),
   };
 }
@@ -26,6 +27,7 @@ describe('openSkillSpawnDialog', () => {
     expect(store.setInitialAgentTask).toHaveBeenCalledWith('');
     expect(store.setSpawnAgentPreset).toHaveBeenCalledWith(null);
     expect(store.setSpawnAgentRepoPath).toHaveBeenCalledWith('/repo/sample');
+    expect(store.setSpawnAgentWorktree).toHaveBeenCalledWith(null);
     expect(store.setSpawnDialogOpen).toHaveBeenCalledWith(true);
   });
 
@@ -58,6 +60,19 @@ describe('openSkillSpawnDialog', () => {
 
     expect(store.setInitialAgentTask).toHaveBeenCalledWith('/seo-check');
     expect(store.setSpawnAgentPreset).toHaveBeenCalledWith(null);
+  });
+
+  it('pins the worktree box off for every skill launch, provider or not', () => {
+    const withProvider = makeStore();
+    openSkillSpawnDialog(withProvider, '/repo/sample', {
+      prompt: '/changelog',
+      providerId: 'claude',
+    });
+    expect(withProvider.setSpawnAgentWorktree).toHaveBeenCalledWith(false);
+
+    const withoutProvider = makeStore();
+    openSkillSpawnDialog(withoutProvider, '/repo/sample', { prompt: '/seo-check' });
+    expect(withoutProvider.setSpawnAgentWorktree).toHaveBeenCalledWith(false);
   });
 
   it('injects the latest full prompt for an Auric skill reference', () => {

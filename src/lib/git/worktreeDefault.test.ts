@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitRepoRef } from '@/lib/tauri/git';
-import { isGitRepoRoot, workingDirectoryHasGitRepo } from './worktreeDefault';
+import { isGitRepoRoot, resolveUseWorktree, workingDirectoryHasGitRepo } from './worktreeDefault';
 
 const mockExists = vi.fn<(path: string) => Promise<boolean>>();
 
@@ -69,5 +69,30 @@ describe('workingDirectoryHasGitRepo', () => {
   it('is false when the probe cannot run', async () => {
     mockExists.mockRejectedValueOnce(new Error('Tauri IPC is unavailable'));
     await expect(workingDirectoryHasGitRepo('/maybe', [])).resolves.toBe(false);
+  });
+});
+
+describe('resolveUseWorktree', () => {
+  it('follows the folder when nothing was pinned or toggled', () => {
+    expect(resolveUseWorktree({ hasGitRepo: true })).toBe(true);
+    expect(resolveUseWorktree({ hasGitRepo: false })).toBe(false);
+  });
+
+  it('lets a pin keep the box off inside a git repo', () => {
+    expect(resolveUseWorktree({ pinned: false, hasGitRepo: true })).toBe(false);
+  });
+
+  it('lets a pin turn the box on outside a git repo', () => {
+    expect(resolveUseWorktree({ pinned: true, hasGitRepo: false })).toBe(true);
+  });
+
+  it('ignores an absent pin', () => {
+    expect(resolveUseWorktree({ pinned: null, hasGitRepo: true })).toBe(true);
+    expect(resolveUseWorktree({ pinned: undefined, hasGitRepo: true })).toBe(true);
+  });
+
+  it('lets the user outrank both the pin and the folder', () => {
+    expect(resolveUseWorktree({ override: true, pinned: false, hasGitRepo: false })).toBe(true);
+    expect(resolveUseWorktree({ override: false, pinned: true, hasGitRepo: true })).toBe(false);
   });
 });

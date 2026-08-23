@@ -51,6 +51,11 @@ export interface UISlice {
    * the dialog. Null for every other entry point. One field, not three: they
    * always travel together and are always cleared together. */
   spawnAgentPreset: SpawnPreset | null;
+  /** The starting state the launch pinned on the "New git worktree" box, or
+   * null to let it follow the working directory. A Quick Access skill runs on
+   * the repo it was started for and pins it off; every other entry point
+   * leaves this null. Cleared with the rest when the dialog closes. */
+  spawnAgentWorktree: boolean | null;
   initialAgentTask: string;
   cliConnected: boolean;
   llmConfigured: boolean;
@@ -99,6 +104,7 @@ export interface UISlice {
   setSpawnAgentGoalId: (id: string | null) => void;
   setSpawnAgentRepoPath: (path: string | null) => void;
   setSpawnAgentPreset: (preset: SpawnPreset | null) => void;
+  setSpawnAgentWorktree: (pinned: boolean | null) => void;
   setInitialAgentTask: (task: string) => void;
   setCliConnected: (connected: boolean) => void;
   setLlmConfigured: (configured: boolean) => void;
@@ -134,6 +140,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   spawnAgentGoalId: null,
   spawnAgentRepoPath: null,
   spawnAgentPreset: null,
+  spawnAgentWorktree: null,
   initialAgentTask: '',
   cliConnected: false,
   llmConfigured: false,
@@ -193,6 +200,8 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   setSpawnAgentRepoPath: (path) => set({ spawnAgentRepoPath: path }),
 
   setSpawnAgentPreset: (preset) => set({ spawnAgentPreset: preset }),
+
+  setSpawnAgentWorktree: (pinned) => set({ spawnAgentWorktree: pinned }),
 
   setInitialAgentTask: (task) => set({ initialAgentTask: task }),
 

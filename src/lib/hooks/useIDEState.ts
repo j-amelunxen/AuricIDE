@@ -164,6 +164,8 @@ export function useIDEState() {
   const spawnAgentRepoPath = useStore((s) => s.spawnAgentRepoPath);
   const setSpawnAgentPreset = useStore((s) => s.setSpawnAgentPreset);
   const spawnAgentPreset = useStore((s) => s.spawnAgentPreset);
+  const setSpawnAgentWorktree = useStore((s) => s.setSpawnAgentWorktree);
+  const spawnAgentWorktree = useStore((s) => s.spawnAgentWorktree);
   const setDiffTab = useStore((s) => s.setDiffTab);
   const resetGitInMemory = useStore((s) => s.resetGitInMemory);
   const scratchDir = useStore((s) => s.scratchDir);
@@ -383,6 +385,8 @@ export function useIDEState() {
     spawnAgentRepoPath,
     setSpawnAgentPreset,
     spawnAgentPreset,
+    setSpawnAgentWorktree,
+    spawnAgentWorktree,
     setDiffTab,
     resetGitInMemory,
     scratchDir,

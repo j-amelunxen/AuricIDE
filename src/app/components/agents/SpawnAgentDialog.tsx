@@ -29,7 +29,11 @@ import {
   spawnAttachmentLabel,
 } from '@/lib/agents/spawnAttachments';
 import { useStore } from '@/lib/store';
-import { isGitRepoRoot, workingDirectoryHasGitRepo } from '@/lib/git/worktreeDefault';
+import {
+  isGitRepoRoot,
+  resolveUseWorktree,
+  workingDirectoryHasGitRepo,
+} from '@/lib/git/worktreeDefault';
 import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
 import { SkillInvocationInput } from '@/app/components/cockpit/SkillInvocationInput';
 import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
@@ -62,6 +66,14 @@ interface SpawnAgentDialogProps {
    * own defaults rather than breaking the launch.
    */
   presetDefaults?: SpawnPreset | null;
+  /**
+   * The state the launch pins on the "New git worktree" box: `false` from a
+   * Quick Access skill, which is aimed at the repository the user is looking
+   * at. Null lets the box follow the working directory, as every other entry
+   * point does. The user's own toggle still wins, and switching the working
+   * directory drops the pin with it.
+   */
+  worktreeDefault?: boolean | null;
 }
 
 export function SpawnAgentDialog(props: SpawnAgentDialogProps) {
@@ -92,6 +104,7 @@ function SpawnAgentDialogPanel({
   initialGoalId = null,
   promptHistory = [],
   presetDefaults = null,
+  worktreeDefault = null,
 }: SpawnAgentDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
   useOverlayLayer({ id: 'spawn', kind: 'tool', active: true, onEscape: onClose });
@@ -191,7 +204,14 @@ function SpawnAgentDialogPanel({
   }
 
   const knownGitRepo = isGitRepoRoot(repoPath, repos);
-  const useWorktree = worktreeOverride ?? (knownGitRepo || probedHasGit === true);
+  const useWorktree = resolveUseWorktree({
+    override: worktreeOverride,
+    // The pin was made for the folder the launch named. Once the user picks
+    // another one, the box goes back to following the folder — the same rule
+    // that drops their own toggle above.
+    pinned: repoPath === initialRepoPath ? worktreeDefault : null,
+    hasGitRepo: knownGitRepo || probedHasGit === true,
+  });
 
   // Only the disk probe lives here — known roots are derived above, so a
   // discovered repo never waits on IPC and never writes the same boolean back.
