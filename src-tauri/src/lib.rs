@@ -1721,6 +1721,18 @@ fn inbox_attach(
     )
 }
 
+/// Attaches a block of pasted text (an email, a spec, a thread) to an item.
+#[tauri::command]
+fn inbox_attach_text(
+    item_id: String,
+    file_name: String,
+    body: String,
+    state: tauri::State<'_, inbox::InboxState>,
+) -> Result<inbox::InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::attach_text_impl(&conn, &state.attachments_dir, &item_id, &file_name, &body)
+}
+
 #[tauri::command]
 fn inbox_detach(
     item_id: String,
@@ -2334,6 +2346,7 @@ pub fn run() {
             inbox_assign,
             inbox_unassign,
             inbox_attach,
+            inbox_attach_text,
             inbox_detach,
             projects_pm_overview,
             agent_log_append,

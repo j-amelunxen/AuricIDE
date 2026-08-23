@@ -1,0 +1,15 @@
+{
+  "comment": [
+    "Which files may hang off an inbox item, and as what.",
+    "Read by src/lib/inbox/inboxMedia.ts and, via include_str!, by",
+    "src-tauri/src/inbox.rs. One list on purpose: the picker and the drop",
+    "target decide what the user may offer, the backend decides what it",
+    "accepts, and a disagreement between them is a file the user can select",
+    "and then watch bounce with an error that names no reason they can see.",
+    "Text is plain text only — an attachment is inlined into the agent prompt",
+    "verbatim, so a format that needs decoding first would arrive as noise."
+  ],
+  "image": ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "avif"],
+  "video": ["mp4", "webm", "mov", "m4v", "ogv"],
+  "text": ["md", "markdown", "txt", "text", "eml", "log"]
+}

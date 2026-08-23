@@ -24,16 +24,24 @@ export interface InboxItem {
   priority: Priority;
   /** Calendar day `YYYY-MM-DD`, or null when nothing is due. */
   dueDate: string | null;
-  /** Images and videos copied into the app inbox store. Absent on older fixtures. */
+  /**
+   * Images, videos and text documents copied into the app inbox store.
+   * Absent on older fixtures.
+   */
   attachments?: InboxAttachment[];
 }
 
-export type InboxMediaKind = 'image' | 'video';
+/**
+ * `text` covers a pasted email, spec or thread. It is stored as a real file
+ * next to the images rather than in a column, so it travels into the project
+ * on assign through the same copy and can be opened in the editor afterwards.
+ */
+export type InboxAttachmentKind = 'image' | 'video' | 'text';
 
 export interface InboxAttachment {
   id: string;
   itemId: string;
-  kind: InboxMediaKind;
+  kind: InboxAttachmentKind;
   fileName: string;
   storedPath: string;
   createdAt: string;
@@ -142,6 +150,18 @@ export async function inboxUnassign(id: string): Promise<InboxItem> {
 
 export async function inboxAttach(itemId: string, sourcePath: string): Promise<InboxItem> {
   return invoke<InboxItem>('inbox_attach', { itemId, sourcePath });
+}
+
+/**
+ * Stores `body` as a file on the item. `fileName` is a name, never a path —
+ * the backend keeps only its last segment and forces a text extension.
+ */
+export async function inboxAttachText(
+  itemId: string,
+  fileName: string,
+  body: string
+): Promise<InboxItem> {
+  return invoke<InboxItem>('inbox_attach_text', { itemId, fileName, body });
 }
 
 export async function inboxDetach(itemId: string, attachmentId: string): Promise<InboxItem> {

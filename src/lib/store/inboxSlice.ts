@@ -3,6 +3,7 @@ import {
   inboxAdd,
   inboxAssign,
   inboxAttach,
+  inboxAttachText,
   inboxDetach,
   inboxDismiss,
   inboxList,
@@ -59,6 +60,8 @@ export interface InboxSlice {
   assignInboxItem: (request: InboxAssignRequest) => Promise<void>;
   unassignInboxItem: (id: string) => Promise<void>;
   attachInboxFile: (itemId: string, sourcePath: string) => Promise<InboxItem | null>;
+  /** Stores a pasted block of text (an email, a spec) as a file on the item. */
+  attachInboxText: (itemId: string, fileName: string, body: string) => Promise<InboxItem | null>;
   detachInboxFile: (itemId: string, attachmentId: string) => Promise<void>;
   refreshInboxOverview: (projectPaths: string[]) => Promise<void>;
 }
@@ -69,6 +72,37 @@ function describeError(error: unknown): string {
 
 function replaceItem(items: InboxItem[], id: string, updated: InboxItem): InboxItem[] {
   return items.map((item) => (item.id === id ? updated : item));
+}
+
+/**
+ * Runs one attach call and folds the result back in. Both attach paths share
+ * it so a pasted text and a dropped image refresh the open project's PM data
+ * on exactly the same condition — an attachment that reached an already
+ * assigned ticket changed that ticket's context, and the panel showing it
+ * would otherwise still be showing the state from before.
+ */
+async function storeAttachment(
+  set: (partial: Partial<InboxSlice>) => void,
+  get: () => InboxSlice,
+  call: () => Promise<InboxItem>
+): Promise<InboxItem | null> {
+  try {
+    const item = await call();
+    set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
+
+    const cross = get() as unknown as Partial<CrossSlices>;
+    if (
+      item.ticketId !== null &&
+      item.projectPath !== null &&
+      item.projectPath === cross.rootPath
+    ) {
+      void cross.refreshPmData?.(item.projectPath);
+    }
+    return item;
+  } catch (error) {
+    set({ inboxError: describeError(error) });
+    return null;
+  }
 }
 
 export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
@@ -159,23 +193,11 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
   },
 
   attachInboxFile: async (itemId, sourcePath) => {
-    try {
-      const item = await inboxAttach(itemId, sourcePath);
-      set({ inboxItems: replaceItem(get().inboxItems, item.id, item), inboxError: null });
+    return storeAttachment(set, get, () => inboxAttach(itemId, sourcePath));
+  },
 
-      const cross = get() as unknown as Partial<CrossSlices>;
-      if (
-        item.ticketId !== null &&
-        item.projectPath !== null &&
-        item.projectPath === cross.rootPath
-      ) {
-        void cross.refreshPmData?.(item.projectPath);
-      }
-      return item;
-    } catch (error) {
-      set({ inboxError: describeError(error) });
-      return null;
-    }
+  attachInboxText: async (itemId, fileName, body) => {
+    return storeAttachment(set, get, () => inboxAttachText(itemId, fileName, body));
   },
 
   detachInboxFile: async (itemId, attachmentId) => {

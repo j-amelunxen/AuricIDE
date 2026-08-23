@@ -514,6 +514,12 @@ const IMAGE_EXTENSIONS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "avif",
 ];
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov", "m4v", "ogv"];
+/// Formats a pasted or dropped document can arrive in. Deliberately plain
+/// text only: an attachment is inlined into the agent prompt verbatim, so a
+/// format that needs decoding first would reach the agent as noise.
+pub const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt", "text", "eml", "log"];
+/// What a pasted document is stored as when its name says nothing else.
+const DEFAULT_TEXT_EXTENSION: &str = "md";
 
 fn file_extension(path: &Path) -> String {
     path.extension()
@@ -530,7 +536,36 @@ fn media_kind_for(path: &Path) -> Option<&'static str> {
     if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
         return Some("video");
     }
+    if TEXT_EXTENSIONS.contains(&ext.as_str()) {
+        return Some("text");
+    }
     None
+}
+
+/// The file name a pasted document is stored under.
+///
+/// The name reaches this from a title the user typed or that was derived from
+/// the paste itself, so it is not a path and must never become one: only the
+/// last segment survives, and `.` / `..` are names, not directories.
+fn text_file_name(raw: &str) -> String {
+    let last = raw
+        .replace('\\', "/")
+        .split('/')
+        .next_back()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let base = if last.is_empty() || last == "." || last == ".." {
+        "note".to_string()
+    } else {
+        last
+    };
+    let ext = file_extension(Path::new(&base));
+    if TEXT_EXTENSIONS.contains(&ext.as_str()) {
+        base
+    } else {
+        format!("{}.{}", base, DEFAULT_TEXT_EXTENSION)
+    }
 }
 
 fn sanitize_file_name(path: &Path) -> String {
@@ -611,6 +646,49 @@ pub fn attach_impl(
     let dest = unique_dest(&dest_dir, &file_name);
     std::fs::copy(source_path, &dest).map_err(|e| format!("Failed to copy attachment: {}", e))?;
 
+    record_attachment(conn, &item, item_id, kind, &dest, &file_name)
+}
+
+/// Stores a block of text — most often a whole email — as an attachment.
+///
+/// The same shape as [`attach_impl`], and deliberately so: the text becomes a
+/// real file next to the images, travels into the project on assign through
+/// the same copy, and is inlined into the agent prompt as a file context item.
+/// Keeping a pasted mail in a database column instead would make it the one
+/// piece of a ticket's context nobody can open, diff or edit.
+pub fn attach_text_impl(
+    conn: &Connection,
+    attachments_dir: &Path,
+    item_id: &str,
+    file_name: &str,
+    body: &str,
+) -> Result<InboxItem, String> {
+    let item = get_impl(conn, item_id)?;
+    if body.trim().is_empty() {
+        return Err("Cannot attach an empty text to an inbox item".to_string());
+    }
+
+    let name = text_file_name(file_name);
+    let dest_dir = attachments_dir.join(item_id);
+    std::fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("Failed to create inbox attachments dir: {}", e))?;
+    let dest = unique_dest(&dest_dir, &name);
+    std::fs::write(&dest, body).map_err(|e| format!("Failed to write attachment: {}", e))?;
+
+    record_attachment(conn, &item, item_id, "text", &dest, &name)
+}
+
+/// Writes the row for an already-stored attachment file and, when the item is
+/// assigned, re-syncs the ticket's context. Shared by both attach paths so a
+/// pasted text and a dropped image reach a ticket by exactly one route.
+fn record_attachment(
+    conn: &Connection,
+    item: &InboxItem,
+    item_id: &str,
+    kind: &str,
+    dest: &Path,
+    fallback_name: &str,
+) -> Result<InboxItem, String> {
     conn.execute(
         "INSERT INTO inbox_attachments (id, item_id, kind, file_name, stored_path)
          VALUES (hex(randomblob(16)), ?1, ?2, ?3, ?4)",
@@ -619,12 +697,12 @@ pub fn attach_impl(
             kind,
             dest.file_name()
                 .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or(file_name),
+                .unwrap_or_else(|| fallback_name.to_string()),
             dest.to_string_lossy().to_string()
         ],
     )
     .map_err(|e| {
-        let _ = std::fs::remove_file(&dest);
+        let _ = std::fs::remove_file(dest);
         format!("Failed to record inbox attachment: {}", e)
     })?;
 
@@ -2071,6 +2149,25 @@ mod tests {
         assert!(overview[1].has_db);
     }
 
+    /// The twin of `src/lib/inbox/inboxMedia.ts`, asserted against the same
+    /// file that side reads. Drift here is a file the picker offers and this
+    /// side refuses — or worse, one it accepts that the picker never shows.
+    #[test]
+    fn attachment_extensions_agree_with_the_shared_fixture() {
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            image: Vec<String>,
+            video: Vec<String>,
+            text: Vec<String>,
+        }
+        const FIXTURES: &str = include_str!("../../src/lib/inbox/attachmentKinds.fixtures.json");
+        let fixture: Fixture = serde_json::from_str(FIXTURES).unwrap();
+
+        assert_eq!(IMAGE_EXTENSIONS, fixture.image.as_slice());
+        assert_eq!(VIDEO_EXTENSIONS, fixture.video.as_slice());
+        assert_eq!(TEXT_EXTENSIONS, fixture.text.as_slice());
+    }
+
     fn write_media(dir: &Path, name: &str) -> std::path::PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, b"not-a-real-media-file").unwrap();
@@ -2112,18 +2209,119 @@ mod tests {
     }
 
     #[test]
-    fn attach_rejects_a_non_media_file() {
+    fn attach_rejects_a_file_that_is_neither_media_nor_text() {
         let conn = test_db();
         let item = add_impl(&conn, &input("Notes")).unwrap();
         let root = TempDir::new().unwrap();
-        let source = write_media(root.path(), "notes.md");
+        let source = write_media(root.path(), "bundle.zip");
 
         let err = attach_impl(&conn, &root.path().join("store"), &item.id, &source).unwrap_err();
         assert!(
-            err.contains("image") || err.contains("video") || err.contains("media"),
+            err.contains("image") || err.contains("video") || err.contains("text"),
             "unexpected error: {err}"
         );
         assert!(list_impl(&conn).unwrap()[0].attachments.is_empty());
+    }
+
+    #[test]
+    fn attach_accepts_a_text_document_dropped_from_disk() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Read the thread")).unwrap();
+        let root = TempDir::new().unwrap();
+        let source = write_media(root.path(), "thread.eml");
+
+        let updated = attach_impl(&conn, &root.path().join("store"), &item.id, &source).unwrap();
+
+        assert_eq!(updated.attachments[0].kind, "text");
+        assert_eq!(updated.attachments[0].file_name, "thread.eml");
+    }
+
+    #[test]
+    fn attach_text_stores_the_body_as_a_file_on_the_item() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Answer the client")).unwrap();
+        let root = TempDir::new().unwrap();
+        let body = "Subject: Invoice 118\n\nHi, the invoice is still open.\n";
+
+        let updated = attach_text_impl(
+            &conn,
+            &root.path().join("store"),
+            &item.id,
+            "invoice-118.md",
+            body,
+        )
+        .unwrap();
+
+        assert_eq!(updated.attachments.len(), 1);
+        assert_eq!(updated.attachments[0].kind, "text");
+        assert_eq!(updated.attachments[0].file_name, "invoice-118.md");
+        assert_eq!(
+            std::fs::read_to_string(&updated.attachments[0].stored_path).unwrap(),
+            body,
+            "the pasted text must survive verbatim"
+        );
+    }
+
+    #[test]
+    fn attach_text_gives_a_nameless_or_odd_name_a_markdown_file() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Paste")).unwrap();
+        let root = TempDir::new().unwrap();
+        let dir = root.path().join("store");
+
+        let blank = attach_text_impl(&conn, &dir, &item.id, "   ", "body").unwrap();
+        assert_eq!(blank.attachments[0].file_name, "note.md");
+
+        let traversal =
+            attach_text_impl(&conn, &dir, &item.id, "../../etc/passwd", "body").unwrap();
+        assert_eq!(traversal.attachments[1].file_name, "passwd.md");
+        assert!(
+            Path::new(&traversal.attachments[1].stored_path).starts_with(&dir),
+            "a file name must never escape the attachments directory"
+        );
+    }
+
+    #[test]
+    fn attach_text_refuses_an_empty_body() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Paste")).unwrap();
+        let root = TempDir::new().unwrap();
+
+        let err = attach_text_impl(
+            &conn,
+            &root.path().join("store"),
+            &item.id,
+            "note.md",
+            "  \n ",
+        )
+        .unwrap_err();
+        assert!(
+            err.to_lowercase().contains("empty"),
+            "unexpected error: {err}"
+        );
+        assert!(list_impl(&conn).unwrap()[0].attachments.is_empty());
+    }
+
+    #[test]
+    fn attach_text_keeps_two_pastes_apart() {
+        let conn = test_db();
+        let item = add_impl(&conn, &input("Two mails")).unwrap();
+        let root = TempDir::new().unwrap();
+        let dir = root.path().join("store");
+
+        attach_text_impl(&conn, &dir, &item.id, "mail.md", "first").unwrap();
+        let updated = attach_text_impl(&conn, &dir, &item.id, "mail.md", "second").unwrap();
+
+        assert_eq!(updated.attachments.len(), 2);
+        assert_ne!(
+            updated.attachments[0].stored_path,
+            updated.attachments[1].stored_path
+        );
+        assert_eq!(
+            std::fs::read_to_string(&updated.attachments[0].stored_path).unwrap(),
+            "first",
+            "the first paste must not be overwritten by the second"
+        );
     }
 
     #[test]
@@ -2141,6 +2339,106 @@ mod tests {
 
         assert!(updated.attachments.is_empty());
         assert!(!Path::new(&stored).exists());
+    }
+
+    /// The point of the whole feature: a mail pasted into the inbox has to
+    /// reach the agent that works the ticket. It gets there as a file in the
+    /// project, which `prompt.ts` inlines verbatim.
+    #[test]
+    fn assign_carries_a_pasted_text_into_the_project_as_readable_ticket_context() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let root = TempDir::new().unwrap();
+        let item = add_impl(&inbox_conn, &input("Answer the overdue invoice mail")).unwrap();
+        let mail = "Subject: Invoice 2024-118 is overdue\n\nThe January invoice is still open.\n";
+        attach_text_impl(
+            &inbox_conn,
+            &root.path().join("store"),
+            &item.id,
+            "invoice-2024-118.md",
+            mail,
+        )
+        .unwrap();
+
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+
+        let ticket_id = assigned.ticket_id.clone().unwrap();
+        let dest = project
+            .path()
+            .join(".auric")
+            .join("inbox-attachments")
+            .join(&ticket_id)
+            .join("invoice-2024-118.md");
+        assert_eq!(
+            std::fs::read_to_string(&dest).unwrap(),
+            mail,
+            "the mail must arrive in the project unchanged"
+        );
+
+        let project_conn = open_project_db(&project);
+        let context_json: String = project_conn
+            .query_row(
+                "SELECT context FROM pm_tickets WHERE id = ?1",
+                params![ticket_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            context_json.contains("invoice-2024-118.md"),
+            "ticket context should point at the pasted mail, got {context_json}"
+        );
+    }
+
+    /// Attaching after the item is already a ticket must reach the ticket too,
+    /// or context added a minute later would only ever exist in the inbox.
+    #[test]
+    fn attaching_text_to_an_assigned_item_updates_the_ticket_context() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let root = TempDir::new().unwrap();
+        let item = add_impl(&inbox_conn, &input("Follow up")).unwrap();
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id.clone(),
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+        let ticket_id = assigned.ticket_id.clone().unwrap();
+
+        attach_text_impl(
+            &inbox_conn,
+            &root.path().join("store"),
+            &item.id,
+            "reply.md",
+            "They answered: go ahead.",
+        )
+        .unwrap();
+
+        let project_conn = open_project_db(&project);
+        let context_json: String = project_conn
+            .query_row(
+                "SELECT context FROM pm_tickets WHERE id = ?1",
+                params![ticket_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            context_json.contains("reply.md"),
+            "a later paste must reach the ticket, got {context_json}"
+        );
     }
 
     #[test]
