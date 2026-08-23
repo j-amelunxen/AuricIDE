@@ -124,6 +124,7 @@ describe('InboxPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storeState = { ...defaultStoreState, overlayStack: { layers: [] } };
+    localStorage.clear();
   });
 
   it('shows the calm empty state with nothing captured', () => {
@@ -335,7 +336,58 @@ describe('InboxPanel', () => {
     expect(panel).not.toHaveClass('glass-card');
   });
 
-  it('reorders unsorted items when sorting by priority', async () => {
+  it('opens on priority — the most urgent row first, without touching the picker', () => {
+    storeState.inboxItems = [
+      makeItem({
+        id: 'low',
+        title: 'Later',
+        priority: 'low',
+        createdAt: '2026-01-02 00:00:00',
+      }),
+      makeItem({
+        id: 'crit',
+        title: 'Now',
+        priority: 'critical',
+        createdAt: '2026-01-01 00:00:00',
+      }),
+    ];
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    const rows = screen.getAllByTestId(/inbox-item-/);
+    expect(rows[0]).toHaveAttribute('data-testid', 'inbox-item-crit');
+    expect(rows[1]).toHaveAttribute('data-testid', 'inbox-item-low');
+    expect(screen.getByLabelText(/sort inbox/i)).toHaveValue('priority');
+  });
+
+  it('sorts inside a project group too, not only the unsorted list', () => {
+    storeState.inboxItems = [
+      assignedItem({
+        id: 'low',
+        title: 'Later',
+        ticketId: 't1',
+        priority: 'low',
+        createdAt: '2026-01-02 00:00:00',
+      }),
+      assignedItem({
+        id: 'crit',
+        title: 'Now',
+        ticketId: 't2',
+        priority: 'critical',
+        createdAt: '2026-01-01 00:00:00',
+      }),
+    ];
+    storeState.inboxOverview = {
+      '/repos/alpha': makeOverview({ tickets: [openTicket('t1'), openTicket('t2')] }),
+    };
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+
+    const group = screen.getByTestId('inbox-group-/repos/alpha');
+    const rows = within(group).getAllByTestId(/inbox-item-/);
+    expect(rows[0]).toHaveAttribute('data-testid', 'inbox-item-crit');
+    expect(rows[1]).toHaveAttribute('data-testid', 'inbox-item-low');
+  });
+
+  it('reorders unsorted items when sorting by capture order', async () => {
     const user = userEvent.setup();
     storeState.inboxItems = [
       makeItem({
@@ -353,14 +405,23 @@ describe('InboxPanel', () => {
     ];
     render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
 
+    await user.selectOptions(screen.getByLabelText(/sort inbox/i), 'created');
+
     const newestFirst = screen.getAllByTestId(/inbox-item-/);
     expect(newestFirst[0]).toHaveAttribute('data-testid', 'inbox-item-low');
+    expect(newestFirst[1]).toHaveAttribute('data-testid', 'inbox-item-crit');
+  });
 
-    await user.selectOptions(screen.getByLabelText(/sort inbox/i), 'priority');
+  it('remembers the picked sort across a remount', async () => {
+    const user = userEvent.setup();
+    storeState.inboxItems = [makeItem({ id: 'a', title: 'Buy milk' })];
+    const first = render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
 
-    const byPriority = screen.getAllByTestId(/inbox-item-/);
-    expect(byPriority[0]).toHaveAttribute('data-testid', 'inbox-item-crit');
-    expect(byPriority[1]).toHaveAttribute('data-testid', 'inbox-item-low');
+    await user.selectOptions(screen.getByLabelText(/sort inbox/i), 'dueDate');
+    first.unmount();
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+    expect(screen.getByLabelText(/sort inbox/i)).toHaveValue('dueDate');
   });
 
   it('reorders unsorted items when sorting by due date', async () => {
