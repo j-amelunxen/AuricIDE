@@ -19,6 +19,12 @@ const storeState = {
   ownsEscape: (id: string) => storeState.overlayStack.layers.at(-1)?.id === id,
 };
 
+const readFileMock = vi.fn(async (_path: string) => 'Guten Tag, anbei das Angebot.');
+
+vi.mock('@/lib/tauri/fs', () => ({
+  readFile: (path: string) => readFileMock(path),
+}));
+
 vi.mock('@/lib/store', () => ({
   useStore: Object.assign((selector: (s: typeof storeState) => unknown) => selector(storeState), {
     getState: () => storeState,
@@ -382,6 +388,50 @@ describe('InboxItemRow', () => {
     it('offers an attach control', () => {
       renderRow();
       expect(screen.getByRole('button', { name: /attach image or video/i })).toBeInTheDocument();
+    });
+
+    it('opens the attachment on a click, so its content can be read here', async () => {
+      const user = userEvent.setup();
+      renderRow({ item: makeItem({ attachments: [shot] }) });
+
+      await user.click(screen.getByRole('button', { name: /open shot\.png/i }));
+
+      const sheet = screen.getByRole('dialog');
+      expect(sheet).toHaveAccessibleName(/shot\.png/i);
+      expect(within(sheet).getByRole('img')).toHaveAttribute('src', '/tmp/shot.png');
+    });
+
+    it('reads a stored text attachment when its chip is clicked', async () => {
+      const user = userEvent.setup();
+      renderRow({
+        item: makeItem({
+          attachments: [
+            {
+              id: 'att-9',
+              itemId: 'item-1',
+              kind: 'text' as const,
+              fileName: 'angebot.md',
+              storedPath: '/store/item-1/angebot.md',
+              createdAt: '2026-01-01 00:00:00',
+            },
+          ],
+        }),
+      });
+
+      await user.click(screen.getByRole('button', { name: /open angebot\.md/i }));
+
+      expect(await screen.findByText(/anbei das Angebot/)).toBeInTheDocument();
+      expect(readFileMock).toHaveBeenCalledWith('/store/item-1/angebot.md');
+    });
+
+    it('removes an attachment without opening it', async () => {
+      const user = userEvent.setup();
+      const { onDetach } = renderRow({ item: makeItem({ attachments: [shot] }) });
+
+      await user.click(screen.getByRole('button', { name: /remove shot\.png/i }));
+
+      expect(onDetach).toHaveBeenCalledWith('item-1', 'att-1');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
 });
