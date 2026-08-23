@@ -16,6 +16,10 @@ export const navigationGlyphs: GlyphMap = {
   check_box: [r(3.5, 3.5, 17, 17, 3), p('M8 12.25l2.75 2.75L16.25 9')],
   add_circle: [c(12, 12, 8.25), l(12, 8, 12, 16), l(8, 12, 16, 12)],
   remove_circle: [c(12, 12, 8.25), l(8, 12, 16, 12)],
+  // The fourth of the ring family, and the one that says "out of play":
+  // the arms reach the same 4px from centre as the minus above, so a
+  // discard sits at the same weight as a plus or a check, not louder.
+  cancel: [c(12, 12, 8.25), l(9.2, 9.2, 14.8, 14.8), l(14.8, 9.2, 9.2, 14.8)],
   remove: [l(5, 12, 19, 12)],
   circle: [c(12, 12, 8.25)],
   // The bare ring the plus, minus and check are drawn inside — an unticked
