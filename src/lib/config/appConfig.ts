@@ -47,6 +47,7 @@ export const APP_CONFIG_KEYS = {
   agentConsoleProjectsCollapsed: 'auric.agent-console.projects-collapsed',
   agentLogPersist: 'auric.agent-log.persist',
   agentLogRetentionDays: 'auric.agent-log.retention-days',
+  inboxSort: 'auric.inbox.sort',
 } as const;
 
 /** Lets mounted UI react to a preference written in this same webview. */

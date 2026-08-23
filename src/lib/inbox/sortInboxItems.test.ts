@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InboxItem } from '@/lib/tauri/inbox';
-import { sortInboxItems } from './sortInboxItems';
+import { INBOX_DEFAULT_SORT, INBOX_SORTS, parseInboxSort, sortInboxItems } from './sortInboxItems';
 
 function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
   return {
@@ -93,5 +93,28 @@ describe('sortInboxItems', () => {
     sortInboxItems(input, 'created');
 
     expect(input.map((item) => item.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('the sort the inbox opens with', () => {
+  it('is priority — the whole point of a triage list', () => {
+    expect(INBOX_DEFAULT_SORT).toBe('priority');
+  });
+
+  it('offers priority first in the picker', () => {
+    expect(INBOX_SORTS[0]).toBe('priority');
+    expect([...INBOX_SORTS].sort()).toEqual(['created', 'dueDate', 'priority']);
+  });
+});
+
+describe('parseInboxSort', () => {
+  it('accepts every offered sort verbatim', () => {
+    for (const sort of INBOX_SORTS) expect(parseInboxSort(sort)).toBe(sort);
+  });
+
+  it('falls back to the default for anything else', () => {
+    expect(parseInboxSort(null)).toBe(INBOX_DEFAULT_SORT);
+    expect(parseInboxSort('')).toBe(INBOX_DEFAULT_SORT);
+    expect(parseInboxSort('whatever-an-old-build-wrote')).toBe(INBOX_DEFAULT_SORT);
   });
 });

@@ -17,9 +17,11 @@ import { projectIconFor } from '@/lib/quickAccess/icon';
 import {
   INBOX_SORTS,
   INBOX_SORT_LABEL,
+  parseInboxSort,
   sortInboxItems,
   type InboxSort,
 } from '@/lib/inbox/sortInboxItems';
+import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 import {
   activeInboxItems,
   liveTicketStatusFor,
@@ -73,7 +75,16 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [sort, setSort] = useState<InboxSort>('created');
+  // Read once, on mount: how the list is ordered is a habit, not a per-visit
+  // decision, and re-deriving it on every render would fight the picker.
+  const [sort, setSort] = useState<InboxSort>(() =>
+    parseInboxSort(readAppPref(APP_CONFIG_KEYS.inboxSort))
+  );
+
+  const pickSort = (next: InboxSort) => {
+    setSort(next);
+    writeAppPref(APP_CONFIG_KEYS.inboxSort, next);
+  };
 
   const liveTickets = { projectPath: rootPath, tickets: pmDraftTickets };
   const visibleItems = activeInboxItems(inboxItems, inboxOverview, liveTickets).map((item) =>
@@ -199,7 +210,7 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
             <select
               aria-label="Sort inbox"
               value={sort}
-              onChange={(e) => setSort(e.target.value as InboxSort)}
+              onChange={(e) => pickSort(parseInboxSort(e.target.value))}
               className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-foreground-muted outline-none focus-visible:outline-2 focus-visible:outline-primary"
             >
               {INBOX_SORTS.map((option) => (

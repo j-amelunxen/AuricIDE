@@ -1,14 +1,35 @@
 import type { Priority } from '@/lib/pm/enums';
 import type { InboxItem } from '@/lib/tauri/inbox';
 
-export const INBOX_SORTS = ['created', 'dueDate', 'priority'] as const;
+/**
+ * In the order the picker offers them, which is also the order of how often
+ * the answer is wanted: what is most urgent, what is due next, what is newest.
+ */
+export const INBOX_SORTS = ['priority', 'dueDate', 'created'] as const;
 export type InboxSort = (typeof INBOX_SORTS)[number];
+
+/**
+ * What the inbox opens with.
+ *
+ * An inbox is a triage list, so the first row should be the one that would be
+ * picked up first — not merely the one captured last. Capture order stays one
+ * click away, and the choice is remembered, so this only decides the very
+ * first look.
+ */
+export const INBOX_DEFAULT_SORT: InboxSort = 'priority';
 
 export const INBOX_SORT_LABEL: Record<InboxSort, string> = {
   created: 'Newest',
   dueDate: 'Due date',
   priority: 'Priority',
 };
+
+/** A stored (or absent, or stale) preference read back as a sort we offer. */
+export function parseInboxSort(raw: string | null | undefined): InboxSort {
+  return (INBOX_SORTS as readonly string[]).includes(raw ?? '')
+    ? (raw as InboxSort)
+    : INBOX_DEFAULT_SORT;
+}
 
 const PRIORITY_RANK: Record<Priority, number> = {
   critical: 0,
