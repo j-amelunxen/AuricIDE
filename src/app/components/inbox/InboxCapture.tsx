@@ -4,7 +4,13 @@ import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { KbdHint } from './KbdHint';
+import { InboxTextSheet } from './InboxTextSheet';
 import { trimmedCaptureTitle } from '@/lib/inbox/captureInput';
+import {
+  fileNameForPastedText,
+  looksLikePastedDocument,
+  titleForPastedText,
+} from '@/lib/inbox/inboxText';
 import {
   attachmentFileName,
   inboxMediaPathsFromFileList,
@@ -20,17 +26,31 @@ export interface InboxCaptureProps {
   className?: string;
 }
 
+interface StagedText {
+  fileName: string;
+  body: string;
+}
+
 /**
  * The one-line capture bar: dropping a task in here has to be as effortless
  * as dropping an event into a calendar. It never asks which project — that
  * decision waits for Assign — so the only thing this component owns is the
  * text and the moment it becomes an item.
+ *
+ * A pasted document — most often a whole email — never enters the field.
+ * The field is one line and cannot be scrolled or reviewed, so a mail typed
+ * into it would be a title nobody can read and a body nobody can recover.
+ * It is staged as an attachment instead, and the title is seeded from the
+ * mail's subject unless the user has already written one of their own.
  */
 export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCaptureProps) {
   const addInboxItem = useStore((s) => s.addInboxItem);
   const attachInboxFile = useStore((s) => s.attachInboxFile);
+  const attachInboxText = useStore((s) => s.attachInboxText);
   const [title, setTitle] = useState('');
   const [pendingPaths, setPendingPaths] = useState<string[]>([]);
+  const [pendingTexts, setPendingTexts] = useState<StagedText[]>([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,8 +59,20 @@ export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCap
     setPendingPaths((current) => [...current, ...paths.filter((path) => !current.includes(path))]);
   };
 
+  const stageText = (fileName: string, body: string) => {
+    setPendingTexts((current) => [...current, { fileName, body }]);
+  };
+
   const pickFiles = async () => {
     stagePaths(await pickInboxMediaFiles());
+  };
+
+  const reset = (item: InboxItem) => {
+    setTitle('');
+    setPendingPaths([]);
+    setPendingTexts([]);
+    inputRef.current?.focus();
+    onCaptured?.(item);
   };
 
   const submit = async () => {
@@ -57,18 +89,20 @@ export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCap
       const attached = await attachInboxFile(item.id, path);
       if (attached === null) {
         setError(useStore.getState().inboxError);
-        setTitle('');
-        setPendingPaths([]);
-        inputRef.current?.focus();
-        onCaptured?.(item);
+        reset(item);
+        return;
+      }
+    }
+    for (const text of pendingTexts) {
+      const attached = await attachInboxText(item.id, text.fileName, text.body);
+      if (attached === null) {
+        setError(useStore.getState().inboxError);
+        reset(item);
         return;
       }
     }
     setError(null);
-    setTitle('');
-    setPendingPaths([]);
-    inputRef.current?.focus();
-    onCaptured?.(item);
+    reset(item);
   };
 
   return (
@@ -102,6 +136,16 @@ export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCap
               setTitle(e.target.value);
               setError(null);
             }}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData('text');
+              if (!looksLikePastedDocument(pasted)) return;
+              e.preventDefault();
+              stageText(fileNameForPastedText(pasted), pasted);
+              setError(null);
+              // A title the user has already started is theirs; a mail's
+              // subject only fills a field that is still empty.
+              setTitle((current) => (current.trim() === '' ? titleForPastedText(pasted) : current));
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -115,6 +159,15 @@ export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCap
           />
           <button
             type="button"
+            title="Attach text"
+            aria-label="Attach text"
+            onClick={() => setSheetOpen(true)}
+            className="shrink-0 rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <AuricIcon name="note_add" className="text-[16px]" />
+          </button>
+          <button
+            type="button"
             title="Attach image or video"
             aria-label="Attach image or video"
             onClick={() => void pickFiles()}
@@ -126,7 +179,7 @@ export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCap
             <KbdHint keys="⏎" label="Add" />
           </span>
         </div>
-        {pendingPaths.length > 0 && (
+        {(pendingPaths.length > 0 || pendingTexts.length > 0) && (
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {pendingPaths.map((path) => (
               <li
@@ -146,6 +199,28 @@ export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCap
                 </button>
               </li>
             ))}
+            {pendingTexts.map((text, index) => (
+              <li
+                key={`${text.fileName}-${index}`}
+                className="flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-foreground"
+              >
+                <AuricIcon name="description" className="text-[12px] text-foreground-muted" />
+                <span className="max-w-[10rem] truncate">{text.fileName}</span>
+                <span className="text-foreground-muted/60">{text.body.length} chars</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${text.fileName}`}
+                  onClick={() =>
+                    setPendingTexts((current) =>
+                      current.filter((_, candidate) => candidate !== index)
+                    )
+                  }
+                  className="text-foreground-muted hover:text-foreground"
+                >
+                  <AuricIcon name="close" className="text-[12px]" />
+                </button>
+              </li>
+            ))}
           </ul>
         )}
       </div>
@@ -153,6 +228,16 @@ export function InboxCapture({ autoFocus, onCaptured, className = '' }: InboxCap
         <p role="alert" className="mt-1 px-1 text-[10px] text-[#ff4a4a]/80">
           {error}
         </p>
+      )}
+      {sheetOpen && (
+        <InboxTextSheet
+          onAttach={(fileName, body) => {
+            stageText(fileName, body);
+            setTitle((current) => (current.trim() === '' ? titleForPastedText(body) : current));
+            setSheetOpen(false);
+          }}
+          onClose={() => setSheetOpen(false)}
+        />
       )}
     </div>
   );

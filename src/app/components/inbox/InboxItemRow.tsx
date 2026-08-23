@@ -11,6 +11,7 @@ import { PRIORITIES, type Priority, type TicketStatus } from '@/lib/pm/enums';
 import { formatInboxDueDate, isDueDateOverdue, normalizeDueDate } from '@/lib/inbox/dueDate';
 import { inboxAttachments, pickInboxMediaFiles } from '@/lib/inbox/inboxMedia';
 import { InboxAttachmentPreview } from './InboxAttachmentPreview';
+import { InboxTextSheet } from './InboxTextSheet';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
 import type {
   InboxAssignRequest,
@@ -35,6 +36,8 @@ export interface InboxItemRowProps {
   onOpenProject: (path: string) => void;
   onHandToAgent: (item: InboxItem) => void;
   onAttach: (id: string, sourcePath: string) => void;
+  /** Hangs a pasted block of text (a whole email, a spec) off the item. */
+  onAttachText: (id: string, fileName: string, body: string) => void;
   onDetach: (id: string, attachmentId: string) => void;
 }
 
@@ -82,6 +85,7 @@ export function InboxItemRow({
   onOpenProject,
   onHandToAgent,
   onAttach,
+  onAttachText,
   onDetach,
 }: InboxItemRowProps) {
   const [editing, setEditing] = useState(false);
@@ -90,6 +94,7 @@ export function InboxItemRow({
   const [priorityMenu, setPriorityMenu] = useState<{ x: number; y: number } | null>(null);
   const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [textSheetOpen, setTextSheetOpen] = useState(false);
 
   const assigned = item.projectPath !== null;
   // A status the project db never wrote (a stale value from an old schema, a
@@ -284,6 +289,15 @@ export function InboxItemRow({
       <div className="flex flex-shrink-0 items-center gap-1">
         <button
           type="button"
+          title="Attach text"
+          aria-label="Attach text"
+          onClick={() => setTextSheetOpen(true)}
+          className={ICON_BUTTON_CLASS}
+        >
+          <AuricIcon name="note_add" className="text-[13px]" />
+        </button>
+        <button
+          type="button"
           title="Attach image or video"
           aria-label="Attach image or video"
           onClick={() => {
@@ -398,6 +412,16 @@ export function InboxItemRow({
             },
           ]}
           onClose={() => setOverflowMenu(null)}
+        />
+      )}
+
+      {textSheetOpen && (
+        <InboxTextSheet
+          onAttach={(fileName, body) => {
+            onAttachText(item.id, fileName, body);
+            setTextSheetOpen(false);
+          }}
+          onClose={() => setTextSheetOpen(false)}
         />
       )}
     </div>

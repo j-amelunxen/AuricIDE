@@ -59,6 +59,7 @@ function renderRow(overrides: Partial<React.ComponentProps<typeof InboxItemRow>>
     onOpenProject: vi.fn(),
     onHandToAgent: vi.fn(),
     onAttach: vi.fn(),
+    onAttachText: vi.fn(),
     onDetach: vi.fn(),
   };
   const props: React.ComponentProps<typeof InboxItemRow> = {
@@ -382,5 +383,41 @@ describe('InboxItemRow', () => {
       renderRow();
       expect(screen.getByRole('button', { name: /attach image or video/i })).toBeInTheDocument();
     });
+  });
+});
+
+describe('InboxItemRow: attaching a whole text', () => {
+  it('hands the pasted mail to onAttachText for this item', async () => {
+    const user = userEvent.setup();
+    const handlers = renderRow({ item: makeItem({ id: 'item-7' }) });
+    const mail = 'Subject: Angebot Dachsanierung\n\nGuten Tag, anbei das Angebot.';
+
+    await user.click(screen.getByRole('button', { name: /attach text/i }));
+    await user.click(screen.getByLabelText(/^text$/i));
+    await user.paste(mail);
+    await user.click(screen.getByRole('button', { name: /^attach$/i }));
+
+    expect(handlers.onAttachText).toHaveBeenCalledWith('item-7', 'angebot-dachsanierung.md', mail);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows an attached text without trying to paint it as an image', () => {
+    renderRow({
+      item: makeItem({
+        attachments: [
+          {
+            id: 'att-9',
+            itemId: 'item-7',
+            kind: 'text',
+            fileName: 'angebot.md',
+            storedPath: '/store/item-7/angebot.md',
+            createdAt: '2026-01-01 00:00:00',
+          },
+        ],
+      }),
+    });
+
+    expect(screen.getByText('angebot.md')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 });
