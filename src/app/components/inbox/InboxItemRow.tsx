@@ -11,10 +11,12 @@ import { PRIORITIES, type Priority, type TicketStatus } from '@/lib/pm/enums';
 import { formatInboxDueDate, isDueDateOverdue, normalizeDueDate } from '@/lib/inbox/dueDate';
 import { inboxAttachments, pickInboxMediaFiles } from '@/lib/inbox/inboxMedia';
 import { InboxAttachmentPreview } from './InboxAttachmentPreview';
+import { InboxAttachmentSheet } from './InboxAttachmentSheet';
 import { InboxTextSheet } from './InboxTextSheet';
 import type { ProjectPickerOption } from '@/lib/projects/projectOptions';
 import type {
   InboxAssignRequest,
+  InboxAttachment,
   InboxItem,
   InboxItemPatch,
   ProjectPmOverview,
@@ -95,6 +97,7 @@ export function InboxItemRow({
   const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
   const [textSheetOpen, setTextSheetOpen] = useState(false);
+  const [openAttachment, setOpenAttachment] = useState<InboxAttachment | null>(null);
 
   const assigned = item.projectPath !== null;
   // A status the project db never wrote (a stale value from an old schema, a
@@ -278,6 +281,7 @@ export function InboxItemRow({
                   fileName={attachment.fileName}
                   kind={attachment.kind}
                   storedPath={attachment.storedPath}
+                  onOpen={() => setOpenAttachment(attachment)}
                   onRemove={() => onDetach(item.id, attachment.id)}
                 />
               </li>
@@ -412,6 +416,14 @@ export function InboxItemRow({
             },
           ]}
           onClose={() => setOverflowMenu(null)}
+        />
+      )}
+
+      {openAttachment !== null && (
+        <InboxAttachmentSheet
+          key={openAttachment.id}
+          attachment={openAttachment}
+          onClose={() => setOpenAttachment(null)}
         />
       )}
 
