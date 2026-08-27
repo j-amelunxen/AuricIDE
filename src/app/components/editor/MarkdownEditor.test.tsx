@@ -237,11 +237,19 @@ vi.mock('@codemirror/view', () => {
       config.parent?.appendChild(this.dom);
     }
     destroy() {}
-    dispatch(tr?: { changes?: unknown }) {
+    dispatch(tr?: { changes?: unknown; annotations?: { type: unknown; value: unknown } }) {
       if (tr?.changes !== undefined && mockEditorState.onUpdate) {
+        const annotation = tr.annotations;
         mockEditorState.onUpdate({
           docChanged: true,
           selectionSet: false,
+          transactions: [
+            {
+              docChanged: true,
+              annotation: (type: unknown) =>
+                annotation && annotation.type === type ? annotation.value : undefined,
+            },
+          ],
           state: {
             doc: {
               toString: () => 'mock content',
@@ -275,6 +283,12 @@ vi.mock('@codemirror/state', () => ({
     create: (config: { doc?: string }) => ({
       doc: config.doc ?? '',
     }),
+  },
+  Annotation: {
+    define: () => {
+      const type = { of: (value: unknown) => ({ type, value }) };
+      return type;
+    },
   },
   Compartment: class {
     of() {
@@ -352,7 +366,20 @@ describe('MarkdownEditor', () => {
     expect(screen.getByTestId('cm-editor')).toHaveTextContent('# Test Content');
   });
 
-  it('calls the latest onChange when content changes after tab switch', async () => {
+  /** What CodeMirror reports after the user typed: a doc change with no sync annotation. */
+  function simulateTyping() {
+    mockEditorState.onUpdate?.({
+      docChanged: true,
+      selectionSet: false,
+      transactions: [{ docChanged: true, annotation: () => undefined }],
+      state: {
+        doc: { toString: () => 'typed', lineAt: () => ({ number: 1, from: 0 }) },
+        selection: { main: { head: 0, empty: true, from: 0, to: 0 } },
+      },
+    });
+  }
+
+  it('calls the latest onChange when the user types after a tab switch', () => {
     // Regression test: stale closure bug caused onChange from the first-opened file
     // to be used for all subsequent files. Typing in file B would write to file A.
     const fn1 = vi.fn();
@@ -363,12 +390,23 @@ describe('MarkdownEditor', () => {
 
     // Simulate switching to a new file: new onChange + new content
     rerender(<MarkdownEditor content="content B" onChange={fn2} />);
+    simulateTyping();
 
     // fn2 must be called (latest handler), fn1 must NOT be called (stale)
-    await vi.waitFor(() => {
-      expect(fn2).toHaveBeenCalled();
-    });
+    expect(fn2).toHaveBeenCalledWith('typed');
     expect(fn1).not.toHaveBeenCalled();
+  });
+
+  it('does not report a tab switch as an edit', () => {
+    // Replacing the buffer with the newly opened file's content is not typing.
+    // Reporting it would mark the tab dirty and autosave the file untouched —
+    // which bumps its mtime and lights the explorer's modified glow on every open.
+    const onChange = vi.fn();
+
+    const { rerender } = render(<MarkdownEditor content="content A" onChange={onChange} />);
+    rerender(<MarkdownEditor content="content B" onChange={onChange} />);
+
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   describe('git gutter', () => {

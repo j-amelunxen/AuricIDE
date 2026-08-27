@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { EditorView } from '@codemirror/view';
 import { Compartment } from '@codemirror/state';
+import { externalContentSync, isExternalContentSync } from '@/lib/editor/externalContentSync';
 import { brokenLinksSetFacet } from '@/lib/editor/wikiLinkBrokenExtension';
 import { fileListFacet, headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
 import { useStore } from '@/lib/store';
@@ -163,7 +164,7 @@ export function MarkdownEditor({
       projectFiles,
       compartments: compartments.current,
       onUpdate: (update) => {
-        if (update.docChanged && onChangeRef.current) {
+        if (update.docChanged && !isExternalContentSync(update) && onChangeRef.current) {
           onChangeRef.current(update.state.doc.toString());
         }
         if (update.selectionSet) {
@@ -393,6 +394,7 @@ export function MarkdownEditor({
     if (viewRef.current && content !== viewRef.current.state.doc.toString()) {
       viewRef.current.dispatch({
         changes: { from: 0, to: viewRef.current.state.doc.length, insert: content },
+        annotations: externalContentSync.of(true),
       });
     }
   }, [content]);
