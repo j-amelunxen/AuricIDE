@@ -27,6 +27,7 @@ function deps(overrides: Partial<Parameters<typeof offerWorktreeMerge>[0]> = {})
       cleanedUp: true,
       oid: 'abc',
     })),
+    commitSubjectFor: vi.fn(async () => 'Cache the repo discovery walk'),
     showToast: vi.fn(),
     ...overrides,
   };
@@ -81,6 +82,44 @@ describe('offerWorktreeMerge', () => {
 
   it('merges and toasts when the user says yes', async () => {
     const input = deps();
+    await offerWorktreeMerge(input);
+    expect(input.mergeAgentWorktree).toHaveBeenCalledWith(
+      tree.path,
+      'Cache the repo discovery walk'
+    );
+    expect(input.showToast).toHaveBeenCalledWith(
+      'Merged into main and removed the worktree.',
+      'success'
+    );
+  });
+
+  it('commits under a written subject, not under the prompt that started the agent', async () => {
+    const input = deps({
+      agent: { name: 'was ist hier los seit 24 stunden', repoPath: tree.path },
+    });
+    await offerWorktreeMerge(input);
+    expect(input.commitSubjectFor).toHaveBeenCalledWith(
+      tree.path,
+      'was ist hier los seit 24 stunden'
+    );
+    expect(input.mergeAgentWorktree).toHaveBeenCalledWith(
+      tree.path,
+      'Cache the repo discovery walk'
+    );
+  });
+
+  it('writes no subject before the user has agreed to merge', async () => {
+    const input = deps({ confirm: vi.fn(async () => false) });
+    await offerWorktreeMerge(input);
+    expect(input.commitSubjectFor).not.toHaveBeenCalled();
+  });
+
+  it('still merges when the subject cannot be written', async () => {
+    const input = deps({
+      commitSubjectFor: vi.fn(async () => {
+        throw new Error('llm unreachable');
+      }),
+    });
     await offerWorktreeMerge(input);
     expect(input.mergeAgentWorktree).toHaveBeenCalledWith(tree.path, 'Agent work: Writer');
     expect(input.showToast).toHaveBeenCalledWith(
