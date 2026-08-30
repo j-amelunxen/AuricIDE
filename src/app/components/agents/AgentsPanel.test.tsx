@@ -1127,7 +1127,10 @@ describe('AgentsPanel – merge worktree after ending', () => {
     expect(mergeAgentWorktree).not.toHaveBeenCalled();
 
     await answer(user, 'Merge');
-    expect(mergeAgentWorktree).toHaveBeenCalledWith(worktreePath, 'Agent work: Writer');
+    // The subject is written from the change, never from the agent's name or
+    // the prompt behind it. Without IPC here there is no change to read, so
+    // the panel commits under the plain fallback.
+    expect(mergeAgentWorktree).toHaveBeenCalledWith(worktreePath, 'Update working tree');
   });
 
   it('keeps the worktree when merge is declined', async () => {

@@ -16,6 +16,12 @@ export interface OfferWorktreeMergeInput {
     worktreePath: string,
     commitMessage?: string
   ) => Promise<WorktreeMergeResult>;
+  /**
+   * The subject line for whatever the agent left uncommitted. Written from the
+   * diff, not from the prompt that started the agent — a commit says what
+   * changed, and the prompt only says what somebody hoped would change.
+   */
+  commitSubjectFor: (worktreePath: string, task: string) => Promise<string>;
   showToast: (message: string, variant?: 'info' | 'success' | 'error') => unknown;
 }
 
@@ -49,8 +55,15 @@ export async function offerWorktreeMerge(input: OfferWorktreeMergeInput): Promis
   });
   if (!go) return;
 
+  let commitMessage = `Agent work: ${agent.name}`;
   try {
-    const result = await input.mergeAgentWorktree(path, `Agent work: ${agent.name}`);
+    commitMessage = await input.commitSubjectFor(path, agent.name);
+  } catch {
+    // A message we could not write is no reason to abandon the merge.
+  }
+
+  try {
+    const result = await input.mergeAgentWorktree(path, commitMessage);
     input.showToast(`Merged into ${result.defaultBranch} and removed the worktree.`, 'success');
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
