@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { AppearanceContent } from './AppearanceContent';
 import { ACCENTS, ACCENT_STORAGE_KEY } from '@/lib/theme/accent';
 import { loadShowStatusBarClock } from '@/lib/settings/statusBarClock';
+import { loadNotificationSoundEnabled, loadNotificationSoundId } from '@/lib/notifications/sound';
 import { clearThemeOverrides } from '@/lib/theme/catalog/apply';
 import { resetThemeForTests } from '@/lib/theme/catalog/controller';
 import { THEME_STORAGE_KEY } from '@/lib/theme/catalog/storage';
@@ -25,6 +26,15 @@ const mockReadFile = vi.fn();
 vi.mock('@/lib/tauri/fs', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
+
+const mockPlayNotificationSound = vi.fn();
+vi.mock('@/lib/notifications/sound', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/notifications/sound')>();
+  return {
+    ...actual,
+    playNotificationSound: (...args: unknown[]) => mockPlayNotificationSound(...args),
+  };
+});
 
 describe('AppearanceContent — theme picker', () => {
   beforeEach(() => {
@@ -223,5 +233,56 @@ describe('AppearanceContent — status bar clock toggle', () => {
 
     expect(screen.getByTestId('status-bar-clock-toggle')).not.toBeChecked();
     expect(loadShowStatusBarClock()).toBe(false);
+  });
+});
+
+describe('AppearanceContent — notification sound', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    clearThemeOverrides();
+    resetThemeForTests();
+    mockPlayNotificationSound.mockReset();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    clearThemeOverrides();
+    resetThemeForTests();
+  });
+
+  it('renders the sound toggle off by default', async () => {
+    render(<AppearanceContent />);
+    await waitFor(() => {
+      expect(screen.getByTestId('notification-sound-toggle')).not.toBeChecked();
+    });
+  });
+
+  it('persists the sound setting when toggled on', async () => {
+    const user = userEvent.setup();
+    render(<AppearanceContent />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notification-sound-toggle')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('notification-sound-toggle'));
+
+    expect(screen.getByTestId('notification-sound-toggle')).toBeChecked();
+    expect(loadNotificationSoundEnabled()).toBe(true);
+  });
+
+  it('lets you pick a sound and preview it', async () => {
+    const user = userEvent.setup();
+    render(<AppearanceContent />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Glass' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('radio', { name: 'Glass' }));
+    expect(loadNotificationSoundId()).toBe('glass');
+
+    await user.click(screen.getByTestId('notification-sound-preview'));
+    expect(mockPlayNotificationSound).toHaveBeenCalledWith('glass');
   });
 });
