@@ -35,6 +35,7 @@ import { agentLogLoad, type PersistedAgentEvent } from '../tauri/agentLog';
 import { loadAppConfig } from '../config/appConfig';
 import type { AgentEvent } from '../agents/events/types';
 import { isFinishedAgent } from '../agents/fleet';
+import { announceHeadlessFinish, shouldNotifyHeadlessFinish } from '../agents/headlessFinish';
 import { AGENT_ACTIVITY_BUMP_MS } from '../agents/liveness';
 import { uniqueAgentName } from '../agents/naming';
 import { MAX_TICKET_ATTEMPTS } from './conductorSlice';
@@ -613,8 +614,10 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
     // *transition*, so they all need the status this agent is coming from.
     const agent = get().agents.find((a) => a.id === agentId);
     // A failure is the one transition worth interrupting for — it reaches the
-    // user even with the agents panel closed. Clean finishes stay silent:
-    // they are represented by the unseen marker and the all-quiet signal.
+    // user even with the agents panel closed. Interactive clean finishes stay
+    // silent: they are represented by the unseen marker and the all-quiet
+    // signal. Headless runs are the exception — nobody is watching, so a
+    // finish has to leave an inbox row the same way a failure does.
     // Guarded on the *transition* so a duplicate stop event cannot stack.
     if (status === 'error') {
       if (agent && agent.status !== 'error' && !willConductorRetry(get(), agentId)) {
@@ -647,6 +650,30 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
           ],
         });
       }
+    }
+    if (
+      status === 'idle' &&
+      agent &&
+      !isFinishedAgent(agent) &&
+      shouldNotifyHeadlessFinish(get().agentSpawnConfigs[agentId])
+    ) {
+      const spawn = get().agentSpawnConfigs[agentId];
+      const repoPath = agent.repoPath ?? spawn?.cwd ?? null;
+      const inbox = get() as AgentSlice & {
+        dispatchNotification?: (input: NotificationInput) => Promise<unknown>;
+        llmConfigured?: boolean;
+        rootPath?: string | null;
+      };
+      void announceHeadlessFinish({
+        agentId,
+        name: agent.name,
+        repoPath,
+        logs: get().agentLogs[agentId] ?? [],
+        task: agent.currentTask,
+        llmConfigured: inbox.llmConfigured === true,
+        projectPath: repoPath ?? inbox.rootPath ?? null,
+        dispatch: inbox.dispatchNotification,
+      });
     }
     if (status === 'idle' || status === 'error') {
       completeRunForAgent(get(), agentId, status === 'idle' ? 'completed' : 'failed');

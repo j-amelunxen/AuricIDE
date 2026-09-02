@@ -25,7 +25,7 @@ export const GUIDANCE = {
     permissionMode:
       "Defines the agent's autonomy. 'Auto-approve' lets it run freely, 'Ask' requires your confirmation for changes.",
     headless:
-      'If enabled, the agent runs in the background without a terminal interface and exits automatically.',
+      'If enabled, the agent runs in the background without a terminal interface and exits automatically. You get a notification when it finishes.',
     worktree:
       'Checks the agent out onto a new git branch in a sibling folder, so it cannot dirty your current files. If this folder is not itself a git repo, you choose which nested repo to branch. When the agent ends you can merge that branch into main or master, which also removes the worktree.',
     worktreeRepo:

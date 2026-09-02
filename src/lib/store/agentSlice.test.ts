@@ -342,6 +342,118 @@ describe('agentSlice', () => {
     });
   });
 
+  describe('the inbox record of a headless finish', () => {
+    async function withInbox() {
+      const { createNotificationsSlice } = await import('./notificationsSlice');
+      type Combined = AgentSlice & import('./notificationsSlice').NotificationsSlice;
+      const combined = createStore<Combined>()((...a) => ({
+        ...createAgentSlice(...a),
+        ...createNotificationsSlice(...a),
+      }));
+      await combined.getState().spawnNewAgent({
+        name: 'Deploy Auric-Website',
+        model: 'sonnet',
+        task: 'Deploy auric-website',
+        headless: true,
+        cwd: '/Users/jen/auric-website',
+      });
+      return combined;
+    }
+
+    // Headless means nobody is watching the terminal. A clean finish has to
+    // leave a record the same way a failure does, or the work ends and nobody
+    // hears about it.
+    it('writes one success naming the agent', async () => {
+      const combined = await withInbox();
+      combined.getState().appendAgentLog('mock-agent-1', 'The site is live at auric-ide.tech.\n');
+      combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+
+      await vi.waitFor(() => {
+        expect(combined.getState().notifications).toHaveLength(1);
+      });
+      const entry = combined.getState().notifications[0];
+      expect(entry.title).toBe('Deploy Auric-Website finished');
+      expect(entry.severity).toBe('success');
+      expect(entry.body).toContain('The site is live');
+      expect(entry.projectPath).toBe('/Users/jen/auric-website');
+      expect(entry.refKind).toBe('agent');
+      expect(entry.refId).toBe('mock-agent-1');
+    });
+
+    it('offers a way back to the agent output', async () => {
+      const combined = await withInbox();
+      combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+
+      await vi.waitFor(() => {
+        expect(combined.getState().notifications).toHaveLength(1);
+      });
+      expect(combined.getState().notifications[0].actions).toEqual([
+        {
+          id: 'logs',
+          label: 'Open logs',
+          kind: 'open',
+          target: { type: 'agent', agentId: 'mock-agent-1' },
+        },
+      ]);
+    });
+
+    it('does not stack on a duplicate stop signal', async () => {
+      const combined = await withInbox();
+      combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+      await vi.waitFor(() => expect(combined.getState().notifications).toHaveLength(1));
+
+      combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(combined.getState().notifications).toHaveLength(1);
+    });
+
+    it('writes nothing when a conductor agent finishes headless', async () => {
+      const { createNotificationsSlice } = await import('./notificationsSlice');
+      type Combined = AgentSlice & import('./notificationsSlice').NotificationsSlice;
+      const combined = createStore<Combined>()((...a) => ({
+        ...createAgentSlice(...a),
+        ...createNotificationsSlice(...a),
+      }));
+      await combined.getState().spawnNewAgent({
+        name: 'review:auth',
+        model: 'sonnet',
+        task: 'Review the ticket',
+        headless: true,
+        runSource: 'conductor',
+      });
+
+      combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(combined.getState().notifications).toHaveLength(0);
+    });
+
+    it('does not toast a clean headless finish', async () => {
+      const { createToastSlice } = await import('./toastSlice');
+      const { createNotificationsSlice } = await import('./notificationsSlice');
+      type Combined = AgentSlice &
+        import('./toastSlice').ToastSlice &
+        import('./notificationsSlice').NotificationsSlice;
+      const combined = createStore<Combined>()((...a) => ({
+        ...createAgentSlice(...a),
+        ...createToastSlice(...a),
+        ...createNotificationsSlice(...a),
+      }));
+      await combined.getState().spawnNewAgent({
+        name: 'Deploy Auric-Website',
+        model: 'sonnet',
+        task: 'Deploy auric-website',
+        headless: true,
+      });
+
+      combined.getState().updateAgentStatus('mock-agent-1', 'idle');
+      await vi.waitFor(() => expect(combined.getState().notifications).toHaveLength(1));
+
+      expect(combined.getState().toasts).toHaveLength(0);
+    });
+  });
+
   it('stays silent while the conductor will retry the ticket itself', async () => {
     // Interrupting the user for a failure the system is about to handle
     // would be a false alarm — only the final, given-up failure toasts.

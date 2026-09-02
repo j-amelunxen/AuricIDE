@@ -546,7 +546,7 @@ function SpawnAgentDialogPanel({
           role="dialog"
           aria-modal="true"
           aria-labelledby="spawn-agent-title"
-          className="glass-card relative w-full max-w-md overflow-visible rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
+          className="glass-card relative w-full max-w-md overflow-visible rounded-xl border border-white/10 bg-surface p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
           onClick={(e) => e.stopPropagation()}
           onDragOver={handleHtml5DragOver}
           onDragLeave={handleHtml5DragLeave}
@@ -877,7 +877,7 @@ function SpawnAgentDialogPanel({
                 Headless Mode
                 <InfoTooltip description={GUIDANCE.agents.headless} label="i" />
                 <span className="text-[10px] ml-1 opacity-60">
-                  Agent runs unattended and exits after completion
+                  Runs unattended, exits when done, notifies you
                 </span>
               </span>
             </label>
