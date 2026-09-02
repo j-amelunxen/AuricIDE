@@ -6,8 +6,8 @@ import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { formatNotificationAge } from '@/lib/notifications/format';
 import { projectIconFor } from '@/lib/quickAccess/icon';
-import { TICKET_STATUS_BADGE_CLASS, TICKET_STATUS_LABEL } from '@/lib/pm/ticketStatusStyle';
 import { PRIORITIES, type Priority, type TicketStatus } from '@/lib/pm/enums';
+import { canMarkTicketDone, TicketStatusChip } from '@/app/components/pm/TicketStatusChip';
 import { formatInboxDueDate, isDueDateOverdue, normalizeDueDate } from '@/lib/inbox/dueDate';
 import { inboxAttachments, pickInboxMediaFiles } from '@/lib/inbox/inboxMedia';
 import { InboxAttachmentPreview } from './InboxAttachmentPreview';
@@ -41,6 +41,7 @@ export interface InboxItemRowProps {
   /** Hangs a pasted block of text (a whole email, a spec) off the item. */
   onAttachText: (id: string, fileName: string, body: string) => void;
   onDetach: (id: string, attachmentId: string) => void;
+  onSetStatus: (status: TicketStatus) => void;
 }
 
 type AssignMenuState =
@@ -51,8 +52,6 @@ type AssignMenuState =
 /** Classes shared by every small icon-only action button in this row. */
 const ICON_BUTTON_CLASS =
   'rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary';
-
-const UNKNOWN_STATUS_BADGE_CLASS = 'bg-white/5 text-foreground-muted/60';
 
 const PRIORITY_LABEL: Record<Priority, string> = {
   low: 'Low',
@@ -89,6 +88,7 @@ export function InboxItemRow({
   onAttach,
   onAttachText,
   onDetach,
+  onSetStatus,
 }: InboxItemRowProps) {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(item.title);
@@ -100,12 +100,6 @@ export function InboxItemRow({
   const [openAttachment, setOpenAttachment] = useState<InboxAttachment | null>(null);
 
   const assigned = item.projectPath !== null;
-  // A status the project db never wrote (a stale value from an old schema, a
-  // hand-edited row) must render the same as "not known yet" rather than an
-  // undefined label and an undefined class.
-  const statusLabel = TICKET_STATUS_LABEL[ticketStatus as TicketStatus] ?? 'Unknown';
-  const statusBadgeClass =
-    TICKET_STATUS_BADGE_CLASS[ticketStatus as TicketStatus] ?? UNKNOWN_STATUS_BADGE_CLASS;
 
   const startEditing = () => {
     setDraftTitle(item.title);
@@ -262,11 +256,7 @@ export function InboxItemRow({
                 {item.projectName ?? item.projectPath}
               </span>
               <span aria-hidden="true">·</span>
-              <span
-                className={`rounded px-1 py-0.5 normal-case tracking-normal ${statusBadgeClass}`}
-              >
-                {statusLabel}
-              </span>
+              <TicketStatusChip status={ticketStatus} onSetStatus={onSetStatus} />
               <span aria-hidden="true">·</span>
             </>
           )}
@@ -409,6 +399,15 @@ export function InboxItemRow({
           x={overflowMenu.x}
           y={overflowMenu.y}
           options={[
+            ...(canMarkTicketDone(ticketStatus)
+              ? [
+                  {
+                    label: 'Mark as done',
+                    icon: 'check_circle',
+                    action: () => onSetStatus('done'),
+                  },
+                ]
+              : []),
             {
               label: 'Unassign',
               icon: 'link_off',

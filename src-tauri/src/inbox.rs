@@ -141,6 +141,15 @@ pub struct ProjectPmOverview {
 }
 
 const VALID_PRIORITIES: [&str; 4] = ["low", "normal", "high", "critical"];
+const VALID_TICKET_STATUSES: [&str; 7] = [
+    "open",
+    "in_progress",
+    "to_test",
+    "in_review",
+    "done",
+    "archived",
+    "discarded",
+];
 const INBOX_EPIC_NAME: &str = "Inbox";
 
 pub fn run_migrations(conn: &Connection) -> Result<(), String> {
@@ -1057,6 +1066,65 @@ pub fn assign_impl(conn: &Connection, request: &InboxAssignRequest) -> Result<In
     })?;
 
     get_impl(conn, &request.item_id)
+}
+
+/// Sets a ticket's status in any project's database, from the inbox or the
+/// start-screen dashboard. Writes history with source `inbox` so the origin
+/// stays visible next to MCP and PM-save changes.
+pub fn set_ticket_status_impl(
+    project_path: &str,
+    ticket_id: &str,
+    status: &str,
+) -> Result<(), String> {
+    if !VALID_TICKET_STATUSES.contains(&status) {
+        return Err(format!("Invalid ticket status: {}", status));
+    }
+    if !Path::new(project_path).is_dir() {
+        return Err(format!("Project folder does not exist: {}", project_path));
+    }
+
+    let conn = crate::database::init_db(project_path)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
+
+    // Read-then-write: take the write lock first so the busy timeout applies.
+    let tx = rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| format!("Failed to begin project transaction: {}", e))?;
+
+    let current: String = match tx.query_row(
+        "SELECT status FROM pm_tickets WHERE id = ?1",
+        params![ticket_id],
+        |row| row.get(0),
+    ) {
+        Ok(value) => value,
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            return Err(format!("Ticket not found: {}", ticket_id));
+        }
+        Err(e) => return Err(format!("Failed to read ticket {}: {}", ticket_id, e)),
+    };
+
+    if current == status {
+        return Ok(());
+    }
+
+    tx.execute(
+        "UPDATE pm_tickets
+         SET status = ?1, status_updated_at = datetime('now'), updated_at = datetime('now')
+         WHERE id = ?2",
+        params![status, ticket_id],
+    )
+    .map_err(|e| format!("Failed to update ticket {}: {}", ticket_id, e))?;
+
+    tx.execute(
+        "INSERT INTO pm_status_history (id, ticket_id, from_status, to_status, changed_at, source)
+         VALUES (hex(randomblob(16)), ?1, ?2, ?3, datetime('now'), 'inbox')",
+        params![ticket_id, current, status],
+    )
+    .map_err(|e| format!("Failed to record ticket status history: {}", e))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit project transaction: {}", e))?;
+    Ok(())
 }
 
 /// One overview per input path, same order, never creating or migrating a
@@ -2514,5 +2582,111 @@ mod tests {
                 || context_json.contains("\"type\": \"file\""),
             "transferred media must be file context items: {context_json}"
         );
+    }
+
+    #[test]
+    fn set_ticket_status_marks_the_ticket_done_and_records_history() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let item = add_impl(&inbox_conn, &input("Close me")).unwrap();
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+        let ticket_id = assigned.ticket_id.clone().unwrap();
+
+        set_ticket_status_impl(&project.path().to_string_lossy(), &ticket_id, "done").unwrap();
+
+        let project_conn = open_project_db(&project);
+        let status: String = project_conn
+            .query_row(
+                "SELECT status FROM pm_tickets WHERE id = ?1",
+                params![ticket_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "done");
+
+        let (from_status, to_status, source): (Option<String>, String, String) = project_conn
+            .query_row(
+                "SELECT from_status, to_status, source FROM pm_status_history
+                 WHERE ticket_id = ?1 AND to_status = 'done'",
+                params![ticket_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(from_status.as_deref(), Some("open"));
+        assert_eq!(to_status, "done");
+        assert_eq!(source, "inbox");
+    }
+
+    #[test]
+    fn set_ticket_status_rejects_an_unknown_status() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let item = add_impl(&inbox_conn, &input("Nope")).unwrap();
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+
+        let err = set_ticket_status_impl(
+            &project.path().to_string_lossy(),
+            assigned.ticket_id.as_deref().unwrap(),
+            "blocked",
+        )
+        .unwrap_err();
+        assert!(err.contains("Invalid ticket status"));
+    }
+
+    #[test]
+    fn set_ticket_status_rejects_a_missing_ticket() {
+        let project = seeded_project();
+        let err =
+            set_ticket_status_impl(&project.path().to_string_lossy(), "does-not-exist", "done")
+                .unwrap_err();
+        assert!(err.contains("Ticket not found"));
+    }
+
+    #[test]
+    fn set_ticket_status_same_status_does_not_add_history() {
+        let inbox_conn = test_db();
+        let project = seeded_project();
+        let item = add_impl(&inbox_conn, &input("Stay open")).unwrap();
+        let assigned = assign_impl(
+            &inbox_conn,
+            &InboxAssignRequest {
+                item_id: item.id,
+                project_path: project.path().to_string_lossy().to_string(),
+                epic_id: None,
+                priority: None,
+            },
+        )
+        .unwrap();
+        let ticket_id = assigned.ticket_id.clone().unwrap();
+
+        set_ticket_status_impl(&project.path().to_string_lossy(), &ticket_id, "open").unwrap();
+
+        let project_conn = open_project_db(&project);
+        let count: i64 = project_conn
+            .query_row(
+                "SELECT COUNT(*) FROM pm_status_history WHERE ticket_id = ?1",
+                params![ticket_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }

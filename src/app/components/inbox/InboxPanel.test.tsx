@@ -8,6 +8,7 @@ const updateInboxItemMock = vi.fn();
 const dismissInboxItemMock = vi.fn();
 const assignInboxItemMock = vi.fn();
 const unassignInboxItemMock = vi.fn();
+const setInboxTicketStatusMock = vi.fn();
 
 function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
   return {
@@ -43,6 +44,8 @@ const defaultStoreState = {
   dismissInboxItem: (id: string) => dismissInboxItemMock(id),
   assignInboxItem: (request: unknown) => assignInboxItemMock(request),
   unassignInboxItem: (id: string) => unassignInboxItemMock(id),
+  setInboxTicketStatus: (projectPath: string, ticketId: string, status: string) =>
+    setInboxTicketStatusMock(projectPath, ticketId, status),
   attachInboxFile: vi.fn(async () => null),
   detachInboxFile: vi.fn(async () => undefined),
   setSpawnAgentTicketId: vi.fn(),
@@ -312,6 +315,47 @@ describe('InboxPanel', () => {
     // in this suite that the panel has to survive it, not just the real app.
     storeState.inboxItems = null as unknown as InboxItem[];
     expect(() => render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />)).not.toThrow();
+  });
+
+  it('sets ticket status from an assigned inbox row', async () => {
+    const user = userEvent.setup();
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = { '/repos/alpha': makeOverview({ tickets: [openTicket()] }) };
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: /status: open/i }));
+    await user.click(screen.getByRole('menuitem', { name: /^done$/i }));
+
+    expect(setInboxTicketStatusMock).toHaveBeenCalledWith('/repos/alpha', 't1', 'done');
+  });
+
+  it('lists other live project tickets under the group and can set their status', async () => {
+    const user = userEvent.setup();
+    storeState.inboxItems = [assignedItem()];
+    storeState.inboxOverview = {
+      '/repos/alpha': makeOverview({
+        tickets: [
+          openTicket('t1'),
+          {
+            id: 't2',
+            name: 'Already in PM',
+            status: 'in_progress',
+            priority: 'high',
+            epicId: 'epic-2',
+            epicName: 'Backend',
+            updatedAt: '2026-01-01 00:00:00',
+          },
+        ],
+      }),
+    };
+
+    render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
+    expect(screen.getByText('Already in PM')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /status: ip/i }));
+    await user.click(screen.getByRole('menuitem', { name: /^done$/i }));
+
+    expect(setInboxTicketStatusMock).toHaveBeenCalledWith('/repos/alpha', 't2', 'done');
   });
 
   it('renders the wide summary once the inbox has an item', () => {

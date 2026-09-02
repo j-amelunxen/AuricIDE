@@ -67,6 +67,7 @@ function renderRow(overrides: Partial<React.ComponentProps<typeof InboxItemRow>>
     onAttach: vi.fn(),
     onAttachText: vi.fn(),
     onDetach: vi.fn(),
+    onSetStatus: vi.fn(),
   };
   const props: React.ComponentProps<typeof InboxItemRow> = {
     item: makeItem(),
@@ -300,6 +301,32 @@ describe('InboxItemRow', () => {
       await user.click(screen.getByRole('menuitem', { name: /unassign/i }));
 
       expect(onUnassign).toHaveBeenCalledWith(assigned);
+    });
+
+    it('lets the status chip set the ticket status', async () => {
+      const user = userEvent.setup();
+      const { onSetStatus } = renderRow({ item: assigned, ticketStatus: 'open' });
+
+      await user.click(screen.getByRole('button', { name: /status: open/i }));
+      await user.click(screen.getByRole('menuitem', { name: /^done$/i }));
+
+      expect(onSetStatus).toHaveBeenCalledWith('done');
+    });
+
+    it('offers Mark as done from the overflow menu of a live ticket', async () => {
+      const user = userEvent.setup();
+      const { onSetStatus } = renderRow({ item: assigned, ticketStatus: 'open' });
+
+      await user.click(screen.getByRole('button', { name: /more actions/i }));
+      await user.click(screen.getByRole('menuitem', { name: /mark as done/i }));
+
+      expect(onSetStatus).toHaveBeenCalledWith('done');
+    });
+
+    it('does not turn an unknown status into a picker', () => {
+      renderRow({ item: assigned, ticketStatus: 'unknown' });
+      expect(screen.queryByRole('button', { name: /status:/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/unknown/i)).toBeInTheDocument();
     });
 
     it('shows an unknown status distinctly when the overview has not loaded', () => {

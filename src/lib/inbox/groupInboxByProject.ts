@@ -1,5 +1,5 @@
 import type { TicketStatus } from '@/lib/pm/enums';
-import type { InboxItem, ProjectPmOverview } from '@/lib/tauri/inbox';
+import type { InboxItem, ProjectPmOverview, ProjectTicketDigest } from '@/lib/tauri/inbox';
 import { resolveInboxTicketStatus } from './inboxTicketStatus';
 
 export interface GroupedInboxItem {
@@ -16,6 +16,8 @@ export interface InboxProjectGroup {
   projectName: string;
   overview: ProjectPmOverview | undefined;
   items: GroupedInboxItem[];
+  /** Live tickets in this project that did not come from the inbox. */
+  otherTickets: ProjectTicketDigest[];
 }
 
 /** Assigned inbox items, grouped by project and sorted by project name. */
@@ -35,6 +37,7 @@ export function groupInboxByProject(
         projectName: item.projectName ?? item.projectPath,
         overview: overview[item.projectPath],
         items: [],
+        otherTickets: [],
       };
       groups.set(item.projectPath, group);
     }
@@ -43,6 +46,15 @@ export function groupInboxByProject(
       item,
       ticketStatus: resolveInboxTicketStatus(item, group.overview),
     });
+  }
+
+  for (const group of groups.values()) {
+    const inboxTicketIds = new Set(
+      group.items.map((entry) => entry.item.ticketId).filter((id): id is string => id !== null)
+    );
+    group.otherTickets = (group.overview?.tickets ?? []).filter(
+      (ticket) => !inboxTicketIds.has(ticket.id)
+    );
   }
 
   return [...groups.values()].sort((a, b) => a.projectName.localeCompare(b.projectName));

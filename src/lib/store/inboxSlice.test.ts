@@ -11,6 +11,7 @@ const mockUnassign = vi.fn();
 const mockAttach = vi.fn();
 const mockDetach = vi.fn();
 const mockOverview = vi.fn();
+const mockSetTicketStatus = vi.fn();
 
 vi.mock('@/lib/tauri/inbox', () => ({
   inboxList: (...args: unknown[]) => mockList(...args),
@@ -22,6 +23,7 @@ vi.mock('@/lib/tauri/inbox', () => ({
   inboxAttach: (...args: unknown[]) => mockAttach(...args),
   inboxDetach: (...args: unknown[]) => mockDetach(...args),
   projectsPmOverview: (...args: unknown[]) => mockOverview(...args),
+  inboxSetTicketStatus: (...args: unknown[]) => mockSetTicketStatus(...args),
 }));
 
 import { createInboxSlice, type InboxSlice } from './inboxSlice';
@@ -637,6 +639,68 @@ describe('inboxSlice', () => {
 
       expect(mockDismiss).not.toHaveBeenCalled();
       expect(store.getState().inboxItems).toEqual([assigned]);
+    });
+  });
+
+  describe('setInboxTicketStatus', () => {
+    it('writes the status, refreshes the overview, and updates the open project draft', async () => {
+      const assigned = makeItem({
+        projectPath: '/repo/alpha',
+        projectName: 'alpha',
+        ticketId: 'ticket-1',
+        assignedAt: '2026-08-17T10:00:00Z',
+      });
+      const updateTicket = vi.fn();
+      const refreshPmData = vi.fn().mockResolvedValue(undefined);
+      store.setState({
+        inboxItems: [assigned],
+        inboxOverview: { '/repo/alpha': makeOverview({ projectPath: '/repo/alpha' }) },
+        rootPath: '/repo/alpha',
+        updateTicket,
+        refreshPmData,
+      } as unknown as Partial<InboxSlice>);
+      mockSetTicketStatus.mockResolvedValue(undefined);
+      mockOverview.mockResolvedValue([makeOverview({ projectPath: '/repo/alpha', open: 0 })]);
+
+      await store.getState().setInboxTicketStatus('/repo/alpha', 'ticket-1', 'done');
+
+      expect(mockSetTicketStatus).toHaveBeenCalledWith({
+        projectPath: '/repo/alpha',
+        ticketId: 'ticket-1',
+        status: 'done',
+      });
+      expect(updateTicket).toHaveBeenCalledWith('ticket-1', { status: 'done' });
+      expect(refreshPmData).toHaveBeenCalledWith('/repo/alpha');
+      expect(mockOverview).toHaveBeenCalled();
+    });
+
+    it('does not touch PM drafts when the project is not the one currently open', async () => {
+      const updateTicket = vi.fn();
+      const refreshPmData = vi.fn().mockResolvedValue(undefined);
+      store.setState({
+        inboxOverview: { '/repo/alpha': makeOverview({ projectPath: '/repo/alpha' }) },
+        rootPath: '/repo/other',
+        updateTicket,
+        refreshPmData,
+      } as unknown as Partial<InboxSlice>);
+      mockSetTicketStatus.mockResolvedValue(undefined);
+      mockOverview.mockResolvedValue([makeOverview({ projectPath: '/repo/alpha' })]);
+
+      await store.getState().setInboxTicketStatus('/repo/alpha', 'ticket-1', 'in_progress');
+
+      expect(mockSetTicketStatus).toHaveBeenCalled();
+      expect(updateTicket).not.toHaveBeenCalled();
+      expect(refreshPmData).not.toHaveBeenCalled();
+    });
+
+    it('sets inboxError without throwing on failure', async () => {
+      mockSetTicketStatus.mockRejectedValue(new Error('locked'));
+
+      await expect(
+        store.getState().setInboxTicketStatus('/repo/alpha', 'ticket-1', 'done')
+      ).resolves.toBeUndefined();
+
+      expect(store.getState().inboxError).toBe('locked');
     });
   });
 });

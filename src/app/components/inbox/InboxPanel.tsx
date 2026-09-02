@@ -9,6 +9,7 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import { InboxCapture } from './InboxCapture';
 import { InboxItemRow } from './InboxItemRow';
+import { InboxOverviewTicketRow } from './InboxOverviewTicketRow';
 import { unsortedInboxItems } from '@/lib/inbox/unsortedInboxItems';
 import { groupInboxByProject, type InboxProjectGroup } from '@/lib/inbox/groupInboxByProject';
 import { inboxProjectOptions } from '@/lib/inbox/inboxProjectOptions';
@@ -72,6 +73,7 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
   const attachInboxFile = useStore((s) => s.attachInboxFile);
   const attachInboxText = useStore((s) => s.attachInboxText);
   const detachInboxFile = useStore((s) => s.detachInboxFile);
+  const setInboxTicketStatus = useStore((s) => s.setInboxTicketStatus);
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -168,6 +170,10 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
         onAttach={(id, sourcePath) => void attachInboxFile(id, sourcePath)}
         onAttachText={(id, fileName, body) => void attachInboxText(id, fileName, body)}
         onDetach={(id, attachmentId) => void detachInboxFile(id, attachmentId)}
+        onSetStatus={(status) => {
+          if (item.projectPath === null || item.ticketId === null) return;
+          void setInboxTicketStatus(item.projectPath, item.ticketId, status);
+        }}
       />
     );
   };
@@ -300,6 +306,15 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
                     {!collapsed && (
                       <div className="space-y-1.5 pl-2">
                         {group.items.map((entry) => renderRow(entry.item))}
+                        {group.otherTickets.map((ticket) => (
+                          <InboxOverviewTicketRow
+                            key={ticket.id}
+                            ticket={ticket}
+                            onSetStatus={(status) =>
+                              void setInboxTicketStatus(group.projectPath, ticket.id, status)
+                            }
+                          />
+                        ))}
                       </div>
                     )}
                   </div>

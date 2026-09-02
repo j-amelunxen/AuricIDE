@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import type { TicketStatus } from '@/lib/pm/enums';
 import {
   inboxAdd,
   inboxAssign,
@@ -7,6 +8,7 @@ import {
   inboxDetach,
   inboxDismiss,
   inboxList,
+  inboxSetTicketStatus,
   inboxUnassign,
   inboxUpdate,
   projectsPmOverview,
@@ -32,7 +34,13 @@ interface CrossSlices {
   refreshPmData: (projectPath: string) => Promise<void>;
   updateTicket: (
     id: string,
-    updates: { name?: string; description?: string; priority?: string; dueDate?: string | null }
+    updates: {
+      name?: string;
+      description?: string;
+      priority?: string;
+      dueDate?: string | null;
+      status?: TicketStatus;
+    }
   ) => void;
 }
 
@@ -64,6 +72,15 @@ export interface InboxSlice {
   attachInboxText: (itemId: string, fileName: string, body: string) => Promise<InboxItem | null>;
   detachInboxFile: (itemId: string, attachmentId: string) => Promise<void>;
   refreshInboxOverview: (projectPaths: string[]) => Promise<void>;
+  /**
+   * Writes a ticket status into that project's database. Works for the open
+   * project and for every other assigned project on the start-screen inbox.
+   */
+  setInboxTicketStatus: (
+    projectPath: string,
+    ticketId: string,
+    status: TicketStatus
+  ) => Promise<void>;
 }
 
 function describeError(error: unknown): string {
@@ -241,6 +258,25 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
    * longer starred, recent, open or assigned to anything) actually leaves
    * the map instead of keeping a snapshot nothing will ever refresh again.
    */
+  setInboxTicketStatus: async (projectPath, ticketId, status) => {
+    try {
+      await inboxSetTicketStatus({ projectPath, ticketId, status });
+
+      const cross = get() as unknown as Partial<CrossSlices>;
+      if (projectPath === cross.rootPath) {
+        // Draft first so the inbox live path (and Mission Control) move
+        // before the overview round-trip comes back.
+        cross.updateTicket?.(ticketId, { status });
+        void cross.refreshPmData?.(projectPath);
+      }
+
+      await get().refreshInboxOverview(trackedOverviewPaths(get(), projectPath));
+      set({ inboxError: null });
+    } catch (error) {
+      set({ inboxError: describeError(error) });
+    }
+  },
+
   refreshInboxOverview: async (projectPaths) => {
     try {
       const overviews = await projectsPmOverview(projectPaths);

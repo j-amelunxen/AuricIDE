@@ -171,3 +171,12 @@ export async function inboxDetach(itemId: string, attachmentId: string): Promise
 export async function projectsPmOverview(projectPaths: string[]): Promise<ProjectPmOverview[]> {
   return invoke<ProjectPmOverview[]>('projects_pm_overview', { projectPaths });
 }
+
+/** Writes a ticket status into that project's database, open or not. */
+export async function inboxSetTicketStatus(args: {
+  projectPath: string;
+  ticketId: string;
+  status: TicketStatus;
+}): Promise<void> {
+  return invoke<void>('inbox_set_ticket_status', args);
+}
