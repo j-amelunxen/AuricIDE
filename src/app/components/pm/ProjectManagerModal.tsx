@@ -60,6 +60,8 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
   const updateTicket = useStore((s) => s.updateTicket);
   const deleteTicket = useStore((s) => s.deleteTicket);
   const moveTicket = useStore((s) => s.moveTicket);
+  const reorderTickets = useStore((s) => s.reorderTickets);
+  const reorderEpics = useStore((s) => s.reorderEpics);
   const addTestCase = useStore((s) => s.addTestCase);
   const updateTestCase = useStore((s) => s.updateTestCase);
   const deleteTestCase = useStore((s) => s.deleteTestCase);
@@ -500,6 +502,7 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
                 onAddEpic={handleAddEpic}
                 onEditEpic={handleEditEpic}
                 onDeleteEpic={(id) => void handleDeleteEpic(id)}
+                onReorderEpics={reorderEpics}
               />
             </div>
 
@@ -522,6 +525,7 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
                   await handleSave();
                 }}
                 onAddTicket={handleOpenCreateTicket}
+                onReorderTickets={reorderTickets}
               />
             </div>
 

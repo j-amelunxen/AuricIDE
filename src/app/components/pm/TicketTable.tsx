@@ -17,6 +17,15 @@ import {
 } from '@/lib/pm/ticketStatusStyle';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
+import {
+  TICKET_SORTS,
+  TICKET_SORT_LABEL,
+  parseTicketSort,
+  sortTickets,
+  type TicketSort,
+} from '@/lib/pm/sortTickets';
+import { useListDragReorder } from '@/lib/pm/useListDragReorder';
+import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 import { AuricIcon } from '../ui/AuricIcon';
 
 interface TicketTableProps {
@@ -29,33 +38,19 @@ interface TicketTableProps {
   onUpdateTicket: (id: string, updates: Partial<PmTicket>) => void;
   onSave?: () => Promise<void>;
   onAddTicket: () => void;
+  /** Custom order of the currently visible tickets. */
+  onReorderTickets?: (orderedIds: string[]) => void;
   /** True while project data is being read — an empty list is not yet a fact. */
   loading?: boolean;
   /** Why the tickets could not be read; shown instead of a false empty state. */
   loadError?: string | null;
 }
 
-type SortKey = 'name' | 'status' | 'priority' | 'createdAt';
-
-const priorityValue: Record<PmTicket['priority'], number> = {
-  low: 0,
-  normal: 1,
-  high: 2,
-  critical: 3,
-};
-
 const modelPowerBadge: Record<NonNullable<PmTicket['modelPower']>, string> = {
   low: 'bg-blue-500/15 text-blue-300 border-blue-500/20',
   medium: 'bg-orange-500/15 text-orange-300 border-orange-500/20',
   high: 'bg-red-500/15 text-red-300 border-red-500/20',
 };
-
-const sortOptions: { key: SortKey; label: string }[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'status', label: 'Status' },
-  { key: 'priority', label: 'Priority' },
-  { key: 'createdAt', label: 'Created' },
-];
 
 export function TicketTable({
   tickets,
@@ -67,10 +62,13 @@ export function TicketTable({
   onUpdateTicket,
   onSave,
   onAddTicket,
+  onReorderTickets,
   loading = false,
   loadError = null,
 }: TicketTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
+  const [sortKey, setSortKey] = useState<TicketSort>(() =>
+    parseTicketSort(readAppPref(APP_CONFIG_KEYS.pmTicketSort))
+  );
   const [sortAsc, setSortAsc] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: PmTicket } | null>(
     null
@@ -152,36 +150,19 @@ export function TicketTable({
     return options;
   }, [contextMenu, onUpdateTicket, handleSpawnAgent]);
 
-  const sorted = useMemo(() => {
-    const arr = [...tickets];
-    arr.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case 'name':
-          cmp = a.name.localeCompare(b.name);
-          break;
-        case 'status':
-          cmp = a.status.localeCompare(b.status);
-          break;
-        case 'priority':
-          cmp = priorityValue[a.priority] - priorityValue[b.priority];
-          break;
-        case 'createdAt':
-          cmp = a.createdAt.localeCompare(b.createdAt);
-          break;
-      }
-      return sortAsc ? cmp : -cmp;
-    });
-    return arr;
-  }, [tickets, sortKey, sortAsc]);
+  const sorted = useMemo(() => sortTickets(tickets, sortKey, sortAsc), [tickets, sortKey, sortAsc]);
+  const sortedIds = useMemo(() => sorted.map((ticket) => ticket.id), [sorted]);
+  const { draggedId, dropTarget, canReorder, onDragStart, onDragOver, onDrop, onDragEnd } =
+    useListDragReorder(sortedIds, onReorderTickets, sortKey === 'custom' && sortAsc);
 
-  const handleSortChange = (key: SortKey) => {
+  const handleSortChange = (key: TicketSort) => {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
     } else {
       setSortKey(key);
       setSortAsc(true);
     }
+    writeAppPref(APP_CONFIG_KEYS.pmTicketSort, key);
   };
 
   return (
@@ -193,13 +174,13 @@ export function TicketTable({
         </span>
         <select
           value={sortKey}
-          onChange={(e) => handleSortChange(e.target.value as SortKey)}
+          onChange={(e) => handleSortChange(parseTicketSort(e.target.value))}
           aria-label="Sort tickets"
           className="bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] text-foreground-muted focus:outline-none cursor-pointer"
         >
-          {sortOptions.map((opt) => (
-            <option key={opt.key} value={opt.key}>
-              {opt.label} {sortKey === opt.key ? (sortAsc ? '\u2191' : '\u2193') : ''}
+          {TICKET_SORTS.map((key) => (
+            <option key={key} value={key}>
+              {TICKET_SORT_LABEL[key]} {sortKey === key ? (sortAsc ? '\u2191' : '\u2193') : ''}
             </option>
           ))}
         </select>
@@ -237,12 +218,33 @@ export function TicketTable({
         {sorted.map((ticket) => (
           <div
             key={ticket.id}
+            data-testid={`ticket-row-${ticket.id}`}
+            draggable={canReorder}
+            onDragStart={(event) => onDragStart(ticket.id, event)}
+            onDragOver={(event) => onDragOver(ticket.id, event)}
+            onDrop={(event) => onDrop(ticket.id, event)}
+            onDragEnd={onDragEnd}
             onClick={() => onSelectTicket(ticket.id)}
             onContextMenu={(e) => handleContextMenu(e, ticket)}
-            className={`group relative flex items-center gap-2 cursor-pointer px-3 py-2.5 border-b border-white/[0.05] transition-colors hover:bg-white/[0.04] ${
+            title={canReorder ? 'Drag to reorder' : undefined}
+            className={`group relative flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.05] transition-colors hover:bg-white/[0.04] ${
+              canReorder ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+            } ${draggedId === ticket.id ? 'opacity-35' : ''} ${
               selectedTicketId === ticket.id ? 'bg-primary/10' : ''
             }`}
           >
+            {dropTarget?.id === ticket.id && dropTarget.place === 'before' && (
+              <span
+                data-testid={`ticket-drop-before-${ticket.id}`}
+                className="pointer-events-none absolute left-3 right-3 top-0 z-10 h-0.5 rounded-full bg-primary"
+              />
+            )}
+            {dropTarget?.id === ticket.id && dropTarget.place === 'after' && (
+              <span
+                data-testid={`ticket-drop-after-${ticket.id}`}
+                className="pointer-events-none absolute bottom-0 left-3 right-3 z-10 h-0.5 rounded-full bg-primary"
+              />
+            )}
             {isBlocked(ticket.id) && (
               <div
                 className="absolute left-0 top-[4px] bottom-[4px] w-[2px] bg-git-deleted/80 rounded-full"

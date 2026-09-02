@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import type { PmEpic, PmTicket } from '@/lib/tauri/pm';
+import { useListDragReorder } from '@/lib/pm/useListDragReorder';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface EpicSidebarProps {
@@ -12,6 +13,7 @@ interface EpicSidebarProps {
   onAddEpic: () => void;
   onEditEpic: (epic: PmEpic) => void;
   onDeleteEpic: (id: string) => void;
+  onReorderEpics?: (orderedIds: string[]) => void;
 }
 
 export function EpicSidebar({
@@ -22,6 +24,7 @@ export function EpicSidebar({
   onAddEpic,
   onEditEpic,
   onDeleteEpic,
+  onReorderEpics,
 }: EpicSidebarProps) {
   const ticketCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -30,6 +33,14 @@ export function EpicSidebar({
     }
     return map;
   }, [tickets]);
+
+  const orderedEpics = useMemo(
+    () => [...epics].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)),
+    [epics]
+  );
+  const orderedIds = useMemo(() => orderedEpics.map((epic) => epic.id), [orderedEpics]);
+  const { draggedId, dropTarget, canReorder, onDragStart, onDragOver, onDrop, onDragEnd } =
+    useListDragReorder(orderedIds, onReorderEpics);
 
   return (
     <div className="flex h-full flex-col border-r border-white/[0.08]">
@@ -69,16 +80,36 @@ export function EpicSidebar({
         {epics.length > 0 && <div className="mx-3.5 my-1 h-px bg-white/[0.05]" />}
 
         {/* Individual epics */}
-        {epics.map((epic) => (
+        {orderedEpics.map((epic) => (
           <div
             key={epic.id}
             data-testid={`epic-item-${epic.id}`}
-            className={`group flex items-center pl-3 pr-2 transition-colors border-l-2 ${
+            draggable={canReorder}
+            onDragStart={(event) => onDragStart(epic.id, event)}
+            onDragOver={(event) => onDragOver(epic.id, event)}
+            onDrop={(event) => onDrop(epic.id, event)}
+            onDragEnd={onDragEnd}
+            title={canReorder ? 'Drag to reorder' : undefined}
+            className={`group relative flex items-center pl-3 pr-2 transition-colors border-l-2 ${
+              canReorder ? 'cursor-grab active:cursor-grabbing' : ''
+            } ${draggedId === epic.id ? 'opacity-35' : ''} ${
               selectedEpicId === epic.id
                 ? 'border-primary/50 bg-primary/10'
                 : 'border-transparent hover:bg-white/[0.04]'
             }`}
           >
+            {dropTarget?.id === epic.id && dropTarget.place === 'before' && (
+              <span
+                data-testid={`epic-drop-before-${epic.id}`}
+                className="pointer-events-none absolute left-3 right-3 top-0 z-10 h-0.5 rounded-full bg-primary"
+              />
+            )}
+            {dropTarget?.id === epic.id && dropTarget.place === 'after' && (
+              <span
+                data-testid={`epic-drop-after-${epic.id}`}
+                className="pointer-events-none absolute bottom-0 left-3 right-3 z-10 h-0.5 rounded-full bg-primary"
+              />
+            )}
             <button
               type="button"
               onClick={() => onSelectEpic(epic.id)}
