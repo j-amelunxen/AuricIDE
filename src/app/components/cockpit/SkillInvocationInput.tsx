@@ -219,7 +219,7 @@ export function SkillInvocationInput({
           id={listboxId}
           role="listbox"
           aria-label={`${ariaLabel} suggestions`}
-          className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-lg border border-white/10 bg-surface-raised py-1 shadow-lg shadow-black/40"
+          className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-lg border border-white/10 bg-surface py-1 shadow-2xl shadow-black/60"
         >
           {suggestions.map((skill, index) => (
             <li

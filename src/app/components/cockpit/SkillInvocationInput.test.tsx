@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -240,6 +241,25 @@ describe('SkillInvocationInput in a prompt (token + multiline)', () => {
     const { input } = setup({ completeToken: true, multiline: true });
     await user.type(input, 'line one{Enter}line two');
     expect(input).toHaveValue('line one\nline two');
+  });
+
+  // The popup floats over the dialog's own fields. A background utility that
+  // names a token the theme never defines emits no rule at all, and the list
+  // then renders straight through onto whatever is behind it.
+  it('paints the popup on a background colour the theme actually defines', async () => {
+    const user = userEvent.setup();
+    const { input } = setup({ completeToken: true, multiline: true });
+    await user.type(input, '/');
+
+    const background = Array.from(screen.getByRole('listbox').classList).find((name) =>
+      name.startsWith('bg-')
+    );
+    expect(background).toBeDefined();
+
+    const theme = readFileSync('src/app/globals.css', 'utf8');
+    const token = background!.slice('bg-'.length).replace(/\/.*$/, '');
+    const literal = token.startsWith('[');
+    expect(literal || theme.includes(`--color-${token}:`)).toBe(true);
   });
 
   it('does not steal ArrowUp while the list is closed', () => {
