@@ -1181,7 +1181,8 @@ export function ScheduleEditor({
                 <span>
                   Headless
                   <span className="mt-0.5 block text-[9px] text-foreground-muted/60">
-                    Runs unattended and exits when the work is done.
+                    Runs unattended and exits when the work is done. You get a notification when it
+                    finishes.
                   </span>
                 </span>
               </label>
@@ -1343,7 +1344,8 @@ export function ScheduleEditor({
                     <span>
                       Headless
                       <span className="mt-0.5 block text-[9px] text-foreground-muted/60">
-                        Runs unattended and exits when the work is done.
+                        Runs unattended and exits when the work is done. You get a notification when
+                        it finishes.
                       </span>
                     </span>
                   </label>
