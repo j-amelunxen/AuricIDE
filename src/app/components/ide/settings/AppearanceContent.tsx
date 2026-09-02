@@ -5,6 +5,8 @@ import { SettingsToggle } from '../../ui/settings/SettingsToggle';
 import { useTheme } from '@/lib/theme/catalog/useTheme';
 import { importCustomTheme } from '@/lib/theme/catalog/importTheme';
 import { useStatusBarClock } from '@/lib/settings/statusBarClock';
+import { useNotificationSound } from '@/lib/settings/notificationSound';
+import { NOTIFICATION_SOUNDS, playNotificationSound } from '@/lib/notifications/sound';
 import { useStore } from '@/lib/store';
 import type { ThemeMeta } from '@/lib/theme/catalog/types';
 
@@ -58,6 +60,12 @@ function ThemeOption({
 export function AppearanceContent() {
   const { id, list, skippedCount, select, reload } = useTheme();
   const [showStatusBarClock, setShowStatusBarClock] = useStatusBarClock();
+  const {
+    enabled: soundEnabled,
+    sound,
+    setEnabled: setSoundEnabled,
+    setSound,
+  } = useNotificationSound();
   const showToast = useStore((s) => s.showToast);
 
   const builtins = list.filter((t) => t.builtin);
@@ -168,6 +176,48 @@ export function AppearanceContent() {
           onChange={setShowStatusBarClock}
           testId="status-bar-clock-toggle"
         />
+      </SettingsSection>
+
+      <SettingsSection title="Notifications" icon="notifications">
+        <SettingsToggle
+          label="Play a sound"
+          description="A short chime when something in the inbox needs you — failures, questions, and reminders. Agent successes stay quiet."
+          checked={soundEnabled}
+          onChange={setSoundEnabled}
+          testId="notification-sound-toggle"
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="radiogroup" aria-label="Notification sound" className="flex flex-wrap gap-1.5">
+            {NOTIFICATION_SOUNDS.map((option) => (
+              <label
+                key={option.id}
+                className={`cursor-pointer rounded-md border px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                  sound === option.id
+                    ? 'border-primary/50 bg-primary/10 text-foreground'
+                    : 'border-white/10 text-foreground-muted hover:border-white/20 hover:text-foreground'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="notification-sound"
+                  value={option.id}
+                  checked={sound === option.id}
+                  onChange={() => setSound(option.id)}
+                  className="sr-only"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => playNotificationSound(sound)}
+            className="text-[10px] text-primary-light hover:underline"
+            data-testid="notification-sound-preview"
+          >
+            Preview
+          </button>
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Shell" icon="dashboard">

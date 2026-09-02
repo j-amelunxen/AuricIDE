@@ -91,6 +91,8 @@ describe('app config', () => {
     expect(Object.values(APP_CONFIG_KEYS)).toContain('auric.agent-spawn-defaults');
     expect(APP_CONFIG_KEYS.pmTicketSort).toBe('auric.pm.ticket-sort');
     expect(APP_CONFIG_KEYS.inboxSort).toBe('auric.inbox.sort');
+    expect(APP_CONFIG_KEYS.notificationSoundEnabled).toBe('auric.notifications.sound');
+    expect(APP_CONFIG_KEYS.notificationSound).toBe('auric.notifications.sound-id');
     expect(new Set(Object.values(APP_CONFIG_KEYS)).size).toBe(
       Object.values(APP_CONFIG_KEYS).length
     );

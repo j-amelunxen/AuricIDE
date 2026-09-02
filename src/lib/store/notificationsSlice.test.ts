@@ -13,11 +13,16 @@ const mockDelete = vi.fn();
 // The banner itself is os.ts's business and tested there; what matters here is
 // which arrivals reach it at all.
 const mockNotifyOs = vi.fn<(title: string, body: string) => Promise<void>>(async () => undefined);
+const mockChimeIfWanted = vi.fn();
 
 vi.mock('@/lib/notifications/os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/notifications/os')>();
   return { ...actual, notifyOs: (title: string, body: string) => mockNotifyOs(title, body) };
 });
+
+vi.mock('@/lib/notifications/sound', () => ({
+  chimeIfWanted: (...args: unknown[]) => mockChimeIfWanted(...args),
+}));
 
 vi.mock('@/lib/tauri/notifications', () => ({
   notificationsDispatch: (...args: unknown[]) => mockDispatch(...args),
@@ -112,6 +117,13 @@ describe('notificationsSlice', () => {
       await store.getState().dispatchNotification({ source: 'ui', title: 'Hallo' });
       expect(store.getState().notificationsCursor).toBe(0);
     });
+
+    it('offers a dispatched row to the chime', async () => {
+      await store.getState().dispatchNotification({ source: 'ui', title: 'Hallo' });
+      expect(mockChimeIfWanted).toHaveBeenCalledWith([
+        expect.objectContaining({ source: 'ui', title: 'Hallo' }),
+      ]);
+    });
   });
 
   describe('drainNotifications', () => {
@@ -171,6 +183,18 @@ describe('notificationsSlice', () => {
       await store.getState().drainNotifications();
       expect(mockNotifyOs).not.toHaveBeenCalled();
     });
+
+    it('offers the drain batch to the chime', async () => {
+      const row = makeNotification({ id: 5, source: 'system', title: 'Weekly changelog' });
+      mockList.mockResolvedValueOnce([row]);
+      await store.getState().drainNotifications();
+      expect(mockChimeIfWanted).toHaveBeenCalledWith([row]);
+    });
+
+    it('does not chime when nothing arrived', async () => {
+      await store.getState().drainNotifications();
+      expect(mockChimeIfWanted).not.toHaveBeenCalled();
+    });
   });
 
   describe('reloadNotifications', () => {
@@ -180,6 +204,12 @@ describe('notificationsSlice', () => {
       mockList.mockResolvedValueOnce([makeNotification({ id: 4, source: 'system' })]);
       await store.getState().reloadNotifications();
       expect(mockNotifyOs).not.toHaveBeenCalled();
+    });
+
+    it('does not chime for history it is only re-reading', async () => {
+      mockList.mockResolvedValueOnce([makeNotification({ id: 4, source: 'system' })]);
+      await store.getState().reloadNotifications();
+      expect(mockChimeIfWanted).not.toHaveBeenCalled();
     });
 
     it('replaces the list and rebuilds the cursor', async () => {

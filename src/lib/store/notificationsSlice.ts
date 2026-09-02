@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
 import type { Notification } from '@/lib/notifications/types';
 import { deservesOsBanner, notifyOs, osBannerForBatch } from '@/lib/notifications/os';
+import { chimeIfWanted } from '@/lib/notifications/sound';
 import {
   notificationsAnswer,
   notificationsClear,
@@ -134,6 +135,15 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
     if (deservesOsBanner(severity, kind, input.source)) {
       void notifyOs(input.title, input.body ?? '');
     }
+    chimeIfWanted([
+      {
+        severity,
+        kind,
+        source: input.source,
+        title: input.title,
+        body: input.body ?? null,
+      },
+    ]);
 
     try {
       const stored = await notificationsDispatch(input);
@@ -190,6 +200,7 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set, 
       if (incoming.length === 0) return;
       const banner = osBannerForBatch(incoming);
       if (banner) void notifyOs(banner.title, banner.body);
+      chimeIfWanted(incoming);
       const notifications = mergeNotifications(get().notifications, incoming);
       set({
         notifications,

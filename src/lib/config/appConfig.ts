@@ -49,6 +49,8 @@ export const APP_CONFIG_KEYS = {
   agentLogRetentionDays: 'auric.agent-log.retention-days',
   inboxSort: 'auric.inbox.sort',
   pmTicketSort: 'auric.pm.ticket-sort',
+  notificationSoundEnabled: 'auric.notifications.sound',
+  notificationSound: 'auric.notifications.sound-id',
 } as const;
 
 /** Lets mounted UI react to a preference written in this same webview. */
