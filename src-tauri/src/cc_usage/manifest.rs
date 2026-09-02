@@ -71,6 +71,26 @@ pub struct ModelSpec {
     /// model — the transcript records it as `usage.speed`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fast_rates: Option<Vec<Rate>>,
+    /// Cache multipliers that hold for this model alone, overriding
+    /// `PricingSpec::cache` wholesale.
+    ///
+    /// Anthropic's multipliers used to be one set for every model, and for
+    /// almost every model they still are. Fable 5.1 broke that: it reads a
+    /// cached token at 0.025× its input rate where the rest read at 0.1×.
+    /// Neither shared answer is available — pricing it at 0.1× overstates by
+    /// four times the model whose runs are mostly cache reads, and moving the
+    /// list-wide value to 0.025× misprices every other model the same way in
+    /// the other direction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache: Option<CacheMultipliers>,
+}
+
+impl ModelSpec {
+    /// The multipliers this model's cached tokens are priced with: its own if
+    /// it declares any, the price list's otherwise.
+    pub fn cache_multipliers<'a>(&'a self, fallback: &'a CacheMultipliers) -> &'a CacheMultipliers {
+        self.cache.as_ref().unwrap_or(fallback)
+    }
 }
 
 /// How a cached token is priced relative to a fresh input token.
@@ -280,6 +300,61 @@ mod tests {
             .expect("dated alias");
         assert_eq!(by_id.id, by_alias.id);
         assert_eq!(by_id.id, by_dated.id);
+    }
+
+    #[test]
+    fn the_current_models_are_all_in_the_price_list() {
+        // A model that has shipped but is missing here reads as "no rate" in
+        // the panel and contributes nothing to the total — the report looks
+        // complete while understating the bill by whatever that model did.
+        let plugin = built_in();
+        for id in [
+            "claude-fable-5-1",
+            "claude-fable-5",
+            "claude-mythos-5-1",
+            "claude-mythos-5",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-haiku-4-5",
+        ] {
+            let model = plugin
+                .model_for(id)
+                .unwrap_or_else(|| panic!("{id} must be priced"));
+            assert!(!model.rates.is_empty(), "{id} has no rate");
+        }
+    }
+
+    #[test]
+    fn fable_5_1_bills_at_the_fable_tier() {
+        let plugin = built_in();
+        let fable = plugin.model_for("claude-fable-5-1").expect("fable 5.1");
+        assert_eq!(fable.label, "Fable 5.1");
+        let rate = rate_on(&fable.rates, "2026-09-02").expect("rate");
+        assert_eq!(rate.input_per_m_tok, 10.0);
+        assert_eq!(rate.output_per_m_tok, 50.0);
+    }
+
+    #[test]
+    fn a_model_may_carry_its_own_cache_multipliers() {
+        // Fable 5.1 reads a cached token at 0.025× its input rate ($0.25/MTok)
+        // where every other model reads at 0.1×. Pricing it off the list-wide
+        // multiplier would overstate the model that caches hardest fourfold;
+        // changing the list-wide one would misprice every other model.
+        let plugin = built_in();
+        let fable = plugin.model_for("claude-fable-5-1").expect("fable 5.1");
+        let cache = fable.cache.as_ref().expect("its own multipliers");
+        assert_eq!(cache.read, 0.025);
+        // Only the read differs — writes are the ordinary 1.25× / 2.0×.
+        assert_eq!(cache.write5m, plugin.pricing.cache.write5m);
+        assert_eq!(cache.write1h, plugin.pricing.cache.write1h);
+
+        // Every other model stays on the shared multipliers, so a change
+        // there still reaches them.
+        assert!(plugin
+            .model_for("claude-opus-5")
+            .expect("opus 5")
+            .cache
+            .is_none());
     }
 
     #[test]
