@@ -22,6 +22,7 @@ import {
 } from '@/lib/pm/testCaseDerivation';
 import { DependencyProposalModal } from './DependencyProposalModal';
 import { TicketSkillsField } from './TicketSkillsField';
+import { TicketTiming } from './TicketTiming';
 import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
 
 interface TicketEditPanelProps {
@@ -461,6 +462,8 @@ export function TicketEditPanel({
               <span>Created: {formatDate(ticket.createdAt)}</span>
               <span>Updated: {formatDate(ticket.updatedAt)}</span>
             </div>
+
+            <TicketTiming ticketId={ticket.id} status={ticket.status} />
           </div>
         )}
 

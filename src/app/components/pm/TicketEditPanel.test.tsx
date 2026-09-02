@@ -35,6 +35,7 @@ vi.mock('@/lib/store', () => ({
       pushOverlay: () => undefined,
       removeOverlay: () => undefined,
       ownsEscape: () => false,
+      pmStatusHistory: [],
     }),
 }));
 

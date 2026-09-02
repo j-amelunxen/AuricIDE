@@ -13,7 +13,9 @@ import {
   computeVelocity,
   computeVelocityBasis,
   formatDuration,
+  parseHistoryTime,
 } from '@/lib/pm/metrics';
+import { isClosedTicketStatus } from '@/lib/pm/enums';
 
 /**
  * How much history an estimate is allowed to lean on. The whole point of the
@@ -97,6 +99,7 @@ export function MetricsView() {
   const pmDirty = useStore((s) => s.pmDirty);
 
   const [basisSize, setBasisSize] = useState<number | undefined>(10);
+  const [epicFilter, setEpicFilter] = useState('all');
 
   useEffect(() => {
     if (rootPath) {
@@ -132,54 +135,90 @@ export function MetricsView() {
 
   const epicInfos = useMemo(() => epics.map((e) => ({ id: e.id, name: e.name })), [epics]);
 
+  const scopedTickets = useMemo(
+    () => (epicFilter === 'all' ? ticketInfos : ticketInfos.filter((t) => t.epicId === epicFilter)),
+    [ticketInfos, epicFilter]
+  );
+
+  const scopedIds = useMemo(() => new Set(scopedTickets.map((t) => t.id)), [scopedTickets]);
+
+  const scopedHistory = useMemo(
+    () =>
+      epicFilter === 'all'
+        ? historyEntries
+        : historyEntries.filter((h) => scopedIds.has(h.ticketId)),
+    [historyEntries, scopedIds, epicFilter]
+  );
+
+  const scopedEpics = useMemo(
+    () => (epicFilter === 'all' ? epicInfos : epicInfos.filter((e) => e.id === epicFilter)),
+    [epicInfos, epicFilter]
+  );
+
   const basis = useMemo(
-    () => computeVelocityBasis(historyEntries, ticketInfos, basisSize),
-    [historyEntries, ticketInfos, basisSize]
+    () => computeVelocityBasis(scopedHistory, scopedTickets, basisSize),
+    [scopedHistory, scopedTickets, basisSize]
   );
 
   const ticketMetrics = useMemo(
-    () => computeTicketMetrics(historyEntries, ticketInfos, now),
-    [historyEntries, ticketInfos, now]
+    () => computeTicketMetrics(scopedHistory, scopedTickets, now),
+    [scopedHistory, scopedTickets, now]
   );
 
   const statusDurations = useMemo(
-    () => computeStatusDurations(historyEntries, ticketInfos),
-    [historyEntries, ticketInfos]
+    () => computeStatusDurations(scopedHistory, scopedTickets),
+    [scopedHistory, scopedTickets]
   );
 
   const velocity = useMemo(
-    () => computeVelocity(historyEntries, ticketInfos, 1, now),
-    [historyEntries, ticketInfos, now]
+    () => computeVelocity(scopedHistory, scopedTickets, 1, now),
+    [scopedHistory, scopedTickets, now]
   );
 
   const burndown = useMemo(
     () =>
-      computeBurndown(historyEntries, ticketInfos, {
+      computeBurndown(scopedHistory, scopedTickets, {
         now,
         throughputPerDay: basis.ticketsPerDay,
         forecastDays: FORECAST_DAYS,
       }),
-    [historyEntries, ticketInfos, basis.ticketsPerDay, now]
+    [scopedHistory, scopedTickets, basis.ticketsPerDay, now]
   );
 
   const projections = useMemo(
-    () => computeEpicProjections(historyEntries, ticketInfos, epicInfos, basis, now),
-    [historyEntries, ticketInfos, epicInfos, basis, now]
+    () => computeEpicProjections(scopedHistory, scopedTickets, scopedEpics, basis, now),
+    [scopedHistory, scopedTickets, scopedEpics, basis, now]
   );
 
   const project = useMemo(
-    () => computeProjectProjection(ticketInfos, basis, now),
-    [ticketInfos, basis, now]
+    () => computeProjectProjection(scopedTickets, basis, now),
+    [scopedTickets, basis, now]
   );
 
+  const ticketNames = useMemo(() => new Map(tickets.map((t) => [t.id, t.name])), [tickets]);
+
   // Longest-waiting first: the point of the list is to surface what is stuck.
-  const openTicketRows = useMemo(() => {
-    const names = new Map(tickets.map((t) => [t.id, t.name]));
-    return ticketMetrics
-      .filter((m) => !COMPLETED_STATUSES.has(m.currentStatus))
-      .map((m) => ({ ...m, name: names.get(m.ticketId) ?? m.ticketId }))
-      .sort((a, b) => (b.timeInCurrentStatus ?? 0) - (a.timeInCurrentStatus ?? 0));
-  }, [ticketMetrics, tickets]);
+  const openTicketRows = useMemo(
+    () =>
+      ticketMetrics
+        .filter((m) => !isClosedTicketStatus(m.currentStatus))
+        .map((m) => ({ ...m, name: ticketNames.get(m.ticketId) ?? m.ticketId }))
+        .sort((a, b) => (b.timeInCurrentStatus ?? 0) - (a.timeInCurrentStatus ?? 0)),
+    [ticketMetrics, ticketNames]
+  );
+
+  const completedTicketRows = useMemo(
+    () =>
+      ticketMetrics
+        .filter((m) => COMPLETED_STATUSES.has(m.currentStatus))
+        .map((m) => ({ ...m, name: ticketNames.get(m.ticketId) ?? m.ticketId }))
+        .sort((a, b) => {
+          const at = a.completedAt ? parseHistoryTime(a.completedAt) : 0;
+          const bt = b.completedAt ? parseHistoryTime(b.completedAt) : 0;
+          return bt - at;
+        }),
+    [ticketMetrics, ticketNames]
+  );
 
   if (loading) {
     return (
@@ -198,23 +237,41 @@ export function MetricsView() {
   }
 
   const basisSelector = (
-    <div className="flex items-center gap-1">
-      <span className="text-[10px] text-foreground-muted mr-1">Estimate from</span>
-      {BASIS_OPTIONS.map((opt) => (
-        <button
-          key={opt.label}
-          type="button"
-          onClick={() => setBasisSize(opt.value)}
-          aria-pressed={basisSize === opt.value}
-          className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
-            basisSize === opt.value
-              ? 'bg-white/15 text-white'
-              : 'text-foreground-muted hover:text-foreground'
-          }`}
+    <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] text-foreground-muted">Epic</span>
+        <select
+          aria-label="Epic"
+          value={epicFilter}
+          onChange={(e) => setEpicFilter(e.target.value)}
+          className="bg-white/5 border border-white/10 rounded px-2 py-0.5 text-[10px] text-foreground"
         >
-          {opt.label}
-        </button>
-      ))}
+          <option value="all">All</option>
+          {epics.map((epic) => (
+            <option key={epic.id} value={epic.id}>
+              {epic.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] text-foreground-muted mr-1">Estimate from</span>
+        {BASIS_OPTIONS.map((opt) => (
+          <button
+            key={opt.label}
+            type="button"
+            onClick={() => setBasisSize(opt.value)}
+            aria-pressed={basisSize === opt.value}
+            className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
+              basisSize === opt.value
+                ? 'bg-white/15 text-white'
+                : 'text-foreground-muted hover:text-foreground'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 
@@ -264,7 +321,7 @@ export function MetricsView() {
           }
         />
         <Card
-          label="Project ETA"
+          label={epicFilter === 'all' ? 'Project ETA' : 'Epic ETA'}
           value={
             project.estimatedDaysRemaining !== null ? `${project.estimatedDaysRemaining}d` : DASH
           }
@@ -379,6 +436,48 @@ export function MetricsView() {
           <p className="text-[10px] text-foreground-muted mt-3">
             Each epic&apos;s estimate assumes the whole throughput is aimed at it, so the project
             row is the shared estimate rather than the sum of the rows above.
+          </p>
+        </Panel>
+      )}
+
+      {completedTicketRows.length > 0 && (
+        <Panel title={`Completed Tickets (${completedTicketRows.length})`}>
+          <div className="max-h-[320px] overflow-y-auto pr-2">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-panel-bg">
+                <tr className="text-foreground-muted text-left border-b border-white/[0.08]">
+                  <th className="pb-2 font-medium">Ticket</th>
+                  <th className="pb-2 font-medium text-right whitespace-nowrap pl-4">Cycle</th>
+                  <th className="pb-2 font-medium text-right whitespace-nowrap pl-4">Lead</th>
+                  <th className="pb-2 font-medium text-right whitespace-nowrap pl-4">
+                    In progress
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {completedTicketRows.map((t) => (
+                  <tr key={t.ticketId} className="border-b border-white/[0.04]">
+                    <td className="py-2 text-foreground truncate max-w-0 w-full" title={t.name}>
+                      {t.name}
+                    </td>
+                    <td className="py-2 text-right text-foreground-muted whitespace-nowrap">
+                      {t.cycleTime !== null ? formatDuration(t.cycleTime) : DASH}
+                    </td>
+                    <td className="py-2 text-right text-foreground-muted whitespace-nowrap">
+                      {t.leadTime !== null ? formatDuration(t.leadTime) : DASH}
+                    </td>
+                    <td className="py-2 text-right text-foreground-muted whitespace-nowrap">
+                      {t.timeInStatus.in_progress
+                        ? formatDuration(t.timeInStatus.in_progress)
+                        : DASH}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-foreground-muted mt-3">
+            Cycle is the last spell in progress until done. Lead is created until done.
           </p>
         </Panel>
       )}

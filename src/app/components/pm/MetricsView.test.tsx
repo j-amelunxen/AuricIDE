@@ -221,13 +221,14 @@ describe('MetricsView', () => {
     seedProject();
     render(<MetricsView />);
 
-    const epicOne = screen.getByText('Epic One').closest('tr')!;
+    const table = screen.getByText('Epic Projections').closest('div')!.parentElement!;
+    const epicOne = within(table).getByText('Epic One').closest('tr')!;
     expect(within(epicOne).getAllByRole('cell')[5].textContent).toBe('0d');
 
-    const epicTwo = screen.getByText('Epic Two').closest('tr')!;
+    const epicTwo = within(table).getByText('Epic Two').closest('tr')!;
     expect(within(epicTwo).getAllByRole('cell')[5].textContent).toBe('5d');
 
-    const projectRow = screen.getByText('Project').closest('tr')!;
+    const projectRow = within(table).getByText('Project').closest('tr')!;
     const cells = within(projectRow).getAllByRole('cell');
     expect(cells[1].textContent).toBe('7'); // total
     expect(cells[2].textContent).toBe('6'); // done
@@ -291,5 +292,49 @@ describe('MetricsView', () => {
     expect(screen.getByText('1 ticket completed — too few to measure a pace.')).toBeDefined();
     expect(cardValue('Throughput')).toBe('—');
     expect(cardValue('Project ETA')).toBe('—');
+  });
+
+  it('keeps discarded tickets out of the open list', () => {
+    seedProject();
+    mockStore.pmTickets = [
+      ...(mockStore.pmTickets as ReturnType<typeof ticket>[]),
+      ticket('t8', 'e1', 'Thrown Away', 'discarded'),
+    ];
+    mockStore.pmStatusHistory = [
+      ...(mockStore.pmStatusHistory as ReturnType<typeof entry>[]),
+      entry('t8', null, 'open', '2026-01-01T00:00:00Z'),
+      entry('t8', 'open', 'discarded', '2026-01-02T00:00:00Z'),
+    ];
+
+    render(<MetricsView />);
+
+    expect(screen.getByText('Open Tickets (1)')).toBeDefined();
+    expect(screen.queryByText('Thrown Away')).toBeNull();
+  });
+
+  it('lists completed tickets with cycle and lead time', () => {
+    seedProject();
+    render(<MetricsView />);
+
+    expect(screen.getByText('Completed Tickets (6)')).toBeDefined();
+    const row = screen.getByText('Ticket 6').closest('tr')!;
+    const cells = within(row).getAllByRole('cell');
+    // in_progress Jan 24 → done Jan 25
+    expect(cells[1].textContent).toBe('1d 0h');
+    // created Jan 1 → done Jan 25
+    expect(cells[2].textContent).toBe('24d 0h');
+  });
+
+  it('scopes the open list to one epic', async () => {
+    const user = userEvent.setup();
+    seedProject();
+    render(<MetricsView />);
+
+    await user.selectOptions(screen.getByLabelText('Epic'), 'e2');
+
+    expect(screen.getByText('Open Tickets (1)')).toBeDefined();
+    expect(screen.getByText('Still Running')).toBeDefined();
+    expect(screen.queryByText('Completed Tickets')).toBeNull();
+    expect(screen.queryByText('Ticket 1')).toBeNull();
   });
 });
