@@ -6,6 +6,10 @@ vi.mock('@/lib/hooks/useProjectSkills', () => ({
   useProjectSkills: () => ({ discovered: [], ready: true }),
 }));
 
+vi.mock('./MetricsView', () => ({
+  MetricsView: () => <div data-testid="metrics-view">Metrics panel</div>,
+}));
+
 // Stands in for the real panel, but keeps the one wire this file tests: the
 // delete button the panel renders and the handler the modal hands it.
 vi.mock('./TicketEditPanel', () => ({
@@ -155,6 +159,18 @@ describe('ProjectManagerModal', () => {
     // + New Ticket appears in header and in ticket list footer
     const newTicketBtns = screen.getAllByText('+ New Ticket');
     expect(newTicketBtns.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('switches to the Metrics tab and hides the ticket columns', async () => {
+    mockStore.pmModalOpen = true;
+    render(<ProjectManagerModal />);
+    expect(screen.getByTestId('tickets-columns')).toBeDefined();
+    expect(screen.queryByTestId('metrics-view')).toBeNull();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Metrics' }));
+
+    expect(screen.getByTestId('metrics-view')).toBeDefined();
+    expect(screen.queryByTestId('tickets-columns')).toBeNull();
   });
 
   it('shows the persist chip only while Plan is dirty', () => {

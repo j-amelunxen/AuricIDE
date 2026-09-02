@@ -207,6 +207,12 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
 
         await initProjectDb(projectPath);
         const state = await ipcPmLoad(projectPath);
+        let history: PmStatusHistoryEntry[] = [];
+        try {
+          history = await ipcPmLoadHistory(projectPath);
+        } catch {
+          // Empty rather than the previous project's figures.
+        }
 
         // Auto-archive 'done' tickets older than 24 hours
         const now = new Date();
@@ -231,6 +237,7 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
           pmDraftTickets: processedTickets,
           pmDraftTestCases: state.testCases,
           pmDraftDependencies: state.dependencies,
+          pmStatusHistory: history,
           pmDirty: hasArchived,
         });
       }
@@ -291,11 +298,20 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
         testCases: pmDraftTestCases,
         dependencies: pmDraftDependencies,
       });
+      // Status history is written inside the save. Reload it here so the
+      // Metrics tab is not sitting on the pre-save snapshot until the next poll.
+      let history = get().pmStatusHistory;
+      try {
+        history = await ipcPmLoadHistory(projectPath);
+      } catch {
+        // The tickets landed; the 30s refresh will pick the history up.
+      }
       set({
         pmEpics: pmDraftEpics,
         pmTickets: pmDraftTickets,
         pmTestCases: pmDraftTestCases,
         pmDependencies: pmDraftDependencies,
+        pmStatusHistory: history,
         pmDirty: false,
       });
       refreshInboxAfterPmWrite(get, projectPath);
@@ -313,6 +329,7 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
       pmDraftTickets: [],
       pmDraftTestCases: [],
       pmDraftDependencies: [],
+      pmStatusHistory: [],
       pmDirty: false,
     });
   },
@@ -327,6 +344,7 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
       pmDraftTickets: [],
       pmDraftTestCases: [],
       pmDraftDependencies: [],
+      pmStatusHistory: [],
       pmDirty: false,
     }),
 

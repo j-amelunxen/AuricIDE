@@ -355,6 +355,24 @@ describe('pmSlice', () => {
     expect(store.getState().pmDirty).toBe(false);
   });
 
+  it('loadPmData also loads status history so ticket timing is available immediately', async () => {
+    const historyEntry: PmStatusHistoryEntry = {
+      id: 'h1',
+      ticketId: 't1',
+      fromStatus: null,
+      toStatus: 'open',
+      changedAt: '2026-01-01T00:00:00Z',
+      source: 'ui',
+    };
+    mockPmLoadHistory.mockResolvedValueOnce([historyEntry]);
+
+    const store = createTestStore();
+    await store.getState().loadPmData('/project');
+
+    expect(mockPmLoadHistory).toHaveBeenCalledWith('/project');
+    expect(store.getState().pmStatusHistory).toEqual([historyEntry]);
+  });
+
   it('loadPmData does not wipe unsaved drafts', async () => {
     const persisted = makeTicket({ id: 't-saved', name: 'Saved' });
     mockPmLoad.mockResolvedValue({
@@ -446,6 +464,78 @@ describe('pmSlice', () => {
     await store.getState().savePmData('/project');
 
     expect(refreshInboxOverview).not.toHaveBeenCalled();
+  });
+
+  it('reloads status history after a successful save', async () => {
+    const store = createTestStore();
+    store.setState({
+      pmStatusHistory: [],
+    });
+    const historyEntry: PmStatusHistoryEntry = {
+      id: 'h1',
+      ticketId: 't1',
+      fromStatus: 'open',
+      toStatus: 'in_progress',
+      changedAt: '2026-01-02T00:00:00Z',
+      source: 'ui',
+    };
+    mockPmLoadHistory.mockResolvedValueOnce([historyEntry]);
+
+    await store.getState().savePmData('/project');
+
+    expect(mockPmLoadHistory).toHaveBeenCalledWith('/project');
+    expect(store.getState().pmStatusHistory).toEqual([historyEntry]);
+  });
+
+  it('keeps the save when history reload fails', async () => {
+    const store = createTestStore();
+    store.getState().addEpic(makeEpic());
+    mockPmLoadHistory.mockRejectedValueOnce(new Error('history locked'));
+
+    await store.getState().savePmData('/project');
+
+    expect(store.getState().pmDirty).toBe(false);
+    expect(store.getState().pmEpics).toEqual(store.getState().pmDraftEpics);
+  });
+
+  it('clears status history when in-memory PM state is reset', () => {
+    const store = createTestStore();
+    store.setState({
+      pmStatusHistory: [
+        {
+          id: 'h1',
+          ticketId: 't1',
+          fromStatus: 'open',
+          toStatus: 'in_progress',
+          changedAt: '2026-01-02T00:00:00Z',
+          source: 'ui',
+        },
+      ],
+    });
+
+    store.getState().resetPmInMemory();
+
+    expect(store.getState().pmStatusHistory).toEqual([]);
+  });
+
+  it('clears status history when PM data is cleared', async () => {
+    const store = createTestStore();
+    store.setState({
+      pmStatusHistory: [
+        {
+          id: 'h1',
+          ticketId: 't1',
+          fromStatus: null,
+          toStatus: 'open',
+          changedAt: '2026-01-01T00:00:00Z',
+          source: 'ui',
+        },
+      ],
+    });
+
+    await store.getState().clearPmData('/project');
+
+    expect(store.getState().pmStatusHistory).toEqual([]);
   });
 
   it('refreshes the inbox overview after a PM reload picks up agent status changes', async () => {
