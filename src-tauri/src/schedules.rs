@@ -622,6 +622,20 @@ mod tests {
     }
 
     /// "Every 14 days at 09:00 Berlin", created and anchored 2026-08-12.
+    /// `upsert_impl` leaves `created_at` to the column default, which is the
+    /// real clock. A test that runs the scheduler at a fixed moment has to put
+    /// the row's own timestamps where the fixture says they are — otherwise the
+    /// due window starts today and nothing in the test's past can ever come
+    /// due, so the test passes only until the machine's date overtakes it.
+    fn seed(conn: &Connection, schedule: &Schedule) {
+        upsert_impl(conn, schedule).expect("upsert");
+        conn.execute(
+            "UPDATE schedules SET created_at = ?2, last_checked_at = ?3 WHERE id = ?1",
+            params![schedule.id, schedule.created_at, schedule.last_checked_at],
+        )
+        .expect("back-date the fixture");
+    }
+
     fn every_14_days() -> Schedule {
         Schedule {
             id: "s1".into(),
@@ -854,6 +868,23 @@ mod tests {
         assert_eq!(list_impl(&conn).unwrap().len(), 0);
     }
 
+    // The helper is what takes the wall clock out of the runner's tests. If it
+    // ever stopped back-dating, they would all still pass today and start
+    // failing on some future date instead — the failure this whole seam exists
+    // to prevent.
+    #[test]
+    fn seeding_puts_the_fixtures_own_timestamps_in_the_row() {
+        let conn = test_db();
+        seed(&conn, &every_14_days());
+
+        let stored = &list_impl(&conn).unwrap()[0];
+        assert_eq!(stored.created_at, "2026-08-12 07:00:00");
+        assert_eq!(
+            stored.last_checked_at.as_deref(),
+            Some("2026-08-12 07:00:00")
+        );
+    }
+
     #[test]
     fn a_schedule_round_trips() {
         let conn = test_db();
@@ -918,7 +949,7 @@ mod tests {
         let mut schedule = every_14_days();
         schedule.payload =
             r#"{"title":"Security-Scan","severity":"warn","actions":[]}"#.to_string();
-        upsert_impl(&conn, &schedule).expect("upsert");
+        seed(&conn, &schedule);
 
         let fired = run_due_impl(&mut conn, at("2026-09-24 07:00:00")).expect("run");
 
@@ -933,7 +964,7 @@ mod tests {
     #[test]
     fn a_schedule_without_a_payload_title_falls_back_to_its_name() {
         let mut conn = test_db();
-        upsert_impl(&conn, &every_14_days()).expect("upsert");
+        seed(&conn, &every_14_days());
 
         run_due_impl(&mut conn, at("2026-08-27 07:00:00")).expect("run");
 
@@ -945,7 +976,7 @@ mod tests {
     #[test]
     fn a_second_run_fires_nothing_new() {
         let mut conn = test_db();
-        upsert_impl(&conn, &every_14_days()).expect("upsert");
+        seed(&conn, &every_14_days());
 
         assert_eq!(
             run_due_impl(&mut conn, at("2026-09-24 07:00:00")).unwrap(),
@@ -968,7 +999,7 @@ mod tests {
     #[test]
     fn a_crash_before_the_bookkeeping_cannot_double_the_reminder() {
         let mut conn = test_db();
-        upsert_impl(&conn, &every_14_days()).expect("upsert");
+        seed(&conn, &every_14_days());
 
         run_due_impl(&mut conn, at("2026-09-24 07:00:00")).expect("first");
         conn.execute(
@@ -991,7 +1022,7 @@ mod tests {
         let mut conn = test_db();
         let mut schedule = every_14_days();
         schedule.enabled = false;
-        upsert_impl(&conn, &schedule).expect("upsert");
+        seed(&conn, &schedule);
 
         assert_eq!(
             run_due_impl(&mut conn, at("2026-09-24 07:00:00")).unwrap(),
@@ -1006,8 +1037,8 @@ mod tests {
         let mut broken = weekly_wednesday();
         broken.id = "broken".into();
         broken.cron_expr = Some("nonsense".into());
-        upsert_impl(&conn, &broken).expect("broken");
-        upsert_impl(&conn, &every_14_days()).expect("good");
+        seed(&conn, &broken);
+        seed(&conn, &every_14_days());
 
         assert_eq!(
             run_due_impl(&mut conn, at("2026-09-24 07:00:00")).unwrap(),
@@ -1018,7 +1049,7 @@ mod tests {
     #[test]
     fn running_records_the_next_due_time() {
         let mut conn = test_db();
-        upsert_impl(&conn, &every_14_days()).expect("upsert");
+        seed(&conn, &every_14_days());
 
         run_due_impl(&mut conn, at("2026-08-27 07:00:00")).expect("run");
 
