@@ -197,6 +197,84 @@ describe('pmSlice', () => {
     expect(store.getState().pmDirty).toBe(true);
   });
 
+  it('reorderTickets writes sortOrder so custom order survives another sort', () => {
+    const store = createTestStore();
+    store.getState().addTicket(makeTicket({ id: 't1', sortOrder: 0 }));
+    store.getState().addTicket(makeTicket({ id: 't2', sortOrder: 1 }));
+    store.getState().addTicket(makeTicket({ id: 't3', sortOrder: 2 }));
+
+    store.getState().reorderTickets(['t3', 't1', 't2']);
+
+    const byId = Object.fromEntries(
+      store.getState().pmDraftTickets.map((t) => [t.id, t.sortOrder])
+    );
+    expect(byId).toEqual({ t3: 0, t1: 1, t2: 2 });
+    expect(store.getState().pmDirty).toBe(true);
+  });
+
+  it('reorderTickets inside one epic leaves the other epic in its slots', () => {
+    const store = createTestStore();
+    store.getState().addTicket(makeTicket({ id: 'a1', epicId: 'e1', sortOrder: 0 }));
+    store.getState().addTicket(makeTicket({ id: 'b1', epicId: 'e2', sortOrder: 1 }));
+    store.getState().addTicket(makeTicket({ id: 'a2', epicId: 'e1', sortOrder: 2 }));
+
+    store.getState().reorderTickets(['a2', 'a1']);
+
+    const byId = Object.fromEntries(
+      store.getState().pmDraftTickets.map((t) => [t.id, t.sortOrder])
+    );
+    expect(byId).toEqual({ a2: 0, b1: 1, a1: 2 });
+  });
+
+  it('reorderEpics writes sortOrder on the epic drafts', () => {
+    const store = createTestStore();
+    store.getState().addEpic(makeEpic({ id: 'e1', sortOrder: 0 }));
+    store.getState().addEpic(makeEpic({ id: 'e2', sortOrder: 1 }));
+    store.getState().addEpic(makeEpic({ id: 'e3', sortOrder: 2 }));
+
+    store.getState().reorderEpics(['e2', 'e3', 'e1']);
+
+    expect(store.getState().pmDraftEpics.map((e) => [e.id, e.sortOrder])).toEqual([
+      ['e1', 2],
+      ['e2', 0],
+      ['e3', 1],
+    ]);
+    expect(store.getState().pmDirty).toBe(true);
+  });
+
+  it('reorderTickets does not mark dirty when the ids are not a real move', () => {
+    const store = createTestStore();
+    store.getState().addTicket(makeTicket({ id: 't1', sortOrder: 0 }));
+    store.setState({ pmDirty: false });
+    store.getState().reorderTickets(['t1']);
+    expect(store.getState().pmDirty).toBe(false);
+  });
+
+  it('savePmData persists the custom ticket and epic order', async () => {
+    const store = createTestStore();
+    store.getState().addEpic(makeEpic({ id: 'e1', sortOrder: 0 }));
+    store.getState().addEpic(makeEpic({ id: 'e2', sortOrder: 1 }));
+    store.getState().addTicket(makeTicket({ id: 't1', sortOrder: 0 }));
+    store.getState().addTicket(makeTicket({ id: 't2', sortOrder: 1 }));
+    store.getState().reorderEpics(['e2', 'e1']);
+    store.getState().reorderTickets(['t2', 't1']);
+
+    await store.getState().savePmData('/project');
+
+    const payload = mockPmSave.mock.calls[0][1] as {
+      epics: { id: string; sortOrder: number }[];
+      tickets: { id: string; sortOrder: number }[];
+    };
+    expect(Object.fromEntries(payload.epics.map((e) => [e.id, e.sortOrder]))).toEqual({
+      e2: 0,
+      e1: 1,
+    });
+    expect(Object.fromEntries(payload.tickets.map((t) => [t.id, t.sortOrder]))).toEqual({
+      t2: 0,
+      t1: 1,
+    });
+  });
+
   it('archiveDoneTickets moves all done tickets to archived', () => {
     const store = createTestStore();
     store.getState().addTicket(makeTicket({ id: 't1', status: 'done' }));

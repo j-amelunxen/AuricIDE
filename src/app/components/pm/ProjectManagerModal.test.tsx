@@ -60,6 +60,8 @@ const mockStore: Record<string, unknown> = {
   updateTicket: vi.fn(),
   deleteTicket: vi.fn(),
   moveTicket: vi.fn(),
+  reorderTickets: vi.fn(),
+  reorderEpics: vi.fn(),
   addTestCase: vi.fn(),
   updateTestCase: vi.fn(),
   deleteTestCase: vi.fn(),

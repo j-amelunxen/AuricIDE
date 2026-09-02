@@ -89,6 +89,8 @@ describe('app config', () => {
     // theme and the spawn defaults are written elsewhere but belong on it.
     expect(Object.values(APP_CONFIG_KEYS)).toContain('auric.theme');
     expect(Object.values(APP_CONFIG_KEYS)).toContain('auric.agent-spawn-defaults');
+    expect(APP_CONFIG_KEYS.pmTicketSort).toBe('auric.pm.ticket-sort');
+    expect(APP_CONFIG_KEYS.inboxSort).toBe('auric.inbox.sort');
     expect(new Set(Object.values(APP_CONFIG_KEYS)).size).toBe(
       Object.values(APP_CONFIG_KEYS).length
     );

@@ -113,4 +113,44 @@ describe('EpicSidebar', () => {
     fireEvent.click(screen.getByLabelText('Edit epic epic-1'));
     expect(onEditEpic).toHaveBeenCalledWith(epics[0]);
   });
+
+  it('renders epics in sortOrder even when the array is not', () => {
+    const epics = [
+      makeEpic({ id: 'e-2', name: 'Later', sortOrder: 1 }),
+      makeEpic({ id: 'e-1', name: 'Earlier', sortOrder: 0 }),
+    ];
+    render(<EpicSidebar {...defaultProps} epics={epics} />);
+    const names = screen.getAllByTestId(/epic-item-/).map((el) => el.textContent);
+    expect(names[0]).toContain('Earlier');
+    expect(names[1]).toContain('Later');
+  });
+
+  it('reorders epics by drag and drop', () => {
+    const onReorderEpics = vi.fn();
+    const epics = [
+      makeEpic({ id: 'e-1', name: 'Auth', sortOrder: 0 }),
+      makeEpic({ id: 'e-2', name: 'UI', sortOrder: 1 }),
+    ];
+    render(<EpicSidebar {...defaultProps} epics={epics} onReorderEpics={onReorderEpics} />);
+    const source = screen.getByTestId('epic-item-e-1');
+    const target = screen.getByTestId('epic-item-e-2');
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      height: 40,
+      bottom: 40,
+      left: 0,
+      right: 200,
+      width: 200,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer, clientY: 30 });
+    fireEvent.drop(target, { dataTransfer, clientY: 30 });
+
+    expect(onReorderEpics).toHaveBeenCalledWith(['e-2', 'e-1']);
+  });
 });

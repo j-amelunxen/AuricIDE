@@ -1,7 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TicketTable } from './TicketTable';
 import type { PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
+import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 
 const makeTicket = (overrides: Partial<PmTicket> = {}): PmTicket => ({
   id: 'tk-1',
@@ -18,6 +19,10 @@ const makeTicket = (overrides: Partial<PmTicket> = {}): PmTicket => ({
 });
 
 describe('TicketTable', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   const defaultProps = {
     tickets: [] as PmTicket[],
     allTickets: [] as PmTicket[],
@@ -210,6 +215,116 @@ describe('TicketTable', () => {
     );
 
     expect(screen.queryByTitle('Blocked by dependencies')).toBeNull();
+  });
+});
+
+function ticketNames(): string[] {
+  return screen
+    .getAllByTestId(/ticket-row-/)
+    .map((row) => row.querySelector('span.flex-1')?.textContent ?? '');
+}
+
+describe('TicketTable custom order', () => {
+  const defaultProps = {
+    tickets: [] as PmTicket[],
+    allTickets: [] as PmTicket[],
+    testCases: [] as PmTestCase[],
+    selectedTicketId: null as string | null,
+    dependencies: [] as PmDependency[],
+    onSelectTicket: vi.fn(),
+    onUpdateTicket: vi.fn(),
+    onAddTicket: vi.fn(),
+  };
+
+  const tickets = [
+    makeTicket({
+      id: 'tk-1',
+      name: 'First by custom',
+      sortOrder: 0,
+      createdAt: '2026-03-01T00:00:00Z',
+      priority: 'low',
+    }),
+    makeTicket({
+      id: 'tk-2',
+      name: 'Second by custom',
+      sortOrder: 1,
+      createdAt: '2026-01-01T00:00:00Z',
+      priority: 'critical',
+    }),
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('opens on custom order so a drag has somewhere to land', () => {
+    render(<TicketTable {...defaultProps} tickets={tickets} />);
+    expect(screen.getByLabelText('Sort tickets')).toHaveValue('custom');
+    expect(ticketNames()).toEqual(['First by custom', 'Second by custom']);
+  });
+
+  it('returns to the stored custom order after sorting by created or priority', () => {
+    render(<TicketTable {...defaultProps} tickets={tickets} />);
+    const select = screen.getByLabelText('Sort tickets');
+
+    fireEvent.change(select, { target: { value: 'createdAt' } });
+    expect(ticketNames()).toEqual(['Second by custom', 'First by custom']);
+
+    fireEvent.change(select, { target: { value: 'priority' } });
+    expect(ticketNames()).toEqual(['First by custom', 'Second by custom']);
+
+    fireEvent.change(select, { target: { value: 'custom' } });
+    expect(ticketNames()).toEqual(['First by custom', 'Second by custom']);
+  });
+
+  it('remembers the chosen sort across mounts', () => {
+    const { unmount } = render(<TicketTable {...defaultProps} tickets={tickets} />);
+    fireEvent.change(screen.getByLabelText('Sort tickets'), { target: { value: 'priority' } });
+    expect(localStorage.getItem(APP_CONFIG_KEYS.pmTicketSort)).toBe('priority');
+    unmount();
+
+    render(<TicketTable {...defaultProps} tickets={tickets} />);
+    expect(screen.getByLabelText('Sort tickets')).toHaveValue('priority');
+  });
+
+  it('reorders by drag and drop while on custom sort', () => {
+    const onReorderTickets = vi.fn();
+    render(<TicketTable {...defaultProps} tickets={tickets} onReorderTickets={onReorderTickets} />);
+    const source = screen.getByTestId('ticket-row-tk-1');
+    const target = screen.getByTestId('ticket-row-tk-2');
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      height: 40,
+      bottom: 40,
+      left: 0,
+      right: 200,
+      width: 200,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer, clientY: 30 });
+    fireEvent.drop(target, { dataTransfer, clientY: 30 });
+
+    expect(onReorderTickets).toHaveBeenCalledWith(['tk-2', 'tk-1']);
+  });
+
+  it('does not reorder by drag when another sort is active', () => {
+    const onReorderTickets = vi.fn();
+    render(<TicketTable {...defaultProps} tickets={tickets} onReorderTickets={onReorderTickets} />);
+    fireEvent.change(screen.getByLabelText('Sort tickets'), { target: { value: 'priority' } });
+
+    const source = screen.getByTestId('ticket-row-tk-1');
+    const target = screen.getByTestId('ticket-row-tk-2');
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer, clientY: 30 });
+
+    expect(onReorderTickets).not.toHaveBeenCalled();
+    expect(source).not.toHaveAttribute('draggable', 'true');
   });
 });
 

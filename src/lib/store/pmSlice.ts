@@ -16,6 +16,7 @@ import {
   pmLoadHistory as ipcPmLoadHistory,
 } from '../tauri/pm';
 import { initProjectDb } from '../tauri/db';
+import { applyVisibleOrder } from '../pm/customOrder';
 
 export interface PmSlice {
   /** True while project data is being read; distinguishes empty from not-yet. */
@@ -57,6 +58,9 @@ export interface PmSlice {
   updateTicket: (id: string, updates: Partial<PmTicket>) => void;
   deleteTicket: (id: string) => void;
   moveTicket: (ticketId: string, newEpicId: string) => void;
+  /** Custom order of the currently visible tickets; other tickets keep their slots. */
+  reorderTickets: (visibleOrderedIds: string[]) => void;
+  reorderEpics: (orderedIds: string[]) => void;
   addTestCase: (tc: PmTestCase) => void;
   updateTestCase: (id: string, updates: Partial<PmTestCase>) => void;
   deleteTestCase: (id: string) => void;
@@ -390,6 +394,20 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
       ),
       pmDirty: true,
     })),
+
+  reorderTickets: (visibleOrderedIds) =>
+    set((s) => {
+      const pmDraftTickets = applyVisibleOrder(s.pmDraftTickets, visibleOrderedIds);
+      if (pmDraftTickets === s.pmDraftTickets) return s;
+      return { pmDraftTickets, pmDirty: true };
+    }),
+
+  reorderEpics: (orderedIds) =>
+    set((s) => {
+      const pmDraftEpics = applyVisibleOrder(s.pmDraftEpics, orderedIds);
+      if (pmDraftEpics === s.pmDraftEpics) return s;
+      return { pmDraftEpics, pmDirty: true };
+    }),
 
   addTestCase: (tc) =>
     set((s) => ({ pmDraftTestCases: [...s.pmDraftTestCases, tc], pmDirty: true })),
