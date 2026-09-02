@@ -7,6 +7,7 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { getStaleRequirements, getUnverifiedRequirements } from '@/lib/store/requirementsSlice';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { ConductorPanel } from '../goals/ConductorPanel';
+import { TicketStatusChip } from '../pm/TicketStatusChip';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
@@ -89,7 +90,7 @@ function SpecPicker({
         role="listbox"
         aria-label="Choose a spec"
         data-testid="mc-spec-picker"
-        className="absolute left-0 top-full z-[var(--z-tool-nested)] mt-2 max-h-64 w-64 overflow-y-auto rounded-xl border border-white/10 bg-[#0a0a10] p-2 shadow-2xl"
+        className="absolute left-0 top-full z-[var(--z-tool-nested)] mt-2 max-h-64 w-64 overflow-y-auto rounded-xl border border-white/10 bg-surface p-2 shadow-2xl"
       >
         {specPaths.map((path) => {
           const name = path.split('/').pop() ?? path;
@@ -151,6 +152,7 @@ export function MissionControl({
   const agents = useStore((s) => s.agents);
   const goals = useStore((s) => s.goalsDraft);
 
+  const setInboxTicketStatus = useStore((s) => s.setInboxTicketStatus);
   const openWorkPlace = useStore((s) => s.openWorkPlace);
   const closeWorkPlace = useStore((s) => s.closeWorkPlace);
   const loadPmData = useStore((s) => s.loadPmData);
@@ -170,7 +172,8 @@ export function MissionControl({
     /(^|\/)specs\/.*\.(md|markdown|excalidraw)$/i.test(p)
   );
   const specDocs = specPaths.length;
-  const openTickets = tickets.filter((t) => !isClosedTicketStatus(t.status)).length;
+  const liveTickets = tickets.filter((t) => !isClosedTicketStatus(t.status));
+  const openTickets = liveTickets.length;
   const runningAgents = agents.filter((a) => a.status === 'running').length;
 
   const relevantTruths = requirements.filter(
@@ -401,6 +404,41 @@ export function MissionControl({
               </button>
             </div>
           </section>
+        )}
+
+        {liveTickets.length > 0 && (
+          <div
+            data-testid="mc-ticket-list"
+            className="glass-card w-full min-w-0 max-w-3xl overflow-hidden rounded-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-muted">
+                Tickets
+              </h2>
+              <span className="font-mono text-[9px] text-foreground-muted/70">
+                {liveTickets.length} open
+              </span>
+            </div>
+            <ul className="space-y-1.5 p-2">
+              {liveTickets.map((ticket) => (
+                <li
+                  key={ticket.id}
+                  className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2"
+                >
+                  <p className="min-w-0 flex-1 truncate text-left text-[12px] text-foreground">
+                    {ticket.name}
+                  </p>
+                  <TicketStatusChip
+                    status={ticket.status}
+                    onSetStatus={(status) => {
+                      if (rootPath === null) return;
+                      void setInboxTicketStatus(rootPath, ticket.id, status);
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* The conductor, on the table — not in a drawer */}

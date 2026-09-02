@@ -1743,6 +1743,18 @@ fn inbox_detach(
     inbox::detach_impl(&conn, &item_id, &attachment_id)
 }
 
+/// Writes a ticket status into any project's database. Used from the inbox
+/// and the start-screen / Mission Control ticket lists, including projects
+/// that are not the one currently open.
+#[tauri::command]
+fn inbox_set_ticket_status(
+    project_path: String,
+    ticket_id: String,
+    status: String,
+) -> Result<(), String> {
+    inbox::set_ticket_status_impl(&project_path, &ticket_id, &status)
+}
+
 /// Reads several projects' `.auric/project.db` files read-only, so a
 /// possibly large batch does not block the main thread.
 #[tauri::command]
@@ -2348,6 +2360,7 @@ pub fn run() {
             inbox_attach,
             inbox_attach_text,
             inbox_detach,
+            inbox_set_ticket_status,
             projects_pm_overview,
             agent_log_append,
             agent_log_load,

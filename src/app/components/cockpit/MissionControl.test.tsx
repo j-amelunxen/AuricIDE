@@ -481,6 +481,36 @@ describe('MissionControl', () => {
     expect(onCloseProject).toHaveBeenCalledTimes(1);
   });
 
+  it('lists live tickets on the dashboard and can set their status', async () => {
+    const setInboxTicketStatus = vi.fn(async () => {});
+    useStore.setState({
+      rootPath: '/tmp/demo-project',
+      pmDraftTickets: [
+        makeTicket({ id: 't-open', name: 'Fix the parser', status: 'open' }),
+        makeTicket({ id: 't-done', name: 'Already shipped', status: 'done' }),
+      ],
+      setInboxTicketStatus,
+    });
+    render(<MissionControl />);
+
+    expect(screen.getByTestId('mc-ticket-list')).toBeInTheDocument();
+    expect(screen.getByText('Fix the parser')).toBeInTheDocument();
+    expect(screen.queryByText('Already shipped')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /status: open/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^done$/i }));
+
+    expect(setInboxTicketStatus).toHaveBeenCalledWith('/tmp/demo-project', 't-open', 'done');
+  });
+
+  it('hides the ticket list when nothing is still live', () => {
+    useStore.setState({
+      pmDraftTickets: [makeTicket({ status: 'done' })],
+    });
+    render(<MissionControl />);
+    expect(screen.queryByTestId('mc-ticket-list')).not.toBeInTheDocument();
+  });
+
   it('flags decaying truths with a review shortcut', () => {
     useStore.setState({
       pmDraftTickets: [makeTicket({})],

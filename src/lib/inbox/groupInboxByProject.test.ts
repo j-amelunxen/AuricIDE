@@ -164,4 +164,49 @@ describe('groupInboxByProject', () => {
 
     expect(group.items[0].ticketStatus).toBe('unknown');
   });
+
+  it('lists live overview tickets that are not already inbox items', () => {
+    const item = makeItem({
+      id: 'a',
+      projectPath: '/repo/alpha',
+      projectName: 'alpha',
+      ticketId: 'ticket-1',
+    });
+    const fromInbox = {
+      id: 'ticket-1',
+      name: 'From inbox',
+      status: 'open' as const,
+      priority: 'normal' as const,
+      epicId: 'epic-1',
+      epicName: 'Inbox',
+      updatedAt: '2026-08-17T10:00:00Z',
+    };
+    const alreadyInPm = {
+      id: 'ticket-2',
+      name: 'Already in PM',
+      status: 'in_progress' as const,
+      priority: 'high' as const,
+      epicId: 'epic-2',
+      epicName: 'Backend',
+      updatedAt: '2026-08-17T11:00:00Z',
+    };
+    const overview = makeOverview({ tickets: [fromInbox, alreadyInPm] });
+
+    const [group] = groupInboxByProject([item], { '/repo/alpha': overview });
+
+    expect(group.otherTickets.map((ticket) => ticket.id)).toEqual(['ticket-2']);
+  });
+
+  it('has no other tickets when the overview is missing', () => {
+    const item = makeItem({
+      id: 'a',
+      projectPath: '/repo/alpha',
+      projectName: 'alpha',
+      ticketId: 'ticket-1',
+    });
+
+    const [group] = groupInboxByProject([item], {});
+
+    expect(group.otherTickets).toEqual([]);
+  });
 });
