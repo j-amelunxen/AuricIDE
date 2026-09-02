@@ -165,6 +165,9 @@ vi.mock('@codemirror/state', () => ({
   Facet: {
     define: () => ({ of: () => [] }),
   },
+  Annotation: {
+    define: () => ({ of: () => [] }),
+  },
 }));
 
 vi.mock('@codemirror/lang-markdown', () => ({
