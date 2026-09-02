@@ -19,9 +19,20 @@
     },
     "models": [
       {
+        "id": "claude-fable-5-1",
+        "label": "Fable 5.1",
+        "rates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }],
+        "cache": { "write5m": 1.25, "write1h": 2.0, "read": 0.025 }
+      },
+      {
         "id": "claude-fable-5",
         "label": "Fable 5",
         "aliases": ["fable"],
+        "rates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }]
+      },
+      {
+        "id": "claude-mythos-5-1",
+        "label": "Mythos 5.1",
         "rates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }]
       },
       {

@@ -112,6 +112,9 @@ input token that was either also stored (a write) or not recomputed (a read).
 | `write1h` | Writing to the 1-hour cache                   | `2.0`             |
 | `read`    | Reading from either                           | `0.1`             |
 
+These hold for every model that does not say otherwise — a model may carry its
+own `cache` block, see below.
+
 ### `pricing.serverTools`
 
 Anthropic-hosted tools bill per request, not per token, so they cannot ride the
@@ -126,6 +129,16 @@ token maths. Optional — omitted means both are free.
 | `aliases`   | no       | Other strings the same model appears under                          |
 | `rates`     | yes      | Ordered; see **Dated rates**                                        |
 | `fastRates` | no       | Fast mode is the same model at a different price                    |
+| `cache`     | no       | Cache multipliers for this model alone; replaces `pricing.cache`    |
+
+**`cache` on a model replaces the shared block wholesale** — all three fields,
+not the ones you name. It exists because the multipliers stopped being one set
+for every model: Fable 5.1 reads a cached token at `0.025` of its input rate
+($0.25 per MTok) where every other model reads at `0.1`. Neither shared answer
+works — leaving it at `0.1` overstates fourfold the model whose runs are mostly
+cache reads, and moving the list-wide value to `0.025` misprices every other
+model by the same factor the other way. Omit it unless a model genuinely
+deviates.
 
 **Model strings are normalized before matching:** a `[...]` suffix is stripped
 and the string is lowercased. So `claude-opus-5[1m]` matches `claude-opus-5` —

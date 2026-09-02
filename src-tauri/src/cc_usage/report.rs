@@ -247,15 +247,14 @@ fn price(plugin: &UsagePlugin, turn: &Turn) -> Priced {
         .map(|moment| moment.format("%Y-%m-%d").to_string())
         .unwrap_or_default();
 
+    // A model may price its cached tokens differently from the rest of the
+    // price list; `cache_multipliers` falls back to the shared set.
+    let cache = model.cache_multipliers(&plugin.pricing.cache);
+
     let (cost, cache_saving) = match rate_on(rates, &day) {
         Some(rate) => (
-            cost_of(
-                &turn.counts,
-                rate,
-                &plugin.pricing.cache,
-                &plugin.pricing.server_tools,
-            ),
-            cache_saving_of(&turn.counts, rate, &plugin.pricing.cache),
+            cost_of(&turn.counts, rate, cache, &plugin.pricing.server_tools),
+            cache_saving_of(&turn.counts, rate, cache),
         ),
         None => (0.0, 0.0),
     };
@@ -640,6 +639,32 @@ mod tests {
         assert_close(window.totals.cost, 0.0);
         assert_eq!(window.unpriced_models, vec!["claude-unknown-9"]);
         assert!(window.models[0].unpriced);
+    }
+
+    #[test]
+    fn a_models_own_cache_multipliers_win_over_the_price_lists() {
+        // Fable 5.1 reads a cached token at 0.025× its input rate, not the
+        // 0.1× every other model reads at. A long agent session is mostly
+        // cache reads, so pricing it off the shared multiplier would put a
+        // number on the panel four times what the model actually costs.
+        let mut cached = turn(NOW - HOUR, "claude-fable-5-1", "/tmp/alpha", "s1");
+        cached.counts = TokenCounts {
+            cache_read: 1_000_000,
+            ..Default::default()
+        };
+        let report = build(&[cached]);
+        assert_close(window(&report, "24h").totals.cost, 10.0 * 0.025);
+    }
+
+    #[test]
+    fn a_model_without_its_own_multipliers_uses_the_price_lists() {
+        let mut cached = turn(NOW - HOUR, "claude-opus-5", "/tmp/alpha", "s1");
+        cached.counts = TokenCounts {
+            cache_read: 1_000_000,
+            ..Default::default()
+        };
+        let report = build(&[cached]);
+        assert_close(window(&report, "24h").totals.cost, 5.0 * 0.1);
     }
 
     #[test]
