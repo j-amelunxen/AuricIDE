@@ -148,7 +148,7 @@ function BlueprintsGalleryContent() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="blueprints-gallery-title"
-        className="w-[95vw] h-[90vh] flex flex-col bg-[#0a0a10] rounded-xl border border-white/10 shadow-2xl overflow-hidden"
+        className="w-[95vw] h-[90vh] flex flex-col bg-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 flex-shrink-0">

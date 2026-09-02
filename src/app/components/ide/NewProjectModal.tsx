@@ -67,7 +67,7 @@ function NewProjectForm({ onCreate, onClose }: Omit<NewProjectModalProps, 'isOpe
         aria-labelledby="new-project-title"
         data-testid="new-project-modal"
         onSubmit={handleSubmit}
-        className="glass-card relative w-[480px] max-w-[95vw] overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a10] shadow-2xl animate-in fade-in zoom-in duration-200"
+        className="glass-card relative w-[480px] max-w-[95vw] overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl animate-in fade-in zoom-in duration-200"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">

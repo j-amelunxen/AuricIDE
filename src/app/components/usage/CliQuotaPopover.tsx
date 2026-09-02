@@ -72,7 +72,7 @@ export function CliQuotaPopover({
       /* Not `role="tooltip"`: it holds the refresh button, and a tooltip that
          owns the only control for a thing is a contradiction — it is the
          disclosure the chip's aria-expanded refers to. */
-      className="absolute right-0 bottom-full mb-2 z-[var(--z-tool)] w-64 rounded-lg border border-white/10 bg-[#0a0a10] p-3 shadow-2xl animate-in fade-in zoom-in duration-150"
+      className="absolute right-0 bottom-full mb-2 z-[var(--z-tool)] w-64 rounded-lg border border-white/10 bg-surface p-3 shadow-2xl animate-in fade-in zoom-in duration-150"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-[9px] uppercase tracking-wide text-foreground-muted">CLI quota</span>
@@ -193,7 +193,7 @@ export function CliQuotaPopover({
           </section>
         )}
       </div>
-      <div className="absolute right-3 top-full border-8 border-transparent border-t-[#0a0a10]" />
+      <div className="absolute right-3 top-full border-8 border-transparent border-t-surface" />
     </div>
   );
 }

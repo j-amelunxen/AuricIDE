@@ -160,7 +160,7 @@ function ActivityButton({
         {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
           <span
             data-testid={`badge-${item.id}`}
-            className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-white shadow-sm ring-2 ring-[#050508]"
+            className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-white shadow-sm ring-2 ring-background"
           >
             {item.badge}
           </span>

@@ -119,7 +119,7 @@ function ImportSpecDialogPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-spec-title"
-        className="glass-card w-full max-w-lg overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
+        className="glass-card w-full max-w-lg overflow-hidden rounded-xl border border-white/10 bg-surface p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center gap-2">

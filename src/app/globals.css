@@ -430,7 +430,7 @@ textarea:focus-visible,
   .glass,
   .glass-panel,
   .glass-card {
-    background: #0a0a10 !important;
+    background: var(--color-surface, #0a0a10) !important;
     backdrop-filter: none !important;
   }
 
@@ -636,7 +636,7 @@ textarea:focus-visible,
 
 .react-flow__handle {
   background: var(--primary) !important;
-  border: 2px solid #0a0a10 !important;
+  border: 2px solid var(--color-surface, #0a0a10) !important;
   width: 8px;
   height: 8px;
 }

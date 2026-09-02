@@ -95,7 +95,7 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
       ref={menuRef}
       role="menu"
       aria-label="Context menu"
-      className="fixed z-[var(--z-tool)] w-44 overflow-hidden rounded-lg border border-white/10 bg-[#0a0a10]/95 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in duration-100"
+      className="fixed z-[var(--z-tool)] w-44 overflow-hidden rounded-lg border border-white/10 bg-surface/95 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in duration-100"
       style={{ left: adjustedX, top: adjustedY }}
     >
       <div className="max-h-[70vh] overflow-y-auto py-1">

@@ -30,7 +30,7 @@ function LinkGraphNodeBase({ data }: LinkGraphNodeProps) {
       <Handle
         type="target"
         position={Position.Left}
-        className="!bg-primary !border-[#0a0a10] !w-2 !h-2"
+        className="!bg-primary !border-surface !w-2 !h-2"
       />
 
       <div className="flex items-center gap-2">
@@ -61,7 +61,7 @@ function LinkGraphNodeBase({ data }: LinkGraphNodeProps) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!bg-primary !border-[#0a0a10] !w-2 !h-2"
+        className="!bg-primary !border-surface !w-2 !h-2"
       />
     </div>
   );

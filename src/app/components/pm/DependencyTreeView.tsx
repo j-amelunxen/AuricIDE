@@ -182,7 +182,7 @@ export function DependencyTreeView({
   }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   return (
-    <div className="w-full h-full bg-[#050508]">
+    <div className="w-full h-full bg-background">
       <ReactFlow
         nodes={nodes}
         edges={edges}
