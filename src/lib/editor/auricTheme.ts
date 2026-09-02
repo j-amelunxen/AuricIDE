@@ -54,7 +54,7 @@ export const auricTheme = EditorView.theme(
       color: 'var(--primary)',
     },
     '.cm-tooltip': {
-      backgroundColor: '#0a0a10',
+      backgroundColor: 'var(--color-surface)',
       border: '1px solid rgba(255, 255, 255, 0.1)',
       color: '#e2e8f0',
       backdropFilter: 'blur(8px)',
@@ -102,7 +102,7 @@ export const auricTheme = EditorView.theme(
 
     // Search panel
     '.cm-panels': {
-      backgroundColor: '#0a0a10',
+      backgroundColor: 'var(--color-surface)',
       borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
     },
     '.cm-panels.cm-panels-top': {

@@ -36,7 +36,7 @@ function ThemeOption({
       />
       <span
         aria-hidden="true"
-        className={`h-4 w-4 flex-shrink-0 rounded-full ring-2 ring-offset-2 ring-offset-[#0a0a10] transition-shadow ${
+        className={`h-4 w-4 flex-shrink-0 rounded-full ring-2 ring-offset-2 ring-offset-surface transition-shadow ${
           selected ? 'ring-white/70' : 'ring-transparent'
         }`}
         style={{

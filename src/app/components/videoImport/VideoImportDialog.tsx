@@ -396,7 +396,7 @@ function VideoImportDialogContent() {
           aria-modal="true"
           aria-labelledby="video-import-title"
           data-testid="video-import-dialog"
-          className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a10] shadow-2xl"
+          className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl"
           onClick={(event) => event.stopPropagation()}
         >
           <header className="flex flex-wrap items-center gap-2 border-b border-white/5 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4">

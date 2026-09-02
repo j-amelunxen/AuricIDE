@@ -264,7 +264,7 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
   };
 
   return (
-    <div className="command-center-enter fixed inset-0 z-[var(--z-tool)] flex flex-col bg-[#050508]">
+    <div className="command-center-enter fixed inset-0 z-[var(--z-tool)] flex flex-col bg-background">
       <div
         ref={dialogRef}
         data-testid="command-center-shell"

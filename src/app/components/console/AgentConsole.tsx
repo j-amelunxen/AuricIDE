@@ -281,7 +281,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[var(--z-tool)] flex flex-col bg-[#050508]">
+    <div className="fixed inset-0 z-[var(--z-tool)] flex flex-col bg-background">
       <div
         ref={dialogRef}
         data-testid="agent-console-shell"
@@ -444,7 +444,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
         <div
           data-testid="agent-console-feed"
           style={{ height: feedHeight }}
-          className="flex min-h-0 flex-col bg-[#0a0a10]"
+          className="flex min-h-0 flex-col bg-surface"
         >
           {/* The console's own border-top, made draggable. A separator rather
               than a button: it has a value, and screen readers announce it as

@@ -221,7 +221,7 @@ function SettingsDialog({
         aria-modal="true"
         aria-labelledby="settings-modal-title"
         data-testid="settings-modal"
-        className="glass-card w-[900px] max-w-[95vw] h-[78vh] overflow-hidden rounded-xl border border-white/10 bg-[#0a0a10] shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col"
+        className="glass-card w-[900px] max-w-[95vw] h-[78vh] overflow-hidden rounded-xl border border-white/10 bg-surface shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
