@@ -20,8 +20,12 @@ import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConf
 /** Roughly four rows plus the feed's own header: still a feed, not a sliver. */
 export const CONSOLE_FEED_MIN_HEIGHT = 96;
 
-/** The strip's original height, and what Home returns to. */
-export const CONSOLE_FEED_DEFAULT_HEIGHT = 168;
+/**
+ * What Home returns to. The strip started at 168px, enough to see that
+ * something is happening; since the feed became lanes with a rail and a
+ * composer, that left two rows of conversation, so the default grew.
+ */
+export const CONSOLE_FEED_DEFAULT_HEIGHT = 280;
 
 /** The share of the window the feed may take. The rest stays the fleet's. */
 export const CONSOLE_FEED_MAX_FRACTION = 0.7;
