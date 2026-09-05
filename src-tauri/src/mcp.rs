@@ -29,6 +29,12 @@ impl McpServerState {
     }
 }
 
+impl Default for McpServerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn start_mcp_server(
     db_path: &str,
     script_path: &str,
