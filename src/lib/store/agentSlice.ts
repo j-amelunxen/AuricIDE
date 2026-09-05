@@ -64,10 +64,24 @@ export const MAX_AGENT_EVENTS = 2_000;
 // The project DB keeps 100 start prompts; the dialog only ever recalls the
 // freshest slice of them, so loading the whole tail is wasted work.
 export const MAX_RECALLED_PROMPTS = 25;
+// A lane's composer history is session-only scrollback, not an archive — cap
+// it the same way agentLogs bounds raw output, so a long-lived agent's sent
+// messages cannot grow without limit.
+export const MAX_SENT_MESSAGES = 200;
 // How much stored history the console reads back. The file may hold up to
 // AGENT_LOG_MAX_ROWS; rendering all of it would be pointless — this is a feed
 // somebody scrolls, not an archive they page through.
 export const MAX_LOADED_HISTORY = 2_000;
+
+/** One message a user typed to a running agent through the console's composer. */
+export interface SentMessage {
+  text: string;
+  at: number;
+  /** Monotonic per agent, starting at 0 — the feed's tiebreaker at a shared
+   * timestamp, and what keeps a sent row's identity from colliding with an
+   * event's once both land in the same merged feed (see `feed.ts`). */
+  seq: number;
+}
 
 export interface AgentLogMeta {
   /** Total chunks ever appended for this agent — survives trimming, so
@@ -138,6 +152,32 @@ export interface AgentSlice {
    * logs were looked at, so nothing slips silently off the review pile.
    */
   reviewedAgentIds: string[];
+  /**
+   * Lanes folded down to their summary in the console feed: still running,
+   * still counted, just excluded from the merged All-lanes view except for
+   * `mention` and `outcome` rows. Session-scoped, like the other view state.
+   */
+  mutedAgentIds: string[];
+  /** Toggles a lane's mute — no other view state changes with it. */
+  toggleAgentMuted: (agentId: string) => void;
+  /**
+   * When each lane was last read, for `laneUnread`. Absent means every event
+   * counts unread — the lane has never been opened.
+   */
+  laneSeenAt: Record<string, number>;
+  /**
+   * Marks a lane read up to `at`. Never moves the mark backwards, because an
+   * older mark arriving after a newer one would resurrect events already
+   * seen as unread.
+   */
+  markLaneSeen: (agentId: string, at: number) => void;
+  /**
+   * The user's own messages to each agent, newest last, capped at
+   * `MAX_SENT_MESSAGES` — the console feed's `you` rows. Session-only,
+   * written by `sendAgentInput` itself rather than by its callers, so every
+   * caller gets the composer's feed row for free.
+   */
+  agentSentMessages: Record<string, SentMessage[]>;
   /**
    * The exact config each agent was launched with, kept for one-click retry.
    * AgentInfo alone cannot reconstruct a launch — permission mode and
@@ -221,16 +261,26 @@ function withoutAgentRecords(state: LogRecords, agentId: string): LogRecords {
   return { agentLogs, agentLogMeta };
 }
 
-type AgentRuntimeRecords = Pick<AgentSlice, 'agentEvents' | 'agentHeartbeat' | 'agentStreamLines'>;
+type AgentRuntimeRecords = Pick<
+  AgentSlice,
+  | 'agentEvents'
+  | 'agentHeartbeat'
+  | 'agentStreamLines'
+  | 'mutedAgentIds'
+  | 'laneSeenAt'
+  | 'agentSentMessages'
+>;
 
 /**
- * Drops event history, heartbeat buckets, and the out-of-store extractor
- * registry for any id not present in `keepAgentIds`. Deliberately a sweep
- * rather than a single-id removal: an id can accumulate these records
- * (`appendAgentLog`) without ever landing in `agents` at all — Tauri does
- * not order PTY output against the spawn result — so removing exactly the
- * one agent a caller has in mind would miss that orphan. Passing the
- * post-removal `agents` id list here catches both in one pass.
+ * Drops event history, heartbeat buckets, the out-of-store extractor
+ * registry, and the lane view state (mute, seen mark, sent messages) for any
+ * id not present in `keepAgentIds`. Deliberately a sweep rather than a
+ * single-id removal: an id can accumulate these records (`appendAgentLog`,
+ * `sendAgentInput`, `toggleAgentMuted`, `markLaneSeen`) without ever landing
+ * in `agents` at all — Tauri does not order PTY output against the spawn
+ * result — so removing exactly the one agent a caller has in mind would miss
+ * that orphan. Passing the post-removal `agents` id list here catches both in
+ * one pass.
  */
 function reconcileAgentRuntimeState(
   state: AgentRuntimeRecords,
@@ -242,6 +292,9 @@ function reconcileAgentRuntimeState(
     agentEvents: withoutAgentIds(state.agentEvents, (id) => !keep.has(id)),
     agentHeartbeat: withoutAgentIds(state.agentHeartbeat, (id) => !keep.has(id)),
     agentStreamLines: withoutAgentIds(state.agentStreamLines, (id) => !keep.has(id)),
+    mutedAgentIds: state.mutedAgentIds.filter((id) => keep.has(id)),
+    laneSeenAt: withoutAgentIds(state.laneSeenAt, (id) => !keep.has(id)),
+    agentSentMessages: withoutAgentIds(state.agentSentMessages, (id) => !keep.has(id)),
   };
 }
 
@@ -306,10 +359,28 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   reviewedAgentIds: [],
   agentSpawnConfigs: {},
   promptHistory: [],
+  mutedAgentIds: [],
+  laneSeenAt: {},
+  agentSentMessages: {},
 
   setAgentColor: (agentId, color) => {
     const { [agentId]: _cleared, ...rest } = get().agentColors;
     set({ agentColors: color ? { ...rest, [agentId]: color } : rest });
+  },
+
+  toggleAgentMuted: (agentId) => {
+    const current = get().mutedAgentIds;
+    set({
+      mutedAgentIds: current.includes(agentId)
+        ? current.filter((id) => id !== agentId)
+        : [...current, agentId],
+    });
+  },
+
+  markLaneSeen: (agentId, at) => {
+    const current = get().laneSeenAt[agentId];
+    if (current !== undefined && current >= at) return;
+    set({ laneSeenAt: { ...get().laneSeenAt, [agentId]: at } });
   },
 
   toggleAgentRepoCollapsed: (repoPath) => {
@@ -554,6 +625,19 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   sendAgentInput: async (agentId, text) => {
     await sendToAgent(agentId, text);
+
+    // A bare Enter nudge (stall recovery, a permission menu's default) is
+    // not a message the composer should show back in the feed — only text
+    // that survives a trim of whitespace and trailing newlines counts.
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const existing = get().agentSentMessages[agentId] ?? [];
+    // Derived from the last kept message rather than the array length, so a
+    // seq already dropped by the cap below is never handed to a new message.
+    const seq = existing.length > 0 ? existing[existing.length - 1].seq + 1 : 0;
+    const updated = [...existing, { text: trimmed, at: Date.now(), seq }].slice(-MAX_SENT_MESSAGES);
+    set({ agentSentMessages: { ...get().agentSentMessages, [agentId]: updated } });
   },
 
   renameRunningAgent: async (agentId, name) => {

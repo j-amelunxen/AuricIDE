@@ -20,6 +20,7 @@ import {
   MAX_AGENT_LOGS,
   MAX_AGENT_LOG_BYTES,
   MAX_FINISHED_AGENTS,
+  MAX_SENT_MESSAGES,
   UNGROUPED_REPO_KEY,
 } from './agentSlice';
 
@@ -1661,6 +1662,113 @@ describe('agentSlice – marker colours', () => {
   });
 });
 
+describe('agentSlice – muted lanes', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const withStatus = (id: string, status: 'running' | 'idle' = 'running') => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status,
+    startedAt: 0,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+    store.setState({ agents: [withStatus('a1'), withStatus('a2')] });
+  });
+
+  it('starts with nothing muted', () => {
+    expect(store.getState().mutedAgentIds).toEqual([]);
+  });
+
+  it('mutes and unmutes an agent', () => {
+    store.getState().toggleAgentMuted('a1');
+    expect(store.getState().mutedAgentIds).toEqual(['a1']);
+
+    store.getState().toggleAgentMuted('a1');
+    expect(store.getState().mutedAgentIds).toEqual([]);
+  });
+
+  it('mutes several agents independently', () => {
+    store.getState().toggleAgentMuted('a1');
+    store.getState().toggleAgentMuted('a2');
+    expect(store.getState().mutedAgentIds.sort()).toEqual(['a1', 'a2']);
+  });
+
+  it('forgets a mute once the agent is killed', async () => {
+    store.getState().toggleAgentMuted('a1');
+    await store.getState().killRunningAgent('a1');
+    expect(store.getState().mutedAgentIds).toEqual([]);
+  });
+
+  it('forgets a mute once the agent is dismissed', () => {
+    store.setState({ agents: [withStatus('done', 'idle')] });
+    store.getState().toggleAgentMuted('done');
+
+    store.getState().dismissFinishedAgent('done');
+
+    expect(store.getState().mutedAgentIds).toEqual([]);
+  });
+});
+
+describe('agentSlice – lane seen marks', () => {
+  let store: StoreApi<AgentSlice>;
+
+  const withStatus = (id: string, status: 'running' | 'idle' = 'running') => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status,
+    startedAt: 0,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = createStore<AgentSlice>()(createAgentSlice);
+    store.setState({ agents: [withStatus('a1')] });
+  });
+
+  it('starts with no lane marked seen', () => {
+    expect(store.getState().laneSeenAt).toEqual({});
+  });
+
+  it('records when a lane was last seen', () => {
+    store.getState().markLaneSeen('a1', 100);
+    expect(store.getState().laneSeenAt.a1).toBe(100);
+  });
+
+  it('never moves a seen mark backwards', () => {
+    store.getState().markLaneSeen('a1', 100);
+    store.getState().markLaneSeen('a1', 50);
+    expect(store.getState().laneSeenAt.a1).toBe(100);
+  });
+
+  it('does move the mark forward', () => {
+    store.getState().markLaneSeen('a1', 100);
+    store.getState().markLaneSeen('a1', 150);
+    expect(store.getState().laneSeenAt.a1).toBe(150);
+  });
+
+  it('forgets the seen mark once the agent is killed', async () => {
+    store.getState().markLaneSeen('a1', 100);
+    await store.getState().killRunningAgent('a1');
+    expect(store.getState().laneSeenAt).toEqual({});
+  });
+
+  it('forgets the seen mark once the agent is dismissed', () => {
+    store.setState({ agents: [withStatus('done', 'idle')] });
+    store.getState().markLaneSeen('done', 100);
+
+    store.getState().dismissFinishedAgent('done');
+
+    expect(store.getState().laneSeenAt).toEqual({});
+  });
+});
+
 describe('agentSlice – collapsed repo groups', () => {
   let store: StoreApi<AgentSlice>;
 
@@ -2030,6 +2138,24 @@ describe('agentSlice – event extraction', () => {
     expect(store.getState().agentEvents['orphan']).toBeUndefined();
   });
 
+  it('sweeps orphaned muted, seen and sent-message records for an id that never landed in agents, on refresh', async () => {
+    const { listAgents } = await import('../tauri/agents');
+    store.getState().appendAgentLog('orphan', '$ pnpm build\n');
+    store.getState().toggleAgentMuted('orphan');
+    store.getState().markLaneSeen('orphan', 100);
+    await store.getState().sendAgentInput('orphan', 'hello\n');
+    expect(store.getState().mutedAgentIds).toContain('orphan');
+    expect(store.getState().laneSeenAt['orphan']).toBe(100);
+    expect(store.getState().agentSentMessages['orphan']).toBeDefined();
+
+    vi.mocked(listAgents).mockResolvedValueOnce([]);
+    await store.getState().refreshAgents();
+
+    expect(store.getState().mutedAgentIds).not.toContain('orphan');
+    expect(store.getState().laneSeenAt['orphan']).toBeUndefined();
+    expect(store.getState().agentSentMessages['orphan']).toBeUndefined();
+  });
+
   it('sweeps an orphaned id as a side effect of an unrelated agent being cleaned up', async () => {
     store.setState({ agents: [claudeAgent('events-real')] });
     store.getState().appendAgentLog('orphan-2', '$ pnpm build\n');
@@ -2059,6 +2185,104 @@ describe('sendAgentInput', () => {
     await store.getState().sendAgentInput('agent-1', 'run the tests\n');
 
     expect(agents.sendToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\n');
+  });
+
+  it('records a sent message trimmed of trailing whitespace and newlines', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+
+    await store.getState().sendAgentInput('agent-1', 'run the tests\n');
+
+    expect(store.getState().agentSentMessages['agent-1']).toEqual([
+      expect.objectContaining({ text: 'run the tests', seq: 0 }),
+    ]);
+  });
+
+  it('does not record a bare newline nudge as a message', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+
+    await store.getState().sendAgentInput('agent-1', '\n');
+
+    expect(store.getState().agentSentMessages['agent-1'] ?? []).toEqual([]);
+  });
+
+  it('does not record an all-whitespace send as a message', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+
+    await store.getState().sendAgentInput('agent-1', '   \n');
+
+    expect(store.getState().agentSentMessages['agent-1'] ?? []).toEqual([]);
+  });
+
+  it('assigns each sent message a monotonically increasing seq, per agent', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+
+    await store.getState().sendAgentInput('agent-1', 'first\n');
+    await store.getState().sendAgentInput('agent-1', 'second\n');
+    await store.getState().sendAgentInput('agent-2', 'other agent\n');
+
+    expect(store.getState().agentSentMessages['agent-1'].map((m) => m.seq)).toEqual([0, 1]);
+    expect(store.getState().agentSentMessages['agent-2'].map((m) => m.seq)).toEqual([0]);
+  });
+
+  it('caps stored sent messages at MAX_SENT_MESSAGES, dropping the oldest', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+
+    for (let i = 0; i < MAX_SENT_MESSAGES + 5; i++) {
+      await store.getState().sendAgentInput('agent-1', `message ${i}\n`);
+    }
+
+    const messages = store.getState().agentSentMessages['agent-1'];
+    expect(messages).toHaveLength(MAX_SENT_MESSAGES);
+    expect(messages[0].text).toBe('message 5');
+    expect(messages[messages.length - 1].text).toBe(`message ${MAX_SENT_MESSAGES + 4}`);
+  });
+
+  it('keeps seq increasing past the cap so a later message never reuses a dropped seq', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+
+    for (let i = 0; i < MAX_SENT_MESSAGES + 3; i++) {
+      await store.getState().sendAgentInput('agent-1', `message ${i}\n`);
+    }
+
+    const messages = store.getState().agentSentMessages['agent-1'];
+    const seqs = messages.map((m) => m.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  it('forgets sent messages once the agent is killed', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    store.setState({
+      agents: [
+        {
+          id: 'agent-1',
+          name: 'a',
+          model: 'm',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 0,
+        },
+      ],
+    });
+
+    await store.getState().sendAgentInput('agent-1', 'hello\n');
+    await store.getState().killRunningAgent('agent-1');
+
+    expect(store.getState().agentSentMessages['agent-1']).toBeUndefined();
+  });
+
+  it('forgets sent messages once the agent is dismissed', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    store.setState({
+      agents: [
+        { id: 'done', name: 'done', model: 'm', provider: 'claude', status: 'idle', startedAt: 0 },
+      ],
+    });
+
+    await store.getState().sendAgentInput('done', 'hello\n');
+    store.getState().dismissFinishedAgent('done');
+
+    expect(store.getState().agentSentMessages['done']).toBeUndefined();
   });
 });
 
