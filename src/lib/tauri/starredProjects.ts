@@ -1,5 +1,44 @@
 import { invoke } from './invoke';
-import type { StarredProject, StarredProjectSettings } from '../store/starredProjectsSlice';
+import type { PermissionMode } from './agents';
+
+export type ProjectIconOverride =
+  | { kind: 'glyph'; value: string }
+  | { kind: 'emoji'; value: string }
+  | { kind: 'image'; value: string };
+
+export interface QuickAccessSkill {
+  id: string;
+  label: string;
+  prompt: string;
+  providerId?: string;
+  model?: string;
+  permissionMode?: PermissionMode;
+  invocation?: string;
+  auricSkillId?: string;
+}
+
+export interface QuickAccessCombo {
+  id: string;
+  label: string;
+  steps: QuickAccessSkill[];
+}
+
+export interface StarredProjectSettings {
+  icon?: ProjectIconOverride;
+  skills: QuickAccessSkill[];
+  combos?: QuickAccessCombo[];
+  wheelSlots?: (string | null)[];
+}
+
+export interface StarredProject {
+  path: string;
+  name: string;
+  starredAt: number;
+  icon?: ProjectIconOverride;
+  skills?: QuickAccessSkill[];
+  combos?: QuickAccessCombo[];
+  wheelSlots?: (string | null)[];
+}
 
 /**
  * The backend is a separate system, so its shape is an assumption until it is

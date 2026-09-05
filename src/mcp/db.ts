@@ -1,24 +1,8 @@
 import Database from 'better-sqlite3';
+import { initMigrationTable, openSqliteDb, createInMemorySqliteDb } from './sqliteHelper';
 
 function runMigrations(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      id         INTEGER PRIMARY KEY,
-      name       TEXT NOT NULL,
-      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  const applied = (id: number): boolean => {
-    const row = db.prepare('SELECT COUNT(*) > 0 AS ok FROM _migrations WHERE id = ?').get(id) as {
-      ok: number;
-    };
-    return row.ok === 1;
-  };
-
-  const record = (id: number, name: string): void => {
-    db.prepare('INSERT INTO _migrations (id, name) VALUES (?, ?)').run(id, name);
-  };
+  const { applied, record } = initMigrationTable(db);
 
   // Migration #1: kv_store
   if (!applied(1)) {
@@ -327,16 +311,13 @@ function runMigrations(db: Database.Database): void {
 }
 
 export function openDatabase(path: string): Database.Database {
-  const db = new Database(path);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  const db = openSqliteDb(path, { wal: true, foreignKeys: true });
   runMigrations(db);
   return db;
 }
 
 export function createTestDb(): Database.Database {
-  const db = new Database(':memory:');
-  db.pragma('foreign_keys = ON');
+  const db = createInMemorySqliteDb({ foreignKeys: true });
   runMigrations(db);
   return db;
 }

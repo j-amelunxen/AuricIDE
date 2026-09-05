@@ -1,8 +1,7 @@
 import { Facet, type Extension } from '@codemirror/state';
-import { linter, lintGutter, type Diagnostic } from '@codemirror/lint';
-import type { EditorView } from '@codemirror/view';
+import { linter, lintGutter } from '@codemirror/lint';
 import * as yaml from 'js-yaml';
-import { useStore } from '@/lib/store';
+import { createStructuredLinterSource } from './structuredLintHelper';
 
 export const currentFilePathFacetYaml = Facet.define<string, string>({
   combine: (values) => values[0] ?? '',
@@ -35,41 +34,10 @@ export function parseYamlErrors(text: string): YamlParseError[] {
   }
 }
 
-export function yamlLintSource(view: EditorView): Diagnostic[] {
-  const text = view.state.doc.toString();
-  const errors = parseYamlErrors(text);
-  const filePath = view.state.facet(currentFilePathFacetYaml);
-
-  const diagnostics: Diagnostic[] = errors.map((error) => {
-    const lineCount = view.state.doc.lines;
-    const safeLine = Math.min(Math.max(error.line, 1), lineCount);
-    const line = view.state.doc.line(safeLine);
-    const from = Math.min(line.from + Math.max(0, error.column - 1), view.state.doc.length);
-    const to = Math.min(Math.max(from + 1, line.to), view.state.doc.length);
-
-    return {
-      from,
-      to,
-      severity: 'error' as const,
-      message: error.message,
-      source: 'yaml',
-    };
-  });
-
-  if (filePath) {
-    useStore.getState().setDiagnostics(
-      filePath,
-      errors.map((e) => ({
-        line: e.line,
-        column: e.column,
-        message: e.message,
-        ruleId: 'yaml',
-        severity: 'error' as const,
-      }))
-    );
-  }
-
-  return diagnostics;
-}
+export const yamlLintSource = createStructuredLinterSource(
+  parseYamlErrors,
+  currentFilePathFacetYaml,
+  'yaml'
+);
 
 export const yamlLintExtension: Extension = [linter(yamlLintSource, { delay: 300 }), lintGutter()];

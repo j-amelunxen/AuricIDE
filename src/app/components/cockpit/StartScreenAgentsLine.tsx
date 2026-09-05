@@ -7,7 +7,7 @@ import { countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
 import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
-interface DailyTip {
+export interface DailyTip {
   icon: string;
   text: ReactNode;
 }

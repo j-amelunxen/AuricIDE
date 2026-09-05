@@ -1,4 +1,5 @@
 import { readImageAsDataUri } from '@/lib/tauri/projectIcons';
+import { createAsyncDedupeCache } from './asyncDedupeCache';
 
 /**
  * Path → data URI, or null once a path is known to be unreadable.
@@ -9,44 +10,17 @@ import { readImageAsDataUri } from '@/lib/tauri/projectIcons';
  * never changes within a session. A negative entry is cached too — a deleted
  * favicon should cost one failed read, not one per render.
  */
-const cache = new Map<string, string | null>();
-const inFlight = new Map<string, Promise<string | null>>();
+const iconCache = createAsyncDedupeCache<string>();
 
 export function getCachedImageIcon(path: string): string | null | undefined {
-  return cache.get(path);
+  return iconCache.get(path);
 }
 
 export function loadImageIcon(path: string): Promise<string | null> {
-  const cached = cache.get(path);
-  if (cached !== undefined) return Promise.resolve(cached);
-
-  const existing = inFlight.get(path);
-  if (existing) return existing;
-
-  const request = readImageAsDataUri(path)
-    .then((dataUri) => {
-      cache.set(path, dataUri);
-      return dataUri;
-    })
-    .catch(() => {
-      cache.set(path, null);
-      return null;
-    })
-    .finally(() => {
-      inFlight.delete(path);
-    });
-
-  inFlight.set(path, request);
-  return request;
+  return iconCache.load(path, () => readImageAsDataUri(path));
 }
 
 /** Forgets one path, or everything. Used by tests and after picking a new icon. */
 export function clearImageIconCache(path?: string): void {
-  if (path === undefined) {
-    cache.clear();
-    inFlight.clear();
-    return;
-  }
-  cache.delete(path);
-  inFlight.delete(path);
+  iconCache.clear(path);
 }

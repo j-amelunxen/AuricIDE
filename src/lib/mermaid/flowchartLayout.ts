@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre';
-import type { FlowchartNode, FlowchartEdge, FlowchartDirection } from './mermaidFlowchartParser';
+import type { FlowchartNode, FlowchartEdge, FlowchartDirection } from './flowchartTypes';
 
 export interface LayoutResult {
   nodes: FlowchartNode[];

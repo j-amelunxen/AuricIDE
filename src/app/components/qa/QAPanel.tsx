@@ -7,15 +7,13 @@ import { CoverageHeatmapModal } from './CoverageHeatmapModal';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function QAPanel() {
-  const {
-    coverageStatus,
-    coverageSummary,
-    fileCoverage,
-    rootPath,
-    loadCoverage,
-    setSpawnDialogOpen,
-    setInitialAgentTask,
-  } = useStore();
+  const coverageStatus = useStore((s) => s.coverageStatus);
+  const coverageSummary = useStore((s) => s.coverageSummary);
+  const fileCoverage = useStore((s) => s.fileCoverage);
+  const rootPath = useStore((s) => s.rootPath);
+  const loadCoverage = useStore((s) => s.loadCoverage);
+  const setSpawnDialogOpen = useStore((s) => s.setSpawnDialogOpen);
+  const setInitialAgentTask = useStore((s) => s.setInitialAgentTask);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [heatmapOpen, setHeatmapOpen] = useState(false);

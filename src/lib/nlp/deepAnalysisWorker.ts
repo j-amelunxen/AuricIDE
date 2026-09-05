@@ -57,13 +57,8 @@ export interface WorkerRequest {
   id: string;
 }
 
-export interface NerEntity {
-  entity_group: string;
-  score: number;
-  word: string;
-  start: number;
-  end: number;
-}
+import type { NerEntity } from './nlpTypes';
+export type { NerEntity };
 
 export interface ClassifyResult {
   labels: string[];

@@ -1,3 +1,5 @@
+import { copyToClipboard } from './clipboard';
+
 /**
  * Opens an external URL in the system browser via tauri-plugin-opener.
  * Falls back to copying the URL to the clipboard (browser mode / plugin
@@ -8,7 +10,7 @@ export async function openExternalUrl(url: string): Promise<void> {
     const { openUrl } = await import('@tauri-apps/plugin-opener');
     await openUrl(url);
   } catch {
-    await navigator.clipboard.writeText(url);
+    await copyToClipboard(url);
     throw new Error('Could not open the browser. Link copied to clipboard instead.');
   }
 }

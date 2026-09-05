@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InboxItemRow, type InboxItemRowProps } from './InboxItemRow';
@@ -239,10 +239,8 @@ describe('InboxItemRow', () => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
       renderRow();
-
       await user.click(screen.getByRole('button', { name: /copy/i }));
-
-      expect(writeText).toHaveBeenCalledWith('Write the report');
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('Write the report'));
     });
 
     it('includes the notes when copying an item that has them', async () => {
@@ -252,9 +250,10 @@ describe('InboxItemRow', () => {
       renderRow({ item: makeItem({ notes: 'Ask the client for the invoice number.' }) });
 
       await user.click(screen.getByRole('button', { name: /copy/i }));
-
-      expect(writeText).toHaveBeenCalledWith(
-        'Write the report\n\nAsk the client for the invoice number.'
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(
+          'Write the report\n\nAsk the client for the invoice number.'
+        )
       );
     });
   });

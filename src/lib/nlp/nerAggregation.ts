@@ -1,4 +1,4 @@
-import type { NerEntity } from './deepAnalysisWorker';
+import type { NerEntity } from './nlpTypes';
 
 /**
  * Raw per-token output of transformers.js' token-classification pipeline.

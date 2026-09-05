@@ -6,11 +6,8 @@ const STORAGE_KEY = 'auric-recent-projects';
 export const MAX_RECENT = 50;
 let syncRevision = 0;
 
-export interface RecentProject {
-  path: string;
-  name: string;
-  openedAt: number;
-}
+import type { RecentProject } from '../tauri/recentProjects';
+export type { RecentProject };
 
 export interface RecentProjectsSlice {
   recentProjects: RecentProject[];

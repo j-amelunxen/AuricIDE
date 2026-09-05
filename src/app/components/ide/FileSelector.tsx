@@ -5,6 +5,7 @@ import { ProjectFileInfo } from '@/lib/tauri/fs';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { useStore } from '@/lib/store';
+import { copyToClipboard } from '@/lib/tauri/clipboard';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 interface FileSelectorProps {
@@ -49,16 +50,15 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
     });
   }, [files, extension, minLines, maxLines, query]);
 
-  const copyToClipboard = () => {
+  const copyContent = () => {
     const paths = filtered.map((f) => f.path).join('\n');
-    if (!navigator.clipboard?.writeText) {
-      showToast('Clipboard is unavailable in this context', 'error');
-      return;
-    }
-    void navigator.clipboard
-      .writeText(paths)
-      .then(() => showToast('File list copied', 'success'))
-      .catch(() => showToast('Could not copy file list', 'error'));
+    void copyToClipboard(paths).then((ok) => {
+      if (ok) {
+        showToast('File list copied', 'success');
+      } else {
+        showToast('Could not copy file list', 'error');
+      }
+    });
   };
 
   return (
@@ -187,7 +187,7 @@ function FileSelectorDialog({ files, onClose, rootPath }: Omit<FileSelectorProps
             {filtered.length} files found
           </span>
           <button
-            onClick={copyToClipboard}
+            onClick={copyContent}
             disabled={filtered.length === 0}
             className="flex items-center gap-2 bg-primary/20 hover:bg-primary/30 disabled:opacity-50 text-primary-light px-4 py-1.5 rounded-lg text-xs font-bold transition-all"
           >
