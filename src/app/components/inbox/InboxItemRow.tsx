@@ -22,6 +22,7 @@ import type {
   ProjectPmOverview,
 } from '@/lib/tauri/inbox';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
+import { copyToClipboard } from '@/lib/tauri/clipboard';
 
 export interface InboxItemRowProps {
   item: InboxItem;
@@ -119,15 +120,12 @@ export function InboxItemRow({
 
   const copyContent = () => {
     const text = item.notes.trim() === '' ? item.title : `${item.title}\n\n${item.notes}`;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
+    void copyToClipboard(text).then((ok) => {
+      if (ok) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => {
-        // Fallback or ignore
-      });
+      }
+    });
   };
 
   const pickProject = (option: ProjectPickerOption) => {

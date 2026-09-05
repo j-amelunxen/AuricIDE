@@ -3,6 +3,7 @@ mod agent_persistence;
 mod agents;
 mod app_config;
 mod cc_usage;
+mod clipboard;
 pub mod crashlog;
 mod database;
 mod excalidraw;
@@ -2282,6 +2283,8 @@ pub fn run() {
             save_image_to_path,
             get_scratch_dir,
             check_cli_status,
+            clipboard::clipboard_write_text,
+            clipboard::clipboard_read_text,
             watch_directory,
             unwatch_directory,
             shell_spawn,

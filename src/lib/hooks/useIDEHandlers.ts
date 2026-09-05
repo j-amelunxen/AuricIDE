@@ -44,6 +44,7 @@ import {
 } from '@/lib/project/newProject';
 import { type AgentConfig } from '@/lib/tauri/agents';
 import { openExternalUrl, revealInFileManager } from '@/lib/tauri/opener';
+import { copyToClipboard } from '@/lib/tauri/clipboard';
 import { buildAgenticCommitTask } from '@/lib/git/agenticCommit';
 import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
 import { computeBacklinkWarning } from '@/lib/refactoring/backlinkWarning';
@@ -1276,13 +1277,34 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     [state]
   );
 
-  const handleCopyPath = useCallback((path: string) => {
-    navigator.clipboard.writeText(path);
-  }, []);
+  const handleCopyPath = useCallback(
+    (path: string) => {
+      void copyToClipboard(path).then((ok) => {
+        if (ok) {
+          state.showToast('Copied path', 'success');
+        } else {
+          state.showToast('Could not copy path', 'error');
+        }
+      });
+    },
+    [state]
+  );
 
-  const handleCopyPaths = useCallback((paths: string[]) => {
-    navigator.clipboard.writeText(paths.join('\n'));
-  }, []);
+  const handleCopyPaths = useCallback(
+    (paths: string[]) => {
+      void copyToClipboard(paths.join('\n')).then((ok) => {
+        if (ok) {
+          state.showToast(
+            paths.length === 1 ? 'Copied path' : `Copied ${paths.length} paths`,
+            'success'
+          );
+        } else {
+          state.showToast('Could not copy paths', 'error');
+        }
+      });
+    },
+    [state]
+  );
 
   const handleRenameRequest = useCallback(
     (node: FileTreeNode) => {
@@ -1984,6 +2006,7 @@ export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
     handleContextMenu,
     handleRootContextMenu,
     handleCopyPath,
+    handleCopyPaths,
     handleRenameConfirm,
     handleAddToGitignore,
     handleIgnoreGitRepo,

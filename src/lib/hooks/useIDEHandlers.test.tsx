@@ -2615,4 +2615,50 @@ describe('useIDEHandlers', () => {
       expect(mockState.setScrollToLine).toHaveBeenCalledWith(3);
     });
   });
+
+  describe('handleCopyPath and handleCopyPaths', () => {
+    it('copies a single path and shows a success toast', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleCopyPath('/p/notes.md');
+
+      await waitFor(() => {
+        expect(mockState.showToast).toHaveBeenCalledWith('Copied path', 'success');
+      });
+    });
+
+    it('copies multiple paths separated by newlines and shows count toast', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleCopyPaths(['/p/a.md', '/p/b.md']);
+
+      await waitFor(() => {
+        expect(mockState.showToast).toHaveBeenCalledWith('Copied 2 paths', 'success');
+      });
+    });
+
+    it('shows an error toast when copying fails', async () => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+        configurable: true,
+      });
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.handleCopyPath('/p/fail.md');
+
+      await waitFor(() => {
+        expect(mockState.showToast).toHaveBeenCalledWith('Could not copy path', 'error');
+      });
+    });
+  });
 });

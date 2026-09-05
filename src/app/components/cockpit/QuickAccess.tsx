@@ -36,6 +36,7 @@ import { SkillWheel, useSkillWheel } from './SkillWheel';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useProjectDirty } from '@/lib/hooks/useProjectDirty';
+import { copyToClipboard } from '@/lib/tauri/clipboard';
 
 /** Hold-to-confirm threshold for unstarring — long enough to rule out an
  * accidental tap, short enough to still feel immediate once committed to. */
@@ -554,17 +555,13 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           action: () => {
             // Held before ContextMenu's onClose nulls the menu state.
             const path = contextMenu.path;
-            // ContextMenu invokes actions synchronously, and an insecure
-            // context has no navigator.clipboard at all — reaching for it
-            // unguarded throws inside the click handler.
-            if (!navigator.clipboard?.writeText) {
-              showToast('Clipboard is unavailable in this context', 'error');
-              return;
-            }
-            void navigator.clipboard
-              .writeText(path)
-              .then(() => showToast('Working directory copied', 'success'))
-              .catch(() => showToast('Could not copy working directory', 'error'));
+            void copyToClipboard(path).then((ok) => {
+              if (ok) {
+                showToast('Working directory copied', 'success');
+              } else {
+                showToast('Could not copy working directory', 'error');
+              }
+            });
           },
         },
         { type: 'separator' },
