@@ -2,7 +2,7 @@ import type { AgentInfo } from '../../tauri/agents';
 import type { SentMessage } from '../../store/agentSlice';
 import type { PersistedAgentEvent } from '../../tauri/agentLog';
 import type { StreamLine } from './streamCapture';
-import type { AgentEvent, AgentEventKind } from './types';
+import { isAgentEventKind, type AgentEvent, type AgentEventKind } from './types';
 
 export interface FeedEntry extends AgentEvent {
   agentId: string;
@@ -12,6 +12,14 @@ export interface FeedEntry extends AgentEvent {
 export interface StreamFeedEntry extends StreamLine {
   agentId: string;
 }
+
+/**
+ * Every kind a feed row can carry: a real agent event, the user's own `sent`
+ * message, or a raw output `line` shown as-is (the feed's "All output" mode).
+ * `sent` and `line` are feed-only concepts — neither is ever written to disk
+ * as an `AgentEvent`.
+ */
+export type FeedRowKind = AgentEventKind | 'sent' | 'line';
 
 /**
  * One row of the activity feed as it is displayed.
@@ -27,7 +35,7 @@ export interface FeedRow {
   agentId: string;
   agentName: string;
   repoPath?: string;
-  kind: AgentEventKind | 'sent';
+  kind: FeedRowKind;
   label: string;
   path?: string;
   at: number;
@@ -35,18 +43,25 @@ export interface FeedRow {
 }
 
 /**
- * Identity of a single row, for reconciling the live and stored copies.
+ * Identity of a single row, for reconciling the live and stored copies and
+ * for React's list reconciliation.
  *
  * A `sent` row's seq comes from its own per-agent counter (see
- * `SentMessage`), which starts at 0 just like `AgentEvent.seq` — so a sent
- * message and an unrelated stored event can legitimately land on the same
- * `(agentId, at, seq)` triple. Prefixing the seq for `sent` rows keeps that
- * pairing from colliding with an event's key, which would otherwise make
- * `mergeFeedRows` mistake the real event for a duplicate of the message and
- * drop it.
+ * `SentMessage`), and a `line` row's from `StreamLine`'s — both start at 0
+ * just like `AgentEvent.seq` — so any two of the three kinds can legitimately
+ * land on the same `(agentId, at, seq)` triple. Prefixing the seq per
+ * non-event kind keeps those from colliding with each other or with a real
+ * event's key, which would otherwise make `mergeFeedRows` mistake one row for
+ * a duplicate of another and drop it.
  */
-function rowKey(row: { agentId: string; at: number; seq?: number; kind?: string }): string {
-  const seqPart = row.kind === 'sent' ? `s${row.seq ?? 0}` : `${row.seq ?? 0}`;
+export function feedRowKey(row: {
+  agentId: string;
+  at: number;
+  seq?: number;
+  kind?: string;
+}): string {
+  const seq = row.seq ?? 0;
+  const seqPart = row.kind === 'sent' ? `s${seq}` : row.kind === 'line' ? `l${seq}` : `${seq}`;
   return `${row.agentId}|${row.at}|${seqPart}`;
 }
 
@@ -110,18 +125,19 @@ export function mergeFeedRows(
   history: PersistedAgentEvent[],
   limit = 1_000
 ): FeedRow[] {
-  const seen = new Set(live.map(rowKey));
+  const seen = new Set(live.map(feedRowKey));
   const rows = [...live];
   for (const stored of history) {
-    if (seen.has(rowKey(stored))) continue;
-    seen.add(rowKey(stored));
+    if (seen.has(feedRowKey(stored))) continue;
+    seen.add(feedRowKey(stored));
     rows.push({
       agentId: stored.agentId,
       agentName: stored.agentName,
       repoPath: stored.repoPath,
-      // Stored history is always a real event — 'sent' rows are session-only
-      // and never written to disk.
-      kind: stored.kind as AgentEventKind,
+      // A row from disk we cannot classify is still something the agent
+      // did — hiding it would make the history lie by omission, so an
+      // unrecognised stored kind is shown as a 'note' rather than dropped.
+      kind: isAgentEventKind(stored.kind) ? stored.kind : 'note',
       label: stored.label,
       path: stored.path,
       at: stored.at,
@@ -184,4 +200,26 @@ export function mergeStreamFeed(
     }
   }
   return entries.sort(newestFirst).slice(0, limit);
+}
+
+/**
+ * Stream lines, resolved against the running fleet into displayable rows of
+ * kind `'line'` — the feed's honest counterpart to recasting a stream line as
+ * a `'note'` event, which it is not: nothing distilled it, it is the agent's
+ * raw output shown as-is.
+ */
+export function toStreamFeedRows(lines: StreamFeedEntry[], agents: AgentInfo[]): FeedRow[] {
+  const agentById = new Map(agents.map((agent) => [agent.id, agent]));
+  return lines.map((line) => {
+    const agent = agentById.get(line.agentId);
+    return {
+      agentId: line.agentId,
+      agentName: agent?.name || line.agentId,
+      repoPath: agent?.repoPath,
+      kind: 'line',
+      label: line.text,
+      at: line.at,
+      seq: line.seq,
+    };
+  });
 }

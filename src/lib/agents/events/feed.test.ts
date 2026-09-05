@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { AgentInfo } from '../../tauri/agents';
 import type { SentMessage } from '../../store/agentSlice';
 import {
+  feedRowKey,
   mergeActivityFeed,
   mergeFeedRows,
   mergeStreamFeed,
   toFeedRows,
   toSentFeedRows,
+  toStreamFeedRows,
   type FeedRow,
+  type StreamFeedEntry,
 } from './feed';
 import type { PersistedAgentEvent } from '../../tauri/agentLog';
 import type { StreamLine } from './streamCapture';
@@ -292,5 +295,76 @@ describe('mergeFeedRows', () => {
     const rows = mergeFeedRows([sent], [stored('a', 10, 0, 'Edited a')]);
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.label).sort()).toEqual(['Edited a', 'go']);
+  });
+
+  it('shows a stored row whose kind is not a real AgentEventKind rather than dropping it', () => {
+    // A row from disk we cannot classify is still something the agent did —
+    // hiding it would make the history lie by omission, so it is shown as a
+    // 'note' rather than skipped.
+    const bogus: PersistedAgentEvent = {
+      agentId: 'a',
+      agentName: 'a',
+      kind: 'bogus',
+      label: 'Unrecognised row',
+      at: 10,
+      seq: 0,
+    };
+    const rows = mergeFeedRows([], [bogus]);
+    expect(rows).toEqual([expect.objectContaining({ kind: 'note', label: 'Unrecognised row' })]);
+  });
+});
+
+describe('toStreamFeedRows', () => {
+  const line = (agentId: string, text: string, at: number, seq = 0): StreamFeedEntry => ({
+    agentId,
+    text,
+    at,
+    seq,
+  });
+
+  it("turns a stream line into a 'line'-kind row carrying the agent identity", () => {
+    const rows = toStreamFeedRows(
+      [line('a', 'hello there', 5)],
+      [{ ...agent('a'), name: 'Builder', repoPath: '/repos/acme' }]
+    );
+    expect(rows).toEqual([
+      {
+        agentId: 'a',
+        agentName: 'Builder',
+        repoPath: '/repos/acme',
+        kind: 'line',
+        label: 'hello there',
+        at: 5,
+        seq: 0,
+      },
+    ]);
+  });
+
+  it('falls back to the id when the line’s agent is gone', () => {
+    const rows = toStreamFeedRows([line('gone', 'orphan', 1)], []);
+    expect(rows[0].agentName).toBe('gone');
+  });
+
+  it('skips agents with no captured lines', () => {
+    expect(toStreamFeedRows([], [agent('a')])).toEqual([]);
+  });
+});
+
+describe('feedRowKey', () => {
+  it('never collides across an event, a sent message and a stream line sharing (agentId, at, seq)', () => {
+    // Each kind keeps its own seq space starting at 0, so the same triple is
+    // legitimately reused by all three — the key must still tell them apart.
+    const shared = { agentId: 'a', at: 10, seq: 0 };
+    const eventKey = feedRowKey({ ...shared, kind: 'run' });
+    const sentKey = feedRowKey({ ...shared, kind: 'sent' });
+    const lineKey = feedRowKey({ ...shared, kind: 'line' });
+    expect(new Set([eventKey, sentKey, lineKey]).size).toBe(3);
+  });
+
+  it('treats a different agent, timestamp or seq as a different key', () => {
+    const base = feedRowKey({ agentId: 'a', at: 10, seq: 0, kind: 'run' });
+    expect(feedRowKey({ agentId: 'b', at: 10, seq: 0, kind: 'run' })).not.toBe(base);
+    expect(feedRowKey({ agentId: 'a', at: 11, seq: 0, kind: 'run' })).not.toBe(base);
+    expect(feedRowKey({ agentId: 'a', at: 10, seq: 1, kind: 'run' })).not.toBe(base);
   });
 });

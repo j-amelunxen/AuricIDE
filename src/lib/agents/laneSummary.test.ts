@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { llmCall } from '../tauri/llm';
-import { __resetFinishPolishCacheForTests } from './headlessFinish';
+import { clearFinishPolishCache } from './headlessFinish';
 import { extractAskSummary, resolveLaneSummary } from './laneSummary';
 
 vi.mock('../tauri/llm', () => ({
@@ -11,7 +11,7 @@ vi.mock('../tauri/llm', () => ({
 // headlessFinish.ts's cache (S1) — reset it so one test's extract cannot
 // dedupe into another's just because both logs happened to say the same thing.
 beforeEach(() => {
-  __resetFinishPolishCacheForTests();
+  clearFinishPolishCache();
 });
 
 describe('extractAskSummary', () => {
@@ -220,6 +220,50 @@ describe('resolveLaneSummary', () => {
       });
       expect(summary).toEqual(
         expect.objectContaining({ text: 'Deployed to production.', source: 'extract' })
+      );
+    });
+  });
+
+  describe('pre-computed extract', () => {
+    it('uses a given ask extract instead of deriving one from the logs', async () => {
+      // These logs alone hold no question — a recompute would return null.
+      const summary = await resolveLaneSummary({
+        kind: 'ask',
+        logs: ['Reading fleet.ts\n'],
+        extract: 'Do you want to proceed?',
+        llmConfigured: false,
+        projectPath: '/repo',
+      });
+      expect(summary).toEqual(
+        expect.objectContaining({ text: 'Do you want to proceed?', source: 'extract' })
+      );
+    });
+
+    it('uses a given done/failed extract instead of deriving one from the logs', async () => {
+      // Empty logs alone would derive to null.
+      const summary = await resolveLaneSummary({
+        kind: 'done',
+        logs: [],
+        extract: 'Deployed to production.',
+        llmConfigured: false,
+        projectPath: '/repo',
+      });
+      expect(summary).toEqual(
+        expect.objectContaining({ text: 'Deployed to production.', source: 'extract' })
+      );
+    });
+
+    it('still polishes a given extract through a configured LLM', async () => {
+      vi.mocked(llmCall).mockResolvedValueOnce({ content: 'It wants approval to deploy.' });
+      const summary = await resolveLaneSummary({
+        kind: 'ask',
+        logs: ['Reading fleet.ts\n'],
+        extract: 'Do you want to proceed?',
+        llmConfigured: true,
+        projectPath: '/repo',
+      });
+      expect(summary).toEqual(
+        expect.objectContaining({ text: 'It wants approval to deploy.', source: 'llm' })
       );
     });
   });

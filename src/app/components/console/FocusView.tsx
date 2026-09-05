@@ -12,16 +12,12 @@ import {
   CONSOLE_STATE_RANK,
 } from '@/lib/agents/consoleState';
 import { describeRightNow } from '@/lib/agents/consoleActivity';
+import { projectLabel } from '@/lib/agents/lanes';
 import { useNow } from '@/lib/hooks/useNow';
 import { useStore } from '@/lib/store';
 import { XtermTerminal } from '@/app/components/terminal/XtermTerminal';
 import { Heartbeat, CONSOLE_STATE_HEARTBEAT_TONE } from './Heartbeat';
 import { PhaseChip } from './PhaseChip';
-
-function repoName(repoPath?: string): string {
-  if (!repoPath) return 'Unknown';
-  return repoPath.split('/').pop() || repoPath;
-}
 
 const THUMB_TONE: Record<'yours' | 'error' | 'other', string> = {
   yours: 'border-amber-500/45',
@@ -96,7 +92,7 @@ export function FocusView({
             ← Projects
           </button>
           <span data-testid="focus-crumb" className="text-[11px] text-foreground-muted">
-            {repoName(agent.repoPath)} /{' '}
+            {projectLabel(agent.repoPath)} /{' '}
             <b className="font-semibold text-foreground">{agent.name}</b> · {agent.model}
           </span>
           <PhaseChip state={state} label={label} className="ml-1" />
@@ -172,7 +168,7 @@ export function FocusView({
                 />
               </div>
               <div className="truncate text-[10.5px] text-foreground-muted">
-                {repoName(other.repoPath)} · {other.model} · {otherLabel}
+                {projectLabel(other.repoPath)} · {other.model} · {otherLabel}
               </div>
               <div className="truncate text-[11px] text-foreground">
                 <span aria-hidden="true" className="text-foreground-muted">

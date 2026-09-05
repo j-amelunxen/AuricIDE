@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig } from '../tauri/agents';
 import { llmCall } from '../tauri/llm';
 import {
-  __resetFinishPolishCacheForTests,
   announceHeadlessFinish,
+  clearFinishPolishCache,
   headlessFinishNotification,
   resolveFinishBody,
   resolveFinishSummary,
@@ -18,7 +18,7 @@ vi.mock('../tauri/llm', () => ({
 // consumer) is module state — without a reset, one test's finish could
 // dedupe into another's just because they extracted the same text.
 beforeEach(() => {
-  __resetFinishPolishCacheForTests();
+  clearFinishPolishCache();
 });
 
 const HEADLESS: Pick<AgentConfig, 'headless' | 'runSource'> = {

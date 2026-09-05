@@ -11,6 +11,7 @@ import {
   isVisibleUnderMute,
   laneUnread,
   oldestFirst,
+  projectLabel,
   SENDER_RUN_MAX_GAP_MS,
 } from './lanes';
 
@@ -52,6 +53,28 @@ describe('feedTier', () => {
 
   it("reads a sent message as the user's own", () => {
     expect(feedTier('sent')).toBe('you');
+  });
+
+  it('reads a raw stream line as prose, same tier as a note', () => {
+    expect(feedTier('line')).toBe('prose');
+  });
+});
+
+describe('projectLabel', () => {
+  it('is the last path segment of the repo path', () => {
+    expect(projectLabel('/work/acme-app')).toBe('acme-app');
+  });
+
+  it('is Unknown when there is no repo path', () => {
+    expect(projectLabel(undefined)).toBe('Unknown');
+  });
+
+  it('is Unknown for an empty repo path', () => {
+    expect(projectLabel('')).toBe('Unknown');
+  });
+
+  it('still yields the last real segment when the path ends in a slash', () => {
+    expect(projectLabel('/work/acme-app/')).toBe('acme-app');
   });
 });
 
