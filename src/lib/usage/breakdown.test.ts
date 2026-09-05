@@ -56,6 +56,7 @@ function windowReport(partial: Partial<UsageWindowReport> = {}): UsageWindowRepo
     sessions: 0,
     sidechainMessages: 0,
     unpricedModels: [],
+    previous: null,
     ...partial,
   };
 }
@@ -174,6 +175,7 @@ describe('shares', () => {
       aggregate: aggregate({ cost: 25 }),
       sessions: 1,
       unpriced: false,
+      series: [],
     };
     expect(shareOf(row, 100)).toBeCloseTo(0.25);
     // A window with no cost cannot apportion one — including the all-unpriced

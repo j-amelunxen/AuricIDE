@@ -14,7 +14,9 @@ import type {
 import type { UsageSnapshot } from '@/lib/usage/types';
 
 const ccUsagePlugins = vi.fn(async (): Promise<CcUsagePlugin[]> => []);
-const ccUsageReport = vi.fn(async (): Promise<CcUsageReport> => emptyReport());
+const ccUsageReport = vi.fn(async (_options?: { force?: boolean }): Promise<CcUsageReport> =>
+  emptyReport()
+);
 
 vi.mock('@/lib/usage/ccUsage', async () => {
   const actual = await vi.importActual<typeof import('@/lib/usage/ccUsage')>('@/lib/usage/ccUsage');

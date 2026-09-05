@@ -13,7 +13,7 @@ import { useStore } from '@/lib/store';
 const mockListThemes = vi.fn(async () => [] as { path: string; content: string }[]);
 const mockImportTheme = vi.fn();
 vi.mock('@/lib/tauri/themes', () => ({
-  listThemes: (...args: unknown[]) => mockListThemes(...args),
+  listThemes: () => mockListThemes(),
   importTheme: (...args: unknown[]) => mockImportTheme(...args),
 }));
 
