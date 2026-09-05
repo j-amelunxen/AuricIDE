@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import { buildMcpConfig, initMcpJson } from '@/lib/settings/mcpConfig';
 import { SettingsToggle } from '../ui/settings/SettingsToggle';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { copyToClipboard } from '@/lib/tauri/clipboard';
 
 type InitFeedback = { kind: 'success' | 'error'; message: string } | null;
 
@@ -47,12 +48,10 @@ export function McpSettingsContent() {
   };
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(configSnippet);
+    const ok = await copyToClipboard(configSnippet);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API not available in some contexts
     }
   };
 

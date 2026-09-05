@@ -1,4 +1,4 @@
-import type { Command } from './registry';
+import type { Command } from './types';
 
 /** A successful fuzzy match: a score for ranking plus the matched character offsets. */
 export interface FuzzyMatch {

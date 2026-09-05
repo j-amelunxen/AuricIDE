@@ -1,6 +1,6 @@
 import type { AgentEvent } from '../types';
 import { extractPath, truncateLabel } from './shared';
-import type { LineMatcher } from './index';
+import type { LineMatcher } from './types';
 
 /** `⏺ Read(src/lib/example.ts)`, `⏺ Bash(pnpm lint)`, … — the TUI's tool-call line. */
 const TOOL_LINE =

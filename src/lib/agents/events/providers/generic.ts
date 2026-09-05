@@ -1,6 +1,6 @@
 import { PROMPT_PATTERNS } from '../../awaitingInput';
 import { extractPath, isCommandShaped } from './shared';
-import type { LineMatcher } from './index';
+import type { LineMatcher } from './types';
 
 const DOLLAR_RUN_LINE = /^\$\s+(.+)$/;
 const CARET_RUN_LINE = /^>\s+(.+)$/;

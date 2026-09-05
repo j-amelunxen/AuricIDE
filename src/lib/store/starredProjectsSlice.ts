@@ -1,6 +1,5 @@
 import type { StateCreator } from 'zustand';
 import * as nativeStarredProjects from '../tauri/starredProjects';
-import type { PermissionMode } from '../tauri/agents';
 import { normalizeWheelSlots } from '../quickAccess/wheel';
 import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
 
@@ -26,66 +25,21 @@ let syncRevision = 0;
  * a kind this build does not know falls back to the generated tile rather
  * than breaking the row.
  */
-export type ProjectIconOverride =
-  | { kind: 'glyph'; value: string }
-  | { kind: 'emoji'; value: string }
-  /** An image file inside the project — `value` is its absolute path, never
-   *  its bytes, so the store file does not grow with every icon set. */
-  | { kind: 'image'; value: string };
-
-/** A named launch preset: one recurring task, two clicks. */
-export interface QuickAccessSkill {
-  id: string;
-  label: string;
-  prompt: string;
-  /** The anchor for the other two — a model only means something inside a provider. */
-  providerId?: string;
-  model?: string;
-  permissionMode?: PermissionMode;
-  /** Where an adopted entry came from, so a re-scan can tell it apart. */
-  invocation?: string;
-  /** Global Auric definition. `prompt` and `label` remain as deletion-safe snapshots. */
-  auricSkillId?: string;
-}
-
-/** An ordered chain of launch presets. Ending one step starts the next. */
-export interface QuickAccessCombo {
-  id: string;
-  label: string;
-  steps: QuickAccessSkill[];
-}
-
-export interface StarredProjectSettings {
-  icon?: ProjectIconOverride;
-  skills: QuickAccessSkill[];
-  /** Absent on older callers — keep the record's existing list in that case. */
-  combos?: QuickAccessCombo[];
-  /** Absent — keep the record's existing wheel. */
-  wheelSlots?: (string | null)[];
-}
-
-export interface StarredProject {
-  path: string;
-  name: string;
-  starredAt: number;
-  icon?: ProjectIconOverride;
-  /**
-   * Optional in TS but not in Rust: records written by builds that predate
-   * this feature are still sitting in localStorage without the key. Read it
-   * through {@link quickAccessSkills}, never as `project.skills.map(...)`.
-   */
-  skills?: QuickAccessSkill[];
-  /**
-   * Same as {@link skills}: older records have no key. Read through
-   * {@link quickAccessCombos}.
-   */
-  combos?: QuickAccessCombo[];
-  /**
-   * Skill ids on the radial wheel, by slot. Older records have no key — read
-   * through {@link quickAccessWheelSlots}.
-   */
-  wheelSlots?: (string | null)[];
-}
+import type {
+  ProjectIconOverride,
+  QuickAccessCombo,
+  QuickAccessSkill,
+  StarredProject,
+  StarredProjectSettings,
+} from '../tauri/starredProjects';
+export type {
+  ProjectIconOverride,
+  QuickAccessCombo,
+  QuickAccessSkill,
+  StarredProject,
+  StarredProjectSettings,
+};
+export type { StarredProject as StarredProjectRecord } from '../tauri/starredProjects';
 
 export function quickAccessSkills(project: StarredProject): QuickAccessSkill[] {
   const library = loadAuricSkills();

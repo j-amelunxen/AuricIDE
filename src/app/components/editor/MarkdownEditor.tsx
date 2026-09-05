@@ -7,8 +7,6 @@ import { externalContentSync, isExternalContentSync } from '@/lib/editor/externa
 import { brokenLinksSetFacet } from '@/lib/editor/wikiLinkBrokenExtension';
 import { fileListFacet, headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
 import { useStore } from '@/lib/store';
-import { selectBlameHunks } from '@/lib/store/gitSlice';
-import { repoForPath, relativeToRepo } from '@/lib/git/repos';
 import {
   slashCommandsFacet,
   mergeSlashCommands,
@@ -26,60 +24,18 @@ import {
   renameHeadingExtension,
   renameHeadingCallbackFacet,
 } from '@/lib/editor/renameHeadingExtension';
-import { computeHeadingRenameChanges } from '@/lib/refactoring/renameHeading';
-import { applyChangesToContent } from '@/lib/refactoring/applyRenameChanges';
 import { computeSectionExtraction } from '@/lib/refactoring/extractSection';
-import { applyExtractSection } from '@/lib/refactoring/applyExtractSection';
 import { showReferencesFacet } from '@/lib/editor/findReferencesExtension';
-import {
-  lintConfigFacet,
-  fileListForLintFacet,
-  headingIndexForLintFacet,
-  currentFilePathFacet,
-} from '@/lib/editor/markdownLintExtension';
-import { jsonLintExtension, currentFilePathFacetJson } from '@/lib/editor/jsonLintExtension';
-import { xmlLintExtension, currentFilePathFacetXml } from '@/lib/editor/xmlLintExtension';
-import { yamlLintExtension, currentFilePathFacetYaml } from '@/lib/editor/yamlLintExtension';
-import { createGitGutter, diffToLineChanges } from '@/lib/editor/gitGutterExtension';
-import { createBlameGutter } from '@/lib/editor/blameGutterExtension';
-import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
 import { findAllReferences } from '@/lib/refactoring/findReferences';
-import { RenameHeadingDialog } from '@/app/components/refactoring/RenameHeadingDialog';
-import { ExtractSectionDialog } from '@/app/components/refactoring/ExtractSectionDialog';
 import { MarkdownPreview } from './MarkdownPreview';
 import { detectAsciiArt } from '@/lib/ascii-art/detector';
 import { repairAsciiArt } from '@/lib/ascii-art/repair';
 import { SelectionMenu } from './SelectionMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import {
-  createEditorState,
-  getLanguageExtension,
-  getLintableFileType,
-  buildHeadingTitleIndex,
-} from '@/lib/editor/setup';
-
-function buildLintReconfiguration(
-  fileType: ReturnType<typeof getLintableFileType>,
-  filePath?: string
-) {
-  switch (fileType) {
-    case 'markdown':
-      return [
-        lintConfigFacet.of(useStore.getState().lintConfig),
-        fileListForLintFacet.of(useStore.getState().allFilePaths),
-        headingIndexForLintFacet.of(buildHeadingTitleIndex()),
-        currentFilePathFacet.of(filePath ?? ''),
-      ];
-    case 'json':
-      return [jsonLintExtension, currentFilePathFacetJson.of(filePath ?? '')];
-    case 'xml':
-      return [xmlLintExtension, currentFilePathFacetXml.of(filePath ?? '')];
-    case 'yaml':
-      return [yamlLintExtension, currentFilePathFacetYaml.of(filePath ?? '')];
-    default:
-      return [];
-  }
-}
+import { createEditorState, getLanguageExtension, getLintableFileType } from '@/lib/editor/setup';
+import { buildLintReconfiguration } from './markdown/editorLintConfig';
+import { useEditorGitExtensions } from './markdown/useEditorGitExtensions';
+import { EditorRefactoringDialogs } from './markdown/EditorRefactoringDialogs';
 
 interface UniversalEditorProps {
   content: string;
@@ -203,6 +159,12 @@ export function MarkdownEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const { blameVisible, showBlameToggle } = useEditorGitExtensions({
+    viewRef,
+    compartments,
+    filePath,
+  });
+
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -273,122 +235,6 @@ export function MarkdownEditor({
       ],
     });
   }, [filePath, projectFiles]);
-
-  const isDirty = useStore((s) => s.openTabs.find((t) => t.id === filePath)?.isDirty ?? false);
-  const statusSignature = useStore((s) => {
-    if (!filePath) return '';
-    const repo = repoForPath(filePath, s.repos);
-    if (!repo) return '';
-    const relativePath = relativeToRepo(filePath, repo.path);
-    const fileStatuses = s.repoStates[repo.path]?.fileStatuses ?? [];
-    return fileStatuses
-      .filter((f) => f.path === relativePath)
-      .map((f) => f.status)
-      .join(',');
-  });
-
-  // Last-saved gutter, not live keystrokes: skip while the buffer is dirty,
-  // refetch after save (isDirty → false) and when git status for this path
-  // changes (commit / discard).
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    const repos = useStore.getState().repos;
-    const repo = filePath ? repoForPath(filePath, repos) : null;
-    if (!repo || !filePath) {
-      view.dispatch({ effects: compartments.current.gitGutter.reconfigure(createGitGutter([])) });
-      return;
-    }
-    if (isDirty) return;
-    const relativePath = relativeToRepo(filePath, repo.path);
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const [{ getGitDiff }, { parseDiff }] = await Promise.all([
-          import('@/lib/tauri/git'),
-          import('@/lib/git/parseDiff'),
-        ]);
-        const diff = await getGitDiff(repo.path, relativePath);
-        const changes = diffToLineChanges(parseDiff(diff));
-        if (!cancelled && viewRef.current) {
-          viewRef.current.dispatch({
-            effects: compartments.current.gitGutter.reconfigure(createGitGutter(changes)),
-          });
-        }
-      } catch {
-        if (!cancelled && viewRef.current) {
-          viewRef.current.dispatch({
-            effects: compartments.current.gitGutter.reconfigure(createGitGutter([])),
-          });
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [filePath, isDirty, statusSignature]);
-
-  const blameVisible = useStore((s) => s.blameVisible);
-  const blameHunks = useStore((s) => selectBlameHunks(s, filePath));
-  const isFileTab = !!filePath && !isDiffTabId(filePath);
-  const repoForFile = useStore((s) => (filePath ? repoForPath(filePath, s.repos) : null));
-  const showBlameToggle = !!repoForFile && isFileTab;
-
-  const openBlameHunk = useCallback(
-    async (hunk: { oid: string; summary: string }) => {
-      const store = useStore.getState();
-      if (!filePath || isDiffTabId(filePath)) return;
-      const repo = repoForPath(filePath, store.repos);
-      if (!repo) return;
-      const relativePath = relativeToRepo(filePath, repo.path);
-      const { getGitDiffCommit } = await import('@/lib/tauri/git');
-      const patch = await getGitDiffCommit(repo.path, hunk.oid, relativePath);
-      const source = { kind: 'revision' as const, oid: hunk.oid, summary: hunk.summary };
-      const id = diffTabId(source, relativePath, repo.path);
-      store.setDiffTab(id, { patch, filePath: relativePath, source, repoPath: repo.path });
-      store.openTab({
-        id,
-        path: relativePath,
-        name: `${relativePath.split('/').pop()} @ ${hunk.oid.slice(0, 7)}`,
-      });
-      if (store.historyPath === relativePath) {
-        store.setHistorySelectedOid(hunk.oid);
-      }
-    },
-    [filePath]
-  );
-
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    const repos = useStore.getState().repos;
-    const repo = filePath ? repoForPath(filePath, repos) : null;
-    if (!blameVisible || !repo || !filePath || isDiffTabId(filePath)) {
-      view.dispatch({ effects: compartments.current.blameGutter.reconfigure([]) });
-      return;
-    }
-    if (isDirty) return;
-    const relativePath = relativeToRepo(filePath, repo.path);
-    void useStore.getState().loadBlame(repo.path, relativePath);
-  }, [blameVisible, filePath, isDirty]);
-
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    if (!blameVisible || !filePath || isDiffTabId(filePath)) {
-      view.dispatch({ effects: compartments.current.blameGutter.reconfigure([]) });
-      return;
-    }
-    view.dispatch({
-      effects: compartments.current.blameGutter.reconfigure(
-        createBlameGutter(blameHunks, (hunk) => {
-          void openBlameHunk(hunk);
-        })
-      ),
-    });
-  }, [blameVisible, blameHunks, filePath, openBlameHunk]);
 
   useEffect(() => {
     if (viewRef.current && content !== viewRef.current.state.doc.toString()) {
@@ -519,96 +365,16 @@ export function MarkdownEditor({
         )}
       </div>
 
-      {renameDialog && (
-        <RenameHeadingDialog
-          oldTitle={renameDialog.title}
-          referenceCount={renameDialog.refCount}
-          onCancel={() => setRenameDialog(null)}
-          onConfirm={async (newTitle) => {
-            const currentFile = filePath ?? '';
-            const currentFileName = currentFile.split('/').pop() ?? '';
-            try {
-              const { readFile, writeFile } = await import('@/lib/tauri/fs');
-              const allPaths = useStore.getState().allFilePaths;
-              const workspace = new Map<string, string>();
-              for (const p of allPaths) {
-                if (p.endsWith('.md')) {
-                  try {
-                    const c = await readFile(p);
-                    workspace.set(p, c);
-                  } catch {}
-                }
-              }
-              const changes = computeHeadingRenameChanges(
-                currentFile,
-                currentFileName,
-                renameDialog.title,
-                newTitle,
-                workspace
-              );
-              const byFile = new Map<string, typeof changes>();
-              for (const change of changes) {
-                const list = byFile.get(change.filePath) ?? [];
-                list.push(change);
-                byFile.set(change.filePath, list);
-              }
-              for (const [fp, fileChanges] of byFile) {
-                const original = workspace.get(fp) ?? '';
-                const updated = applyChangesToContent(original, fileChanges);
-                await writeFile(fp, updated);
-                if (fp === currentFile && onChange) onChange(updated);
-              }
-            } catch {
-              if (viewRef.current) {
-                const doc = viewRef.current.state.doc.toString();
-                const changes = computeHeadingRenameChanges(
-                  currentFile,
-                  currentFileName,
-                  renameDialog.title,
-                  newTitle,
-                  new Map([[currentFile, doc]])
-                );
-                const updated = applyChangesToContent(doc, changes);
-                if (onChange) onChange(updated);
-              }
-            }
-            setRenameDialog(null);
-          }}
-        />
-      )}
-
-      {extractDialog && (
-        <ExtractSectionDialog
-          headingTitle={extractDialog.title}
-          suggestedFileName={extractDialog.suggestedFileName}
-          contentPreview={extractDialog.contentPreview}
-          onCancel={() => setExtractDialog(null)}
-          onConfirm={async (fileName) => {
-            const currentFile = filePath ?? '';
-            const extraction = computeSectionExtraction(content, extractDialog.line);
-            if (!extraction) {
-              setExtractDialog(null);
-              return;
-            }
-            try {
-              const { readFile, writeFile } = await import('@/lib/tauri/fs');
-              await applyExtractSection(currentFile, extraction, fileName, readFile, writeFile);
-              const updatedSource =
-                content.slice(0, extraction.sectionFrom) +
-                extraction.replacementText +
-                content.slice(extraction.sectionTo);
-              if (onChange) onChange(updatedSource);
-            } catch {
-              const updatedSource =
-                content.slice(0, extraction.sectionFrom) +
-                extraction.replacementText +
-                content.slice(extraction.sectionTo);
-              if (onChange) onChange(updatedSource);
-            }
-            setExtractDialog(null);
-          }}
-        />
-      )}
+      <EditorRefactoringDialogs
+        renameDialog={renameDialog}
+        onCloseRenameDialog={() => setRenameDialog(null)}
+        extractDialog={extractDialog}
+        onCloseExtractDialog={() => setExtractDialog(null)}
+        content={content}
+        filePath={filePath}
+        onChange={onChange}
+        viewRef={viewRef}
+      />
 
       {menuPos && (
         <SelectionMenu

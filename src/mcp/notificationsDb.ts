@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { initMigrationTable, openSqliteDb, createInMemorySqliteDb } from './sqliteHelper';
 
 /**
  * The MCP server's handle on the notification inbox.
@@ -17,20 +18,7 @@ import Database from 'better-sqlite3';
 export const NOTIFICATION_CAP = 1000;
 
 function runMigrations(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      id         INTEGER PRIMARY KEY,
-      name       TEXT NOT NULL,
-      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  const applied = (id: number): boolean => {
-    const row = db.prepare('SELECT COUNT(*) > 0 AS ok FROM _migrations WHERE id = ?').get(id) as {
-      ok: number;
-    };
-    return row.ok === 1;
-  };
+  const { applied, record } = initMigrationTable(db);
 
   if (!applied(1)) {
     db.exec(`
@@ -59,7 +47,7 @@ function runMigrations(db: Database.Database): void {
       CREATE UNIQUE INDEX notifications_dedupe
         ON notifications(dedupe_key) WHERE dedupe_key IS NOT NULL;
     `);
-    db.prepare('INSERT INTO _migrations (id, name) VALUES (?, ?)').run(1, 'create_notifications');
+    record(1, 'create_notifications');
   }
 
   // Schedules share this database — they are dispatchers into the same inbox.
@@ -89,20 +77,18 @@ function runMigrations(db: Database.Database): void {
       );
       CREATE INDEX schedules_enabled ON schedules(enabled, next_due_at);
     `);
-    db.prepare('INSERT INTO _migrations (id, name) VALUES (?, ?)').run(2, 'create_schedules');
+    record(2, 'create_schedules');
   }
 }
 
 export function openNotificationsDb(path: string): Database.Database {
-  const db = new Database(path);
-  // WAL because the app writes to this same file from another process.
-  db.pragma('journal_mode = WAL');
+  const db = openSqliteDb(path, { wal: true });
   runMigrations(db);
   return db;
 }
 
 export function createTestNotificationsDb(): Database.Database {
-  const db = new Database(':memory:');
+  const db = createInMemorySqliteDb();
   runMigrations(db);
   return db;
 }

@@ -1,4 +1,5 @@
 import { dominantIconHue } from './iconColor';
+import { createAsyncDedupeCache } from './asyncDedupeCache';
 
 /**
  * Path → the hue its mark is built from, or null once a mark is known to have
@@ -10,8 +11,7 @@ import { dominantIconHue } from './iconColor';
  * cannot change within a session. Negative answers are cached too — a
  * greyscale logo should cost one decode, not one per render.
  */
-const cache = new Map<string, number | null>();
-const inFlight = new Map<string, Promise<number | null>>();
+const hueCache = createAsyncDedupeCache<number>();
 
 /**
  * Sampling resolution. Small on purpose: a dominant hue survives downsampling,
@@ -21,7 +21,7 @@ const inFlight = new Map<string, Promise<number | null>>();
 const SAMPLE_SIZE = 32;
 
 export function getCachedIconHue(path: string): number | null | undefined {
-  return cache.get(path);
+  return hueCache.get(path);
 }
 
 function sample(dataUri: string): Promise<number | null> {
@@ -58,27 +58,7 @@ function sample(dataUri: string): Promise<number | null> {
 
 /** The hue for an already-loaded icon, decoding it at most once per session. */
 export function loadIconHue(path: string, dataUri: string): Promise<number | null> {
-  const cached = cache.get(path);
-  if (cached !== undefined) return Promise.resolve(cached);
-
-  const existing = inFlight.get(path);
-  if (existing) return existing;
-
-  const request = sample(dataUri)
-    .then((hue) => {
-      cache.set(path, hue);
-      return hue;
-    })
-    .catch(() => {
-      cache.set(path, null);
-      return null;
-    })
-    .finally(() => {
-      inFlight.delete(path);
-    });
-
-  inFlight.set(path, request);
-  return request;
+  return hueCache.load(path, () => sample(dataUri));
 }
 
 /**
@@ -88,11 +68,5 @@ export function loadIconHue(path: string, dataUri: string): Promise<number | nul
  * production, which nothing currently does.
  */
 export function clearIconHueCache(path?: string): void {
-  if (path === undefined) {
-    cache.clear();
-    inFlight.clear();
-    return;
-  }
-  cache.delete(path);
-  inFlight.delete(path);
+  hueCache.clear(path);
 }

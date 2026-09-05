@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import fuzzysort from 'fuzzysort';
-import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
-import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { SearchPaletteModal } from './SearchPaletteModal';
 
 interface FileSearchProps {
   files: string[];
@@ -15,18 +14,8 @@ interface FileSearchProps {
 }
 
 export function FileSearch({ files, isOpen, onClose, onSelect, rootPath }: FileSearchProps) {
-  if (!isOpen) return null;
-  return (
-    <FileSearchDialog files={files} onClose={onClose} onSelect={onSelect} rootPath={rootPath} />
-  );
-}
-
-function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearchProps, 'isOpen'>) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useDialogA11y<HTMLDivElement>();
-  useOverlayLayer({ id: 'file-search', kind: 'tool', active: true, onEscape: onClose });
 
   const results = useMemo(() => {
     if (!query) {
@@ -72,11 +61,9 @@ function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearc
     });
   }, [query, files]);
 
-  useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 10);
-  }, []);
+  if (!isOpen) return null;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelectedIndex((prev) => (prev + 1) % results.length);
@@ -90,93 +77,67 @@ function FileSearchDialog({ files, onClose, onSelect, rootPath }: Omit<FileSearc
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[var(--z-tool)] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
+    <SearchPaletteModal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabel="Go to file"
+      overlayId="file-search"
+      topOffsetClass="pt-[15vh]"
+      placeholder="Search files everywhere..."
+      query={query}
+      onQueryChange={setQuery}
+      onKeyDown={handleKeyDown}
+      headerExtra={
+        <div className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 bg-white/5 text-[9px] text-foreground-muted font-mono uppercase tracking-widest">
+          <span>Fuzzy</span>
+        </div>
+      }
+      footerRight={`${files.length} Files Indexed`}
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Go to file"
-        className="glass-card w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 shadow-2xl animate-in fade-in zoom-in duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3 px-4 border-b border-white/5">
-          <AuricIcon name="search" className="text-foreground-muted" />
-          <input
-            ref={inputRef}
-            type="text"
-            className="w-full bg-transparent py-4 text-sm text-foreground outline-none placeholder:text-foreground-muted"
-            placeholder="Search files everywhere..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 bg-white/5 text-[9px] text-foreground-muted font-mono uppercase tracking-widest">
-            <span>Fuzzy</span>
-          </div>
+      {results.length === 0 ? (
+        <div className="px-4 py-8 text-center text-xs text-foreground-muted">
+          No files matching &ldquo;<span className="text-foreground">{query}</span>&rdquo;
         </div>
+      ) : (
+        results.map((res, i) => {
+          const isSelected = i === selectedIndex;
+          const displayPath = rootPath ? res.path.replace(rootPath, '') : res.path;
+          const parts = displayPath.split('/');
+          const fileName = parts.pop() || '';
+          const dirPath = parts.join('/');
 
-        <div className="max-h-[400px] overflow-y-auto py-2">
-          {results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-foreground-muted">
-              No files matching &ldquo;<span className="text-foreground">{query}</span>&rdquo;
-            </div>
-          ) : (
-            results.map((res, i) => {
-              const isSelected = i === selectedIndex;
-              const displayPath = rootPath ? res.path.replace(rootPath, '') : res.path;
-              const parts = displayPath.split('/');
-              const fileName = parts.pop() || '';
-              const dirPath = parts.join('/');
-
-              return (
-                <div
-                  key={res.path}
-                  onClick={() => onSelect(res.path)}
-                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
-                    isSelected
-                      ? 'bg-primary/10 border-l-2 border-primary'
-                      : 'hover:bg-white/5 border-l-2 border-transparent'
-                  }`}
-                >
-                  <AuricIcon
-                    name="description"
-                    className={`text-lg ${isSelected ? 'text-primary' : 'text-foreground-muted'}`}
+          return (
+            <div
+              key={res.path}
+              onClick={() => onSelect(res.path)}
+              className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                isSelected
+                  ? 'bg-primary/10 border-l-2 border-primary'
+                  : 'hover:bg-white/5 border-l-2 border-transparent'
+              }`}
+            >
+              <AuricIcon
+                name="description"
+                className={`text-lg ${isSelected ? 'text-primary' : 'text-foreground-muted'}`}
+              />
+              <div className="flex flex-col min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-4">
+                  <span
+                    className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-foreground-muted'}`}
+                    dangerouslySetInnerHTML={{ __html: res.highlight || fileName }}
                   />
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-4">
-                      <span
-                        className={`text-sm font-medium truncate ${isSelected ? 'text-foreground' : 'text-foreground-muted'}`}
-                        dangerouslySetInnerHTML={{ __html: res.highlight || fileName }}
-                      />
-                      <span className="text-[9px] text-foreground-muted font-mono opacity-40 shrink-0">
-                        {res.path.split('.').pop()?.toUpperCase()}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-foreground-muted truncate opacity-60">
-                      {dirPath || '/'}
-                    </span>
-                  </div>
+                  <span className="text-[9px] text-foreground-muted font-mono opacity-40 shrink-0">
+                    {res.path.split('.').pop()?.toUpperCase()}
+                  </span>
                 </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="flex items-center justify-between px-4 py-2 bg-black/20 border-t border-white/5 text-[9px] text-foreground-muted uppercase tracking-tighter">
-          <div className="flex gap-4">
-            <span className="flex items-center gap-1">
-              <kbd className="rounded bg-white/5 px-1 font-mono">↑↓</kbd> Navigate
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className="rounded bg-white/5 px-1 font-mono">↵</kbd> Open
-            </span>
-          </div>
-          <span>{files.length} Files Indexed</span>
-        </div>
-      </div>
-    </div>
+                <span className="text-[10px] text-foreground-muted truncate opacity-60">
+                  {dirPath || '/'}
+                </span>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </SearchPaletteModal>
   );
 }

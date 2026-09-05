@@ -74,7 +74,7 @@ describe('FileSelector', () => {
     expect(screen.getByText('main.rs')).toBeInTheDocument();
   });
 
-  it('copies to clipboard', () => {
+  it('copies to clipboard', async () => {
     const writeTextMock = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, {
       clipboard: {
@@ -87,7 +87,9 @@ describe('FileSelector', () => {
     fireEvent.click(copyButton);
 
     const expected = ['/root/src/index.ts', '/root/src/main.rs', '/root/README.md'].join('\n');
-    expect(writeTextMock).toHaveBeenCalledWith(expected);
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(expected);
+    });
   });
 
   it('shows a success toast after copying the file list', async () => {
@@ -132,19 +134,21 @@ describe('FileSelector', () => {
     });
   });
 
-  it('shows an error toast when the clipboard is unavailable', () => {
+  it('shows an error toast when the clipboard is unavailable', async () => {
     Object.assign(navigator, { clipboard: undefined });
 
     render(<FileSelector files={mockFiles} isOpen={true} onClose={() => {}} rootPath="/root" />);
     fireEvent.click(screen.getByText('Copy List to Clipboard'));
 
-    expect(useStore.getState().toasts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          message: 'Clipboard is unavailable in this context',
-          variant: 'error',
-        }),
-      ])
-    );
+    await waitFor(() => {
+      expect(useStore.getState().toasts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: 'Could not copy file list',
+            variant: 'error',
+          }),
+        ])
+      );
+    });
   });
 });

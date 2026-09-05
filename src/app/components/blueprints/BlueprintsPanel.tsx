@@ -11,23 +11,21 @@ import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 export function BlueprintsPanel() {
-  const {
-    blueprintsDraft,
-    blueprintsDirty,
-    blueprintsModalOpen,
-    selectedBlueprintId,
-    blueprintServerUrl,
-    blueprintSyncStatus,
-    blueprintSyncError,
-    rootPath,
-    loadBlueprints,
-    saveBlueprints,
-    addBlueprint,
-    deleteBlueprint,
-    discardBlueprintChanges,
-    setBlueprintsModalOpen,
-    setSelectedBlueprintId,
-  } = useStore();
+  const blueprintsDraft = useStore((s) => s.blueprintsDraft);
+  const blueprintsDirty = useStore((s) => s.blueprintsDirty);
+  const blueprintsModalOpen = useStore((s) => s.blueprintsModalOpen);
+  const selectedBlueprintId = useStore((s) => s.selectedBlueprintId);
+  const blueprintServerUrl = useStore((s) => s.blueprintServerUrl);
+  const blueprintSyncStatus = useStore((s) => s.blueprintSyncStatus);
+  const blueprintSyncError = useStore((s) => s.blueprintSyncError);
+  const rootPath = useStore((s) => s.rootPath);
+  const loadBlueprints = useStore((s) => s.loadBlueprints);
+  const saveBlueprints = useStore((s) => s.saveBlueprints);
+  const addBlueprint = useStore((s) => s.addBlueprint);
+  const deleteBlueprint = useStore((s) => s.deleteBlueprint);
+  const discardBlueprintChanges = useStore((s) => s.discardBlueprintChanges);
+  const setBlueprintsModalOpen = useStore((s) => s.setBlueprintsModalOpen);
+  const setSelectedBlueprintId = useStore((s) => s.setSelectedBlueprintId);
   const { confirm, confirmDialog } = useConfirm();
 
   useEffect(() => {

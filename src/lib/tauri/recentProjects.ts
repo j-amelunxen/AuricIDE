@@ -1,5 +1,10 @@
 import { invoke } from './invoke';
-import type { RecentProject } from '../store/recentProjectsSlice';
+
+export interface RecentProject {
+  path: string;
+  name: string;
+  openedAt: number;
+}
 
 /**
  * The backend is a separate system, so its shape is an assumption until it is

@@ -1,5 +1,5 @@
 import { extractPath } from './shared';
-import type { LineMatcher } from './index';
+import type { LineMatcher } from './types';
 
 /** Codex bullets a top-level action with `•`, though `⚬` and `-` show up too. */
 const BULLET = '[•⚬-]';

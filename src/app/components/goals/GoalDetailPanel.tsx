@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
@@ -13,17 +13,19 @@ import {
 import { useStore } from '@/lib/store';
 import { GOAL_STATUS_STYLES } from './GoalTree';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { GoalWorkflowStepper } from './detail/GoalWorkflowStepper';
+import { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
+import { GoalTicketsSection } from './detail/GoalTicketsSection';
+import { GoalRequirementsSection } from './detail/GoalRequirementsSection';
+import { GoalRunsSection } from './detail/GoalRunsSection';
 
-const WORKFLOW_STEP_LABELS = ['Define', 'Plan & create work', 'Run', 'Achieved'] as const;
+export { GoalWorkflowStepper } from './detail/GoalWorkflowStepper';
+export { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
+export { GoalTicketsSection } from './detail/GoalTicketsSection';
+export { GoalRequirementsSection } from './detail/GoalRequirementsSection';
+export { GoalRunsSection } from './detail/GoalRunsSection';
 
-const RUN_OUTCOME_STYLES: Record<string, string> = {
-  running: 'bg-amber-500/20 text-amber-300',
-  completed: 'bg-green-500/20 text-green-300',
-  failed: 'bg-red-500/20 text-red-300',
-  killed: 'bg-gray-500/20 text-gray-300',
-};
-
-interface GoalDetailPanelProps {
+export interface GoalDetailPanelProps {
   goal: PmGoal | null;
   goals: PmGoal[];
   tickets: PmTicket[];
@@ -62,10 +64,6 @@ export function GoalDetailPanel({
   onLinkTicket,
   onUnlinkTicket,
 }: GoalDetailPanelProps) {
-  const [reqPickerValue, setReqPickerValue] = useState('');
-  const [ticketPickerOpen, setTicketPickerOpen] = useState(false);
-  const [ticketQuery, setTicketQuery] = useState('');
-
   const stations = useStore((s) => s.goalStationsDraft);
 
   const satisfaction = useMemo(
@@ -88,6 +86,7 @@ export function GoalDetailPanel({
     () => (goal ? tickets.filter((t) => t.goalId === goal.id) : []),
     [goal, tickets]
   );
+
   const subtreeHasTickets = useMemo(() => {
     if (!goal) return false;
     const ids = new Set([goal.id, ...getGoalDescendants(goals, goal.id).map((item) => item.id)]);
@@ -95,29 +94,6 @@ export function GoalDetailPanel({
   }, [goal, goals, tickets]);
 
   const goalRuns = useMemo(() => (goal ? getRunsForGoal(runs, goal.id) : []), [goal, runs]);
-
-  const linkedRequirements = useMemo(() => {
-    if (!goal) return [];
-    const ids = new Set(
-      requirementLinks.filter((l) => l.goalId === goal.id).map((l) => l.requirementId)
-    );
-    return requirements.filter((r) => ids.has(r.id));
-  }, [goal, requirements, requirementLinks]);
-
-  const linkableRequirements = useMemo(() => {
-    const linked = new Set(linkedRequirements.map((r) => r.id));
-    return requirements.filter((r) => !linked.has(r.id));
-  }, [requirements, linkedRequirements]);
-
-  const linkableTickets = useMemo(() => {
-    if (!goal) return [];
-    const query = ticketQuery.trim().toLowerCase();
-    return tickets.filter((t) => {
-      if (t.goalId === goal.id) return false;
-      if (query && !t.name.toLowerCase().includes(query)) return false;
-      return true;
-    });
-  }, [goal, tickets, ticketQuery]);
 
   const validParents = useMemo(() => {
     if (!goal) return [];
@@ -193,117 +169,12 @@ export function GoalDetailPanel({
         </div>
       </div>
 
-      {/* Workflow stepper: where this goal stands in the loop, and the one next action */}
-      {workflowStep && (
-        <div
-          data-testid="goal-workflow-stepper"
-          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5"
-        >
-          <ol className="flex flex-wrap items-center gap-y-2">
-            {WORKFLOW_STEP_LABELS.map((label, i) => {
-              const pos = i + 1;
-              const isCurrent = pos === workflowStep.index;
-              const isDone = pos < workflowStep.index || workflowStep.stage === 'done';
-              return (
-                <li
-                  key={label}
-                  data-testid={`goal-workflow-step-${pos}`}
-                  aria-current={isCurrent ? 'step' : undefined}
-                  className={`flex items-center ${i < WORKFLOW_STEP_LABELS.length - 1 ? 'flex-1' : ''}`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold transition-colors ${
-                        isDone && !isCurrent
-                          ? 'bg-green-500/20 text-green-300'
-                          : isCurrent
-                            ? 'bg-primary/25 text-primary-light ring-1 ring-primary/40'
-                            : 'bg-white/5 text-foreground-muted'
-                      }`}
-                    >
-                      {isDone && !isCurrent ? (
-                        <AuricIcon name="check" className="text-[11px]" />
-                      ) : (
-                        pos
-                      )}
-                    </span>
-                    <span
-                      className={`text-[10px] ${
-                        isCurrent
-                          ? 'font-bold text-foreground'
-                          : isDone
-                            ? 'text-foreground/70'
-                            : 'text-foreground-muted'
-                      }`}
-                    >
-                      {label}
-                    </span>
-                  </span>
-                  {i < WORKFLOW_STEP_LABELS.length - 1 && (
-                    <span aria-hidden className="mx-2 h-px flex-1 bg-white/10" />
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-          <p
-            data-testid="goal-workflow-hint"
-            className="mt-2 text-[10px] leading-relaxed text-foreground-muted"
-          >
-            {workflowStep.hint}
-          </p>
-        </div>
-      )}
+      {/* Workflow stepper */}
+      {workflowStep && <GoalWorkflowStepper workflowStep={workflowStep} />}
 
       {/* Satisfaction check */}
       {satisfaction && (
-        <div
-          data-testid="goal-satisfaction"
-          className={`rounded-xl border p-3 ${
-            satisfaction.satisfied
-              ? 'border-green-500/30 bg-green-500/10'
-              : 'border-white/10 bg-white/5'
-          }`}
-        >
-          {satisfaction.satisfied ? (
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-medium text-green-300">
-                All checks pass. Ready to mark achieved.
-              </p>
-              {goal.status !== 'achieved' && (
-                <button
-                  data-testid="goal-achieve-btn"
-                  onClick={() => onAchieve(goal.id)}
-                  className="rounded-lg bg-green-500/20 border border-green-500/30 px-3 py-1 text-[10px] font-bold text-green-300 hover:bg-green-500/30 transition-colors"
-                >
-                  Mark achieved
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-foreground-muted">
-                Open conditions ({satisfaction.blockers.length})
-              </p>
-              <ul className="space-y-1">
-                {satisfaction.blockers.slice(0, 6).map((b, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-[11px] text-foreground/80">
-                    <AuricIcon
-                      name="radio_button_unchecked"
-                      className="mt-px text-[12px] text-foreground-muted"
-                    />
-                    {b}
-                  </li>
-                ))}
-                {satisfaction.blockers.length > 6 && (
-                  <li className="text-[10px] text-foreground-muted">
-                    +{satisfaction.blockers.length - 6} more
-                  </li>
-                )}
-              </ul>
-            </>
-          )}
-        </div>
+        <GoalSatisfactionCard goal={goal} satisfaction={satisfaction} onAchieve={onAchieve} />
       )}
 
       {/* Actions */}
@@ -380,208 +251,29 @@ export function GoalDetailPanel({
       </div>
 
       {/* Linked tickets */}
-      <div>
-        <div className="flex items-center justify-between">
-          <label className={labelCls}>Tickets ({goalTickets.length})</label>
-          <button
-            data-testid="goal-ticket-add-btn"
-            onClick={() => setTicketPickerOpen((v) => !v)}
-            className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium text-primary-light hover:bg-primary/10 transition-colors"
-          >
-            <AuricIcon name={ticketPickerOpen ? 'close' : 'add'} className="text-[12px]" />
-            {ticketPickerOpen ? 'Close' : 'Add'}
-          </button>
-        </div>
-
-        {goalTickets.length === 0 ? (
-          <p className="text-[10px] text-foreground-muted/70">No tickets attached yet.</p>
-        ) : (
-          <ul className="space-y-1">
-            {goalTickets.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center gap-2 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-foreground/90"
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    t.status === 'done'
-                      ? 'bg-green-400'
-                      : t.status === 'in_progress'
-                        ? 'bg-amber-400'
-                        : 'bg-gray-400'
-                  }`}
-                />
-                <span className="flex-1 truncate">{t.name}</span>
-                <span className="text-[9px] text-foreground-muted">{t.status}</span>
-                <button
-                  data-testid={`goal-ticket-unlink-${t.id}`}
-                  onClick={() => onUnlinkTicket(t.id)}
-                  className="text-[12px] text-foreground-muted opacity-60 hover:opacity-100 hover:text-red-300"
-                  title="Unlink"
-                >
-                  <AuricIcon name="close" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {ticketPickerOpen && (
-          <div
-            data-testid="goal-ticket-picker"
-            className="mt-1.5 rounded-lg border border-white/10 bg-white/[0.03] p-2"
-          >
-            <input
-              data-testid="goal-ticket-picker-search"
-              value={ticketQuery}
-              onChange={(e) => setTicketQuery(e.target.value)}
-              placeholder="Browse tickets by name…"
-              autoFocus
-              className={inputCls}
-            />
-            <ul className="mt-1.5 max-h-48 space-y-1 overflow-y-auto">
-              {linkableTickets.length === 0 ? (
-                <li className="px-1 py-2 text-center text-[10px] text-foreground-muted/70">
-                  No matching tickets.
-                </li>
-              ) : (
-                linkableTickets.map((t) => (
-                  <li
-                    key={t.id}
-                    data-testid={`goal-ticket-option-${t.id}`}
-                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-foreground/90 hover:bg-white/5"
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                        t.status === 'done'
-                          ? 'bg-green-400'
-                          : t.status === 'in_progress'
-                            ? 'bg-amber-400'
-                            : 'bg-gray-400'
-                      }`}
-                    />
-                    <span className="flex-1 truncate">{t.name}</span>
-                    {t.goalId && t.goalId !== goal.id && (
-                      <span className="shrink-0 text-[9px] text-amber-300/80">
-                        already in another goal
-                      </span>
-                    )}
-                    <button
-                      data-testid={`goal-ticket-link-${t.id}`}
-                      onClick={() => onLinkTicket(goal.id, t.id)}
-                      className="shrink-0 text-[14px] text-primary-light hover:text-primary"
-                      title="Add to this goal"
-                    >
-                      <AuricIcon name="add_circle" />
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-        )}
-      </div>
+      <GoalTicketsSection
+        goalId={goal.id}
+        goalTickets={goalTickets}
+        allTickets={tickets}
+        onLinkTicket={onLinkTicket}
+        onUnlinkTicket={onUnlinkTicket}
+        inputCls={inputCls}
+        labelCls={labelCls}
+      />
 
       {/* Linked requirements */}
-      <div>
-        <label className={labelCls}>Requirements</label>
-        {linkedRequirements.length === 0 && goalTickets.length > 0 && (
-          <p
-            data-testid="goal-no-requirement-hint"
-            className="mb-1.5 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-300/90"
-          >
-            <AuricIcon name="info" className="mt-px text-[12px]" />
-            No requirement linked. This goal completes when agents finish successfully. Link a
-            requirement to add a verified completion check.
-          </p>
-        )}
-        <div className="flex flex-wrap gap-1.5">
-          {linkedRequirements.map((r) => (
-            <span
-              key={r.id}
-              data-testid={`goal-req-chip-${r.id}`}
-              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${
-                r.status === 'verified'
-                  ? 'bg-green-500/15 text-green-300'
-                  : 'bg-amber-500/15 text-amber-300'
-              }`}
-            >
-              {r.reqId}
-              <button
-                data-testid={`goal-req-unlink-${r.id}`}
-                onClick={() => onUnlinkRequirement(goal.id, r.id)}
-                className="text-[10px] opacity-60 hover:opacity-100"
-                title="Unlink"
-              >
-                <AuricIcon name="close" />
-              </button>
-            </span>
-          ))}
-        </div>
-        {linkableRequirements.length > 0 && (
-          <select
-            data-testid="goal-req-picker"
-            value={reqPickerValue}
-            onChange={(e) => {
-              if (e.target.value) {
-                onLinkRequirement(goal.id, e.target.value);
-                setReqPickerValue('');
-              }
-            }}
-            className="mt-1.5 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-foreground-muted outline-none"
-          >
-            <option value="" className="bg-background-dark">
-              + Link requirement…
-            </option>
-            {linkableRequirements.map((r) => (
-              <option key={r.id} value={r.id} className="bg-background-dark">
-                {r.reqId} · {r.title}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      <GoalRequirementsSection
+        goalId={goal.id}
+        hasTickets={goalTickets.length > 0}
+        requirements={requirements}
+        requirementLinks={requirementLinks}
+        onLinkRequirement={onLinkRequirement}
+        onUnlinkRequirement={onUnlinkRequirement}
+        labelCls={labelCls}
+      />
 
       {/* Runs */}
-      <div>
-        <label className={labelCls}>Agent runs ({goalRuns.length})</label>
-        {goalRuns.length === 0 ? (
-          <p className="text-[10px] text-foreground-muted/70">
-            No agents launched for this goal yet.
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {goalRuns.map((run) => (
-              <li key={run.id} className="rounded-lg bg-white/5 px-2.5 py-2">
-                <div className="flex items-center gap-2 text-[10px]">
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 font-bold ${RUN_OUTCOME_STYLES[run.outcome] ?? RUN_OUTCOME_STYLES.running}`}
-                  >
-                    {run.outcome}
-                  </span>
-                  <span className="text-foreground-muted">
-                    {run.model || 'model?'} · {run.source}
-                  </span>
-                  <span className="ml-auto tabular-nums text-foreground-muted/70">
-                    {run.startedAt}
-                  </span>
-                </div>
-                {run.summary && (
-                  <p className="mt-1 text-[10px] text-foreground/80">{run.summary}</p>
-                )}
-                <details className="mt-1">
-                  <summary className="cursor-pointer text-[9px] text-foreground-muted hover:text-foreground">
-                    Show prompt
-                  </summary>
-                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-2 text-[9px] leading-relaxed text-foreground/70">
-                    {run.prompt}
-                  </pre>
-                </details>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <GoalRunsSection goalRuns={goalRuns} labelCls={labelCls} />
     </div>
   );
 }

@@ -7,6 +7,11 @@ const setInitialAgentTask = vi.fn();
 const setSpawnDialogOpen = vi.fn();
 const setSpawnAgentTicketId = vi.fn();
 const mockLlmCall = vi.fn();
+const mockCopyToClipboard = vi.fn().mockResolvedValue(true);
+
+vi.mock('@/lib/tauri/clipboard', () => ({
+  copyToClipboard: (...args: unknown[]) => mockCopyToClipboard(...args),
+}));
 
 vi.mock('@tauri-apps/api/core', () => ({
   __esModule: true,
@@ -341,10 +346,7 @@ describe('TicketEditPanel', () => {
   });
 
   it('copies prompt to clipboard when Copy Prompt clicked', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, {
-      clipboard: { writeText },
-    });
+    mockCopyToClipboard.mockClear();
 
     const ticket = makeTicket({
       name: 'Test Ticket',
@@ -390,9 +392,9 @@ describe('TicketEditPanel', () => {
     });
 
     await vi.waitFor(() => {
-      expect(writeText).toHaveBeenCalled();
+      expect(mockCopyToClipboard).toHaveBeenCalled();
     });
-    const copiedText = writeText.mock.calls[0][0];
+    const copiedText = mockCopyToClipboard.mock.calls[0][0];
     expect(copiedText).toContain('Implementation of ticket: Test Ticket');
     expect(copiedText).toContain('Description:\nTest Description');
     expect(copiedText).toContain('1. TC 1\nBody 1');

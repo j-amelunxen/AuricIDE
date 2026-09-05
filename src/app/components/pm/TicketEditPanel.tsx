@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import type { PmTicket, PmEpic, PmTestCase, PmDependency } from '@/lib/tauri/pm';
 import { TestCaseEditor } from './TestCaseEditor';
 import { DependencySelector } from './DependencySelector';
 import { TicketContextEditor } from './TicketContextEditor';
@@ -21,70 +20,14 @@ import {
   parseTestCaseResponse,
 } from '@/lib/pm/testCaseDerivation';
 import { DependencyProposalModal } from './DependencyProposalModal';
-import { TicketSkillsField } from './TicketSkillsField';
-import { TicketTiming } from './TicketTiming';
 import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
+import { copyToClipboard } from '@/lib/tauri/clipboard';
+import type { DetailTab, TicketEditPanelProps } from './ticketEdit/types';
+import { TicketEditToolbar } from './ticketEdit/TicketEditToolbar';
+import { TicketDetailsTab } from './ticketEdit/TicketDetailsTab';
+import { TicketAdvancedTab } from './ticketEdit/TicketAdvancedTab';
 
-interface TicketEditPanelProps {
-  ticket: PmTicket | null;
-  epics: PmEpic[];
-  allTickets: PmTicket[];
-  testCases: PmTestCase[];
-  dependencies: PmDependency[];
-  availableItems: { id: string; type: 'epic' | 'ticket'; name: string; status?: string }[];
-  onUpdateTicket: (id: string, updates: Partial<PmTicket>) => void;
-  onSave?: () => Promise<void>;
-  onSaveAndClose?: () => Promise<void>;
-  onCancel?: () => void;
-  onDeleteTicket: (id: string) => void;
-  onMoveTicket: (ticketId: string, newEpicId: string) => void;
-  onAddTestCase: (initial?: Partial<PmTestCase>) => void;
-  onUpdateTestCase: (id: string, updates: Partial<PmTestCase>) => void;
-  onDeleteTestCase: (id: string) => void;
-  onAddDependency: (dep: PmDependency) => void;
-  onRemoveDependency: (id: string) => void;
-}
-
-const statusOptions: { value: PmTicket['status']; label: string; className: string }[] = [
-  { value: 'open', label: 'Open', className: 'bg-white/10 text-foreground-muted' },
-  { value: 'in_progress', label: 'In Progress', className: 'bg-yellow-500/10 text-git-modified' },
-  { value: 'to_test', label: 'To Test', className: 'bg-cyan-500/10 text-cyan-300' },
-  { value: 'in_review', label: 'In Review', className: 'bg-indigo-500/10 text-indigo-300' },
-  { value: 'done', label: 'Done', className: 'bg-green-500/10 text-git-added' },
-  { value: 'archived', label: 'Archived', className: 'bg-purple-500/10 text-purple-400' },
-  { value: 'discarded', label: 'Discarded', className: 'bg-white/5 text-foreground-muted' },
-];
-
-const priorityOptions: { value: PmTicket['priority']; label: string; className: string }[] = [
-  { value: 'low', label: 'Low', className: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
-  { value: 'normal', label: 'Normal', className: 'bg-white/10 text-foreground border-white/20' },
-  {
-    value: 'high',
-    label: 'High',
-    className: 'bg-orange-500/10 text-orange-300 border-orange-500/20',
-  },
-  {
-    value: 'critical',
-    label: 'Critical',
-    className: 'bg-red-500/10 text-red-300 border-red-500/20',
-  },
-];
-
-const modelPowerOptions: {
-  value: PmTicket['modelPower'];
-  label: string;
-  className: string;
-}[] = [
-  { value: 'low', label: 'Low', className: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
-  {
-    value: 'medium',
-    label: 'Medium',
-    className: 'bg-orange-500/10 text-orange-300 border-orange-500/20',
-  },
-  { value: 'high', label: 'High', className: 'bg-red-500/10 text-red-300 border-red-500/20' },
-];
-
-type DetailTab = 'details' | 'context' | 'testcases' | 'dependencies' | 'advanced';
+export type { TicketEditPanelProps };
 
 export function TicketEditPanel({
   ticket,
@@ -203,15 +146,11 @@ export function TicketEditPanel({
 
   const handleCopyPrompt = async () => {
     const prompt = await getPrompt();
-    navigator.clipboard
-      .writeText(prompt)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => {
-        // Fallback or ignore
-      });
+    const ok = await copyToClipboard(prompt);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const tabs: { key: DetailTab; label: string; count?: number }[] = [
@@ -221,14 +160,6 @@ export function TicketEditPanel({
     { key: 'dependencies', label: 'Dependencies', count: dependencies.length },
     { key: 'advanced', label: 'Advanced Settings' },
   ];
-
-  function formatDate(iso: string) {
-    try {
-      return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } catch {
-      return iso;
-    }
-  }
 
   return (
     <div className="flex h-full flex-col">
@@ -240,103 +171,20 @@ export function TicketEditPanel({
           </span>
         </div>
       )}
-      {/* Toolbar — wraps when the agents bar steals the pane, instead of
-          clipping the title and shoving Start agent off the right edge. */}
-      <div
-        data-testid="ticket-edit-toolbar"
-        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/10 px-4 py-3"
-      >
-        <input
-          type="text"
-          aria-label="Ticket name"
-          value={ticket.name}
-          onChange={(e) => onUpdateTicket(ticket.id, { name: e.target.value })}
-          className="min-w-0 w-full basis-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-foreground focus:border-primary/50 focus:outline-none"
-        />
 
-        <div
-          data-testid="ticket-edit-actions"
-          className="ml-auto flex shrink-0 flex-wrap items-center gap-1"
-        >
-          <button
-            type="button"
-            onClick={onCancel}
-            title="Deselect ticket"
-            className="rounded-lg px-2 py-1.5 text-[10px] font-medium text-foreground-muted transition-colors hover:bg-white/5"
-          >
-            Deselect
-          </button>
-          <button
-            type="button"
-            disabled={!pmDirty}
-            onClick={onSave}
-            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-medium text-foreground transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-25"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={handleSpawnAgent}
-            className="flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary-light transition hover:bg-primary/20"
-          >
-            <AuricIcon name="smart_toy" className="text-[16px]" />
-            Start agent
-          </button>
-          <button
-            type="button"
-            onClick={handleCopyPrompt}
-            title="Copy prompt to clipboard"
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
-              copied
-                ? 'border-green-500/20 bg-green-500/10 text-green-400'
-                : 'border-white/10 bg-white/5 text-foreground-muted hover:bg-white/10 hover:text-foreground'
-            }`}
-          >
-            <AuricIcon name={copied ? 'check' : 'content_copy'} className="text-[16px]" />
-            {copied ? 'Copied!' : 'Copy Prompt'}
-          </button>
-          <button
-            type="button"
-            aria-label="Delete ticket"
-            onClick={() => onDeleteTicket(ticket.id)}
-            className="rounded-lg p-1.5 text-foreground-muted opacity-50 transition-colors hover:bg-red-500/10 hover:text-red-400 hover:opacity-100"
-          >
-            <AuricIcon name="delete" className="text-[18px]" />
-          </button>
-        </div>
-
-        <div
-          data-testid="ticket-status-pills"
-          className="flex w-full min-w-0 flex-wrap items-center gap-1"
-        >
-          {statusOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onUpdateTicket(ticket.id, { status: opt.value })}
-              className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                ticket.status === opt.value
-                  ? opt.className
-                  : 'text-foreground-muted hover:bg-white/5'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-          <select
-            value={ticket.epicId}
-            onChange={(e) => onMoveTicket(ticket.id, e.target.value)}
-            aria-label="Move to epic"
-            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-foreground focus:border-primary/50 focus:outline-none"
-          >
-            {epics.map((epic) => (
-              <option key={epic.id} value={epic.id}>
-                {epic.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <TicketEditToolbar
+        ticket={ticket}
+        epics={epics}
+        pmDirty={pmDirty}
+        copied={copied}
+        onUpdateTicket={onUpdateTicket}
+        onMoveTicket={onMoveTicket}
+        onCancel={onCancel}
+        onSave={onSave}
+        onDeleteTicket={onDeleteTicket}
+        onSpawnAgent={handleSpawnAgent}
+        onCopyPrompt={handleCopyPrompt}
+      />
 
       {/* Tab bar */}
       <div className="shrink-0 flex border-b border-white/10 px-4" role="tablist">
@@ -366,105 +214,11 @@ export function TicketEditPanel({
       {/* Tab content — scrollable */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'details' && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <label className="mb-2 flex items-center text-xs text-foreground-muted">
-                Priority
-                <InfoTooltip description={GUIDANCE.pm.priority} label="i" />
-              </label>
-              <div className="flex gap-2" data-testid="priority-selector">
-                {priorityOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => onUpdateTicket(ticket.id, { priority: opt.value })}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border ${
-                      ticket.priority === opt.value
-                        ? opt.className
-                        : 'border-transparent text-foreground-muted hover:bg-white/5'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-xs text-foreground-muted" htmlFor="ticket-due-date">
-                Due date
-              </label>
-              <input
-                id="ticket-due-date"
-                type="date"
-                aria-label="Due date"
-                value={ticket.dueDate ?? ''}
-                onChange={(e) =>
-                  onUpdateTicket(ticket.id, {
-                    dueDate: e.target.value === '' ? null : e.target.value,
-                  })
-                }
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground focus:border-primary/50 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 flex items-center text-xs text-foreground-muted">
-                Agent strength
-                <InfoTooltip description={GUIDANCE.pm.modelPower} label="i" />
-              </label>
-              <div className="flex gap-2" data-testid="model-power-selector">
-                <button
-                  type="button"
-                  onClick={() => onUpdateTicket(ticket.id, { modelPower: undefined })}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border ${
-                    ticket.modelPower === undefined
-                      ? 'bg-white/10 text-foreground border-white/20'
-                      : 'border-transparent text-foreground-muted hover:bg-white/5'
-                  }`}
-                >
-                  None
-                </button>
-                {modelPowerOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => onUpdateTicket(ticket.id, { modelPower: opt.value })}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border ${
-                      ticket.modelPower === opt.value
-                        ? opt.className
-                        : 'border-transparent text-foreground-muted hover:bg-white/5'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs text-foreground-muted">Description</label>
-              <textarea
-                value={ticket.description}
-                onChange={(e) => onUpdateTicket(ticket.id, { description: e.target.value })}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none resize-none"
-                rows={8}
-              />
-            </div>
-
-            <TicketSkillsField
-              skills={ticket.skills}
-              discovered={discovered}
-              onChange={(next) => onUpdateTicket(ticket.id, { skills: next })}
-            />
-
-            <div className="flex gap-4 text-xs text-foreground-muted">
-              <span>Created: {formatDate(ticket.createdAt)}</span>
-              <span>Updated: {formatDate(ticket.updatedAt)}</span>
-            </div>
-
-            <TicketTiming ticketId={ticket.id} status={ticket.status} />
-          </div>
+          <TicketDetailsTab
+            ticket={ticket}
+            discovered={discovered}
+            onUpdateTicket={onUpdateTicket}
+          />
         )}
 
         {activeTab === 'context' && (
@@ -534,80 +288,7 @@ export function TicketEditPanel({
         )}
 
         {activeTab === 'advanced' && (
-          <div className="flex flex-col gap-4">
-            <div>
-              <label
-                htmlFor="working-directory"
-                className="mb-1.5 flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider"
-              >
-                Working Directory
-                <InfoTooltip description={GUIDANCE.pm.workingDirectory} label="i" />
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="working-directory"
-                  data-testid="ticket-working-directory"
-                  type="text"
-                  value={ticket.workingDirectory || ''}
-                  onChange={(e) => onUpdateTicket(ticket.id, { workingDirectory: e.target.value })}
-                  placeholder="Inherit from project root"
-                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const mod = await import('@tauri-apps/plugin-dialog');
-                      const selected = await mod.open({ directory: true });
-                      if (selected) {
-                        onUpdateTicket(ticket.id, { workingDirectory: selected as string });
-                      }
-                    } catch (err) {
-                      console.error('Failed to open directory dialog:', err);
-                    }
-                  }}
-                  className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs text-foreground-muted hover:bg-white/10 hover:text-foreground transition flex items-center gap-1.5"
-                >
-                  <AuricIcon name="folder_open" className="text-[16px]" />
-                  Browse
-                </button>
-              </div>
-              <p className="mt-1.5 text-[10px] text-foreground-muted">
-                Agent cwd. Empty = project root.
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-1.5 flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider">
-                Human Supervision
-              </label>
-              <button
-                type="button"
-                data-testid="human-supervision-toggle"
-                onClick={() =>
-                  onUpdateTicket(ticket.id, {
-                    needsHumanSupervision: !ticket.needsHumanSupervision,
-                  })
-                }
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                  ticket.needsHumanSupervision
-                    ? 'bg-orange-500/10 border-orange-500/20 text-orange-300'
-                    : 'bg-white/5 border-white/10 text-foreground-muted hover:bg-white/10'
-                }`}
-              >
-                <AuricIcon
-                  name={ticket.needsHumanSupervision ? 'visibility' : 'visibility_off'}
-                  className="text-[16px]"
-                />
-                {ticket.needsHumanSupervision ? 'Enabled' : 'Disabled'}
-              </button>
-              <p className="mt-1.5 text-[10px] text-foreground-muted">
-                {ticket.needsHumanSupervision
-                  ? 'Needs human start. Conductor skips it.'
-                  : 'Conductor can pick this up.'}
-              </p>
-            </div>
-          </div>
+          <TicketAdvancedTab ticket={ticket} onUpdateTicket={onUpdateTicket} />
         )}
       </div>
 

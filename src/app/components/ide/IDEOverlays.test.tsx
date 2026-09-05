@@ -57,10 +57,10 @@ function renderOverlays(overrides: Partial<OverlayProps>) {
 }
 
 describe('IDEOverlays — prompt history follows the spawn target', () => {
-  let loadPromptHistory: (projectPath: string) => Promise<void>;
+  let loadPromptHistory: (projectPath: string | null) => Promise<void>;
 
   beforeEach(() => {
-    loadPromptHistory = vi.fn(async (_projectPath: string) => {});
+    loadPromptHistory = vi.fn(async (_projectPath: string | null) => {});
     useStore.setState({ loadPromptHistory, promptHistory: [], goalsDraft: [], agents: [] });
   });
 
