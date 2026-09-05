@@ -16,7 +16,7 @@ vi.mock('@/lib/ide/userActivity', () => ({
   idleForMs: () => mockIdleForMs(),
 }));
 
-const mockIsDir = vi.fn(async () => true);
+const mockIsDir = vi.fn(async (_path: string) => true);
 vi.mock('@/lib/tauri/fs', () => ({
   isDir: (path: string) => mockIsDir(path),
 }));
@@ -299,9 +299,11 @@ describe('useScheduledConductorRuns', () => {
   });
 
   it('starts a trusted, fresh spawn-agent auto launch without switching project', async () => {
+    // Attended on purpose: a custom-agent auto launch never waits for an
+    // unattended IDE, unlike a conductor run.
+    mockIdleForMs.mockReturnValue(0);
     useStore.setState({
       rootPath: OTHER_REPO,
-      idleForMs: 0,
       notifications: [autoAgentNotification()],
     });
     renderHook(() => useScheduledConductorRuns(openProject));

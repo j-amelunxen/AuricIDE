@@ -65,8 +65,8 @@ describe('changeAgainst', () => {
 
   it('calls a change under one percent flat', () => {
     // Noise dressed up as a trend is worse than no arrow at all.
-    expect(changeAgainst(100.5, 100).direction).toBe('flat');
-    expect(changeAgainst(99.5, 100).direction).toBe('flat');
+    expect(changeAgainst(100.5, 100)?.direction).toBe('flat');
+    expect(changeAgainst(99.5, 100)?.direction).toBe('flat');
   });
 
   it('declines to compare against a period with no spend', () => {
