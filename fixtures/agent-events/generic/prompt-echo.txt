@@ -1,0 +1,4 @@
+> git status
+> Ich habe so regelmäßige Situationen, dass ich in der Anwendung klicke
+> Please look at the file.
+Reading files…

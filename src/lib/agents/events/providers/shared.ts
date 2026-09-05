@@ -22,6 +22,25 @@ export function extractPath(text: string): string | undefined {
   return undefined;
 }
 
+/** What the first token of a real command line looks like: a bare executable
+ * name or path, never a quoted argument or a capitalised English word. */
+const COMMAND_TOKEN = /^[\w.\/~@:+-]+$/;
+
+/**
+ * Whether `text` (the part of a line after a `>` or `$` prompt) reads as a
+ * shell command rather than prose. The Claude Code TUI echoes the user's own
+ * prompt back as a `>`-prefixed line, and that echo must not be mistaken for
+ * a command the agent ran — see rule 21 in docs/design-console-lanes.md.
+ */
+export function isCommandShaped(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes(', ')) return false;
+  if (/[.?!]$/.test(trimmed)) return false;
+  const [firstToken] = trimmed.split(/\s+/);
+  return COMMAND_TOKEN.test(firstToken);
+}
+
 /** Longest a note label may run before it is elided — a feed row, not a paragraph. */
 export const NOTE_MAX_CHARS = 120;
 
