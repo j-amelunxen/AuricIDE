@@ -1,7 +1,8 @@
 import type { AgentInfo } from '../../tauri/agents';
+import type { SentMessage } from '../../store/agentSlice';
 import type { PersistedAgentEvent } from '../../tauri/agentLog';
 import type { StreamLine } from './streamCapture';
-import type { AgentEvent } from './types';
+import type { AgentEvent, AgentEventKind } from './types';
 
 export interface FeedEntry extends AgentEvent {
   agentId: string;
@@ -26,16 +27,27 @@ export interface FeedRow {
   agentId: string;
   agentName: string;
   repoPath?: string;
-  kind: AgentEvent['kind'];
+  kind: AgentEventKind | 'sent';
   label: string;
   path?: string;
   at: number;
   seq?: number;
 }
 
-/** Identity of a single event, for reconciling the live and stored copies. */
-function rowKey(row: { agentId: string; at: number; seq?: number }): string {
-  return `${row.agentId}|${row.at}|${row.seq ?? 0}`;
+/**
+ * Identity of a single row, for reconciling the live and stored copies.
+ *
+ * A `sent` row's seq comes from its own per-agent counter (see
+ * `SentMessage`), which starts at 0 just like `AgentEvent.seq` — so a sent
+ * message and an unrelated stored event can legitimately land on the same
+ * `(agentId, at, seq)` triple. Prefixing the seq for `sent` rows keeps that
+ * pairing from colliding with an event's key, which would otherwise make
+ * `mergeFeedRows` mistake the real event for a duplicate of the message and
+ * drop it.
+ */
+function rowKey(row: { agentId: string; at: number; seq?: number; kind?: string }): string {
+  const seqPart = row.kind === 'sent' ? `s${row.seq ?? 0}` : `${row.seq ?? 0}`;
+  return `${row.agentId}|${row.at}|${seqPart}`;
 }
 
 /** Live events, resolved against the running fleet into displayable rows. */
@@ -56,6 +68,28 @@ export function toFeedRows(
         path: event.path,
         at: event.at,
         seq: event.seq,
+      });
+    }
+  }
+  return rows;
+}
+
+/** A user's own messages to a running agent, resolved into displayable rows. */
+export function toSentFeedRows(
+  sent: Record<string, SentMessage[]>,
+  agents: AgentInfo[]
+): FeedRow[] {
+  const rows: FeedRow[] = [];
+  for (const agent of agents) {
+    for (const message of sent[agent.id] ?? []) {
+      rows.push({
+        agentId: agent.id,
+        agentName: agent.name || agent.id,
+        repoPath: agent.repoPath,
+        kind: 'sent',
+        label: message.text,
+        at: message.at,
+        seq: message.seq,
       });
     }
   }
@@ -85,7 +119,9 @@ export function mergeFeedRows(
       agentId: stored.agentId,
       agentName: stored.agentName,
       repoPath: stored.repoPath,
-      kind: stored.kind as AgentEvent['kind'],
+      // Stored history is always a real event — 'sent' rows are session-only
+      // and never written to disk.
+      kind: stored.kind as AgentEventKind,
       label: stored.label,
       path: stored.path,
       at: stored.at,

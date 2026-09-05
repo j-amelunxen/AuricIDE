@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_NAME_MAX_CHARS, deriveAgentName, uniqueAgentName } from './naming';
+import { agentMonogram, AGENT_NAME_MAX_CHARS, deriveAgentName, uniqueAgentName } from './naming';
 
 describe('deriveAgentName', () => {
   it('names the agent after what it was asked to do', () => {
@@ -74,5 +74,35 @@ describe('uniqueAgentName', () => {
 
   it('does not renumber a name that merely starts the same', () => {
     expect(uniqueAgentName('Fix', ['Fix the redirect'])).toBe('Fix');
+  });
+});
+
+describe('agentMonogram', () => {
+  it('takes the first letter of each of the first two words', () => {
+    expect(agentMonogram('Wiki lint')).toBe('WL');
+  });
+
+  it('takes the first two letters of a single word', () => {
+    expect(agentMonogram('Waitlist')).toBe('WA');
+  });
+
+  it('uses whatever letters exist when a single word is too short for two', () => {
+    expect(agentMonogram('x')).toBe('X');
+  });
+
+  it('ignores leading punctuation before splitting into words', () => {
+    expect(agentMonogram('"Translate batch 1"')).toBe('TB');
+  });
+
+  it('falls back to a placeholder for an empty name', () => {
+    expect(agentMonogram('')).toBe('?');
+  });
+
+  it('falls back to a placeholder for a blank name', () => {
+    expect(agentMonogram('   ')).toBe('?');
+  });
+
+  it('uppercases the result even when the source is lowercase', () => {
+    expect(agentMonogram('quiet runner')).toBe('QR');
   });
 });

@@ -55,3 +55,27 @@ export function uniqueAgentName(name: string, existingNames: string[]): string {
   while (taken.has(`${name} ${suffix}`)) suffix++;
   return `${name} ${suffix}`;
 }
+
+/** Strips punctuation a pasted or quoted title tends to open with. */
+const LEADING_PUNCTUATION = /^[^\p{L}\p{N}]+/u;
+
+/** No letters or digits worth showing — the monogram falls back to this. */
+const PLACEHOLDER_MONOGRAM = '?';
+
+/**
+ * A lane's two-letter identity badge, the fleet equivalent of a chat avatar's
+ * initials. Two words contribute one letter each, because that is what
+ * distinguishes "Wiki lint" from "Wiki search" at a glance; a single word has
+ * no second word to borrow from, so it lends its own next letter instead.
+ */
+export function agentMonogram(name: string): string {
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(LEADING_PUNCTUATION, ''))
+    .filter((word) => word.length > 0);
+
+  if (words.length === 0) return PLACEHOLDER_MONOGRAM;
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}

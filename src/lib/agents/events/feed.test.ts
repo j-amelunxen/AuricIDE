@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo } from '../../tauri/agents';
+import type { SentMessage } from '../../store/agentSlice';
 import {
   mergeActivityFeed,
   mergeFeedRows,
   mergeStreamFeed,
   toFeedRows,
+  toSentFeedRows,
   type FeedRow,
 } from './feed';
 import type { PersistedAgentEvent } from '../../tauri/agentLog';
@@ -168,6 +170,47 @@ describe('toFeedRows', () => {
   });
 });
 
+describe('toSentFeedRows', () => {
+  const message = (text: string, at: number, seq = 0): SentMessage => ({ text, at, seq });
+
+  it('turns a sent message into a "sent"-kind row carrying the agent identity', () => {
+    const rows = toSentFeedRows({ a: [message('run the tests', 5)] }, [
+      { ...agent('a'), name: 'Builder', repoPath: '/repos/acme' },
+    ]);
+    expect(rows).toEqual([
+      {
+        agentId: 'a',
+        agentName: 'Builder',
+        repoPath: '/repos/acme',
+        kind: 'sent',
+        label: 'run the tests',
+        at: 5,
+        seq: 0,
+      },
+    ]);
+  });
+
+  it('falls back to the id when an agent has no name yet', () => {
+    const rows = toSentFeedRows({ a: [message('hi', 1)] }, [{ ...agent('a'), name: '' }]);
+    expect(rows[0].agentName).toBe('a');
+  });
+
+  it('emits one row per sent message, in the order they were sent', () => {
+    const rows = toSentFeedRows({ a: [message('first', 1, 0), message('second', 2, 1)] }, [
+      agent('a'),
+    ]);
+    expect(rows.map((r) => r.label)).toEqual(['first', 'second']);
+  });
+
+  it('skips agents with no sent messages', () => {
+    expect(toSentFeedRows({}, [agent('a')])).toEqual([]);
+  });
+
+  it('ignores messages for agents no longer in the fleet', () => {
+    expect(toSentFeedRows({ gone: [message('orphan', 1)] }, [])).toEqual([]);
+  });
+});
+
 describe('mergeFeedRows', () => {
   const live = (agentId: string, at: number, seq = 0, label = 'live'): FeedRow => ({
     agentId,
@@ -229,5 +272,25 @@ describe('mergeFeedRows', () => {
 
   it('is just the history when nothing is running', () => {
     expect(mergeFeedRows([], [stored('a', 5)])).toHaveLength(1);
+  });
+
+  it('does not let a sent row shadow a stored event sharing the same (agent, at, seq)', () => {
+    // Sent messages carry their own seq space, per agent, starting at 0 —
+    // exactly like AgentEvent's. mergeFeedRows dedupes stored history against
+    // whatever is already live by (agentId, at, seq); without a kind-aware
+    // row key, a sent row at seq 0 would look identical to a stored *event*
+    // row with that same seq, and the real event would be silently dropped
+    // as if it were the sent message already accounted for.
+    const sent: FeedRow = {
+      agentId: 'a',
+      agentName: 'a',
+      kind: 'sent',
+      label: 'go',
+      at: 10,
+      seq: 0,
+    };
+    const rows = mergeFeedRows([sent], [stored('a', 10, 0, 'Edited a')]);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.label).sort()).toEqual(['Edited a', 'go']);
   });
 });
