@@ -48,7 +48,15 @@ export function headlessFinishNotification(input: {
   };
 }
 
-function clipLlm(content: string): string | null {
+/**
+ * Strips code fences, quotes and excess whitespace from a raw LLM reply, then
+ * hands the cleaned text to the caller's own length clip. Every summary an
+ * LLM is asked to polish gets the same "no preamble, no quotes, no markdown"
+ * instruction and needs the same cleanup before it can be trusted — only the
+ * length cap differs by caller (a finished-run body clips to
+ * `FINISH_SUMMARY_MAX_CHARS`; a lane summary clips shorter).
+ */
+export function clipLlmReply(content: string, clip: (text: string) => string): string | null {
   let text = content.trim();
   text = text
     .replace(/^```(?:\w+)?\n?/, '')
@@ -57,10 +65,10 @@ function clipLlm(content: string): string | null {
   text = text.replace(/^["“]|["”]$/gu, '').trim();
   text = text.replace(/\s+/g, ' ').trim();
   if (!text) return null;
-  return clipFinishSummary(text);
+  return clip(text);
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), ms);
     promise.then(
@@ -96,7 +104,83 @@ async function polishWithLlm(
       },
     ],
   });
-  return clipLlm(response.content);
+  return clipLlmReply(response.content, clipFinishSummary);
+}
+
+/** How long a settled polish is handed to a second caller instead of asking again. */
+const FINISH_POLISH_CACHE_TTL_MS = 30_000;
+
+interface FinishPolishCacheEntry {
+  promise: Promise<string | null>;
+  /** Null while in flight; stamped the moment it settles, so a caller past the TTL asks fresh. */
+  settledAt: number | null;
+}
+
+const finishPolishCache = new Map<string, FinishPolishCacheEntry>();
+
+/**
+ * One model call per distinct (extract, task, project), shared by every
+ * caller that asks for it while it is in flight or within the TTL after it
+ * settles. `resolveFinishBody` (the headless-finish notification) and a lane
+ * summary's `done`/`failed` polish both reach `resolveFinishSummary` for the
+ * very same finish in the same tick — without this, one finish became two
+ * identical round trips to the model.
+ */
+function sharedPolishWithLlm(
+  extract: string,
+  task: string | undefined,
+  projectPath: string
+): Promise<string | null> {
+  const key = `${extract}|${task ?? ''}|${projectPath}`;
+  const now = Date.now();
+  const cached = finishPolishCache.get(key);
+  if (
+    cached &&
+    (cached.settledAt === null || now - cached.settledAt < FINISH_POLISH_CACHE_TTL_MS)
+  ) {
+    return cached.promise;
+  }
+
+  const promise = polishWithLlm(extract, task, projectPath);
+  const entry: FinishPolishCacheEntry = { promise, settledAt: null };
+  finishPolishCache.set(key, entry);
+  // A separate derived promise, not the one callers await — it must not
+  // surface as an unhandled rejection when the shared call fails.
+  promise
+    .finally(() => {
+      entry.settledAt = Date.now();
+    })
+    .catch(() => {});
+  return promise;
+}
+
+/** Test-only: clears the shared polish cache so one test's finish cannot dedupe into another's. */
+export function __resetFinishPolishCacheForTests(): void {
+  finishPolishCache.clear();
+}
+
+/**
+ * Extract-then-polish for a finished run, reporting whether the polish
+ * landed. `resolveFinishBody` only needs the text; a lane summary
+ * (`laneSummary.ts`) also records that as its `source`, and cannot recover it
+ * from the resolved text alone if a polish ever echoed the extract verbatim.
+ */
+export async function resolveFinishSummary(input: {
+  logs: string[];
+  task?: string;
+  llmConfigured: boolean;
+  projectPath: string | null;
+  llmTimeoutMs?: number;
+}): Promise<{ text: string; source: 'llm' | 'extract' } | null> {
+  const extract = deriveFinishSummary(input.logs);
+  if (!extract) return null;
+  if (!input.llmConfigured || !input.projectPath) return { text: extract, source: 'extract' };
+
+  const polished = await withTimeout(
+    sharedPolishWithLlm(extract, input.task, input.projectPath),
+    input.llmTimeoutMs ?? FINISH_SUMMARY_LLM_TIMEOUT_MS
+  );
+  return polished ? { text: polished, source: 'llm' } : { text: extract, source: 'extract' };
 }
 
 /**
@@ -112,15 +196,8 @@ export async function resolveFinishBody(input: {
   projectPath: string | null;
   llmTimeoutMs?: number;
 }): Promise<string | null> {
-  const extract = deriveFinishSummary(input.logs);
-  if (!extract) return null;
-  if (!input.llmConfigured || !input.projectPath) return extract;
-
-  const polished = await withTimeout(
-    polishWithLlm(extract, input.task, input.projectPath),
-    input.llmTimeoutMs ?? FINISH_SUMMARY_LLM_TIMEOUT_MS
-  );
-  return polished ?? extract;
+  const result = await resolveFinishSummary(input);
+  return result?.text ?? null;
 }
 
 export async function announceHeadlessFinish(input: {

@@ -9,6 +9,7 @@ import { loadProviderPolicy } from '@/lib/config/projectConfig';
 import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter';
 import { nextAttentionAgentId, withReviewFlags } from '@/lib/agents/attention';
 import { flushAgentLog } from '@/lib/agents/events/persistence';
+import { installLaneSummarySubscriber } from '@/lib/agents/laneSummarySubscriber';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useAgentConsoleAutoOpen } from '@/lib/hooks/useAgentConsoleAutoOpen';
@@ -107,6 +108,11 @@ export function useIDEActions(
   useEffect(() => {
     void useStore.getState().loadInterruptedAgents();
   }, []);
+
+  // Watches the fleet for the two moments a lane summary is produced (an
+  // agent starts waiting on input, an agent stops) for as long as the IDE is
+  // mounted — the console rail needs a summary whether or not it is open.
+  useEffect(() => installLaneSummarySubscriber(), []);
 
   // A project's own agent settings — its commit prompt, its ticket pattern —
   // replace the previous project's as soon as it is opened. Credentials it
