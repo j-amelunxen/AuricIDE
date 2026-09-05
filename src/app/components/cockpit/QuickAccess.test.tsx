@@ -445,7 +445,7 @@ describe('QuickAccess', () => {
       render(<QuickAccess currentPath="/a/apps" />);
       fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
       fireEvent.click(screen.getByRole('menuitem', { name: /copy working directory/i }));
-      expect(writeText).toHaveBeenCalledWith('/a/website');
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('/a/website'));
       await waitFor(() => expect(useStore.getState().toasts[0]?.variant).toBe('success'));
     });
 
@@ -462,7 +462,7 @@ describe('QuickAccess', () => {
       await waitFor(() => expect(useStore.getState().toasts[0]?.variant).toBe('error'));
     });
 
-    it('says so when there is no clipboard to copy into', () => {
+    it('says so when there is no clipboard to copy into', async () => {
       // Insecure contexts (and jsdom) have no navigator.clipboard at all —
       // reaching for it unguarded throws inside the click handler.
       Object.assign(navigator, { clipboard: undefined });
@@ -472,7 +472,24 @@ describe('QuickAccess', () => {
       render(<QuickAccess currentPath="/a/apps" />);
       fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
       fireEvent.click(screen.getByRole('menuitem', { name: /copy working directory/i }));
-      expect(useStore.getState().toasts[0]?.variant).toBe('error');
+      await waitFor(() => expect(useStore.getState().toasts[0]?.variant).toBe('error'));
+    });
+
+    it('falls back to execCommand when writeText fails due to document focus loss', async () => {
+      Object.assign(navigator, {
+        clipboard: { writeText: vi.fn().mockRejectedValue(new Error('Document is not focused')) },
+      });
+      const originalExec = document.execCommand;
+      document.execCommand = vi.fn().mockReturnValue(true);
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /copy working directory/i }));
+      await waitFor(() => expect(useStore.getState().toasts[0]?.variant).toBe('success'));
+      expect(document.execCommand).toHaveBeenCalledWith('copy');
+      document.execCommand = originalExec;
     });
   });
 

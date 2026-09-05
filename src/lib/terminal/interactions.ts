@@ -10,6 +10,7 @@
  * 40, so the default `scrollSensitivity: 1` crawls. We bump it and keep
  * smooth-scroll off so a notch jumps instead of easing.
  */
+import { copyToClipboard, readClipboardText as readClipboard } from '@/lib/tauri/clipboard';
 
 export const TERMINAL_INTERACTION_OPTIONS = {
   macOptionClickForcesSelection: true,
@@ -66,24 +67,12 @@ export function handleTerminalClipboardKey(
 }
 
 export async function copyText(text: string): Promise<boolean> {
-  const write = navigator.clipboard?.writeText?.bind(navigator.clipboard);
-  if (!text || !write) return false;
-  try {
-    await write(text);
-    return true;
-  } catch {
-    return false;
-  }
+  if (!text) return false;
+  return await copyToClipboard(text);
 }
 
 export async function readClipboardText(): Promise<string> {
-  const read = navigator.clipboard?.readText?.bind(navigator.clipboard);
-  if (!read) return '';
-  try {
-    return (await read()) ?? '';
-  } catch {
-    return '';
-  }
+  return await readClipboard();
 }
 
 export type TerminalMenuKind = 'copy' | 'paste' | 'select-all' | 'spawn' | 'separator';

@@ -122,6 +122,13 @@ export function ContextMenu({ x, y, options, onClose }: ContextMenuProps) {
               role="menuitem"
               onClick={(e) => {
                 e.stopPropagation();
+                if (typeof window !== 'undefined') {
+                  try {
+                    window.focus();
+                  } catch {
+                    // ignore
+                  }
+                }
                 option.action?.();
                 if (!option.keepOpen) onClose();
               }}
