@@ -2,15 +2,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig } from '../tauri/agents';
 import { llmCall } from '../tauri/llm';
 import {
+  __resetFinishPolishCacheForTests,
   announceHeadlessFinish,
   headlessFinishNotification,
   resolveFinishBody,
+  resolveFinishSummary,
   shouldNotifyHeadlessFinish,
 } from './headlessFinish';
 
 vi.mock('../tauri/llm', () => ({
   llmCall: vi.fn(),
 }));
+
+// The shared-polish cache (S1: one finish, one LLM call, not one per
+// consumer) is module state — without a reset, one test's finish could
+// dedupe into another's just because they extracted the same text.
+beforeEach(() => {
+  __resetFinishPolishCacheForTests();
+});
 
 const HEADLESS: Pick<AgentConfig, 'headless' | 'runSource'> = {
   headless: true,
@@ -138,6 +147,62 @@ describe('resolveFinishBody', () => {
     });
     expect(body).toBeNull();
     expect(llmCall).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveFinishSummary — one shared model call per finish', () => {
+  beforeEach(() => {
+    vi.mocked(llmCall).mockReset();
+  });
+
+  // resolveFinishSummary has two independent callers reaching it with the
+  // same extract, task and project path in the same tick — the headless
+  // notification path (resolveFinishBody) and the lane summary subscriber.
+  // Without sharing the underlying call, one finish becomes two identical
+  // round trips to the model.
+  it('shares one in-flight LLM call across concurrent callers with the same extract, task and project', async () => {
+    let released: (value: { content: string }) => void = () => {};
+    vi.mocked(llmCall).mockImplementationOnce(() => new Promise((resolve) => (released = resolve)));
+
+    const input = {
+      logs: ['Deployed auric-website to production.\n'],
+      task: 'Deploy auric-website',
+      llmConfigured: true,
+      projectPath: '/repo',
+    };
+    const first = resolveFinishSummary(input);
+    const second = resolveFinishSummary(input);
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    released({ content: 'The site is live on production.' });
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toEqual({ text: 'The site is live on production.', source: 'llm' });
+    expect(secondResult).toEqual({ text: 'The site is live on production.', source: 'llm' });
+  });
+
+  it('makes a fresh call once the shared result has expired', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(llmCall).mockResolvedValueOnce({ content: 'First answer.' });
+      const input = {
+        logs: ['Deployed auric-website to production.\n'],
+        llmConfigured: true,
+        projectPath: '/repo',
+      };
+      await resolveFinishSummary(input);
+      expect(llmCall).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(31_000);
+
+      vi.mocked(llmCall).mockResolvedValueOnce({ content: 'Second answer.' });
+      const result = await resolveFinishSummary(input);
+
+      expect(llmCall).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ text: 'Second answer.', source: 'llm' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

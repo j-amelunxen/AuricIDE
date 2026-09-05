@@ -75,6 +75,12 @@ vi.mock('@/lib/config/migrateCredentials', () => ({
   migrateProjectCredentials: vi.fn(async () => ({ lifted: [] })),
 }));
 
+const uninstallLaneSummarySubscriber = vi.fn();
+const installLaneSummarySubscriberMock = vi.fn(() => uninstallLaneSummarySubscriber);
+vi.mock('@/lib/agents/laneSummarySubscriber', () => ({
+  installLaneSummarySubscriber: () => installLaneSummarySubscriberMock(),
+}));
+
 vi.mock('@/lib/store', () => ({
   useStore: {
     getState: () => ({
@@ -218,6 +224,27 @@ describe('useIDEActions – what a freshly opened project knows about the keys',
     renderHook(() => useIDEActions(opened, handlers));
 
     await vi.waitFor(() => expect(setJudgeLlmConfigured).toHaveBeenCalledWith(true));
+  });
+});
+
+describe('useIDEActions – the lane summary subscriber', () => {
+  beforeEach(() => {
+    installLaneSummarySubscriberMock.mockClear();
+    uninstallLaneSummarySubscriber.mockClear();
+  });
+
+  it('installs the subscriber on mount, whether or not the console is open', () => {
+    renderHook(() => useIDEActions(state, handlers));
+
+    expect(installLaneSummarySubscriberMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('tears the subscriber down on unmount', () => {
+    const { unmount } = renderHook(() => useIDEActions(state, handlers));
+
+    unmount();
+
+    expect(uninstallLaneSummarySubscriber).toHaveBeenCalledTimes(1);
   });
 });
 

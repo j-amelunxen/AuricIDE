@@ -31,6 +31,7 @@ import { createSchedulesSlice, type SchedulesSlice } from './schedulesSlice';
 import { createSkillComboSlice, type SkillComboSlice } from './skillComboSlice';
 import { createUsageLimitsSlice, type UsageLimitsSlice } from './usageLimitsSlice';
 import { createOverlaySlice, type OverlaySlice } from '@/lib/overlays/overlaySlice';
+import { createLaneSummariesSlice, type LaneSummariesSlice } from './laneSummariesSlice';
 
 export type StoreState = FileTreeSlice &
   TabsSlice &
@@ -63,7 +64,8 @@ export type StoreState = FileTreeSlice &
   SchedulesSlice &
   SkillComboSlice &
   UsageLimitsSlice &
-  OverlaySlice;
+  OverlaySlice &
+  LaneSummariesSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -98,6 +100,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createSkillComboSlice(...a),
   ...createUsageLimitsSlice(...a),
   ...createOverlaySlice(...a),
+  ...createLaneSummariesSlice(...a),
 }));
 
 // Dev-only: expose the store for debugging and browser-mode testing.
