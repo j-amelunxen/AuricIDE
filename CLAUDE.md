@@ -291,6 +291,38 @@ Supporting modules in `src/lib/agents/`:
 - `colors.ts` — the marker palette. Explicit hex, not theme tokens: "the red
   one" must stay red whatever accent the user picked.
 
+### The console feed reads like a group chat, on purpose
+
+The Agent Console's feed (`ActivityFeed.tsx`) interleaves every agent, and with
+seven agents on three repositories that was a log file scrolling past. It now
+borrows exactly the mechanisms messaging apps use to keep a busy channel
+readable, and nothing else — the full reasoning and the numbered rules are in
+`docs/design-console-lanes.md`. What to keep straight when touching it:
+
+- **Oldest first, newest at the bottom, follow stops when you scroll.** Rows
+  arriving while the reader is scrolled up are counted into a "N new ↓" pill;
+  Pause is a separate, explicit freeze. Reading direction and growth direction
+  must agree, or the row being read moves under the eye.
+- **One header per sender run** (`groupBySender`, `lanes.ts`), the identity
+  colour on the monogram only. A user's marker still wins the hue
+  (`streamColorFor`); status colours stay with status.
+- **Rows have a tier** (`feedTier`): a question is the only row that may
+  shout, an outcome carries an icon, prose wraps in the UI face, a tool call is
+  a quiet monospace line, and the human's own messages are the only bubbles.
+- **Lanes are view state, not process state.** `mutedAgentIds`, `laneSeenAt`
+  and `agentSentMessages` live in `agentSlice` beside parking, are cleared
+  wherever parking is, and never change a count the header states. A muted
+  lane still surfaces its questions and outcomes.
+- **The rail's summary is heuristic first.** `describeRightNow` is the
+  default; `laneSummaries` (a model's one sentence) exists only for the two
+  moments a human acts — an agent starting to wait on input and an agent
+  stopping — and the extract is shown before any polish lands
+  (`laneSummarySubscriber.ts`). A rolling LLM summary was rejected: a wrong
+  line is worse than a raw one.
+- **The composer is the same wire as everywhere else.** `sendAgentInput` is
+  the one path to an agent's stdin; it records the sent text itself, so every
+  caller's message shows up in the feed and a bare Enter nudge does not.
+
 ## From a notification to a running agent
 
 A scheduled reminder is meant to cost one click: it arrives, you press Start,
