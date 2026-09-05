@@ -2,6 +2,7 @@ import type { AgentConfig } from '../tauri/agents';
 import { llmCall } from '../tauri/llm';
 import type { NotificationInput } from '../tauri/notifications';
 import { clipFinishSummary, deriveFinishSummary } from './finishSummary';
+import { createSharedPromiseCache } from './sharedPromiseCache';
 
 /** How long we wait on a configured LLM before using the extracted tail. */
 const FINISH_SUMMARY_LLM_TIMEOUT_MS = 4_000;
@@ -110,14 +111,6 @@ async function polishWithLlm(
 /** How long a settled polish is handed to a second caller instead of asking again. */
 const FINISH_POLISH_CACHE_TTL_MS = 30_000;
 
-interface FinishPolishCacheEntry {
-  promise: Promise<string | null>;
-  /** Null while in flight; stamped the moment it settles, so a caller past the TTL asks fresh. */
-  settledAt: number | null;
-}
-
-const finishPolishCache = new Map<string, FinishPolishCacheEntry>();
-
 /**
  * One model call per distinct (extract, task, project), shared by every
  * caller that asks for it while it is in flight or within the TTL after it
@@ -126,36 +119,25 @@ const finishPolishCache = new Map<string, FinishPolishCacheEntry>();
  * very same finish in the same tick — without this, one finish became two
  * identical round trips to the model.
  */
+const finishPolishCache = createSharedPromiseCache<string | null>({
+  ttlMs: FINISH_POLISH_CACHE_TTL_MS,
+});
+
 function sharedPolishWithLlm(
   extract: string,
   task: string | undefined,
   projectPath: string
 ): Promise<string | null> {
   const key = `${extract}|${task ?? ''}|${projectPath}`;
-  const now = Date.now();
-  const cached = finishPolishCache.get(key);
-  if (
-    cached &&
-    (cached.settledAt === null || now - cached.settledAt < FINISH_POLISH_CACHE_TTL_MS)
-  ) {
-    return cached.promise;
-  }
-
-  const promise = polishWithLlm(extract, task, projectPath);
-  const entry: FinishPolishCacheEntry = { promise, settledAt: null };
-  finishPolishCache.set(key, entry);
-  // A separate derived promise, not the one callers await — it must not
-  // surface as an unhandled rejection when the shared call fails.
-  promise
-    .finally(() => {
-      entry.settledAt = Date.now();
-    })
-    .catch(() => {});
-  return promise;
+  return finishPolishCache.get(key, () => polishWithLlm(extract, task, projectPath));
 }
 
-/** Test-only: clears the shared polish cache so one test's finish cannot dedupe into another's. */
-export function __resetFinishPolishCacheForTests(): void {
+/**
+ * Clears the shared polish cache. Exists for test isolation: without it, one
+ * test's finish could dedupe into another's just because they extracted the
+ * same text, task and project path.
+ */
+export function clearFinishPolishCache(): void {
   finishPolishCache.clear();
 }
 
@@ -171,8 +153,14 @@ export async function resolveFinishSummary(input: {
   llmConfigured: boolean;
   projectPath: string | null;
   llmTimeoutMs?: number;
+  /**
+   * A caller that already derived the extract (e.g. to show it immediately,
+   * ahead of a polish) may pass it here instead of having it derived again
+   * from `logs`.
+   */
+  extract?: string;
 }): Promise<{ text: string; source: 'llm' | 'extract' } | null> {
-  const extract = deriveFinishSummary(input.logs);
+  const extract = input.extract ?? deriveFinishSummary(input.logs);
   if (!extract) return null;
   if (!input.llmConfigured || !input.projectPath) return { text: extract, source: 'extract' };
 

@@ -1,9 +1,23 @@
 /**
+ * Every kind a structured event can carry. `AgentEventKind` is derived from
+ * this tuple rather than declared alongside it, so the type and the runtime
+ * guard below cannot drift apart.
+ */
+export const AGENT_EVENT_KINDS = ['read', 'edit', 'run', 'ask', 'done', 'error', 'note'] as const;
+
+/**
  * A structured event distilled from an agent's raw PTY output — one entry per
  * tool call, permission prompt, or notable line. This is what turns a wall of
  * terminal text into a feed, a "files touched" list, and a phase.
  */
-export type AgentEventKind = 'read' | 'edit' | 'run' | 'ask' | 'done' | 'error' | 'note';
+export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
+
+const AGENT_EVENT_KIND_SET: ReadonlySet<string> = new Set(AGENT_EVENT_KINDS);
+
+/** Whether a string read off disk is actually one of the real event kinds. */
+export function isAgentEventKind(value: string): value is AgentEventKind {
+  return AGENT_EVENT_KIND_SET.has(value);
+}
 
 export interface AgentEvent {
   kind: AgentEventKind;

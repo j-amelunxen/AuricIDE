@@ -8,8 +8,8 @@ import {
   type ConsoleAgentState,
 } from './consoleState';
 import { formatAgentDuration } from './duration';
-import type { FeedRow } from './events/feed';
-import type { AgentEvent, AgentEventKind } from './events/types';
+import type { FeedRow, FeedRowKind } from './events/feed';
+import type { AgentEvent } from './events/types';
 import { agentMonogram } from './naming';
 import { streamColorFor } from './streamColors';
 
@@ -21,18 +21,19 @@ import { streamColorFor } from './streamColors';
  */
 export type FeedTier = 'mention' | 'outcome' | 'prose' | 'system' | 'you';
 
-const TIER_BY_KIND: Record<AgentEventKind | 'sent', FeedTier> = {
+const TIER_BY_KIND: Record<FeedRowKind, FeedTier> = {
   ask: 'mention',
   done: 'outcome',
   error: 'outcome',
   note: 'prose',
+  line: 'prose',
   read: 'system',
   edit: 'system',
   run: 'system',
   sent: 'you',
 };
 
-export function feedTier(kind: AgentEventKind | 'sent'): FeedTier {
+export function feedTier(kind: FeedRowKind): FeedTier {
   return TIER_BY_KIND[kind];
 }
 
@@ -135,6 +136,16 @@ export interface Lane {
 /** Bucket agents with no repo path fall into, matching the rest of the fleet UI. */
 const UNKNOWN_PROJECT_LABEL = 'Unknown';
 
+/**
+ * The project name shown for a repo path: its last real segment, regardless
+ * of a trailing slash, or `'Unknown'` when there is no path at all.
+ */
+export function projectLabel(repoPath: string | undefined): string {
+  if (!repoPath) return UNKNOWN_PROJECT_LABEL;
+  const segments = repoPath.split('/').filter((segment) => segment.length > 0);
+  return segments[segments.length - 1] ?? UNKNOWN_PROJECT_LABEL;
+}
+
 /** The rail's lanes, one per tracked agent, sorted most actionable first. */
 export function buildLanes(input: {
   agents: AgentInfo[];
@@ -162,7 +173,7 @@ export function buildLanes(input: {
       agentId: agent.id,
       agentName: agent.name || agent.id,
       repoPath: agent.repoPath,
-      projectLabel: agent.repoPath?.split('/').pop() || UNKNOWN_PROJECT_LABEL,
+      projectLabel: projectLabel(agent.repoPath),
       monogram: agentMonogram(agent.name),
       color: streamColorFor(agent.id, agentColors[agent.id]),
       state,

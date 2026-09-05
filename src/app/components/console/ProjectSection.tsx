@@ -7,6 +7,7 @@ import type { AgentEvent } from '@/lib/agents/events/types';
 import type { HeartbeatBucket } from '@/lib/agents/events/heartbeat';
 import { heartbeatSeries } from '@/lib/agents/events/heartbeat';
 import { consoleAgentState, CONSOLE_STATE_RANK } from '@/lib/agents/consoleState';
+import { projectLabel } from '@/lib/agents/lanes';
 import type { AgentColor } from '@/lib/agents/colors';
 import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
@@ -21,10 +22,6 @@ import { comboMenuLabel } from '@/lib/quickAccess/combo';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import { ConsoleAgentCard } from './ConsoleAgentCard';
-
-function repoName(repoPath: string): string {
-  return repoPath.split('/').pop() || repoPath;
-}
 
 export interface ProjectSectionProps {
   repoPath: string;
@@ -116,7 +113,7 @@ export function ProjectSection({
           : `${runningAgentIds.length} running agents`;
       const go = await confirm({
         title: 'Stop all agents?',
-        message: `Stop ${what} in ${repoName(repoPath)}? Their work in progress is lost.`,
+        message: `Stop ${what} in ${projectLabel(repoPath)}? Their work in progress is lost.`,
         confirmLabel: 'Stop all',
       });
       if (!go) return;
@@ -179,7 +176,7 @@ export function ProjectSection({
     >
       <div className="mb-2.5 flex items-center gap-2">
         <ProjectTileFace path={repoPath} icon={project?.icon} size="md" />
-        <span className="text-[13px] font-semibold text-foreground">{repoName(repoPath)}</span>
+        <span className="text-[13px] font-semibold text-foreground">{projectLabel(repoPath)}</span>
         <span className="whitespace-nowrap font-mono text-[11px] text-foreground-muted">
           {agents.length === 0
             ? 'idle'

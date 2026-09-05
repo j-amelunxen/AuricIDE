@@ -101,9 +101,15 @@ export async function resolveLaneSummary(input: {
   llmConfigured: boolean;
   projectPath: string | null;
   timeoutMs?: number;
+  /**
+   * A caller that already derived the extract for this transition (to show
+   * it immediately, ahead of the polish below) may pass it here instead of
+   * having it derived again from `logs`.
+   */
+  extract?: string;
 }): Promise<LaneSummary | null> {
   if (input.kind === 'ask') {
-    const extract = extractAskSummary(input.logs);
+    const extract = input.extract ?? extractAskSummary(input.logs);
     if (!extract) return null;
     if (!input.llmConfigured || !input.projectPath) {
       return { kind: 'ask', text: extract, at: Date.now(), source: 'extract' };
@@ -127,6 +133,7 @@ export async function resolveLaneSummary(input: {
     llmConfigured: input.llmConfigured,
     projectPath: input.projectPath,
     llmTimeoutMs: input.timeoutMs,
+    extract: input.extract,
   });
   if (!result) return null;
   return { kind: input.kind, text: result.text, at: Date.now(), source: result.source };

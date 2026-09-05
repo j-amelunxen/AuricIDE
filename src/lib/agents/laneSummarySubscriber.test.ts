@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '../store';
 import type { AgentConfig, AgentInfo } from '../tauri/agents';
-import { __resetFinishPolishCacheForTests } from './headlessFinish';
+import { clearFinishPolishCache } from './headlessFinish';
 import { installLaneSummarySubscriber } from './laneSummarySubscriber';
 
 vi.mock('../tauri/llm', () => ({
@@ -58,7 +58,7 @@ describe('installLaneSummarySubscriber', () => {
 
   beforeEach(() => {
     vi.mocked(llmCall).mockReset();
-    __resetFinishPolishCacheForTests();
+    clearFinishPolishCache();
     useStore.setState({
       agents: [],
       agentLogs: {},

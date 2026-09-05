@@ -53,7 +53,8 @@ export function LaneRail({
     const list = listRef.current;
     if (!list) return;
     const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-lane-row]'));
-    const current = rows.indexOf(document.activeElement as HTMLElement);
+    const active = document.activeElement;
+    const current = active instanceof HTMLElement ? rows.indexOf(active) : -1;
     if (current === -1) return;
     const next = current + (event.key === 'ArrowDown' ? 1 : -1);
     if (next < 0 || next >= rows.length) return;
@@ -135,7 +136,7 @@ export function LaneRail({
                 <span className="flex min-w-0 items-center gap-1 text-[10px] text-foreground-muted">
                   <span className="truncate">{lane.projectLabel}</span>
                   <span aria-hidden="true">·</span>
-                  <PhaseChip state={lane.state} label={lane.phaseLabel} className="!text-[9px]" />
+                  <PhaseChip state={lane.state} label={lane.phaseLabel} size="compact" />
                 </span>
                 <span className="line-clamp-2 text-[11px] leading-snug text-foreground-muted">
                   {summaryLine}

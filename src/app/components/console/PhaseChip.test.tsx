@@ -18,4 +18,13 @@ describe('PhaseChip', () => {
     expect(yoursClass).not.toBe(workingClass);
     expect(yoursClass).toContain('amber');
   });
+
+  it('shrinks its text under the compact size, for tight spots like the lane rail', () => {
+    const { rerender } = render(<PhaseChip state="working" label="Running" />);
+    const defaultClass = screen.getByTestId('phase-chip').className;
+    expect(defaultClass).toContain('text-[10px]');
+
+    rerender(<PhaseChip state="working" label="Running" size="compact" />);
+    expect(screen.getByTestId('phase-chip').className).toContain('text-[9px]');
+  });
 });
