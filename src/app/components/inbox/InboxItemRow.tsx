@@ -10,6 +10,7 @@ import { PRIORITIES, type Priority, type TicketStatus } from '@/lib/pm/enums';
 import { canMarkTicketDone, TicketStatusChip } from '@/app/components/pm/TicketStatusChip';
 import { formatInboxDueDate, isDueDateOverdue, normalizeDueDate } from '@/lib/inbox/dueDate';
 import { inboxAttachments, pickInboxMediaFiles } from '@/lib/inbox/inboxMedia';
+import { setInboxTaskDragData } from '@/lib/inbox/inboxDrag';
 import { InboxAttachmentPreview } from './InboxAttachmentPreview';
 import { InboxAttachmentSheet } from './InboxAttachmentSheet';
 import { InboxTextSheet } from './InboxTextSheet';
@@ -43,6 +44,7 @@ export interface InboxItemRowProps {
   onAttachText: (id: string, fileName: string, body: string) => void;
   onDetach: (id: string, attachmentId: string) => void;
   onSetStatus: (status: TicketStatus) => void;
+  onToggleDailyGoal?: (id: string) => void;
 }
 
 type AssignMenuState =
@@ -90,6 +92,7 @@ export function InboxItemRow({
   onAttachText,
   onDetach,
   onSetStatus,
+  onToggleDailyGoal,
 }: InboxItemRowProps) {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(item.title);
@@ -99,6 +102,7 @@ export function InboxItemRow({
   const [copied, setCopied] = useState(false);
   const [textSheetOpen, setTextSheetOpen] = useState(false);
   const [openAttachment, setOpenAttachment] = useState<InboxAttachment | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const assigned = item.projectPath !== null;
 
@@ -170,7 +174,16 @@ export function InboxItemRow({
   return (
     <div
       data-testid={`inbox-item-${item.id}`}
-      className="relative flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2"
+      draggable={!editing}
+      onDragStart={(e) => {
+        setIsDragging(true);
+        setInboxTaskDragData(e, { type: 'inbox-item', id: item.id });
+      }}
+      onDragEnd={() => setIsDragging(false)}
+      title={!editing ? 'In die Tagesziele ziehen' : undefined}
+      className={`relative flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 transition-colors ${
+        !editing ? 'cursor-grab active:cursor-grabbing' : ''
+      } ${isDragging ? 'opacity-40' : ''}`}
     >
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -204,6 +217,14 @@ export function InboxItemRow({
         )}
 
         <div className="mt-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/50">
+          {Boolean(item.dailyGoal) && (
+            <>
+              <span className="rounded bg-amber-500/15 px-1 py-0.5 font-semibold normal-case tracking-normal text-amber-300">
+                Tagesziel
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          )}
           <button
             type="button"
             aria-label={`Priority: ${PRIORITY_LABEL[item.priority]}`}
@@ -301,6 +322,21 @@ export function InboxItemRow({
         >
           <AuricIcon name="image" className="text-[13px]" />
         </button>
+        {onToggleDailyGoal && (
+          <button
+            type="button"
+            title={item.dailyGoal ? 'Tagesziel entfernen' : 'Als Tagesziel festlegen'}
+            aria-label={item.dailyGoal ? 'Tagesziel entfernen' : 'Als Tagesziel festlegen'}
+            onClick={() => onToggleDailyGoal(item.id)}
+            className={
+              item.dailyGoal
+                ? 'rounded-lg p-1 text-amber-400 transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-primary'
+                : ICON_BUTTON_CLASS
+            }
+          >
+            <AuricIcon name="flag" className="text-[13px]" />
+          </button>
+        )}
         {assigned ? (
           <>
             <button

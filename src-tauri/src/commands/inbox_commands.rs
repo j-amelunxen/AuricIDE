@@ -95,3 +95,19 @@ pub fn inbox_set_ticket_status(
 ) -> Result<(), String> {
     inbox::set_ticket_status_impl(&project_path, &ticket_id, &status)
 }
+
+#[tauri::command]
+pub fn inbox_capture_ticket(
+    project_path: String,
+    ticket_id: String,
+    daily_goal: Option<bool>,
+    state: tauri::State<'_, InboxState>,
+) -> Result<InboxItem, String> {
+    let conn = state.conn.lock().unwrap();
+    inbox::capture_ticket_impl(
+        &conn,
+        &project_path,
+        &ticket_id,
+        daily_goal.unwrap_or(false),
+    )
+}

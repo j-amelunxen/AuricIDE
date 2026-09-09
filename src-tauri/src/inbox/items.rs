@@ -1,6 +1,6 @@
 use super::attachments::load_attachments;
 use super::types::*;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 
 pub(crate) fn row_to_item(row: &rusqlite::Row) -> rusqlite::Result<InboxItem> {
@@ -17,6 +17,7 @@ pub(crate) fn row_to_item(row: &rusqlite::Row) -> rusqlite::Result<InboxItem> {
         dismissed_at: row.get(9)?,
         priority: row.get(10)?,
         due_date: row.get(11)?,
+        daily_goal: row.get::<_, i32>(12).map(|v| v != 0).unwrap_or(false),
         attachments: Vec::new(),
     })
 }
@@ -88,11 +89,12 @@ pub fn add_impl(conn: &Connection, input: &InboxItemInput) -> Result<InboxItem, 
 
     let priority = resolve_priority(input.priority.as_deref())?;
     let due_date = parse_due_date(input.due_date.as_deref())?;
+    let daily_goal = input.daily_goal.unwrap_or(false);
 
     conn.execute(
-        "INSERT INTO inbox_items (id, title, notes, priority, due_date)
-         VALUES (hex(randomblob(16)), ?1, ?2, ?3, ?4)",
-        params![title, input.notes, priority, due_date],
+        "INSERT INTO inbox_items (id, title, notes, priority, due_date, daily_goal)
+         VALUES (hex(randomblob(16)), ?1, ?2, ?3, ?4, ?5)",
+        params![title, input.notes, priority, due_date, daily_goal as i32],
     )
     .map_err(|e| format!("Failed to add inbox item: {}", e))?;
 
@@ -233,6 +235,14 @@ pub fn update_impl(
         .map_err(|e| format!("Failed to update inbox item due date: {}", e))?;
     }
 
+    if let Some(daily_goal) = patch.daily_goal {
+        conn.execute(
+            "UPDATE inbox_items SET daily_goal = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![daily_goal as i32, id],
+        )
+        .map_err(|e| format!("Failed to update inbox item daily goal: {}", e))?;
+    }
+
     get_impl(conn, id)
 }
 
@@ -261,4 +271,84 @@ pub fn unassign_impl(conn: &Connection, id: &str) -> Result<InboxItem, String> {
     )
     .map_err(|e| format!("Failed to unassign inbox item: {}", e))?;
     get_impl(conn, id)
+}
+
+/// Captures or updates a ticket from a project into the inbox with daily_goal status.
+/// If an active (non-dismissed) inbox item for this ticket already exists, it updates its daily_goal flag.
+/// Otherwise, it reads ticket details from the project database and inserts an assigned inbox item.
+pub fn capture_ticket_impl(
+    conn: &Connection,
+    project_path: &str,
+    ticket_id: &str,
+    daily_goal: bool,
+) -> Result<InboxItem, String> {
+    // 1. Check if already in inbox
+    let existing_id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM inbox_items WHERE ticket_id = ?1 AND dismissed_at IS NULL LIMIT 1",
+            params![ticket_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to check existing inbox item: {}", e))?;
+
+    if let Some(id) = existing_id {
+        return update_impl(
+            conn,
+            &id,
+            &InboxItemPatch {
+                daily_goal: Some(daily_goal),
+                ..Default::default()
+            },
+        );
+    }
+
+    // 2. Read from project database
+    if !Path::new(project_path).is_dir() {
+        return Err(format!("Project folder does not exist: {}", project_path));
+    }
+    let project_conn = crate::database::init_db(project_path)?;
+    project_conn
+        .busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
+
+    let (name, description, priority, due_date): (String, String, String, Option<String>) =
+        project_conn
+            .query_row(
+                "SELECT name, description, priority, due_date FROM pm_tickets WHERE id = ?1",
+                params![ticket_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .map_err(|e| format!("Failed to read ticket {}: {}", ticket_id, e))?;
+
+    let project_name = Path::new(project_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| project_path.to_string());
+
+    conn.execute(
+        "INSERT INTO inbox_items
+            (id, title, notes, priority, due_date, project_path, project_name, ticket_id, assigned_at, daily_goal)
+         VALUES (hex(randomblob(16)), ?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), ?8)",
+        params![
+            name,
+            description,
+            priority,
+            due_date,
+            project_path,
+            project_name,
+            ticket_id,
+            daily_goal as i32
+        ],
+    )
+    .map_err(|e| format!("Failed to capture ticket into inbox: {}", e))?;
+
+    let sql = format!(
+        "SELECT {} FROM inbox_items WHERE rowid = ?1",
+        SELECT_COLUMNS
+    );
+    let item = conn
+        .query_row(&sql, params![conn.last_insert_rowid()], row_to_item)
+        .map_err(|e| format!("Failed to read back captured inbox item: {}", e))?;
+    hydrate_item(conn, item)
 }

@@ -10,6 +10,9 @@ import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import { InboxCapture } from './InboxCapture';
 import { InboxItemRow } from './InboxItemRow';
 import { InboxOverviewTicketRow } from './InboxOverviewTicketRow';
+import { InboxDailyGoalsSection } from './InboxDailyGoalsSection';
+import { InboxDailyGoalsPlanner } from './InboxDailyGoalsPlanner';
+import { filterDailyGoals } from '@/lib/inbox/dailyGoals';
 import { unsortedInboxItems } from '@/lib/inbox/unsortedInboxItems';
 import { groupInboxByProject, type InboxProjectGroup } from '@/lib/inbox/groupInboxByProject';
 import { inboxProjectOptions } from '@/lib/inbox/inboxProjectOptions';
@@ -29,6 +32,7 @@ import {
   resolveInboxTicketStatus,
 } from '@/lib/inbox/inboxTicketStatus';
 import { mirroredInboxItem } from '@/lib/inbox/inboxMirror';
+import type { InboxTaskDragPayload } from '@/lib/inbox/inboxDrag';
 import type { InboxItem } from '@/lib/tauri/inbox';
 
 export interface InboxPanelProps {
@@ -75,7 +79,12 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
   const detachInboxFile = useStore((s) => s.detachInboxFile);
   const setInboxTicketStatus = useStore((s) => s.setInboxTicketStatus);
   const setSpawnAgentTicketId = useStore((s) => s.setSpawnAgentTicketId);
+  const toggleDailyGoal = useStore((s) => s.toggleDailyGoal);
+  const setDailyGoal = useStore((s) => s.setDailyGoal);
+  const captureTicketAsDailyGoal = useStore((s) => s.captureTicketAsDailyGoal);
+  const addInboxItem = useStore((s) => s.addInboxItem);
 
+  const [plannerOpen, setPlannerOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   // Read once, on mount: how the list is ordered is a habit, not a per-visit
   // decision, and re-deriving it on every render would fight the picker.
@@ -93,6 +102,7 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
     mirroredInboxItem(item, inboxOverview, liveTickets)
   );
   const orderedItems = sortInboxItems(visibleItems, sort);
+  const dailyGoals = filterDailyGoals(orderedItems);
   const unsorted = unsortedInboxItems(orderedItems);
   const groups = groupInboxByProject(orderedItems, inboxOverview);
   const projectOptions = inboxProjectOptions({
@@ -170,12 +180,29 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
         onAttach={(id, sourcePath) => void attachInboxFile(id, sourcePath)}
         onAttachText={(id, fileName, body) => void attachInboxText(id, fileName, body)}
         onDetach={(id, attachmentId) => void detachInboxFile(id, attachmentId)}
+        onToggleDailyGoal={(targetId) => void toggleDailyGoal(targetId)}
         onSetStatus={(status) => {
           if (item.projectPath === null || item.ticketId === null) return;
           void setInboxTicketStatus(item.projectPath, item.ticketId, status);
         }}
       />
     );
+  };
+
+  const handleCreateAndSetDailyGoal = async (title: string, projectPath: string) => {
+    const item = await addInboxItem(title);
+    if (item) {
+      await assignInboxItem({ itemId: item.id, projectPath });
+      await toggleDailyGoal(item.id);
+    }
+  };
+
+  const handleDropTaskOnDailyGoals = async (payload: InboxTaskDragPayload) => {
+    if (payload.type === 'inbox-item') {
+      await setDailyGoal(payload.id, true);
+    } else if (payload.type === 'ticket') {
+      await captureTicketAsDailyGoal(payload.projectPath, payload.ticketId);
+    }
   };
 
   const loadingFirstPaint = inboxLoading && inboxItems.length === 0;
@@ -231,6 +258,23 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
 
       <div className="flex-1 space-y-3 overflow-y-auto p-2">
         {!hideCapture && <InboxCapture />}
+
+        {!loadingFirstPaint && (
+          <InboxDailyGoalsSection
+            goals={dailyGoals}
+            overview={inboxOverview}
+            starredProjects={starredProjects}
+            liveTickets={liveTickets}
+            onOpenProject={onOpenProject}
+            onHandToAgent={handleHandToAgent}
+            onToggleDailyGoal={(id) => void toggleDailyGoal(id)}
+            onDropTask={(payload) => void handleDropTaskOnDailyGoals(payload)}
+            onSetStatus={(projectPath, ticketId, status) => {
+              void setInboxTicketStatus(projectPath, ticketId, status);
+            }}
+            onOpenPlanner={() => setPlannerOpen(true)}
+          />
+        )}
 
         {inboxError !== null && (
           <p data-testid="inbox-error" className="px-1 text-[11px] text-[#ff4a4a]/80">
@@ -310,8 +354,12 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
                           <InboxOverviewTicketRow
                             key={ticket.id}
                             ticket={ticket}
+                            projectPath={group.projectPath}
                             onSetStatus={(status) =>
                               void setInboxTicketStatus(group.projectPath, ticket.id, status)
+                            }
+                            onSetDailyGoal={() =>
+                              void captureTicketAsDailyGoal(group.projectPath, ticket.id)
                             }
                           />
                         ))}
@@ -324,6 +372,21 @@ export function InboxPanel({ variant, hideCapture, onOpenProject }: InboxPanelPr
           </div>
         )}
       </div>
+
+      <InboxDailyGoalsPlanner
+        isOpen={plannerOpen}
+        onClose={() => setPlannerOpen(false)}
+        projects={projectOptions}
+        inboxItems={inboxItems}
+        overview={inboxOverview}
+        onToggleDailyGoal={(id) => void toggleDailyGoal(id)}
+        onCaptureTicketAsDailyGoal={(projectPath, ticketId) =>
+          void captureTicketAsDailyGoal(projectPath, ticketId)
+        }
+        onCreateAndSetDailyGoal={(title, projectPath) =>
+          void handleCreateAndSetDailyGoal(title, projectPath)
+        }
+      />
 
       {confirmDialog}
     </div>

@@ -294,6 +294,7 @@ pub fn run() {
             inbox_attach_text,
             inbox_detach,
             inbox_set_ticket_status,
+            inbox_capture_ticket,
             projects_pm_overview,
             agent_log_append,
             agent_log_load,

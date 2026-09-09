@@ -16,6 +16,7 @@ pub(crate) fn input(title: &str) -> InboxItemInput {
         notes: String::new(),
         priority: None,
         due_date: None,
+        daily_goal: None,
     }
 }
 

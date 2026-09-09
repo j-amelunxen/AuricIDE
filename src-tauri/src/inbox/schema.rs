@@ -64,6 +64,13 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         CREATE INDEX idx_inbox_attachments_item ON inbox_attachments(item_id);",
     )?;
 
+    apply_migration(
+        conn,
+        4,
+        "add_inbox_item_daily_goal",
+        "ALTER TABLE inbox_items ADD COLUMN daily_goal INTEGER NOT NULL DEFAULT 0;",
+    )?;
+
     Ok(())
 }
 
