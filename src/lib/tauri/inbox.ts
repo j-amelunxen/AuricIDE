@@ -24,6 +24,8 @@ export interface InboxItem {
   priority: Priority;
   /** Calendar day `YYYY-MM-DD`, or null when nothing is due. */
   dueDate: string | null;
+  /** Whether this task is flagged as today's sprint goal / Tagesziel. */
+  dailyGoal?: boolean;
   /**
    * Images, videos and text documents copied into the app inbox store.
    * Absent on older fixtures.
@@ -52,6 +54,7 @@ export interface InboxItemInput {
   notes?: string;
   priority?: Priority;
   dueDate?: string | null;
+  dailyGoal?: boolean;
 }
 
 export interface InboxItemPatch {
@@ -60,6 +63,7 @@ export interface InboxItemPatch {
   priority?: Priority;
   /** `null` or `''` clears a previously set date. */
   dueDate?: string | null;
+  dailyGoal?: boolean;
 }
 
 export interface InboxAssignRequest {
@@ -179,4 +183,13 @@ export async function inboxSetTicketStatus(args: {
   status: TicketStatus;
 }): Promise<void> {
   return invoke<void>('inbox_set_ticket_status', args);
+}
+
+/** Captures an existing project ticket into the inbox, optionally flagged as daily goal. */
+export async function inboxCaptureTicket(args: {
+  projectPath: string;
+  ticketId: string;
+  dailyGoal?: boolean;
+}): Promise<InboxItem> {
+  return invoke<InboxItem>('inbox_capture_ticket', args);
 }

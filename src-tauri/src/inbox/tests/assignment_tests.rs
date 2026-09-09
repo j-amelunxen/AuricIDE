@@ -154,6 +154,7 @@ fn assign_transfers_the_item_priority_and_due_date_onto_the_ticket() {
             notes: "Ask accounting first".to_string(),
             priority: Some("critical".to_string()),
             due_date: Some("2026-08-22".to_string()),
+            ..Default::default()
         },
     )
     .unwrap();

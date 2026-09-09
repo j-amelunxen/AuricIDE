@@ -5,6 +5,7 @@ import {
   inboxAssign,
   inboxAttach,
   inboxAttachText,
+  inboxCaptureTicket,
   inboxDetach,
   inboxDismiss,
   inboxList,
@@ -19,6 +20,7 @@ import {
 } from '@/lib/tauri/inbox';
 import { settledInboxItems } from '@/lib/inbox/inboxTicketStatus';
 import { inboxPatchFromNewerDigest, ticketUpdatesFromInboxPatch } from '@/lib/inbox/inboxMirror';
+import { itemsToUnflagForProject } from '@/lib/inbox/dailyGoals';
 
 /**
  * The pieces of the wider store this slice reaches into, cast rather than
@@ -81,6 +83,12 @@ export interface InboxSlice {
     ticketId: string,
     status: TicketStatus
   ) => Promise<void>;
+  /** Toggles an item as today's sprint goal / Tagesziel. */
+  toggleDailyGoal: (id: string) => Promise<void>;
+  /** Sets or unsets an item as today's sprint goal / Tagesziel. */
+  setDailyGoal: (id: string, isGoal: boolean) => Promise<void>;
+  /** Captures an existing project ticket into the inbox as today's sprint goal. */
+  captureTicketAsDailyGoal: (projectPath: string, ticketId: string) => Promise<InboxItem | null>;
 }
 
 function describeError(error: unknown): string {
@@ -289,6 +297,47 @@ export const createInboxSlice: StateCreator<InboxSlice> = (set, get) => ({
       await dismissSettledInboxItems(get, set, inboxOverview);
     } catch (error) {
       set({ inboxError: describeError(error) });
+    }
+  },
+
+  toggleDailyGoal: async (id) => {
+    const item = get().inboxItems.find((i) => i.id === id);
+    if (!item) return;
+    await get().setDailyGoal(id, !Boolean(item.dailyGoal));
+  },
+
+  setDailyGoal: async (id, isGoal) => {
+    const item = get().inboxItems.find((i) => i.id === id);
+    if (!item) return;
+    if (Boolean(item.dailyGoal) === isGoal) return;
+    if (isGoal) {
+      const toUnflag = itemsToUnflagForProject(get().inboxItems, id, item.projectPath);
+      for (const other of toUnflag) {
+        await get().updateInboxItem(other.id, { dailyGoal: false });
+      }
+    }
+    await get().updateInboxItem(id, { dailyGoal: isGoal });
+  },
+
+  captureTicketAsDailyGoal: async (projectPath, ticketId) => {
+    try {
+      const toUnflag = itemsToUnflagForProject(get().inboxItems, '', projectPath);
+      for (const other of toUnflag) {
+        await get().updateInboxItem(other.id, { dailyGoal: false });
+      }
+
+      const item = await inboxCaptureTicket({ projectPath, ticketId, dailyGoal: true });
+      const items = get().inboxItems;
+      const existing = items.find((i) => i.id === item.id);
+      if (existing) {
+        set({ inboxItems: replaceItem(items, item.id, item), inboxError: null });
+      } else {
+        set({ inboxItems: [item, ...items], inboxError: null });
+      }
+      return item;
+    } catch (error) {
+      set({ inboxError: describeError(error) });
+      return null;
     }
   },
 });

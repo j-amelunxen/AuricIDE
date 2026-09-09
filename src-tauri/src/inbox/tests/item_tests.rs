@@ -134,6 +134,7 @@ fn add_stores_priority_and_due_date() {
             notes: String::new(),
             priority: Some("high".to_string()),
             due_date: Some("2026-08-20".to_string()),
+            ..Default::default()
         },
     )
     .unwrap();
@@ -151,6 +152,7 @@ fn add_rejects_an_invalid_priority() {
             notes: String::new(),
             priority: Some("urgent".to_string()),
             due_date: None,
+            ..Default::default()
         },
     )
     .unwrap_err();
@@ -167,6 +169,7 @@ fn add_rejects_an_invalid_due_date() {
             notes: String::new(),
             priority: None,
             due_date: Some("20.08.2026".to_string()),
+            ..Default::default()
         },
     )
     .unwrap_err();
@@ -203,6 +206,7 @@ fn update_clears_a_due_date_with_a_blank_value() {
             notes: String::new(),
             priority: None,
             due_date: Some("2026-08-20".to_string()),
+            ..Default::default()
         },
     )
     .unwrap();
@@ -231,6 +235,7 @@ fn update_of_an_assigned_item_writes_through_to_the_ticket() {
             notes: "inbox notes".to_string(),
             priority: Some("normal".to_string()),
             due_date: None,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -253,6 +258,7 @@ fn update_of_an_assigned_item_writes_through_to_the_ticket() {
             notes: Some("ticket notes".to_string()),
             priority: Some("high".to_string()),
             due_date: Some("2026-09-01".to_string()),
+            ..Default::default()
         },
     )
     .unwrap();
@@ -352,4 +358,87 @@ fn unassign_clears_the_link_but_leaves_the_ticket_in_the_project() {
         )
         .unwrap();
     assert_eq!(still_there, 1);
+}
+
+#[test]
+fn add_stores_daily_goal() {
+    let conn = test_db();
+    let item_default = add_impl(&conn, &input("regular")).unwrap();
+    assert!(!item_default.daily_goal);
+
+    let mut goal_input = input("sprint goal");
+    goal_input.daily_goal = Some(true);
+    let item_goal = add_impl(&conn, &goal_input).unwrap();
+    assert!(item_goal.daily_goal);
+}
+
+#[test]
+fn update_changes_daily_goal() {
+    let conn = test_db();
+    let item = add_impl(&conn, &input("task")).unwrap();
+    assert!(!item.daily_goal);
+
+    let updated = update_impl(
+        &conn,
+        &item.id,
+        &InboxItemPatch {
+            daily_goal: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(updated.daily_goal);
+
+    let unflagged = update_impl(
+        &conn,
+        &item.id,
+        &InboxItemPatch {
+            daily_goal: Some(false),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(!unflagged.daily_goal);
+}
+
+#[test]
+fn capture_ticket_creates_and_links_inbox_item_with_daily_goal() {
+    let inbox_conn = test_db();
+    let project = seeded_project();
+    let project_conn = open_project_db(&project);
+
+    // Create a ticket in project DB
+    let epic_id = "epic-1";
+    project_conn
+        .execute(
+            "INSERT INTO pm_epics (id, name) VALUES (?1, 'Core')",
+            params![epic_id],
+        )
+        .unwrap();
+    let ticket_id = "t-100";
+    project_conn
+        .execute(
+            "INSERT INTO pm_tickets (id, epic_id, name, description, priority, due_date)
+             VALUES (?1, ?2, 'Implement feature X', 'Details', 'high', '2026-09-08')",
+            params![ticket_id, epic_id],
+        )
+        .unwrap();
+    drop(project_conn);
+
+    let project_path = project.path().to_string_lossy().to_string();
+    let item = capture_ticket_impl(&inbox_conn, &project_path, ticket_id, true).unwrap();
+
+    assert_eq!(item.title, "Implement feature X");
+    assert_eq!(item.notes, "Details");
+    assert_eq!(item.priority, "high");
+    assert_eq!(item.due_date, Some("2026-09-08".to_string()));
+    assert_eq!(item.project_path, Some(project_path.clone()));
+    assert_eq!(item.ticket_id, Some(ticket_id.to_string()));
+    assert!(item.assigned_at.is_some());
+    assert!(item.daily_goal);
+
+    // Calling it again toggles/updates daily_goal on the existing item
+    let updated = capture_ticket_impl(&inbox_conn, &project_path, ticket_id, false).unwrap();
+    assert_eq!(updated.id, item.id);
+    assert!(!updated.daily_goal);
 }

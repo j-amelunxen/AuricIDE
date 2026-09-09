@@ -23,6 +23,8 @@ pub struct InboxItem {
     pub priority: String,
     pub due_date: Option<String>,
     #[serde(default)]
+    pub daily_goal: bool,
+    #[serde(default)]
     pub attachments: Vec<InboxAttachment>,
 }
 
@@ -37,7 +39,7 @@ pub struct InboxAttachment {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxItemInput {
     pub title: String,
@@ -47,6 +49,8 @@ pub struct InboxItemInput {
     pub priority: Option<String>,
     #[serde(default)]
     pub due_date: Option<String>,
+    #[serde(default)]
+    pub daily_goal: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -57,6 +61,7 @@ pub struct InboxItemPatch {
     pub priority: Option<String>,
     /// `None` leaves the date alone; `Some("")` clears it; a calendar day sets it.
     pub due_date: Option<String>,
+    pub daily_goal: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -127,4 +132,4 @@ pub const DEFAULT_TEXT_EXTENSION: &str = "md";
 
 pub const SELECT_COLUMNS: &str = "id, title, notes, created_at, updated_at, \
      project_path, project_name, ticket_id, assigned_at, dismissed_at, \
-     priority, due_date";
+     priority, due_date, daily_goal";
