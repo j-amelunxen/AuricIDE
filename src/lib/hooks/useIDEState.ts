@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { useStore } from '@/lib/store';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
@@ -10,7 +10,15 @@ import { type ExtraTerminal } from '@/app/components/terminal/TerminalPanel';
 import { type SettingsCategory } from '@/app/components/ide/SettingsModal';
 
 export function useIDEState() {
-  const [activeActivity, setActiveActivity] = useState('explorer');
+  const [activeActivity, setActiveActivityRaw] = useState('explorer');
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  // Every way of naming an activity (rail, shortcut, command palette) means
+  // "show me that panel", so it unfolds a sidebar the user had folded away.
+  // Only a click on the already-active rail icon folds it (`activityClick`).
+  const setActiveActivity = useCallback((id: string) => {
+    setActiveActivityRaw(id);
+    setLeftCollapsed(false);
+  }, []);
   const [editorContent, setEditorContent] = useState('');
   const [imageData, setImageData] = useState<string | null>(null);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
@@ -229,6 +237,8 @@ export function useIDEState() {
   return {
     activeActivity,
     setActiveActivity,
+    leftCollapsed,
+    setLeftCollapsed,
     workPlaceOpen,
     editorContent,
     setEditorContent,

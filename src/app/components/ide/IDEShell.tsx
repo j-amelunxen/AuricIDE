@@ -11,6 +11,8 @@ export interface IDEShellProps {
   rightPanel?: React.ReactNode;
   bottomPanel?: React.ReactNode;
   statusBar: React.ReactNode;
+  leftCollapsed?: boolean;
+  onLeftToggle?: (collapsed: boolean) => void;
   bottomCollapsed?: boolean;
   onBottomToggle?: (collapsed: boolean) => void;
   rightCollapsed?: boolean;
@@ -25,16 +27,19 @@ export function IDEShell({
   rightPanel,
   bottomPanel,
   statusBar,
+  leftCollapsed: leftCollapsedProp,
+  onLeftToggle,
   bottomCollapsed: bottomCollapsedProp,
   onBottomToggle,
   rightCollapsed: rightCollapsedProp,
   onRightToggle,
 }: IDEShellProps) {
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [leftCollapsedInternal, setLeftCollapsedInternal] = useState(false);
   const [bottomCollapsedInternal, setBottomCollapsedInternal] = useState(false);
   const [rightCollapsedInternal, setRightCollapsedInternal] = useState(false);
 
   // Sync with prop if provided
+  const leftCollapsed = leftCollapsedProp !== undefined ? leftCollapsedProp : leftCollapsedInternal;
   const isBottomCollapsed =
     bottomCollapsedProp !== undefined ? bottomCollapsedProp : bottomCollapsedInternal;
   const isRightCollapsed =
@@ -137,7 +142,9 @@ export function IDEShell({
       <button
         data-testid="toggle-left-panel"
         className="sr-only"
-        onClick={() => setLeftCollapsed((c) => !c)}
+        onClick={() =>
+          onLeftToggle ? onLeftToggle(!leftCollapsed) : setLeftCollapsedInternal((c) => !c)
+        }
         aria-label="Toggle left panel"
       />
       <button

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Home from './page';
 import { useStore } from '@/lib/store';
@@ -417,6 +417,26 @@ describe('Home page', () => {
     expect(screen.getByTestId('activity-item-settings')).toBeInTheDocument();
     expect(screen.getByTestId('activity-item-scratches')).toBeInTheDocument();
     expect(screen.getByTestId('activity-item-extensions')).toBeInTheDocument();
+  });
+
+  it('reserves no empty sidebar column while no project is open', () => {
+    render(<Home />);
+    expect(screen.getByTestId('left-panel-container').style.width).toBe('0px');
+  });
+
+  it('folds the sidebar when its active rail icon is clicked again, and unfolds it on the next', async () => {
+    render(<Home />);
+    const inbox = screen.getByTestId('activity-item-inbox');
+    const panel = () => screen.getByTestId('left-panel-container');
+
+    fireEvent.click(inbox);
+    await waitFor(() => expect(panel().style.width).toBe(''));
+
+    fireEvent.click(inbox);
+    await waitFor(() => expect(panel().style.width).toBe('0px'));
+
+    fireEvent.click(inbox);
+    await waitFor(() => expect(panel().style.width).toBe(''));
   });
 
   it('returns to the start screen from Mission Control', () => {
