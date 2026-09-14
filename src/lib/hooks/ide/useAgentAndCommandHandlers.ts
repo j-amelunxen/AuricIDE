@@ -9,6 +9,7 @@ import { persistQuietly } from '@/lib/store/persistFeedback';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { defaultCommands } from '@/lib/commands/registry';
 import { TIPS, activityItems, visibleActivityItems } from '@/lib/ide/constants';
+import { activityClick } from '@/lib/ide/leftPanel';
 import { unsortedInboxItems } from '@/lib/inbox/unsortedInboxItems';
 import { selectChangedFileCount } from '@/lib/store/gitSlice';
 import {
@@ -242,6 +243,15 @@ export function useAgentAndCommandHandlers({
       if (id === 'blueprints') {
         state.setBlueprintsGalleryOpen(true);
         if (state.rootPath) state.loadBlueprints(state.rootPath);
+        return;
+      }
+      const click = activityClick({
+        clicked: id,
+        activeActivity: state.activeActivity,
+        workPlaceOpen: useStore.getState().workPlaceOpen,
+      });
+      if (click === 'toggle') {
+        state.setLeftCollapsed(!state.leftCollapsed);
         return;
       }
       if (useStore.getState().pmDirty) {

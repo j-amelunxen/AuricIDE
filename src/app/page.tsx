@@ -33,6 +33,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { StartSplashScreen } from './components/ide/StartSplashScreen';
 import { EditorContentRouter } from './components/ide/EditorContentRouter';
 import { LeftSidebarPanel } from './components/ide/LeftSidebarPanel';
+import { leftPanelVisible } from '@/lib/ide/leftPanel';
 import { CanvasPageModals } from './components/ide/CanvasPageModals';
 
 // Memoized sub-components
@@ -103,6 +104,12 @@ export default function Home() {
     setNewProjectOpen(false);
   };
 
+  const leftPanelShown = leftPanelVisible({
+    activeActivity: state.activeActivity,
+    availableIds: handlers.itemsWithBadge.map((item) => item.id),
+    collapsed: state.leftCollapsed,
+  });
+
   const leftPanelContent = useMemo(
     () => (
       <LeftSidebarPanel
@@ -164,6 +171,8 @@ export default function Home() {
         onClose={() => setNewProjectOpen(false)}
       />
       <IDEShell
+        leftCollapsed={!leftPanelShown}
+        onLeftToggle={state.setLeftCollapsed}
         bottomCollapsed={state.bottomCollapsed}
         onBottomToggle={state.setBottomCollapsed}
         rightCollapsed={state.rightCollapsed}

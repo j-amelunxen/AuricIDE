@@ -86,6 +86,38 @@ describe('IDEShell', () => {
     expect(panel.style.width).toBe('0px');
   });
 
+  it('collapses the left panel to zero width when leftCollapsed is set', () => {
+    render(
+      <IDEShell
+        header={<div />}
+        leftPanel={<div data-testid="left-content">Explorer</div>}
+        leftCollapsed
+        statusBar={<div />}
+      />
+    );
+
+    expect(screen.getByTestId('left-panel-container').style.width).toBe('0px');
+  });
+
+  it('reports a left toggle to onLeftToggle instead of flipping its own state', async () => {
+    const user = userEvent.setup();
+    const onLeftToggle = vi.fn();
+    render(
+      <IDEShell
+        header={<div />}
+        leftPanel={<div data-testid="left-content">Explorer</div>}
+        leftCollapsed={false}
+        onLeftToggle={onLeftToggle}
+        statusBar={<div />}
+      />
+    );
+
+    await user.click(screen.getByTestId('toggle-left-panel'));
+
+    expect(onLeftToggle).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId('left-panel-container').style.width).toBe('');
+  });
+
   it('can toggle bottom panel visibility', async () => {
     const user = userEvent.setup();
     render(

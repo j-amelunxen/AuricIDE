@@ -49,6 +49,8 @@ export function LeftSidebarPanel({
   // gone from the rail — keep the left pane empty rather than a hollow tree.
   if (!activeItem) return null;
 
+  // Every case below must be listed in LEFT_PANEL_ACTIVITIES (lib/ide/leftPanel.ts),
+  // or the shell will not give it a column.
   switch (state.activeActivity) {
     case 'explorer':
       return (
