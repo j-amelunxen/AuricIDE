@@ -155,7 +155,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   referencesPanelResults: [],
   providers: [FALLBACK_CRUSH_PROVIDER],
   workPlaceOpen: false,
-  workTab: 'goals',
+  workTab: 'tickets',
   agentConsoleOpen: false,
   commandCenterOpen: false,
   commandCenterProject: undefined,
