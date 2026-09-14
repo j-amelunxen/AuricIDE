@@ -48,15 +48,17 @@ describe('uiSlice – Work place', () => {
     store = createTestStore();
   });
 
-  it('starts closed on the Goals tab', () => {
+  it('starts closed on the Tickets tab, the view day-to-day work happens in', () => {
     expect(store.current.workPlaceOpen).toBe(false);
-    expect(store.current.workTab).toBe('goals');
+    expect(store.current.workTab).toBe('tickets');
   });
 
   it('openWorkPlace opens the last tab when none is given', () => {
+    store.current.openWorkPlace('requirements');
+    store.current.closeWorkPlace();
     store.current.openWorkPlace();
     expect(store.current.workPlaceOpen).toBe(true);
-    expect(store.current.workTab).toBe('goals');
+    expect(store.current.workTab).toBe('requirements');
   });
 
   it('openWorkPlace remembers the requested tab', () => {
