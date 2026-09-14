@@ -226,18 +226,20 @@ export function MissionControl({
           <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-foreground-muted">
             Mission Control
           </p>
-          <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-white">
-            {projectName}
-          </h1>
-          <button
-            type="button"
-            data-testid="mc-leave-project"
-            onClick={() => onCloseProject?.()}
-            className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
-          >
-            <AuricIcon name="arrow_back" aria-hidden="true" className="text-sm" />
-            Leave project
-          </button>
+          <div className="mt-1 flex flex-row flex-wrap items-center justify-center gap-x-2">
+            <h1 className="font-display text-3xl font-black tracking-tight text-white">
+              {projectName}
+            </h1>
+            <button
+              type="button"
+              data-testid="mc-leave-project"
+              onClick={() => onCloseProject?.()}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[11px] text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light"
+            >
+              <AuricIcon name="arrow_back" aria-hidden="true" className="text-sm" />
+              Leave project
+            </button>
+          </div>
         </div>
 
         {/* The loop. Container queries follow the editor pane, so opening the
