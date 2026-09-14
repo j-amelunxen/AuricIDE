@@ -464,14 +464,15 @@ describe('MissionControl', () => {
     expect(useStore.getState().isProjectStarred('/tmp/other-project')).toBe(true);
   });
 
-  it('offers a leave-project control under the project name', () => {
+  it('offers a leave-project control beside the project name, not stacked under it', () => {
     render(<MissionControl />);
     const leave = screen.getByTestId('mc-leave-project');
+    const heading = screen.getByRole('heading', { name: 'demo-project' });
     expect(leave).toHaveAccessibleName(/leave project/i);
     expect(leave).toHaveClass('focus-visible:outline-2');
-    expect(
-      leave.compareDocumentPosition(screen.getByRole('heading', { name: 'demo-project' }))
-    ).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+    expect(leave.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+    expect(leave.parentElement).toBe(heading.parentElement);
+    expect(leave.parentElement).toHaveClass('flex-row');
   });
 
   it('leaves the project when the leave-project control is pressed', () => {
