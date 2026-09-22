@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 import { QUICK_ACCESS_HINT, QuickAccess } from './QuickAccess';
 import { DWELL_DOTS_MS, DWELL_OPEN_MS } from '@/lib/quickAccess/wheel';
 import { useStore } from '@/lib/store';
@@ -18,6 +19,7 @@ describe('QuickAccess', () => {
   beforeEach(() => {
     mockLoadProjectsDirty.mockReset();
     mockLoadProjectsDirty.mockResolvedValue({});
+    localStorage.removeItem(APP_CONFIG_KEYS.quickAccessSort);
     useStore.setState({ starredProjects: [], toasts: [], projectDirtyEpoch: 0 });
   });
 
@@ -1168,5 +1170,148 @@ describe('QuickAccess', () => {
       'data-active',
       'false'
     );
+  });
+
+  describe('badges', () => {
+    const checkout = (path: string, name: string, badge?: { text: string; color: string }) => ({
+      path,
+      name,
+      starredAt: 1,
+      badge,
+    });
+
+    it('shows a lane mark under the tile and names it for a screen reader', () => {
+      useStore.setState({
+        starredProjects: [checkout('/wt/fe', 'auricide', { text: 'fe', color: 'blue' })],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const chip = screen.getByTestId('quick-access-badge-/wt/fe');
+      expect(chip).toHaveTextContent('fe');
+      expect(chip).toHaveAttribute('data-color', 'blue');
+      expect(screen.getByTestId('quick-access-tile-/wt/fe')).toHaveAccessibleName(/badge fe/i);
+    });
+
+    it('sets a badge from the right-click field with Enter, and a colour click', () => {
+      useStore.setState({
+        starredProjects: [checkout('/wt/fe', 'auricide')],
+      });
+      render(<QuickAccess currentPath={null} />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/wt/fe'));
+      const input = screen.getByRole('textbox', { name: /badge text/i });
+      expect(input).toHaveFocus();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      fireEvent.change(input, { target: { value: 'fe' } });
+      fireEvent.submit(screen.getByTestId('quick-access-badge-form'));
+      expect(useStore.getState().starredProjects[0].badge).toEqual({ text: 'fe', color: 'blue' });
+      expect(screen.queryByRole('textbox', { name: /badge text/i })).not.toBeInTheDocument();
+
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/wt/fe'));
+      fireEvent.change(screen.getByRole('textbox', { name: /badge text/i }), {
+        target: { value: 'qa' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Green' }));
+      expect(useStore.getState().starredProjects[0].badge).toEqual({ text: 'qa', color: 'green' });
+    });
+
+    it('removes a badge from the chip without opening a menu', () => {
+      useStore.setState({
+        starredProjects: [checkout('/wt/fe', 'auricide', { text: 'fe', color: 'blue' })],
+      });
+      render(<QuickAccess currentPath={null} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove badge fe' }));
+      expect(useStore.getState().starredProjects[0].badge).toBeUndefined();
+      expect(screen.queryByTestId('quick-access-badge-/wt/fe')).not.toBeInTheDocument();
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('reuses a badge in one click, and clicking the active one clears it', () => {
+      useStore.setState({
+        starredProjects: [
+          checkout('/wt/fe', 'auricide', { text: 'fe', color: 'blue' }),
+          checkout('/wt/plain', 'notes'),
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/wt/plain'));
+      fireEvent.click(screen.getByRole('button', { name: 'Use fe' }));
+      expect(
+        useStore.getState().starredProjects.find((p) => p.path === '/wt/plain')?.badge
+      ).toEqual({ text: 'fe', color: 'blue' });
+
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/wt/fe'));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear fe' }));
+      expect(
+        useStore.getState().starredProjects.find((p) => p.path === '/wt/fe')?.badge
+      ).toBeUndefined();
+    });
+
+    it('clears a badge by submitting an empty field', () => {
+      useStore.setState({
+        starredProjects: [checkout('/wt/fe', 'auricide', { text: 'fe', color: 'blue' })],
+      });
+      render(<QuickAccess currentPath={null} />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/wt/fe'));
+      fireEvent.change(screen.getByRole('textbox', { name: /badge text/i }), {
+        target: { value: '' },
+      });
+      fireEvent.submit(screen.getByTestId('quick-access-badge-form'));
+      expect(useStore.getState().starredProjects[0].badge).toBeUndefined();
+    });
+
+    it('sorts by badge when asked and remembers that', () => {
+      useStore.setState({
+        starredProjects: [
+          checkout('/wt/zeta', 'zeta', { text: 'qa', color: 'green' }),
+          checkout('/wt/alpha', 'alpha'),
+          checkout('/wt/mu', 'mu', { text: 'fe', color: 'blue' }),
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const order = () =>
+        screen
+          .getAllByTestId(/^quick-access-tile-/)
+          .map((tile) => tile.getAttribute('data-testid'));
+
+      expect(order()).toEqual([
+        'quick-access-tile-/wt/alpha',
+        'quick-access-tile-/wt/mu',
+        'quick-access-tile-/wt/zeta',
+      ]);
+
+      fireEvent.click(screen.getByTestId('quick-access-sort-badge'));
+      expect(order()).toEqual([
+        'quick-access-tile-/wt/mu',
+        'quick-access-tile-/wt/zeta',
+        'quick-access-tile-/wt/alpha',
+      ]);
+      expect(localStorage.getItem(APP_CONFIG_KEYS.quickAccessSort)).toBe('badge');
+      expect(screen.getByTestId('quick-access-sort-badge')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('restores badge order and can switch back from the menu', () => {
+      localStorage.setItem(APP_CONFIG_KEYS.quickAccessSort, 'badge');
+      useStore.setState({
+        starredProjects: [
+          checkout('/wt/zeta', 'zeta', { text: 'qa', color: 'green' }),
+          checkout('/wt/alpha', 'alpha'),
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const tiles = screen.getAllByTestId(/^quick-access-tile-/);
+      expect(tiles.map((tile) => tile.getAttribute('data-testid'))).toEqual([
+        'quick-access-tile-/wt/zeta',
+        'quick-access-tile-/wt/alpha',
+      ]);
+
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/wt/zeta'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /sort projects by name/i }));
+      const after = screen.getAllByTestId(/^quick-access-tile-/);
+      expect(after.map((tile) => tile.getAttribute('data-testid'))).toEqual([
+        'quick-access-tile-/wt/alpha',
+        'quick-access-tile-/wt/zeta',
+      ]);
+      expect(localStorage.getItem(APP_CONFIG_KEYS.quickAccessSort)).toBe('name');
+    });
   });
 });

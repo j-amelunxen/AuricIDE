@@ -14,6 +14,8 @@ pub const MAX_SKILLS_PER_PROJECT: usize = 20;
 pub const MAX_COMBOS_PER_PROJECT: usize = 20;
 pub const MAX_STEPS_PER_COMBO: usize = 8;
 pub const WHEEL_SLOT_COUNT: usize = 6;
+/// Twin of `BADGE_MAX_CHARS` in `src/lib/quickAccess/badge.ts`.
+pub const BADGE_MAX_CHARS: usize = 6;
 pub const LEGACY_KEY: &str = "auric-recent-projects";
 pub const LEGACY_STARRED_KEY: &str = "auric-starred-projects";
 
@@ -74,6 +76,27 @@ pub struct QuickAccessCombo {
     pub steps: Vec<QuickAccessSkill>,
 }
 
+/// A short lane mark on one checkout. `color` is an opaque key, same as an
+/// icon kind: this build stores it and the frontend paints the ones it knows.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectBadge {
+    pub text: String,
+    pub color: String,
+}
+
+/// Present-versus-absent for a badge on the settings payload.
+///
+/// `#[serde(default)]` applies only when the field is missing, and then this
+/// function is not called. A present field — object or null — is wrapped so
+/// the store can tell "they did not mention it" from "they cleared it".
+fn badge_update<'de, D>(deserializer: D) -> Result<Option<Option<ProjectBadge>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<ProjectBadge>::deserialize(deserializer)?))
+}
+
 /// The per-project Quick Access settings, as one blob. They live INSIDE the
 /// starred record on purpose: unstarring a project drops its settings with it,
 /// which is the behaviour without any cleanup logic to get wrong.
@@ -89,6 +112,14 @@ pub struct StarredProjectSettings {
     /// Missing means "keep the record's wheel, then drop ids that left skills".
     #[serde(default)]
     pub wheel_slots: Option<Vec<Option<String>>>,
+    /// `None` — the payload did not mention a badge, leave the stored one.
+    /// `Some(None)` — explicit null, clear it. `Some(Some(_))` — replace it.
+    #[serde(
+        default,
+        deserialize_with = "badge_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub badge: Option<Option<ProjectBadge>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -105,6 +136,8 @@ pub struct StarredProject {
     pub combos: Vec<QuickAccessCombo>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wheel_slots: Vec<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge: Option<ProjectBadge>,
 }
 
 impl StarredProject {
@@ -128,6 +161,9 @@ impl StarredProject {
         }
         if self.wheel_slots.is_empty() {
             self.wheel_slots = other.wheel_slots;
+        }
+        if self.badge.is_none() {
+            self.badge = other.badge;
         }
         if self.name.trim().is_empty() {
             self.name = other.name;

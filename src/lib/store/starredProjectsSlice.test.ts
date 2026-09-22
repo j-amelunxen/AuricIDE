@@ -179,6 +179,39 @@ describe('starredProjectsSlice', () => {
       expect(a.skills).toEqual([blogartikel]);
     });
 
+    it('stores a badge without disturbing the icon, and an icon save keeps the badge', () => {
+      useStore.getState().setStarredProjectIcon('/a', glyph);
+      useStore.getState().setStarredProjectBadge('/a', { text: '  fe  ', color: 'green' });
+      let [a] = useStore.getState().starredProjects;
+      expect(a.icon).toEqual(glyph);
+      expect(a.badge).toEqual({ text: 'fe', color: 'green' });
+
+      useStore.getState().setStarredProjectIcon('/a', undefined);
+      [a] = useStore.getState().starredProjects;
+      expect(a.icon).toBeUndefined();
+      expect(a.badge).toEqual({ text: 'fe', color: 'green' });
+      expect(JSON.parse(mockStorage['auric-starred-projects'])[0].badge).toEqual({
+        text: 'fe',
+        color: 'green',
+      });
+    });
+
+    it('clears a badge without touching the other project', () => {
+      useStore.getState().setStarredProjectBadge('/a', { text: 'fe', color: 'blue' });
+      useStore.getState().setStarredProjectBadge('/b', { text: 'qa', color: 'red' });
+      useStore.getState().setStarredProjectBadge('/a', null);
+      const [a, b] = useStore.getState().starredProjects;
+      expect(a.badge).toBeUndefined();
+      expect(b.badge).toEqual({ text: 'qa', color: 'red' });
+    });
+
+    it('drops the badge with the project when it is unstarred', () => {
+      useStore.getState().setStarredProjectBadge('/a', { text: 'fe', color: 'blue' });
+      useStore.getState().removeStarredProject('/a');
+      useStore.getState().addStarredProject('/a');
+      expect(useStore.getState().starredProjects[0].badge).toBeUndefined();
+    });
+
     it('clears the icon back to the generated tile', () => {
       useStore.getState().setStarredProjectIcon('/a', glyph);
       useStore.getState().setStarredProjectIcon('/a', undefined);

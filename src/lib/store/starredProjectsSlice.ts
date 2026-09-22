@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import * as nativeStarredProjects from '../tauri/starredProjects';
+import { normalizeProjectBadge } from '../quickAccess/badge';
 import { normalizeWheelSlots } from '../quickAccess/wheel';
 import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
 
@@ -13,8 +14,8 @@ let syncRevision = 0;
  * falls off the (capped, recency-ordered) recent list.
  *
  * The array is kept in STAR order — new stars append, nothing reorders — but that
- * is NOT the display order: `QuickAccess` sorts tiles alphabetically by name so
- * the row stays predictable as the set grows. Star order still carries weight:
+ * is NOT the display order: `QuickAccess` sorts the tiles, by name unless the
+ * user switches to badge. Star order still carries weight:
  * `starredAt` means "pinned since", and the Rust store sorts and dedupes on it
  * (`merge_starred_projects`), so both sides agree on which copy of a path wins.
  */
@@ -26,6 +27,7 @@ let syncRevision = 0;
  * than breaking the row.
  */
 import type {
+  ProjectBadge,
   ProjectIconOverride,
   QuickAccessCombo,
   QuickAccessSkill,
@@ -33,6 +35,7 @@ import type {
   StarredProjectSettings,
 } from '../tauri/starredProjects';
 export type {
+  ProjectBadge,
   ProjectIconOverride,
   QuickAccessCombo,
   QuickAccessSkill,
@@ -96,6 +99,8 @@ export interface StarredProjectsSlice {
   setStarredProjectSkills: (path: string, skills: QuickAccessSkill[]) => void;
   setStarredProjectCombos: (path: string, combos: QuickAccessCombo[]) => void;
   setStarredProjectWheelSlots: (path: string, wheelSlots: (string | null)[]) => void;
+  /** `null` clears the badge. A blank text clears it too, after normalisation. */
+  setStarredProjectBadge: (path: string, badge: ProjectBadge | null) => void;
 }
 
 function loadLegacyProjects(): StarredProject[] {
@@ -198,20 +203,27 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
     // Spread, do NOT rebuild the record field by field: the whole object is
     // mirrored into localStorage verbatim, so a reconstructed one would drop
     // any field a newer build added and this one does not know about.
-    const updated = existing.map((p) =>
-      p.path === path
-        ? {
-            ...p,
-            icon: settings.icon,
-            skills: settings.skills,
-            combos: settings.combos ?? p.combos,
-            wheelSlots: normalizeWheelSlots(
-              settings.wheelSlots ?? p.wheelSlots,
-              wheelIdsForSettings(settings.skills, settings.combos ?? p.combos)
-            ),
-          }
-        : p
-    );
+    const updated = existing.map((p) => {
+      if (p.path !== path) return p;
+      // Spread, then overlay the fields this payload owns. `badge` is not one
+      // of them unless the caller set it: an icon save must not wipe a lane mark.
+      const next: StarredProject = {
+        ...p,
+        icon: settings.icon,
+        skills: settings.skills,
+        combos: settings.combos ?? p.combos,
+        wheelSlots: normalizeWheelSlots(
+          settings.wheelSlots ?? p.wheelSlots,
+          wheelIdsForSettings(settings.skills, settings.combos ?? p.combos)
+        ),
+      };
+      if (settings.badge !== undefined) {
+        const normalized = normalizeProjectBadge(settings.badge);
+        if (normalized) next.badge = normalized;
+        else delete next.badge;
+      }
+      return next;
+    });
     set({ starredProjects: updated });
     persist(updated);
     const revision = ++syncRevision;
@@ -266,6 +278,18 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
       skills: quickAccessSkills(target),
       combos: quickAccessCombos(target),
       wheelSlots,
+    });
+  },
+
+  setStarredProjectBadge: (path, badge) => {
+    const target = get().starredProjects.find((p) => p.path === path);
+    if (!target) return;
+    get().updateStarredProjectSettings(path, {
+      icon: target.icon,
+      skills: quickAccessSkills(target),
+      combos: quickAccessCombos(target),
+      wheelSlots: quickAccessWheelSlots(target),
+      badge,
     });
   },
 

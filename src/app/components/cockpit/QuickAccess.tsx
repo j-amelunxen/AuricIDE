@@ -1,6 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
+import {
+  parseQuickAccessSort,
+  sortQuickAccessProjects,
+  type QuickAccessSort,
+} from '@/lib/quickAccess/badge';
 import { useStore } from '@/lib/store';
 import {
   quickAccessCombos,
@@ -13,6 +19,7 @@ import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
 import { PROJECT_TILE_COLUMNS, PROJECT_TILE_GRID } from './projectGrid';
+import { ProjectBadgeField } from './ProjectBadgeField';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { ProjectTile } from './ProjectTile';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -44,11 +51,11 @@ export interface QuickAccessProps {
  * Quick Access — a stable grid of starred projects ("apps") in Mission Control,
  * for one-click switching between workspaces. Hovering a tile dwells into a
  * radial skill wheel; holding the tile skips the dwell and releases onto a
- * slot. Tiles are sorted alphabetically by name — a predictable order that
- * stays put across sessions (names change far less often than recency), so
- * muscle memory and spatial locality hold without the row reshuffling.
- * Unstarring requires a deliberate hold (not a single tap) so a stray click
- * can't drop a tile.
+ * slot. Tiles sort by name unless the user switches to badge. Name order is
+ * the default on purpose: a lane mark must not slide a tile out from under a
+ * remembered position. Badge order groups the marks and leaves unmarked
+ * tiles after them. Unstarring requires a deliberate hold (not a single tap)
+ * so a stray click can't drop a tile.
  */
 export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) {
   const starredProjects = useStore((s) => s.starredProjects);
@@ -66,6 +73,14 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   // this component opens the dialog.
   const [settingsPath, setSettingsPath] = useState<string | null>(null);
   const [wheelPath, setWheelPath] = useState<string | null>(null);
+  const [sort, setSort] = useState<QuickAccessSort>(() =>
+    parseQuickAccessSort(readAppPref(APP_CONFIG_KEYS.quickAccessSort))
+  );
+
+  const chooseSort = (next: QuickAccessSort) => {
+    setSort(next);
+    writeAppPref(APP_CONFIG_KEYS.quickAccessSort, next);
+  };
 
   // Resolved from the store rather than captured, so the dialog keeps editing
   // the live record if it changes underneath.
@@ -150,6 +165,11 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
             });
           },
         },
+        {
+          label: sort === 'badge' ? 'Sort projects by name' : 'Sort projects by badge',
+          icon: 'filter_list',
+          action: () => chooseSort(sort === 'badge' ? 'name' : 'badge'),
+        },
         { type: 'separator' },
         {
           label: 'Quick Access Settings',
@@ -159,9 +179,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
       ]
     : [];
 
-  const sortedProjects = [...starredProjects].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
-  );
+  const sortedProjects = sortQuickAccessProjects(starredProjects, sort);
   const dirtyByProject = useProjectDirty(sortedProjects.map((project) => project.path));
 
   const currentStarred =
@@ -176,8 +194,45 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
       <div
         data-testid="quick-access-row"
         data-columns={PROJECT_TILE_COLUMNS}
+        data-sort={sort}
         className={`${PROJECT_TILE_GRID} items-start overflow-visible`}
       >
+        {starredProjects.length > 1 && (
+          <div
+            role="group"
+            aria-label="Sort projects"
+            data-testid="quick-access-sort"
+            className="flex w-full basis-full items-center justify-end gap-0.5"
+          >
+            <span className="mr-1 text-[9px] font-bold uppercase tracking-[0.16em] text-foreground-muted/50">
+              Sort
+            </span>
+            {(
+              [
+                ['name', 'Name'],
+                ['badge', 'Badge'],
+              ] as const
+            ).map(([option, label]) => {
+              const selected = option === sort;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  data-testid={`quick-access-sort-${option}`}
+                  aria-pressed={selected}
+                  onClick={() => chooseSort(option)}
+                  className={`rounded-md px-2 py-1 text-[10px] font-medium transition-[color,background-color,transform] duration-150 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-light ${
+                    selected
+                      ? 'bg-primary/15 text-primary-light'
+                      : 'text-foreground-muted hover:bg-white/5 hover:text-foreground'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {sortedProjects.map((project) => (
           <ProjectTile
             key={project.path}
@@ -229,8 +284,14 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
+          width={220}
           options={menuOptions}
           onClose={() => setContextMenu(null)}
+          preface={
+            menuProject ? (
+              <ProjectBadgeField project={menuProject} onDone={() => setContextMenu(null)} />
+            ) : undefined
+          }
         />
       )}
       {settingsProject && (
