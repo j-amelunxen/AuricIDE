@@ -161,9 +161,74 @@ export interface AgentTabProps {
   onSelect: () => void;
   /** Absent when neither killing nor dismissing is wired up. */
   onEnd?: () => void;
+  /**
+   * Save the rows on screen as a scratch. Only the active tab is showing a
+   * terminal, so a background tab must not offer this.
+   */
+  onSaveScreen?: () => void;
 }
 
-export function AgentTab({ agent, isActive, now, onSelect, onEnd }: AgentTabProps) {
+const TAB_ACTION =
+  'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[opacity,transform,color,background-color] active:scale-[0.96] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60';
+
+function AgentTabActions({
+  agent,
+  isActive,
+  endLabel,
+  onEnd,
+  onSaveScreen,
+  onDismissPreview,
+}: {
+  agent: AgentInfo;
+  isActive: boolean;
+  endLabel: string;
+  onEnd?: () => void;
+  onSaveScreen?: () => void;
+  onDismissPreview: () => void;
+}) {
+  return (
+    <>
+      {isActive && onSaveScreen && (
+        <button
+          type="button"
+          data-testid={`agent-tab-capture-${agent.id}`}
+          aria-label={`Save the visible screen of ${agent.name} as a scratch`}
+          title="Save this screen as a scratch"
+          onClick={() => {
+            onDismissPreview();
+            onSaveScreen();
+          }}
+          className={`${TAB_ACTION} opacity-70 hover:bg-white/10 hover:text-foreground ${
+            onEnd ? '' : 'mr-1'
+          }`}
+        >
+          <AuricIcon name="image" aria-hidden="true" className="text-[11px]" />
+        </button>
+      )}
+      {onEnd && (
+        <button
+          type="button"
+          data-testid={`agent-tab-close-${agent.id}`}
+          aria-label={endLabel}
+          title={endLabel}
+          onClick={() => {
+            onDismissPreview();
+            onEnd();
+          }}
+          className={`${TAB_ACTION} mr-1 hover:bg-red-500/15 hover:text-red-400 ${
+            isActive
+              ? 'opacity-70'
+              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+          }`}
+        >
+          <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
+        </button>
+      )}
+    </>
+  );
+}
+
+export function AgentTab({ agent, isActive, now, onSelect, onEnd, onSaveScreen }: AgentTabProps) {
   const { shellRef, placement, open, close, closeNow, hold } = usePromptPreview();
 
   const state = agentState(agent, now);
@@ -217,25 +282,14 @@ export function AgentTab({ agent, isActive, now, onSelect, onEnd }: AgentTabProp
           {AGENT_STATE_LABEL[state]}
         </span>
       </button>
-      {onEnd && (
-        <button
-          type="button"
-          data-testid={`agent-tab-close-${agent.id}`}
-          aria-label={endLabel}
-          title={endLabel}
-          onClick={() => {
-            closeNow();
-            onEnd();
-          }}
-          className={`mr-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[opacity,transform,color,background-color] hover:bg-red-500/15 hover:text-red-400 active:scale-[0.96] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 ${
-            isActive
-              ? 'opacity-70'
-              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-          }`}
-        >
-          <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
-        </button>
-      )}
+      <AgentTabActions
+        agent={agent}
+        isActive={isActive}
+        endLabel={endLabel}
+        onEnd={onEnd}
+        onSaveScreen={onSaveScreen}
+        onDismissPreview={closeNow}
+      />
       {placement && (
         <PromptPreview
           agent={agent}

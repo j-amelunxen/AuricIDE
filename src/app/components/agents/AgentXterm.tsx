@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
 import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
 import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
@@ -15,14 +15,27 @@ import {
   readClipboardText,
   terminalMenuActions,
 } from '@/lib/terminal/interactions';
+import { visibleTerminalText, type ViewportTerminal } from '@/lib/terminal/viewportText';
 
 export interface AgentXtermProps {
   agentId: string;
   onSelectionSpawn?: (selection: string) => void;
 }
 
-export function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
+export interface AgentXtermHandle {
+  /** Null until the terminal exists. Empty when the screen has no text. */
+  visibleText: () => string | null;
+}
+
+export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function AgentXterm(
+  { agentId, onSelectionSpawn },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<ViewportTerminal | null>(null);
+  useImperativeHandle(ref, () => ({
+    visibleText: () => (termRef.current ? visibleTerminalText(termRef.current) : null),
+  }));
   const onSelectionSpawnRef = useRef(onSelectionSpawn);
   useEffect(() => {
     onSelectionSpawnRef.current = onSelectionSpawn;
@@ -95,6 +108,7 @@ export function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       try {
         fitAddon.fit();
       } catch {}
+      termRef.current = term;
 
       // Right-click: always show a clipboard menu. Spawn stays a bonus
       // when there is a selection — never the only entry, and never gated
@@ -209,6 +223,7 @@ export function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
         resizeObserver.disconnect();
         host.removeEventListener('contextmenu', handleContextMenu);
         window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
+        if (termRef.current === term) termRef.current = null;
         term.dispose();
       };
     };
@@ -268,4 +283,4 @@ export function AgentXterm({ agentId, onSelectionSpawn }: AgentXtermProps) {
       )}
     </>
   );
-}
+});
