@@ -85,6 +85,8 @@ describe('isGitMetadataLine', () => {
     'old file mode 100644',
     'new file mode 100755',
     'deleted file mode 100644',
+    'old mode 100644',
+    'new mode 100755',
     'similarity index 90%',
     'dissimilarity index 40%',
     'rename from old.txt',
@@ -112,6 +114,16 @@ describe('isGitMetadataLine', () => {
 });
 
 describe('parseDiff git metadata', () => {
+  it('yields no lines for a mode-only change', () => {
+    // Exactly what libgit2 prints for `chmod +x` on a tracked file: a forced
+    // file header with the mode pair, no index line, no hunk.
+    const raw = `diff --git a/run.sh b/run.sh
+old mode 100644
+new mode 100755
+`;
+    expect(parseDiff(raw)).toEqual([]);
+  });
+
   it('drops diff --git, index, and no-newline markers', () => {
     const raw = `diff --git a/file.txt b/file.txt
 index abcdef0..1234567 100644

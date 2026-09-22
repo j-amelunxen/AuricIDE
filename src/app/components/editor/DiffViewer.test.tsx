@@ -36,6 +36,11 @@ const twoHunkDiff = `--- a/file.txt
 const headerOnlyDiff = `--- a/file.txt
 +++ b/file.txt`;
 
+const modeOnlyDiff = `diff --git a/run.sh b/run.sh
+old mode 100644
+new mode 100755
+`;
+
 function sideBySideColumns(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.w-1\\/2'));
 }
@@ -74,6 +79,39 @@ describe('DiffViewer', () => {
 
     await user.click(screen.getByTestId('diff-view-toggle'));
     expect(screen.getByTestId('diff-side-by-side')).toBeInTheDocument();
+  });
+});
+
+describe('DiffViewer mode-only change', () => {
+  it('says the mode changed instead of rendering the header as lines', () => {
+    render(<DiffViewer diff={modeOnlyDiff} fileName="run.sh" />);
+    const panel = screen.getByTestId('diff-mode-only');
+    expect(panel).toHaveTextContent('Only the file mode changed');
+    expect(panel).toHaveTextContent('100644');
+    expect(panel).toHaveTextContent('100755');
+    expect(panel).toHaveTextContent('regular file');
+    expect(panel).toHaveTextContent('executable');
+    expect(screen.getByText('run.sh')).toBeInTheDocument();
+    expect(screen.queryByTestId('diff-viewer')).not.toBeInTheDocument();
+    expect(screen.queryByText('No changes')).not.toBeInTheDocument();
+  });
+
+  it('explains an executable-bit flip with the core.fileMode hint', () => {
+    render(<DiffViewer diff={modeOnlyDiff} fileName="run.sh" />);
+    expect(screen.getByTestId('diff-mode-only-hint')).toHaveTextContent('core.fileMode');
+  });
+
+  it('leaves the hint out when the change is not an executable-bit flip', () => {
+    const raw = 'diff --git a/link b/link\nold mode 100644\nnew mode 120000\n';
+    render(<DiffViewer diff={raw} fileName="link" />);
+    expect(screen.getByTestId('diff-mode-only')).toHaveTextContent('symlink');
+    expect(screen.queryByTestId('diff-mode-only-hint')).not.toBeInTheDocument();
+  });
+
+  it('keeps the normal viewer when the content changed too', () => {
+    render(<DiffViewer diff={`${modeOnlyDiff}${sampleDiff}`} fileName="run.sh" />);
+    expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+    expect(screen.queryByTestId('diff-mode-only')).not.toBeInTheDocument();
   });
 });
 

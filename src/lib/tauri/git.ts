@@ -6,6 +6,11 @@ export interface GitFileStatus {
   status: GitStatusLabel;
   staged: GitStagedKind | null;
   unstaged: GitUnstagedKind | null;
+  /**
+   * The executable bit differs on either side. Absent when false — Rust leaves
+   * it off the wire. Says nothing about whether the content changed too.
+   */
+  modeChanged?: boolean;
 }
 
 import { invoke } from './invoke';

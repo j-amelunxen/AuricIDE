@@ -1,4 +1,5 @@
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { countModeChanged, MODE_CHANGE_HINT_THRESHOLD } from '@/lib/git/modeChange';
 import { isStaged, isUnstagedTracked, isUntracked } from '@/lib/git/statusSplit';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { AgenticControls } from './AgenticControls';
@@ -48,6 +49,7 @@ export function RepoBody({
   const changed = visible.filter(isUnstagedTracked);
   const untracked = visible.filter(isUntracked);
   const hasChanges = staged.length + changed.length + untracked.length > 0;
+  const modeChangedCount = countModeChanged(visible);
   const pushButton = onPush ? (
     <button
       type="button"
@@ -142,6 +144,23 @@ export function RepoBody({
           <p className="p-3 text-xs text-foreground-muted">No changes</p>
         ) : (
           <>
+            {/* Lives here, not in RepoSection: a single root repo renders
+            RepoBody without a section around it. Counts stay untouched —
+            the files are changed; this only says in what way. */}
+            {modeChangedCount >= MODE_CHANGE_HINT_THRESHOLD && (
+              <p
+                data-testid="mode-change-hint"
+                className="mx-3 mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-300/90"
+              >
+                <AuricIcon name="info" className="mt-px text-[12px]" />
+                <span>
+                  {modeChangedCount.toLocaleString('en-US')} changed files differ in the executable
+                  bit. Filesystems that don&apos;t keep it — mounted shares, network drives — cause
+                  this for every file; <code className="font-mono">core.fileMode</code> decides
+                  whether git looks at it.
+                </span>
+              </p>
+            )}
             {staged.length > 0 && (
               <FileSection
                 title="Staged"

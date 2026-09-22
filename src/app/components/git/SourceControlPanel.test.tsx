@@ -1005,3 +1005,51 @@ describe('SourceControlPanel – multi-repo', () => {
     expect(screen.queryByLabelText('Ignore this repository')).not.toBeInTheDocument();
   });
 });
+
+describe('SourceControlPanel – executable-bit hint', () => {
+  function flipped(count: number): GitFileStatus[] {
+    return Array.from({ length: count }, (_, i) => ({
+      path: `src/file-${i}.ts`,
+      status: 'modified',
+      staged: null,
+      unstaged: 'modified',
+      modeChanged: true,
+    }));
+  }
+
+  it('names how many changed files differ in the executable bit', () => {
+    render(
+      <SourceControlPanel
+        {...defaultProps}
+        repos={[singleRootRepo({ fileStatuses: [...flipped(12), ...rootFileStatuses] })]}
+      />
+    );
+
+    const hint = screen.getByTestId('mode-change-hint');
+    expect(hint).toHaveTextContent('12 changed files differ in the executable bit');
+    expect(hint).toHaveTextContent('core.fileMode');
+  });
+
+  it('stays quiet below the threshold, where a chmod was probably deliberate', () => {
+    render(
+      <SourceControlPanel
+        {...defaultProps}
+        repos={[singleRootRepo({ fileStatuses: flipped(9) })]}
+      />
+    );
+
+    expect(screen.queryByTestId('mode-change-hint')).not.toBeInTheDocument();
+  });
+
+  it('does not change any count the panel states', () => {
+    render(
+      <SourceControlPanel
+        {...defaultProps}
+        repos={[singleRootRepo(), otherRepo({ fileStatuses: flipped(10) })]}
+      />
+    );
+
+    expect(screen.getByLabelText('10 changed files')).toBeInTheDocument();
+    expect(screen.getByTestId('mode-change-hint')).toHaveTextContent('10 changed files');
+  });
+});

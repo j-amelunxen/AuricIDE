@@ -17,6 +17,10 @@ const GIT_METADATA_PREFIXES = [
   'old file mode',
   'new file mode',
   'deleted file mode',
+  // A mode change on an existing file — spelled without "file", unlike the
+  // new/deleted headers above. Missing these renders them as context lines.
+  'old mode ',
+  'new mode ',
   'similarity index',
   'dissimilarity index',
   'rename from',

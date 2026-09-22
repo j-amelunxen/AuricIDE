@@ -1,6 +1,7 @@
 'use client';
 
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { parseModeChange } from '@/lib/git/modeChange';
 import {
   buildSideBySideRows,
   parseDiff,
@@ -9,6 +10,7 @@ import {
 } from '@/lib/git/parseDiff';
 import { LineCommentContext } from './diff/LineCommentContext';
 import { LineEditContext } from './diff/LineEditContext';
+import { ModeOnlyChange } from './diff/ModeOnlyChange';
 import { SideBySideView } from './diff/SideBySideView';
 import { UnifiedView } from './diff/UnifiedView';
 import { useDiffViewerState } from './diff/useDiffViewerState';
@@ -41,6 +43,12 @@ export function DiffViewer(props: DiffViewerProps) {
         No changes
       </div>
     );
+  }
+
+  // Content changes win: with hunks present, the patch itself is the story.
+  const modeChange = lines.length === 0 ? parseModeChange(diff) : null;
+  if (modeChange) {
+    return <ModeOnlyChange fileName={fileName} change={modeChange} />;
   }
 
   return (

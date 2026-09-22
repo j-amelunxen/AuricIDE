@@ -6,6 +6,12 @@ pub struct GitFileStatus {
     pub status: String,
     pub staged: Option<String>,
     pub unstaged: Option<String>,
+    /// The executable bit differs on either side (HEAD→index or index→worktree).
+    /// Says nothing about the content: libgit2 does not always hash the
+    /// worktree file here, so "only the mode" cannot be claimed from a status.
+    /// Sent only when true — a status can hold thousands of rows.
+    #[serde(rename = "modeChanged", skip_serializing_if = "std::ops::Not::not")]
+    pub mode_changed: bool,
 }
 
 #[derive(Debug, Serialize)]
