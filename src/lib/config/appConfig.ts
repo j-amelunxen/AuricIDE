@@ -48,6 +48,7 @@ export const APP_CONFIG_KEYS = {
   agentLogPersist: 'auric.agent-log.persist',
   agentLogRetentionDays: 'auric.agent-log.retention-days',
   inboxSort: 'auric.inbox.sort',
+  quickAccessSort: 'auric.quick-access.sort',
   pmTicketSort: 'auric.pm.ticket-sort',
   notificationSoundEnabled: 'auric.notifications.sound',
   notificationSound: 'auric.notifications.sound-id',

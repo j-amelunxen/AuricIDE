@@ -24,6 +24,7 @@ import {
   slotIndexAt,
   wheelSlotChoices,
 } from '@/lib/quickAccess/wheel';
+import { badgeChipStyle, normalizeProjectBadge } from '@/lib/quickAccess/badge';
 import { ProjectTileFace } from './ProjectTileFace';
 import { SkillWheel, useSkillWheel } from './SkillWheel';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -65,8 +66,10 @@ export function ProjectTile({
   onOpenSettings,
   onWheelActivity,
 }: ProjectTileProps) {
+  const badge = normalizeProjectBadge(project.badge);
   const label = [
     active ? `${project.name} (current)` : `Switch to ${project.name}`,
+    badge ? `badge ${badge.text}` : null,
     dirty ? 'uncommitted changes' : null,
   ]
     .filter(Boolean)
@@ -77,6 +80,7 @@ export function ProjectTile({
   const tileRef = useRef<HTMLButtonElement>(null);
   const { machine, dispatch } = useSkillWheel(wheelSuppressed);
   const setStarredProjectWheelSlots = useStore((s) => s.setStarredProjectWheelSlots);
+  const setStarredProjectBadge = useStore((s) => s.setStarredProjectBadge);
   // 'assign' picks what goes on the slot, 'manage' acts on what is already
   // there. Both keep the wheel pinned open while they are up.
   const [picker, setPicker] = useState<{
@@ -392,6 +396,43 @@ export function ProjectTile({
           <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
         </button>
       </div>
+      {badge && (
+        <span
+          data-testid={`quick-access-badge-${project.path}`}
+          data-color={badge.color}
+          // Colour stays on this chip. The ring means "open" and the amber dot
+          // means "uncommitted"; painting either of those would change what the
+          // tile claims. The × is always there: these marks are temporary.
+          className="inline-flex max-w-full items-center gap-0.5 rounded py-0.5 pr-0.5 pl-1.5 text-[11px] font-semibold leading-none"
+          style={badgeChipStyle(badge.color)}
+        >
+          <button
+            type="button"
+            title={badge.text}
+            aria-label={`Edit badge ${badge.text}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onContextMenu(event);
+            }}
+            className="min-w-0 truncate"
+          >
+            {badge.text}
+          </button>
+          <button
+            type="button"
+            data-testid={`quick-access-badge-remove-${project.path}`}
+            aria-label={`Remove badge ${badge.text}`}
+            title="Remove badge"
+            onClick={(event) => {
+              event.stopPropagation();
+              setStarredProjectBadge(project.path, null);
+            }}
+            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm hover:bg-black/25"
+          >
+            <AuricIcon name="close" aria-hidden="true" className="text-[10px]" />
+          </button>
+        </span>
+      )}
       <span
         title={project.name}
         className="max-w-full truncate text-[10px] font-medium text-foreground-muted"

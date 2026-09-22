@@ -233,7 +233,31 @@ pub fn apply_starred_settings(
         .wheel_slots
         .unwrap_or_else(|| target.wheel_slots.clone());
     target.wheel_slots = normalize_wheel_slots(incoming, &known_ids);
+    // Absent means the caller was saving something else (an icon, a skill).
+    // Those paths must not wipe a lane mark they never mentioned.
+    if let Some(update) = settings.badge {
+        target.badge = update.and_then(normalize_badge);
+    }
     true
+}
+
+/// Trim, collapse whitespace, cap at [`BADGE_MAX_CHARS`], drop a trailing cut.
+/// Blank text clears the badge. A blank colour becomes `blue`; any other key
+/// is stored as-is so a newer palette still round-trips.
+pub fn normalize_badge(badge: ProjectBadge) -> Option<ProjectBadge> {
+    let collapsed = badge.text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text: String = collapsed.chars().take(BADGE_MAX_CHARS).collect();
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let color = badge.color.trim();
+    let color = if color.is_empty() {
+        "blue".to_string()
+    } else {
+        color.to_string()
+    };
+    Some(ProjectBadge { text, color })
 }
 
 pub fn push_starred_project(projects: &mut Vec<StarredProject>, path: String, starred_at: u64) {
@@ -253,6 +277,7 @@ pub fn push_starred_project(projects: &mut Vec<StarredProject>, path: String, st
         skills: Vec::new(),
         combos: Vec::new(),
         wheel_slots: Vec::new(),
+        badge: None,
     });
 }
 

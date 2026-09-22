@@ -23,11 +23,25 @@ export interface QuickAccessCombo {
   steps: QuickAccessSkill[];
 }
 
+/**
+ * A lane mark on one checkout. `color` is a key, not a guarantee this build
+ * paints it — unknown keys still round-trip. See `src/lib/quickAccess/badge.ts`.
+ */
+export interface ProjectBadge {
+  text: string;
+  color: string;
+}
+
 export interface StarredProjectSettings {
   icon?: ProjectIconOverride;
   skills: QuickAccessSkill[];
   combos?: QuickAccessCombo[];
   wheelSlots?: (string | null)[];
+  /**
+   * Omit to leave the stored badge alone. `null` clears it. An icon or skill
+   * save must not mention this field, or a lane mark disappears with it.
+   */
+  badge?: ProjectBadge | null;
 }
 
 export interface StarredProject {
@@ -38,6 +52,7 @@ export interface StarredProject {
   skills?: QuickAccessSkill[];
   combos?: QuickAccessCombo[];
   wheelSlots?: (string | null)[];
+  badge?: ProjectBadge;
 }
 
 /**

@@ -49,6 +49,7 @@ fn starred(path: &str, starred_at: u64) -> StarredProject {
         skills: Vec::new(),
         combos: Vec::new(),
         wheel_slots: Vec::new(),
+        badge: None,
     }
 }
 
@@ -186,6 +187,7 @@ fn apply_settings_updates_only_the_named_project() {
             skills: vec![skill("seo")],
             combos: Vec::new(),
             wheel_slots: None,
+            badge: None,
         },
     );
 
@@ -395,4 +397,198 @@ fn apply_settings_keeps_a_combo_on_the_wheel() {
         projects[0].wheel_slots[0].as_deref(),
         Some("combo:blog-write")
     );
+}
+
+fn fe_badge() -> ProjectBadge {
+    ProjectBadge {
+        text: "fe".into(),
+        color: "blue".into(),
+    }
+}
+
+#[test]
+fn apply_settings_sets_a_badge_and_collapses_it_like_the_frontend() {
+    let mut projects = vec![starred("/a", 1)];
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            badge: Some(Some(ProjectBadge {
+                text: "  fe  ".into(),
+                color: "green".into(),
+            })),
+            ..StarredProjectSettings::default()
+        },
+    );
+
+    assert_eq!(
+        projects[0].badge,
+        Some(ProjectBadge {
+            text: "fe".into(),
+            color: "green".into(),
+        })
+    );
+}
+
+#[test]
+fn apply_settings_caps_a_badge_at_six_characters() {
+    let mut projects = vec![starred("/a", 1)];
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            badge: Some(Some(ProjectBadge {
+                text: "lane-twelve".into(),
+                color: "blue".into(),
+            })),
+            ..StarredProjectSettings::default()
+        },
+    );
+    assert_eq!(projects[0].badge.as_ref().unwrap().text, "lane-t");
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            badge: Some(Some(ProjectBadge {
+                text: "abcde fghi".into(),
+                color: "blue".into(),
+            })),
+            ..StarredProjectSettings::default()
+        },
+    );
+    // The cut lands on the space between the words. That space does not stay.
+    assert_eq!(projects[0].badge.as_ref().unwrap().text, "abcde");
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            badge: Some(Some(ProjectBadge {
+                text: "überlang".into(),
+                color: "blue".into(),
+            })),
+            ..StarredProjectSettings::default()
+        },
+    );
+    assert_eq!(projects[0].badge.as_ref().unwrap().text, "überla");
+}
+
+#[test]
+fn apply_settings_clears_a_blank_badge_and_fills_a_blank_colour() {
+    let mut projects = vec![starred("/a", 1)];
+    projects[0].badge = Some(fe_badge());
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            badge: Some(Some(ProjectBadge {
+                text: "   ".into(),
+                color: "blue".into(),
+            })),
+            ..StarredProjectSettings::default()
+        },
+    );
+    assert!(projects[0].badge.is_none());
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            badge: Some(Some(ProjectBadge {
+                text: "fe".into(),
+                color: "   ".into(),
+            })),
+            ..StarredProjectSettings::default()
+        },
+    );
+    assert_eq!(projects[0].badge.as_ref().unwrap().color, "blue");
+}
+
+#[test]
+fn apply_settings_keeps_a_badge_the_payload_does_not_mention() {
+    let mut projects = vec![starred("/a", 1)];
+    projects[0].badge = Some(fe_badge());
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            icon: Some(ProjectIconOverride {
+                kind: "glyph".into(),
+                value: "bolt".into(),
+            }),
+            ..StarredProjectSettings::default()
+        },
+    );
+
+    assert_eq!(projects[0].badge, Some(fe_badge()));
+    assert_eq!(projects[0].icon.as_ref().unwrap().value, "bolt");
+}
+
+#[test]
+fn apply_settings_clears_a_badge_on_explicit_null() {
+    let mut projects = vec![starred("/a", 1)];
+    projects[0].badge = Some(fe_badge());
+
+    apply_starred_settings(
+        &mut projects,
+        "/a",
+        StarredProjectSettings {
+            badge: Some(None),
+            ..StarredProjectSettings::default()
+        },
+    );
+
+    assert!(projects[0].badge.is_none());
+}
+
+#[test]
+fn settings_json_distinguishes_a_missing_badge_from_null() {
+    let missing: StarredProjectSettings = serde_json::from_str("{}").unwrap();
+    assert!(missing.badge.is_none());
+
+    let clear: StarredProjectSettings = serde_json::from_str(r#"{"badge":null}"#).unwrap();
+    assert_eq!(clear.badge, Some(None));
+
+    let set: StarredProjectSettings =
+        serde_json::from_str(r#"{"badge":{"text":"fe","color":"blue"}}"#).unwrap();
+    assert_eq!(set.badge, Some(Some(fe_badge())));
+}
+
+#[test]
+fn absorb_fills_a_missing_badge_and_does_not_overwrite_one() {
+    let mut kept = starred("/a", 1);
+    kept.badge = Some(fe_badge());
+    let mut other = starred("/a", 2);
+    other.badge = Some(ProjectBadge {
+        text: "qa".into(),
+        color: "red".into(),
+    });
+    kept.absorb(other);
+    assert_eq!(kept.badge.as_ref().unwrap().text, "fe");
+
+    let mut empty = starred("/a", 1);
+    let mut donor = starred("/a", 2);
+    donor.badge = Some(ProjectBadge {
+        text: "qa".into(),
+        color: "red".into(),
+    });
+    empty.absorb(donor);
+    assert_eq!(empty.badge.as_ref().unwrap().text, "qa");
+}
+
+#[test]
+fn a_badge_roundtrips_through_the_starred_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("starred-projects.json");
+    let mut project = starred("/a", 1);
+    project.badge = Some(fe_badge());
+
+    write_starred_store_atomic(&path, std::slice::from_ref(&project)).unwrap();
+
+    assert_eq!(read_starred_store(&path).unwrap().unwrap(), vec![project]);
 }
