@@ -214,7 +214,7 @@ describe('AgentConsole layout', () => {
     expect(screen.getByTestId('agent-console-header').className).toContain('--titlebar-gutter');
   });
 
-  it('lays the shell out as fixed header/feed rows around one scrolling middle', () => {
+  it('lays the shell out as fixed header/feed rows around a filling middle', () => {
     // Explicit grid rows rather than nested flex: the middle row is the only
     // one allowed to grow, so a tall fleet can never push the activity feed
     // off the bottom of the window.
@@ -223,6 +223,18 @@ describe('AgentConsole layout', () => {
 
     const shell = screen.getByTestId('agent-console-shell');
     expect(shell.className).toContain('grid-rows-[auto_minmax(0,1fr)_auto]');
+  });
+
+  it('fills the fleet pane as a treemap instead of scrolling stacked cards', () => {
+    resetStore({
+      agentConsoleOpen: true,
+      agents: [agent({ id: 'a1', repoPath: '/repos/acme-app' })],
+    });
+    render(<AgentConsole onOpenTerminal={vi.fn()} />);
+
+    const map = screen.getByTestId('fleet-treemap');
+    expect(map.className).toContain('overflow-hidden');
+    expect(map.className).not.toContain('overflow-y-auto');
   });
 
   it('keeps the shell a grid so the middle row owns every pixel that is left', () => {

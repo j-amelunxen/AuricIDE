@@ -20,8 +20,10 @@ import {
 } from '@/lib/store/starredProjectsSlice';
 import { comboMenuLabel } from '@/lib/quickAccess/combo';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import type { TreemapGroupCell } from '@/lib/agents/treemap';
 import { ProjectTileFace } from '@/app/components/cockpit/ProjectTileFace';
 import { ConsoleAgentCard } from './ConsoleAgentCard';
+import { TreemapAgentCell } from './TreemapAgentCell';
 
 export interface ProjectSectionProps {
   repoPath: string;
@@ -44,6 +46,12 @@ export interface ProjectSectionProps {
   onDismiss: (agentId: string) => void;
   onStopAll: (repoPath: string) => void;
   onOpenProject?: (repoPath: string) => void;
+  /**
+   * When set, this section is one cluster in the fleet treemap: absolutely
+   * positioned, agents laid out inside rather than stacked. Absent, it is
+   * the original stacked card (idle tiles, tests).
+   */
+  layout?: TreemapGroupCell;
 }
 
 /**
@@ -69,6 +77,7 @@ export function ProjectSection({
   onDismiss,
   onStopAll,
   onOpenProject,
+  layout,
 }: ProjectSectionProps) {
   const now = useNow();
   const { confirm, confirmDialog } = useConfirm();
@@ -150,6 +159,9 @@ export function ProjectSection({
       : []),
   ];
 
+  const treemap = layout !== undefined;
+  const agentRectById = new Map((layout?.agents ?? []).map((cell) => [cell.id, cell]));
+
   return (
     <div
       data-testid={`project-section-${repoPath}`}
@@ -168,15 +180,35 @@ export function ProjectSection({
         const box = e.currentTarget.getBoundingClientRect();
         setMenu({ x: box.left + 16, y: box.top + 16 });
       }}
-      className={`group rounded-2xl border bg-panel-bg/60 p-3 transition-colors ${
+      style={
+        treemap
+          ? {
+              position: 'absolute',
+              left: layout.x,
+              top: layout.y,
+              width: layout.w,
+              height: layout.h,
+            }
+          : undefined
+      }
+      className={`group border bg-panel-bg/60 transition-colors ${
+        treemap ? 'overflow-hidden rounded-xl' : 'rounded-2xl p-3'
+      } ${
         needsAttention
           ? 'border-amber-500/45 shadow-[0_0_0_1px_rgba(245,158,11,0.18)]'
           : 'border-white/10 hover:border-white/20'
       }`}
     >
-      <div className="mb-2.5 flex items-center gap-2">
-        <ProjectTileFace path={repoPath} icon={project?.icon} size="md" />
-        <span className="text-[13px] font-semibold text-foreground">{projectLabel(repoPath)}</span>
+      <div
+        className={`flex items-center gap-2 ${treemap ? 'absolute inset-x-0 top-0 z-10 bg-panel-bg/80 px-2' : 'mb-2.5'}`}
+        style={treemap ? { height: layout.headerH } : undefined}
+      >
+        <ProjectTileFace path={repoPath} icon={project?.icon} size={treemap ? 'xs' : 'md'} />
+        <span
+          className={`font-semibold text-foreground ${treemap ? 'truncate text-[11px]' : 'text-[13px]'}`}
+        >
+          {projectLabel(repoPath)}
+        </span>
         <span className="whitespace-nowrap font-mono text-[11px] text-foreground-muted">
           {agents.length === 0
             ? 'idle'
@@ -207,25 +239,59 @@ export function ProjectSection({
         </span>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        {sorted.map(({ agent, reviewed }) => (
-          <ConsoleAgentCard
-            key={agent.id}
-            agent={agent}
-            events={agentEvents[agent.id] ?? []}
-            heartbeat={heartbeatSeries(agentHeartbeat[agent.id] ?? [], now)}
-            heartbeatScaleMax={heartbeatScaleMax}
-            reviewed={reviewed}
-            color={agentColors[agent.id]}
-            onFocus={onFocus}
-            onOpenTerminal={onOpenTerminal}
-            onStop={onStop}
-            onRetry={onRetry}
-            onMarkReviewed={onMarkReviewed}
-            onDismiss={onDismiss}
-          />
-        ))}
-      </div>
+      {treemap ? (
+        sorted.map(({ agent, reviewed }) => {
+          const cell = agentRectById.get(agent.id);
+          if (!cell) return null;
+          return (
+            <div
+              key={agent.id}
+              className="absolute"
+              style={{
+                left: cell.x - layout.x,
+                top: cell.y - layout.y,
+                width: cell.w,
+                height: cell.h,
+              }}
+            >
+              <TreemapAgentCell
+                agent={agent}
+                events={agentEvents[agent.id] ?? []}
+                reviewed={reviewed}
+                color={agentColors[agent.id]}
+                width={cell.w}
+                height={cell.h}
+                onFocus={onFocus}
+                onOpenTerminal={onOpenTerminal}
+                onStop={onStop}
+                onRetry={onRetry}
+                onMarkReviewed={onMarkReviewed}
+                onDismiss={onDismiss}
+              />
+            </div>
+          );
+        })
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {sorted.map(({ agent, reviewed }) => (
+            <ConsoleAgentCard
+              key={agent.id}
+              agent={agent}
+              events={agentEvents[agent.id] ?? []}
+              heartbeat={heartbeatSeries(agentHeartbeat[agent.id] ?? [], now)}
+              heartbeatScaleMax={heartbeatScaleMax}
+              reviewed={reviewed}
+              color={agentColors[agent.id]}
+              onFocus={onFocus}
+              onOpenTerminal={onOpenTerminal}
+              onStop={onStop}
+              onRetry={onRetry}
+              onMarkReviewed={onMarkReviewed}
+              onDismiss={onDismiss}
+            />
+          ))}
+        </div>
+      )}
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} options={menuOptions} onClose={() => setMenu(null)} />
