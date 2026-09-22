@@ -16,10 +16,12 @@ import {
 import { buildLanes, groupBySender, isVisibleUnderMute, oldestFirst } from '@/lib/agents/lanes';
 import { FEED_REVEAL_STEP, trimGroupsToWindow } from '@/lib/agents/feedWindow';
 import { streamColorFor } from '@/lib/agents/streamColors';
+import { selectAttentionPops } from '@/lib/agents/attentionDock';
 import { LaneRail } from './LaneRail';
 import { FeedComposer } from './FeedComposer';
 import { FeedGroupBlock } from './FeedGroupBlock';
 import { FeedToggle } from './FeedToggle';
+import { AttentionDock } from './AttentionDock';
 
 /**
  * What the feed is showing.
@@ -73,13 +75,15 @@ export interface ActivityFeedProps {
    * that strip read as an overlay sitting on the ACTIVITY row.
    */
   hint?: string;
+  /** Opens Focus for an agent popped on the attention dock. */
+  onFocus?: (agentId: string) => void;
 }
 
 /**
  * The console's message-hierarchy feed: a lane rail on the left, one merged
  * stream on the right, oldest first — see `docs/design-console-lanes.md`.
  */
-export function ActivityFeed({ hint }: ActivityFeedProps = {}) {
+export function ActivityFeed({ hint, onFocus }: ActivityFeedProps = {}) {
   const agents = useStore((s) => s.agents);
   const agentEvents = useStore((s) => s.agentEvents);
   const agentStreamLines = useStore((s) => s.agentStreamLines);
@@ -201,8 +205,19 @@ export function ActivityFeed({ hint }: ActivityFeedProps = {}) {
     void sendAgentInput(selectedLane.agentId, `${text}\n`);
   };
 
+  const attentionPops = useMemo(
+    () =>
+      selectAttentionPops({
+        agents,
+        reviewedAgentIds,
+        agentEvents,
+        now,
+      }),
+    [agents, reviewedAgentIds, agentEvents, now]
+  );
+
   return (
-    <div className="grid h-full min-h-0 grid-cols-[224px_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 grid-cols-[224px_minmax(0,1fr)_minmax(220px,280px)]">
       <LaneRail
         lanes={lanes}
         selectedAgentId={selectedAgentId}
@@ -322,6 +337,8 @@ export function ActivityFeed({ hint }: ActivityFeedProps = {}) {
 
         <FeedComposer lane={selectedLane} onSend={handleComposerSend} />
       </div>
+
+      <AttentionDock pops={attentionPops} onFocus={onFocus} />
     </div>
   );
 }

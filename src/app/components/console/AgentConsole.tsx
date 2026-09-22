@@ -29,6 +29,7 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { CliQuotaChip } from '@/app/components/usage/CliQuotaChip';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ProjectSection, type ProjectSectionProps } from './ProjectSection';
+import { FleetTreemap } from './FleetTreemap';
 import { ActivityFeed } from './ActivityFeed';
 import { FocusView } from './FocusView';
 
@@ -376,28 +377,36 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
           <div
             ref={gridRef}
             onKeyDown={handleGridKeyDown}
-            className="min-h-0 overflow-y-auto px-4 py-3"
+            className={`flex min-h-0 flex-col px-3 py-2 ${
+              sortedActive.length > 0 ? 'overflow-hidden' : 'overflow-y-auto'
+            }`}
           >
-            <div
-              className="grid gap-3"
-              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))' }}
-            >
-              {sortedActive.map((repoPath) => (
-                <ProjectSection
-                  key={repoPath}
-                  repoPath={repoPath}
-                  agents={grouped[repoPath]}
+            {sortedActive.length > 0 && (
+              <div className="min-h-0 flex-1">
+                <FleetTreemap
+                  groups={sortedActive.map((repoPath) => ({
+                    repoPath,
+                    agents: grouped[repoPath],
+                  }))}
                   {...sectionProps}
                 />
-              ))}
-            </div>
+              </div>
+            )}
 
             {idleProjects.length > 0 && (
-              <>
+              <div
+                className={
+                  sortedActive.length > 0 ? 'max-h-[28%] flex-shrink-0 overflow-y-auto' : undefined
+                }
+              >
                 {/* Foldable, because a long starred list is a wall of tiles
                     between the fleet and the feed on every open. The heading
                     stays either way — a fold nobody can find is a deletion. */}
-                <h2 className="mb-2 mt-6 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-foreground-muted">
+                <h2
+                  className={`mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-foreground-muted ${
+                    sortedActive.length > 0 ? 'mt-2' : 'mt-6'
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={toggleProjects}
@@ -436,7 +445,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
                     ))}
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
@@ -476,6 +485,7 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
                   ? 'Esc returns to the project grid'
                   : 'Right-click a project to spawn · Esc closes'
               }
+              onFocus={setFocusedAgentId}
             />
           </div>
         </div>

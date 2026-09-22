@@ -812,3 +812,52 @@ describe('ActivityFeed header', () => {
     expect(filterGroup?.className.split(' ')).toContain('ml-auto');
   });
 });
+
+describe('ActivityFeed attention dock', () => {
+  it('keeps the right column even when nobody needs a human', () => {
+    setFeedState({ agentEvents });
+    render(<ActivityFeed />);
+    expect(screen.getByTestId('attention-dock')).toHaveTextContent('All clear');
+  });
+
+  it('pops a waiting agent into the dock', () => {
+    useStore.setState({
+      agents: [{ ...agents[0], awaitingInput: true }, agents[1]],
+      agentEvents,
+      agentStreamLines: {},
+      agentSentMessages: {},
+      agentLogHistory: [],
+      mutedAgentIds: [],
+      laneSeenAt: {},
+      agentColors: {},
+      reviewedAgentIds: [],
+      laneSummaries: {},
+    } as Partial<ReturnType<typeof useStore.getState>>);
+    render(<ActivityFeed />);
+
+    const pop = screen.getByTestId('attention-pop');
+    expect(pop).toHaveTextContent('Waitlist');
+    expect(pop).toHaveTextContent('Permission requested');
+  });
+
+  it('opens Focus from a dock pop', async () => {
+    const user = userEvent.setup();
+    const onFocus = vi.fn();
+    useStore.setState({
+      agents: [{ ...agents[0], awaitingInput: true }, agents[1]],
+      agentEvents,
+      agentStreamLines: {},
+      agentSentMessages: {},
+      agentLogHistory: [],
+      mutedAgentIds: [],
+      laneSeenAt: {},
+      agentColors: {},
+      reviewedAgentIds: [],
+      laneSummaries: {},
+    } as Partial<ReturnType<typeof useStore.getState>>);
+    render(<ActivityFeed onFocus={onFocus} />);
+
+    await user.click(screen.getByTestId('attention-pop'));
+    expect(onFocus).toHaveBeenCalledWith('a1');
+  });
+});
