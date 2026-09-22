@@ -334,3 +334,78 @@ fn git_projects_dirty_returns_one_row_per_input_in_order() {
         ]
     );
 }
+
+#[cfg(unix)]
+fn set_mode(dir: &TempDir, rel_path: &str, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(dir.path().join(rel_path), fs::Permissions::from_mode(mode)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn git_status_flags_an_executable_bit_flip_in_the_worktree() {
+    let dir = init_test_repo();
+    let repo_path = dir.path().to_str().unwrap();
+    commit_file(&dir, "run.sh", "echo hi\n", "init");
+    set_mode(&dir, "run.sh", 0o755);
+
+    let rows = git_status_impl(repo_path).unwrap();
+    let row = find_status(&rows, "run.sh");
+    assert_eq!(row.unstaged.as_deref(), Some("modified"));
+    assert!(
+        row.mode_changed,
+        "a chmod +x must be reported as a mode change"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn git_status_flags_a_staged_executable_bit_flip() {
+    let dir = init_test_repo();
+    let repo_path = dir.path().to_str().unwrap();
+    commit_file(&dir, "run.sh", "echo hi\n", "init");
+    set_mode(&dir, "run.sh", 0o755);
+    git_stage_impl(repo_path, &["run.sh".to_string()]).unwrap();
+
+    let rows = git_status_impl(repo_path).unwrap();
+    let row = find_status(&rows, "run.sh");
+    assert_eq!(row.staged.as_deref(), Some("modified"));
+    assert!(row.mode_changed);
+}
+
+#[test]
+fn git_status_does_not_flag_content_changes_or_new_files() {
+    let dir = init_test_repo();
+    let repo_path = dir.path().to_str().unwrap();
+    commit_file(&dir, "file.txt", "v1\n", "init");
+    fs::write(dir.path().join("file.txt"), "v2\n").unwrap();
+    // A new file's "old" mode is empty — that is an addition, not a mode change.
+    fs::write(dir.path().join("fresh.txt"), "new\n").unwrap();
+    fs::write(dir.path().join("staged.txt"), "new\n").unwrap();
+    git_stage_impl(repo_path, &["staged.txt".to_string()]).unwrap();
+
+    let rows = git_status_impl(repo_path).unwrap();
+    for path in ["file.txt", "fresh.txt", "staged.txt"] {
+        assert!(
+            !find_status(&rows, path).mode_changed,
+            "{path} must not be flagged"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn git_status_omits_the_mode_flag_from_the_wire_when_false() {
+    let dir = init_test_repo();
+    let repo_path = dir.path().to_str().unwrap();
+    commit_file(&dir, "run.sh", "echo hi\n", "init");
+    commit_file(&dir, "file.txt", "v1\n", "second");
+    set_mode(&dir, "run.sh", 0o755);
+    fs::write(dir.path().join("file.txt"), "v2\n").unwrap();
+
+    let rows = git_status_impl(repo_path).unwrap();
+    let flipped = serde_json::to_value(find_status(&rows, "run.sh")).unwrap();
+    let edited = serde_json::to_value(find_status(&rows, "file.txt")).unwrap();
+    assert_eq!(flipped["modeChanged"], serde_json::json!(true));
+    assert!(edited.get("modeChanged").is_none(), "got {edited}");
+}

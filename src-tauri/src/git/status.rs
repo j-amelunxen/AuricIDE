@@ -29,6 +29,7 @@ pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
                 status: "ignored".to_string(),
                 staged: None,
                 unstaged: None,
+                mode_changed: false,
             });
             continue;
         }
@@ -70,10 +71,21 @@ pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
             status: label.to_string(),
             staged,
             unstaged,
+            mode_changed: mode_changed(&entry),
         });
     }
 
     Ok(result)
+}
+
+/// Both modes come from what the status already read (tree, index, lstat).
+/// Only a modified delta counts: an added or deleted file has one empty side,
+/// which differs from anything without being a change of mode.
+fn mode_changed(entry: &git2::StatusEntry) -> bool {
+    [entry.head_to_index(), entry.index_to_workdir()]
+        .into_iter()
+        .flatten()
+        .any(|d| d.status() == git2::Delta::Modified && d.old_file().mode() != d.new_file().mode())
 }
 
 pub fn git_branch_info_impl(repo_path: &str) -> Result<BranchInfo, String> {
