@@ -6,6 +6,10 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 
 // Module-level spies so individual tests can control/inspect behavior
+const mockWriteFile = vi.fn(async () => {});
+let mockScreenLines: string[] = [];
+let mockViewportY = 0;
+
 const mockGetSelection = vi.fn().mockReturnValue('');
 const mockHasSelection = vi.fn().mockReturnValue(false);
 const mockSelectAll = vi.fn();
@@ -19,10 +23,33 @@ const mockTerminalOptions: unknown[] = [];
 let keyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
 
 // Mock xterm.js — AgentXterm dynamically imports these
+vi.mock('@/lib/tauri/fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/tauri/fs')>();
+  return {
+    ...actual,
+    writeFile: (path: string, content: string) => mockWriteFile(path, content),
+  };
+});
+
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     rows = 24;
     cols = 80;
+    buffer = {
+      active: {
+        get viewportY() {
+          return mockViewportY;
+        },
+        getLine(y: number) {
+          const text = mockScreenLines[y] ?? '';
+          return {
+            translateToString(trimRight?: boolean) {
+              return trimRight ? text.replace(/\s+$/, '') : text;
+            },
+          };
+        },
+      },
+    };
     options: { fontSize?: number };
     constructor(options?: { fontSize?: number }) {
       this.options = { ...options };
@@ -1166,5 +1193,72 @@ describe('AgentTerminalModal restore feedback', () => {
       await pendingRestore;
     });
     await waitFor(() => expect(screen.queryByTestId('terminal-restoring')).not.toBeInTheDocument());
+  });
+});
+
+describe('AgentTerminalModal – save the visible screen as a scratch', () => {
+  const other: AgentInfo = { ...agent, id: 'agent-2', name: 'Other' };
+
+  beforeEach(() => {
+    mockWriteFile.mockClear();
+    mockFocus.mockClear();
+    mockScreenLines = [];
+    mockViewportY = 0;
+    useStore.setState({
+      scratchDir: '/data/scratches',
+      scratches: [{ name: 'scratch-1.md', path: '/data/scratches/scratch-1.md' }],
+      toasts: [],
+      scratchStatus: 'idle',
+    });
+  });
+
+  afterEach(() => {
+    useStore.setState({
+      scratchDir: null,
+      scratches: [],
+      toasts: [],
+      scratchStatus: 'idle',
+      overlayStack: { layers: [] },
+    });
+  });
+
+  it('writes a scratch from the rows on screen and leaves the terminal open', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    mockViewportY = 1;
+    mockScreenLines = ['scrolled away', 'diff --git a/src/app.ts', 'hello'];
+
+    render(<AgentTerminalModal agent={agent} agents={[agent, other]} onClose={onClose} />);
+    await waitFor(() => expect(mockFocus).toHaveBeenCalled());
+
+    expect(screen.queryByTestId('agent-tab-capture-agent-2')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('agent-tab-capture-agent-1'));
+
+    await waitFor(() => expect(mockWriteFile).toHaveBeenCalled());
+    const [path, content] = mockWriteFile.mock.calls[0];
+    expect(path).toBe('/data/scratches/scratch-2.md');
+    expect(content).toContain('# Writer');
+    expect(content).toContain('diff --git a/src/app.ts\nhello');
+    expect(content).not.toContain('scrolled away');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(useStore.getState().toasts.map((t) => t.message)).toContain(
+      'Screen saved as scratch-2.md'
+    );
+  });
+
+  it('says so when the screen has no text', async () => {
+    const user = userEvent.setup();
+    mockScreenLines = ['', '   '];
+
+    render(<AgentTerminalModal agent={agent} agents={[agent]} onClose={vi.fn()} />);
+    await waitFor(() => expect(mockFocus).toHaveBeenCalled());
+    await user.click(screen.getByTestId('agent-tab-capture-agent-1'));
+
+    await waitFor(() =>
+      expect(useStore.getState().toasts.map((t) => t.message)).toContain(
+        'Nothing on the screen to save'
+      )
+    );
+    expect(mockWriteFile).not.toHaveBeenCalled();
   });
 });

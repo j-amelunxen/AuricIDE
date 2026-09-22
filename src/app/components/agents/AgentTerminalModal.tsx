@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
+import { writeFile } from '@/lib/tauri/fs';
+import { saveTerminalScreen } from '@/lib/scratch/fromTerminal';
 import { useStore } from '@/lib/store';
 import { deriveErrorDigest } from '@/lib/agents/errorDigest';
 import { useNow } from '@/lib/hooks/useNow';
@@ -17,11 +19,68 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
 import { AgentTab } from './AgentTab';
-import { AgentXterm } from './AgentXterm';
+import { AgentXterm, type AgentXtermHandle } from './AgentXterm';
 
 export { AgentXterm } from './AgentXterm';
 
 const EMPTY_ERROR_LOGS: string[] = [];
+
+function toastScreenSave(
+  result: Awaited<ReturnType<typeof saveTerminalScreen>> | 'opening' | 'failed'
+): void {
+  const toast = useStore.getState().showToast;
+  if (result === 'opening') {
+    toast('The terminal is still opening', 'info');
+    return;
+  }
+  if (result === 'failed') {
+    toast('Could not save the screen', 'error');
+    return;
+  }
+  if (result.ok) {
+    toast(`Screen saved as ${result.name}`, 'success');
+    return;
+  }
+  toast(
+    result.reason === 'empty'
+      ? 'Nothing on the screen to save'
+      : 'Could not resolve the scratch directory',
+    result.reason === 'empty' ? 'info' : 'error'
+  );
+}
+
+async function resolveScratchDir(): Promise<string | null> {
+  let dir = useStore.getState().scratchDir;
+  if (!dir) {
+    await useStore.getState().initScratches();
+    dir = useStore.getState().scratchDir;
+  }
+  return dir;
+}
+
+async function captureAgentScreen(
+  agentName: string,
+  readScreen: () => string | null
+): Promise<void> {
+  try {
+    const screen = readScreen();
+    if (screen === null) {
+      toastScreenSave('opening');
+      return;
+    }
+    const result = await saveTerminalScreen({
+      agentName,
+      screen,
+      resolveDir: resolveScratchDir,
+      existingNames: () => useStore.getState().scratches.map((scratch) => scratch.name),
+      write: writeFile,
+      refresh: () => useStore.getState().refreshScratches(),
+    });
+    toastScreenSave(result);
+  } catch {
+    toastScreenSave('failed');
+  }
+}
 
 export interface AgentTerminalModalProps {
   agent: AgentInfo | null;
@@ -94,6 +153,8 @@ function AgentTerminalDialog({
   onDismiss,
 }: AgentTerminalDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
+  const screenRef = useRef<AgentXtermHandle>(null);
+  const savingScreen = useRef(false);
   const { confirm, confirmDialog } = useConfirm();
   const offerMerge = useWorktreeMergeOffer(confirm);
   useOverlayLayer({ id: 'agent-terminal', kind: 'tool', active: true, onEscape: onClose });
@@ -134,6 +195,16 @@ function AgentTerminalDialog({
     },
     [agent.id, tabOrder, confirm, offerMerge, onClose, onDismiss, onKill, onSwitchAgent]
   );
+
+  const saveVisibleScreen = useCallback(() => {
+    if (savingScreen.current) return;
+    savingScreen.current = true;
+    void captureAgentScreen(agent.name, () => screenRef.current?.visibleText() ?? null).finally(
+      () => {
+        savingScreen.current = false;
+      }
+    );
+  }, [agent.name]);
 
   const now = useNow();
   const state = agentState(agent, now);
@@ -278,6 +349,7 @@ function AgentTerminalDialog({
                         if (!isActive) onSwitchAgent?.(a);
                       }}
                       onEnd={canEnd ? () => void closeTab(a) : undefined}
+                      onSaveScreen={isActive ? saveVisibleScreen : undefined}
                     />
                   );
                 })}
@@ -288,7 +360,7 @@ function AgentTerminalDialog({
 
         {/* xterm.js Terminal */}
         <div className="flex-1 min-h-0 p-2">
-          <AgentXterm agentId={agent.id} onSelectionSpawn={onSelectionSpawn} />
+          <AgentXterm ref={screenRef} agentId={agent.id} onSelectionSpawn={onSelectionSpawn} />
         </div>
       </div>
       {confirmDialog}

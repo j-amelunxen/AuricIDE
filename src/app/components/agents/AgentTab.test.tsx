@@ -230,4 +230,22 @@ describe('AgentTab – the tab itself', () => {
     );
     expect(onEnd).toHaveBeenCalled();
   });
+
+  it('saves the visible screen from the active tab without ending the agent', () => {
+    const onSaveScreen = vi.fn();
+    const onSelect = vi.fn();
+    const onEnd = vi.fn();
+    renderTab({}, { isActive: true, onSaveScreen, onSelect, onEnd });
+
+    fireEvent.click(screen.getByTestId('agent-tab-capture-agent-1'));
+
+    expect(onSaveScreen).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it('offers no screen capture on a tab that is not showing', () => {
+    renderTab({}, { isActive: false, onSaveScreen: vi.fn() });
+    expect(screen.queryByTestId('agent-tab-capture-agent-1')).not.toBeInTheDocument();
+  });
 });
