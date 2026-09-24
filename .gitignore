@@ -74,6 +74,9 @@ themes/*.json
 # Excalidraw runtime assets (copied from node_modules on install)
 public/excalidraw-assets/
 
+# Versioned MCP runtime payload (built from src/mcp for packaging)
+src-tauri/resources/auric-mcp/
+
 # CodeGraph local index
 .codegraph/
 

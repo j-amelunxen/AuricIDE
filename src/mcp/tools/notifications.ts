@@ -3,10 +3,10 @@ import type { FastMCP } from 'fastmcp';
 import type Database from 'better-sqlite3';
 import {
   createSchedule,
-  deleteSchedule,
+  deleteScheduleForProject,
   dispatchNotification,
-  getAnswer,
-  listSchedules,
+  getAnswerForProject,
+  listSchedulesForProject,
 } from '../notificationsDb';
 
 /**
@@ -113,7 +113,6 @@ export function registerNotificationTools(
           'Repeat dispatches under this key replace the earlier row and make it unread again, ' +
             'instead of stacking duplicates'
         ),
-      projectPath: z.string().optional().describe('Defaults to the project this server serves'),
       refKind: z.enum(['agent', 'ticket', 'goal', 'file']).optional(),
       refId: z.string().optional(),
       expiresAt: z
@@ -127,8 +126,8 @@ export function registerNotificationTools(
         ...args,
         actions,
         source: 'agent',
-        projectPath: args.projectPath ?? defaults.projectPath ?? null,
-        projectName: args.projectPath ? null : (defaults.projectName ?? null),
+        projectPath: defaults.projectPath ?? null,
+        projectName: defaults.projectName ?? null,
       });
       return JSON.stringify({ uid: stored.uid, id: stored.id });
     },
@@ -160,7 +159,6 @@ export function registerNotificationTools(
         .describe(
           'Re-asking under the same key replaces the earlier question rather than stacking'
         ),
-      projectPath: z.string().optional().describe('Defaults to the project this server serves'),
       expiresAt: z
         .string()
         .optional()
@@ -186,8 +184,8 @@ export function registerNotificationTools(
         expiresAt: args.expiresAt,
         source: 'agent',
         kind: 'ask',
-        projectPath: args.projectPath ?? defaults.projectPath ?? null,
-        projectName: args.projectPath ? null : (defaults.projectName ?? null),
+        projectPath: defaults.projectPath ?? null,
+        projectName: defaults.projectName ?? null,
         actions,
       });
       return JSON.stringify({ uid: stored.uid });
@@ -203,7 +201,12 @@ export function registerNotificationTools(
     parameters: z.object({
       uid: z.string().describe('The uid notify_ask returned'),
     }),
-    execute: async ({ uid }) => JSON.stringify(getAnswer(db, uid)),
+    execute: async ({ uid }) =>
+      JSON.stringify(
+        defaults.projectPath
+          ? getAnswerForProject(db, uid, defaults.projectPath)
+          : { status: 'gone' }
+      ),
   });
 
   server.addTool({
@@ -253,7 +256,6 @@ export function registerNotificationTools(
           'What happens to occurrences missed while the app was closed. Default "coalesce": ' +
             'one reminder saying how overdue it is, rather than a stack of identical ones.'
         ),
-      projectPath: z.string().optional().describe('Defaults to the project this server serves'),
     }),
     execute: async (args) => {
       const stored = createSchedule(db, {
@@ -266,8 +268,8 @@ export function registerNotificationTools(
         timeOfDay: args.timeOfDay,
         timezone: args.timezone ?? 'UTC',
         catchUp: args.catchUp,
-        projectPath: args.projectPath ?? defaults.projectPath ?? null,
-        projectName: args.projectPath ? null : (defaults.projectName ?? null),
+        projectPath: defaults.projectPath ?? null,
+        projectName: defaults.projectName ?? null,
         payload: {
           title: args.title ?? args.name,
           body: args.body,
@@ -288,19 +290,21 @@ export function registerNotificationTools(
     parameters: z.object({}),
     execute: async () =>
       JSON.stringify(
-        listSchedules(db).map((row) => ({
-          id: row.id,
-          name: row.name,
-          enabled: row.enabled === 1,
-          specKind: row.spec_kind,
-          cronExpr: row.cron_expr,
-          everyN: row.every_n,
-          everyUnit: row.every_unit,
-          timezone: row.timezone,
-          catchUp: row.catch_up,
-          nextDueAt: row.next_due_at,
-          projectPath: row.project_path,
-        }))
+        (defaults.projectPath ? listSchedulesForProject(db, defaults.projectPath) : []).map(
+          (row) => ({
+            id: row.id,
+            name: row.name,
+            enabled: row.enabled === 1,
+            specKind: row.spec_kind,
+            cronExpr: row.cron_expr,
+            everyN: row.every_n,
+            everyUnit: row.every_unit,
+            timezone: row.timezone,
+            catchUp: row.catch_up,
+            nextDueAt: row.next_due_at,
+            projectPath: row.project_path,
+          })
+        )
       ),
   });
 
@@ -308,6 +312,11 @@ export function registerNotificationTools(
     name: 'schedule_delete',
     description: 'Remove a recurring reminder. Notifications it already raised are kept.',
     parameters: z.object({ id: z.string().describe('The schedule id from schedule_list') }),
-    execute: async ({ id }) => JSON.stringify({ deleted: deleteSchedule(db, id) }),
+    execute: async ({ id }) =>
+      JSON.stringify({
+        deleted: defaults.projectPath
+          ? deleteScheduleForProject(db, id, defaults.projectPath)
+          : false,
+      }),
   });
 }

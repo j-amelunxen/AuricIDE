@@ -96,6 +96,7 @@ function ImportSpecDialogPanel({
         name: 'Spec Import',
         model,
         task: prompt,
+        projectPath: workingDirectory || null,
         cwd: workingDirectory || undefined,
         permissionMode,
         provider: selectedProviderId,

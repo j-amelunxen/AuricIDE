@@ -31,10 +31,22 @@ describe('MCP IPC wrappers', () => {
   });
 
   describe('mcpStatus', () => {
-    it('returns status info', async () => {
-      mockInvoke.mockResolvedValueOnce({ status: 'stopped', pid: null });
+    it('returns lifecycle, binding, and error status from the backend', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        status: 'running',
+        phase: 'error',
+        pid: 1234,
+        projectPath: '/repo/alpha',
+        error: 'could not stop process',
+      });
       const result = await mcpStatus();
-      expect(result).toEqual({ status: 'stopped', pid: null });
+      expect(result).toEqual({
+        status: 'running',
+        phase: 'error',
+        pid: 1234,
+        projectPath: '/repo/alpha',
+        error: 'could not stop process',
+      });
       expect(mockInvoke).toHaveBeenCalledOnce();
       expect(mockInvoke.mock.calls[0][0]).toBe('mcp_status');
     });

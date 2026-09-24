@@ -151,6 +151,101 @@ fn test_dynamic_explicit_mode_wins_over_configured_default() {
     );
 }
 
+#[test]
+fn project_binding_injection_is_declarative_and_can_add_arguments_and_environment() {
+    let json = r#"{
+      "id": "mcp-aware",
+      "name": "MCP-aware CLI",
+      "executable": "agent-cli",
+      "arguments": [{ "type": "task", "quote": true }],
+      "projectBinding": {
+        "arguments": ["--project", "{projectRoot}", "--database={databasePath}", "--mcp-config", "{mcpConfigPath}"],
+        "environment": {
+          "PROVIDER_PROJECT": "{projectRoot}",
+          "PROVIDER_DATABASE": "{databasePath}"
+        }
+      },
+      "info": {
+        "models": [], "permissionModes": [],
+        "defaultModel": "auto", "defaultPermissionMode": "default"
+      },
+      "versionCheck": { "command": "agent-cli", "args": ["--version"] },
+      "promptTemplate": "agent-cli \""
+    }"#;
+    let provider = DynamicProvider::new(serde_json::from_str(json).unwrap());
+    let binding =
+        ProviderProjectBinding::new("/repo/A Project", "/repo/A Project/.auric/project.db")
+            .with_mcp_config_path("/app data/project.mcp.json");
+    let injection = provider.project_binding_injection(&binding);
+    let cmd = provider
+        .build_spawn_command("auto", "task", None, false, false, false)
+        .with_injection(injection);
+
+    assert_eq!(
+        cmd.command,
+        "agent-cli --project \"/repo/A Project\" --database=\"/repo/A Project/.auric/project.db\" --mcp-config \"/app data/project.mcp.json\" \"task\""
+    );
+    assert_eq!(
+        cmd.env_vars,
+        vec![
+            (
+                "PROVIDER_DATABASE".to_string(),
+                "/repo/A Project/.auric/project.db".to_string()
+            ),
+            (
+                "PROVIDER_PROJECT".to_string(),
+                "/repo/A Project".to_string()
+            ),
+        ]
+    );
+}
+
+#[test]
+fn provider_without_project_binding_declares_no_isolated_mcp_support() {
+    let provider = DynamicProvider::new(get_claude_config());
+    let binding = ProviderProjectBinding::new("/project", "/project/.auric/project.db");
+
+    assert!(provider.project_binding_injection(&binding).is_empty());
+}
+
+#[test]
+fn spawn_injection_preserves_prompt_whitespace_and_overrides_duplicate_environment_keys() {
+    let command = SpawnCommand {
+        command: "agent-cli \"two  spaces\"".to_string(),
+        env_vars: vec![("KEY".to_string(), "old".to_string())],
+        executable: "agent-cli".to_string(),
+    };
+
+    let result = command.with_injection(SpawnInjection {
+        arguments: vec!["--flag".to_string()],
+        env_vars: vec![("KEY".to_string(), "new".to_string())],
+    });
+
+    assert_eq!(result.command, "agent-cli --flag \"two  spaces\"");
+    assert_eq!(
+        result.env_vars,
+        vec![("KEY".to_string(), "new".to_string())]
+    );
+}
+
+#[test]
+fn codex_binding_uses_session_scoped_mcp_overrides_with_shell_safe_values() {
+    let binding =
+        ProviderProjectBinding::new("/repo/A Project", "/repo/A Project/.auric/project.db")
+            .with_runtime_entrypoint("/Applications/Auric IDE/server.mjs");
+    let injection = codex_project_binding_injection(&binding).unwrap();
+    let command = DynamicProvider::new(get_codex_config())
+        .build_spawn_command("auto", "task", Some("acceptEdits"), false, false, true)
+        .with_injection(injection);
+
+    assert!(command.command.contains("mcp_servers.auric-pm.command"));
+    assert!(command
+        .command
+        .contains("/Applications/Auric IDE/server.mjs"));
+    assert!(command.command.contains("/repo/A Project"));
+    assert!(command.command.contains("required=true"));
+}
+
 // ── Dynamic Provider Tests (Gemini Emulation) ─────────────────────
 
 fn get_gemini_config() -> ProviderConfig {

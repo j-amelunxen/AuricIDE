@@ -16,6 +16,7 @@ pub fn persisted_from_config(
         provider: provider_id.to_string(),
         task: config.task.clone(),
         cwd: config.cwd.clone(),
+        project_path: config.project_path.clone(),
         permission_mode: config.permission_mode.clone(),
         dangerously_ignore_permissions: config.dangerously_ignore_permissions.unwrap_or(false),
         auto_accept_edits: config.auto_accept_edits.unwrap_or(false),

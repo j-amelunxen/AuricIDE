@@ -23,6 +23,14 @@ describe('sqliteHelper', () => {
       expect(fk[0]?.foreign_keys).toBe(1);
       db.close();
     });
+
+    it('configures a bounded busy timeout for competing writers', () => {
+      const db = openSqliteDb(':memory:');
+
+      expect(db.pragma('busy_timeout', { simple: true })).toBe(5_000);
+
+      db.close();
+    });
   });
 
   describe('initMigrationTable', () => {

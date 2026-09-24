@@ -1,5 +1,6 @@
 pub mod manager;
 pub mod persistence;
+pub mod project_binding;
 pub mod shell_env;
 pub mod types;
 

@@ -78,4 +78,14 @@ impl AgentProvider for CrushProvider {
             template: "crush \"".to_string(),
         }
     }
+
+    fn project_binding_injection(&self, binding: &ProviderProjectBinding) -> SpawnInjection {
+        match binding.crush_config_path.as_ref() {
+            Some(path) => SpawnInjection {
+                arguments: Vec::new(),
+                env_vars: vec![("CRUSH_GLOBAL_CONFIG".to_string(), path.clone())],
+            },
+            None => SpawnInjection::default(),
+        }
+    }
 }

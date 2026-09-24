@@ -19,6 +19,9 @@ pub struct PersistedAgent {
     pub provider: String,
     pub task: String,
     pub cwd: Option<String>,
+    /// Immutable logical project binding. Missing on v1 persistence files.
+    #[serde(default)]
+    pub project_path: Option<String>,
     pub permission_mode: Option<String>,
     #[serde(default)]
     pub dangerously_ignore_permissions: bool,
@@ -168,6 +171,7 @@ mod tests {
             provider: "claude".to_string(),
             task: "do the thing".to_string(),
             cwd: Some("/tmp/repo".to_string()),
+            project_path: Some("/tmp/repo".to_string()),
             permission_mode: Some("auto".to_string()),
             dangerously_ignore_permissions: false,
             auto_accept_edits: true,

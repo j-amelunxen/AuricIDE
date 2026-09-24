@@ -508,6 +508,7 @@ describe('agentSlice', () => {
     expect(config.permissionMode).toBe('auto');
     expect(config.task).toBe('refactor the parser');
     expect(config.cwd).toBe('/repo');
+    expect(config.projectPath).toBeNull();
   });
 
   it('does not toast a clean finish — only failures make noise', async () => {
@@ -557,6 +558,31 @@ describe('agentSlice', () => {
     expect(store.getState().agents.map((a) => a.id)).toEqual(['mock-agent-2']);
   });
 
+  it('does not infer project authority from cwd when retry metadata is missing', async () => {
+    const { spawnAgent } = await import('../tauri/agents');
+    store.setState({
+      agents: [
+        {
+          id: 'legacy-general',
+          name: 'General',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'error',
+          currentTask: 'Continue',
+          startedAt: 1,
+          repoPath: '/execution-only',
+        },
+      ],
+      agentSpawnConfigs: {},
+    });
+
+    await store.getState().retryFailedAgent('legacy-general');
+
+    expect(spawnAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cwd: '/execution-only', projectPath: null })
+    );
+  });
+
   it('creates a worktree and spawns with that cwd when asked', async () => {
     const { spawnAgent } = await import('../tauri/agents');
     const { addGitWorktree } = await import('../tauri/git');
@@ -573,6 +599,7 @@ describe('agentSlice', () => {
     expect(spawnAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/repo.auric-wt/writer-ab12',
+        projectPath: '/repo',
         name: 'Writer',
         task: 'Write docs',
       })

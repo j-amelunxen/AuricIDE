@@ -56,6 +56,7 @@ export function createAgentJudgeDeps(ctx: ConductorReviewContext): AgentJudgeDep
         model: state.conductorJudgeModel || state.conductorModel || modelForPower(undefined),
         provider: state.conductorJudgeProviderId ?? state.conductorProviderId ?? undefined,
         task: buildReviewAgentPrompt(input),
+        projectPath: full.rootPath ?? null,
         cwd: full.rootPath ?? undefined,
         // Same reason as the implementer: the verdict is collected when this
         // process exits. Left interactive it would sit at its prompt with the

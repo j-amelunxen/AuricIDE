@@ -256,6 +256,9 @@ export function useSpawnAgentDialog({
         name,
         model,
         task: composedTask,
+        // Capture the logical project before agentLifecycle may replace cwd
+        // with a newly-created worktree path.
+        projectPath: cwd || null,
         cwd: cwd || undefined,
         permissionMode,
         provider: selectedProviderId,

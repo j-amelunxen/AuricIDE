@@ -335,6 +335,7 @@ pub fn run() {
             excalidraw_list_scenes,
             excalidraw_get_scene_content,
             excalidraw_scene_url,
+            mcp_launch_spec,
             start_mcp,
             stop_mcp,
             mcp_status,

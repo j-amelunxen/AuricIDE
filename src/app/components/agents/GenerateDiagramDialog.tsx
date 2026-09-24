@@ -140,6 +140,7 @@ function GenerateDiagramDialogPanel({
       name,
       model: selectedProvider.defaultModel,
       task,
+      projectPath: folderPath || null,
       cwd: folderPath,
       // No permissionMode: the provider's configured defaultPermissionMode
       // (dynamic-providers/*.json) decides.

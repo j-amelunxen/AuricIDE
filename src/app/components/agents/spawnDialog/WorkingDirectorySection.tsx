@@ -33,7 +33,7 @@ export function WorkingDirectorySection({
         htmlFor="repo-path"
         className="flex items-center text-[10px] font-bold text-foreground-muted uppercase tracking-wider"
       >
-        Working Directory
+        Project scope &amp; working directory
         <InfoTooltip description={GUIDANCE.pm.workingDirectory} label="i" />
       </label>
       <div className="flex gap-2">
@@ -52,6 +52,26 @@ export function WorkingDirectorySection({
         >
           Browse
         </button>
+      </div>
+      <div className="flex min-h-5 items-center justify-between gap-3">
+        <p data-testid="agent-project-scope" className="truncate text-[10px] text-foreground-muted">
+          {repoPath ? (
+            <>
+              Project MCP: <span className="text-foreground">{repoPath}</span>
+            </>
+          ) : (
+            'General agent · no project MCP or database access'
+          )}
+        </p>
+        {repoPath && (
+          <button
+            type="button"
+            onClick={() => onRepoPathChange('')}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary/80 transition-[color,transform] hover:text-primary active:scale-[0.96]"
+          >
+            Use general scope
+          </button>
+        )}
       </div>
       {recentPaths.length > 0 && (
         <div className="relative">

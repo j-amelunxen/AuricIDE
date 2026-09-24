@@ -406,11 +406,38 @@ describe('SpawnAgentDialog', () => {
       expect.objectContaining({
         task: 'Fix bugs',
         cwd: '/my/repo',
+        projectPath: '/my/repo',
         model: DEFAULT_MODEL,
         provider: DEFAULT_PROVIDER,
       })
     );
     expect(onSpawn.mock.calls[0][0].useWorktree).toBeUndefined();
+  });
+
+  it('can explicitly start a general agent without project database access', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={onSpawn}
+        initialRepoPath="/my/repo"
+      />
+    );
+
+    expect(screen.getByTestId('agent-project-scope')).toHaveTextContent('Project MCP: /my/repo');
+    await user.click(screen.getByRole('button', { name: /use general scope/i }));
+    expect(screen.getByTestId('agent-project-scope')).toHaveTextContent(
+      'General agent · no project MCP or database access'
+    );
+    await user.type(screen.getByLabelText(/what should it do/i), 'Triage notifications');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ projectPath: null, task: 'Triage notifications' })
+    );
+    expect(onSpawn.mock.calls[0][0].cwd).toBeUndefined();
   });
 
   it('passes useWorktree when the new git worktree box is checked', async () => {
@@ -1501,6 +1528,7 @@ describe('SpawnAgentDialog – Quick Access multi-select', () => {
 
     expect(onSpawn).toHaveBeenCalledTimes(2);
     expect(onSpawn.mock.calls.map((call) => call[0].cwd)).toEqual(['/c/api', '/b/shop']);
+    expect(onSpawn.mock.calls.map((call) => call[0].projectPath)).toEqual(['/c/api', '/b/shop']);
     expect(onSpawn.mock.calls.every((call) => call[0].task === 'Fix bugs')).toBe(true);
     expect(onSpawn.mock.calls.every((call) => call[0].model === DEFAULT_MODEL)).toBe(true);
     expect(onSpawn.mock.calls.every((call) => call[0].provider === DEFAULT_PROVIDER)).toBe(true);

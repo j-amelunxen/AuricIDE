@@ -63,10 +63,10 @@ describe('notification MCP tools', () => {
       expect(row(uid as string).project_name).toBe('auric');
     });
 
-    it('lets the caller name a different project', async () => {
+    it('does not let the caller impersonate a different project', async () => {
       const { uid } = await call('notify', { title: 'x', projectPath: '/repo/other' });
 
-      expect(row(uid as string).project_path).toBe('/repo/other');
+      expect(row(uid as string).project_path).toBe('/repo/auric');
     });
 
     // The source says who wrote it, which the UI shows and the history keeps.

@@ -25,6 +25,9 @@ export interface AgentInfo {
    * the first stop signal — the review list sorts by it.
    */
   finishedAt?: number;
+  /** Immutable logical project whose Auric MCP/PM database this agent uses. */
+  projectPath?: string | null;
+  /** Execution directory, which may be a worktree below a different path. */
   repoPath?: string;
   spawnedByTicketId?: string;
   spawnedByGoalId?: string;
@@ -43,6 +46,13 @@ export interface AgentConfig {
   name: string;
   model: string;
   task: string;
+  /**
+   * Logical AuricIDE project whose PM database is exposed to this agent.
+   * This is deliberately separate from `cwd`: a worktree changes where the
+   * agent edits files, but must never retarget its MCP session. `null` means
+   * an explicitly projectless agent.
+   */
+  projectPath?: string | null;
   cwd?: string;
   permissionMode?: PermissionMode;
   dangerouslyIgnorePermissions?: boolean;
@@ -137,6 +147,7 @@ export interface InterruptedAgent {
   model: string;
   provider: string;
   task: string;
+  projectPath?: string | null;
   cwd?: string | null;
   permissionMode?: string | null;
   dangerouslyIgnorePermissions: boolean;
