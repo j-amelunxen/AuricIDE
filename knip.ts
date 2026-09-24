@@ -18,6 +18,8 @@ const config: KnipConfig = {
     '@wdio/mocha-framework',
     '@wdio/tauri-service',
   ],
+  // Lean is an externally installed verification tool invoked by scripts/lean-check.mjs.
+  ignoreBinaries: ['lake'],
   // Don't flag exports that are also used within the same file
   // (e.g., React Props interfaces, shared type aliases co-located with implementations)
   ignoreExportsUsedInFile: true,

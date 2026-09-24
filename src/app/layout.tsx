@@ -3,6 +3,7 @@ import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { CrashBoundary, GlobalErrorHandlers } from './components/CrashBoundary';
 import { SharedPrefsGate } from './components/SharedPrefsGate';
+import { WdioTauriBridge } from './components/WdioTauriBridge';
 import { TITLEBAR_BOOT_SCRIPT } from '@/lib/platform/titlebar';
 
 const spaceGrotesk = Space_Grotesk({
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <script dangerouslySetInnerHTML={{ __html: TITLEBAR_BOOT_SCRIPT }} />
       </head>
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} subpixel-antialiased`}>
+        <WdioTauriBridge />
         <GlobalErrorHandlers />
         <CrashBoundary>
           <SharedPrefsGate>{children}</SharedPrefsGate>

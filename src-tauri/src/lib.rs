@@ -40,13 +40,31 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
+#[cfg(all(feature = "e2e-webdriver", not(debug_assertions)))]
+compile_error!("the e2e-webdriver feature must never be linked into a release artifact");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+
+    // Both WDIO plugins are intentionally unavailable unless the dedicated
+    // E2E Cargo feature is selected. Normal dev and release artifacts never
+    // register the evaluator nor the embedded WebDriver HTTP server. The
+    // embedded service sets this runtime sentinel only for the child it owns;
+    // launching a leftover feature-enabled binary by hand fails closed.
+    #[cfg(feature = "e2e-webdriver")]
+    let builder = match std::env::var("WDIO_EMBEDDED_SERVER").as_deref() {
+        Ok("true") => builder
+            .plugin(tauri_plugin_wdio::init())
+            .plugin(tauri_plugin_wdio_webdriver::init()),
+        _ => panic!("e2e-webdriver binary requires the WDIO-managed runtime sentinel"),
+    };
+
+    let builder = builder
         .setup(|app| {
             if let Ok(log_dir) = app.path().app_log_dir() {
                 crashlog::set_crash_log_dir(log_dir);

@@ -66,7 +66,16 @@ const eslintConfig = defineConfig([
     },
   },
   prettier,
-  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'src-tauri/**', 'stitch_*/**']),
+  globalIgnores([
+    '.next/**',
+    'out/**',
+    'build/**',
+    'playwright-report/**',
+    'test-results/**',
+    'next-env.d.ts',
+    'src-tauri/**',
+    'stitch_*/**',
+  ]),
 ]);
 
 export default eslintConfig;
