@@ -50,6 +50,7 @@ fn every_14_days() -> Schedule {
         enabled: true,
         project_path: None,
         project_name: None,
+        mission_slug: None,
         spec_kind: "every".into(),
         cron_expr: None,
         every_n: Some(14),
@@ -303,6 +304,34 @@ fn a_schedule_round_trips() {
 }
 
 #[test]
+fn existing_schedules_migrate_with_no_mission_link() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE _migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n\
+         INSERT INTO _migrations (id, name) VALUES (2, 'create_schedules');\n\
+         CREATE TABLE schedules (\n\
+           id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,\n\
+           project_path TEXT, project_name TEXT, spec_kind TEXT NOT NULL, cron_expr TEXT,\n\
+           every_n INTEGER, every_unit TEXT, anchor_at TEXT, time_of_day TEXT,\n\
+           timezone TEXT NOT NULL DEFAULT 'UTC', catch_up TEXT NOT NULL DEFAULT 'coalesce',\n\
+           payload TEXT NOT NULL DEFAULT '{}', last_fired_at TEXT, last_checked_at TEXT,\n\
+           next_due_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),\n\
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n\
+         );",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO schedules (id, name, spec_kind) VALUES ('legacy', 'Legacy', 'cron')",
+        [],
+    )
+    .unwrap();
+
+    run_migrations(&conn).unwrap();
+    let stored = list_impl(&conn).unwrap().remove(0);
+    assert_eq!(stored.mission_slug, None);
+}
+
+#[test]
 fn upsert_updates_rather_than_duplicating() {
     let conn = test_db();
     upsert_impl(&conn, &every_14_days()).expect("first");
@@ -364,6 +393,96 @@ fn running_due_schedules_raises_a_notification() {
     assert_eq!(inbox[0].title, "Security-Scan");
     assert_eq!(inbox[0].severity, "warn");
     assert!(inbox[0].body.as_deref().unwrap().contains("verpasst"));
+}
+
+#[test]
+fn mission_schedule_injects_a_trusted_launch_and_ignores_editable_actions() {
+    let mut conn = test_db();
+    let project = tempfile::tempdir().unwrap();
+    let mission_dir = project.path().join(".auric/missions/weekly-product-review");
+    std::fs::create_dir_all(&mission_dir).unwrap();
+    std::fs::write(mission_dir.join("MISSION.md"), "# Mission").unwrap();
+    std::fs::write(mission_dir.join("STATE.md"), "# State").unwrap();
+    let mut schedule = every_14_days();
+    schedule.project_path = Some(project.path().to_string_lossy().to_string());
+    schedule.mission_slug = Some("weekly-product-review".into());
+    schedule.payload =
+        r#"{"actions":[{"id":"bad","label":"Bad","kind":"command","commandId":"file.save"}]}"#
+            .into();
+    seed(&conn, &schedule);
+
+    run_due_impl(&mut conn, at("2026-08-27 07:00:00")).unwrap();
+    let notification = crate::notifications::list_impl(&conn, None, None, None)
+        .unwrap()
+        .remove(0);
+    assert_eq!(notification.ref_kind.as_deref(), Some("mission"));
+    assert_eq!(
+        notification.ref_id.as_deref(),
+        Some("weekly-product-review")
+    );
+    assert_eq!(notification.actions[0]["kind"], "spawn-agent");
+    assert_eq!(notification.actions[0]["launch"], "auto");
+    assert_eq!(notification.actions[0]["headless"], true);
+    assert_eq!(notification.actions[0]["permissionMode"], "acceptEdits");
+    assert_eq!(
+        notification.actions[0]["repoPath"],
+        project.path().to_string_lossy().as_ref()
+    );
+    assert!(notification.actions[0]["task"]
+        .as_str()
+        .unwrap()
+        .contains(".auric/missions/weekly-product-review/MISSION.md"));
+    assert_eq!(notification.actions.as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn rejects_a_mission_slug_that_is_not_one_safe_path_component() {
+    let conn = test_db();
+    let mut schedule = every_14_days();
+    schedule.mission_slug = Some("../../outside".into());
+
+    assert!(upsert_impl(&conn, &schedule)
+        .unwrap_err()
+        .contains("canonical path component"));
+}
+
+#[test]
+fn generic_schedule_edits_may_only_preserve_an_existing_mission_link() {
+    let mut mission = every_14_days();
+    mission.mission_slug = Some("weekly-product-review".into());
+    let mut preserved = mission.clone();
+    preserved.name = "Renamed".into();
+    assert!(validate_mission_link_edit(Some(&mission), &preserved).is_ok());
+
+    let mut removed = preserved.clone();
+    removed.mission_slug = None;
+    assert!(validate_mission_link_edit(Some(&mission), &removed).is_err());
+    assert!(validate_mission_link_edit(None, &mission).is_err());
+}
+
+#[test]
+fn missing_mission_files_raise_a_local_error_without_launch_authority() {
+    let mut conn = test_db();
+    let project = tempfile::tempdir().unwrap();
+    let mut schedule = every_14_days();
+    schedule.project_path = Some(project.path().to_string_lossy().to_string());
+    schedule.mission_slug = Some("missing-mission".into());
+    schedule.payload = r#"{"actions":[{"id":"bad","label":"Bad","kind":"spawn-agent","task":"bad","launch":"auto"}]}"#.into();
+    seed(&conn, &schedule);
+
+    run_due_impl(&mut conn, at("2026-08-27 07:00:00")).unwrap();
+    let notification = crate::notifications::list_impl(&conn, None, None, None)
+        .unwrap()
+        .remove(0);
+    assert_eq!(notification.severity, "error");
+    assert!(notification.title.starts_with("Mission unavailable:"));
+    assert!(notification
+        .body
+        .unwrap()
+        .contains("MISSION.md and STATE.md"));
+    assert!(notification.actions.as_array().unwrap().is_empty());
+    assert_eq!(notification.ref_kind.as_deref(), Some("mission"));
+    assert_eq!(notification.ref_id.as_deref(), Some("missing-mission"));
 }
 
 #[test]

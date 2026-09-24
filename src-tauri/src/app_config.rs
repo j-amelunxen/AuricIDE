@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 /// Bump only for a breaking change; additive fields ride on `#[serde(default)]`.
 const STORE_VERSION: u32 = 1;
@@ -201,8 +202,34 @@ pub fn set_credential(
     Ok(())
 }
 
+pub fn replace_namespace(
+    entries: &mut CredentialMap,
+    namespace: &str,
+    values: BTreeMap<String, String>,
+) -> Result<(), String> {
+    let mut replacement = entries.clone();
+    replacement.remove(namespace);
+    for (key, value) in values {
+        set_credential(&mut replacement, namespace, &key, &value)?;
+    }
+    *entries = replacement;
+    Ok(())
+}
+
 fn total_entries(entries: &CredentialMap) -> usize {
     entries.values().map(|ns| ns.len()).sum()
+}
+
+fn namespace_has_credentials(entries: &CredentialMap, namespace: &str) -> bool {
+    let Some(values) = entries.get(namespace) else {
+        return false;
+    };
+    ["api_token", "user_key"].into_iter().all(|key| {
+        values
+            .get(key)
+            .and_then(|value| meaningful(value))
+            .is_some()
+    })
 }
 
 // ── Tauri commands ──────────────────────────────────────────────────
@@ -226,11 +253,72 @@ pub fn app_credential_set(
     key: String,
     value: String,
     state: tauri::State<'_, AppCredentialsState>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     let _guard = state.lock.lock().unwrap();
     let mut entries = read_credentials(&state.path);
+    let enabling_pushover = namespace == crate::delivery::PUSHOVER_NAMESPACE
+        && key == "enabled"
+        && value.trim() == "true"
+        && entries
+            .get(&namespace)
+            .and_then(|values| values.get("enabled"))
+            .map(String::as_str)
+            != Some("true");
     set_credential(&mut entries, &namespace, &key, &value)?;
-    write_credentials_atomic(&state.path, &entries)
+    if enabling_pushover && !namespace_has_credentials(&entries, &namespace) {
+        return Err("Enter both Pushover credentials before enabling delivery".to_string());
+    }
+    if enabling_pushover {
+        // The switch means "from now on", never "flush everything that was
+        // queued while this integration was off".
+        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
+            delivery.skip_nonterminal()?;
+        }
+    }
+    write_credentials_atomic(&state.path, &entries)?;
+    if namespace == crate::delivery::PUSHOVER_NAMESPACE {
+        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
+            delivery.wake();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn app_credential_replace_namespace(
+    namespace: String,
+    values: BTreeMap<String, String>,
+    state: tauri::State<'_, AppCredentialsState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let _guard = state.lock.lock().unwrap();
+    let mut entries = read_credentials(&state.path);
+    let was_enabled = entries
+        .get(&namespace)
+        .and_then(|current| current.get("enabled"))
+        .map(String::as_str)
+        == Some("true");
+    let will_be_enabled = values.get("enabled").map(String::as_str) == Some("true");
+    replace_namespace(&mut entries, &namespace, values)?;
+    if namespace == crate::delivery::PUSHOVER_NAMESPACE
+        && will_be_enabled
+        && !namespace_has_credentials(&entries, &namespace)
+    {
+        return Err("Enter both Pushover credentials before enabling delivery".to_string());
+    }
+    if namespace == crate::delivery::PUSHOVER_NAMESPACE && !was_enabled && will_be_enabled {
+        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
+            delivery.skip_nonterminal()?;
+        }
+    }
+    write_credentials_atomic(&state.path, &entries)?;
+    if namespace == crate::delivery::PUSHOVER_NAMESPACE {
+        if let Some(delivery) = app.try_state::<crate::delivery::DeliveryRouterState>() {
+            delivery.wake();
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -311,6 +399,39 @@ mod tests {
         set_credential(&mut entries, "llm", "api_key", "").unwrap();
 
         assert!(entries.is_empty(), "an emptied namespace should not linger");
+    }
+
+    #[test]
+    fn replacing_a_namespace_is_all_or_nothing_in_memory() {
+        let mut entries = CredentialMap::from([(
+            "pushover_settings".into(),
+            BTreeMap::from([("api_token".into(), "old".into())]),
+        )]);
+        replace_namespace(
+            &mut entries,
+            "pushover_settings",
+            BTreeMap::from([
+                ("api_token".into(), "new".into()),
+                ("user_key".into(), "user".into()),
+            ]),
+        )
+        .unwrap();
+
+        assert_eq!(entries["pushover_settings"]["api_token"], "new");
+        assert_eq!(entries["pushover_settings"]["user_key"], "user");
+        assert!(namespace_has_credentials(&entries, "pushover_settings"));
+    }
+
+    #[test]
+    fn pushover_requires_both_nonblank_credentials() {
+        let entries = CredentialMap::from([(
+            "pushover_settings".into(),
+            BTreeMap::from([
+                ("api_token".into(), "token".into()),
+                ("user_key".into(), "  ".into()),
+            ]),
+        )]);
+        assert!(!namespace_has_credentials(&entries, "pushover_settings"));
     }
 
     #[test]

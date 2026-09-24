@@ -15,6 +15,7 @@ export const CREDENTIAL_NAMESPACES = {
   judge: 'judge_llm_settings',
   excalidraw: 'excalidraw_settings',
   videoImport: 'video_import_settings',
+  pushover: 'pushover_settings',
 } as const;
 
 /**
@@ -40,4 +41,12 @@ export async function setAppCredential(
   value: string
 ): Promise<void> {
   await invoke('app_credential_set', { namespace, key, value });
+}
+
+/** Replaces one namespace in a single Rust-owned atomic file update. */
+export async function setAppCredentials(
+  namespace: string,
+  values: Record<string, string>
+): Promise<void> {
+  await invoke('app_credential_replace_namespace', { namespace, values });
 }

@@ -563,6 +563,15 @@ describe('ScheduleEditor', () => {
       expect(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>).id).toBe('s1');
     });
 
+    it('keeps the backend mission link when its recurrence is edited', () => {
+      const props = renderEditor({
+        schedule: { ...existing, missionSlug: 'weekly-product-review' },
+      });
+      expect(lastDraft(props.onDraftChange as ReturnType<typeof vi.fn>).missionSlug).toBe(
+        'weekly-product-review'
+      );
+    });
+
     // Re-anchoring on every edit would silently shift the whole series.
     it('keeps the original anchor', () => {
       const props = renderEditor({ schedule: existing });

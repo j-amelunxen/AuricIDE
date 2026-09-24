@@ -79,6 +79,66 @@ function runMigrations(db: Database.Database): void {
     `);
     record(2, 'create_schedules');
   }
+
+  // Mirrors notification migration 3. An INSERT trigger is intentional: it
+  // makes the notification row and its delivery event one SQLite transaction,
+  // including writes made directly by this MCP process.
+  if (!applied(3)) {
+    db.exec(`
+      CREATE TABLE notification_delivery_outbox (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_row_id INTEGER NOT NULL,
+        notification_uid    TEXT NOT NULL,
+        channel             TEXT NOT NULL,
+        payload_fingerprint TEXT NOT NULL,
+        title               TEXT NOT NULL,
+        body                TEXT,
+        severity            TEXT NOT NULL,
+        project_name        TEXT,
+        origin              TEXT,
+        status              TEXT NOT NULL DEFAULT 'pending',
+        attempts            INTEGER NOT NULL DEFAULT 0,
+        available_at        TEXT NOT NULL DEFAULT (datetime('now')),
+        lease_owner         TEXT,
+        lease_until         TEXT,
+        delivered_at        TEXT,
+        last_error          TEXT,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(notification_uid, channel, payload_fingerprint)
+      );
+      CREATE INDEX notification_delivery_ready
+        ON notification_delivery_outbox(status, available_at, lease_until);
+      CREATE TRIGGER notifications_enqueue_pushover
+      AFTER INSERT ON notifications
+      BEGIN
+        INSERT OR IGNORE INTO notification_delivery_outbox
+          (notification_row_id, notification_uid, channel, payload_fingerprint,
+           title, body, severity, project_name, origin)
+        VALUES
+          (NEW.id, NEW.uid, 'pushover',
+           printf('%d:%s%d:%s%d:%s%d:%s%d:%s',
+             length(NEW.title), NEW.title,
+             length(COALESCE(NEW.body, '')), COALESCE(NEW.body, ''),
+             length(NEW.severity), NEW.severity,
+             length(COALESCE(NEW.project_name, '')), COALESCE(NEW.project_name, ''),
+             length(COALESCE(NEW.origin, '')), COALESCE(NEW.origin, '')),
+           NEW.title, NEW.body,
+           NEW.severity, NEW.project_name, NEW.origin);
+      END;
+    `);
+    record(3, 'create_notification_delivery_outbox');
+  }
+
+  // Mirrors `schedules::run_migrations`, migration 4. Mission launch details
+  // are not exposed in CreateScheduleInput: only the trusted app UI creates
+  // this link, and the native runner derives its action from it.
+  if (!applied(4)) {
+    db.exec(`
+      ALTER TABLE schedules ADD COLUMN mission_slug TEXT;
+      CREATE INDEX schedules_mission ON schedules(project_path, mission_slug);
+    `);
+    record(4, 'link_schedules_to_missions');
+  }
 }
 
 export function openNotificationsDb(path: string): Database.Database {
@@ -151,15 +211,19 @@ export function dispatchNotification(db: Database.Database, input: DispatchInput
   const write = db.transaction((): NotificationRow => {
     const inherited = input.dedupeKey
       ? (
-          db.prepare('SELECT uid FROM notifications WHERE dedupe_key = ?').get(input.dedupeKey) as
-            { uid: string } | undefined
+          db
+            .prepare('SELECT uid FROM notifications WHERE dedupe_key = ? AND project_path IS ?')
+            .get(input.dedupeKey, input.projectPath ?? null) as { uid: string } | undefined
         )?.uid
       : undefined;
 
     const uid = input.uid ?? inherited ?? generateUid();
 
     if (input.dedupeKey) {
-      db.prepare('DELETE FROM notifications WHERE dedupe_key = ?').run(input.dedupeKey);
+      db.prepare('DELETE FROM notifications WHERE dedupe_key = ? AND project_path IS ?').run(
+        input.dedupeKey,
+        input.projectPath ?? null
+      );
     }
     db.prepare('DELETE FROM notifications WHERE uid = ?').run(uid);
 
@@ -238,11 +302,23 @@ export function getAnswer(db: Database.Database, uid: string): AnswerResult {
   return { status: expired ? 'expired' : 'pending' };
 }
 
+export function getAnswerForProject(
+  db: Database.Database,
+  uid: string,
+  projectPath: string
+): AnswerResult {
+  const belongs = db
+    .prepare('SELECT 1 FROM notifications WHERE uid = ? AND project_path = ?')
+    .get(uid, projectPath);
+  return belongs ? getAnswer(db, uid) : { status: 'gone' };
+}
+
 export interface ScheduleRow {
   id: string;
   name: string;
   enabled: number;
   project_path: string | null;
+  mission_slug: string | null;
   spec_kind: string;
   cron_expr: string | null;
   every_n: number | null;
@@ -307,11 +383,19 @@ export function createSchedule(db: Database.Database, input: CreateScheduleInput
   return db.prepare('SELECT * FROM schedules WHERE id = ?').get(id) as ScheduleRow;
 }
 
-export function listSchedules(db: Database.Database): ScheduleRow[] {
-  return db.prepare('SELECT * FROM schedules ORDER BY name COLLATE NOCASE').all() as ScheduleRow[];
+export function listSchedulesForProject(db: Database.Database, projectPath: string): ScheduleRow[] {
+  return db
+    .prepare('SELECT * FROM schedules WHERE project_path = ? ORDER BY name COLLATE NOCASE')
+    .all(projectPath) as ScheduleRow[];
 }
 
-/** Returns whether a row was actually removed, so the caller can say so. */
-export function deleteSchedule(db: Database.Database, id: string): boolean {
-  return db.prepare('DELETE FROM schedules WHERE id = ?').run(id).changes > 0;
+export function deleteScheduleForProject(
+  db: Database.Database,
+  id: string,
+  projectPath: string
+): boolean {
+  return (
+    db.prepare('DELETE FROM schedules WHERE id = ? AND project_path = ?').run(id, projectPath)
+      .changes > 0
+  );
 }

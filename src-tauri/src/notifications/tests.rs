@@ -58,6 +58,145 @@ fn dispatch_returns_the_stored_row_with_defaults_applied() {
 }
 
 #[test]
+fn every_notification_insert_enqueues_one_pushover_snapshot_in_the_same_transaction() {
+    struct Snapshot {
+        row_id: i64,
+        uid: String,
+        title: String,
+        body: Option<String>,
+        severity: String,
+        project_name: Option<String>,
+        origin: Option<String>,
+        status: String,
+    }
+
+    let mut conn = test_db();
+    let mut notice = input("Build failed");
+    notice.body = Some("The release build exited with code 1".to_string());
+    notice.severity = Some("error".to_string());
+    notice.project_name = Some("AuricIDE".to_string());
+    notice.origin = Some("Release agent".to_string());
+
+    let stored = dispatch_impl(&mut conn, &notice).expect("dispatch");
+    let snapshot = conn
+        .query_row(
+            "SELECT notification_row_id, notification_uid, title, body, severity, project_name, origin, status
+             FROM notification_delivery_outbox",
+            [],
+            |row| {
+                Ok(Snapshot {
+                    row_id: row.get(0)?,
+                    uid: row.get(1)?,
+                    title: row.get(2)?,
+                    body: row.get(3)?,
+                    severity: row.get(4)?,
+                    project_name: row.get(5)?,
+                    origin: row.get(6)?,
+                    status: row.get(7)?,
+                })
+            },
+        )
+        .expect("outbox row");
+
+    assert_eq!(snapshot.row_id, stored.id);
+    assert_eq!(snapshot.uid, stored.uid);
+    assert_eq!(snapshot.title, "Build failed");
+    assert_eq!(
+        snapshot.body.as_deref(),
+        Some("The release build exited with code 1")
+    );
+    assert_eq!(snapshot.severity, "error");
+    assert_eq!(snapshot.project_name.as_deref(), Some("AuricIDE"));
+    assert_eq!(snapshot.origin.as_deref(), Some("Release agent"));
+    assert_eq!(snapshot.status, "pending");
+}
+
+#[test]
+fn the_outbox_trigger_covers_direct_database_writers_and_rolls_back_with_them() {
+    let conn = test_db();
+    let tx = conn.unchecked_transaction().expect("transaction");
+    tx.execute(
+        "INSERT INTO notifications (uid, source, title, severity) VALUES ('direct', 'mcp', 'Direct write', 'warn')",
+        [],
+    )
+    .expect("direct insert");
+    assert_eq!(
+        tx.query_row(
+            "SELECT COUNT(*) FROM notification_delivery_outbox",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        1
+    );
+    tx.rollback().expect("rollback");
+
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM notification_delivery_outbox",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn dedupe_replacement_preserves_each_delivery_event_snapshot() {
+    let mut conn = test_db();
+    let mut first = input("Old");
+    first.dedupe_key = Some("same".to_string());
+    let old = dispatch_impl(&mut conn, &first).expect("first");
+    let mut second = input("New");
+    second.dedupe_key = Some("same".to_string());
+    let new = dispatch_impl(&mut conn, &second).expect("second");
+
+    let events: Vec<(i64, String)> = conn
+        .prepare("SELECT notification_row_id, title FROM notification_delivery_outbox ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        events,
+        vec![(old.id, "Old".to_string()), (new.id, "New".to_string())]
+    );
+}
+
+#[test]
+fn exact_redispatch_of_a_logical_notification_does_not_duplicate_external_intent() {
+    let mut conn = test_db();
+    let mut first = input("Same");
+    first.uid = Some("logical-notification".to_string());
+    dispatch_impl(&mut conn, &first).expect("first");
+    dispatch_impl(&mut conn, &first).expect("exact retry");
+
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM notification_delivery_outbox",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        1
+    );
+
+    first.body = Some("Changed detail".to_string());
+    dispatch_impl(&mut conn, &first).expect("changed retry");
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM notification_delivery_outbox",
+            [],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        2
+    );
+}
+
+#[test]
 fn dispatch_mints_distinct_uids() {
     let mut conn = test_db();
     let a = dispatch_impl(&mut conn, &input("a")).expect("a");

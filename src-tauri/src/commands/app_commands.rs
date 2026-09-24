@@ -7,6 +7,7 @@ use crate::llm::{self, LlmRequest, LlmResponse};
 use crate::mcp::{self, McpServerState, McpStatusInfo};
 #[cfg(target_os = "macos")]
 use crate::menu;
+use crate::missions::{self, CreateMissionInput, CreatedMissionWithSchedule};
 use crate::notifications::{self, Notification, NotificationInput, NotificationsState};
 use crate::providers::{ProviderInfo, ProviderRegistryState};
 use crate::schedules::{self, Schedule};
@@ -334,6 +335,10 @@ pub fn schedules_upsert(
     state: tauri::State<'_, NotificationsState>,
 ) -> Result<Schedule, String> {
     let conn = state.conn.lock().unwrap();
+    let existing = schedules::list_impl(&conn)?
+        .into_iter()
+        .find(|candidate| candidate.id == schedule.id);
+    schedules::validate_mission_link_edit(existing.as_ref(), &schedule)?;
     schedules::upsert_impl(&conn, &schedule)
 }
 
@@ -359,4 +364,13 @@ pub fn schedules_set_enabled(
 #[tauri::command]
 pub fn schedules_preview(schedule: Schedule, count: Option<usize>) -> Result<Vec<String>, String> {
     schedules::preview_impl(&schedule, chrono::Utc::now(), count.unwrap_or(3))
+}
+
+#[tauri::command]
+pub fn mission_create(
+    input: CreateMissionInput,
+    state: tauri::State<'_, NotificationsState>,
+) -> Result<CreatedMissionWithSchedule, String> {
+    let conn = state.conn.lock().unwrap();
+    missions::create_with_schedule_impl(&conn, &input, chrono::Utc::now())
 }
