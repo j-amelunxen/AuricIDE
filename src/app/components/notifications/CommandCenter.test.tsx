@@ -202,6 +202,21 @@ describe('CommandCenter', () => {
     expect(useStore.getState().commandCenterOpen).toBe(false);
   });
 
+  it('opens mission creation for the active project', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ rootPath: ALPHA } as never);
+    renderCenter();
+
+    await user.click(screen.getByTestId('command-center-new-mission'));
+
+    expect(screen.getByRole('dialog', { name: 'New mission' })).toBeInTheDocument();
+  });
+
+  it('does not offer a mission without a project target', () => {
+    renderCenter();
+    expect(screen.queryByTestId('command-center-new-mission')).toBeNull();
+  });
+
   it('closes on Escape', () => {
     renderCenter();
 

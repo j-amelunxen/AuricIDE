@@ -19,6 +19,7 @@ import { McpSettingsContent } from './McpSettingsContent';
 import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
 import { ExcalidrawContent } from './settings/ExcalidrawContent';
 import { VideoImportContent } from './settings/VideoImportContent';
+import { PushoverContent } from './settings/PushoverContent';
 import { AuricSkillsContent } from './settings/AuricSkillsContent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
@@ -40,6 +41,7 @@ export type SettingsCategory =
   | 'blueprints'
   | 'excalidraw'
   | 'video-import'
+  | 'pushover'
   | 'providers'
   | 'project-agent'
   | 'git';
@@ -114,6 +116,7 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     items: [
       { id: 'mcp', icon: 'hub', label: 'MCP' },
       { id: 'blueprints', icon: 'sync', label: 'Blueprints' },
+      { id: 'pushover', icon: 'notifications_active', label: 'Pushover' },
     ],
   },
   {
@@ -206,6 +209,8 @@ function SettingsDialog({
         return <ExcalidrawContent />;
       case 'video-import':
         return <VideoImportContent />;
+      case 'pushover':
+        return <PushoverContent />;
     }
   };
 

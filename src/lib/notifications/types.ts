@@ -15,7 +15,7 @@ import type { PermissionMode } from '@/lib/tauri/agents';
 export type NotificationSeverity = 'info' | 'success' | 'warn' | 'error';
 export type NotificationKind = 'info' | 'ask';
 export type NotificationSource = 'ui' | 'agent' | 'mcp' | 'system';
-export type NotificationRefKind = 'agent' | 'ticket' | 'goal' | 'file';
+export type NotificationRefKind = 'agent' | 'ticket' | 'goal' | 'file' | 'mission';
 
 /** One notification as it comes back from the database. */
 export interface Notification {

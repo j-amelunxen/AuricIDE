@@ -181,6 +181,15 @@ describe('SettingsModal – Category Navigation', () => {
     expect(screen.getByTestId('settings-nav-system')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-git')).toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-video-import')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-nav-pushover')).toBeInTheDocument();
+  });
+
+  it('opens the Pushover delivery settings', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+
+    await user.click(screen.getByTestId('settings-nav-pushover'));
+    expect(await screen.findByText('Enable Pushover')).toBeInTheDocument();
   });
 
   it('Agent is active by default', () => {

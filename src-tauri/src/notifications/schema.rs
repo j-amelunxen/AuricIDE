@@ -59,6 +59,57 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
     // and keeping them together means one file to back up and one to watch.
     crate::schedules::run_migrations(conn)?;
 
+    // A snapshot outbox rather than a foreign key: dedupe deliberately deletes
+    // and reinserts notification rows, but delivery of the event that was
+    // already committed must remain durable. The trigger is the producer
+    // boundary, so Rust, MCP and any future direct SQLite writer cannot forget
+    // to enqueue delivery in the notification's own transaction.
+    apply_migration(
+        conn,
+        3,
+        "create_notification_delivery_outbox",
+        "CREATE TABLE notification_delivery_outbox (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            notification_row_id INTEGER NOT NULL,
+            notification_uid    TEXT NOT NULL,
+            channel             TEXT NOT NULL,
+            payload_fingerprint TEXT NOT NULL,
+            title               TEXT NOT NULL,
+            body                TEXT,
+            severity            TEXT NOT NULL,
+            project_name        TEXT,
+            origin              TEXT,
+            status              TEXT NOT NULL DEFAULT 'pending',
+            attempts            INTEGER NOT NULL DEFAULT 0,
+            available_at        TEXT NOT NULL DEFAULT (datetime('now')),
+            lease_owner         TEXT,
+            lease_until         TEXT,
+            delivered_at        TEXT,
+            last_error          TEXT,
+            created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(notification_uid, channel, payload_fingerprint)
+        );
+        CREATE INDEX notification_delivery_ready
+            ON notification_delivery_outbox(status, available_at, lease_until);
+        CREATE TRIGGER notifications_enqueue_pushover
+        AFTER INSERT ON notifications
+        BEGIN
+            INSERT OR IGNORE INTO notification_delivery_outbox
+                (notification_row_id, notification_uid, channel, payload_fingerprint,
+                 title, body, severity, project_name, origin)
+            VALUES
+                (NEW.id, NEW.uid, 'pushover',
+                 printf('%d:%s%d:%s%d:%s%d:%s%d:%s',
+                    length(NEW.title), NEW.title,
+                    length(COALESCE(NEW.body, '')), COALESCE(NEW.body, ''),
+                    length(NEW.severity), NEW.severity,
+                    length(COALESCE(NEW.project_name, '')), COALESCE(NEW.project_name, ''),
+                    length(COALESCE(NEW.origin, '')), COALESCE(NEW.origin, '')),
+                 NEW.title, NEW.body,
+                 NEW.severity, NEW.project_name, NEW.origin);
+        END;",
+    )?;
+
     Ok(())
 }
 

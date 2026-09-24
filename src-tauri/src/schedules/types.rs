@@ -22,6 +22,9 @@ pub struct Schedule {
     pub enabled: bool,
     pub project_path: Option<String>,
     pub project_name: Option<String>,
+    /// Links this recurrence to a Markdown mission scaffold. When present the
+    /// runner derives the launch action itself instead of trusting `payload`.
+    pub mission_slug: Option<String>,
     /// `cron` or `every`.
     pub spec_kind: String,
     pub cron_expr: Option<String>,

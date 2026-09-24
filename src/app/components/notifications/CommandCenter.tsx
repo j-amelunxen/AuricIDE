@@ -25,6 +25,7 @@ import { ProjectRail } from './ProjectRail';
 import { ScheduleEditor } from './ScheduleEditor';
 import { UpcomingStrip } from './UpcomingStrip';
 import { useNotificationActions } from './useNotificationActions';
+import { MissionCreateDialog } from './MissionCreateDialog';
 
 export interface CommandCenterProps {
   /** Runs a command from the manifest — the same dispatch the palette uses. */
@@ -69,6 +70,9 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
   const { confirm, confirmDialog } = useConfirm();
 
   const [editing, setEditing] = useState<EditorState | null>(null);
+  const [missionTarget, setMissionTarget] = useState<{ path: string; name: string | null } | null>(
+    null
+  );
   const [draft, setDraft] = useState<Schedule | null>(null);
   const [preview, setPreview] = useState<string[]>([]);
   const [discoveredByPath, setDiscoveredByPath] = useState<{
@@ -270,6 +274,8 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
         data-testid="command-center-shell"
         role="dialog"
         aria-modal="true"
+        aria-hidden={missionTarget !== null ? true : undefined}
+        inert={missionTarget !== null ? true : undefined}
         aria-labelledby="command-center-title"
         // Explicit rows, not nested flex: only the body may grow, so a long
         // project list can never push the header off the window.
@@ -308,6 +314,19 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            {newScheduleTarget.path !== null && (
+              <button
+                type="button"
+                data-testid="command-center-new-mission"
+                onClick={() =>
+                  setMissionTarget({ path: newScheduleTarget.path!, name: newScheduleTarget.name })
+                }
+                className="press-feedback flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-[10px] font-semibold text-black hover:brightness-110"
+              >
+                <AuricIcon name="add" aria-hidden="true" className="text-sm" />
+                New mission
+              </button>
+            )}
             <button
               type="button"
               data-testid="command-center-new-schedule"
@@ -403,6 +422,17 @@ function CommandCenterContent({ onRunCommand, onOpenProject }: CommandCenterProp
             closeEditor();
           }}
           onCancel={closeEditor}
+        />
+      )}
+      {missionTarget !== null && (
+        <MissionCreateDialog
+          projectPath={missionTarget.path}
+          projectName={missionTarget.name}
+          onCreated={async () => {
+            await loadSchedules();
+            setMissionTarget(null);
+          }}
+          onCancel={() => setMissionTarget(null)}
         />
       )}
       {confirmDialog}

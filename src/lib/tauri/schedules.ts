@@ -28,6 +28,8 @@ export interface Schedule {
   enabled: boolean;
   projectPath: string | null;
   projectName: string | null;
+  /** Mission scaffold this recurrence runs. Absent on legacy schedules. */
+  missionSlug?: string | null;
   specKind: ScheduleSpecKind;
   cronExpr: string | null;
   everyN: number | null;

@@ -7,6 +7,7 @@ mod clipboard;
 pub mod commands;
 pub mod crashlog;
 mod database;
+mod delivery;
 mod excalidraw;
 mod git;
 mod ignored_repos;
@@ -16,6 +17,7 @@ mod mcp;
 mod memory_report;
 #[cfg(target_os = "macos")]
 mod menu;
+mod missions;
 mod notifications;
 mod project_icons;
 mod project_skills;
@@ -59,6 +61,15 @@ pub fn run() {
             app.manage(recent_projects::RecentProjectsState::initialize(
                 recent_projects_path,
             ));
+            // Application credentials are Rust-owned and mode 0600. Delivery
+            // workers read Pushover configuration from this path on every
+            // drain, so credential rotation never requires an app restart.
+            let credentials_path = app_config::credentials_path_in(
+                &app.path().app_data_dir().map_err(|e| e.to_string())?,
+            );
+            app.manage(app_config::AppCredentialsState::new(
+                credentials_path.clone(),
+            ));
             // The notification inbox is app-global, not per project: agents run
             // in several repos at once here, and a message must still be waiting
             // when you come back to the project it came from.
@@ -66,9 +77,15 @@ pub fn run() {
                 notifications::db_path_in(&app.path().app_data_dir().map_err(|e| e.to_string())?);
             match notifications::init_db(&notifications_db) {
                 Ok(conn) => {
+                    let delivery_router = delivery::DeliveryRouterState::new(
+                        notifications_db.clone(),
+                        credentials_path.clone(),
+                    );
                     let handle = app.handle().clone();
+                    let watcher_delivery = delivery_router.clone();
                     let watcher = notifications::watch_inbox(&notifications_db, move || {
                         let _ = handle.emit("notifications-changed", ());
+                        watcher_delivery.wake();
                     })
                     .map_err(|error| {
                         eprintln!("Notification inbox watcher unavailable: {error}");
@@ -79,6 +96,13 @@ pub fn run() {
                         conn: std::sync::Mutex::new(conn),
                         watcher: std::sync::Mutex::new(watcher),
                     });
+                    delivery_router.wake();
+                    let fallback_delivery = delivery_router.clone();
+                    std::thread::spawn(move || loop {
+                        std::thread::sleep(std::time::Duration::from_secs(30));
+                        fallback_delivery.wake();
+                    });
+                    app.manage(delivery_router);
                     spawn_schedule_runner(app.handle().clone());
                 }
                 // A missing inbox must not stop the IDE from opening. The
@@ -118,15 +142,6 @@ pub fn run() {
                 &app.path().app_data_dir().map_err(|e| e.to_string())?,
             );
             app.manage(webview_prefs::WebviewPrefsState::new(webview_prefs_path));
-
-            // Credentials are application-wide too, but they stay out of the
-            // mirror above: that store exists to copy whatever the webview puts
-            // in localStorage, and an API key does not belong in a second copy
-            // inside a WebKit database. This one is written by Rust at 0600.
-            let credentials_path = app_config::credentials_path_in(
-                &app.path().app_data_dir().map_err(|e| e.to_string())?,
-            );
-            app.manage(app_config::AppCredentialsState::new(credentials_path));
 
             // CLI quota readings for the status bar. The service reads its own
             // on/off switch out of the mirror above on every call, so nothing
@@ -305,6 +320,8 @@ pub fn run() {
             schedules_delete,
             schedules_set_enabled,
             schedules_preview,
+            mission_create,
+            delivery::worker::pushover_send_test,
             goals_save,
             goals_load,
             goals_clear,
@@ -336,6 +353,7 @@ pub fn run() {
             webview_prefs::webview_prefs_remove,
             app_config::app_credential_list,
             app_config::app_credential_set,
+            app_config::app_credential_replace_namespace,
             usage_limits::usage_limits_read,
             usage_limits::usage_limits_refresh,
             cc_usage::cc_usage_plugins,

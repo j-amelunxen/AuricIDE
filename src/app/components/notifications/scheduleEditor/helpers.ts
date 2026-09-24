@@ -364,6 +364,9 @@ export function buildScheduleDraft({
     enabled: schedule?.enabled ?? true,
     projectPath,
     projectName,
+    // Mission ownership is backend-authored. Editing its recurrence must not
+    // silently turn it back into a generic notification schedule.
+    missionSlug: schedule?.missionSlug ?? null,
     timezone: schedule?.timezone ?? localTimezone(),
     catchUp,
     payload: JSON.stringify(payload),
