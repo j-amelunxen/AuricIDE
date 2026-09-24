@@ -11,6 +11,8 @@ pub struct AgentConfig {
     pub model: String,
     pub task: String,
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub project_path: Option<String>,
     pub permission_mode: Option<String>,
     pub dangerously_ignore_permissions: Option<bool>,
     pub auto_accept_edits: Option<bool>,
@@ -42,6 +44,7 @@ pub struct AgentInfo {
     pub current_task: Option<String>,
     pub started_at: u64,
     pub last_activity_at: Option<u64>,
+    pub project_path: Option<String>,
     pub repo_path: Option<String>,
     pub spawned_by_ticket_id: Option<String>,
     pub spawned_by_goal_id: Option<String>,

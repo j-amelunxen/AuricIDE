@@ -8,6 +8,39 @@ impl DynamicProvider {
     pub fn new(config: ProviderConfig) -> Self {
         Self { config }
     }
+
+    fn render_binding_template(
+        template: &str,
+        binding: &ProviderProjectBinding,
+        quote_paths: bool,
+    ) -> String {
+        let project_root = if quote_paths {
+            format!("\"{}\"", shell_escape_double_quoted(&binding.project_root))
+        } else {
+            binding.project_root.clone()
+        };
+        let database_path = if quote_paths {
+            format!("\"{}\"", shell_escape_double_quoted(&binding.database_path))
+        } else {
+            binding.database_path.clone()
+        };
+        let mcp_config_path = binding
+            .mcp_config_path
+            .as_deref()
+            .map(|path| {
+                if quote_paths {
+                    format!("\"{}\"", shell_escape_double_quoted(path))
+                } else {
+                    path.to_string()
+                }
+            })
+            .unwrap_or_default();
+
+        template
+            .replace("{projectRoot}", &project_root)
+            .replace("{databasePath}", &database_path)
+            .replace("{mcpConfigPath}", &mcp_config_path)
+    }
 }
 
 impl AgentProvider for DynamicProvider {
@@ -110,6 +143,30 @@ impl AgentProvider for DynamicProvider {
     fn prompt_template(&self) -> PromptTemplate {
         PromptTemplate {
             template: self.config.prompt_template.clone(),
+        }
+    }
+
+    fn project_binding_injection(&self, binding: &ProviderProjectBinding) -> SpawnInjection {
+        let Some(config) = &self.config.project_binding else {
+            return SpawnInjection::default();
+        };
+
+        SpawnInjection {
+            arguments: config
+                .arguments
+                .iter()
+                .map(|argument| Self::render_binding_template(argument, binding, true))
+                .collect(),
+            env_vars: config
+                .environment
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        Self::render_binding_template(value, binding, false),
+                    )
+                })
+                .collect(),
         }
     }
 }

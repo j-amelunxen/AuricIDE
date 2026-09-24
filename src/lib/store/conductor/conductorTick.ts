@@ -295,6 +295,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
         model,
         provider: providerOverride,
         task: prompt,
+        projectPath: full.rootPath ?? null,
         cwd: ticket.workingDirectory ?? full.rootPath ?? undefined,
         headless: true,
         spawnedByTicketId: ticket.id,

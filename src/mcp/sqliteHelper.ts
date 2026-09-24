@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
 
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+
 export interface SqliteDbOptions {
   wal?: boolean;
   foreignKeys?: boolean;
@@ -13,6 +15,7 @@ export function openSqliteDb(
   options: SqliteDbOptions = { wal: true }
 ): Database.Database {
   const db = new Database(path);
+  db.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
   if (options.wal ?? true) {
     db.pragma('journal_mode = WAL');
   }
@@ -27,6 +30,7 @@ export function openSqliteDb(
  */
 export function createInMemorySqliteDb(options: SqliteDbOptions = {}): Database.Database {
   const db = new Database(':memory:');
+  db.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
   if (options.foreignKeys !== undefined) {
     db.pragma(`foreign_keys = ${options.foreignKeys ? 'ON' : 'OFF'}`);
   }

@@ -14,6 +14,9 @@
   "scripts": {
     "dev": "next dev --turbopack --port 41873",
     "build": "next build",
+    "mcp:bundle": "node scripts/build-mcp-runtime.mjs",
+    "mcp:smoke": "pnpm mcp:bundle && node scripts/mcp-runtime-smoke.mjs",
+    "mcp:e2e:isolation": "pnpm mcp:bundle && node scripts/mcp-isolation-e2e.mjs",
     "start": "next start --port 41873",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

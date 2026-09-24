@@ -154,11 +154,15 @@ pub async fn resume_interrupted_agent(
             .ok_or_else(|| format!("Interrupted agent not found: {}", agent_id))?
     };
 
+    // Never infer project authority from cwd. `None` is an explicit general
+    // session and must stay projectless across application restarts.
+    let project_path = persisted.project_path.clone();
     let config = AgentConfig {
         name: persisted.name,
         model: persisted.model,
         task: agents::resume_task_prompt(&persisted.task),
         cwd: persisted.cwd,
+        project_path,
         permission_mode: persisted.permission_mode,
         dangerously_ignore_permissions: Some(persisted.dangerously_ignore_permissions),
         auto_accept_edits: Some(persisted.auto_accept_edits),

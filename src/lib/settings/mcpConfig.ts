@@ -1,23 +1,18 @@
 import { exists, readFile, writeFile } from '@/lib/tauri/fs';
+import { mcpLaunchSpec, type McpLaunchSpec } from '@/lib/tauri/mcp';
 
-export interface McpServerEntry {
-  command: string;
-  args: string[];
+export type McpServerEntry = McpLaunchSpec;
+
+export function buildMcpServerEntry(launchSpec: McpLaunchSpec): McpServerEntry {
+  return launchSpec;
 }
 
-export function buildMcpServerEntry(projectPath: string): McpServerEntry {
-  return {
-    command: 'npx',
-    args: ['tsx', `${projectPath}/src/mcp/server.ts`, `${projectPath}/.auric/project.db`],
-  };
-}
-
-export function buildMcpConfig(projectPath: string): {
+export function buildMcpConfig(launchSpec: McpLaunchSpec): {
   mcpServers: Record<string, McpServerEntry>;
 } {
   return {
     mcpServers: {
-      'auric-pm': buildMcpServerEntry(projectPath),
+      'auric-pm': buildMcpServerEntry(launchSpec),
     },
   };
 }
@@ -31,7 +26,7 @@ export type InitMcpResult = 'created' | 'updated';
  */
 export async function initMcpJson(projectPath: string): Promise<InitMcpResult> {
   const configPath = `${projectPath}/.mcp.json`;
-  const entry = buildMcpServerEntry(projectPath);
+  const entry = buildMcpServerEntry(await mcpLaunchSpec(projectPath));
 
   let config: Record<string, unknown> = {};
   let result: InitMcpResult = 'created';

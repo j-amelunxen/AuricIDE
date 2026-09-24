@@ -51,7 +51,13 @@ export async function handleSpawnNewAgent(
       const { addGitWorktree } = await import('@/lib/tauri/git');
       const worktree = await addGitWorktree(repo, config.name);
       const { useWorktree: _flag, worktreeRepoPath: _source, ...rest } = config;
-      spawnConfig = { ...rest, cwd: worktree.path };
+      spawnConfig = {
+        ...rest,
+        // Preserve an explicit null (general agent), but legacy callers that
+        // omit projectPath bind to the source repo, never the new worktree.
+        projectPath: config.projectPath === undefined ? (config.cwd ?? null) : config.projectPath,
+        cwd: worktree.path,
+      };
       void toast.refreshAgentWorktrees?.();
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -91,8 +97,9 @@ export async function handleSpawnNewAgent(
 
   const { rootPath } = get() as AgentSlice & { rootPath?: string | null };
   const remembered = config.historyPrompt ?? config.task;
-  if (rootPath && remembered.trim()) {
-    recordAgentPromptHistory(rootPath, {
+  const historyProjectPath = spawnConfig.projectPath ?? rootPath;
+  if (historyProjectPath && remembered.trim()) {
+    recordAgentPromptHistory(historyProjectPath, {
       id: crypto.randomUUID(),
       prompt: remembered,
       agentName: name,
@@ -139,6 +146,7 @@ export async function handleRetryFailedAgent(
     name: failed.name,
     model: failed.model,
     task: failed.currentTask ?? 'wait',
+    projectPath: failed.projectPath ?? null,
     cwd: failed.repoPath,
     provider: failed.provider,
     spawnedByTicketId: failed.spawnedByTicketId,
@@ -431,6 +439,7 @@ export async function handleResumeInterruptedAgent(
               name: interrupted.name,
               model: interrupted.model,
               task: interrupted.task,
+              projectPath: interrupted.projectPath ?? null,
               cwd: interrupted.cwd ?? undefined,
               permissionMode: (interrupted.permissionMode ?? undefined) as
                 AgentConfig['permissionMode'] | undefined,

@@ -175,11 +175,15 @@ describe('buildSpawnConfig', () => {
   });
 
   it('runs in the repo the action names', () => {
-    expect(buildSpawnConfig({ ...action, repoPath: '/repo/sample' }).cwd).toBe('/repo/sample');
+    const config = buildSpawnConfig({ ...action, repoPath: '/repo/sample' });
+    expect(config.cwd).toBe('/repo/sample');
+    expect(config.projectPath).toBe('/repo/sample');
   });
 
   it('falls back to the current project when the action names no repo', () => {
-    expect(buildSpawnConfig(action, { fallbackCwd: '/repo/current' }).cwd).toBe('/repo/current');
+    const config = buildSpawnConfig(action, { fallbackCwd: '/repo/current' });
+    expect(config.cwd).toBe('/repo/current');
+    expect(config.projectPath).toBe('/repo/current');
   });
 
   // Launch choices are remembered per working directory. Reading them without

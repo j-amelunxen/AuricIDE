@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
-import { dirname } from 'node:path';
 import { FastMCP } from 'fastmcp';
+import { resolveMcpCliBinding } from './cli';
 import { registerContextTools } from './tools/context';
 import { registerDependencyTools } from './tools/dependencies';
 import { registerEpicTools } from './tools/epics';
@@ -34,8 +34,8 @@ function attachNotificationTools(server: FastMCP, projectRoot: string): void {
 
   try {
     registerNotificationTools(server, openNotificationsDb(dbPath), {
-      projectPath: process.env.AURIC_PROJECT_ROOT ?? projectRoot,
-      projectName: (process.env.AURIC_PROJECT_ROOT ?? projectRoot).split('/').filter(Boolean).pop(),
+      projectPath: projectRoot,
+      projectName: projectRoot.split('/').filter(Boolean).pop(),
     });
   } catch (error) {
     // The PM tools are the point of this server; an unreachable inbox must not
@@ -69,19 +69,21 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   return server;
 }
 
-// CLI entry point: `npx tsx src/mcp/server.ts <db-path>`
-if (typeof process !== 'undefined' && process.argv[1]?.includes('server')) {
-  const dbPath = process.argv[2];
-  if (!dbPath) {
-    console.error('Usage: npx tsx src/mcp/server.ts <path-to-project.db>');
-    process.exit(1);
-  }
+const isMainModule =
+  (import.meta as ImportMeta & { main?: boolean }).main === true ||
+  (typeof process !== 'undefined' && process.argv[1]?.includes('server'));
 
-  import('./db').then(({ openDatabase }) => {
-    const db = openDatabase(dbPath);
-    // dbPath is typically <project>/.auric/project.db → project root is two levels up
-    const projectRoot = dirname(dirname(dbPath));
-    const server = createMcpServer(db, projectRoot);
-    server.start({ transportType: 'stdio' });
-  });
+// CLI entry point: `auric-mcp --project-root <project-directory>`
+if (isMainModule) {
+  import('./db')
+    .then(({ openDatabase }) => {
+      const { projectRoot, databasePath } = resolveMcpCliBinding(process.argv.slice(2));
+      const db = openDatabase(databasePath);
+      const server = createMcpServer(db, projectRoot);
+      server.start({ transportType: 'stdio' });
+    })
+    .catch((error) => {
+      console.error(`[auric-pm] ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    });
 }

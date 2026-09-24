@@ -1,6 +1,14 @@
 use super::persistence::{
     persisted_from_config, persistence_record_exit, persistence_record_spawn,
 };
+use super::project_binding::resolve_project_binding;
+
+pub(super) fn is_reserved_auric_env(key: &str) -> bool {
+    matches!(
+        key,
+        "AURIC_PROJECT_ROOT" | "AURIC_MCP_DB_PATH" | "AURIC_NOTIFICATIONS_DB"
+    )
+}
 use super::shell_env::cached_login_shell_env;
 use super::types::*;
 use crate::agent_persistence::AgentPersistenceState;
@@ -82,6 +90,10 @@ pub async fn spawn_agent_impl(
     ),
     String,
 > {
+    // Resolve once, before opening the PTY. The resulting binding is immutable
+    // for the process lifetime and never follows later UI/project changes.
+    let project_binding = resolve_project_binding(config.project_path.as_deref())?;
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -100,19 +112,15 @@ pub async fn spawn_agent_impl(
         ("sh", vec!["-c".to_string()])
     };
 
-    let policy = match config.cwd.as_deref() {
-        Some(cwd) => {
-            let project = crate::git::primary_project_path(std::path::Path::new(cwd))
-                .unwrap_or_else(|| std::path::PathBuf::from(cwd));
-            crate::provider_policy::policy_for_project(&project)
-        }
+    let policy = match project_binding.as_ref() {
+        Some(binding) => crate::provider_policy::policy_for_project(binding.project_root()),
         None => crate::provider_policy::ProviderPolicy::default(),
     };
     let (provider_id, provider) =
         resolve_permitted_provider(config.provider.as_deref(), providers, &policy)?;
     let provider_id = provider_id.as_str();
 
-    let spawn_cmd = provider.build_spawn_command(
+    let mut spawn_cmd = provider.build_spawn_command(
         &config.model,
         &config.task,
         config.permission_mode.as_deref(),
@@ -120,6 +128,43 @@ pub async fn spawn_agent_impl(
         config.auto_accept_edits.unwrap_or(false),
         config.headless.unwrap_or(false),
     );
+    if let Some(binding) = project_binding.as_ref() {
+        let runtime_entrypoint = crate::mcp::runtime_entrypoint(app)?;
+        let mcp_configs = crate::mcp::ensure_agent_mcp_config(app, binding.project_root())?;
+        let provider_binding = binding
+            .provider_binding()
+            .with_mcp_config_path(mcp_configs.standard.to_string_lossy().into_owned())
+            .with_crush_config_path(mcp_configs.crush.to_string_lossy().into_owned())
+            .with_runtime_entrypoint(runtime_entrypoint.to_string_lossy().into_owned());
+        let provider_injection = if provider_id == "codex" {
+            crate::providers::codex_project_binding_injection(&provider_binding)?
+        } else {
+            provider.project_binding_injection(&provider_binding)
+        };
+        if provider_injection.is_empty() {
+            return Err(format!(
+                "Provider '{provider_id}' does not support an isolated Auric MCP project binding"
+            ));
+        }
+        spawn_cmd = spawn_cmd.with_injection(provider_injection);
+        // Reserved Auric variables are applied after provider material so a
+        // provider config cannot accidentally point MCP at a different project.
+        spawn_cmd = spawn_cmd.with_injection(crate::providers::SpawnInjection {
+            arguments: Vec::new(),
+            env_vars: {
+                let mut env = binding.environment();
+                if let Ok(app_data) = app.path().app_data_dir() {
+                    env.push((
+                        "AURIC_NOTIFICATIONS_DB".to_string(),
+                        crate::notifications::db_path_in(&app_data)
+                            .to_string_lossy()
+                            .into_owned(),
+                    ));
+                }
+                env
+            },
+        });
+    }
     let spawn_cmd = attach_usage_sidecar(spawn_cmd, app);
 
     let mut cmd = CommandBuilder::new(shell);
@@ -129,7 +174,12 @@ pub async fn spawn_agent_impl(
     cmd.arg(&spawn_cmd.command);
 
     for (key, value) in cached_login_shell_env().await {
-        cmd.env(key, value);
+        // Project authority must come exclusively from the resolved binding
+        // above. In particular, a deliberately general agent must not inherit
+        // a stale binding from the shell that launched AuricIDE.
+        if !is_reserved_auric_env(key) {
+            cmd.env(key, value);
+        }
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -142,10 +192,6 @@ pub async fn spawn_agent_impl(
         if std::path::Path::new(cwd).is_dir() {
             cmd.cwd(cwd);
         }
-        let project = crate::git::primary_project_path(std::path::Path::new(cwd))
-            .unwrap_or_else(|| std::path::PathBuf::from(cwd));
-        let db_path = project.join(".auric").join("project.db");
-        cmd.env("AURIC_MCP_DB_PATH", db_path.to_string_lossy().as_ref());
     }
 
     let child = pair
@@ -165,7 +211,14 @@ pub async fn spawn_agent_impl(
     let mut manager = state.lock().await;
     let id = manager.next_id();
 
-    persistence_record_spawn(app, persisted_from_config(&config, &id, provider_id, now));
+    let mut persisted_config = config.clone();
+    persisted_config.project_path = project_binding
+        .as_ref()
+        .map(|binding| binding.project_root().to_string_lossy().into_owned());
+    persistence_record_spawn(
+        app,
+        persisted_from_config(&persisted_config, &id, provider_id, now),
+    );
 
     let info = AgentInfo {
         id: id.clone(),
@@ -176,6 +229,9 @@ pub async fn spawn_agent_impl(
         current_task: Some(config.task),
         started_at: now,
         last_activity_at: Some(now),
+        project_path: project_binding
+            .as_ref()
+            .map(|binding| binding.project_root().to_string_lossy().into_owned()),
         repo_path: config.cwd.clone(),
         spawned_by_ticket_id: config.spawned_by_ticket_id.clone(),
         spawned_by_goal_id: config.spawned_by_goal_id.clone(),

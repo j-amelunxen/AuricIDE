@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:41873",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeDevCommand": "pnpm mcp:bundle && pnpm dev",
+    "beforeBuildCommand": "pnpm mcp:bundle && pnpm build"
   },
   "app": {
     "windows": [
@@ -24,6 +24,7 @@
       }
     ],
     "security": {
+      "capabilities": ["default"],
       "csp": null,
       "assetProtocol": {
         "enable": true,
@@ -35,7 +36,8 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "../dynamic-providers": "dynamic-providers"
+      "../dynamic-providers": "dynamic-providers",
+      "resources/auric-mcp": "auric-mcp"
     },
     "icon": [
       "icons/32x32.png",

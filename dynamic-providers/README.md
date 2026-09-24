@@ -78,6 +78,13 @@ Here is an example structure of a provider definition:
       "fallback": "--interactive"
     }
   ],
+  "projectBinding": {
+    "arguments": ["--project", "{projectRoot}", "--database={databasePath}"],
+    "environment": {
+      "MY_AGENT_PROJECT": "{projectRoot}",
+      "MY_AGENT_DATABASE": "{databasePath}"
+    }
+  },
   "info": {
     "models": [
       { "value": "auto", "label": "Auto Model" },
@@ -105,6 +112,18 @@ Here is an example structure of a provider definition:
   "promptTemplate": "agent-cli --use-model model-xyz -i \""
 }
 ```
+
+`projectBinding` is optional. It declares provider-specific launch material that
+is added only when the caller explicitly binds an agent to a project. Argument
+templates are shell-quoted automatically; environment values are passed as raw
+values. The available placeholders are `{projectRoot}` (the canonical logical
+project, which may differ from the agent's worktree/cwd) and `{databasePath}`
+(`<projectRoot>/.auric/project.db`). Auric also exports these fixed variables for
+every bound agent: `AURIC_PROJECT_ROOT` and `AURIC_MCP_DB_PATH`.
+
+An agent launched without a project receives neither the descriptor nor the
+fixed variables. This makes provider configs reusable for general agents while
+keeping an MCP-capable launch immutably tied to the project selected at spawn.
 
 ### Argument Types
 

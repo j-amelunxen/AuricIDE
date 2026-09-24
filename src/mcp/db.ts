@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { initMigrationTable, openSqliteDb, createInMemorySqliteDb } from './sqliteHelper';
 
-function runMigrations(db: Database.Database): void {
+function applyMigrations(db: Database.Database): void {
   const { applied, record } = initMigrationTable(db);
 
   // Migration #1: kv_store
@@ -308,6 +308,10 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE pm_tickets ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'");
     record(19, 'add_ticket_skills');
   }
+}
+
+function runMigrations(db: Database.Database): void {
+  db.transaction(() => applyMigrations(db)).immediate();
 }
 
 export function openDatabase(path: string): Database.Database {

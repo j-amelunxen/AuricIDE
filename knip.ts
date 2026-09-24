@@ -10,8 +10,13 @@ const config: KnipConfig = {
     'tailwindcss',
     // remark-lint presets — consumed as unified plugins, not direct TS imports
     'remark-lint',
-    // tsx — used as runtime via `npx tsx` to run the MCP server subprocess
-    'tsx',
+    // bun — the pinned bundler is launched by absolute path from scripts/build-mcp-runtime.mjs
+    'bun',
+    // WDIO loads these through its CLI/configuration at runtime rather than TS imports.
+    '@wdio/cli',
+    '@wdio/local-runner',
+    '@wdio/mocha-framework',
+    '@wdio/tauri-service',
   ],
   // Don't flag exports that are also used within the same file
   // (e.g., React Props interfaces, shared type aliases co-located with implementations)

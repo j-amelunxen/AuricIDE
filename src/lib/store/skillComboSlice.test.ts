@@ -111,6 +111,7 @@ describe('skillComboSlice', () => {
         model: 'opus',
         permissionMode: 'plan',
         cwd: '/a/website',
+        projectPath: '/a/website',
       })
     );
     const [agent] = useStore.getState().agents;

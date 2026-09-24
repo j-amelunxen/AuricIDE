@@ -1,5 +1,16 @@
+use super::project_binding::resolve_project_binding;
 use super::*;
 use crate::provider_policy::ProviderPolicy;
+
+#[test]
+fn general_agents_strip_inherited_project_authority() {
+    assert!(super::manager::is_reserved_auric_env("AURIC_PROJECT_ROOT"));
+    assert!(super::manager::is_reserved_auric_env("AURIC_MCP_DB_PATH"));
+    assert!(super::manager::is_reserved_auric_env(
+        "AURIC_NOTIFICATIONS_DB"
+    ));
+    assert!(!super::manager::is_reserved_auric_env("PATH"));
+}
 use crate::providers::{new_provider_registry, ProviderRegistryState};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
@@ -113,6 +124,7 @@ fn test_agent_config_deserializes_camel_case() {
         "model": "sonnet",
         "task": "do stuff",
         "cwd": "/tmp",
+        "projectPath": "/tmp/project",
         "permissionMode": "bypassPermissions",
         "dangerouslyIgnorePermissions": true,
         "autoAcceptEdits": false,
@@ -124,6 +136,7 @@ fn test_agent_config_deserializes_camel_case() {
     assert_eq!(config.model, "sonnet");
     assert_eq!(config.task, "do stuff");
     assert_eq!(config.cwd.as_deref(), Some("/tmp"));
+    assert_eq!(config.project_path.as_deref(), Some("/tmp/project"));
     assert_eq!(config.permission_mode.as_deref(), Some("bypassPermissions"));
     assert_eq!(config.dangerously_ignore_permissions, Some(true));
     assert_eq!(config.auto_accept_edits, Some(false));
@@ -143,6 +156,7 @@ fn test_agent_config_optional_fields_default_to_none() {
     assert_eq!(config.model, "auto");
     assert_eq!(config.task, "hello");
     assert!(config.cwd.is_none());
+    assert!(config.project_path.is_none());
     assert!(config.permission_mode.is_none());
     assert!(config.dangerously_ignore_permissions.is_none());
     assert!(config.auto_accept_edits.is_none());
@@ -157,6 +171,7 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
         model: "opus".to_string(),
         task: "fix the login flow".to_string(),
         cwd: Some("/repo".to_string()),
+        project_path: Some("/repo".to_string()),
         permission_mode: Some("acceptEdits".to_string()),
         dangerously_ignore_permissions: None,
         auto_accept_edits: Some(true),
@@ -172,6 +187,7 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
     assert_eq!(persisted.provider, "claude");
     assert_eq!(persisted.task, "fix the login flow");
     assert_eq!(persisted.cwd.as_deref(), Some("/repo"));
+    assert_eq!(persisted.project_path.as_deref(), Some("/repo"));
     assert_eq!(persisted.permission_mode.as_deref(), Some("acceptEdits"));
     assert!(!persisted.dangerously_ignore_permissions);
     assert!(persisted.auto_accept_edits);
@@ -179,6 +195,121 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
     assert_eq!(persisted.started_at, 123);
     assert_eq!(persisted.spawned_by_ticket_id.as_deref(), Some("ticket-7"));
     assert!(persisted.spawned_by_goal_id.is_none());
+}
+
+#[test]
+fn project_binding_is_explicit_and_does_not_fall_back_to_execution_cwd() {
+    let config: AgentConfig = serde_json::from_str(
+        r#"{
+            "name": "General Agent",
+            "model": "auto",
+            "task": "triage inbox",
+            "cwd": "/tmp",
+            "projectPath": null
+        }"#,
+    )
+    .unwrap();
+
+    assert_eq!(config.cwd.as_deref(), Some("/tmp"));
+    assert!(config.project_path.is_none());
+    assert!(resolve_project_binding(config.project_path.as_deref())
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn project_binding_canonicalizes_the_logical_root_independently_of_execution_cwd() {
+    let temp = tempfile::tempdir().unwrap();
+    let logical_root = temp.path().join("project");
+    let execution_worktree = temp.path().join("worktrees").join("feature");
+    std::fs::create_dir_all(&logical_root).unwrap();
+    std::fs::create_dir_all(logical_root.join(".auric")).unwrap();
+    std::fs::write(logical_root.join(".auric/project.db"), []).unwrap();
+    std::fs::create_dir_all(&execution_worktree).unwrap();
+    let non_canonical_root = logical_root.join("..").join("project");
+
+    let binding = resolve_project_binding(non_canonical_root.to_str())
+        .unwrap()
+        .expect("an explicit project path creates a binding");
+
+    assert_eq!(binding.project_root(), logical_root.canonicalize().unwrap());
+    assert_eq!(
+        binding.database_path(),
+        logical_root
+            .canonicalize()
+            .unwrap()
+            .join(".auric")
+            .join("project.db")
+    );
+    assert_ne!(binding.project_root(), execution_worktree);
+}
+
+#[test]
+fn project_binding_exports_the_explicit_mcp_launcher_environment() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join(".auric")).unwrap();
+    std::fs::write(root.join(".auric/project.db"), []).unwrap();
+    let binding = resolve_project_binding(root.to_str()).unwrap().unwrap();
+
+    assert_eq!(
+        binding.environment(),
+        vec![
+            (
+                "AURIC_PROJECT_ROOT".to_string(),
+                root.to_string_lossy().into_owned()
+            ),
+            (
+                "AURIC_MCP_DB_PATH".to_string(),
+                root.join(".auric")
+                    .join("project.db")
+                    .to_string_lossy()
+                    .into_owned()
+            ),
+        ]
+    );
+}
+
+#[test]
+fn project_binding_fails_closed_for_missing_or_non_directory_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("not-a-project");
+    std::fs::write(&file, "x").unwrap();
+
+    let file_error = resolve_project_binding(file.to_str()).unwrap_err();
+    assert!(file_error.contains("directory"), "{file_error}");
+
+    let missing = temp.path().join("missing");
+    let missing_error = resolve_project_binding(missing.to_str()).unwrap_err();
+    assert!(
+        missing_error.contains("resolve project path"),
+        "{missing_error}"
+    );
+
+    let uninitialized = temp.path().join("uninitialized-project");
+    std::fs::create_dir(&uninitialized).unwrap();
+    let uninitialized_error = resolve_project_binding(uninitialized.to_str()).unwrap_err();
+    assert!(
+        uninitialized_error.contains("not initialized")
+            && uninitialized_error.contains(".auric/project.db"),
+        "{uninitialized_error}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn project_binding_rejects_a_database_symlink_outside_the_project() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(project.join(".auric")).unwrap();
+    let outside = temp.path().join("other-project.db");
+    std::fs::write(&outside, []).unwrap();
+    symlink(&outside, project.join(".auric/project.db")).unwrap();
+
+    let error = resolve_project_binding(project.to_str()).unwrap_err();
+    assert!(error.contains("escapes project root"), "{error}");
 }
 
 #[test]

@@ -75,6 +75,7 @@ function resolveStepConfig(
     // Recall is a list of things a person typed — the handoff does not belong
     // in it.
     historyPrompt: step.prompt,
+    projectPath,
     cwd: projectPath,
     permissionMode: launch.permissionMode,
     provider: launch.provider,

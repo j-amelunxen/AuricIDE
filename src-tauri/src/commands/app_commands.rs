@@ -12,6 +12,8 @@ use crate::notifications::{self, Notification, NotificationInput, NotificationsS
 use crate::providers::{ProviderInfo, ProviderRegistryState};
 use crate::schedules::{self, Schedule};
 use crate::themes::{self, ThemeFile};
+use serde::Serialize;
+use std::collections::BTreeMap;
 use tauri::{Emitter, Manager};
 
 #[tauri::command]
@@ -120,12 +122,75 @@ pub fn excalidraw_scene_url(workspace_id: Option<String>, scene_id: String) -> S
     excalidraw::scene_url_impl(workspace_id.as_deref(), &scene_id)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpLaunchSpec {
+    command: String,
+    args: Vec<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    env: BTreeMap<String, String>,
+}
+
+/// Returns the exact, package-owned stdio command external MCP clients should
+/// launch. The project contributes only data; executable code always comes
+/// from the installed AuricIDE runtime.
+#[tauri::command]
+pub fn mcp_launch_spec(
+    project_path: String,
+    app: tauri::AppHandle,
+) -> Result<McpLaunchSpec, String> {
+    let project_root = std::path::Path::new(&project_path)
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve project path '{project_path}': {error}"))?;
+    if !project_root.is_dir() {
+        return Err(format!(
+            "Project path '{}' is not a directory",
+            project_root.display()
+        ));
+    }
+    let database_path = project_root.join(".auric").join("project.db");
+    if !database_path.is_file() {
+        return Err(format!(
+            "AuricIDE project is not initialized: {}",
+            project_root.display()
+        ));
+    }
+
+    let runtime = mcp::runtime_entrypoint(&app)?;
+
+    let mut env = BTreeMap::new();
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        env.insert(
+            "AURIC_NOTIFICATIONS_DB".to_string(),
+            notifications::db_path_in(&app_data_dir)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+
+    Ok(McpLaunchSpec {
+        command: "node".to_string(),
+        args: vec![
+            runtime.to_string_lossy().into_owned(),
+            "--project-root".to_string(),
+            project_root.to_string_lossy().into_owned(),
+        ],
+        env,
+    })
+}
+
 #[tauri::command]
 pub async fn start_mcp(
     project_path: String,
     state: tauri::State<'_, McpServerState>,
     app: tauri::AppHandle,
 ) -> Result<McpStatusInfo, String> {
+    let generation = state.reserve_start()?;
+    let binding = crate::agents::project_binding::resolve_project_binding(Some(&project_path))?
+        .ok_or_else(|| "A project is required to start MCP".to_string())?;
+    let canonical_root = binding.project_root().to_path_buf();
+    let canonical_project = canonical_root.to_string_lossy().into_owned();
+    let runtime = mcp::runtime_entrypoint(&app)?;
     let mut shell_env = crate::agents::cached_login_shell_env().await.to_vec();
 
     if let Ok(dir) = app.path().app_data_dir() {
@@ -136,41 +201,16 @@ pub async fn start_mcp(
                 .to_string(),
         ));
     }
-    shell_env.push(("AURIC_PROJECT_ROOT".to_string(), project_path.clone()));
+    shell_env.extend(binding.environment());
 
-    let mut guard = state.process.lock().unwrap();
-    if guard.is_some() {
-        return Err("MCP server is already running".to_string());
-    }
-
-    let db_path = std::path::Path::new(&project_path)
-        .join(".auric")
-        .join("project.db");
-    let db_path_str = db_path.to_string_lossy().to_string();
-
-    let script_path = std::path::Path::new(&project_path)
-        .join("src")
-        .join("mcp")
-        .join("server.ts");
-    let script_path_str = script_path.to_string_lossy().to_string();
-
-    let child = mcp::start_mcp_server(&db_path_str, &script_path_str, &shell_env)?;
-    let pid = child.id();
-    *guard = Some(child);
-
-    Ok(McpStatusInfo {
-        status: mcp::McpServerStatus::Running,
-        pid: Some(pid),
+    state.start_reserved_with(generation, &canonical_project, move || {
+        mcp::start_packaged_mcp_server(&runtime, &canonical_root, &shell_env)
     })
 }
 
 #[tauri::command]
 pub fn stop_mcp(state: tauri::State<'_, McpServerState>) -> Result<(), String> {
-    let mut guard = state.process.lock().unwrap();
-    match guard.take() {
-        Some(mut child) => mcp::stop_mcp_server(&mut child),
-        None => Err("MCP server is not running".to_string()),
-    }
+    state.stop_with(mcp::stop_mcp_server)
 }
 
 #[tauri::command]

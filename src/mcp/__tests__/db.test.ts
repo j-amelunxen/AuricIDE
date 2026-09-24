@@ -1,9 +1,33 @@
 import Database from 'better-sqlite3';
-import { mkdtempSync, rmSync } from 'fs';
+import { spawn } from 'child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb, openDatabase } from '../db';
+
+const concurrentOpenWorker = `
+  import { existsSync, writeFileSync } from 'node:fs';
+  import { openDatabase } from './src/mcp/db.ts';
+
+  writeFileSync(process.env.AURIC_READY_PATH, '');
+  while (!existsSync(process.env.AURIC_START_PATH)) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  const db = openDatabase(process.env.AURIC_DB_PATH);
+  db.close();
+`;
+
+async function waitForFiles(paths: string[]): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!paths.every((path) => existsSync(path))) {
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for concurrent database workers');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 describe('openDatabase', () => {
   let tempDir: string;
@@ -98,6 +122,53 @@ describe('openDatabase', () => {
     expect(row.cnt).toBe(18);
     db2.close();
   });
+
+  it('serializes simultaneous first opens from independent client processes', async () => {
+    const dbPath = join(tempDir, 'test.db');
+    const startPath = join(tempDir, 'start');
+    const readyPaths = Array.from({ length: 12 }, (_, index) => join(tempDir, `ready-${index}`));
+    const workers = readyPaths.map(
+      (readyPath) =>
+        new Promise<void>((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            ['--import', 'tsx', '--input-type=module', '--eval', concurrentOpenWorker],
+            {
+              cwd: process.cwd(),
+              env: {
+                ...process.env,
+                AURIC_DB_PATH: dbPath,
+                AURIC_READY_PATH: readyPath,
+                AURIC_START_PATH: startPath,
+              },
+              stdio: ['ignore', 'ignore', 'pipe'],
+            }
+          );
+          let stderr = '';
+          child.stderr.setEncoding('utf8');
+          child.stderr.on('data', (chunk: string) => {
+            stderr += chunk;
+          });
+          child.on('error', reject);
+          child.on('exit', (code) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`Concurrent database worker exited ${code}: ${stderr}`));
+            }
+          });
+        })
+    );
+
+    await waitForFiles(readyPaths);
+    writeFileSync(startPath, '');
+    await Promise.all(workers);
+
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
+    expect(row.cnt).toBe(18);
+    db.close();
+  }, 20_000);
 
   it('works when Rust has already migrated (pre-existing migration rows)', () => {
     const dbPath = join(tempDir, 'test.db');

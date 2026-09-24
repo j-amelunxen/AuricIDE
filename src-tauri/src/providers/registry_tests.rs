@@ -163,6 +163,21 @@ fn test_crush_permission_yolo_maps_to_yolo() {
 }
 
 #[test]
+fn crush_uses_an_agent_private_project_mcp_config() {
+    let binding = ProviderProjectBinding::new("/project", "/project/.auric/project.db")
+        .with_crush_config_path("/app-data/project.crush.json");
+    let injection = CrushProvider.project_binding_injection(&binding);
+
+    assert_eq!(
+        injection.env_vars,
+        vec![(
+            "CRUSH_GLOBAL_CONFIG".to_string(),
+            "/app-data/project.crush.json".to_string()
+        )]
+    );
+}
+
+#[test]
 fn test_shell_escape_backticks_and_parens() {
     let provider = DynamicProvider::new(get_claude_config());
     let task = "Call `list_epics()` then `create_epic({ name })` ok";

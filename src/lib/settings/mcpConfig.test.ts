@@ -3,27 +3,35 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mockExists = vi.fn();
 const mockReadFile = vi.fn();
 const mockWriteFile = vi.fn();
+const mockMcpLaunchSpec = vi.fn();
 vi.mock('@/lib/tauri/fs', () => ({
   exists: (...args: unknown[]) => mockExists(...args),
   readFile: (...args: unknown[]) => mockReadFile(...args),
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
 }));
+vi.mock('@/lib/tauri/mcp', () => ({
+  mcpLaunchSpec: (...args: unknown[]) => mockMcpLaunchSpec(...args),
+}));
 
-import { buildMcpServerEntry, initMcpJson } from './mcpConfig';
+import { buildMcpConfig, buildMcpServerEntry, initMcpJson } from './mcpConfig';
+
+const launchSpec = {
+  command: 'node',
+  args: ['/app/resources/auric-mcp/server.mjs', '--project-root', '/test/project'],
+  env: { AURIC_NOTIFICATIONS_DB: '/app/data/notifications.db' },
+};
 
 describe('buildMcpServerEntry', () => {
   it('builds the auric-pm server entry for a project path', () => {
-    const entry = buildMcpServerEntry('/test/project');
-    expect(entry).toEqual({
-      command: 'npx',
-      args: ['tsx', '/test/project/src/mcp/server.ts', '/test/project/.auric/project.db'],
-    });
+    expect(buildMcpServerEntry(launchSpec)).toEqual(launchSpec);
+    expect(buildMcpConfig(launchSpec)).toEqual({ mcpServers: { 'auric-pm': launchSpec } });
   });
 });
 
 describe('initMcpJson', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMcpLaunchSpec.mockResolvedValue(launchSpec);
   });
 
   it('creates .mcp.json when none exists', async () => {
@@ -38,8 +46,9 @@ describe('initMcpJson', () => {
     expect(JSON.parse(content)).toEqual({
       mcpServers: {
         'auric-pm': {
-          command: 'npx',
-          args: ['tsx', '/test/project/src/mcp/server.ts', '/test/project/.auric/project.db'],
+          command: 'node',
+          args: ['/app/resources/auric-mcp/server.mjs', '--project-root', '/test/project'],
+          env: { AURIC_NOTIFICATIONS_DB: '/app/data/notifications.db' },
         },
       },
     });
@@ -63,7 +72,8 @@ describe('initMcpJson', () => {
     const [, content] = mockWriteFile.mock.calls[0];
     const parsed = JSON.parse(content);
     expect(parsed.mcpServers['other-server']).toEqual({ command: 'foo', args: [] });
-    expect(parsed.mcpServers['auric-pm'].args).toContain('/test/project/src/mcp/server.ts');
+    expect(parsed.mcpServers['auric-pm'].args).not.toContain('/test/project/src/mcp/server.ts');
+    expect(parsed.mcpServers['auric-pm'].args).toContain('/test/project');
     expect(parsed.someOtherKey).toBe(true);
   });
 
@@ -81,11 +91,7 @@ describe('initMcpJson', () => {
 
     const [, content] = mockWriteFile.mock.calls[0];
     const parsed = JSON.parse(content);
-    expect(parsed.mcpServers['auric-pm'].args).toEqual([
-      'tsx',
-      '/test/project/src/mcp/server.ts',
-      '/test/project/.auric/project.db',
-    ]);
+    expect(parsed.mcpServers['auric-pm']).toEqual(launchSpec);
   });
 
   it('throws without writing when the existing .mcp.json is invalid JSON', async () => {

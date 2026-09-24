@@ -47,6 +47,7 @@ export function useGitActionHandlers(
           model: provider.defaultModel,
           provider: provider.id,
           task,
+          projectPath: repoPath,
           cwd: repoPath,
         });
         state.setCommitMessage(repoPath, '');
