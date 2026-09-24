@@ -140,6 +140,8 @@ mod tests {
     }
 
     const FIXTURES: &str = include_str!("../../src/lib/config/providerPolicy.fixtures.json");
+    const ORACLE_CORPUS: &str =
+        include_str!("../../verification/contracts/provider-policy-v1.jsonl");
 
     #[derive(Deserialize)]
     struct ParseCase {
@@ -163,8 +165,26 @@ mod tests {
         decide: Vec<DecideCase>,
     }
 
+    #[derive(Deserialize)]
+    struct OracleCase {
+        version: String,
+        name: String,
+        policy: ProviderPolicy,
+        #[serde(rename = "providerId")]
+        provider_id: String,
+        allowed: bool,
+    }
+
     fn fixtures() -> Fixtures {
         serde_json::from_str(FIXTURES).expect("fixtures must parse")
+    }
+
+    fn oracle_cases() -> Vec<OracleCase> {
+        ORACLE_CORPUS
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_str(line).expect("oracle corpus case must parse"))
+            .collect()
     }
 
     #[test]
@@ -198,6 +218,29 @@ mod tests {
         let fixtures = fixtures();
         assert!(fixtures.parse.len() >= 10);
         assert!(fixtures.decide.len() >= 10);
+    }
+
+    #[test]
+    fn conforms_to_the_versioned_lean_oracle_corpus() {
+        let cases = oracle_cases();
+        assert!(
+            cases.len() >= 8,
+            "oracle corpus must cover meaningful branches"
+        );
+
+        for case in cases {
+            assert_eq!(
+                case.version, "provider-policy-v1",
+                "oracle case: {}",
+                case.name
+            );
+            assert_eq!(
+                is_provider_allowed(&case.provider_id, &case.policy),
+                case.allowed,
+                "oracle case: {}",
+                case.name
+            );
+        }
     }
 
     #[test]

@@ -137,6 +137,13 @@ flowchart TD
 
 ### Cross-Cutting Flows & Invariants
 
+- [Verification Rebalance](./testing/verification-rebalance-plan.md) — Migration from implementation-coupled test volume to risk-oriented executable evidence.
+- [Test and Verification Policy](./testing/test-policy.md) — Classification, removal, shadow, Lean eligibility, and rollback rules.
+- [Verification Baseline](./testing/baseline-2026-09-24.md) — Pre-migration Vitest and Rust suite measurements.
+- [Verification Acceptance Matrix](./testing/acceptance-matrix.md) — Observable acceptance and hard Go/No-Go conditions for VFY-01 through VFY-10.
+- [Verification Pilot Report](./testing/pilot-report-2026-09-24.md) — Measured pilot results, limitations, and the explicit rollout decision.
+- [Verification Migration Ledger](./testing/migration-ledger.md) — Replacement evidence and reversible removal decisions by area.
+- [Verification Architecture ADR](./adr/0001-verification-architecture.md) — Accepted architecture and the precise boundary of the Lean claim.
 - [Scheduled Conductor Runs](./design-scheduled-conductor-runs.md) — Timetable project factory and zero-click safety gates.
 - [Scheduled Skill Combo Notifications](./design-scheduled-skill-combo-notifications.md) — Scheduled skills and chained combos via notifications.
 - [Skill Combo Invariants](./invariants-scheduled-skill-combo.md) — Formal invariants for scheduled skill execution.

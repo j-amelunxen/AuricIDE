@@ -10,7 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. **Run the test** — confirm it fails for the right reason
 3. **Implement** the minimum code to make it pass
 4. **Refactor** while keeping tests green
-5. **Never skip tests** — every feature needs unit coverage
+5. **Never skip verification** — every behavior change needs coverage at the
+   lowest trustworthy layer defined in `docs/testing/test-policy.md`; use unit
+   tests for combinatorial pure logic, not as a default quota
 
 ## Key Commands
 

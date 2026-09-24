@@ -1,0 +1,17 @@
+{
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "e2e-webdriver",
+          "description": "Enables the test-only WDIO bridge and embedded WebDriver server.",
+          "windows": ["main"],
+          "platforms": ["macOS"],
+          "permissions": ["wdio:default", "wdio-webdriver:default"]
+        }
+      ]
+    }
+  }
+}

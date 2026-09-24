@@ -1,0 +1,8 @@
+{"version":"provider-policy-v1","name":"open policy permits a normalized id","policy":{"allow":null,"deny":[]},"providerId":"claude","allowed":true}
+{"version":"provider-policy-v1","name":"deny wins over allow","policy":{"allow":["claude","grok"],"deny":["grok"]},"providerId":"grok","allowed":false}
+{"version":"provider-policy-v1","name":"empty allow means open","policy":{"allow":[],"deny":[]},"providerId":"opencode","allowed":true}
+{"version":"provider-policy-v1","name":"allow list permits a member","policy":{"allow":["claude"],"deny":[]},"providerId":"claude","allowed":true}
+{"version":"provider-policy-v1","name":"allow list denies a non-member","policy":{"allow":["claude"],"deny":[]},"providerId":"crush","allowed":false}
+{"version":"provider-policy-v1","name":"deny list leaves a different provider open","policy":{"allow":null,"deny":["grok"]},"providerId":"claude","allowed":true}
+{"version":"provider-policy-v1","name":"blank provider id is denied","policy":{"allow":null,"deny":[]},"providerId":"","allowed":false}
+{"version":"provider-policy-v1","name":"deny list can block every named provider","policy":{"allow":null,"deny":["claude","crush"]},"providerId":"crush","allowed":false}

@@ -80,6 +80,10 @@ src-tauri/resources/auric-mcp/
 # CodeGraph local index
 .codegraph/
 
+# Lean build products (toolchain pin and lakefile remain tracked)
+/verification/lean/.lake/
+/verification/lean/lake-manifest.json
+
 # Generated promo/marketing assets (Higgsfield experiments) — keep out of the repo
 promo-assets/
 

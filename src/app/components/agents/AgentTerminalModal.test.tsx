@@ -6,7 +6,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 
 // Module-level spies so individual tests can control/inspect behavior
-const mockWriteFile = vi.fn(async () => {});
+const mockWriteFile = vi.fn(async (_path: string, _content: string) => {});
 let mockScreenLines: string[] = [];
 let mockViewportY = 0;
 

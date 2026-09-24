@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { ProviderInfo } from '../tauri/providers';
 import fixtures from './providerPolicy.fixtures.json';
 import {
@@ -9,6 +11,20 @@ import {
   serializeProviderPolicy,
   type ProviderPolicy,
 } from './providerPolicy';
+
+interface OracleCase {
+  version: 'provider-policy-v1';
+  name: string;
+  policy: ProviderPolicy;
+  providerId: string;
+  allowed: boolean;
+}
+
+const oracleCorpusPath = resolve(process.cwd(), 'verification/contracts/provider-policy-v1.jsonl');
+const oracleCases = readFileSync(oracleCorpusPath, 'utf8')
+  .trim()
+  .split('\n')
+  .map((line) => JSON.parse(line) as OracleCase);
 
 const provider = (id: string): ProviderInfo => ({
   id,
@@ -40,6 +56,19 @@ describe('provider policy — shared contract', () => {
       });
     }
   });
+});
+
+describe('provider policy — Lean oracle conformance', () => {
+  it('has a versioned, non-empty corpus', () => {
+    expect(oracleCases.length).toBeGreaterThanOrEqual(8);
+    expect(oracleCases.every((testCase) => testCase.version === 'provider-policy-v1')).toBe(true);
+  });
+
+  for (const testCase of oracleCases) {
+    it(testCase.name, () => {
+      expect(isProviderAllowed(testCase.providerId, testCase.policy)).toBe(testCase.allowed);
+    });
+  }
 });
 
 describe('provider policy — TypeScript surface', () => {

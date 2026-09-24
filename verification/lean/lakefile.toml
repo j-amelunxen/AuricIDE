@@ -1,0 +1,10 @@
+name = "auric-verification"
+version = "0.1.0"
+defaultTargets = ["provider-policy-oracle"]
+
+[[lean_lib]]
+name = "AuricIDE"
+
+[[lean_exe]]
+name = "provider-policy-oracle"
+root = "AuricIDE.ProviderPolicyOracle"

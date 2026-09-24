@@ -26,8 +26,8 @@ function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
 
 describe('InboxDailyGoalsPlanner', () => {
   const mockProjects: ProjectPickerOption[] = [
-    { path: '/repo/alpha', name: 'Alpha', icon: null },
-    { path: '/repo/beta', name: 'Beta', icon: null },
+    { path: '/repo/alpha', name: 'Alpha', starred: false },
+    { path: '/repo/beta', name: 'Beta', starred: false },
   ];
 
   const mockOverview: Record<string, ProjectPmOverview> = {
