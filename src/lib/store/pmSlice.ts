@@ -16,9 +16,9 @@ import {
   pmLoadHistory as ipcPmLoadHistory,
 } from '../tauri/pm';
 import { initProjectDb } from '../tauri/db';
-import { applyVisibleOrder } from '../pm/customOrder';
+import { transitionPmDomain, type PmDomainEvent, type PmDomainState } from './pm/pmDomain';
 
-export interface PmSlice {
+export interface PmSlice extends PmDomainState {
   /** True while project data is being read; distinguishes empty from not-yet. */
   pmLoading: boolean;
   /** Why the last load failed; null when it succeeded or never ran. */
@@ -160,6 +160,13 @@ function mergeDependencies(
   }
 
   return result;
+}
+
+function reducePmDomain(state: PmSlice, event: PmDomainEvent): PmSlice | PmDomainState {
+  const transition = transitionPmDomain(state, event);
+  // Effects deliberately remain unhandled here: this pilot's domain events are
+  // synchronous, and load/save continue to own the persistence boundary.
+  return transition.state;
 }
 
 export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
@@ -348,16 +355,7 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
       pmDirty: false,
     }),
 
-  discardPmChanges: () => {
-    const { pmEpics, pmTickets, pmTestCases, pmDependencies } = get();
-    set({
-      pmDraftEpics: pmEpics,
-      pmDraftTickets: pmTickets,
-      pmDraftTestCases: pmTestCases,
-      pmDraftDependencies: pmDependencies,
-      pmDirty: false,
-    });
-  },
+  discardPmChanges: () => set((state) => reducePmDomain(state, { type: 'discardChanges' })),
 
   addEpic: (epic) => set((s) => ({ pmDraftEpics: [...s.pmDraftEpics, epic], pmDirty: true })),
 
@@ -367,43 +365,17 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
       pmDirty: true,
     })),
 
-  deleteEpic: (id) =>
-    set((s) => {
-      const ticketIds = s.pmDraftTickets.filter((t) => t.epicId === id).map((t) => t.id);
-      return {
-        pmDraftEpics: s.pmDraftEpics.filter((e) => e.id !== id),
-        pmDraftTickets: s.pmDraftTickets.filter((t) => t.epicId !== id),
-        pmDraftTestCases: s.pmDraftTestCases.filter((tc) => !ticketIds.includes(tc.ticketId)),
-        pmDirty: true,
-      };
-    }),
+  deleteEpic: (id) => set((state) => reducePmDomain(state, { type: 'deleteEpic', id })),
 
   addTicket: (ticket) =>
     set((s) => ({ pmDraftTickets: [...s.pmDraftTickets, ticket], pmDirty: true })),
 
   updateTicket: (id, updates) =>
-    set((s) => ({
-      pmDraftTickets: s.pmDraftTickets.map((t) => {
-        if (t.id === id) {
-          const newStatus = updates.status;
-          const statusChanged = newStatus && newStatus !== t.status;
-          return {
-            ...t,
-            ...updates,
-            statusUpdatedAt: statusChanged ? new Date().toISOString() : t.statusUpdatedAt,
-          };
-        }
-        return t;
-      }),
-      pmDirty: true,
-    })),
+    set((state) =>
+      reducePmDomain(state, { type: 'updateTicket', id, updates, now: new Date().toISOString() })
+    ),
 
-  deleteTicket: (id) =>
-    set((s) => ({
-      pmDraftTickets: s.pmDraftTickets.filter((t) => t.id !== id),
-      pmDraftTestCases: s.pmDraftTestCases.filter((tc) => tc.ticketId !== id),
-      pmDirty: true,
-    })),
+  deleteTicket: (id) => set((state) => reducePmDomain(state, { type: 'deleteTicket', id })),
 
   moveTicket: (ticketId, newEpicId) =>
     set((s) => ({
@@ -414,18 +386,10 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
     })),
 
   reorderTickets: (visibleOrderedIds) =>
-    set((s) => {
-      const pmDraftTickets = applyVisibleOrder(s.pmDraftTickets, visibleOrderedIds);
-      if (pmDraftTickets === s.pmDraftTickets) return s;
-      return { pmDraftTickets, pmDirty: true };
-    }),
+    set((state) => reducePmDomain(state, { type: 'reorderTickets', visibleOrderedIds })),
 
   reorderEpics: (orderedIds) =>
-    set((s) => {
-      const pmDraftEpics = applyVisibleOrder(s.pmDraftEpics, orderedIds);
-      if (pmDraftEpics === s.pmDraftEpics) return s;
-      return { pmDraftEpics, pmDirty: true };
-    }),
+    set((state) => reducePmDomain(state, { type: 'reorderEpics', orderedIds })),
 
   addTestCase: (tc) =>
     set((s) => ({ pmDraftTestCases: [...s.pmDraftTestCases, tc], pmDirty: true })),

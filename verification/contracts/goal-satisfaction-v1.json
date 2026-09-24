@@ -1,0 +1,118 @@
+{
+  "version": "goal-satisfaction-v1",
+  "kind": "executable-specification",
+  "scope": "Parity contract for the TypeScript getGoalSatisfaction and MCP/SQLite evaluateGoal implementations. Blocker text is intentionally not normative; tests compare the normalized blocker categories below.",
+  "cases": [
+    {
+      "id": "empty-goal",
+      "fixture": {},
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["empty-goal"]
+      }
+    },
+    {
+      "id": "open-subtree-ticket",
+      "fixture": {
+        "child": { "status": "achieved" },
+        "tickets": [{ "goal": "child", "status": "open" }]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["ticket-not-done"]
+      }
+    },
+    {
+      "id": "done-subtree-ticket",
+      "fixture": {
+        "child": { "status": "achieved" },
+        "tickets": [{ "goal": "child", "status": "done" }]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": []
+      }
+    },
+    {
+      "id": "discarded-subtree-ticket",
+      "fixture": {
+        "child": { "status": "achieved" },
+        "tickets": [{ "goal": "child", "status": "discarded" }]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": []
+      }
+    },
+    {
+      "id": "linked-requirement-verified",
+      "fixture": {
+        "requirements": [{ "status": "verified" }]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": []
+      }
+    },
+    {
+      "id": "linked-requirement-unverified",
+      "fixture": {
+        "requirements": [{ "status": "active" }]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["requirement-not-verified"]
+      }
+    },
+    {
+      "id": "station-pending",
+      "fixture": {
+        "stations": [{ "goal": "root", "status": "planned", "evidenceKind": "human" }]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["station-not-done"]
+      }
+    },
+    {
+      "id": "station-done-unverified",
+      "fixture": {
+        "stations": [{ "goal": "root", "status": "done", "evidenceKind": "claim" }]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["station-unverified-evidence"]
+      }
+    },
+    {
+      "id": "station-done-verified",
+      "fixture": {
+        "stations": [{ "goal": "root", "status": "done", "evidenceKind": "proof" }]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": []
+      }
+    },
+    {
+      "id": "child-achieved",
+      "fixture": {
+        "child": { "status": "achieved" }
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": []
+      }
+    },
+    {
+      "id": "child-not-achieved",
+      "fixture": {
+        "child": { "status": "active" }
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["child-not-achieved"]
+      }
+    }
+  ]
+}
