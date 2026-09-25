@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { isVerifiedEvidence } from '../../lib/pm/enums';
+import { createTicket, type CreateTicketParams, type Ticket } from './tickets';
 
 export interface GoalRow {
   id: string;
@@ -43,6 +44,22 @@ interface TicketSummaryRow {
 export interface GoalTreeNode extends GoalRow {
   children: GoalTreeNode[];
   tickets: TicketSummaryRow[];
+}
+
+export interface GoalPlanWorkPackage {
+  goal: {
+    name: string;
+    description?: string;
+    successCriteria?: string;
+    priority?: string;
+    goalPrompt?: string;
+  };
+  ticket: Omit<CreateTicketParams, 'epicId' | 'goalId'>;
+}
+
+export interface MaterializedGoalPackage {
+  goal: GoalRow;
+  ticket: Ticket;
 }
 
 const now = (): string => new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -190,6 +207,71 @@ export function decomposeGoal(
   });
   insertAll();
   return results;
+}
+
+export function materializeGoalPlan(
+  db: Database.Database,
+  parentId: string,
+  epicId: string,
+  workPackages: GoalPlanWorkPackage[],
+  createdBy: string
+): MaterializedGoalPackage[] {
+  if (workPackages.length === 0) throw new Error('At least one work package is required');
+  const requestedNames = new Set<string>();
+  for (const { goal } of workPackages) {
+    if (requestedNames.has(goal.name)) {
+      throw new Error(`Duplicate child goal name '${goal.name}' in work packages`);
+    }
+    requestedNames.add(goal.name);
+  }
+
+  const materialize = db.transaction(() => {
+    if (!getGoal(db, parentId)) throw new Error(`Parent goal '${parentId}' not found`);
+    const epic = db.prepare('SELECT id FROM pm_epics WHERE id = ?').get(epicId);
+    if (!epic) throw new Error(`Epic '${epicId}' not found`);
+
+    return workPackages.map(({ goal: goalFields, ticket: ticketFields }) => {
+      const matchingGoals = db
+        .prepare(
+          `SELECT * FROM pm_goals
+           WHERE parent_id = ? AND name = ?
+           ORDER BY created_at, id`
+        )
+        .all(parentId, goalFields.name) as GoalRow[];
+      if (matchingGoals.length > 1) {
+        throw new Error(
+          `Ambiguous child goal name '${goalFields.name}': ${matchingGoals.length} direct children match`
+        );
+      }
+
+      const goal =
+        matchingGoals[0] ??
+        createGoal(db, { ...goalFields, parentId, status: 'active' }, createdBy);
+      const matchingTickets = db
+        .prepare(
+          `SELECT * FROM pm_tickets
+           WHERE goal_id = ? AND name = ?
+           ORDER BY created_at, id`
+        )
+        .all(goal.id, ticketFields.name) as Ticket[];
+      if (matchingTickets.length > 1) {
+        throw new Error(
+          `Ambiguous ticket name '${ticketFields.name}': ${matchingTickets.length} tickets match child '${goalFields.name}'`
+        );
+      }
+      const existingTicket = matchingTickets[0];
+      const ticket =
+        existingTicket ??
+        createTicket(db, {
+          ...ticketFields,
+          epicId,
+          goalId: goal.id,
+        });
+      return { goal, ticket };
+    });
+  });
+
+  return materialize();
 }
 
 function ticketsForGoal(db: Database.Database, goalId: string): TicketSummaryRow[] {

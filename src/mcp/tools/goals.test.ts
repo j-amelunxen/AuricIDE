@@ -8,6 +8,7 @@ import {
   updateGoal,
   deleteGoal,
   decomposeGoal,
+  materializeGoalPlan,
   linkTicketToGoal,
   linkRequirementToGoal,
   recordGoalRun,
@@ -105,6 +106,202 @@ describe('goal MCP tools', () => {
       expect(children).toHaveLength(2);
       expect(children.every((c) => c.parent_id === p.id)).toBe(true);
       expect(children[1].success_criteria).toBe('- b done');
+    });
+  });
+
+  describe('materializeGoalPlan', () => {
+    it('atomically creates active child goals with one open ticket linked to each child', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Delivery');
+
+      const pairs = materializeGoalPlan(
+        db,
+        parent.id,
+        'epic-1',
+        [
+          {
+            goal: {
+              name: 'Authentication works',
+              successCriteria: '- login test passes',
+              priority: 'high',
+            },
+            ticket: { name: 'Implement authentication', description: 'Build the login flow' },
+          },
+          {
+            goal: { name: 'Launch is approved' },
+            ticket: { name: 'Approve launch', needsHumanSupervision: true },
+          },
+        ],
+        'agent'
+      );
+
+      expect(pairs).toHaveLength(2);
+      for (const { goal, ticket } of pairs) {
+        expect(goal.parent_id).toBe(parent.id);
+        expect(goal.status).toBe('active');
+        expect(ticket.epic_id).toBe('epic-1');
+        expect(ticket.status).toBe('open');
+        expect(ticket.goal_id).toBe(goal.id);
+        expect(ticket.goal_id).not.toBe(parent.id);
+      }
+      expect(pairs[1].ticket.needs_human_supervision).toBe(1);
+    });
+
+    it('returns the existing goal and ticket pair when the exact package is materialized again', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Delivery');
+      const packages = [
+        {
+          goal: { name: 'Authentication works', description: 'First description' },
+          ticket: { name: 'Implement authentication', description: 'First ticket description' },
+        },
+      ];
+
+      const first = materializeGoalPlan(db, parent.id, 'epic-1', packages, 'agent');
+      const second = materializeGoalPlan(db, parent.id, 'epic-1', packages, 'agent');
+
+      expect(second).toEqual(first);
+      expect(listGoals(db, { parentId: parent.id })).toHaveLength(1);
+      expect(
+        (db.prepare('SELECT COUNT(*) AS count FROM pm_tickets').get() as { count: number }).count
+      ).toBe(1);
+    });
+
+    it('reuses a matching linked ticket even when it belongs to another epic', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Original');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-2', 'Requested');
+      const first = materializeGoalPlan(
+        db,
+        parent.id,
+        'epic-1',
+        [{ goal: { name: 'Child' }, ticket: { name: 'Work' } }],
+        'agent'
+      );
+
+      const second = materializeGoalPlan(
+        db,
+        parent.id,
+        'epic-2',
+        [{ goal: { name: 'Child' }, ticket: { name: 'Work' } }],
+        'agent'
+      );
+
+      expect(second[0].ticket.id).toBe(first[0].ticket.id);
+      expect(second[0].ticket.epic_id).toBe('epic-1');
+    });
+
+    it('rejects duplicate child goal names in one request before writing anything', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Delivery');
+
+      expect(() =>
+        materializeGoalPlan(
+          db,
+          parent.id,
+          'epic-1',
+          [
+            { goal: { name: 'Same child' }, ticket: { name: 'First work' } },
+            { goal: { name: 'Same child' }, ticket: { name: 'Second work' } },
+          ],
+          'agent'
+        )
+      ).toThrow(/duplicate child goal name/i);
+
+      expect(listGoals(db, { parentId: parent.id })).toEqual([]);
+      expect(
+        (db.prepare('SELECT COUNT(*) AS count FROM pm_tickets').get() as { count: number }).count
+      ).toBe(0);
+    });
+
+    it('rejects ambiguous existing direct children with the same exact name', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+      createGoal(db, { name: 'Duplicate', parentId: parent.id }, 'ui');
+      createGoal(db, { name: 'Duplicate', parentId: parent.id }, 'ui');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Delivery');
+
+      expect(() =>
+        materializeGoalPlan(
+          db,
+          parent.id,
+          'epic-1',
+          [{ goal: { name: 'Duplicate' }, ticket: { name: 'Work' } }],
+          'agent'
+        )
+      ).toThrow(/ambiguous/i);
+      expect(
+        (db.prepare('SELECT COUNT(*) AS count FROM pm_tickets').get() as { count: number }).count
+      ).toBe(0);
+    });
+
+    it('rejects ambiguous same-named tickets linked to the matching child', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+      const child = createGoal(db, { name: 'Child', parentId: parent.id }, 'ui');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Delivery');
+      db.prepare(
+        'INSERT INTO pm_tickets (id, epic_id, name, status, goal_id) VALUES (?, ?, ?, ?, ?)'
+      ).run('ticket-a', 'epic-1', 'Work', 'open', child.id);
+      db.prepare(
+        'INSERT INTO pm_tickets (id, epic_id, name, status, goal_id) VALUES (?, ?, ?, ?, ?)'
+      ).run('ticket-b', 'epic-1', 'Work', 'open', child.id);
+
+      expect(() =>
+        materializeGoalPlan(
+          db,
+          parent.id,
+          'epic-1',
+          [{ goal: { name: 'Child' }, ticket: { name: 'Work' } }],
+          'agent'
+        )
+      ).toThrow(/ambiguous ticket name/i);
+      expect(
+        (db.prepare('SELECT COUNT(*) AS count FROM pm_tickets').get() as { count: number }).count
+      ).toBe(2);
+    });
+
+    it('rolls back the whole batch when a later package fails ticket validation', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+      db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Delivery');
+
+      expect(() =>
+        materializeGoalPlan(
+          db,
+          parent.id,
+          'epic-1',
+          [
+            { goal: { name: 'First child' }, ticket: { name: 'First work' } },
+            {
+              goal: { name: 'Second child' },
+              ticket: { name: 'Second work', priority: 'invalid-priority' as 'normal' },
+            },
+          ],
+          'agent'
+        )
+      ).toThrow(/priority/i);
+
+      expect(listGoals(db, { parentId: parent.id })).toEqual([]);
+      expect(
+        (db.prepare('SELECT COUNT(*) AS count FROM pm_tickets').get() as { count: number }).count
+      ).toBe(0);
+    });
+
+    it('leaves no child goals or tickets behind when the epic does not exist', () => {
+      const parent = createGoal(db, { name: 'Meta goal' }, 'ui');
+
+      expect(() =>
+        materializeGoalPlan(
+          db,
+          parent.id,
+          'missing-epic',
+          [{ goal: { name: 'Child' }, ticket: { name: 'Work' } }],
+          'agent'
+        )
+      ).toThrow(/epic/i);
+
+      expect(listGoals(db, { parentId: parent.id })).toEqual([]);
+      expect(
+        (db.prepare('SELECT COUNT(*) AS count FROM pm_tickets').get() as { count: number }).count
+      ).toBe(0);
     });
   });
 

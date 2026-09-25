@@ -37,6 +37,7 @@ export interface GoalDetailPanelProps {
   onAchieve: (id: string) => void;
   onAddSubGoal: (parentId: string) => void;
   onLaunchAgent: (goal: PmGoal) => void;
+  onSplitGoal: (goal: PmGoal) => void;
   onLinkRequirement: (goalId: string, requirementId: string) => void;
   onUnlinkRequirement: (goalId: string, requirementId: string) => void;
   onLinkTicket: (goalId: string, ticketId: string) => void;
@@ -59,6 +60,7 @@ export function GoalDetailPanel({
   onAchieve,
   onAddSubGoal,
   onLaunchAgent,
+  onSplitGoal,
   onLinkRequirement,
   onUnlinkRequirement,
   onLinkTicket,
@@ -184,15 +186,58 @@ export function GoalDetailPanel({
             Conductor works through tickets. Create tickets before launching an agent.
           </p>
         )}
-        <div className="flex flex-wrap gap-2">
-          <button
-            data-testid="goal-launch-agent-btn"
-            onClick={() => onLaunchAgent(goal)}
-            className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
-          >
-            <AuricIcon name="rocket_launch" className="text-sm" />
-            {subtreeHasTickets ? 'Plan work with agent' : 'Create tickets with agent'}
-          </button>
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="max-w-52">
+            <button
+              data-testid="goal-launch-agent-btn"
+              aria-describedby="goal-direct-agent-guidance"
+              onClick={() => onLaunchAgent(goal)}
+              className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
+            >
+              <AuricIcon name="rocket_launch" className="text-sm" />
+              {subtreeHasTickets ? 'Plan work with agent' : 'Create tickets with agent'}
+            </button>
+            <p
+              id="goal-direct-agent-guidance"
+              data-testid="goal-direct-agent-guidance"
+              className="mt-1 text-[9px] leading-snug text-foreground-muted"
+            >
+              Creates or plans tickets directly on this goal.
+            </p>
+          </div>
+          <div className="max-w-56">
+            <span
+              data-testid="goal-split-agent-disabled-explanation"
+              tabIndex={goal.status === 'achieved' ? 0 : undefined}
+              aria-describedby={
+                goal.status === 'achieved' ? 'goal-split-disabled-reason' : undefined
+              }
+              className="inline-block"
+            >
+              <button
+                data-testid="goal-split-agent-btn"
+                aria-describedby="goal-split-agent-guidance"
+                disabled={goal.status === 'achieved'}
+                onClick={() => onSplitGoal(goal)}
+                className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[11px] text-foreground hover:bg-white/10 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <AuricIcon name="account_tree" className="text-sm" />
+                Split into sub-goals with agent
+              </button>
+            </span>
+            {goal.status === 'achieved' && (
+              <span id="goal-split-disabled-reason" className="sr-only">
+                Achieved goals cannot be split into new sub-goals.
+              </span>
+            )}
+            <p
+              id="goal-split-agent-guidance"
+              data-testid="goal-split-agent-guidance"
+              className="mt-1 text-[9px] leading-snug text-foreground-muted"
+            >
+              Creates child outcomes, each with its own ticket.
+            </p>
+          </div>
           <button
             data-testid="goal-add-subgoal-btn"
             onClick={() => onAddSubGoal(goal.id)}

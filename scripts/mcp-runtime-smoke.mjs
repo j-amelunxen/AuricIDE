@@ -61,8 +61,14 @@ try {
     `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })}\n`
   );
   const tools = await request(2, 'tools/list');
-  assert.equal(tools.result?.tools?.length, 62, 'expected the complete packaged Auric tool set');
-  for (const name of ['notify', 'notify_ask', 'notify_answer_get', 'schedule_list']) {
+  assert.equal(tools.result?.tools?.length, 63, 'expected the complete packaged Auric tool set');
+  for (const name of [
+    'notify',
+    'notify_ask',
+    'notify_answer_get',
+    'schedule_list',
+    'materialize_goal_plan',
+  ]) {
     assert.ok(
       tools.result.tools.some((tool) => tool.name === name),
       `missing tool ${name}`

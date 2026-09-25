@@ -59,6 +59,7 @@ function renderPanel(
       onAchieve={vi.fn()}
       onAddSubGoal={vi.fn()}
       onLaunchAgent={vi.fn()}
+      onSplitGoal={vi.fn()}
       onLinkRequirement={vi.fn()}
       onUnlinkRequirement={vi.fn()}
       onLinkTicket={vi.fn()}
@@ -95,6 +96,50 @@ describe('GoalDetailPanel workflow stepper', () => {
 });
 
 describe('GoalDetailPanel planning action', () => {
+  it('offers a separate explicit action for splitting the goal with an agent', async () => {
+    const user = userEvent.setup();
+    const onLaunchAgent = vi.fn();
+    const onSplitGoal = vi.fn();
+    const goal = makeGoal();
+
+    renderPanel(goal, [], { onLaunchAgent, onSplitGoal });
+    await user.click(screen.getByTestId('goal-split-agent-btn'));
+
+    expect(screen.getByTestId('goal-split-agent-btn')).toHaveTextContent(
+      'Split into sub-goals with agent'
+    );
+    expect(onSplitGoal).toHaveBeenCalledWith(goal);
+    expect(onLaunchAgent).not.toHaveBeenCalled();
+  });
+
+  it('explains the difference between direct ticket planning and splitting into child outcomes', () => {
+    renderPanel(makeGoal());
+
+    expect(screen.getByTestId('goal-direct-agent-guidance')).toHaveTextContent(
+      /tickets directly on this goal/i
+    );
+    expect(screen.getByTestId('goal-split-agent-guidance')).toHaveTextContent(
+      /child outcomes, each with its own ticket/i
+    );
+  });
+
+  it('disables splitting an achieved goal and exposes the reason to keyboard users', () => {
+    renderPanel(makeGoal({ status: 'achieved' }));
+
+    expect(screen.getByTestId('goal-split-agent-btn')).toBeDisabled();
+    expect(screen.getByTestId('goal-split-agent-disabled-explanation')).toHaveAttribute(
+      'tabindex',
+      '0'
+    );
+    expect(screen.getByTestId('goal-split-agent-disabled-explanation')).toHaveAttribute(
+      'aria-describedby',
+      'goal-split-disabled-reason'
+    );
+    expect(screen.getByText('Achieved goals cannot be split into new sub-goals.')).toHaveClass(
+      'sr-only'
+    );
+  });
+
   it('offers ticket creation and explains that the conductor runs tickets when none exist', () => {
     renderPanel(makeGoal());
     expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent(

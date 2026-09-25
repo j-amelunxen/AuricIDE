@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
-import { resolveGoalId, resolveRequirementId, resolveTicketId } from './resolve';
+import { resolveEpicId, resolveGoalId, resolveRequirementId, resolveTicketId } from './resolve';
 import {
   listGoals,
   getGoal,
@@ -9,6 +9,7 @@ import {
   updateGoal,
   deleteGoal,
   decomposeGoal,
+  materializeGoalPlan,
   getGoalTree,
   linkTicketToGoal,
   linkRequirementToGoal,
@@ -156,6 +157,44 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
     execute: async ({ parentId, children }) => {
       const resolved = resolveGoalId(db, parentId);
       return JSON.stringify(decomposeGoal(db, resolved, children, 'mcp'));
+    },
+  });
+
+  server.addTool({
+    name: 'materialize_goal_plan',
+    description:
+      'Idempotently and atomically materialize a meta-goal plan. Exact child-goal name plus ticket name is the package identity: existing pairs are returned unchanged, missing tickets are added to existing matching children, and new pairs are created only when missing. Duplicate or ambiguous child names are rejected. If any package fails, nothing is created.',
+    parameters: z.object({
+      parentId: z.string().describe('Meta-goal ID (UUID or unique prefix)'),
+      epicId: z.string().describe('Existing epic for all created tickets (UUID or unique prefix)'),
+      workPackages: z
+        .array(
+          z.object({
+            goal: z.object({
+              name: z.string(),
+              description: z.string().optional(),
+              successCriteria: z.string().optional(),
+              priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+              goalPrompt: z.string().optional(),
+            }),
+            ticket: z.object({
+              name: z.string(),
+              description: z.string().optional(),
+              priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+              dueDate: z.string().nullable().optional(),
+              needsHumanSupervision: z.boolean().optional(),
+              skills: z.array(z.string()).optional(),
+            }),
+          })
+        )
+        .min(1),
+    }),
+    execute: async ({ parentId, epicId, workPackages }) => {
+      const resolvedParentId = resolveGoalId(db, parentId);
+      const resolvedEpicId = resolveEpicId(db, epicId);
+      return JSON.stringify(
+        materializeGoalPlan(db, resolvedParentId, resolvedEpicId, workPackages, 'mcp')
+      );
     },
   });
 
