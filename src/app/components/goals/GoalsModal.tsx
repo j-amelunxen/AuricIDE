@@ -59,6 +59,38 @@ export function buildGoalLaunchPrompt(goal: PmGoal, stations: PmGoalStation[] = 
   return `/goal\n\n${parts.join('\n\n')}`;
 }
 
+/** Builds the dedicated planning prompt that atomically splits a meta-goal into executable work. */
+export function buildMetaGoalSplitPrompt(metaGoal: PmGoal): string {
+  const context = [`# Meta-goal: ${metaGoal.name}`, `metaGoalId: "${metaGoal.id}"`];
+  if (metaGoal.description) context.push(`## Description\n${metaGoal.description}`);
+  if (metaGoal.successCriteria) {
+    context.push(`## Success criteria\n${metaGoal.successCriteria}`);
+  }
+  if (metaGoal.goalPrompt.trim()) {
+    context.push(`## Planning instructions\n${metaGoal.goalPrompt}`);
+  }
+  context.push(
+    '## Planning contract\n' +
+      `Use the exact metaGoalId "${metaGoal.id}"; do not look it up by name. First call ` +
+      `get_goal_tree with rootId "${metaGoal.id}" and inspect the existing child goals and ` +
+      'tickets. On every rerun, reuse the existing plan: do not delete or overwrite existing ' +
+      'children or tickets, and only create genuinely missing work packages. Package identity is ' +
+      'the exact child goal name plus ticket name; materialize_goal_plan returns the existing pair ' +
+      'when both already exist.\n\n' +
+      'Call list_epics and reuse an appropriate existing epic; if none exists, call create_epic ' +
+      'and use its returned epicId. Design at least one work package ' +
+      'whose child goal is a checkable outcome and whose ticket is executable. Then call ' +
+      'materialize_goal_plan once for atomic materialization, passing parentId equal to the exact ' +
+      'metaGoalId, the selected epicId, and all genuinely missing workPackages. Each returned child ' +
+      'goal id must be that package ticket goalId; the ticket goalId must never be the metaGoalId. ' +
+      'Do not call create_goal, decompose_goal, or create_ticket separately for these packages. ' +
+      'Do NOT call record_goal_run: this run is already recorded. Exit after reporting the created ' +
+      'goal and ticket pairs, or explain why no genuinely missing packages remain.'
+  );
+
+  return `/goal\n\n${context.join('\n\n')}`;
+}
+
 export function GoalsModal() {
   const goalsModalOpen = useStore((s) => s.goalsModalOpen);
   if (!goalsModalOpen) return null;
@@ -261,6 +293,15 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
     [goalStationsDraft, setInitialAgentTask, setSpawnAgentGoalId, setSpawnDialogOpen]
   );
 
+  const handleSplitGoal = useCallback(
+    (goal: PmGoal) => {
+      setInitialAgentTask(buildMetaGoalSplitPrompt(goal));
+      setSpawnAgentGoalId(goal.id);
+      setSpawnDialogOpen(true);
+    },
+    [setInitialAgentTask, setSpawnAgentGoalId, setSpawnDialogOpen]
+  );
+
   const body = (
     <>
       <div
@@ -399,6 +440,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
               onAchieve={achieveGoal}
               onAddSubGoal={handleAddSubGoal}
               onLaunchAgent={handleLaunchAgent}
+              onSplitGoal={handleSplitGoal}
               onLinkRequirement={linkRequirementToGoal}
               onUnlinkRequirement={unlinkRequirementFromGoal}
               onLinkTicket={handleLinkTicket}

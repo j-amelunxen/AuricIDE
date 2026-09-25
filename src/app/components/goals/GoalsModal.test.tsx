@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { GoalsModal, buildGoalLaunchPrompt } from './GoalsModal';
+import { GoalsModal, buildGoalLaunchPrompt, buildMetaGoalSplitPrompt } from './GoalsModal';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 
@@ -216,6 +216,27 @@ describe('buildGoalLaunchPrompt', () => {
   });
 });
 
+describe('buildMetaGoalSplitPrompt', () => {
+  it('requires a rerun-safe atomic child-goal and ticket plan for the exact meta-goal id', () => {
+    const prompt = buildMetaGoalSplitPrompt(makeGoal({ id: 'meta-99' }));
+
+    expect(prompt.startsWith('/goal\n\n')).toBe(true);
+    expect(prompt).toContain('metaGoalId: "meta-99"');
+    expect(prompt).toContain('get_goal_tree');
+    expect(prompt).toMatch(/list_epics[\s\S]*create_epic[\s\S]*epicId/i);
+    expect(prompt).toContain('materialize_goal_plan');
+    expect(prompt).toMatch(/atomic/i);
+    expect(prompt).toMatch(/rerun/i);
+    expect(prompt).toMatch(/reuse/i);
+    expect(prompt).toMatch(/genuinely missing/i);
+    expect(prompt).toMatch(/do not delete or overwrite/i);
+    expect(prompt).toMatch(/exact child goal name.*ticket name/i);
+    expect(prompt).toMatch(/returns the existing pair/i);
+    expect(prompt).toMatch(/child goal[\s\S]{0,80}ticket goalId/i);
+    expect(prompt).toMatch(/never[\s\S]{0,40}metaGoalId/i);
+  });
+});
+
 describe('GoalsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -290,6 +311,23 @@ describe('GoalsModal', () => {
     expect(mocks.setSpawnDialogOpen).toHaveBeenCalledWith(true);
   });
 
+  it('opens the shared spawn dialog with the selected meta-goal split prompt', async () => {
+    storeState.selectedGoalId = 'g1';
+    const user = userEvent.setup();
+    render(<GoalsModal />);
+
+    await user.click(screen.getByTestId('goal-split-agent-btn'));
+
+    expect(mocks.setSpawnAgentGoalId).toHaveBeenCalledWith('g1');
+    expect(mocks.setInitialAgentTask).toHaveBeenCalledWith(
+      expect.stringContaining('metaGoalId: "g1"')
+    );
+    expect(mocks.setInitialAgentTask).toHaveBeenCalledWith(
+      expect.stringContaining('materialize_goal_plan')
+    );
+    expect(mocks.setSpawnDialogOpen).toHaveBeenCalledWith(true);
+  });
+
   it('links a ticket picked from the browser and persists it immediately', async () => {
     storeState.selectedGoalId = 'g1';
     storeState.pmDraftTickets = [makeTicket({ id: 't1', name: 'Fix login bug' })];
@@ -360,6 +398,7 @@ describe('GoalsModal', () => {
     expect(mocks.addGoal).toHaveBeenCalled();
     expect(mocks.setSelectedGoalId).toHaveBeenCalled();
     expect(mocks.saveGoals).not.toHaveBeenCalled();
+    expect(mocks.setSpawnDialogOpen).not.toHaveBeenCalled();
   });
 
   it('does not offer goal creation when no project is open', async () => {
