@@ -149,8 +149,39 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
   );
   if (!workLeft && !hasActiveAgents) {
     if (goalId) {
+      let workingGoals = goals;
+      const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
+      const depthOf = (goal: (typeof goals)[number]): number => {
+        let depth = 0;
+        let parentId = goal.parentId;
+        const seen = new Set<string>();
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId);
+          depth += 1;
+          parentId = goalsById.get(parentId)?.parentId ?? null;
+        }
+        return depth;
+      };
+      const descendants = getGoalDescendants(goals, goalId).sort((a, b) => depthOf(b) - depthOf(a));
+      for (const descendant of descendants) {
+        if (descendant.status !== 'active' && descendant.status !== 'in_progress') continue;
+        const descendantSatisfaction = getGoalSatisfaction(
+          workingGoals,
+          allTickets,
+          full.requirementsDraft ?? [],
+          full.goalRequirementLinksDraft ?? [],
+          full.goalStationsDraft ?? [],
+          descendant.id
+        );
+        if (!descendantSatisfaction.satisfied) continue;
+        full.achieveGoal?.(descendant.id);
+        workingGoals = workingGoals.map((goal) =>
+          goal.id === descendant.id ? { ...goal, status: 'achieved' as const } : goal
+        );
+      }
+
       const satisfaction = getGoalSatisfaction(
-        goals,
+        workingGoals,
         allTickets,
         full.requirementsDraft ?? [],
         full.goalRequirementLinksDraft ?? [],

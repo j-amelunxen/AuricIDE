@@ -634,6 +634,57 @@ describe('conductorSlice', () => {
     );
   });
 
+  it('achieves satisfied descendants before their meta-goal in the same exhausted tick', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'meta', name: 'Ship the release', status: 'in_progress' }),
+        makeGoal({ id: 'child', parentId: 'meta', name: 'Authentication works', status: 'active' }),
+        makeGoal({ id: 'leaf', parentId: 'child', name: 'Login is tested', status: 'active' }),
+      ],
+      pmDraftTickets: [
+        makeTicket({ id: 'child-ticket', goalId: 'child', status: 'done' }),
+        makeTicket({ id: 'leaf-ticket', goalId: 'leaf', status: 'done' }),
+      ],
+    });
+    store.getState().startConductor('meta');
+
+    await store.getState().conductorTick();
+
+    expect(store.getState().goalsDraft).toEqual([
+      expect.objectContaining({ id: 'meta', status: 'achieved' }),
+      expect.objectContaining({ id: 'child', status: 'achieved' }),
+      expect.objectContaining({ id: 'leaf', status: 'achieved' }),
+    ]);
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_achieved');
+    expect(store.getState().conductorDecisions.some((d) => d.action === 'goal_achieved')).toBe(
+      true
+    );
+  });
+
+  it('does not resurrect failed or archived descendants when their tickets are done', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'meta', status: 'in_progress' }),
+        makeGoal({ id: 'failed-child', parentId: 'meta', status: 'failed' }),
+        makeGoal({ id: 'archived-child', parentId: 'meta', status: 'archived' }),
+      ],
+      pmDraftTickets: [
+        makeTicket({ id: 'failed-ticket', goalId: 'failed-child', status: 'done' }),
+        makeTicket({ id: 'archived-ticket', goalId: 'archived-child', status: 'done' }),
+      ],
+    });
+    store.getState().startConductor('meta');
+
+    await store.getState().conductorTick();
+
+    expect(store.getState().goalsDraft).toEqual([
+      expect.objectContaining({ id: 'meta', status: 'in_progress' }),
+      expect.objectContaining({ id: 'failed-child', status: 'failed' }),
+      expect.objectContaining({ id: 'archived-child', status: 'archived' }),
+    ]);
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+  });
+
   it('stops with blockers when scope is exhausted but goal not satisfiable', async () => {
     store.setState({
       goalsDraft: [
@@ -646,6 +697,7 @@ describe('conductorSlice', () => {
     await store.getState().conductorTick();
 
     expect(store.getState().goalsDraft[0].status).not.toBe('achieved');
+    expect(store.getState().goalsDraft[1].status).toBe('active');
     expect(store.getState().conductorRunning).toBe(false);
     const stopDecision = store.getState().conductorDecisions.find((d) => d.action === 'stop');
     expect(stopDecision?.detail).toContain('Sub-goal');
