@@ -108,14 +108,120 @@ fn reports_the_provider_that_actually_resolved() {
     // something other than the row the user clicked.
     let (registry, default_id) = registry_and_default();
 
-    let (id, _) = resolve_permitted_provider(
+    let (id, _) = resolve_permitted_provider(None, &registry, &ProviderPolicy::default())
+        .expect("no request resolves to the default");
+
+    assert_eq!(id, default_id);
+}
+
+#[test]
+fn refuses_an_unknown_provider_by_name_instead_of_falling_back() {
+    // Naming a provider is a choice; running a different one in its place
+    // would be a silent substitution the caller never sees.
+    let (registry, _) = registry_and_default();
+
+    let error = resolve_permitted_provider(
         Some("not-a-real-provider"),
         &registry,
         &ProviderPolicy::default(),
     )
-    .expect("an unknown name still falls back");
+    .err()
+    .expect("an unknown provider must not spawn");
+
+    assert!(
+        error.contains("not-a-real-provider"),
+        "unhelpful message: {}",
+        error
+    );
+    assert!(
+        error.contains("not installed"),
+        "unhelpful message: {}",
+        error
+    );
+}
+
+#[test]
+fn a_blank_provider_name_means_no_request() {
+    let (registry, default_id) = registry_and_default();
+
+    let (id, _) = resolve_permitted_provider(Some("  "), &registry, &ProviderPolicy::default())
+        .expect("blank is treated as absent");
 
     assert_eq!(id, default_id);
+}
+
+/// A registry holding claude, codex and grok, the way an install with those
+/// three provider configs sees it.
+fn cross_registry() -> ProviderRegistryState {
+    let dir = std::env::temp_dir().join(format!(
+        "auric-cross-providers-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    for id in ["claude", "codex", "grok"] {
+        let json = format!(
+            r#"{{
+              "id": "{id}", "name": "{id}", "executable": "{id}",
+              "arguments": [ {{ "type": "task", "quote": true }} ],
+              "info": {{ "models": [], "permissionModes": [],
+                         "defaultModel": "m", "defaultPermissionMode": "default" }},
+              "versionCheck": {{ "command": "{id}", "args": ["--version"] }},
+              "promptTemplate": "{id}"
+            }}"#
+        );
+        std::fs::write(dir.join(format!("{id}.json")), json).unwrap();
+    }
+    let loaded = crate::providers::ProviderRegistry::load_configs_from(&[dir.clone()]);
+    let _ = std::fs::remove_dir_all(&dir);
+    let registry = new_provider_registry(None);
+    registry.providers.write().unwrap().extend(loaded);
+    registry
+}
+
+#[test]
+fn any_provider_can_start_any_other_across_the_board() {
+    // The caller's own provider plays no part in the decision: a Claude agent
+    // asking for Codex, a Codex agent asking for Claude, either asking for
+    // Grok — each resolves to exactly the provider that was named.
+    let registry = cross_registry();
+    for (caller, target) in [
+        ("claude", "codex"),
+        ("codex", "claude"),
+        ("claude", "grok"),
+        ("codex", "grok"),
+        ("grok", "claude"),
+    ] {
+        let (id, _) =
+            resolve_permitted_provider(Some(target), &registry, &ProviderPolicy::default())
+                .unwrap_or_else(|e| panic!("{caller} -> {target}: {e}"));
+        assert_eq!(id, target, "{caller} asked for {target}");
+    }
+}
+
+#[test]
+fn a_forbidden_provider_is_refused_whoever_asks() {
+    let registry = cross_registry();
+    let no_grok = deny(&["grok"]);
+
+    let error = resolve_permitted_provider(Some("grok"), &registry, &no_grok)
+        .err()
+        .expect("denied grok must not spawn");
+    assert!(
+        error.contains("grok") && error.contains("not permitted"),
+        "{}",
+        error
+    );
+
+    let only_claude = ProviderPolicy {
+        allow: Some(vec!["claude".to_string()]),
+        deny: Vec::new(),
+    };
+    assert!(resolve_permitted_provider(Some("codex"), &registry, &only_claude).is_err());
+    assert!(resolve_permitted_provider(Some("claude"), &registry, &only_claude).is_ok());
 }
 
 #[test]
@@ -180,6 +286,9 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
         headless: Some(false),
         spawned_by_ticket_id: Some("ticket-7".to_string()),
         spawned_by_goal_id: None,
+        launch_request_uid: None,
+        agent_notification_uid: None,
+        agent_notification_action_id: None,
     };
     let persisted = persisted_from_config(&config, "agent-4", "claude", 123);
     assert_eq!(persisted.id, "agent-4");

@@ -109,6 +109,10 @@ pub struct ProviderProjectBinding {
     pub mcp_config_path: Option<String>,
     pub crush_config_path: Option<String>,
     pub runtime_entrypoint: Option<String>,
+    /// The environment the Auric MCP server gets (`crate::mcp::agent_mcp_server_env`).
+    /// Config-file providers carry it in the file; Codex, configured on the
+    /// command line, gets it as an inline table.
+    pub mcp_env: BTreeMap<String, String>,
 }
 
 impl ProviderProjectBinding {
@@ -119,7 +123,13 @@ impl ProviderProjectBinding {
             mcp_config_path: None,
             crush_config_path: None,
             runtime_entrypoint: None,
+            mcp_env: BTreeMap::new(),
         }
+    }
+
+    pub fn with_mcp_env(mut self, env: BTreeMap<String, String>) -> Self {
+        self.mcp_env = env;
+        self
     }
 
     pub fn with_mcp_config_path(mut self, path: impl Into<String>) -> Self {
@@ -142,6 +152,41 @@ fn shell_quote_argument(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+/// Renders an untrusted value as exactly one inert shell word.
+///
+/// Spawn commands run through `sh -c` / `zsh -c`, and values such as the model
+/// name come straight from MCP callers. A value made only of characters that
+/// no POSIX shell treats specially is left as is, so ordinary model ids read
+/// the same as before (`--model opus`); anything else is single-quoted, which
+/// disables every expansion, separator and line break inside it.
+pub fn shell_word(value: &str) -> String {
+    let plain = !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._:/@%+=,-".contains(c));
+    if plain {
+        value.to_string()
+    } else {
+        shell_quote_argument(value)
+    }
+}
+
+/// A TOML inline table of strings. Keys and values are written as JSON
+/// strings, which are valid TOML basic strings (same quote and backslash
+/// escapes, control characters as `\uXXXX`), so no value can close the table
+/// or start another key.
+fn toml_inline_table(entries: &BTreeMap<String, String>) -> Result<String, String> {
+    let pairs = entries
+        .iter()
+        .map(|(key, value)| {
+            let key = serde_json::to_string(key).map_err(|error| error.to_string())?;
+            let value = serde_json::to_string(value).map_err(|error| error.to_string())?;
+            Ok(format!("{key}={value}"))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(format!("{{{}}}", pairs.join(",")))
+}
+
 /// Codex accepts configuration overrides for one invocation. This keeps the
 /// Auric server out of the user's global config and pins the session to one
 /// packaged runtime and one canonical project root.
@@ -156,17 +201,65 @@ pub fn codex_project_binding_injection(
     let project =
         serde_json::to_string(&binding.project_root).map_err(|error| error.to_string())?;
     let args = format!("mcp_servers.auric-pm.args=[{runtime},\"--project-root\",{project}]");
+    let mut arguments = vec![
+        "-c".to_string(),
+        shell_quote_argument("mcp_servers.auric-pm.command=\"node\""),
+        "-c".to_string(),
+        shell_quote_argument(&args),
+        "-c".to_string(),
+        shell_quote_argument("mcp_servers.auric-pm.required=true"),
+    ];
+    if !binding.mcp_env.is_empty() {
+        arguments.push("-c".to_string());
+        arguments.push(shell_quote_argument(&format!(
+            "mcp_servers.auric-pm.env={}",
+            toml_inline_table(&binding.mcp_env)?
+        )));
+    }
     Ok(SpawnInjection {
-        arguments: vec![
-            "-c".to_string(),
-            shell_quote_argument("mcp_servers.auric-pm.command=\"node\""),
-            "-c".to_string(),
-            shell_quote_argument(&args),
-            "-c".to_string(),
-            shell_quote_argument("mcp_servers.auric-pm.required=true"),
-        ],
+        arguments,
         env_vars: Vec::new(),
     })
+}
+
+/// The provider's launch material for one isolated Auric MCP project, which
+/// may be empty when the provider declares no project binding.
+pub fn project_binding_material(
+    provider_id: &str,
+    provider: &dyn AgentProvider,
+    binding: &ProviderProjectBinding,
+) -> Result<SpawnInjection, String> {
+    if provider_id == "codex" {
+        codex_project_binding_injection(binding)
+    } else {
+        Ok(provider.project_binding_injection(binding))
+    }
+}
+
+/// The launch material that binds `provider` to one isolated Auric MCP
+/// project, or the refusal when it has none. Strict: `allowUnboundMcp` is not
+/// considered here, only at spawn (`agents::manager::bind_to_project_mcp`).
+pub fn project_binding_injection_for(
+    provider_id: &str,
+    provider: &dyn AgentProvider,
+    binding: &ProviderProjectBinding,
+) -> Result<SpawnInjection, String> {
+    crate::agents::manager::binding_injection_for(
+        provider_id,
+        project_binding_material(provider_id, provider, binding)?,
+        false,
+    )
+}
+
+/// Whether a project-bound spawn of `provider` can succeed at all: the same
+/// decision `project_binding_injection_for` makes at spawn, taken against a
+/// binding with every path filled in. `list_agent_providers` offers only these.
+pub fn supports_isolated_mcp_binding(provider_id: &str, provider: &dyn AgentProvider) -> bool {
+    let probe = ProviderProjectBinding::new("/project", "/project/.auric/project.db")
+        .with_mcp_config_path("/agent-bindings/project.mcp.json")
+        .with_crush_config_path("/agent-bindings/project.crush.json")
+        .with_runtime_entrypoint("/runtime/server.mjs");
+    project_binding_injection_for(provider_id, provider, &probe).is_ok()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,6 +316,9 @@ pub enum ArgumentConfig {
     },
     #[serde(rename_all = "camelCase")]
     Task {
+        /// Still required so existing configs keep parsing; the task is
+        /// always passed as one quoted argument (see `DynamicProvider`).
+        #[allow(dead_code)]
         quote: bool,
     },
     #[serde(rename_all = "camelCase")]

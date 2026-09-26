@@ -139,6 +139,86 @@ function runMigrations(db: Database.Database): void {
     `);
     record(4, 'link_schedules_to_missions');
   }
+
+  // Mirrors notification migration 5 (`notifications/schema.rs`): what became
+  // of an agent launch request. Written by the IDE, read by `get_agent_run`.
+  if (!applied(5)) {
+    db.exec(`
+      CREATE TABLE agent_launch_runs (
+        request_uid  TEXT PRIMARY KEY,
+        agent_id     TEXT NOT NULL,
+        agent_name   TEXT,
+        provider     TEXT,
+        model        TEXT,
+        status       TEXT NOT NULL,
+        summary      TEXT,
+        error        TEXT,
+        started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        finished_at  TEXT,
+        updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    record(5, 'create_agent_launch_runs');
+  }
+
+  // Mirrors notification migration 6 (`notifications/schema.rs`): the native
+  // launch-claim gate (written only by the IDE) and the rule that a launch
+  // run is deleted with its request, whichever path deletes the row.
+  if (!applied(6)) {
+    db.exec(`
+      CREATE TABLE agent_launch_claims (
+        request_uid  TEXT PRIMARY KEY,
+        grant_id     TEXT NOT NULL,
+        root_goal_id TEXT NOT NULL,
+        goal_id      TEXT,
+        owner_pid    INTEGER NOT NULL DEFAULT 0,
+        claimed_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX agent_launch_claims_root ON agent_launch_claims(root_goal_id);
+      CREATE TABLE agent_launch_grant_usage (
+        grant_id       TEXT PRIMARY KEY,
+        launches_used  INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TRIGGER notifications_drop_launch_run
+      AFTER DELETE ON notifications
+      BEGIN
+        DELETE FROM agent_launch_runs WHERE request_uid = OLD.uid;
+      END;
+    `);
+    record(6, 'create_agent_launch_claims');
+  }
+
+  // Mirrors notification migration 7 (`notifications/schema.rs`): launch
+  // grants. Created here only so both sides agree on the schema; nothing in
+  // this server reads or writes the table (see the test in notificationsDb.test.ts).
+  if (!applied(7)) {
+    db.exec(`
+      CREATE TABLE agent_launch_grants (
+        id             TEXT PRIMARY KEY,
+        project_path   TEXT NOT NULL,
+        root_goal_id   TEXT NOT NULL,
+        root_goal_name TEXT NOT NULL DEFAULT '',
+        max_concurrent INTEGER NOT NULL CHECK (max_concurrent BETWEEN 1 AND 5),
+        launch_budget  INTEGER NOT NULL CHECK (launch_budget BETWEEN 1 AND 50),
+        granted_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        revoked_at     TEXT
+      );
+      CREATE UNIQUE INDEX agent_launch_grants_in_force
+        ON agent_launch_grants(project_path, root_goal_id) WHERE revoked_at IS NULL;
+    `);
+    record(7, 'create_agent_launch_grants');
+  }
+
+  // Mirrors notification migration 8 (`notifications/schema.rs`): reminders
+  // an agent's schedule (`mcp-` id) fired as `system` before sub-goal 09 r4
+  // are marked as written by an agent.
+  if (!applied(8)) {
+    db.exec(`
+      UPDATE notifications SET source = 'agent'
+       WHERE source = 'system' AND dedupe_key LIKE 'schedule:mcp-%';
+    `);
+    record(8, 'mark_legacy_mcp_schedule_reminders');
+  }
 }
 
 export function openNotificationsDb(path: string): Database.Database {

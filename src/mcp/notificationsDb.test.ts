@@ -225,3 +225,60 @@ describe('the MCP view of the inbox', () => {
     });
   });
 });
+
+// Mirrors notification migration 6 (`notifications/schema.rs`): the launch
+// claim tables and the rule that a launch run goes with its request.
+describe('launch runs and claims in the MCP view of the inbox', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = createTestNotificationsDb();
+  });
+
+  const runCount = () =>
+    (db.prepare('SELECT COUNT(*) AS n FROM agent_launch_runs').get() as { n: number }).n;
+
+  function requestWithRun(uid: string) {
+    dispatchNotification(db, {
+      uid,
+      title: 'Agent requested',
+      source: 'agent',
+      origin: 'request_agent_launch',
+      dedupeKey: `agent-launch:${uid}`,
+      refKind: 'goal',
+      refId: 'goal-1',
+    });
+    db.prepare(
+      "INSERT INTO agent_launch_runs (request_uid, agent_id, status) VALUES (?, 'a1', 'completed')"
+    ).run(uid);
+  }
+
+  it('has the claim, usage and grant tables the IDE writes', () => {
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'agent_launch_%'")
+      .all()
+      .map((row) => (row as { name: string }).name)
+      .sort();
+    expect(tables).toEqual([
+      'agent_launch_claims',
+      'agent_launch_grant_usage',
+      'agent_launch_grants',
+      'agent_launch_runs',
+    ]);
+  });
+
+  it('drops the run of a request the dispatch cap prunes', () => {
+    requestWithRun('old');
+    db.prepare("UPDATE notifications SET read_at = datetime('now') WHERE uid = 'old'").run();
+    for (let n = 0; n < NOTIFICATION_CAP; n += 1) dispatchNotification(db, { title: `f${n}` });
+
+    expect(db.prepare("SELECT uid FROM notifications WHERE uid = 'old'").get()).toBeUndefined();
+    expect(runCount()).toBe(0);
+  });
+
+  it('keeps the run of a request that is still there', () => {
+    requestWithRun('kept');
+    dispatchNotification(db, { title: 'other' });
+    expect(runCount()).toBe(1);
+  });
+});

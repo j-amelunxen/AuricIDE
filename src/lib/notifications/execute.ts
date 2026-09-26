@@ -83,6 +83,79 @@ export interface NotificationActionContext {
   providers?: ProviderInfo[];
   /** Schedule or notification origin name, carried into the decision log. */
   origin?: string;
+  /** Set when the notification is an MCP launch request; see `launchRequest.ts`. */
+  launchRequestUid?: string;
+  /**
+   * The project an agent-written button belongs to (the notification's
+   * `projectPath`, the requesting agent's MCP project). Required for a launch
+   * request and for every other agent-written Start button: the stored folder
+   * may be a worktree without its own `.auric/project.db`, so the binding can
+   * never be derived from it.
+   */
+  launchProjectPath?: string;
+  /**
+   * The notification the clicked action sits on. Required for a Start button
+   * a model wrote: the native spawn re-reads that row and refuses any folder
+   * but the one the MCP server checked and stamped on it.
+   */
+  notificationUid?: string;
+}
+
+/**
+ * Where a launch request runs and which project it is bound to. The folder is
+ * the one stored with the request (the requesting agent's own); there is no
+ * fallback to the open project, and the Rust spawn checks it once more
+ * (`agents/launch_dir.rs`).
+ */
+function launchRequestPlacement(
+  action: Extract<NotificationAction, { kind: 'spawn-agent' }>,
+  context: NotificationActionContext
+): { cwd: string; projectPath: string } {
+  if (!action.repoPath) {
+    throw new Error('This launch request stored no folder to start in');
+  }
+  if (!context.launchProjectPath) {
+    throw new Error('This launch request names no project to bind the agent to');
+  }
+  return { cwd: action.repoPath, projectPath: context.launchProjectPath };
+}
+
+/**
+ * Where an agent-written Start button (notify, an agent's schedule) runs.
+ * Sub-goal 09, blocker 2 of review r3: the same directory rule as a launch
+ * request. The folder is the one stored on the row, never the open project,
+ * and the config names the row and action so the Rust spawn checks the folder
+ * against the MCP server's stamp (`check_agent_notification_directory`).
+ */
+function agentButtonPlacement(
+  action: Extract<NotificationAction, { kind: 'spawn-agent' }>,
+  context: NotificationActionContext
+): { cwd: string; projectPath: string; notificationUid: string } {
+  if (!context.notificationUid) {
+    throw new Error('This Start button was written by an agent and cannot be checked here');
+  }
+  if (!action.repoPath) {
+    throw new Error('This Start button stored no folder to start in');
+  }
+  if (!context.launchProjectPath) {
+    throw new Error('This Start button names no project to bind the agent to');
+  }
+  return {
+    cwd: action.repoPath,
+    projectPath: context.launchProjectPath,
+    notificationUid: context.notificationUid,
+  };
+}
+
+function checkedPlacement(
+  action: Extract<NotificationAction, { kind: 'spawn-agent' }>,
+  context: NotificationActionContext
+) {
+  if (context.launchRequestUid) {
+    return { ...launchRequestPlacement(action, context), notificationUid: null };
+  }
+  if (context.trust !== 'user') return agentButtonPlacement(action, context);
+  return null;
 }
 
 /**
@@ -108,7 +181,11 @@ export function buildSpawnConfig(
   action: Extract<NotificationAction, { kind: 'spawn-agent' }>,
   context: NotificationActionContext = {}
 ): AgentConfig {
-  const cwd = action.repoPath ?? context.fallbackCwd;
+  const placement = checkedPlacement(action, context);
+  const cwd = placement ? placement.cwd : (action.repoPath ?? context.fallbackCwd);
+  // An agent-written button may not make a worktree: the native check accepts
+  // only the stamped folder itself. Launch requests have their own rule.
+  const worktree = action.useWorktree && cwd && !placement?.notificationUid;
   const defaults = loadSpawnDefaults(cwd) ?? loadSpawnDefaults();
   const trusted = context.trust === 'user';
 
@@ -116,7 +193,7 @@ export function buildSpawnConfig(
     name: deriveAgentName(action.task, cwd?.split('/').filter(Boolean).pop()),
     model: action.model ?? defaults?.model ?? FALLBACK_MODEL,
     task: trusted ? taskWithNote(action.task, action.note) : action.task,
-    projectPath: cwd ?? null,
+    projectPath: placement ? placement.projectPath : (cwd ?? null),
     cwd,
     provider: action.provider ?? defaults?.providerId,
     permissionMode: (trusted ? action.permissionMode : undefined) ?? defaults?.permissionMode,
@@ -124,6 +201,14 @@ export function buildSpawnConfig(
     spawnedByTicketId: action.ticketId,
     spawnedByGoalId: action.goalId,
     runSource: 'ui',
+    ...(worktree ? { useWorktree: true, worktreeRepoPath: cwd } : {}),
+    ...(context.launchRequestUid ? { launchRequestUid: context.launchRequestUid } : {}),
+    ...(placement?.notificationUid
+      ? {
+          agentNotificationUid: placement.notificationUid,
+          agentNotificationActionId: action.id,
+        }
+      : {}),
   };
 }
 

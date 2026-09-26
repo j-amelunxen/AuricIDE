@@ -48,6 +48,9 @@ reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 cron = "0.17.0"
 chrono-tz = "0.10.4"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time"] }

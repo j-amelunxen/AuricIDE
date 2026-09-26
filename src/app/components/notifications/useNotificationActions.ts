@@ -5,6 +5,11 @@ import { useStore } from '@/lib/store';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { defaultCommands } from '@/lib/commands/registry';
 import { executeNotificationAction, NotificationActionError } from '@/lib/notifications/execute';
+import {
+  isLaunchRequest,
+  launchFailedAnswer,
+  launchStartedAnswer,
+} from '@/lib/notifications/launchRequest';
 import { notificationTrust } from '@/lib/notifications/trust';
 import {
   presentNotificationActions,
@@ -135,6 +140,8 @@ export function useNotificationActions({
   const handleAction = useCallback(
     async (notification: Notification, action: NotificationAction) => {
       const store = useStore.getState();
+      // An MCP launch request reports back which agent it became, or why not.
+      const request = isLaunchRequest(notification) && action.kind === 'spawn-agent';
 
       // Every action on a question settles it, not just an `answer` one — and
       // it is stamped before the effect runs, so a spawn that fails still
@@ -156,6 +163,9 @@ export function useNotificationActions({
               const agent = await store.spawnNewAgent(config);
               store.selectAgent(agent.id);
               store.showToast(`${agent.name} started`, 'success');
+              if (request) {
+                await store.answerNotification(notification.uid, launchStartedAnswer(agent.id));
+              }
               return agent;
             },
             openSpawnDialog: ({ task, repoPath, preset }) =>
@@ -205,12 +215,18 @@ export function useNotificationActions({
             fallbackCwd: useStore.getState().rootPath ?? undefined,
             // What the payload may decide about the launch depends on who
             // wrote it, never on what it says about itself.
-            trust: notificationTrust(notification.source),
+            trust: notificationTrust(notification),
             providers: useStore.getState().providers,
             origin: notification.origin ?? undefined,
+            launchRequestUid: request ? notification.uid : undefined,
+            launchProjectPath: notification.projectPath ?? undefined,
+            notificationUid: notification.uid,
           }
         );
       } catch (error) {
+        if (request) {
+          await store.answerNotification(notification.uid, launchFailedAnswer(error));
+        }
         // The decision stands; only the effect failed. Say so rather than
         // leaving the click looking like it did nothing.
         const message =

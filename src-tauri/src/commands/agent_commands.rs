@@ -170,6 +170,9 @@ pub async fn resume_interrupted_agent(
         headless: Some(persisted.headless),
         spawned_by_ticket_id: persisted.spawned_by_ticket_id,
         spawned_by_goal_id: persisted.spawned_by_goal_id,
+        launch_request_uid: None,
+        agent_notification_uid: None,
+        agent_notification_action_id: None,
     };
 
     spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await

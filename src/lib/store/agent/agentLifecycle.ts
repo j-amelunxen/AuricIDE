@@ -4,6 +4,7 @@ import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { drainHeartbeatKinds } from '@/lib/agents/events/registry';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { announceHeadlessFinish, shouldNotifyHeadlessFinish } from '@/lib/agents/headlessFinish';
+import { recordLaunchStart } from '@/lib/agents/launchRunTracking';
 import { uniqueAgentName } from '@/lib/agents/naming';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
@@ -129,8 +130,15 @@ export async function handleSpawnNewAgent(
         finishedAt: null,
       };
       goalsSlice.recordGoalRun(run);
+      const persistPath = spawnConfig.projectPath ?? rootPath;
+      if (spawnConfig.launchRequestUid && persistPath && goalsSlice.persistGoalRun) {
+        // A launch request has no dialog that saves afterwards; best effort,
+        // the run stays in the draft if the write fails.
+        goalsSlice.persistGoalRun(persistPath, run.id).catch(() => undefined);
+      }
     }
   }
+  recordLaunchStart(spawnConfig, named);
   return named;
 }
 

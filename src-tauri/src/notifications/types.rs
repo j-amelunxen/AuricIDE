@@ -79,3 +79,78 @@ pub struct NotificationInput {
     #[serde(default)]
     pub expires_at: Option<String>,
 }
+
+/// What became of one agent launch request (MCP `request_agent_launch`).
+/// Keyed by the request's uid; read back by MCP `get_agent_run`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentLaunchRunInput {
+    pub request_uid: String,
+    pub agent_id: String,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// `running`, `completed`, `failed` or `killed`.
+    pub status: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// Jennifer's standing permission for one mission root, as the UI asks for
+/// it. The id is minted by the caller; the row is written only through the
+/// IDE's Tauri command, never through MCP.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchGrantInput {
+    pub id: String,
+    pub project_path: String,
+    pub root_goal_id: String,
+    #[serde(default)]
+    pub root_goal_name: String,
+    pub max_concurrent: i64,
+    pub launch_budget: i64,
+}
+
+/// A grant in force, with what it has paid for so far.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchGrant {
+    pub id: String,
+    pub project_path: String,
+    pub root_goal_id: String,
+    pub root_goal_name: String,
+    pub max_concurrent: i64,
+    pub launch_budget: i64,
+    pub granted_at: String,
+    pub launches_used: i64,
+}
+
+/// One automatic start a launch grant wants to make. Only the ids travel:
+/// limits, project and mission root are read from the grant row, the goal
+/// from the request row, inside the claim.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentLaunchClaimInput {
+    pub request_uid: String,
+    pub grant_id: String,
+}
+
+/// What a claim decided. Only `Claimed` may lead to a spawn.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchClaimOutcome {
+    Claimed,
+    /// The grant is unknown, revoked, or belongs to another project.
+    NoGrant,
+    /// The request's goal is not under the grant's mission root in project.db.
+    OutsideRoot,
+    AlreadyClaimed,
+    AtCapacity,
+    BudgetSpent,
+    NotARequest,
+}
