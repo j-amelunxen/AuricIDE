@@ -308,6 +308,12 @@ function applyMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE pm_tickets ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'");
     record(19, 'add_ticket_skills');
   }
+
+  // Migration #20: per-goal work mode (keep in sync with src-tauri/src/database/migrations.rs).
+  if (!applied(20)) {
+    db.exec("ALTER TABLE pm_goals ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'auto'");
+    record(20, 'add_goal_work_mode');
+  }
 }
 
 function runMigrations(db: Database.Database): void {

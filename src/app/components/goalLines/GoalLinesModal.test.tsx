@@ -238,6 +238,23 @@ describe('station interactions on the board', () => {
     ...overrides,
   });
 
+  it('draws a mission root without tickets as a line with its station progress', () => {
+    const root = makeGoal({ name: 'Mission' });
+    const child = makeGoal({ parentId: root.id, name: 'First sub-goal' });
+    seedStore({
+      goalsDraft: [root, child],
+      goalStationsDraft: [
+        station(child.id, { kind: 'normal', status: 'done', evidenceKind: 'proof' }),
+        station(child.id, { id: 'st-2', kind: 'normal', sortOrder: 1 }),
+      ],
+    });
+    render(<GoalLinesModal />);
+
+    expect(screen.getByTestId(`goal-line-card-${root.id}`)).toBeTruthy();
+    expect(screen.getByTestId(`goal-line-progress-${root.id}`).textContent).toBe('1/2 stations');
+    expect(screen.queryByTestId('goal-lines-not-started')).toBeNull();
+  });
+
   it('quick-add creates a human station in the draft and persists', () => {
     const goal = makeGoal();
     const saveGoals = vi.fn(async () => {});

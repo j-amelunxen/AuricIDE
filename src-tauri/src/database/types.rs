@@ -169,6 +169,10 @@ pub struct RequirementsState {
     pub test_links: Vec<PmRequirementTestLink>,
 }
 
+fn default_goal_work_mode() -> String {
+    "auto".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PmGoal {
@@ -180,6 +184,10 @@ pub struct PmGoal {
     pub status: String,
     pub priority: String,
     pub goal_prompt: String,
+    /// How the goal is worked: `auto`, `stations` or `tickets`. Resolved in
+    /// the frontend (`resolveGoalWorkMode`); a payload without it is `auto`.
+    #[serde(default = "default_goal_work_mode")]
+    pub work_mode: String,
     pub created_by: String,
     pub achieved_at: Option<String>,
     pub sort_order: i32,

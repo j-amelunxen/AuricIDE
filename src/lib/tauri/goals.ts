@@ -1,3 +1,4 @@
+import type { GoalWorkModeSetting } from '../goals/workMode';
 import type { GoalStatusValue, Priority } from '@/lib/pm/enums';
 export type GoalStatus = GoalStatusValue;
 export type GoalPriority = Priority;
@@ -14,6 +15,12 @@ export interface PmGoal {
   priority: GoalPriority;
   /** Canonical prompt artifact used when launching agents for this goal. */
   goalPrompt: string;
+  /**
+   * How the goal is worked: by tickets or by its stations. Absent reads as
+   * `auto` (see `resolveGoalWorkMode`), so goals from before the setting keep
+   * behaving as they did.
+   */
+  workMode?: GoalWorkModeSetting;
   /** Provenance: which actor created this goal. */
   createdBy: GoalActor;
   achievedAt: string | null;

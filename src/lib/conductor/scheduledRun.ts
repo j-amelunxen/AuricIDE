@@ -166,8 +166,9 @@ export interface ScheduledRunDeps {
   conductorTick: () => Promise<void>;
   /**
    * How many tickets in this scope the conductor could actually spawn for right
-   * now — the panel's own preflight `ready`, so the button and the schedule
-   * agree on what "there is work" means.
+   * now, plus the stations goals it would ask a goal agent for — the panel's
+   * own preflight, so the button and the schedule agree on what "there is
+   * work" means.
    */
   readyTicketCount: (goalId: string | null) => number;
   /** Pre-fills the Conductor panel for a human to press Start themselves. */

@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useMemo, type DragEvent, type MouseEvent } from 'react';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 import {
   getGoalChildren,
   getGoalDescendants,
-  getGoalProgress,
+  getGoalWorkProgress,
   getRootGoals,
   type GoalDropPosition,
 } from '@/lib/store/goalsSlice';
@@ -25,6 +25,8 @@ export const GOAL_STATUS_STYLES: Record<string, { dot: string; label: string; te
 interface GoalTreeProps {
   goals: PmGoal[];
   tickets: PmTicket[];
+  /** Goal stations: a goal worked without tickets shows its station progress. */
+  stations?: PmGoalStation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onMoveGoal?: (draggedId: string, targetId: string, position: GoalDropPosition) => void;
@@ -69,6 +71,7 @@ function GoalNode({
   depth,
   goals,
   tickets,
+  stations = [],
   selectedId,
   onSelect,
   onMoveGoal,
@@ -84,14 +87,11 @@ function GoalNode({
   onContextMenuGoal,
 }: GoalNodeProps) {
   const children = getGoalChildren(goals, goal.id);
-  const progress = getGoalProgress(goals, tickets, goal.id);
+  const progress = getGoalWorkProgress(goals, tickets, stations, goal.id);
   const isCollapsed = collapsed.has(goal.id);
   const isSelected = goal.id === selectedId;
   const style = GOAL_STATUS_STYLES[goal.status] ?? GOAL_STATUS_STYLES.draft;
-  const percent =
-    progress.totalTickets > 0
-      ? Math.round((progress.doneTickets / progress.totalTickets) * 100)
-      : null;
+  const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
   const agentCount = activeAgentsByGoal?.[goal.id] ?? 0;
   const dropPosition = dropTarget?.id === goal.id ? dropTarget.position : null;
 
@@ -185,8 +185,12 @@ function GoalNode({
                 style={{ width: `${percent}%` }}
               />
             </span>
-            <span className="text-[9px] tabular-nums text-foreground-muted">
-              {progress.doneTickets}/{progress.totalTickets}
+            <span
+              data-testid={`goal-progress-label-${goal.id}`}
+              title={progress.unit === 'stations' ? 'Stations verified' : 'Tickets done'}
+              className="text-[9px] tabular-nums text-foreground-muted"
+            >
+              {progress.done}/{progress.total}
             </span>
           </span>
         )}
@@ -207,6 +211,7 @@ function GoalNode({
             depth={depth + 1}
             goals={goals}
             tickets={tickets}
+            stations={stations}
             selectedId={selectedId}
             onSelect={onSelect}
             onMoveGoal={onMoveGoal}
@@ -229,6 +234,7 @@ function GoalNode({
 export function GoalTree({
   goals,
   tickets,
+  stations,
   selectedId,
   onSelect,
   onMoveGoal,
@@ -414,6 +420,7 @@ export function GoalTree({
           depth={0}
           goals={goals}
           tickets={tickets}
+          stations={stations}
           selectedId={selectedId}
           onSelect={onSelect}
           onMoveGoal={onMoveGoal}

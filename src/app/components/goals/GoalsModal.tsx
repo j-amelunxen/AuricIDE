@@ -13,51 +13,11 @@ import { GoalDetailPanel } from './GoalDetailPanel';
 import { GoalCreateDialog } from './GoalCreateDialog';
 import { ConductorPanel } from './ConductorPanel';
 import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflowStrip';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal } from '@/lib/tauri/goals';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
-import { planGoalMove, type GoalDropPosition } from '@/lib/store/goalsSlice';
+import { getGoalWorkMode, planGoalMove, type GoalDropPosition } from '@/lib/store/goalsSlice';
+import { buildGoalLaunchPrompt } from '@/lib/goals/goalLaunchPrompt';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-
-/** Builds the launch prompt for a goal: explicit goalPrompt wins, else generated. */
-export function buildGoalLaunchPrompt(goal: PmGoal, stations: PmGoalStation[] = []): string {
-  const parts = [`# Goal: ${goal.name} (goalId: ${goal.id})`];
-  if (goal.goalPrompt.trim()) {
-    parts.push(`## Goal instructions\n${goal.goalPrompt}`);
-  } else {
-    if (goal.description) parts.push(goal.description);
-    if (goal.successCriteria) parts.push(`## Success criteria\n${goal.successCriteria}`);
-  }
-  const savedLine = stations
-    .filter((station) => station.goalId === goal.id)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-  if (savedLine.length > 0) {
-    parts.push(
-      `## Saved line\n${savedLine
-        .map(
-          (station, index) =>
-            `${index + 1}. ${station.name} (stationId: ${station.id}${station.kind === 'human' ? ', human' : ''})`
-        )
-        .join('\n')}`
-    );
-  }
-  parts.push(
-    '## Working agreement\n' +
-      `Work autonomously toward this goal. Its goalId is "${goal.id}". Use this exact ` +
-      'value with the auric-pm MCP tools, do not look it up by name. If those tools are ' +
-      'available, first call list_epics and reuse an appropriate epic; if none exists, call ' +
-      `create_epic with the name "${goal.name}". Pass the resulting epicId to every ` +
-      `create_ticket (goalId: "${goal.id}") to create executable tickets in the saved order. ` +
-      'Human checkpoints must also become tickets with needsHumanSupervision: true. After each ' +
-      "ticket is created, call update_station with that checkpoint's stationId and the returned " +
-      "ticketId to link them. Preserve the saved line's intent and order. Use " +
-      `evaluate_goal (id: "${goal.id}") ` +
-      'to check progress, and record findings as context items or via write_finding. Do NOT ' +
-      'call record_goal_run: this run is already recorded. Exit when the success ' +
-      'criteria are met or you are blocked.'
-  );
-  // Launching an agent for a goal invokes the /goal command first.
-  return `/goal\n\n${parts.join('\n\n')}`;
-}
 
 /** Builds the dedicated planning prompt that atomically splits a meta-goal into executable work. */
 export function buildMetaGoalSplitPrompt(metaGoal: PmGoal): string {
@@ -286,11 +246,19 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
   // provider/model (and repo/permission mode) before the agent actually starts.
   const handleLaunchAgent = useCallback(
     (goal: PmGoal) => {
-      setInitialAgentTask(buildGoalLaunchPrompt(goal, goalStationsDraft));
+      const { mode } = getGoalWorkMode(goalsDraft, tickets, goalStationsDraft, goal.id);
+      setInitialAgentTask(buildGoalLaunchPrompt(goal, goalStationsDraft, mode));
       setSpawnAgentGoalId(goal.id);
       setSpawnDialogOpen(true);
     },
-    [goalStationsDraft, setInitialAgentTask, setSpawnAgentGoalId, setSpawnDialogOpen]
+    [
+      goalsDraft,
+      tickets,
+      goalStationsDraft,
+      setInitialAgentTask,
+      setSpawnAgentGoalId,
+      setSpawnDialogOpen,
+    ]
   );
 
   const handleSplitGoal = useCallback(
@@ -408,6 +376,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
             <GoalTree
               goals={goalsDraft}
               tickets={tickets}
+              stations={goalStationsDraft}
               selectedId={selectedGoalId}
               onSelect={setSelectedGoalId}
               onMoveGoal={handleMoveGoal}

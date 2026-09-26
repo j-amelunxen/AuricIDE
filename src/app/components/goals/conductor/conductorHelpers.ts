@@ -67,6 +67,17 @@ export function preflightLabel(
   if (preflight.inReview > 0) held.push(`${preflight.inReview} in review`);
   if (preflight.exhausted > 0) held.push(`${preflight.exhausted} out of attempts`);
 
+  if (preflight.stationGoalsReady > 0) {
+    const n = preflight.stationGoalsReady;
+    const goals = `${n} stations goal${n === 1 ? '' : 's'} ready for a goal agent`;
+    const tickets =
+      preflight.ready > 0 || held.length > 0 ? [`${preflight.ready} ready`, ...held] : [];
+    return [...tickets, goals].join(' · ');
+  }
+  if (preflight.stationGoals > 0 && preflight.total === 0) {
+    return 'No agent work left - a run checks whether the goal is achieved';
+  }
+
   if (preflight.ready === 0 && preflight.inProgress === 0) {
     const nothing = selectedGoalName
       ? preflight.total === 0

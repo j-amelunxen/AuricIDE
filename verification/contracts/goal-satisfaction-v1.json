@@ -1,7 +1,7 @@
 {
   "version": "goal-satisfaction-v1",
   "kind": "executable-specification",
-  "scope": "Parity contract for the TypeScript getGoalSatisfaction and MCP/SQLite evaluateGoal implementations. Blocker text is intentionally not normative; tests compare the normalized blocker categories below.",
+  "scope": "Parity contract for the TypeScript getGoalSatisfaction and MCP/SQLite evaluateGoal implementations. Blocker text is intentionally not normative; tests compare the normalized blocker categories below. Cases may pin the work mode (fixture.workMode, the stored setting) and the completion transition (expect.workMode, expect.achievable, expect.completionCategories); both sides must also agree on workMode and achievable for every case, pinned or not.",
   "cases": [
     {
       "id": "empty-goal",
@@ -14,8 +14,15 @@
     {
       "id": "open-subtree-ticket",
       "fixture": {
-        "child": { "status": "achieved" },
-        "tickets": [{ "goal": "child", "status": "open" }]
+        "child": {
+          "status": "achieved"
+        },
+        "tickets": [
+          {
+            "goal": "child",
+            "status": "open"
+          }
+        ]
       },
       "expect": {
         "satisfied": false,
@@ -25,8 +32,15 @@
     {
       "id": "done-subtree-ticket",
       "fixture": {
-        "child": { "status": "achieved" },
-        "tickets": [{ "goal": "child", "status": "done" }]
+        "child": {
+          "status": "achieved"
+        },
+        "tickets": [
+          {
+            "goal": "child",
+            "status": "done"
+          }
+        ]
       },
       "expect": {
         "satisfied": true,
@@ -36,8 +50,15 @@
     {
       "id": "discarded-subtree-ticket",
       "fixture": {
-        "child": { "status": "achieved" },
-        "tickets": [{ "goal": "child", "status": "discarded" }]
+        "child": {
+          "status": "achieved"
+        },
+        "tickets": [
+          {
+            "goal": "child",
+            "status": "discarded"
+          }
+        ]
       },
       "expect": {
         "satisfied": true,
@@ -47,7 +68,11 @@
     {
       "id": "linked-requirement-verified",
       "fixture": {
-        "requirements": [{ "status": "verified" }]
+        "requirements": [
+          {
+            "status": "verified"
+          }
+        ]
       },
       "expect": {
         "satisfied": true,
@@ -57,7 +82,11 @@
     {
       "id": "linked-requirement-unverified",
       "fixture": {
-        "requirements": [{ "status": "active" }]
+        "requirements": [
+          {
+            "status": "active"
+          }
+        ]
       },
       "expect": {
         "satisfied": false,
@@ -67,7 +96,13 @@
     {
       "id": "station-pending",
       "fixture": {
-        "stations": [{ "goal": "root", "status": "planned", "evidenceKind": "human" }]
+        "stations": [
+          {
+            "goal": "root",
+            "status": "planned",
+            "evidenceKind": "human"
+          }
+        ]
       },
       "expect": {
         "satisfied": false,
@@ -77,7 +112,13 @@
     {
       "id": "station-done-unverified",
       "fixture": {
-        "stations": [{ "goal": "root", "status": "done", "evidenceKind": "claim" }]
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "claim"
+          }
+        ]
       },
       "expect": {
         "satisfied": false,
@@ -87,7 +128,13 @@
     {
       "id": "station-done-verified",
       "fixture": {
-        "stations": [{ "goal": "root", "status": "done", "evidenceKind": "proof" }]
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          }
+        ]
       },
       "expect": {
         "satisfied": true,
@@ -97,7 +144,9 @@
     {
       "id": "child-achieved",
       "fixture": {
-        "child": { "status": "achieved" }
+        "child": {
+          "status": "achieved"
+        }
       },
       "expect": {
         "satisfied": true,
@@ -107,11 +156,270 @@
     {
       "id": "child-not-achieved",
       "fixture": {
-        "child": { "status": "active" }
+        "child": {
+          "status": "active"
+        }
       },
       "expect": {
         "satisfied": false,
         "blockerCategories": ["child-not-achieved"]
+      }
+    },
+    {
+      "id": "stations-only-all-verified",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          },
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "judged"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": [],
+        "workMode": "stations",
+        "achievable": true,
+        "completionCategories": []
+      }
+    },
+    {
+      "id": "stations-only-human-station-ticked",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          },
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "human"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": [],
+        "workMode": "stations",
+        "achievable": true,
+        "completionCategories": []
+      }
+    },
+    {
+      "id": "stations-only-open-human-station",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          },
+          {
+            "goal": "root",
+            "status": "planned",
+            "evidenceKind": "human"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["station-not-done"],
+        "workMode": "stations",
+        "achievable": false,
+        "completionCategories": ["station-not-done"]
+      }
+    },
+    {
+      "id": "stations-only-claim-not-verified",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "claim"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["station-unverified-evidence"],
+        "workMode": "stations",
+        "achievable": false,
+        "completionCategories": ["station-unverified-evidence"]
+      }
+    },
+    {
+      "id": "stations-with-requirement-and-child",
+      "fixture": {
+        "child": {
+          "status": "achieved"
+        },
+        "requirements": [
+          {
+            "status": "verified"
+          }
+        ],
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          },
+          {
+            "goal": "child",
+            "status": "done",
+            "evidenceKind": "judged"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": [],
+        "workMode": "stations",
+        "achievable": true,
+        "completionCategories": []
+      }
+    },
+    {
+      "id": "stations-with-unverified-requirement",
+      "fixture": {
+        "requirements": [
+          {
+            "status": "active"
+          }
+        ],
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["requirement-not-verified"],
+        "workMode": "stations",
+        "achievable": false,
+        "completionCategories": ["requirement-not-verified"]
+      }
+    },
+    {
+      "id": "stations-with-child-not-achieved",
+      "fixture": {
+        "child": {
+          "status": "active"
+        },
+        "stations": [
+          {
+            "goal": "child",
+            "status": "done",
+            "evidenceKind": "proof"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["child-not-achieved"],
+        "workMode": "stations",
+        "achievable": false,
+        "completionCategories": ["child-not-achieved"]
+      }
+    },
+    {
+      "id": "stations-and-only-discarded-tickets",
+      "fixture": {
+        "tickets": [
+          {
+            "goal": "root",
+            "status": "discarded"
+          }
+        ],
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": [],
+        "workMode": "stations",
+        "achievable": true,
+        "completionCategories": []
+      }
+    },
+    {
+      "id": "auto-with-tickets-stays-tickets",
+      "fixture": {
+        "tickets": [
+          {
+            "goal": "root",
+            "status": "done"
+          }
+        ],
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": [],
+        "workMode": "tickets",
+        "achievable": true,
+        "completionCategories": []
+      }
+    },
+    {
+      "id": "explicit-tickets-mode-with-stations",
+      "fixture": {
+        "workMode": "tickets",
+        "stations": [
+          {
+            "goal": "root",
+            "status": "done",
+            "evidenceKind": "proof"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": [],
+        "workMode": "tickets",
+        "achievable": true,
+        "completionCategories": []
+      }
+    },
+    {
+      "id": "explicit-stations-mode-without-stations",
+      "fixture": {
+        "workMode": "stations",
+        "requirements": [
+          {
+            "status": "verified"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": [],
+        "workMode": "stations",
+        "achievable": false,
+        "completionCategories": ["stations-mode-without-stations"]
       }
     }
   ]

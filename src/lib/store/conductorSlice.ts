@@ -181,6 +181,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorReviewStartedAt: {},
     conductorTicketBudget: null,
     conductorRunSpawned: 0,
+    conductorGoalAttempts: {},
 
     startConductor: (goalId, options) => {
       const rememberToRestore = <K extends keyof RunOverridable>(key: K): void => {
@@ -205,6 +206,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         conductorReviewStartedAt: {},
         conductorTicketBudget: options?.ticketBudget ?? null,
         conductorRunSpawned: 0,
+        conductorGoalAttempts: {},
         ...(options?.maxConcurrent !== undefined && {
           conductorMaxConcurrent: options.maxConcurrent,
         }),

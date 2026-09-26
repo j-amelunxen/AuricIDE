@@ -40,7 +40,7 @@ fn test_run_migrations_creates_tables() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 19);
+    assert_eq!(count, 20);
 
     // kv_store table should exist
     let table_exists: bool = conn
@@ -62,7 +62,7 @@ fn test_run_migrations_idempotent() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 19);
+    assert_eq!(count, 20);
 }
 
 #[test]
@@ -80,5 +80,5 @@ fn test_init_db_creates_db_file() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 19);
+    assert_eq!(count, 20);
 }

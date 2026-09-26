@@ -16,6 +16,9 @@ import type { PmDependency, PmTicket } from '../tauri/pm';
 import type { PmGoal, PmGoalStation } from '../tauri/goals';
 import { spawnAgent } from '../tauri/agents';
 import { createJudgeBackend, type JudgeInput, type JudgeStart } from '../conductor/judgeBackend';
+import type { Notification } from '../notifications/types';
+import type { NotificationInput } from '../tauri/notifications';
+import { isLaunchRequest, LAUNCH_REQUEST_ORIGIN } from '../notifications/launchRequest';
 
 let agentCounter = 0;
 
@@ -35,6 +38,7 @@ vi.mock('../tauri/agents', () => ({
   killAgent: vi.fn(async () => undefined),
   renameAgent: vi.fn(async () => undefined),
   listAgents: vi.fn(async () => []),
+  recordAgentPromptHistory: vi.fn(async () => undefined),
 }));
 
 vi.mock('../tauri/goals', () => ({
@@ -152,6 +156,8 @@ describe('getConductorPreflight', () => {
       inReview: 0,
       toTest: 0,
       exhausted: 0,
+      stationGoals: 0,
+      stationGoalsReady: 0,
     });
   });
 
@@ -632,6 +638,21 @@ describe('conductorSlice', () => {
     expect(store.getState().conductorDecisions.some((d) => d.action === 'goal_achieved')).toBe(
       true
     );
+  });
+
+  it('asks the completion transition, not bare satisfaction, before achieving', async () => {
+    // Satisfied (its one ticket is done) but set to stations mode with no
+    // station: the transition refuses, so the conductor must not achieve it.
+    store.setState({
+      goalsDraft: [makeGoal({ id: 'g1', status: 'in_progress', workMode: 'stations' })],
+      pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1', status: 'done' })],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+
+    expect(store.getState().goalsDraft[0].status).toBe('in_progress');
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+    expect(store.getState().conductorLastRun?.blockers.join(' ')).toMatch(/stations mode/i);
   });
 
   it('achieves satisfied descendants before their meta-goal in the same exhausted tick', async () => {
@@ -1784,5 +1805,384 @@ describe('conductor milestones in the notification inbox', () => {
     await store.getState().conductorTick();
 
     await inboxStaysEmpty();
+  });
+});
+
+describe('conductor on a stations goal (no tickets)', () => {
+  let store: StoreApi<StoreState>;
+  let dispatched: NotificationInput[];
+  let rowId: number;
+
+  const openStation = (overrides: Partial<PmGoalStation> = {}) =>
+    makeStation({ ticketId: null, evidenceKind: 'claim', ...overrides });
+
+  /** A stored inbox row, as dispatch hands it back. */
+  function row(input: NotificationInput, overrides: Partial<Notification> = {}): Notification {
+    return {
+      id: ++rowId,
+      uid: input.uid ?? `uid-${rowId}`,
+      createdAt: '2026-09-27 10:00:00',
+      projectPath: input.projectPath ?? null,
+      projectName: input.projectName ?? null,
+      source: input.source,
+      origin: input.origin ?? null,
+      kind: input.kind ?? 'info',
+      severity: input.severity ?? 'info',
+      title: input.title,
+      body: input.body ?? null,
+      actions: input.actions ?? [],
+      dedupeKey: input.dedupeKey ?? null,
+      refKind: input.refKind ?? null,
+      refId: input.refId ?? null,
+      readAt: null,
+      answeredAt: null,
+      answer: null,
+      expiresAt: null,
+      ...overrides,
+    };
+  }
+
+  const launchRequests = () => dispatched.filter((n) => n.origin === LAUNCH_REQUEST_ORIGIN);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentCounter = 0;
+    rowId = 0;
+    dispatched = [];
+    // @ts-expect-error - Partial store for testing
+    store = createStore<StoreState>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createGoalsSlice(...a),
+      ...createPmSlice(...a),
+      ...createConductorSlice(...a),
+      rootPath: '/repo',
+      judgeLlmConfigured: false,
+      notifications: [] as Notification[],
+      dispatchNotification: async (input: NotificationInput) => {
+        dispatched.push(input);
+        const stored = row(input);
+        store.setState({ notifications: [...store.getState().notifications, stored] });
+        return stored;
+      },
+    }));
+    store.setState({
+      goalsDraft: [makeGoal({ id: 'g1', name: 'Write the guide', status: 'in_progress' })],
+      pmDraftTickets: [],
+      goalStationsDraft: [
+        openStation({ id: 's1', name: 'Draft' }),
+        openStation({ id: 's2', name: 'Proofread', sortOrder: 1 }),
+        openStation({
+          id: 's3',
+          name: 'Approve',
+          kind: 'human',
+          evidenceKind: 'human',
+          sortOrder: 2,
+        }),
+      ],
+    });
+  });
+
+  /** The IDE started the requested agent and it has since finished. */
+  function answerRequestAndFinish(agentId: string) {
+    store.setState({
+      notifications: store
+        .getState()
+        .notifications.map((n) =>
+          isLaunchRequest(n)
+            ? { ...n, answeredAt: '2026-09-27 10:01:00', answer: `agent:${agentId}` }
+            : n
+        ),
+    });
+  }
+
+  describe('preflight', () => {
+    function stationPreflight(goalId: string | null) {
+      const s = store.getState();
+      return getConductorPreflight({
+        tickets: s.pmDraftTickets,
+        dependencies: [],
+        goals: s.goalsDraft,
+        stations: s.goalStationsDraft,
+        goalId,
+        failedTickets: {},
+        approvedTickets: [],
+      });
+    }
+
+    it('counts a stations goal with open agent work', () => {
+      expect(stationPreflight('g1')).toMatchObject({
+        total: 0,
+        stationGoals: 1,
+        stationGoalsReady: 1,
+      });
+    });
+
+    it('does not count a goal set to ticket mode', () => {
+      store.setState({ goalsDraft: [makeGoal({ id: 'g1', workMode: 'tickets' })] });
+      expect(stationPreflight('g1').stationGoals).toBe(0);
+    });
+
+    it('counts a stations goal left with only a human station, so a run can check it', () => {
+      store.setState({
+        goalStationsDraft: [
+          openStation({ id: 's1', status: 'done', evidenceKind: 'judged' }),
+          openStation({ id: 's3', kind: 'human', evidenceKind: 'human' }),
+        ],
+      });
+      expect(stationPreflight('g1')).toMatchObject({ stationGoals: 1, stationGoalsReady: 0 });
+    });
+
+    it('does not count stations goals in an unscoped (all tickets) run', () => {
+      expect(stationPreflight(null).stationGoals).toBe(0);
+    });
+  });
+
+  it('asks for a goal agent through a launch request instead of spawning one', async () => {
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(store.getState().agents).toHaveLength(0);
+    const requests = launchRequests();
+    expect(requests).toHaveLength(1);
+    const request = requests[0];
+    // The same row MCP request_agent_launch writes: foreign, so only a click
+    // or a launch grant starts it, and its folder is the project root.
+    expect(request).toMatchObject({
+      source: 'agent',
+      refKind: 'goal',
+      refId: 'g1',
+      projectPath: '/repo',
+    });
+    expect(request.dedupeKey).toBe(`agent-launch:${request.uid}`);
+    expect(isLaunchRequest(store.getState().notifications[0])).toBe(true);
+    const [action] = request.actions ?? [];
+    expect(action).toMatchObject({ kind: 'spawn-agent', repoPath: '/repo', goalId: 'g1' });
+    const task = (action as { task: string }).task;
+    expect(task).toContain('Work mode: stations');
+    expect(task).toContain('mark_station_done');
+    expect(task).not.toContain('create_ticket');
+    expect(store.getState().conductorRunning).toBe(true);
+    expect(store.getState().conductorRunSpawned).toBe(1);
+    expect(store.getState().conductorDecisions[0]).toMatchObject({ action: 'spawn' });
+  });
+
+  it('passes the conductor provider and model on to the request', async () => {
+    store.setState({ conductorProviderId: 'codex', conductorModel: 'gpt-5-codex' });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(launchRequests()[0].actions?.[0]).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+  });
+
+  it('writes one request per goal while it is open', async () => {
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(1);
+    expect(store.getState().conductorRunning).toBe(true);
+  });
+
+  it('reuses an open request an agent already wrote over MCP', async () => {
+    store.setState({
+      notifications: [
+        row({
+          source: 'agent',
+          origin: LAUNCH_REQUEST_ORIGIN,
+          title: 'Agent requested',
+          dedupeKey: 'agent-launch:mcp-1',
+          refKind: 'goal',
+          refId: 'g1',
+          projectPath: '/repo',
+        }),
+      ],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(0);
+    expect(store.getState().conductorRunning).toBe(true);
+  });
+
+  it('waits while a goal agent is running on the goal', async () => {
+    store.setState({
+      agents: [
+        {
+          id: 'goal-agent',
+          name: 'Goal agent',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          spawnedByGoalId: 'g1',
+        },
+      ],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(0);
+    expect(store.getState().conductorRunning).toBe(true);
+  });
+
+  it('asks again once the agent ended with stations open, then stops out of attempts', async () => {
+    store.getState().startConductor('g1');
+    for (let attempt = 1; attempt <= MAX_TICKET_ATTEMPTS; attempt++) {
+      await store.getState().conductorTick();
+      expect(launchRequests()).toHaveLength(attempt);
+      answerRequestAndFinish(`agent-${attempt}`);
+    }
+    await store.getState().conductorTick();
+
+    expect(launchRequests()).toHaveLength(MAX_TICKET_ATTEMPTS);
+    // A retry is not a new goal: the budget counts the goal once.
+    expect(store.getState().conductorRunSpawned).toBe(1);
+    expect(store.getState().conductorRunning).toBe(false);
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+    expect(store.getState().goalsDraft[0].status).not.toBe('achieved');
+  });
+
+  it('keeps the run open while the judge still owes a verdict on a claim', async () => {
+    store.setState({
+      judgeLlmConfigured: true,
+      goalStationsDraft: [
+        openStation({ id: 's1', status: 'done', evidenceKind: 'claim', lastCheckedAt: null }),
+      ],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(0);
+    expect(store.getState().conductorRunning).toBe(true);
+  });
+
+  it('achieves the goal once every station is verified, without a ticket', async () => {
+    store.setState({
+      goalStationsDraft: [
+        openStation({ id: 's1', status: 'done', evidenceKind: 'judged' }),
+        openStation({ id: 's3', kind: 'human', status: 'done', evidenceKind: 'human' }),
+      ],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(0);
+    expect(store.getState().goalsDraft[0].status).toBe('achieved');
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_achieved');
+  });
+
+  it('stops blocked on the human station once the agent work is verified', async () => {
+    store.setState({
+      goalStationsDraft: [
+        openStation({ id: 's1', status: 'done', evidenceKind: 'judged' }),
+        openStation({ id: 's3', name: 'Approve', kind: 'human', evidenceKind: 'human' }),
+      ],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(0);
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+    expect(store.getState().conductorLastRun?.blockers.join(' ')).toContain('Approve');
+  });
+
+  it('asks for one agent per sub-goal with its own open line, within the budget', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'root', name: 'Mission' }),
+        makeGoal({ id: 'a', parentId: 'root', name: 'A' }),
+        makeGoal({ id: 'b', parentId: 'root', name: 'B' }),
+      ],
+      goalStationsDraft: [
+        openStation({ id: 'sa', goalId: 'a' }),
+        openStation({ id: 'sb', goalId: 'b' }),
+      ],
+    });
+    store.getState().startConductor('root', { ticketBudget: 1 });
+    await store.getState().conductorTick();
+    expect(launchRequests().map((n) => n.refId)).toEqual(['a']);
+  });
+
+  it('counts goal agents in flight against the concurrency limit', async () => {
+    store.setState({
+      conductorMaxConcurrent: 1,
+      goalsDraft: [
+        makeGoal({ id: 'root', name: 'Mission' }),
+        makeGoal({ id: 'a', parentId: 'root', name: 'A' }),
+        makeGoal({ id: 'b', parentId: 'root', name: 'B' }),
+      ],
+      goalStationsDraft: [
+        openStation({ id: 'sa', goalId: 'a' }),
+        openStation({ id: 'sb', goalId: 'b' }),
+      ],
+    });
+    store.getState().startConductor('root');
+    await store.getState().conductorTick();
+    await store.getState().conductorTick();
+    expect(launchRequests().map((n) => n.refId)).toEqual(['a']);
+  });
+
+  it('never gives the tickets of a stations goal to ticket agents (mixed tree)', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'root', name: 'Mission' }),
+        makeGoal({ id: 'st', parentId: 'root', name: 'Stations child', workMode: 'stations' }),
+        makeGoal({ id: 'tk', parentId: 'root', name: 'Ticket child' }),
+      ],
+      pmDraftTickets: [
+        makeTicket({ id: 't-st', goalId: 'st' }),
+        makeTicket({ id: 't-tk', goalId: 'tk' }),
+      ],
+      goalStationsDraft: [openStation({ id: 'sst', goalId: 'st' })],
+    });
+    store.getState().startConductor('root');
+    await store.getState().conductorTick();
+    expect(launchRequests().map((n) => n.refId)).toEqual(['st']);
+    expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t-tk']);
+  });
+
+  it('counts a goal agent in flight before starting a ticket agent', async () => {
+    store.setState({
+      conductorMaxConcurrent: 1,
+      goalsDraft: [
+        makeGoal({ id: 'root', name: 'Mission' }),
+        makeGoal({ id: 'st', parentId: 'root', name: 'Stations child' }),
+        makeGoal({ id: 'tk', parentId: 'root', name: 'Ticket child' }),
+      ],
+      pmDraftTickets: [makeTicket({ id: 't-tk', goalId: 'tk' })],
+      goalStationsDraft: [openStation({ id: 'sst', goalId: 'st' })],
+      agents: [
+        {
+          id: 'goal-agent',
+          name: 'Goal agent',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          spawnedByGoalId: 'st',
+        },
+      ],
+    });
+    store.getState().startConductor('root');
+    await store.getState().conductorTick();
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(store.getState().conductorAssignments).toEqual({});
+    expect(launchRequests()).toHaveLength(0);
+  });
+
+  it('leaves an unscoped run on tickets only', async () => {
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(0);
+    expect(store.getState().conductorRunning).toBe(false);
+  });
+
+  it('keeps ticket mode unchanged: a ticket goal with stations spawns ticket agents', async () => {
+    store.setState({
+      goalsDraft: [makeGoal({ id: 'g1', workMode: 'tickets', status: 'in_progress' })],
+      pmDraftTickets: [makeTicket({ id: 't1', goalId: 'g1' })],
+      goalStationsDraft: [openStation({ id: 's1', ticketId: 't1' })],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(launchRequests()).toHaveLength(0);
+    expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t1']);
   });
 });

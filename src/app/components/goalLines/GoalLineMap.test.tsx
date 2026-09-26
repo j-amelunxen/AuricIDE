@@ -29,6 +29,8 @@ function lineWithStations(count = 8): GoalLine {
     satisfied: false,
     blockers: [],
     planCommitted: false,
+    workMode: 'tickets',
+    progress: { done: 0, total: 0, unit: 'tickets' },
   };
 }
 

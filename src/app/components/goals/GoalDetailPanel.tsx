@@ -6,10 +6,12 @@ import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
 import {
   getGoalDescendants,
-  getGoalSatisfaction,
+  getGoalCompletion,
+  getGoalWorkMode,
   getGoalWorkflowStage,
   getRunsForGoal,
 } from '@/lib/store/goalsSlice';
+import { GOAL_WORK_MODE_SETTINGS, type GoalWorkModeSetting } from '@/lib/goals/workMode';
 import { useStore } from '@/lib/store';
 import { GOAL_STATUS_STYLES } from './GoalTree';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -25,6 +27,12 @@ export { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
 export { GoalTicketsSection } from './detail/GoalTicketsSection';
 export { GoalRequirementsSection } from './detail/GoalRequirementsSection';
 export { GoalRunsSection } from './detail/GoalRunsSection';
+
+const WORK_MODE_LABELS: Record<GoalWorkModeSetting, string> = {
+  auto: 'Auto',
+  stations: 'Stations (no tickets)',
+  tickets: 'Tickets',
+};
 
 export interface GoalDetailPanelProps {
   goal: PmGoal | null;
@@ -70,10 +78,12 @@ export function GoalDetailPanel({
   const stations = useStore((s) => s.goalStationsDraft);
   const rootPath = useStore((s) => s.rootPath);
 
-  const satisfaction = useMemo(
+  // The card and its "Mark achieved" button follow the completion transition,
+  // the same rule as the conductor and MCP evaluate_goal.
+  const completion = useMemo(
     () =>
       goal
-        ? getGoalSatisfaction(goals, tickets, requirements, requirementLinks, stations, goal.id)
+        ? getGoalCompletion(goals, tickets, requirements, requirementLinks, stations, goal.id)
         : null,
     [goal, goals, tickets, requirements, requirementLinks, stations]
   );
@@ -96,6 +106,11 @@ export function GoalDetailPanel({
     const ids = new Set([goal.id, ...getGoalDescendants(goals, goal.id).map((item) => item.id)]);
     return tickets.some((ticket) => !!ticket.goalId && ids.has(ticket.goalId));
   }, [goal, goals, tickets]);
+
+  const workMode = useMemo(
+    () => (goal ? getGoalWorkMode(goals, tickets, stations, goal.id) : null),
+    [goal, goals, tickets, stations]
+  );
 
   const goalRuns = useMemo(() => (goal ? getRunsForGoal(runs, goal.id) : []), [goal, runs]);
 
@@ -177,13 +192,42 @@ export function GoalDetailPanel({
       {workflowStep && <GoalWorkflowStepper workflowStep={workflowStep} />}
 
       {/* Satisfaction check */}
-      {satisfaction && (
-        <GoalSatisfactionCard goal={goal} satisfaction={satisfaction} onAchieve={onAchieve} />
+      {completion && (
+        <GoalSatisfactionCard
+          goal={goal}
+          satisfaction={{ satisfied: completion.achievable, blockers: completion.blockers }}
+          onAchieve={onAchieve}
+        />
       )}
 
       {/* Actions */}
       <div>
-        {!subtreeHasTickets && (
+        {workMode && (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <label htmlFor="goal-work-mode" className="text-[10px] text-foreground-muted">
+              Work mode
+            </label>
+            <select
+              id="goal-work-mode"
+              data-testid="goal-work-mode"
+              value={workMode.setting}
+              onChange={(e) =>
+                onUpdate(goal.id, { workMode: e.target.value as GoalWorkModeSetting })
+              }
+              className="rounded-lg bg-white/5 px-2 py-1 text-[10px] text-foreground outline-none"
+            >
+              {GOAL_WORK_MODE_SETTINGS.map((setting) => (
+                <option key={setting} value={setting} className="bg-background-dark">
+                  {WORK_MODE_LABELS[setting]}
+                </option>
+              ))}
+            </select>
+            <span data-testid="goal-work-mode-reason" className="text-[9px] text-foreground-muted">
+              {workMode.reason}
+            </span>
+          </div>
+        )}
+        {workMode?.mode === 'tickets' && !subtreeHasTickets && (
           <p className="mb-2 text-[10px] text-foreground-muted">
             Conductor works through tickets. Create tickets before launching an agent.
           </p>
@@ -197,14 +241,20 @@ export function GoalDetailPanel({
               className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
             >
               <AuricIcon name="rocket_launch" className="text-sm" />
-              {subtreeHasTickets ? 'Plan work with agent' : 'Create tickets with agent'}
+              {workMode?.mode === 'stations'
+                ? 'Work stations with agent'
+                : subtreeHasTickets
+                  ? 'Plan work with agent'
+                  : 'Create tickets with agent'}
             </button>
             <p
               id="goal-direct-agent-guidance"
               data-testid="goal-direct-agent-guidance"
               className="mt-1 text-[9px] leading-snug text-foreground-muted"
             >
-              Creates or plans tickets directly on this goal.
+              {workMode?.mode === 'stations'
+                ? 'Works the stations directly and marks each one done with evidence. No tickets.'
+                : 'Creates or plans tickets directly on this goal.'}
             </p>
           </div>
           <div className="max-w-56">

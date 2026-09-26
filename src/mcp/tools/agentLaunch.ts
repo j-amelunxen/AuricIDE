@@ -5,8 +5,8 @@ import { dispatchNotification } from '../notificationsDb';
 import { requestingAgentFolder } from '../requesterFolder';
 import { getGoal } from './goalsDb';
 import {
+  buildLaunchRequest,
   LAUNCH_REQUEST_KEY_PREFIX,
-  LAUNCH_REQUEST_ORIGIN,
   parseLaunchAnswer,
 } from '../../lib/notifications/launchRequest';
 import {
@@ -75,8 +75,6 @@ const requestSchema = z
     title: z.string().optional().describe('Inbox title; defaults to the goal name'),
   })
   .strict();
-
-type LaunchRequestArgs = z.infer<typeof requestSchema>;
 
 interface Defaults {
   projectPath?: string;
@@ -164,20 +162,6 @@ function openRequestFor(
   return row?.uid ?? null;
 }
 
-function spawnAction(args: LaunchRequestArgs, folder: string, prompt: string) {
-  return {
-    id: 'start',
-    label: 'Start agent',
-    kind: 'spawn-agent' as const,
-    task: prompt,
-    repoPath: folder,
-    goalId: args.goalId,
-    ...(args.provider ? { provider: args.provider } : {}),
-    ...(args.model ? { model: args.model } : {}),
-    ...(args.worktree ? { useWorktree: true } : {}),
-  };
-}
-
 export function requestAgentLaunch(
   projectDb: Database.Database,
   inboxDb: Database.Database,
@@ -207,20 +191,22 @@ export function requestAgentLaunch(
     if (open) return { uid: open, reused: true };
 
     const uid = crypto.randomUUID();
-    dispatchNotification(inboxDb, {
-      uid,
-      title: args.title?.trim() || `Agent requested for goal "${goal.name}"`,
-      body: prompt.length > 280 ? `${prompt.slice(0, 277)}...` : prompt,
-      severity: 'info',
-      source: 'agent',
-      origin: LAUNCH_REQUEST_ORIGIN,
-      dedupeKey: `${LAUNCH_REQUEST_KEY_PREFIX}${uid}`,
-      refKind: 'goal',
-      refId: goalId,
-      projectPath,
-      projectName: defaults.projectName ?? null,
-      actions: [spawnAction({ ...args, goalId, provider }, folder, prompt)],
-    });
+    dispatchNotification(
+      inboxDb,
+      buildLaunchRequest({
+        uid,
+        goalId,
+        goalName: goal.name,
+        prompt,
+        folder,
+        projectPath,
+        projectName: defaults.projectName ?? null,
+        provider,
+        model: args.model,
+        worktree: args.worktree,
+        title: args.title,
+      })
+    );
     return { uid, reused: false };
   });
   const { uid, reused } = openOrInsert.immediate();

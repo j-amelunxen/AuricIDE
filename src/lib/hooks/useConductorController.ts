@@ -31,6 +31,7 @@ export function useConductorController() {
   const tickets = useStore((s) => s.pmDraftTickets);
   const dependencies = useStore((s) => s.pmDraftDependencies);
   const goals = useStore((s) => s.goalsDraft);
+  const stations = useStore((s) => s.goalStationsDraft);
   const selectedGoalId = useStore((s) => s.selectedGoalId);
   const failedTickets = useStore((s) => s.conductorFailedTickets);
   const approvedTickets = useStore((s) => s.conductorApprovedTickets);
@@ -81,9 +82,14 @@ export function useConductorController() {
         goalId: selectedGoalId,
         failedTickets: failedTickets ?? {},
         approvedTickets: approvedTickets ?? [],
+        stations: stations ?? [],
       }),
-    [tickets, dependencies, goals, selectedGoalId, failedTickets, approvedTickets]
+    [tickets, dependencies, goals, selectedGoalId, failedTickets, approvedTickets, stations]
   );
+
+  // A stations goal is work too: the run asks for goal agents for it, or, with
+  // no agent work left, checks whether it is achieved.
+  const hasWork = preflight.total > 0 || preflight.stationGoals > 0;
 
   const selectedGoalName = useMemo(
     () =>
@@ -122,11 +128,11 @@ export function useConductorController() {
     lastRun,
     preflight,
     selectedGoalName,
-    canStart: rootPath !== null && preflight.total > 0,
+    canStart: rootPath !== null && hasWork,
     startDisabledReason:
       rootPath === null
         ? 'Open a project first'
-        : preflight.total === 0
+        : !hasWork
           ? 'No tickets yet - create work first'
           : undefined,
     providers,

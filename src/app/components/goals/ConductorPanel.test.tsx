@@ -300,6 +300,8 @@ describe('ConductorPanel preflight', () => {
     inReview: 0,
     toTest: 0,
     exhausted: 0,
+    stationGoals: 0,
+    stationGoalsReady: 0,
   };
 
   it('says what a run would pick up before it starts', () => {

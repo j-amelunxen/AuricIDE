@@ -261,3 +261,43 @@ fn test_goals_sync_deletes_only_listed_ids() {
     assert_eq!(state.goals.len(), 1);
     assert_eq!(state.goals[0].id, "keep");
 }
+
+#[test]
+fn test_goal_work_mode_roundtrips_and_defaults_to_auto() {
+    let conn = setup_in_memory_db();
+
+    let mut stations_goal = make_test_goal("g1", None);
+    stations_goal.work_mode = "stations".to_string();
+    let payload = sync_payload(
+        vec![stations_goal, make_test_goal("g2", None)],
+        vec![],
+        vec![],
+    );
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    let g1 = state.goals.iter().find(|g| g.id == "g1").unwrap();
+    let g2 = state.goals.iter().find(|g| g.id == "g2").unwrap();
+    assert_eq!(g1.work_mode, "stations");
+    assert_eq!(g2.work_mode, "auto");
+
+    // A row written without the column (an older writer) reads back as auto.
+    conn.execute(
+        "INSERT INTO pm_goals (id, name) VALUES ('g3', 'Older writer')",
+        [],
+    )
+    .unwrap();
+    let state = goals_load_impl(&conn).unwrap();
+    let g3 = state.goals.iter().find(|g| g.id == "g3").unwrap();
+    assert_eq!(g3.work_mode, "auto");
+}
+
+#[test]
+fn test_goal_payload_without_work_mode_deserializes_as_auto() {
+    let json = r#"{"id":"g1","parentId":null,"name":"Goal","description":"",
+        "successCriteria":"","status":"draft","priority":"normal","goalPrompt":"",
+        "createdBy":"ui","achievedAt":null,"sortOrder":0,
+        "createdAt":"2026-01-01 00:00:00","updatedAt":"2026-01-01 00:00:00"}"#;
+    let goal: PmGoal = serde_json::from_str(json).unwrap();
+    assert_eq!(goal.work_mode, "auto");
+}

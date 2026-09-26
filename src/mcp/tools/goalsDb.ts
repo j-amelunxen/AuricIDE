@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { isVerifiedEvidence } from '../../lib/pm/enums';
+import { GOAL_WORK_MODE_SETTINGS, resolveGoalWorkMode } from '../../lib/goals/workMode';
+import { decideGoalCompletion, type GoalCompletion } from '../../lib/goals/goalCompletion';
 import { createTicket, type CreateTicketParams, type Ticket } from './tickets';
 
 export interface GoalRow {
@@ -12,6 +14,8 @@ export interface GoalRow {
   status: string;
   priority: string;
   goal_prompt: string;
+  /** `auto` | `stations` | `tickets`, resolved by `resolveGoalWorkMode`. */
+  work_mode: string;
   created_by: string;
   achieved_at: string | null;
   sort_order: number;
@@ -86,6 +90,16 @@ export function getGoal(db: Database.Database, id: string): GoalRow | null {
   return (db.prepare('SELECT * FROM pm_goals WHERE id = ?').get(id) as GoalRow | undefined) ?? null;
 }
 
+function checkedWorkMode(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (!(GOAL_WORK_MODE_SETTINGS as readonly string[]).includes(value)) {
+    throw new Error(
+      `Unknown work mode '${value}'; use one of ${GOAL_WORK_MODE_SETTINGS.join(', ')}`
+    );
+  }
+  return value;
+}
+
 export function createGoal(
   db: Database.Database,
   params: {
@@ -97,17 +111,19 @@ export function createGoal(
     priority?: string;
     goalPrompt?: string;
     sortOrder?: number;
+    workMode?: string;
   },
   createdBy: string
 ): GoalRow {
   if (params.parentId && !getGoal(db, params.parentId)) {
     throw new Error(`Parent goal '${params.parentId}' not found`);
   }
+  const workMode = checkedWorkMode(params.workMode) ?? 'auto';
   const id = crypto.randomUUID();
   const ts = now();
   db.prepare(
-    `INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, status, priority, goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`
+    `INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, status, priority, goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at, work_mode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`
   ).run(
     id,
     params.parentId ?? null,
@@ -120,7 +136,8 @@ export function createGoal(
     createdBy,
     params.sortOrder ?? 0,
     ts,
-    ts
+    ts,
+    workMode
   );
   return getGoal(db, id) as GoalRow;
 }
@@ -137,8 +154,10 @@ export function updateGoal(
     priority: string;
     goalPrompt: string;
     sortOrder: number;
+    workMode: string;
   }>
 ): GoalRow {
+  checkedWorkMode(updates.workMode);
   const fieldMap: Record<string, string> = {
     name: 'name',
     parentId: 'parent_id',
@@ -148,6 +167,7 @@ export function updateGoal(
     priority: 'priority',
     goalPrompt: 'goal_prompt',
     sortOrder: 'sort_order',
+    workMode: 'work_mode',
   };
 
   const setClauses: string[] = [];
@@ -408,8 +428,12 @@ export function evaluateGoal(
   satisfied: boolean;
   blockers: string[];
   progress: { totalTickets: number; doneTickets: number };
+  workMode: { mode: string; setting: string; reason: string };
+  /** The completion transition (`decideGoalCompletion`), same as the UI's. */
+  completion: GoalCompletion;
 } {
-  if (!getGoal(db, goalId)) throw new Error(`Goal '${goalId}' not found`);
+  const goal = getGoal(db, goalId);
+  if (!goal) throw new Error(`Goal '${goalId}' not found`);
   const blockers: string[] = [];
   const subtree = descendantIds(db, goalId);
   const placeholders = subtree.map(() => '?').join(',');
@@ -470,12 +494,24 @@ export function evaluateGoal(
     );
   }
 
+  const liveTickets = tickets.filter((t) => t.status !== 'discarded');
+  const workMode = resolveGoalWorkMode(goal.work_mode, {
+    hasTickets: liveTickets.length > 0,
+    hasStations: stations.length > 0,
+  });
+  const satisfaction = { satisfied: blockers.length === 0, blockers };
+
   return {
-    satisfied: blockers.length === 0,
-    blockers,
+    ...satisfaction,
     progress: {
-      totalTickets: tickets.filter((t) => t.status !== 'discarded').length,
+      totalTickets: liveTickets.length,
       doneTickets: tickets.filter((t) => t.status === 'done').length,
     },
+    workMode,
+    completion: decideGoalCompletion({
+      satisfaction,
+      workMode,
+      hasStations: stations.length > 0,
+    }),
   };
 }

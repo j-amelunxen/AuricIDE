@@ -38,6 +38,7 @@ function OrchestrationModalContent() {
   const conductorRunning = useStore((s) => s.conductorRunning);
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
   const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
+  const goalStationsDraft = useStore((s) => s.goalStationsDraft);
 
   // The graph doesn't render lastActivityAt, but the agents array is replaced
   // every ~2s just to bump it — key the memo on a signature without that field
@@ -49,10 +50,10 @@ function OrchestrationModalContent() {
   const { nodes, edges } = useMemo(
     () =>
       orchestrationOpen
-        ? buildOrchestrationGraph(goalsDraft, tickets, agents, goalRunsDraft)
+        ? buildOrchestrationGraph(goalsDraft, tickets, agents, goalRunsDraft, goalStationsDraft)
         : { nodes: [], edges: [] },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- agents is represented by agentSignature
-    [orchestrationOpen, goalsDraft, tickets, agentSignature, goalRunsDraft]
+    [orchestrationOpen, goalsDraft, tickets, agentSignature, goalRunsDraft, goalStationsDraft]
   );
 
   const rfEdges = useMemo(

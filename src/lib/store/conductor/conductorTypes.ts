@@ -88,6 +88,10 @@ export interface ConductorPreflight {
   toTest: number;
   /** Open tickets that used up their attempts and will not be retried. */
   exhausted: number;
+  /** Open stations-mode goals in scope; a run works or at least checks them. */
+  stationGoals: number;
+  /** Of those, the ones a run would ask a goal agent for right away. */
+  stationGoalsReady: number;
 }
 
 export interface CrossSlices {
@@ -108,6 +112,10 @@ export type FullConductorStore = ConductorSlice &
       input: import('@/lib/tauri/notifications').NotificationInput
     ) => Promise<unknown>;
     rootPath?: string | null;
+    /** The inbox, read for launch requests already open on a goal. */
+    notifications?: import('@/lib/notifications/types').Notification[];
+    /** A judge is configured, so a fresh station claim still gets its verdict. */
+    judgeLlmConfigured?: boolean;
   };
 
 export interface ConductorSlice {
@@ -155,8 +163,11 @@ export interface ConductorSlice {
   /** Cap on implementer launches this run; null = unlimited (today's behaviour). */
   conductorTicketBudget: number | null;
   /** Distinct tickets spawned this run. A retry of an already-spawned ticket
-   *  does not add to this — see the budget gate in conductorTick. */
+   *  does not add to this — see the budget gate in conductorTick. A stations
+   *  goal the run asked a goal agent for counts here once, like a ticket. */
   conductorRunSpawned: number;
+  /** goalId -> launch requests this run wrote for a stations goal; reset on start. */
+  conductorGoalAttempts: Record<string, number>;
   startConductor: (
     goalId: string | null,
     options?: {
