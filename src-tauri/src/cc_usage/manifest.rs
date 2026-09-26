@@ -313,6 +313,7 @@ mod tests {
             "claude-fable-5",
             "claude-mythos-5-1",
             "claude-mythos-5",
+            "claude-opus-5-5",
             "claude-opus-5",
             "claude-sonnet-5",
             "claude-haiku-4-5",
@@ -332,6 +333,27 @@ mod tests {
         let rate = rate_on(&fable.rates, "2026-09-02").expect("rate");
         assert_eq!(rate.input_per_m_tok, 10.0);
         assert_eq!(rate.output_per_m_tok, 50.0);
+    }
+
+    #[test]
+    fn opus_5_5_bills_below_opus_5() {
+        // Opus 5.5 is the one successor that got cheaper: $4 / $20 against
+        // Opus 5's $5 / $25. Its cache read is $0.20/MTok, i.e. 0.05× input,
+        // not the shared 0.1× — the shared multiplier would double it.
+        let plugin = built_in();
+        let opus = plugin.model_for("claude-opus-5-5").expect("opus 5.5");
+        assert_eq!(opus.label, "Opus 5.5");
+        let rate = rate_on(&opus.rates, "2026-09-26").expect("rate");
+        assert_eq!(rate.input_per_m_tok, 4.0);
+        assert_eq!(rate.output_per_m_tok, 20.0);
+        let fast = opus.fast_rates.as_ref().expect("fast mode");
+        let fast = rate_on(fast, "2026-09-26").expect("fast rate");
+        assert_eq!(fast.input_per_m_tok, 8.0);
+        assert_eq!(fast.output_per_m_tok, 40.0);
+        let cache = opus.cache.as_ref().expect("its own multipliers");
+        assert_eq!(cache.read, 0.05);
+        assert_eq!(cache.write5m, plugin.pricing.cache.write5m);
+        assert_eq!(cache.write1h, plugin.pricing.cache.write1h);
     }
 
     #[test]
