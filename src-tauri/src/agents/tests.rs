@@ -1,6 +1,7 @@
 use super::project_binding::resolve_project_binding;
 use super::*;
 use crate::provider_policy::ProviderPolicy;
+use crate::providers::SpawnInjection;
 
 #[test]
 fn general_agents_strip_inherited_project_authority() {
@@ -470,4 +471,26 @@ fn test_child_kill_terminates_the_process() {
         terminated,
         "process should have exited after calling kill() on the child handle"
     );
+}
+
+#[test]
+fn a_provider_without_binding_material_is_refused_by_default() {
+    let error = binding_injection_for("grok", SpawnInjection::default(), false).unwrap_err();
+    assert!(error.contains("'grok'"), "{error}");
+}
+
+#[test]
+fn a_provider_that_opts_in_starts_without_binding_material() {
+    let injection = binding_injection_for("grok", SpawnInjection::default(), true).unwrap();
+    assert!(injection.is_empty());
+}
+
+#[test]
+fn declared_binding_material_is_used_regardless_of_the_opt_in() {
+    let declared = SpawnInjection {
+        arguments: vec!["--mcp-config".to_string()],
+        env_vars: Vec::new(),
+    };
+    let injection = binding_injection_for("claude", declared, false).unwrap();
+    assert_eq!(injection.arguments, vec!["--mcp-config".to_string()]);
 }

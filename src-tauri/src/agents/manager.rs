@@ -24,6 +24,22 @@ pub async fn list_agents_impl(state: &AgentManagerState) -> Result<Vec<AgentInfo
     Ok(infos)
 }
 
+/// A bound agent needs provider material that points its MCP at the bound
+/// project. Without it the spawn is refused, unless the provider config opted
+/// in to starting unbound (`allowUnboundMcp`) because its CLI cannot take one.
+pub fn binding_injection_for(
+    provider_id: &str,
+    injection: crate::providers::SpawnInjection,
+    allows_unbound: bool,
+) -> Result<crate::providers::SpawnInjection, String> {
+    if injection.is_empty() && !allows_unbound {
+        return Err(format!(
+            "Provider '{provider_id}' does not support an isolated Auric MCP project binding"
+        ));
+    }
+    Ok(injection)
+}
+
 pub fn resolve_permitted_provider(
     requested: Option<&str>,
     providers: &ProviderRegistryState,
@@ -141,11 +157,11 @@ pub async fn spawn_agent_impl(
         } else {
             provider.project_binding_injection(&provider_binding)
         };
-        if provider_injection.is_empty() {
-            return Err(format!(
-                "Provider '{provider_id}' does not support an isolated Auric MCP project binding"
-            ));
-        }
+        let provider_injection = binding_injection_for(
+            provider_id,
+            provider_injection,
+            provider.allows_unbound_mcp(),
+        )?;
         spawn_cmd = spawn_cmd.with_injection(provider_injection);
         // Reserved Auric variables are applied after provider material so a
         // provider config cannot accidentally point MCP at a different project.

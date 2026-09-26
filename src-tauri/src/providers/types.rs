@@ -202,6 +202,10 @@ pub trait AgentProvider: Send + Sync {
     fn project_binding_injection(&self, _binding: &ProviderProjectBinding) -> SpawnInjection {
         SpawnInjection::default()
     }
+
+    fn allows_unbound_mcp(&self) -> bool {
+        false
+    }
 }
 
 // ── DynamicProvider Configuration ────────────────────────────────────
@@ -260,6 +264,11 @@ pub struct ProviderConfig {
     pub arguments: Vec<ArgumentConfig>,
     #[serde(default)]
     pub project_binding: Option<ProjectBindingInjectionConfig>,
+    /// Lets a provider start without an isolated Auric MCP binding when its CLI
+    /// has no per-launch way to receive one. Its tools then use whatever MCP
+    /// config the CLI discovers itself. Off unless the config says so.
+    #[serde(default)]
+    pub allow_unbound_mcp: bool,
     pub info: ProviderConfigInfo,
     pub version_check: VersionCheck,
     pub prompt_template: String,

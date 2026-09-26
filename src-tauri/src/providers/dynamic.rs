@@ -146,6 +146,10 @@ impl AgentProvider for DynamicProvider {
         }
     }
 
+    fn allows_unbound_mcp(&self) -> bool {
+        self.config.allow_unbound_mcp
+    }
+
     fn project_binding_injection(&self, binding: &ProviderProjectBinding) -> SpawnInjection {
         let Some(config) = &self.config.project_binding else {
             return SpawnInjection::default();
