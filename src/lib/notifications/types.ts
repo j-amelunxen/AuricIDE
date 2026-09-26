@@ -79,6 +79,12 @@ export type NotificationAction =
       goalId?: string;
       provider?: string;
       model?: string;
+      /**
+       * Run in a fresh git worktree of `repoPath` instead of the checkout.
+       * Honoured from any payload: it narrows what the agent touches, it
+       * never widens it.
+       */
+      useWorktree?: boolean;
       /** Honoured only for a user-authored payload — see `trust.ts`. */
       permissionMode?: PermissionMode;
       /**
@@ -225,6 +231,7 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
     goalId: z.string().optional(),
     provider: z.string().optional(),
     model: z.string().optional(),
+    useWorktree: z.boolean().optional(),
     permissionMode: permissionModeSchema.optional(),
     launch: z.enum(['auto', 'direct', 'dialog']).optional(),
     headless: z.boolean().optional(),

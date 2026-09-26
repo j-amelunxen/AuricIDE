@@ -22,6 +22,20 @@ pub struct AgentConfig {
     pub spawned_by_ticket_id: Option<String>,
     #[serde(default)]
     pub spawned_by_goal_id: Option<String>,
+    /// The MCP launch request this spawn answers. When set, the spawn is
+    /// refused unless `cwd` is where that request may run
+    /// (`agents/launch_dir.rs`).
+    #[serde(default)]
+    pub launch_request_uid: Option<String>,
+    /// An agent-written notification whose Start button this spawn answers
+    /// (`notify`, an agent's schedule). When set, the spawn is refused unless
+    /// `cwd` is the folder the MCP server stamped on that action
+    /// (`agents/launch_dir.rs`, `check_agent_notification_directory`).
+    #[serde(default)]
+    pub agent_notification_uid: Option<String>,
+    /// The action on `agent_notification_uid` that was clicked.
+    #[serde(default)]
+    pub agent_notification_action_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

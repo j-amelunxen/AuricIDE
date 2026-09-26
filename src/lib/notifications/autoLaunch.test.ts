@@ -60,6 +60,14 @@ const parseOne =
     actions;
 
 describe('autoAgentLaunches', () => {
+  // Sub-goal 09, review r4 blocker: before r4 a schedule an agent created via
+  // MCP (`mcp-` id) fired its reminder as `system`. Its payload is the agent's,
+  // so a stored `launch: 'auto'` must not start anything on its own.
+  it('skips a reminder of an agent-created schedule that fired as system before r4', () => {
+    const n = notification({ dedupeKey: 'schedule:mcp-1727000000000-4242-1:2026-08-17 09:30:00' });
+    expect(autoAgentLaunches([n], parseOne([spawnAuto]), nowMs)).toEqual([]);
+  });
+
   it('includes a trusted, fresh, unread spawn-agent auto launch', () => {
     const n = notification();
     expect(autoAgentLaunches([n], parseOne([spawnAuto]), nowMs)).toEqual([

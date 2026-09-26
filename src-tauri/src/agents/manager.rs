@@ -29,9 +29,20 @@ pub fn resolve_permitted_provider(
     providers: &ProviderRegistryState,
     policy: &crate::provider_policy::ProviderPolicy,
 ) -> Result<(String, Arc<dyn crate::providers::AgentProvider>), String> {
-    let provider = providers
-        .get(requested.unwrap_or("claude"))
-        .unwrap_or_else(|| providers.default_provider());
+    // A named provider is a choice: if it is not installed the spawn fails
+    // with that name, instead of quietly running the default in its place.
+    // Only an absent (or blank) request means "whatever the default is".
+    let provider = match requested.map(str::trim).filter(|id| !id.is_empty()) {
+        Some(id) => providers.get(id).ok_or_else(|| {
+            format!(
+                "Provider '{id}' is not installed in AuricIDE. \
+                 Import its config under Settings → Providers, or pick an installed one."
+            )
+        })?,
+        None => providers
+            .get("claude")
+            .unwrap_or_else(|| providers.default_provider()),
+    };
     let resolved_id = provider.info().id;
 
     if !crate::provider_policy::is_provider_allowed(&resolved_id, policy) {
@@ -76,6 +87,105 @@ pub fn attach_usage_sidecar(
     }
 }
 
+/// Binds a spawn to its project's Auric MCP server: one private config per
+/// agent, the provider's launch material, and the reserved Auric variables.
+/// The server's environment (`crate::mcp::agent_mcp_server_env`) is computed
+/// once and handed to every provider path.
+fn bind_to_project_mcp(
+    spawn_cmd: crate::providers::SpawnCommand,
+    app: &AppHandle,
+    binding: &super::project_binding::ResolvedProjectBinding,
+    provider: (&str, &dyn crate::providers::AgentProvider),
+    cwd: Option<&str>,
+) -> Result<crate::providers::SpawnCommand, String> {
+    let runtime_entrypoint = crate::mcp::runtime_entrypoint(app)?;
+    let notifications_db = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|app_data| crate::notifications::db_path_in(&app_data));
+    let agent_cwd = crate::mcp::canonical_agent_cwd(cwd);
+    let mcp_env = crate::mcp::agent_mcp_server_env(
+        notifications_db.as_deref(),
+        app.try_state::<ProviderRegistryState>()
+            .as_deref()
+            .map(|registry| registry.as_ref()),
+        agent_cwd.as_deref(),
+    );
+    let mcp_configs = crate::mcp::ensure_agent_mcp_config(app, binding.project_root(), &mcp_env)?;
+    let provider_binding = binding
+        .provider_binding()
+        .with_mcp_config_path(mcp_configs.standard.to_string_lossy().into_owned())
+        .with_crush_config_path(mcp_configs.crush.to_string_lossy().into_owned())
+        .with_runtime_entrypoint(runtime_entrypoint.to_string_lossy().into_owned())
+        .with_mcp_env(mcp_env);
+    let (provider_id, provider) = provider;
+    let provider_injection =
+        crate::providers::project_binding_injection_for(provider_id, provider, &provider_binding)?;
+    let spawn_cmd = spawn_cmd.with_injection(provider_injection);
+    // Reserved Auric variables are applied after provider material so a
+    // provider config cannot accidentally point MCP at a different project.
+    Ok(spawn_cmd.with_injection(crate::providers::SpawnInjection {
+        arguments: Vec::new(),
+        env_vars: {
+            let mut env = binding.environment();
+            if let Some(path) = notifications_db.as_ref() {
+                env.push((
+                    "AURIC_NOTIFICATIONS_DB".to_string(),
+                    path.to_string_lossy().into_owned(),
+                ));
+            }
+            env
+        },
+    }))
+}
+
+/// Sub-goal 09: an agent answering an MCP launch request starts only where
+/// that request may run. Checked against the inbox row, not the frontend's
+/// word, before any PTY exists.
+fn check_launch_request_directory(
+    app: &AppHandle,
+    request_uid: &str,
+    cwd: Option<&str>,
+) -> Result<(), String> {
+    let inbox = app
+        .try_state::<crate::notifications::NotificationsState>()
+        .ok_or_else(|| {
+            "The inbox is unavailable; a launch request cannot be checked".to_string()
+        })?;
+    let conn = inbox
+        .conn
+        .lock()
+        .map_err(|_| "The inbox is unavailable; a launch request cannot be checked".to_string())?;
+    super::launch_dir::check_launch_directory(&conn, request_uid, cwd)
+}
+
+/// Sub-goal 09: an agent-written Start button (notify, an agent's schedule)
+/// starts only in the folder the MCP server checked and stamped on it.
+fn check_agent_notification_directory(app: &AppHandle, config: &AgentConfig) -> Result<(), String> {
+    let Some(uid) = config.agent_notification_uid.as_deref() else {
+        return Ok(());
+    };
+    let action_id = config
+        .agent_notification_action_id
+        .as_deref()
+        .ok_or_else(|| format!("The Start button on '{uid}' names no action"))?;
+    let inbox = app
+        .try_state::<crate::notifications::NotificationsState>()
+        .ok_or_else(|| "The inbox is unavailable; a Start button cannot be checked".to_string())?;
+    let conn = inbox
+        .conn
+        .lock()
+        .map_err(|_| "The inbox is unavailable; a Start button cannot be checked".to_string())?;
+    super::launch_dir::check_agent_notification_directory(
+        &conn,
+        uid,
+        action_id,
+        config.cwd.as_deref(),
+    )
+}
+
+// code-gate: complexity-cyclomatic, complexity-function-length - existing PTY setup plus output pump; sub-goal 09 moved the MCP binding out, splitting the pump is its own refactor
 pub async fn spawn_agent_impl(
     config: AgentConfig,
     state: &AgentManagerState,
@@ -93,6 +203,10 @@ pub async fn spawn_agent_impl(
     // Resolve once, before opening the PTY. The resulting binding is immutable
     // for the process lifetime and never follows later UI/project changes.
     let project_binding = resolve_project_binding(config.project_path.as_deref())?;
+    if let Some(request_uid) = config.launch_request_uid.as_deref() {
+        check_launch_request_directory(app, request_uid, config.cwd.as_deref())?;
+    }
+    check_agent_notification_directory(app, &config)?;
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -129,41 +243,13 @@ pub async fn spawn_agent_impl(
         config.headless.unwrap_or(false),
     );
     if let Some(binding) = project_binding.as_ref() {
-        let runtime_entrypoint = crate::mcp::runtime_entrypoint(app)?;
-        let mcp_configs = crate::mcp::ensure_agent_mcp_config(app, binding.project_root())?;
-        let provider_binding = binding
-            .provider_binding()
-            .with_mcp_config_path(mcp_configs.standard.to_string_lossy().into_owned())
-            .with_crush_config_path(mcp_configs.crush.to_string_lossy().into_owned())
-            .with_runtime_entrypoint(runtime_entrypoint.to_string_lossy().into_owned());
-        let provider_injection = if provider_id == "codex" {
-            crate::providers::codex_project_binding_injection(&provider_binding)?
-        } else {
-            provider.project_binding_injection(&provider_binding)
-        };
-        if provider_injection.is_empty() {
-            return Err(format!(
-                "Provider '{provider_id}' does not support an isolated Auric MCP project binding"
-            ));
-        }
-        spawn_cmd = spawn_cmd.with_injection(provider_injection);
-        // Reserved Auric variables are applied after provider material so a
-        // provider config cannot accidentally point MCP at a different project.
-        spawn_cmd = spawn_cmd.with_injection(crate::providers::SpawnInjection {
-            arguments: Vec::new(),
-            env_vars: {
-                let mut env = binding.environment();
-                if let Ok(app_data) = app.path().app_data_dir() {
-                    env.push((
-                        "AURIC_NOTIFICATIONS_DB".to_string(),
-                        crate::notifications::db_path_in(&app_data)
-                            .to_string_lossy()
-                            .into_owned(),
-                    ));
-                }
-                env
-            },
-        });
+        spawn_cmd = bind_to_project_mcp(
+            spawn_cmd,
+            app,
+            binding,
+            (provider_id, provider.as_ref()),
+            config.cwd.as_deref(),
+        )?;
     }
     let spawn_cmd = attach_usage_sidecar(spawn_cmd, app);
 

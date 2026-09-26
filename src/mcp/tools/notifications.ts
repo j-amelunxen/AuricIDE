@@ -8,6 +8,12 @@ import {
   getAnswerForProject,
   listSchedulesForProject,
 } from '../notificationsDb';
+import { placeSpawnActions } from '../requesterFolder';
+import {
+  isReservedLaunchMarker,
+  LAUNCH_REQUEST_KEY_PREFIX,
+  LAUNCH_REQUEST_ORIGIN,
+} from '../../lib/notifications/launchRequest';
 
 /**
  * Lets an agent reach the human.
@@ -67,6 +73,19 @@ export const notifyActionSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+/**
+ * The launch-request markers belong to `request_agent_launch` alone. A plain
+ * notify carrying them could pass as a launch request (skipping that tool's
+ * checks) or, through the dedupe key, replace a real one.
+ */
+function refuseReservedMarkers(origin?: string, dedupeKey?: string): void {
+  if (isReservedLaunchMarker(origin, dedupeKey)) {
+    throw new Error(
+      `The origin '${LAUNCH_REQUEST_ORIGIN}' and dedupe keys starting with '${LAUNCH_REQUEST_KEY_PREFIX}' are reserved for request_agent_launch`
+    );
+  }
+}
+
 function parseNotifyActions(actions: unknown): z.infer<typeof notifyActionSchema>[] | undefined {
   if (actions === undefined) return undefined;
   if (!Array.isArray(actions)) {
@@ -84,7 +103,16 @@ function parseNotifyActions(actions: unknown): z.infer<typeof notifyActionSchema
 export function registerNotificationTools(
   server: FastMCP,
   db: Database.Database,
-  defaults: { projectPath?: string; projectName?: string } = {}
+  defaults: {
+    projectPath?: string;
+    projectName?: string;
+    /**
+     * The requesting agent's working directory (`AURIC_AGENT_CWD`). Every
+     * Start button an agent writes here is placed in it; without it, a
+     * notification can still be sent, but not one with a Start button.
+     */
+    agentCwd?: string;
+  } = {}
 ): void {
   server.addTool({
     name: 'notify',
@@ -121,7 +149,8 @@ export function registerNotificationTools(
         .describe('UTC "YYYY-MM-DD HH:MM:SS"; the notification stops showing after this'),
     }),
     execute: async (args) => {
-      const actions = parseNotifyActions(args.actions);
+      refuseReservedMarkers(args.origin, args.dedupeKey);
+      const actions = placeSpawnActions(parseNotifyActions(args.actions), defaults.agentCwd);
       const stored = dispatchNotification(db, {
         ...args,
         actions,
@@ -165,6 +194,7 @@ export function registerNotificationTools(
         .describe('UTC "YYYY-MM-DD HH:MM:SS"; after this the answer comes back as "expired"'),
     }),
     execute: async (args) => {
+      refuseReservedMarkers(args.origin, args.dedupeKey);
       // The action id is what gets recorded as the answer, so the caller's
       // `value` becomes the id — that is what they will read back.
       const actions = parseNotifyActions(
@@ -277,7 +307,10 @@ export function registerNotificationTools(
           actions:
             args.task === undefined || args.task.trim() === ''
               ? []
-              : [{ id: 'run', label: 'Start agent', kind: 'spawn-agent', task: args.task }],
+              : placeSpawnActions(
+                  [{ id: 'run', label: 'Start agent', kind: 'spawn-agent', task: args.task }],
+                  defaults.agentCwd
+                ),
         },
       });
       return JSON.stringify({ id: stored.id, name: stored.name });
