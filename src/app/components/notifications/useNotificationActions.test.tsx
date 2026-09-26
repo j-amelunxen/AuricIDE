@@ -477,3 +477,203 @@ describe('useNotificationActions — opening a row', () => {
     await waitFor(() => expect(useStore.getState().notifications[0]?.readAt).not.toBeNull());
   });
 });
+
+// Sub-goal 09, blocker 2 of review r3: a Start button written through the
+// general notify tool used to start wherever its repoPath pointed. The click
+// now always names the row, so the native spawn checks the folder against it
+// (`check_agent_notification_directory`); the frontend never picks the folder.
+describe('useNotificationActions — an agent-written Start button', () => {
+  const notifyButton = (repoPath?: string) =>
+    makeNotification({
+      uid: 'n-5',
+      source: 'agent',
+      origin: 'some-agent',
+      projectPath: REPO_PATH,
+      actions: [
+        {
+          id: 'run',
+          label: 'Start agent',
+          kind: 'spawn-agent',
+          task: 'Do it',
+          ...(repoPath ? { repoPath } : {}),
+        },
+      ],
+    });
+
+  it('hands a foreign folder to the native check instead of starting there unchecked', async () => {
+    const user = userEvent.setup();
+    isDirMock.mockImplementation(async () => true);
+    const notification = notifyButton('/repo/foreign');
+    useStore.setState({ notifications: [notification], rootPath: REPO_PATH } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(await screen.findByTestId('notification-action-n-5-run'));
+
+    await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
+    expect(spawnAgentMock.mock.calls[0][0]).toMatchObject({
+      cwd: '/repo/foreign',
+      agentNotificationUid: 'n-5',
+      agentNotificationActionId: 'run',
+    });
+  });
+
+  it('does not start in the open project when the button stored no folder', async () => {
+    const user = userEvent.setup();
+    const notification = notifyButton();
+    useStore.setState({ notifications: [notification], rootPath: REPO_PATH } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(await screen.findByTestId('notification-action-n-5-run'));
+
+    await waitFor(() =>
+      expect(useStore.getState().toasts.some((t) => t.variant === 'error')).toBe(true)
+    );
+    expect(spawnAgentMock).not.toHaveBeenCalled();
+  });
+});
+
+// Sub-goal 09, review r4 blocker: a schedule an agent created through MCP
+// (`mcp-` id, `createSchedule` in src/mcp/notificationsDb.ts) fired its
+// reminder as source 'system' until r4. Such rows are still in the inbox. The
+// row below is the one the pre-r4 runner wrote: source 'system', origin = the
+// schedule name, dedupe key `schedule:<id>:<utc occurrence>`, the agent's own
+// payload actions, no folder stamp. It must never start in the open project.
+describe('useNotificationActions — a pre-r4 reminder of an agent-created schedule', () => {
+  const legacyReminder = (repoPath?: string) =>
+    makeNotification({
+      uid: 'legacy-1',
+      source: 'system',
+      origin: 'Agent follow-up',
+      projectPath: REPO_PATH,
+      dedupeKey: 'schedule:mcp-1727000000000-4242-1:2026-09-20 08:00:00',
+      actions: [
+        {
+          id: 'run',
+          label: 'Start agent',
+          kind: 'spawn-agent',
+          task: 'Continue the work',
+          permissionMode: 'bypassPermissions',
+          ...(repoPath ? { repoPath } : {}),
+        },
+      ],
+    });
+
+  it('does not start in the open, foreign project when the row stored no folder', async () => {
+    const user = userEvent.setup();
+    const notification = legacyReminder();
+    useStore.setState({ notifications: [notification], rootPath: '/repo/foreign-open' } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(await screen.findByTestId('notification-action-legacy-1-run'));
+
+    await waitFor(() =>
+      expect(useStore.getState().toasts.some((t) => t.variant === 'error')).toBe(true)
+    );
+    expect(spawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('hands a stored folder to the native check and never trusts the payload', async () => {
+    const user = userEvent.setup();
+    isDirMock.mockImplementation(async () => true);
+    const notification = legacyReminder('/repo/elsewhere');
+    useStore.setState({ notifications: [notification], rootPath: '/repo/foreign-open' } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(await screen.findByTestId('notification-action-legacy-1-run'));
+
+    await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
+    const config: Record<string, unknown> = spawnAgentMock.mock.calls[0][0];
+    expect(config).toMatchObject({
+      cwd: '/repo/elsewhere',
+      agentNotificationUid: 'legacy-1',
+      agentNotificationActionId: 'run',
+    });
+    expect(config['permissionMode']).not.toBe('bypassPermissions');
+  });
+});
+
+describe('useNotificationActions — an MCP launch request', () => {
+  const launchRequest = () =>
+    makeNotification({
+      uid: 'req-9',
+      source: 'agent',
+      origin: 'request_agent_launch',
+      dedupeKey: 'agent-launch:req-9',
+      refKind: 'goal',
+      refId: 'goal-1',
+      actions: [
+        {
+          id: 'start',
+          label: 'Start agent',
+          kind: 'spawn-agent',
+          task: 'Work on goal 1',
+          repoPath: REPO_PATH,
+          goalId: 'goal-1',
+        },
+      ],
+    });
+
+  it('starts a goal-bound agent on click and records which agent it became', async () => {
+    const user = userEvent.setup();
+    const notification = launchRequest();
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(await screen.findByTestId('notification-action-req-9-start'));
+
+    await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
+    expect(spawnAgentMock.mock.calls[0][0]).toMatchObject({
+      spawnedByGoalId: 'goal-1',
+      launchRequestUid: 'req-9',
+    });
+    await waitFor(() => expect(useStore.getState().notifications[0]?.answer).toMatch(/^agent:/));
+  });
+
+  // Sub-goal 09: the stored folder may be a worktree without its own project
+  // database. The agent runs there, but stays bound to the request's project,
+  // never to the folder and never to the project the IDE has open.
+  it('runs in the stored folder and binds the agent to the request project', async () => {
+    const user = userEvent.setup();
+    isDirMock.mockImplementation(async (path: string) => path.startsWith(REPO_PATH));
+    const notification = makeNotification({
+      ...launchRequest(),
+      actions: [
+        {
+          id: 'start',
+          label: 'Start agent',
+          kind: 'spawn-agent',
+          task: 'Work on goal 1',
+          repoPath: `${REPO_PATH}.auric-wt/feature`,
+          goalId: 'goal-1',
+        },
+      ],
+    });
+    useStore.setState({ notifications: [notification], rootPath: '/repo/elsewhere' } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(await screen.findByTestId('notification-action-req-9-start'));
+
+    await waitFor(() => expect(spawnAgentMock).toHaveBeenCalledTimes(1));
+    expect(spawnAgentMock.mock.calls[0][0]).toMatchObject({
+      cwd: `${REPO_PATH}.auric-wt/feature`,
+      projectPath: REPO_PATH,
+      launchRequestUid: 'req-9',
+    });
+  });
+
+  it('records a failed start on the request', async () => {
+    const user = userEvent.setup();
+    spawnAgentMock.mockImplementationOnce(async () => {
+      throw new Error("Provider 'nope' is not installed in AuricIDE");
+    });
+    const notification = launchRequest();
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(await screen.findByTestId('notification-action-req-9-start'));
+
+    await waitFor(() =>
+      expect(useStore.getState().notifications[0]?.answer).toMatch(/^failed:.*not installed/)
+    );
+  });
+});

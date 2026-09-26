@@ -16,6 +16,7 @@ import { registerStationTools } from './tools/stations';
 import { registerKnowledgeTools } from './tools/knowledge';
 import { registerReviewTools } from './tools/reviews';
 import { registerNotificationTools } from './tools/notifications';
+import { registerAgentLaunchTools } from './tools/agentLaunch';
 import { openNotificationsDb } from './notificationsDb';
 
 /**
@@ -28,14 +29,31 @@ import { openNotificationsDb } from './notificationsDb';
  * someone. Registering a version that quietly writes nowhere would be worse
  * than not having it.
  */
-function attachNotificationTools(server: FastMCP, projectRoot: string): void {
+function attachNotificationTools(
+  server: FastMCP,
+  db: Database.Database,
+  projectRoot: string
+): void {
   const dbPath = process.env.AURIC_NOTIFICATIONS_DB;
   if (!dbPath) return;
 
   try {
-    registerNotificationTools(server, openNotificationsDb(dbPath), {
+    const inbox = openNotificationsDb(dbPath);
+    const defaults = {
       projectPath: projectRoot,
       projectName: projectRoot.split('/').filter(Boolean).pop(),
+      // The requesting agent's folder, as the IDE set it for this process. Only
+      // as trustworthy as that environment: a shell agent could start its own
+      // server with a forged AURIC_AGENT_CWD (review r3, blocker 1). That is the
+      // excluded shell agent of the threat model, see `requesterFolder.ts`.
+      agentCwd: process.env.AURIC_AGENT_CWD,
+    };
+    registerNotificationTools(server, inbox, defaults);
+    // Launch requests travel through the same inbox, so they exist exactly
+    // when the inbox does: a request that reaches no one must not be offered.
+    registerAgentLaunchTools(server, db, inbox, {
+      ...defaults,
+      installedProviders: process.env.AURIC_AGENT_PROVIDERS,
     });
   } catch (error) {
     // The PM tools are the point of this server; an unreachable inbox must not
@@ -64,7 +82,7 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   registerStationTools(server, db);
   registerKnowledgeTools(server, projectRoot);
   registerReviewTools(server, db);
-  attachNotificationTools(server, projectRoot);
+  attachNotificationTools(server, db, projectRoot);
 
   return server;
 }

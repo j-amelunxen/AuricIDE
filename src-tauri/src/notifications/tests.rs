@@ -483,3 +483,1039 @@ fn mark_all_read_can_be_scoped_to_one_project() {
     assert_eq!(unread_count_impl(&conn, None).unwrap(), 1);
     assert_eq!(unread_count_impl(&conn, Some("/repo-b")).unwrap(), 1);
 }
+
+// ── Launch runs: what became of an agent launch request ──────────────
+
+fn launch_request(conn: &mut Connection, uid: &str) {
+    let mut request = input("Agent requested");
+    request.uid = Some(uid.to_string());
+    request.source = "agent".to_string();
+    request.origin = Some("request_agent_launch".to_string());
+    request.dedupe_key = Some(format!("agent-launch:{uid}"));
+    request.ref_kind = Some("goal".to_string());
+    request.ref_id = Some("goal-1".to_string());
+    request.project_path = Some("/repo".to_string());
+    dispatch_impl(conn, &request).expect("dispatch");
+}
+
+fn run(uid: &str, status: &str) -> AgentLaunchRunInput {
+    AgentLaunchRunInput {
+        request_uid: uid.to_string(),
+        agent_id: "agent-3".to_string(),
+        agent_name: Some("Worker".to_string()),
+        provider: Some("codex".to_string()),
+        model: Some("gpt".to_string()),
+        status: status.to_string(),
+        summary: None,
+        error: None,
+    }
+}
+
+fn stored(conn: &Connection, uid: &str) -> (String, String, Option<String>, Option<String>) {
+    conn.query_row(
+        "SELECT agent_id, status, summary, finished_at FROM agent_launch_runs WHERE request_uid = ?1",
+        params![uid],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    )
+    .expect("row")
+}
+
+#[test]
+fn records_the_agent_a_launch_request_became() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+
+    record_launch_run_impl(&conn, &run("req-1", "running")).expect("record");
+
+    let (agent, status, _, finished) = stored(&conn, "req-1");
+    assert_eq!((agent.as_str(), status.as_str()), ("agent-3", "running"));
+    assert!(finished.is_none());
+}
+
+#[test]
+fn a_finished_run_keeps_its_summary_and_end_time() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "running")).unwrap();
+
+    let mut done = run("req-1", "completed");
+    done.summary = Some("Tests green, PR ready".to_string());
+    record_launch_run_impl(&conn, &done).unwrap();
+
+    let (_, status, summary, finished) = stored(&conn, "req-1");
+    assert_eq!(status, "completed");
+    assert_eq!(summary.as_deref(), Some("Tests green, PR ready"));
+    assert!(finished.is_some());
+}
+
+#[test]
+fn a_finished_run_is_not_reopened() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "failed")).unwrap();
+
+    record_launch_run_impl(&conn, &run("req-1", "running")).unwrap();
+
+    assert_eq!(stored(&conn, "req-1").1, "failed");
+}
+
+#[test]
+fn refuses_a_run_for_something_that_is_not_a_launch_request() {
+    let mut conn = test_db();
+    let mut plain = input("hello");
+    plain.uid = Some("plain".to_string());
+    dispatch_impl(&mut conn, &plain).unwrap();
+
+    assert!(record_launch_run_impl(&conn, &run("plain", "running")).is_err());
+    assert!(record_launch_run_impl(&conn, &run("missing", "running")).is_err());
+}
+
+#[test]
+fn refuses_an_unknown_run_status() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+
+    let error = record_launch_run_impl(&conn, &run("req-1", "exploded")).unwrap_err();
+    assert!(error.contains("exploded"), "{error}");
+}
+
+// ── Launch claims: the native, atomic gate in front of an automatic start ──
+
+/// Every goal is under every root: for the tests that are about the claim
+/// books, not about ancestry (that has its own tests below).
+fn anywhere(_project: &str, _goal: &str, _root: &str) -> Result<bool, String> {
+    Ok(true)
+}
+
+/// Puts grant `id` for `root-1` in `/repo` in force with these limits, the
+/// way a test fixture may: straight into the table, replacing an earlier row
+/// with the same id.
+fn grant_row(conn: &Connection, id: &str, max_concurrent: i64, launch_budget: i64) {
+    conn.execute(
+        "INSERT OR REPLACE INTO agent_launch_grants
+            (id, project_path, root_goal_id, max_concurrent, launch_budget)
+         VALUES (?1, '/repo', 'root-1', ?2, ?3)",
+        params![id, max_concurrent, launch_budget],
+    )
+    .expect("grant row");
+}
+
+fn claim_input(uid: &str, grant_id: &str) -> AgentLaunchClaimInput {
+    AgentLaunchClaimInput {
+        request_uid: uid.to_string(),
+        grant_id: grant_id.to_string(),
+    }
+}
+
+/// Claims `uid` under `grant-1`, whose limits are set to these first.
+fn claim_at(
+    conn: &mut Connection,
+    uid: &str,
+    max_concurrent: i64,
+    launch_budget: i64,
+) -> Result<LaunchClaimOutcome, String> {
+    grant_row(conn, "grant-1", max_concurrent, launch_budget);
+    claim_launch_impl(conn, &claim_input(uid, "grant-1"), &anywhere)
+}
+
+fn read_at(conn: &Connection, uid: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT read_at FROM notifications WHERE uid = ?1",
+        params![uid],
+        |row| row.get(0),
+    )
+    .expect("row")
+}
+
+#[test]
+fn a_claim_takes_the_request_books_the_budget_and_marks_it_read() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+
+    let outcome = claim_at(&mut conn, "req-1", 2, 3).expect("claim");
+
+    assert_eq!(outcome, LaunchClaimOutcome::Claimed);
+    assert!(read_at(&conn, "req-1").is_some());
+    assert_eq!(launch_grant_usage_impl(&conn, "grant-1").unwrap(), 1);
+}
+
+#[test]
+fn the_same_request_cannot_be_claimed_twice() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    claim_at(&mut conn, "req-1", 5, 5).unwrap();
+
+    let second = claim_at(&mut conn, "req-1", 5, 5).unwrap();
+
+    assert_eq!(second, LaunchClaimOutcome::AlreadyClaimed);
+    assert_eq!(launch_grant_usage_impl(&conn, "grant-1").unwrap(), 1);
+}
+
+#[test]
+fn a_request_someone_already_read_or_answered_is_not_claimable() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    launch_request(&mut conn, "req-2");
+    mark_read_impl(&conn, &["req-1".to_string()]).unwrap();
+    answer_impl(&conn, "req-2", "agent:x").unwrap();
+
+    for uid in ["req-1", "req-2"] {
+        assert_eq!(
+            claim_at(&mut conn, uid, 5, 5).unwrap(),
+            LaunchClaimOutcome::AlreadyClaimed
+        );
+    }
+    assert_eq!(launch_grant_usage_impl(&conn, "grant-1").unwrap(), 0);
+}
+
+#[test]
+fn a_claim_at_the_concurrency_limit_is_refused_and_leaves_the_request_untouched() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    launch_request(&mut conn, "req-2");
+    claim_at(&mut conn, "req-1", 1, 5).unwrap();
+
+    let outcome = claim_at(&mut conn, "req-2", 1, 5).unwrap();
+
+    assert_eq!(outcome, LaunchClaimOutcome::AtCapacity);
+    assert!(
+        read_at(&conn, "req-2").is_none(),
+        "refused claim must not mark it read"
+    );
+    assert_eq!(launch_grant_usage_impl(&conn, "grant-1").unwrap(), 1);
+}
+
+#[test]
+fn a_finished_run_frees_its_slot_but_not_its_budget() {
+    let mut conn = test_db();
+    for uid in ["req-1", "req-2", "req-3"] {
+        launch_request(&mut conn, uid);
+    }
+    claim_at(&mut conn, "req-1", 1, 2).unwrap();
+    record_launch_run_impl(&conn, &run("req-1", "running")).unwrap();
+    record_launch_run_impl(&conn, &run("req-1", "completed")).unwrap();
+
+    assert_eq!(
+        claim_at(&mut conn, "req-2", 1, 2).unwrap(),
+        LaunchClaimOutcome::Claimed
+    );
+    release_launch_claim_impl(&conn, "req-2").unwrap();
+    assert_eq!(
+        claim_at(&mut conn, "req-3", 1, 2).unwrap(),
+        LaunchClaimOutcome::BudgetSpent
+    );
+    assert!(read_at(&conn, "req-3").is_none());
+}
+
+#[test]
+fn a_running_record_does_not_free_the_slot() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    launch_request(&mut conn, "req-2");
+    claim_at(&mut conn, "req-1", 1, 5).unwrap();
+    record_launch_run_impl(&conn, &run("req-1", "running")).unwrap();
+
+    assert_eq!(
+        claim_at(&mut conn, "req-2", 1, 5).unwrap(),
+        LaunchClaimOutcome::AtCapacity
+    );
+}
+
+#[test]
+fn deleting_the_request_keeps_the_budget_spent_and_the_slot_taken() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    launch_request(&mut conn, "req-2");
+    claim_at(&mut conn, "req-1", 1, 5).unwrap();
+    delete_impl(&conn, &["req-1".to_string()]).unwrap();
+
+    assert_eq!(launch_grant_usage_impl(&conn, "grant-1").unwrap(), 1);
+    assert_eq!(
+        claim_at(&mut conn, "req-2", 1, 5).unwrap(),
+        LaunchClaimOutcome::AtCapacity
+    );
+    // The agent still ends; its terminal record frees the slot even though
+    // the request row is gone.
+    let _ = record_launch_run_impl(&conn, &run("req-1", "completed"));
+    assert_eq!(
+        claim_at(&mut conn, "req-2", 1, 5).unwrap(),
+        LaunchClaimOutcome::Claimed
+    );
+}
+
+#[test]
+fn only_a_real_launch_request_can_be_claimed() {
+    let mut conn = test_db();
+    let mut plain = input("hello");
+    plain.uid = Some("plain".to_string());
+    dispatch_impl(&mut conn, &plain).unwrap();
+
+    assert_eq!(
+        claim_at(&mut conn, "plain", 5, 5).unwrap(),
+        LaunchClaimOutcome::NotARequest
+    );
+    assert_eq!(
+        claim_at(&mut conn, "missing", 5, 5).unwrap(),
+        LaunchClaimOutcome::NotARequest
+    );
+    assert!(read_at(&conn, "plain").is_none());
+}
+
+/// Fault injection: an agent used plain `notify` to shape a row like a launch
+/// request (same key prefix, goal reference, source). It is neither claimable
+/// nor trackable.
+#[test]
+fn a_row_forged_through_plain_notify_is_not_a_launch_request() {
+    let mut conn = test_db();
+    let mut forged = input("Agent requested");
+    forged.uid = Some("forged".to_string());
+    forged.source = "agent".to_string();
+    forged.origin = Some("my-agent".to_string());
+    forged.dedupe_key = Some("agent-launch:forged".to_string());
+    forged.ref_kind = Some("goal".to_string());
+    forged.ref_id = Some("goal-1".to_string());
+    dispatch_impl(&mut conn, &forged).unwrap();
+
+    assert_eq!(
+        claim_at(&mut conn, "forged", 5, 5).unwrap(),
+        LaunchClaimOutcome::NotARequest
+    );
+    assert!(record_launch_run_impl(&conn, &run("forged", "running")).is_err());
+}
+
+fn grant_input(id: &str, root: &str, max_concurrent: i64, launch_budget: i64) -> LaunchGrantInput {
+    LaunchGrantInput {
+        id: id.to_string(),
+        project_path: "/repo".to_string(),
+        root_goal_id: root.to_string(),
+        root_goal_name: "Mission".to_string(),
+        max_concurrent,
+        launch_budget,
+    }
+}
+
+#[test]
+fn a_grant_with_limits_outside_the_hard_ceilings_is_refused() {
+    let mut conn = test_db();
+    for (max, budget) in [(0, 5), (6, 5), (1, 0), (1, 51), (-1, -1)] {
+        assert!(
+            save_launch_grant_impl(&mut conn, &grant_input("g", "root-1", max, budget)).is_err(),
+            "max {max}, budget {budget}"
+        );
+    }
+    let mut blank = grant_input("g", "root-1", 1, 1);
+    blank.project_path = " ".to_string();
+    assert!(save_launch_grant_impl(&mut conn, &blank).is_err());
+    assert!(list_launch_grants_impl(&conn, None).unwrap().is_empty());
+}
+
+#[test]
+fn a_saved_grant_is_listed_with_its_usage_and_replaces_the_one_before() {
+    let mut conn = test_db();
+    save_launch_grant_impl(&mut conn, &grant_input("g1", "root-1", 2, 3)).unwrap();
+    let saved = save_launch_grant_impl(&mut conn, &grant_input("g2", "root-1", 1, 4)).unwrap();
+
+    let grants = list_launch_grants_impl(&conn, Some("/repo")).unwrap();
+    assert_eq!(grants, vec![saved.clone()]);
+    assert_eq!((saved.max_concurrent, saved.launch_budget), (1, 4));
+    assert_eq!(saved.launches_used, 0);
+    assert!(list_launch_grants_impl(&conn, Some("/other"))
+        .unwrap()
+        .is_empty());
+}
+
+/// Two app instances share the inbox file: a revoke acknowledged in one is
+/// in force for the next claim in the other, and a claim carrying the old
+/// grant id is refused without touching the request.
+#[test]
+fn a_revoke_in_one_instance_stops_the_next_claim_in_the_other() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    let mut first = init_db(&path).unwrap();
+    let second = init_db(&path).unwrap();
+    launch_request(&mut first, "req-1");
+    save_launch_grant_impl(&mut first, &grant_input("g1", "root-1", 2, 5)).unwrap();
+    assert_eq!(list_launch_grants_impl(&second, None).unwrap().len(), 1);
+
+    revoke_launch_grant_impl(&second, "g1").expect("revoke acknowledged");
+
+    assert!(list_launch_grants_impl(&first, None).unwrap().is_empty());
+    assert_eq!(
+        claim_launch_impl(&mut first, &claim_input("req-1", "g1"), &anywhere).unwrap(),
+        LaunchClaimOutcome::NoGrant
+    );
+    assert!(read_at(&first, "req-1").is_none());
+    assert_eq!(launch_grant_usage_impl(&first, "g1").unwrap(), 0);
+}
+
+/// Review r3, blocker 3: instance one shows g1, instance two replaced it with
+/// g2. Revoking g1 from instance one must not look like success while g2
+/// keeps authorising starts: it is a conflict naming the grant in force, and
+/// g2 stays untouched.
+#[test]
+fn revoking_a_replaced_grant_is_a_conflict_not_a_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    let mut first = init_db(&path).unwrap();
+    let mut second = init_db(&path).unwrap();
+    save_launch_grant_impl(&mut first, &grant_input("g1", "root-1", 2, 5)).unwrap();
+    save_launch_grant_impl(&mut second, &grant_input("g2", "root-1", 2, 5)).unwrap();
+
+    let error = revoke_launch_grant_impl(&first, "g1").unwrap_err();
+
+    assert!(error.contains("no longer in force"), "{error}");
+    assert!(error.contains("g2"), "{error}");
+    let in_force = list_launch_grants_impl(&first, None).unwrap();
+    assert_eq!(in_force.len(), 1);
+    assert_eq!(in_force[0].id, "g2");
+}
+
+#[test]
+fn revoking_an_unknown_or_already_revoked_grant_is_an_error() {
+    let mut conn = test_db();
+    save_launch_grant_impl(&mut conn, &grant_input("g1", "root-1", 2, 5)).unwrap();
+    revoke_launch_grant_impl(&conn, "g1").expect("first revoke");
+
+    let again = revoke_launch_grant_impl(&conn, "g1").unwrap_err();
+    assert!(again.contains("already revoked"), "{again}");
+    let unknown = revoke_launch_grant_impl(&conn, "nope").unwrap_err();
+    assert!(unknown.contains("does not exist"), "{unknown}");
+}
+
+#[test]
+fn a_replaced_grant_id_no_longer_claims() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    save_launch_grant_impl(&mut conn, &grant_input("g1", "root-1", 2, 5)).unwrap();
+    save_launch_grant_impl(&mut conn, &grant_input("g2", "root-1", 2, 5)).unwrap();
+
+    assert_eq!(
+        claim_launch_impl(&mut conn, &claim_input("req-1", "g1"), &anywhere).unwrap(),
+        LaunchClaimOutcome::NoGrant
+    );
+    assert_eq!(
+        claim_launch_impl(&mut conn, &claim_input("req-1", "g2"), &anywhere).unwrap(),
+        LaunchClaimOutcome::Claimed
+    );
+}
+
+#[test]
+fn an_unknown_grant_or_one_for_another_project_does_not_claim() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    let mut elsewhere = grant_input("g-other", "root-1", 2, 5);
+    elsewhere.project_path = "/other-repo".to_string();
+    save_launch_grant_impl(&mut conn, &elsewhere).unwrap();
+
+    for grant in ["missing", "g-other"] {
+        assert_eq!(
+            claim_launch_impl(&mut conn, &claim_input("req-1", grant), &anywhere).unwrap(),
+            LaunchClaimOutcome::NoGrant,
+            "{grant}"
+        );
+    }
+    assert!(read_at(&conn, "req-1").is_none());
+}
+
+/// Fault injection: a grant write that cannot be persisted is an error the
+/// UI sees, not a grant that only looks saved.
+#[test]
+fn a_grant_or_revoke_that_cannot_be_written_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    let mut setup = init_db(&path).unwrap();
+    save_launch_grant_impl(&mut setup, &grant_input("g1", "root-1", 1, 1)).unwrap();
+    drop(setup);
+    let mut read_only =
+        Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+
+    assert!(save_launch_grant_impl(&mut read_only, &grant_input("g2", "root-2", 1, 1)).is_err());
+    assert!(revoke_launch_grant_impl(&read_only, "g1").is_err());
+    assert_eq!(list_launch_grants_impl(&read_only, None).unwrap().len(), 1);
+}
+
+#[test]
+fn a_request_written_before_the_grant_is_claimable_once_granted() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-early");
+    conn.execute(
+        "UPDATE notifications SET created_at = datetime('now', '-1 hour') WHERE uid = 'req-early'",
+        [],
+    )
+    .unwrap();
+
+    save_launch_grant_impl(&mut conn, &grant_input("g1", "root-1", 1, 1)).unwrap();
+
+    assert_eq!(
+        claim_launch_impl(&mut conn, &claim_input("req-early", "g1"), &anywhere).unwrap(),
+        LaunchClaimOutcome::Claimed
+    );
+}
+
+// ── Goal ancestry: read from project.db inside the claim ────────────────
+
+/// A project folder with `.auric/project.db` holding just the goal tree.
+fn project_with_goals(goals: &[(&str, Option<&str>)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".auric")).unwrap();
+    let db = Connection::open(dir.path().join(".auric/project.db")).unwrap();
+    db.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         CREATE TABLE pm_goals (id TEXT PRIMARY KEY, parent_id TEXT, name TEXT NOT NULL DEFAULT '');",
+    )
+    .unwrap();
+    for (id, parent) in goals {
+        db.execute(
+            "INSERT INTO pm_goals (id, parent_id) VALUES (?1, ?2)",
+            params![id, parent],
+        )
+        .unwrap();
+    }
+    dir
+}
+
+#[test]
+fn ancestry_is_read_from_the_project_database() {
+    let project = project_with_goals(&[
+        ("root-1", None),
+        ("mid", Some("root-1")),
+        ("goal-1", Some("mid")),
+        ("root-2", None),
+        ("loop-a", Some("loop-b")),
+        ("loop-b", Some("loop-a")),
+    ]);
+    let path = project.path().to_string_lossy().into_owned();
+
+    assert!(goal_is_under_root_in_project(&path, "goal-1", "root-1").unwrap());
+    assert!(goal_is_under_root_in_project(&path, "root-1", "root-1").unwrap());
+    assert!(!goal_is_under_root_in_project(&path, "goal-1", "root-2").unwrap());
+    assert!(!goal_is_under_root_in_project(&path, "missing", "root-1").unwrap());
+    assert!(!goal_is_under_root_in_project(&path, "loop-a", "root-1").unwrap());
+    assert!(goal_is_under_root_in_project("/no/such/project", "goal-1", "root-1").is_err());
+}
+
+/// The goal is under the granted root when the UI loaded it; a second
+/// connection (an agent through MCP) moves it to another mission; the claim
+/// reads the current tree and refuses, without booking anything.
+#[test]
+fn a_goal_moved_out_of_the_granted_root_by_another_connection_is_not_claimed() {
+    let project = project_with_goals(&[
+        ("root-1", None),
+        ("root-2", None),
+        ("goal-1", Some("root-1")),
+    ]);
+    let path = project.path().to_string_lossy().into_owned();
+    let mut conn = test_db();
+    let mut request = input("Agent requested");
+    request.uid = Some("req-1".to_string());
+    request.source = "agent".to_string();
+    request.origin = Some("request_agent_launch".to_string());
+    request.dedupe_key = Some("agent-launch:req-1".to_string());
+    request.ref_kind = Some("goal".to_string());
+    request.ref_id = Some("goal-1".to_string());
+    request.project_path = Some(path.clone());
+    dispatch_impl(&mut conn, &request).unwrap();
+    let mut grant = grant_input("g1", "root-1", 2, 5);
+    grant.project_path = path.clone();
+    save_launch_grant_impl(&mut conn, &grant).unwrap();
+    assert!(goal_is_under_root_in_project(&path, "goal-1", "root-1").unwrap());
+
+    let mover = Connection::open(project.path().join(".auric/project.db")).unwrap();
+    mover
+        .execute(
+            "UPDATE pm_goals SET parent_id = 'root-2' WHERE id = 'goal-1'",
+            [],
+        )
+        .unwrap();
+
+    let outcome = claim_launch_impl(
+        &mut conn,
+        &claim_input("req-1", "g1"),
+        &goal_is_under_root_in_project,
+    )
+    .unwrap();
+    assert_eq!(outcome, LaunchClaimOutcome::OutsideRoot);
+    assert!(read_at(&conn, "req-1").is_none());
+    assert_eq!(launch_grant_usage_impl(&conn, "g1").unwrap(), 0);
+}
+
+#[test]
+fn an_unreadable_project_database_refuses_the_claim() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    grant_row(&conn, "grant-1", 1, 1);
+
+    let result = claim_launch_impl(
+        &mut conn,
+        &claim_input("req-1", "grant-1"),
+        &goal_is_under_root_in_project,
+    );
+
+    assert!(result.is_err(), "{result:?}");
+    assert!(read_at(&conn, "req-1").is_none());
+}
+
+/// Two app instances (dev build and installed bundle share the app data
+/// folder) race for the same request and for the last slot. Each has its own
+/// connection; exactly one may win either race.
+#[test]
+fn two_connections_racing_for_one_request_and_one_slot_yield_one_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    let mut setup = init_db(&path).unwrap();
+    for uid in ["same", "a", "b"] {
+        launch_request(&mut setup, uid);
+    }
+    drop(setup);
+
+    let race = |uids: [&'static str; 2]| -> Vec<LaunchClaimOutcome> {
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = uids
+            .into_iter()
+            .map(|uid| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut conn = init_db(&path).unwrap();
+                    barrier.wait();
+                    claim_at(&mut conn, uid, 1, 10).unwrap()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    };
+
+    let same = race(["same", "same"]);
+    assert_eq!(
+        same.iter()
+            .filter(|o| **o == LaunchClaimOutcome::Claimed)
+            .count(),
+        1,
+        "{same:?}"
+    );
+
+    let conn = init_db(&path).unwrap();
+    release_launch_claim_impl(&conn, "same").unwrap();
+    drop(conn);
+
+    let slot = race(["a", "b"]);
+    assert_eq!(
+        slot.iter()
+            .filter(|o| **o == LaunchClaimOutcome::Claimed)
+            .count(),
+        1,
+        "{slot:?}"
+    );
+    assert!(slot.contains(&LaunchClaimOutcome::AtCapacity), "{slot:?}");
+}
+
+// ── Retention: a launch run goes when its request goes ─────────────────
+
+fn run_count(conn: &Connection) -> i64 {
+    conn.query_row("SELECT COUNT(*) FROM agent_launch_runs", [], |r| r.get(0))
+        .unwrap()
+}
+
+#[test]
+fn deleting_a_request_deletes_its_run() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "completed")).unwrap();
+    mark_read_impl(&conn, &["req-1".to_string()]).unwrap();
+
+    delete_impl(&conn, &["req-1".to_string()]).unwrap();
+
+    assert_eq!(run_count(&conn), 0);
+}
+
+#[test]
+fn clearing_the_inbox_deletes_the_runs_of_the_cleared_requests() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "completed")).unwrap();
+
+    clear_impl(&conn, Some("/repo")).unwrap();
+
+    assert_eq!(run_count(&conn), 0);
+}
+
+#[test]
+fn pruning_deletes_the_runs_of_pruned_requests_only() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "old");
+    record_launch_run_impl(&conn, &run("old", "completed")).unwrap();
+    mark_read_impl(&conn, &["old".to_string()]).unwrap();
+    for n in 0..NOTIFICATION_CAP {
+        let mut filler = input("filler");
+        filler.uid = Some(format!("f-{n}"));
+        dispatch_impl(&mut conn, &filler).unwrap();
+    }
+    launch_request(&mut conn, "new");
+    record_launch_run_impl(&conn, &run("new", "running")).unwrap();
+
+    prune(&conn).unwrap();
+
+    let remaining: Vec<String> = conn
+        .prepare("SELECT request_uid FROM agent_launch_runs")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(remaining, vec!["new".to_string()]);
+}
+
+#[test]
+fn a_reissued_grant_gets_a_fresh_budget_but_no_extra_slots() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    launch_request(&mut conn, "req-2");
+    claim_at(&mut conn, "req-1", 1, 1).unwrap();
+
+    conn.execute(
+        "UPDATE agent_launch_grants SET revoked_at = datetime('now') WHERE id = 'grant-1'",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO agent_launch_grants (id, project_path, root_goal_id, max_concurrent, launch_budget)
+         VALUES ('grant-2', '/repo', 'root-1', 1, 1)",
+        [],
+    )
+    .unwrap();
+    let reissued = claim_input("req-2", "grant-2");
+    assert_eq!(
+        claim_launch_impl(&mut conn, &reissued, &anywhere).unwrap(),
+        LaunchClaimOutcome::AtCapacity
+    );
+    release_launch_claim_impl(&conn, "req-1").unwrap();
+    assert_eq!(
+        claim_launch_impl(&mut conn, &reissued, &anywhere).unwrap(),
+        LaunchClaimOutcome::Claimed
+    );
+}
+
+/// Crash recovery: slots held by an app instance that no longer runs (its
+/// agents died with it) are freed on the next start; live owners keep theirs.
+#[test]
+fn slots_of_a_dead_app_instance_are_freed_and_live_ones_kept() {
+    let mut conn = test_db();
+    for uid in ["dead-1", "live-1", "req-3"] {
+        launch_request(&mut conn, uid);
+    }
+    claim_at(&mut conn, "dead-1", 2, 10).unwrap();
+    claim_at(&mut conn, "live-1", 2, 10).unwrap();
+    conn.execute(
+        "UPDATE agent_launch_claims SET owner_pid = 999999 WHERE request_uid = 'dead-1'",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        claim_at(&mut conn, "req-3", 2, 10).unwrap(),
+        LaunchClaimOutcome::AtCapacity
+    );
+
+    let freed = release_orphaned_launch_claims_impl(&conn, &|pid| pid != 999999).unwrap();
+
+    assert_eq!(freed, 1);
+    assert_eq!(
+        claim_at(&mut conn, "req-3", 2, 10).unwrap(),
+        LaunchClaimOutcome::Claimed
+    );
+    assert_eq!(launch_grant_usage_impl(&conn, "grant-1").unwrap(), 3);
+}
+
+#[test]
+fn a_claim_records_the_instance_that_holds_it() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    claim_at(&mut conn, "req-1", 1, 1).unwrap();
+    let owner: i64 = conn
+        .query_row("SELECT owner_pid FROM agent_launch_claims", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(owner, i64::from(std::process::id()));
+    // The running process itself is always alive.
+    assert!(process_is_alive(std::process::id()));
+}
+
+// ── The native claim replayed against the Lean oracle (REQ-LAUNCH-01..03) ──
+//
+// `verification/contracts/launch-gate-v1.jsonl` holds generated traces with the
+// decision the proved model (`verification/lean/AuricIDE/LaunchGate.lean`)
+// takes at every step. Everything goes through the real implementation on real
+// databases, with two app instances on one `notifications.db` file:
+//
+// * grants are saved as rows (`save_launch_grant_impl`, which also replaces the
+//   root's grant in force) and revoked by id from the other instance
+//   (`revoke_launch_grant_impl`), stale ids included;
+// * the goal tree is a real `<project>/.auric/project.db`: every request's goal
+//   sits under `mid-<root>` below `root-<root>`, a move rewrites its
+//   `parent_id` through a third connection, and the claim asks
+//   `goal_is_under_root_in_project`, the production ancestry;
+// * an attempt claims (`claim_launch_impl`) with the grant id the trace says
+//   the deciding instance holds, alternating instances by request uid.
+
+/// Knobs for mutants of the replay; the real replay uses the default.
+#[derive(Clone, Copy, Default)]
+struct OracleMutant {
+    /// Answers every ancestry question with yes instead of reading project.db.
+    ignore_ancestry: bool,
+    /// Drops revocations instead of writing them.
+    drop_revokes: bool,
+}
+
+/// Two app instances on one notifications.db, plus a real project.db.
+struct OracleWorld {
+    _inbox: tempfile::TempDir,
+    _project: tempfile::TempDir,
+    project_path: String,
+    instances: [Connection; 2],
+    goals: Connection,
+    next_grant: i64,
+    written: std::collections::HashSet<i64>,
+}
+
+const ORACLE_ROOTS: i64 = 3;
+
+impl OracleWorld {
+    fn new() -> Self {
+        let inbox = tempfile::tempdir().unwrap();
+        let path = inbox.path().join("notifications.db");
+        let instances = [init_db(&path).unwrap(), init_db(&path).unwrap()];
+        let tree: Vec<(String, Option<String>)> = (0..ORACLE_ROOTS)
+            .flat_map(|r| {
+                [
+                    (format!("root-{r}"), None),
+                    (format!("mid-{r}"), Some(format!("root-{r}"))),
+                ]
+            })
+            .collect();
+        let tree: Vec<(&str, Option<&str>)> = tree
+            .iter()
+            .map(|(id, parent)| (id.as_str(), parent.as_deref()))
+            .collect();
+        let project = project_with_goals(&tree);
+        let goals = Connection::open(project.path().join(".auric/project.db")).unwrap();
+        OracleWorld {
+            project_path: project.path().to_string_lossy().into_owned(),
+            _inbox: inbox,
+            _project: project,
+            instances,
+            goals,
+            next_grant: 0,
+            written: Default::default(),
+        }
+    }
+
+    fn request(&mut self, uid: i64, root: i64) {
+        if !self.written.insert(uid) {
+            return;
+        }
+        let mut request = input("Agent requested");
+        request.uid = Some(format!("u{uid}"));
+        request.source = "agent".to_string();
+        request.origin = Some("request_agent_launch".to_string());
+        request.dedupe_key = Some(format!("agent-launch:u{uid}"));
+        request.ref_kind = Some("goal".to_string());
+        request.ref_id = Some(format!("goal-u{uid}"));
+        request.project_path = Some(self.project_path.clone());
+        dispatch_impl(&mut self.instances[0], &request).expect("dispatch");
+        self.goals
+            .execute(
+                "INSERT INTO pm_goals (id, parent_id) VALUES (?1, ?2)",
+                params![format!("goal-u{uid}"), format!("mid-{root}")],
+            )
+            .expect("goal");
+    }
+
+    fn grant(&mut self, root: i64, max_concurrent: i64, launch_budget: i64) {
+        let grant = LaunchGrantInput {
+            id: format!("grant-{}", self.next_grant),
+            project_path: self.project_path.clone(),
+            root_goal_id: format!("root-{root}"),
+            root_goal_name: String::new(),
+            max_concurrent,
+            launch_budget,
+        };
+        let instance = (self.next_grant % 2) as usize;
+        save_launch_grant_impl(&mut self.instances[instance], &grant).expect("grant");
+        self.next_grant += 1;
+    }
+
+    fn attempt(&mut self, uid: i64, grant: i64, mutant: OracleMutant) -> String {
+        let ancestry = move |project: &str, goal: &str, root: &str| -> Result<bool, String> {
+            if mutant.ignore_ancestry {
+                return Ok(true);
+            }
+            goal_is_under_root_in_project(project, goal, root)
+        };
+        let input = claim_input(&format!("u{uid}"), &format!("grant-{grant}"));
+        let instance = &mut self.instances[(uid % 2) as usize];
+        claim_outcome_name(claim_launch_impl(instance, &input, &ancestry).expect("claim"))
+            .to_string()
+    }
+
+    fn apply(&mut self, event: &serde_json::Value, mutant: OracleMutant) -> Option<String> {
+        let num = |key: &str| event[key].as_i64().expect(key);
+        let uid = || format!("u{}", num("uid"));
+        match event["kind"].as_str().expect("kind") {
+            "grant" => self.grant(num("root"), num("maxConcurrent"), num("launchBudget")),
+            "revoke" if mutant.drop_revokes => {}
+            "revoke" => {
+                // Stale ids are part of the traces. The state effect is the
+                // model's (only the grant in force is revoked); the answer is
+                // Ok exactly for that grant and an error for a stale one.
+                let id = format!("grant-{}", num("grant"));
+                let in_force = list_launch_grants_impl(&self.instances[1], None)
+                    .expect("list")
+                    .iter()
+                    .any(|grant| grant.id == id);
+                let answer = revoke_launch_grant_impl(&self.instances[1], &id);
+                assert_eq!(answer.is_ok(), in_force, "revoke {id}: {answer:?}");
+            }
+            "request" => self.request(num("uid"), num("root")),
+            "move" => {
+                self.goals
+                    .execute(
+                        "UPDATE pm_goals SET parent_id = ?1 WHERE id = ?2",
+                        params![
+                            format!("mid-{}", num("root")),
+                            format!("goal-u{}", num("uid"))
+                        ],
+                    )
+                    .expect("move");
+            }
+            "attempt" => return Some(self.attempt(num("uid"), num("grant"), mutant)),
+            // An unwritten uid is not a launch request: the store refuses the run.
+            "running" => {
+                let _ = record_launch_run_impl(&self.instances[0], &run(&uid(), "running"));
+            }
+            "finished" => {
+                let _ = record_launch_run_impl(&self.instances[1], &run(&uid(), "completed"));
+            }
+            "spawn-failed" => release_launch_claim_impl(&self.instances[0], &uid()).unwrap(),
+            other => panic!("unknown event kind {other}"),
+        }
+        None
+    }
+
+    fn held(&self) -> Vec<i64> {
+        (0..ORACLE_ROOTS)
+            .map(|root| {
+                self.instances[0]
+                    .query_row(
+                        "SELECT COUNT(*) FROM agent_launch_claims WHERE root_goal_id = ?1",
+                        params![format!("root-{root}")],
+                        |r| r.get(0),
+                    )
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    fn used(&self) -> Vec<i64> {
+        (0..self.next_grant)
+            .map(|id| launch_grant_usage_impl(&self.instances[1], &format!("grant-{id}")).unwrap())
+            .collect()
+    }
+}
+
+fn claim_outcome_name(outcome: LaunchClaimOutcome) -> &'static str {
+    match outcome {
+        LaunchClaimOutcome::Claimed => "start",
+        LaunchClaimOutcome::NoGrant => "no-grant",
+        LaunchClaimOutcome::OutsideRoot => "outside-root",
+        LaunchClaimOutcome::AlreadyClaimed => "already-claimed",
+        LaunchClaimOutcome::AtCapacity => "at-capacity",
+        LaunchClaimOutcome::BudgetSpent => "budget-spent",
+        LaunchClaimOutcome::NotARequest => "not-a-request",
+    }
+}
+
+type OracleOutcome = (Vec<Option<String>>, Vec<i64>, Vec<i64>);
+
+fn replay_oracle_trace(trace: &serde_json::Value, mutant: OracleMutant) -> OracleOutcome {
+    let mut world = OracleWorld::new();
+    let decisions = trace["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .map(|event| world.apply(event, mutant))
+        .collect();
+    (decisions, world.held(), world.used())
+}
+
+fn oracle_traces() -> Vec<serde_json::Value> {
+    let corpus = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../verification/contracts/launch-gate-v1.jsonl"),
+    )
+    .expect("launch-gate corpus");
+    corpus
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn oracle_expected(trace: &serde_json::Value) -> OracleOutcome {
+    let decisions = trace["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d.as_str().map(str::to_string))
+        .collect();
+    let held = serde_json::from_value(trace["final"]["heldCount"].clone()).unwrap();
+    let used = serde_json::from_value(trace["final"]["used"].clone()).unwrap();
+    (decisions, held, used)
+}
+
+#[test]
+fn the_native_claim_agrees_with_the_lean_oracle_on_every_trace() {
+    let traces = oracle_traces();
+    for trace in &traces {
+        let (decisions, held, used) = replay_oracle_trace(trace, OracleMutant::default());
+        let (expected, expected_held, expected_used) = oracle_expected(trace);
+        let index = &trace["trace"];
+        assert_eq!(decisions, expected, "decisions of trace {index}");
+        assert_eq!(held, expected_held, "held slots after trace {index}");
+        assert_eq!(used, expected_used, "usage after trace {index}");
+    }
+    assert!(
+        traces.len() >= 300,
+        "corpus has only {} traces",
+        traces.len()
+    );
+}
+
+/// The corpus must tell a broken claim from the real one: with ancestry
+/// ignored or revocations dropped, the replay disagrees somewhere.
+#[test]
+fn the_native_claim_agrees_with_the_lean_oracle_only_when_intact() {
+    let traces = oracle_traces();
+    let mutants = [
+        (
+            "ancestry ignored",
+            OracleMutant {
+                ignore_ancestry: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "revocations dropped",
+            OracleMutant {
+                drop_revokes: true,
+                ..Default::default()
+            },
+        ),
+    ];
+    for (name, mutant) in mutants {
+        let caught = traces
+            .iter()
+            .filter(|trace| replay_oracle_trace(trace, mutant) != oracle_expected(trace))
+            .count();
+        eprintln!("oracle mutant '{name}': {caught} disagreeing traces");
+        assert!(caught > 0, "mutant '{name}' survived the corpus");
+    }
+}

@@ -118,7 +118,7 @@ export function autoConductorLaunches(
   for (const notification of notifications) {
     if (notification.readAt !== null) continue;
     if (notification.answeredAt !== null) continue;
-    if (notificationTrust(notification.source) !== 'user') continue;
+    if (notificationTrust(notification) !== 'user') continue;
     if (!isFreshOccurrence(notification.dedupeKey, nowMs)) continue;
 
     for (const action of parse(notification)) {

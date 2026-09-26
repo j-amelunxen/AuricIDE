@@ -581,3 +581,32 @@ fn running_records_the_next_due_time() {
     assert_eq!(stored.next_due_at.as_deref(), Some("2026-09-09 07:00:00"));
     assert_eq!(stored.last_fired_at.as_deref(), Some("2026-08-26 07:00:00"));
 }
+
+/// Sub-goal 09, blocker 2 of review r3: a schedule an agent created through
+/// MCP (`schedule_create`, ids `mcp-…`) carries an agent-written payload. Its
+/// reminder is written as `agent`, so its Start button is foreign at click and
+/// goes through the native folder check, like any other agent-written button.
+#[test]
+fn a_schedule_an_agent_created_fires_as_agent_written() {
+    let mut conn = test_db();
+    let mut by_agent = every_14_days();
+    by_agent.id = "mcp-1-2-3".into();
+    by_agent.payload = r#"{"title":"Scan","actions":[{"id":"run","label":"Start agent","kind":"spawn-agent","task":"scan","repoPath":"/repo/a","placement":"requester"}]}"#.into();
+    seed(&conn, &by_agent);
+    let mut by_user = every_14_days();
+    by_user.id = "s-user".into();
+    by_user.payload = r#"{"title":"Own"}"#.into();
+    seed(&conn, &by_user);
+
+    run_due_impl(&mut conn, at("2026-08-27 07:00:00")).unwrap();
+    let inbox = crate::notifications::list_impl(&conn, None, None, None).unwrap();
+    let source_of = |title: &str| {
+        inbox
+            .iter()
+            .find(|n| n.title == title)
+            .map(|n| n.source.clone())
+            .unwrap()
+    };
+    assert_eq!(source_of("Scan"), "agent");
+    assert_eq!(source_of("Own"), "system");
+}

@@ -201,6 +201,23 @@ pub fn set_enabled_impl(conn: &Connection, id: &str, enabled: bool) -> Result<()
     Ok(())
 }
 
+/// Id prefix of schedules an agent created through MCP (`createSchedule` in
+/// `src/mcp/notificationsDb.ts`).
+const MCP_SCHEDULE_ID_PREFIX: &str = "mcp-";
+
+/// Who wrote the reminder's payload. A schedule an agent created through MCP
+/// carries an agent-written payload, so its reminder is `agent`: its Start
+/// button is foreign at click and goes through the native folder check
+/// (sub-goal 09, `check_agent_notification_directory`). Everything else was
+/// entered by a person in the Schedules editor.
+fn fired_source(schedule: &Schedule) -> &'static str {
+    if schedule.id.starts_with(MCP_SCHEDULE_ID_PREFIX) && schedule.mission_slug.is_none() {
+        "agent"
+    } else {
+        "system"
+    }
+}
+
 pub fn run_due_impl(conn: &mut Connection, now: DateTime<Utc>) -> Result<usize, String> {
     let schedules = list_impl(conn)?;
     let mut fired = 0;
@@ -300,7 +317,7 @@ pub fn run_due_impl(conn: &mut Connection, now: DateTime<Utc>) -> Result<usize, 
                 uid: None,
                 project_path: schedule.project_path.clone(),
                 project_name: schedule.project_name.clone(),
-                source: "system".to_string(),
+                source: fired_source(&schedule).to_string(),
                 origin: Some(schedule.name.clone()),
                 kind: Some("info".to_string()),
                 severity: Some(if mission_error.is_some() {

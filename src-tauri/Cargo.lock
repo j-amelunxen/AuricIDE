@@ -263,6 +263,7 @@ dependencies = [
  "cron",
  "dirs 5.0.1",
  "git2",
+ "libc",
  "notify",
  "portable-pty",
  "reqwest 0.12.28",

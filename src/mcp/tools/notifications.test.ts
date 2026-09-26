@@ -1,8 +1,23 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { createTestNotificationsDb, getAnswer } from '../notificationsDb';
 import { notifyActionSchema, registerNotificationTools } from './notifications';
+
+/**
+ * The requesting agent's working directory as the IDE hands it over
+ * (`AURIC_AGENT_CWD`): a real, canonical folder.
+ */
+const SANDBOX = realpathSync(mkdtempSync(join(tmpdir(), 'auric-notify-cwd-')));
+const AGENT_CWD = join(SANDBOX, 'agent');
+const FOREIGN = join(SANDBOX, 'foreign');
+mkdirSync(AGENT_CWD);
+mkdirSync(FOREIGN);
+symlinkSync(FOREIGN, join(SANDBOX, 'link-to-foreign'));
+afterAll(() => rmSync(SANDBOX, { recursive: true, force: true }));
 
 interface CapturedTool {
   name: string;
@@ -27,7 +42,11 @@ describe('notification MCP tools', () => {
 
   beforeEach(() => {
     db = createTestNotificationsDb();
-    tools = captureTools(db, { projectPath: '/repo/auric', projectName: 'auric' });
+    tools = captureTools(db, {
+      projectPath: '/repo/auric',
+      projectName: 'auric',
+      agentCwd: AGENT_CWD,
+    });
   });
 
   const call = async (name: string, args: Record<string, unknown>) =>
@@ -45,6 +64,41 @@ describe('notification MCP tools', () => {
       'schedule_delete',
       'schedule_list',
     ]);
+  });
+
+  // Launch requests are recognised by their key prefix and origin. Plain
+  // notify must not be able to shape one (it would skip request_agent_launch's
+  // checks) or overwrite a real one through the dedupe key.
+  describe('reserved launch-request markers', () => {
+    it.each([
+      ['notify', { title: 'x', dedupeKey: 'agent-launch:forged' }],
+      ['notify', { title: 'x', origin: 'request_agent_launch' }],
+      ['notify', { title: 'x', origin: ' Request_Agent_Launch ' }],
+      ['notify', { title: 'x', dedupeKey: 'AGENT-LAUNCH:forged' }],
+      [
+        'notify_ask',
+        { title: 'x', options: [{ value: 'a', label: 'A' }], dedupeKey: 'agent-launch:x' },
+      ],
+      [
+        'notify_ask',
+        { title: 'x', options: [{ value: 'a', label: 'A' }], origin: 'request_agent_launch' },
+      ],
+    ])('%s refuses %j and writes nothing', async (name, args) => {
+      await expect(call(name, args)).rejects.toThrow(/reserved/i);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM notifications').get()).toEqual({ n: 0 });
+    });
+
+    it('cannot overwrite a real launch request through its dedupe key', async () => {
+      db.prepare(
+        `INSERT INTO notifications (uid, source, origin, title, dedupe_key, project_path)
+         VALUES ('real', 'agent', 'request_agent_launch', 'Agent requested', 'agent-launch:real', '/repo/auric')`
+      ).run();
+
+      await expect(
+        call('notify', { title: 'hijack', dedupeKey: 'agent-launch:real' })
+      ).rejects.toThrow(/reserved/i);
+      expect(row('real').title).toBe('Agent requested');
+    });
   });
 
   describe('notify', () => {
@@ -85,6 +139,99 @@ describe('notification MCP tools', () => {
       });
 
       expect(JSON.parse(row(uid as string).actions as string)).toHaveLength(1);
+    });
+  });
+
+  // Sub-goal 09, directory rule: a Start button an agent writes through notify
+  // (or schedule_create) may only start in the requesting agent's own folder.
+  // The server stamps that folder on the action and marks it as checked; the
+  // native spawn refuses any agent-written button without that stamp
+  // (`agents/launch_dir.rs`, `check_agent_notification_directory`).
+  describe('spawn-agent buttons follow the directory rule', () => {
+    const spawn = (extra: Record<string, unknown> = {}) => ({
+      id: 'run',
+      label: 'Start agent',
+      kind: 'spawn-agent',
+      task: 'scan',
+      ...extra,
+    });
+    const count = () =>
+      (db.prepare('SELECT COUNT(*) AS n FROM notifications').get() as { n: number }).n;
+
+    it('stamps the requesting agent folder on a button that names none', async () => {
+      const { uid } = await call('notify', { title: 'x', actions: [spawn()] });
+
+      expect(JSON.parse(row(uid as string).actions as string)[0]).toMatchObject({
+        repoPath: AGENT_CWD,
+        placement: 'requester',
+      });
+    });
+
+    it('accepts the requesting agent folder when the button names it', async () => {
+      const { uid } = await call('notify', {
+        title: 'x',
+        actions: [spawn({ repoPath: AGENT_CWD })],
+      });
+
+      expect(JSON.parse(row(uid as string).actions as string)[0].repoPath).toBe(AGENT_CWD);
+    });
+
+    it.each([
+      ['a foreign folder', FOREIGN],
+      ['a new folder', join(SANDBOX, 'new-folder')],
+      ['a traversal back out', `${AGENT_CWD}/../foreign`],
+      ['a symlink to a foreign folder', join(SANDBOX, 'link-to-foreign')],
+      ['a relative path', 'foreign'],
+    ])('refuses %s and writes nothing', async (_label, repoPath) => {
+      await expect(call('notify', { title: 'x', actions: [spawn({ repoPath })] })).rejects.toThrow(
+        /own working directory/
+      );
+      expect(count()).toBe(0);
+    });
+
+    it('cannot forge the checked stamp', async () => {
+      const { uid } = await call('notify', {
+        title: 'x',
+        actions: [spawn({ placement: 'requester', useWorktree: true })],
+      });
+
+      const stored = JSON.parse(row(uid as string).actions as string)[0];
+      expect(stored.repoPath).toBe(AGENT_CWD);
+      expect(stored).not.toHaveProperty('useWorktree');
+    });
+
+    it('refuses a Start button when the IDE passed no agent folder', async () => {
+      const bare = captureTools(db, { projectPath: '/repo/auric' });
+
+      await expect(bare.get('notify')!.execute({ title: 'x', actions: [spawn()] })).rejects.toThrow(
+        /AURIC_AGENT_CWD/
+      );
+      expect(count()).toBe(0);
+    });
+
+    it('still sends a notification without a Start button when no agent folder is known', async () => {
+      const bare = captureTools(db, { projectPath: '/repo/auric' });
+
+      await expect(bare.get('notify')!.execute({ title: 'x' })).resolves.toContain('uid');
+    });
+
+    it('stamps the agent folder on a schedule Start button', async () => {
+      const { id } = JSON.parse(
+        await tools.get('schedule_create')!.execute({
+          name: 'Scan',
+          specKind: 'cron',
+          cronExpr: '0 0 9 * * MON',
+          task: 'scan',
+        })
+      ) as { id: string };
+
+      const stored = db.prepare('SELECT payload FROM schedules WHERE id = ?').get(id) as {
+        payload: string;
+      };
+      expect(JSON.parse(stored.payload).actions[0]).toMatchObject({
+        repoPath: AGENT_CWD,
+        placement: 'requester',
+      });
     });
   });
 
@@ -332,7 +479,14 @@ describe('notification MCP tools', () => {
         payload: string;
       };
       expect(JSON.parse(row.payload).actions).toEqual([
-        { id: 'run', label: 'Start agent', kind: 'spawn-agent', task: 'Serverscan durchführen' },
+        {
+          id: 'run',
+          label: 'Start agent',
+          kind: 'spawn-agent',
+          task: 'Serverscan durchführen',
+          repoPath: AGENT_CWD,
+          placement: 'requester',
+        },
       ]);
     });
 
@@ -354,6 +508,8 @@ describe('notification MCP tools', () => {
         label: 'Start agent',
         kind: 'spawn-agent',
         task: 'scan',
+        repoPath: AGENT_CWD,
+        placement: 'requester',
       });
     });
 

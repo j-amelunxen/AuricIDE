@@ -96,6 +96,12 @@ export interface GoalsSlice {
   unlinkRequirementFromGoal: (goalId: string, requirementId: string) => void;
   recordGoalRun: (run: PmGoalRun) => void;
   completeGoalRun: (runId: string, outcome: GoalRunOutcome, summary?: string) => void;
+  /**
+   * Writes one run row to the project db right away, without the rest of the
+   * draft: a goal-bound start from an agent's launch request must survive a
+   * restart, and must not overwrite goals MCP agents changed meanwhile.
+   */
+  persistGoalRun: (projectPath: string, runId: string) => Promise<void>;
   addStation: (station: PmGoalStation) => void;
   updateStation: (id: string, updates: Partial<PmGoalStation>) => void;
   deleteStation: (id: string) => void;
@@ -384,6 +390,28 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       ),
       goalsDirty: true,
     })),
+
+  persistGoalRun: async (projectPath, runId) => {
+    await initProjectDb(projectPath);
+    // Read after the await and invoke in the same tick: writes then reach the
+    // backend in the order the state was read, so a start written late cannot
+    // overwrite the finish.
+    const run = get().goalRunsDraft.find((r) => r.id === runId);
+    if (!run) return;
+    await ipcGoalsSave(projectPath, {
+      goals: [],
+      goalRuns: [run],
+      requirementLinks: [],
+      stations: [],
+      deletedGoalIds: [],
+      deletedRunIds: [],
+      deletedLinkIds: [],
+      deletedStationIds: [],
+    });
+    // The row is stored now; the baseline learns it so a later discard or
+    // save treats it as persisted, not as a local addition.
+    set((s) => ({ goalRuns: [...s.goalRuns.filter((r) => r.id !== run.id), run] }));
+  },
 
   completeGoalRun: (runId, outcome, summary) =>
     set((s) => ({

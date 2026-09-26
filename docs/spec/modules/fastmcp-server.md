@@ -32,7 +32,7 @@ AI agents working in AuricIDE require programmatic, structured access to project
   - `AURIC_PROJECT_ROOT`: Absolute path to workspace repository root.
   - `AURIC_NOTIFICATIONS_DB`: Path to `<app_data_dir>/notifications.db` (omitting this safely disables notification tools).
 
-### 15 Tool Domains (`src/mcp/tools/`)
+### 16 Tool Domains (`src/mcp/tools/`)
 
 | Domain            | Key Tools                                                                                              | Data Source                |
 | ----------------- | ------------------------------------------------------------------------------------------------------ | -------------------------- |
@@ -51,6 +51,7 @@ AI agents working in AuricIDE require programmatic, structured access to project
 | **knowledge**     | `query_knowledge_graph`, `index_knowledge`                                                             | Project markdown notes     |
 | **reviews**       | `record_ticket_review`, `get_latest_review`                                                            | SQLite `pm_ticket_reviews` |
 | **notifications** | `notify`, `notify_ask`, `schedule_create`                                                              | Global `notifications.db`  |
+| **agentLaunch**   | `request_agent_launch`, `list_agent_providers`, `get_agent_run`                                        | `notifications.db` + PM DB |
 
 ---
 
@@ -86,6 +87,7 @@ AI agents working in AuricIDE require programmatic, structured access to project
 - `src/mcp/server.ts` — FastMCP server entry point and tool registry.
 - `src/mcp/db.ts` — Database connection wrapper (`better-sqlite3`).
 - `src/mcp/notificationsDb.ts` — Notifications database connection.
-- `src/mcp/tools/` — Tool implementations across 15 domains.
+- `src/mcp/tools/` — Tool implementations across 16 domains.
+- `src/mcp/tools/agentLaunch.ts` — Launch requests: an agent asks the IDE to start an agent for a goal. The row is agent-written (foreign); it starts on a click, or on its own only under a launch grant Jennifer set for the mission root in the UI. Grants are rows in the app-global inbox database (`agent_launch_grants`, notifications migration 7), written only through the IDE's Tauri commands; no MCP tool reads or writes them. The target folder is never chosen by the agent: the IDE passes each agent's own working directory as `AURIC_AGENT_CWD` in every MCP start path (standard config, Codex override, Crush config); the request runs there, or with `worktree: true` in a new IDE worktree of the same repository (same git common dir). The spawn re-checks that folder against the one stored with the request. `notify` and `schedule_create` place every `spawn-agent` button in the same folder (`src/mcp/requesterFolder.ts`); a button naming another folder is refused, and a button without `AURIC_AGENT_CWD` is not written. Provider is checked against `AURIC_AGENT_PROVIDERS` (only providers that support an isolated MCP project binding) and the project policy; `get_agent_run` reads `agent_launch_runs` (notifications migration 5). See [Notifications & Schedules](./notifications-schedules.md#44-agent-launch-requests-and-grants) for the threat model.
 - `src-tauri/src/mcp.rs` — Backend process supervisor starting and stopping the server.
 - `docs/automation-surface.md` — Machine-generated catalog of all exposed MCP tools and IPC commands.

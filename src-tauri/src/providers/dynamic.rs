@@ -82,15 +82,14 @@ impl AgentProvider for DynamicProvider {
                     if !flag.is_empty() {
                         cmd_parts.push(flag.clone());
                     }
-                    cmd_parts.push(model.to_string());
+                    cmd_parts.push(shell_word(model));
                 }
-                ArgumentConfig::Task { quote } => {
-                    let escaped_task = shell_escape_double_quoted(task);
-                    if *quote {
-                        cmd_parts.push(format!("\"{}\"", escaped_task));
-                    } else {
-                        cmd_parts.push(escaped_task);
-                    }
+                // The task is untrusted text (it can come from an MCP caller),
+                // so it is always one double-quoted, escaped argument. An
+                // unquoted task would let `;` or a line break end the command;
+                // `quote: false` is kept only so older configs still parse.
+                ArgumentConfig::Task { quote: _ } => {
+                    cmd_parts.push(format!("\"{}\"", shell_escape_double_quoted(task)));
                 }
                 ArgumentConfig::Headless {
                     flag,

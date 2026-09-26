@@ -15,6 +15,11 @@ pub fn generate_uid() -> String {
     format!("{}-{}-{}", nanos, std::process::id(), seq)
 }
 
+// code-gate: complexity-function-length - an ordered list of migrations, one block each
+/// Migration id of the one-time fix for reminders an agent's schedule fired
+/// as `system` before sub-goal 09 r4 (see `run_migrations`).
+pub const LEGACY_MCP_REMINDER_MIGRATION: i64 = 8;
+
 pub fn run_migrations(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (
@@ -108,6 +113,97 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
                  NEW.title, NEW.body,
                  NEW.severity, NEW.project_name, NEW.origin);
         END;",
+    )?;
+
+    // What became of an agent launch request. Its own table because the
+    // request row's `answer` is written once, while a run moves from running
+    // to finished. Mirrored in `src/mcp/notificationsDb.ts`, migration 5.
+    apply_migration(
+        conn,
+        5,
+        "create_agent_launch_runs",
+        "CREATE TABLE agent_launch_runs (
+            request_uid  TEXT PRIMARY KEY,
+            agent_id     TEXT NOT NULL,
+            agent_name   TEXT,
+            provider     TEXT,
+            model        TEXT,
+            status       TEXT NOT NULL,
+            summary      TEXT,
+            error        TEXT,
+            started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            finished_at  TEXT,
+            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+    )?;
+
+    // The native gate for automatic starts under a launch grant, plus the
+    // retention rule for launch runs. `agent_launch_claims` holds one row per
+    // start that is still running or not yet resolved (the slot, per root); `agent_launch_grant_usage`
+    // counts starts per grant and is never decremented (the budget). The
+    // trigger drops a run with its request, whichever path deletes the row.
+    // Mirrored in `src/mcp/notificationsDb.ts`, migration 6.
+    apply_migration(
+        conn,
+        6,
+        "create_agent_launch_claims",
+        "CREATE TABLE agent_launch_claims (
+            request_uid  TEXT PRIMARY KEY,
+            grant_id     TEXT NOT NULL,
+            root_goal_id TEXT NOT NULL,
+            goal_id      TEXT,
+            owner_pid    INTEGER NOT NULL DEFAULT 0,
+            claimed_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX agent_launch_claims_root ON agent_launch_claims(root_goal_id);
+        CREATE TABLE agent_launch_grant_usage (
+            grant_id       TEXT PRIMARY KEY,
+            launches_used  INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TRIGGER notifications_drop_launch_run
+        AFTER DELETE ON notifications
+        BEGIN
+            DELETE FROM agent_launch_runs WHERE request_uid = OLD.uid;
+        END;",
+    )?;
+
+    // Jennifer's launch grants, one row per grant; a revoke stamps
+    // `revoked_at` and never deletes, so a claim with an old grant id finds
+    // the row and refuses. Written only through the IDE's Tauri commands
+    // (`save_launch_grant_impl`, `revoke_launch_grant_impl`); no MCP tool
+    // touches this table. Mirrored in `src/mcp/notificationsDb.ts`, migration 7.
+    apply_migration(
+        conn,
+        7,
+        "create_agent_launch_grants",
+        "CREATE TABLE agent_launch_grants (
+            id             TEXT PRIMARY KEY,
+            project_path   TEXT NOT NULL,
+            root_goal_id   TEXT NOT NULL,
+            root_goal_name TEXT NOT NULL DEFAULT '',
+            max_concurrent INTEGER NOT NULL CHECK (max_concurrent BETWEEN 1 AND 5),
+            launch_budget  INTEGER NOT NULL CHECK (launch_budget BETWEEN 1 AND 50),
+            granted_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            revoked_at     TEXT
+        );
+        CREATE UNIQUE INDEX agent_launch_grants_in_force
+            ON agent_launch_grants(project_path, root_goal_id) WHERE revoked_at IS NULL;",
+    )?;
+
+    // Until sub-goal 09 r4 the schedule runner fired every reminder as
+    // `system`, also those of schedules an agent created through MCP (`mcp-`
+    // id, see `fired_source` in `schedules/database.rs`). Their actions are the
+    // agent's payload, so the rows still in the inbox are marked as written by
+    // an agent: the click then never falls back to the open project, and the
+    // native folder check refuses them for want of a stamp. Only `system` rows,
+    // so nothing a person typed changes source. Mirrored in
+    // `src/mcp/notificationsDb.ts`, migration 8.
+    apply_migration(
+        conn,
+        LEGACY_MCP_REMINDER_MIGRATION,
+        "mark_legacy_mcp_schedule_reminders",
+        "UPDATE notifications SET source = 'agent'
+          WHERE source = 'system' AND dedupe_key LIKE 'schedule:mcp-%';",
     )?;
 
     Ok(())

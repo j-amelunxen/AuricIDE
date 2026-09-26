@@ -1,3 +1,4 @@
+import { scheduleIdFromDedupeKey } from './scheduleLink';
 import type { NotificationSource } from './types';
 
 /**
@@ -17,6 +18,28 @@ import type { NotificationSource } from './types';
  */
 export type NotificationTrust = 'user' | 'foreign';
 
-export function notificationTrust(source: NotificationSource | string): NotificationTrust {
+/**
+ * Id prefix of schedules an agent created through MCP (`createSchedule` in
+ * `src/mcp/notificationsDb.ts`); mirrors `MCP_SCHEDULE_ID_PREFIX` in
+ * `src-tauri/src/schedules/database.rs`.
+ */
+const MCP_SCHEDULE_ID_PREFIX = 'mcp-';
+
+/**
+ * Sub-goal 09, review r4: until r4 the runner fired an agent's schedule as
+ * `system`. Migration 8 marks those rows as `agent`, but the dev and the
+ * installed build share the inbox, so an older build can still fire one as
+ * `system`. The schedule id in the dedupe key does not change, so it decides.
+ */
+function isAgentScheduleReminder(dedupeKey: string | null): boolean {
+  return scheduleIdFromDedupeKey(dedupeKey)?.startsWith(MCP_SCHEDULE_ID_PREFIX) ?? false;
+}
+
+export function notificationTrust(notification: {
+  source: NotificationSource | string;
+  dedupeKey: string | null;
+}): NotificationTrust {
+  if (isAgentScheduleReminder(notification.dedupeKey)) return 'foreign';
+  const { source } = notification;
   return source === 'system' || source === 'ui' ? 'user' : 'foreign';
 }

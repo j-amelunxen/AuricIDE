@@ -18,6 +18,7 @@ import { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
 import { GoalTicketsSection } from './detail/GoalTicketsSection';
 import { GoalRequirementsSection } from './detail/GoalRequirementsSection';
 import { GoalRunsSection } from './detail/GoalRunsSection';
+import { MissionLaunchGrantSection } from './detail/MissionLaunchGrantSection';
 
 export { GoalWorkflowStepper } from './detail/GoalWorkflowStepper';
 export { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
@@ -67,6 +68,7 @@ export function GoalDetailPanel({
   onUnlinkTicket,
 }: GoalDetailPanelProps) {
   const stations = useStore((s) => s.goalStationsDraft);
+  const rootPath = useStore((s) => s.rootPath);
 
   const satisfaction = useMemo(
     () =>
@@ -319,6 +321,17 @@ export function GoalDetailPanel({
 
       {/* Runs */}
       <GoalRunsSection goalRuns={goalRuns} labelCls={labelCls} />
+
+      {/* Mission root: Jennifer's launch grant */}
+      {goal.parentId === null && rootPath && (
+        <MissionLaunchGrantSection
+          key={goal.id}
+          projectPath={rootPath}
+          rootGoalId={goal.id}
+          rootGoalName={goal.name}
+          labelCls={labelCls}
+        />
+      )}
     </div>
   );
 }
