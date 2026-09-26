@@ -121,6 +121,13 @@ project, which may differ from the agent's worktree/cwd) and `{databasePath}`
 (`<projectRoot>/.auric/project.db`). Auric also exports these fixed variables for
 every bound agent: `AURIC_PROJECT_ROOT` and `AURIC_MCP_DB_PATH`.
 
+A provider without `projectBinding` is refused when an agent is bound to a
+project, because its tools could otherwise reach another project's database.
+If the CLI has no per-launch way to receive an MCP config at all, set
+`"allowUnboundMcp": true` to start it anyway. It then uses whatever MCP servers
+the CLI discovers on its own, and the reserved `AURIC_*` variables above are
+still exported. Declared `projectBinding` material always wins over this flag.
+
 An agent launched without a project receives neither the descriptor nor the
 fixed variables. This makes provider configs reusable for general agents while
 keeping an MCP-capable launch immutably tied to the project selected at spawn.

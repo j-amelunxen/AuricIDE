@@ -386,6 +386,7 @@ fn get_codex_config() -> ProviderConfig {
             "acceptEdits": "--sandbox workspace-write",
             "bypassPermissions": "--dangerously-bypass-approvals-and-sandbox",
             "plan": "--sandbox read-only",
+            "auto": "--sandbox workspace-write -c approval_policy=on-request -c approvals_reviewer=auto_review",
             "default": ""
           },
           "fallback": ""
@@ -452,10 +453,24 @@ fn test_dynamic_codex_bypass_is_the_only_mode_without_a_sandbox() {
     assert!(!cmd.command.contains("--sandbox"));
 }
 
+// `codex exec` has no `--ask-for-approval`, so the approval policy goes in as a
+// config override, which both the interactive and the headless CLI accept.
+#[test]
+fn test_dynamic_codex_auto_routes_approvals_through_auto_review() {
+    let provider = DynamicProvider::new(get_codex_config());
+    let expected = "--sandbox workspace-write -c approval_policy=on-request \
+                    -c approvals_reviewer=auto_review";
+    let headless = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
+    assert_eq!(headless.command, format!("codex exec \"task\" {expected}"));
+    let interactive =
+        provider.build_spawn_command("auto", "task", Some("auto"), false, false, false);
+    assert_eq!(interactive.command, format!("codex \"task\" {expected}"));
+}
+
 #[test]
 fn test_dynamic_codex_unoffered_mode_falls_back_to_no_flag() {
     let provider = DynamicProvider::new(get_codex_config());
-    let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
+    let cmd = provider.build_spawn_command("auto", "task", Some("yolo"), false, false, true);
     assert_eq!(cmd.command, "codex exec \"task\"");
 }
 
@@ -558,4 +573,61 @@ fn test_local_opencode_config_matches_the_command_contract() {
     assert_eq!(provider.info().id, "opencode");
     let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
     assert_eq!(cmd.command, "opencode run \"task\" --auto");
+}
+
+#[test]
+fn unbound_mcp_is_refused_unless_the_provider_config_opts_in() {
+    let refusing = DynamicProvider::new(get_claude_config());
+    assert!(!refusing.allows_unbound_mcp());
+
+    let mut config = get_claude_config();
+    config.allow_unbound_mcp = true;
+    assert!(DynamicProvider::new(config).allows_unbound_mcp());
+}
+
+#[test]
+fn allow_unbound_mcp_deserializes_from_camel_case() {
+    let json = r#"{
+      "id": "no-mcp-flag",
+      "name": "CLI without an MCP flag",
+      "executable": "agent-cli",
+      "arguments": [{ "type": "task", "quote": true }],
+      "allowUnboundMcp": true,
+      "info": {
+        "models": [], "permissionModes": [],
+        "defaultModel": "auto", "defaultPermissionMode": "default"
+      },
+      "versionCheck": { "command": "agent-cli", "args": ["--version"] },
+      "promptTemplate": "agent-cli \""
+    }"#;
+    let config: ProviderConfig = serde_json::from_str(json).unwrap();
+    assert!(config.allow_unbound_mcp);
+}
+
+#[test]
+fn test_local_codex_config_offers_auto_review() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dynamic-providers/codex.json");
+    let Ok(content) = fs::read_to_string(&path) else {
+        eprintln!("skipping: no local {}", path.display());
+        return;
+    };
+    let provider = DynamicProvider::new(
+        serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("local {} is not valid JSON: {e}", path.display())),
+    );
+    assert_eq!(provider.info().id, "codex");
+    assert!(
+        provider
+            .info()
+            .permission_modes
+            .iter()
+            .any(|m| m.value == "auto"),
+        "the auto-review mode must be offered in the pickers"
+    );
+    let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
+    assert_eq!(
+        cmd.command,
+        "codex exec \"task\" --sandbox workspace-write -c approval_policy=on-request \
+         -c approvals_reviewer=auto_review"
+    );
 }
