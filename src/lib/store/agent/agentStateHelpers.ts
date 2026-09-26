@@ -1,3 +1,4 @@
+import { recordLaunchFinish } from '@/lib/agents/launchRunTracking';
 import type { AgentColor } from '@/lib/agents/colors';
 import { pruneAgentRuntime } from '@/lib/agents/events/registry';
 import type { AgentInfo } from '@/lib/tauri/agents';
@@ -16,12 +17,25 @@ export function completeRunForAgent(
   agentId: string,
   outcome: 'completed' | 'failed' | 'killed'
 ): void {
+  recordLaunchFinish(
+    state.agentSpawnConfigs[agentId],
+    agentId,
+    outcome,
+    state.agentLogs[agentId] ?? []
+  );
   const goalsSlice = state as AgentSlice & Partial<GoalsSlice>;
   if (!goalsSlice.completeGoalRun || !goalsSlice.goalRunsDraft) return;
   const run = goalsSlice.goalRunsDraft.find(
     (r) => r.agentId === agentId && r.outcome === 'running'
   );
-  if (run) goalsSlice.completeGoalRun(run.id, outcome);
+  if (!run) return;
+  goalsSlice.completeGoalRun(run.id, outcome);
+  const config = state.agentSpawnConfigs[agentId];
+  const projectPath =
+    config?.projectPath ?? (state as AgentSlice & { rootPath?: string | null }).rootPath;
+  if (config?.launchRequestUid && projectPath && goalsSlice.persistGoalRun) {
+    goalsSlice.persistGoalRun(projectPath, run.id).catch(() => undefined);
+  }
 }
 
 /** Drops the entries of a per-agent record for agents that no longer exist —

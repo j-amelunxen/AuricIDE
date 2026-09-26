@@ -1,3 +1,4 @@
+pub mod launch_dir;
 pub mod manager;
 pub mod persistence;
 pub mod project_binding;

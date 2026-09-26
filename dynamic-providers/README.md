@@ -137,16 +137,16 @@ keeping an MCP-capable launch immutably tied to the project selected at spawn.
 `arguments` is an ordered list; each entry is tagged by `type` and becomes part of
 the command line in that order.
 
-| `type`       | Field             | Required | Meaning                                                                    |
-| ------------ | ----------------- | -------- | -------------------------------------------------------------------------- |
-| `literal`    | `value`           | yes      | A fixed token — a sub-command or a flag that never varies (e.g. `run`)     |
-| `model`      | `flag`            | yes      | Flag carrying the model selected in the UI                                 |
-|              | `ignoreIfAuto`    | yes      | `true` = omit the flag entirely when the model is `auto`                   |
-| `task`       | `quote`           | yes      | `true` = wrap the task text in double quotes (almost always what you want) |
-| `headless`   | `flag`            | yes      | Flag used when the agent runs unattended                                   |
-|              | `interactiveFlag` | optional | Flag used instead when a terminal is attached                              |
-| `permission` | `map`             | yes      | Permission mode → CLI flag                                                 |
-|              | `fallback`        | optional | Flag for modes missing from `map`. Without it, unmapped modes add nothing  |
+| `type`       | Field             | Required | Meaning                                                                                                |
+| ------------ | ----------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `literal`    | `value`           | yes      | A fixed token — a sub-command or a flag that never varies (e.g. `run`)                                 |
+| `model`      | `flag`            | yes      | Flag carrying the model selected in the UI                                                             |
+|              | `ignoreIfAuto`    | yes      | `true` = omit the flag entirely when the model is `auto`                                               |
+| `task`       | `quote`           | yes      | The task is always passed as one quoted argument; `false` is still accepted but no longer changes that |
+| `headless`   | `flag`            | yes      | Flag used when the agent runs unattended                                                               |
+|              | `interactiveFlag` | optional | Flag used instead when a terminal is attached                                                          |
+| `permission` | `map`             | yes      | Permission mode → CLI flag                                                                             |
+|              | `fallback`        | optional | Flag for modes missing from `map`. Without it, unmapped modes add nothing                              |
 
 **`ignoreIfAuto` and `quote` are required, not opt-in.** Writing
 `{ "type": "task" }` fails the file with `missing field 'quote'`.

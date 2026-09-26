@@ -48,7 +48,7 @@ impl AgentProvider for CrushProvider {
         let mut cmd = "crush".to_string();
 
         if model != "auto" {
-            cmd.push_str(&format!(" --model {}", model));
+            cmd.push_str(&format!(" --model {}", shell_word(model)));
         }
 
         if let Some(mode) = permission_mode {

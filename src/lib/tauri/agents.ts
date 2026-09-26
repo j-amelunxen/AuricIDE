@@ -64,6 +64,19 @@ export interface AgentConfig {
   /** Frontend-only provenance hint for goal runs; ignored by the Rust backend. */
   runSource?: 'ui' | 'conductor';
   /**
+   * The MCP launch request this agent answers. Its start and finish are
+   * recorded against it for `get_agent_run`, and the Rust spawn checks the
+   * working directory against the folder stored with the request.
+   */
+  launchRequestUid?: string;
+  /**
+   * An agent-written notification whose Start button this spawn answers, and
+   * the clicked action. The Rust spawn refuses any `cwd` but the folder the
+   * MCP server stamped on that action (sub-goal 09).
+   */
+  agentNotificationUid?: string;
+  agentNotificationActionId?: string;
+  /**
    * What to remember in the project's prompt history instead of `task`.
    * Frontend-only. A combo step's task carries the previous session's output
    * appended to it; recall is a list of things a person typed, and a terminal

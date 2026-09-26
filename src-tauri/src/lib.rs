@@ -110,6 +110,14 @@ pub fn run() {
                         error
                     })
                     .ok();
+                    // Slots held by an instance that crashed would block its
+                    // missions for good; its agents died with it.
+                    if let Err(error) = notifications::release_orphaned_launch_claims_impl(
+                        &conn,
+                        &notifications::process_is_alive,
+                    ) {
+                        eprintln!("Launch claims: could not free orphaned slots: {error}");
+                    }
                     app.manage(notifications::NotificationsState {
                         conn: std::sync::Mutex::new(conn),
                         watcher: std::sync::Mutex::new(watcher),
@@ -314,6 +322,12 @@ pub fn run() {
             notifications_mark_read,
             notifications_mark_all_read,
             notifications_answer,
+            notifications_record_launch_run,
+            notifications_claim_launch,
+            notifications_release_launch_claim,
+            notifications_save_launch_grant,
+            notifications_revoke_launch_grant,
+            notifications_list_launch_grants,
             notifications_unread_count,
             notifications_clear,
             notifications_delete,

@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -48,12 +49,75 @@ fn write_new_private_file(path: &Path, content: &[u8]) -> Result<(), String> {
         .map_err(|error| format!("Could not write private agent MCP config: {error}"))
 }
 
+/// The installed provider ids that a project-bound spawn can start, sorted and
+/// comma-separated, for the MCP server. A provider without an isolated MCP
+/// binding would only fail at spawn, so it is not offered at all.
+pub(crate) fn agent_providers_env(registry: &crate::providers::ProviderRegistry) -> String {
+    let mut ids: Vec<String> = registry
+        .list_providers()
+        .into_iter()
+        .map(|info| info.id)
+        .filter(|id| !id.is_empty() && !id.contains(','))
+        .filter(|id| {
+            registry.get(id).is_some_and(|provider| {
+                crate::providers::supports_isolated_mcp_binding(id, provider.as_ref())
+            })
+        })
+        .collect();
+    ids.sort_unstable();
+    ids.join(",")
+}
+
+/// The agent's working directory as the MCP server may be told it: absolute,
+/// canonical and an existing directory, or nothing at all (then
+/// `request_agent_launch` refuses).
+pub(crate) fn canonical_agent_cwd(cwd: Option<&str>) -> Option<PathBuf> {
+    let path = Path::new(cwd?);
+    if !path.is_absolute() {
+        return None;
+    }
+    let canonical = path.canonicalize().ok()?;
+    canonical.is_dir().then_some(canonical)
+}
+
+/// The one environment every agent's Auric MCP server gets, whichever way its
+/// provider is configured (standard config, Crush config, Codex overrides).
+pub(crate) fn agent_mcp_server_env(
+    notifications_db: Option<&Path>,
+    registry: Option<&crate::providers::ProviderRegistry>,
+    agent_cwd: Option<&Path>,
+) -> BTreeMap<String, String> {
+    let mut env = BTreeMap::new();
+    if let Some(path) = notifications_db {
+        env.insert(
+            "AURIC_NOTIFICATIONS_DB".to_string(),
+            path.to_string_lossy().into_owned(),
+        );
+    }
+    // Lets `list_agent_providers` / `request_agent_launch` name what can
+    // actually start; the spawn path re-checks it either way.
+    if let Some(registry) = registry {
+        env.insert(
+            "AURIC_AGENT_PROVIDERS".to_string(),
+            agent_providers_env(registry),
+        );
+    }
+    // The only folder `request_agent_launch` may start in (or make a worktree
+    // of). A path that is not valid UTF-8 is left out rather than mangled;
+    // the tool then refuses, which is the safe side.
+    if let Some(cwd) = agent_cwd.and_then(Path::to_str) {
+        env.insert("AURIC_AGENT_CWD".to_string(), cwd.to_string());
+    }
+    env
+}
+
 /// Writes immutable provider configs used by one logical project.
 /// The file lives in app data, never in the user's repository, and contains
 /// one package-owned runtime plus one canonical project root.
 pub fn ensure_agent_mcp_config(
     app: &tauri::AppHandle,
     project_root: &Path,
+    env: &BTreeMap<String, String>,
 ) -> Result<AgentMcpConfigs, String> {
     let runtime = runtime_entrypoint(app)?;
     let app_data = app
@@ -69,7 +133,17 @@ pub fn ensure_agent_mcp_config(
         std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
             .map_err(|error| format!("Could not secure agent MCP config directory: {error}"))?;
     }
+    write_agent_mcp_configs(&directory, &runtime, project_root, env)
+}
 
+/// The standard (`mcpServers`) and the Crush (`mcp`) config for one agent,
+/// both handing the server the same `env`.
+pub(crate) fn write_agent_mcp_configs(
+    directory: &Path,
+    runtime: &Path,
+    project_root: &Path,
+    env: &BTreeMap<String, String>,
+) -> Result<AgentMcpConfigs, String> {
     let mut hasher = DefaultHasher::new();
     project_root.hash(&mut hasher);
     std::process::id().hash(&mut hasher);
@@ -84,15 +158,11 @@ pub fn ensure_agent_mcp_config(
     let identity = hasher.finish();
     let standard_path = directory.join(format!("project-{identity:016x}.mcp.json"));
     let crush_path = directory.join(format!("project-{identity:016x}.crush.json"));
-    let mut server = serde_json::json!({
+    let server = serde_json::json!({
         "command": "node",
-        "args": [runtime.clone(), "--project-root", project_root],
+        "args": [runtime, "--project-root", project_root],
+        "env": env,
     });
-    if let Ok(notifications_dir) = app.path().app_data_dir() {
-        server["env"] = serde_json::json!({
-            "AURIC_NOTIFICATIONS_DB": crate::notifications::db_path_in(&notifications_dir)
-        });
-    }
     let content = serde_json::to_vec_pretty(&serde_json::json!({
         "mcpServers": { "auric-pm": server }
     }))
@@ -105,6 +175,7 @@ pub fn ensure_agent_mcp_config(
                 "type": "stdio",
                 "command": "node",
                 "args": [runtime, "--project-root", project_root],
+                "env": env,
                 "timeout": 30
             }
         }
@@ -553,6 +624,116 @@ pub fn get_mcp_status(state: &McpServerState) -> McpStatusInfo {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn mcp_server_env_carries_the_inbox_the_providers_and_the_agent_folder() {
+        let registry = crate::providers::new_provider_registry(None);
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let env = super::agent_mcp_server_env(
+            Some(std::path::Path::new("/app data/notifications.db")),
+            Some(&registry),
+            Some(&cwd),
+        );
+
+        assert_eq!(
+            env.get("AURIC_NOTIFICATIONS_DB").map(String::as_str),
+            Some("/app data/notifications.db")
+        );
+        assert_eq!(
+            env.get("AURIC_AGENT_PROVIDERS"),
+            Some(&super::agent_providers_env(&registry))
+        );
+        assert_eq!(env.get("AURIC_AGENT_CWD").map(String::as_str), cwd.to_str());
+    }
+
+    #[test]
+    fn mcp_server_env_leaves_out_what_it_does_not_know() {
+        let env = super::agent_mcp_server_env(None, None, None);
+        assert!(env.is_empty(), "{env:?}");
+    }
+
+    #[test]
+    fn the_agent_folder_is_passed_canonical_or_not_at_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let real = root.join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = root.join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let file = root.join("file");
+        std::fs::write(&file, "x").unwrap();
+        let dotted = format!("{}/../real", real.display());
+
+        assert_eq!(
+            super::canonical_agent_cwd(link.to_str()),
+            Some(real.clone())
+        );
+        assert_eq!(
+            super::canonical_agent_cwd(Some(&dotted)),
+            Some(real.clone())
+        );
+        assert_eq!(
+            super::canonical_agent_cwd(root.join("missing").to_str()),
+            None
+        );
+        assert_eq!(super::canonical_agent_cwd(file.to_str()), None);
+        assert_eq!(super::canonical_agent_cwd(Some("relative/dir")), None);
+        assert_eq!(super::canonical_agent_cwd(None), None);
+    }
+
+    #[test]
+    fn standard_and_crush_configs_hand_the_same_env_to_the_mcp_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let env: std::collections::BTreeMap<String, String> = [
+            ("AURIC_NOTIFICATIONS_DB", "/app data/notifications.db"),
+            ("AURIC_AGENT_PROVIDERS", "claude,codex,crush"),
+            ("AURIC_AGENT_CWD", "/repo/it's \"here\""),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+        let configs = super::write_agent_mcp_configs(
+            dir.path(),
+            std::path::Path::new("/rt/server.mjs"),
+            std::path::Path::new("/repo/project"),
+            &env,
+        )
+        .unwrap();
+        let read = |path: &std::path::Path| -> serde_json::Value {
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+        };
+        let expected = serde_json::to_value(&env).unwrap();
+
+        let standard = read(&configs.standard);
+        assert_eq!(standard["mcpServers"]["auric-pm"]["env"], expected);
+        let crush = read(&configs.crush);
+        assert_eq!(crush["mcp"]["auric-pm"]["env"], expected);
+        for key in [
+            "AURIC_NOTIFICATIONS_DB",
+            "AURIC_AGENT_PROVIDERS",
+            "AURIC_AGENT_CWD",
+        ] {
+            assert!(crush["mcp"]["auric-pm"]["env"][key].is_string(), "{key}");
+        }
+    }
+
+    #[test]
+    fn agent_providers_env_lists_installed_ids_sorted_and_comma_separated() {
+        let registry = crate::providers::new_provider_registry(None);
+        let env = super::agent_providers_env(&registry);
+        let ids: Vec<&str> = env.split(',').collect();
+
+        assert!(
+            ids.contains(&"crush"),
+            "the built-in provider is always installed: {env}"
+        );
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted);
+        assert!(ids.iter().all(|id| !id.is_empty() && !id.contains(',')));
+    }
     use super::*;
 
     #[test]

@@ -246,6 +246,124 @@ fn codex_binding_uses_session_scoped_mcp_overrides_with_shell_safe_values() {
     assert!(command.command.contains("required=true"));
 }
 
+/// What `sh -c` makes of one argument: the word the CLI actually receives.
+fn as_shell_sees_it(argument: &str) -> String {
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("printf '%s' {argument}"))
+        .output()
+        .unwrap();
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn codex_binding_hands_the_mcp_server_its_env_as_one_quoted_toml_table() {
+    let env: std::collections::BTreeMap<String, String> = [
+        ("AURIC_AGENT_CWD", "/repo/it's \"here\" $(id)"),
+        ("AURIC_AGENT_PROVIDERS", "claude,codex,crush"),
+        ("AURIC_NOTIFICATIONS_DB", "/app data/notifications.db"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect();
+    let binding = ProviderProjectBinding::new("/repo/p", "/repo/p/.auric/project.db")
+        .with_runtime_entrypoint("/rt/server.mjs")
+        .with_mcp_env(env);
+
+    let injection = codex_project_binding_injection(&binding).unwrap();
+    let overrides: Vec<String> = injection
+        .arguments
+        .chunks(2)
+        .filter(|pair| pair[0] == "-c")
+        .map(|pair| as_shell_sees_it(&pair[1]))
+        .collect();
+
+    assert!(
+        overrides.contains(
+            &concat!(
+                r#"mcp_servers.auric-pm.env={"AURIC_AGENT_CWD"="/repo/it's \"here\" $(id)","#,
+                r#""AURIC_AGENT_PROVIDERS"="claude,codex,crush","#,
+                r#""AURIC_NOTIFICATIONS_DB"="/app data/notifications.db"}"#
+            )
+            .to_string()
+        ),
+        "{overrides:#?}"
+    );
+}
+
+#[test]
+fn codex_binding_without_env_adds_no_env_override() {
+    let binding = ProviderProjectBinding::new("/repo/p", "/repo/p/.auric/project.db")
+        .with_runtime_entrypoint("/rt/server.mjs");
+    let injection = codex_project_binding_injection(&binding).unwrap();
+
+    assert!(!injection
+        .arguments
+        .iter()
+        .any(|argument| argument.contains("mcp_servers.auric-pm.env")));
+}
+
+/// Review r2, point 6: `list_agent_providers` must offer only providers a
+/// project-bound spawn can actually start.
+#[test]
+fn the_provider_list_for_mcp_leaves_out_providers_without_an_isolated_binding() {
+    let registry = new_provider_registry(None);
+    registry
+        .import_provider(
+            r#"{
+              "id": "claude", "name": "Claude Code", "executable": "claude",
+              "arguments": [{ "type": "task", "quote": true }],
+              "projectBinding": { "arguments": ["--mcp-config", "{mcpConfigPath}", "--strict-mcp-config"] },
+              "info": { "models": [], "permissionModes": [], "defaultModel": "auto", "defaultPermissionMode": "default" },
+              "versionCheck": { "command": "claude", "args": ["--version"] },
+              "promptTemplate": "claude \""
+            }"#,
+        )
+        .unwrap();
+    registry
+        .import_provider(
+            r#"{
+              "id": "codex", "name": "Codex CLI", "executable": "codex",
+              "arguments": [{ "type": "task", "quote": true }],
+              "info": { "models": [], "permissionModes": [], "defaultModel": "auto", "defaultPermissionMode": "default" },
+              "versionCheck": { "command": "codex", "args": ["--version"] },
+              "promptTemplate": "codex \""
+            }"#,
+        )
+        .unwrap();
+    registry
+        .import_provider(
+            r#"{
+              "id": "plain", "name": "No MCP binding", "executable": "plain",
+              "arguments": [{ "type": "task", "quote": true }],
+              "info": { "models": [], "permissionModes": [], "defaultModel": "auto", "defaultPermissionMode": "default" },
+              "versionCheck": { "command": "plain", "args": ["--version"] },
+              "promptTemplate": "plain \""
+            }"#,
+        )
+        .unwrap();
+
+    let listed = crate::mcp::agent_providers_env(&registry);
+    let ids: Vec<&str> = listed.split(',').collect();
+
+    for id in ["claude", "codex", "crush"] {
+        assert!(
+            ids.contains(&id),
+            "{id} can be started project-bound: {listed}"
+        );
+    }
+    assert!(!ids.contains(&"plain"), "plain cannot: {listed}");
+
+    // The same decision the spawn takes: plain is refused there, too.
+    let plain = registry.get("plain").unwrap();
+    let binding = ProviderProjectBinding::new("/p", "/p/.auric/project.db")
+        .with_mcp_config_path("/a/p.mcp.json")
+        .with_crush_config_path("/a/p.crush.json")
+        .with_runtime_entrypoint("/rt/server.mjs");
+    let error = project_binding_injection_for("plain", plain.as_ref(), &binding).unwrap_err();
+    assert!(error.contains("does not support an isolated Auric MCP project binding"));
+}
+
 // ── Dynamic Provider Tests (Gemini Emulation) ─────────────────────
 
 fn get_gemini_config() -> ProviderConfig {
@@ -630,4 +748,128 @@ fn test_local_codex_config_offers_auto_review() {
         "codex exec \"task\" --sandbox workspace-write -c approval_policy=on-request \
          -c approvals_reviewer=auto_review"
     );
+}
+
+// ── Untrusted request values never reach the shell as code ────────
+//
+// `model` and `task` arrive from MCP callers (request_agent_launch). The
+// spawn command is run through `sh -c` / `zsh -c`, so each value has to stay
+// exactly one inert argument. These tests run the built command in a real
+// shell with a harmless executable and check that the payload never ran.
+
+const INJECTION_PAYLOADS: &[&str] = &[
+    "x; touch {marker} #",
+    "x && touch {marker}",
+    "x | touch {marker}",
+    "$(touch {marker})",
+    "`touch {marker}`",
+    "x\ntouch {marker}",
+    "x'; touch {marker}; echo '",
+    "x\"; touch {marker}; echo \"",
+];
+
+fn echo_config(task_quote: bool) -> ProviderConfig {
+    let json = format!(
+        r#"{{
+      "id": "echo",
+      "name": "Echo",
+      "executable": "printf '[%s]'",
+      "arguments": [
+        {{ "type": "model", "flag": "--model", "ignoreIfAuto": true }},
+        {{ "type": "task", "quote": {task_quote} }}
+      ],
+      "info": {{ "models": [], "permissionModes": [], "defaultModel": "auto",
+                 "defaultPermissionMode": "default" }},
+      "versionCheck": {{ "command": "printf", "args": [] }},
+      "promptTemplate": ""
+    }}"#
+    );
+    serde_json::from_str(&json).unwrap()
+}
+
+/// Runs `command` in `sh -c` and returns stdout; panics if the marker file
+/// appeared, which would mean part of a value was executed as code.
+fn run_and_assert_inert(command: &str, marker: &std::path::Path) -> String {
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .output()
+        .expect("sh runs");
+    assert!(
+        !marker.exists(),
+        "payload executed as shell code: {command}"
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn marker_path(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("auric-inject-{}-{}", std::process::id(), name));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir.join("pwned")
+}
+
+#[test]
+fn a_hostile_model_name_stays_one_inert_argument_in_a_dynamic_provider() {
+    let provider = DynamicProvider::new(echo_config(true));
+    for (index, template) in INJECTION_PAYLOADS.iter().enumerate() {
+        let marker = marker_path(&format!("dyn-model-{index}"));
+        let model = template.replace("{marker}", &marker.display().to_string());
+        let cmd = provider.build_spawn_command(&model, "task", None, false, false, false);
+        let stdout = run_and_assert_inert(&cmd.command, &marker);
+        assert!(
+            stdout.contains(&format!("[{model}]")),
+            "model must arrive verbatim as one argument, got {stdout:?} from {}",
+            cmd.command
+        );
+    }
+}
+
+#[test]
+fn a_hostile_model_name_stays_one_inert_argument_for_crush() {
+    for (index, template) in INJECTION_PAYLOADS.iter().enumerate() {
+        let marker = marker_path(&format!("crush-model-{index}"));
+        let model = template.replace("{marker}", &marker.display().to_string());
+        let cmd = CrushProvider.build_spawn_command(&model, "task", None, false, false, false);
+        // Swap the real binary for printf; the rest of the command is what
+        // the shell would see.
+        let command = cmd.command.replacen("crush", "printf '[%s]'", 1);
+        let stdout = run_and_assert_inert(&command, &marker);
+        assert!(
+            stdout.contains(&format!("[{model}]")),
+            "model must arrive verbatim as one argument, got {stdout:?} from {command}"
+        );
+    }
+}
+
+#[test]
+fn a_hostile_task_stays_one_inert_argument_even_when_the_config_says_quote_false() {
+    for quote in [true, false] {
+        let provider = DynamicProvider::new(echo_config(quote));
+        for (index, template) in INJECTION_PAYLOADS.iter().enumerate() {
+            let marker = marker_path(&format!("dyn-task-{quote}-{index}"));
+            let task = template.replace("{marker}", &marker.display().to_string());
+            let cmd = provider.build_spawn_command("auto", &task, None, false, false, false);
+            let stdout = run_and_assert_inert(&cmd.command, &marker);
+            assert_eq!(stdout, format!("[{task}]"), "from {}", cmd.command);
+        }
+    }
+}
+
+#[test]
+fn an_ordinary_model_name_is_left_unquoted() {
+    let provider = DynamicProvider::new(get_claude_config());
+    for model in [
+        "opus",
+        "gpt-5.1-codex",
+        "moonshotai/kimi-k2-thinking",
+        "grok-4:fast",
+    ] {
+        let cmd = provider.build_spawn_command(model, "task", None, false, false, false);
+        assert!(
+            cmd.command.contains(&format!("--model {model} ")),
+            "{}",
+            cmd.command
+        );
+    }
 }
