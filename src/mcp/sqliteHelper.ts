@@ -7,6 +7,34 @@ export interface SqliteDbOptions {
   foreignKeys?: boolean;
 }
 
+function isBusy(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'SQLITE_BUSY';
+}
+
+/**
+ * Switches to WAL, retrying while another process holds the lock.
+ *
+ * The first switch of a fresh file needs an exclusive lock, and SQLite answers
+ * SQLITE_BUSY at once instead of calling the busy handler when waiting could
+ * deadlock (another client mid-migration holds a lock this one would wait on).
+ * So `busy_timeout` alone does not cover it: several clients opening the same
+ * new database together (MCP servers of parallel agents) would lose the race.
+ * Retry for as long as the busy timeout promises, then give up loudly.
+ */
+function switchToWal(db: Database.Database): void {
+  const deadline = Date.now() + SQLITE_BUSY_TIMEOUT_MS;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      db.pragma('journal_mode = WAL');
+      return;
+    } catch (error) {
+      if (!isBusy(error) || Date.now() >= deadline) throw error;
+      Atomics.wait(pause, 0, 0, 10);
+    }
+  }
+}
+
 /**
  * Opens a SQLite database at the specified path and configures common pragmas.
  */
@@ -17,7 +45,7 @@ export function openSqliteDb(
   const db = new Database(path);
   db.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
   if (options.wal ?? true) {
-    db.pragma('journal_mode = WAL');
+    switchToWal(db);
   }
   if (options.foreignKeys !== undefined) {
     db.pragma(`foreign_keys = ${options.foreignKeys ? 'ON' : 'OFF'}`);

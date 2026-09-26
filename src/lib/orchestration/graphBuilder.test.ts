@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildOrchestrationGraph } from './graphBuilder';
-import type { PmGoal, PmGoalRun } from '../tauri/goals';
+import type { PmGoal, PmGoalRun, PmGoalStation } from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
 import type { AgentInfo } from '../tauri/agents';
 
@@ -69,6 +69,27 @@ function makeRun(overrides: Partial<PmGoalRun> = {}): PmGoalRun {
   };
 }
 
+function makeStation(overrides: Partial<PmGoalStation> = {}): PmGoalStation {
+  return {
+    id: 's1',
+    goalId: 'g1',
+    name: 'Step',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
 describe('buildOrchestrationGraph', () => {
   it('lays out goals by tree depth with parent→child edges', () => {
     const goals = [
@@ -100,6 +121,17 @@ describe('buildOrchestrationGraph', () => {
     ];
     const { nodes } = buildOrchestrationGraph(goals, tickets, [], []);
     expect(nodes.find((n) => n.id === 'goal-g1')?.data.progress).toEqual({ done: 1, total: 2 });
+  });
+
+  it('includes station progress for a goal worked without tickets', () => {
+    const goals = [makeGoal({ id: 'g1' })];
+    const stations = [
+      makeStation({ id: 's1', status: 'done', evidenceKind: 'judged' }),
+      makeStation({ id: 's2' }),
+      makeStation({ id: 's3', status: 'done', evidenceKind: 'claim' }),
+    ];
+    const { nodes } = buildOrchestrationGraph(goals, [], [], [], stations);
+    expect(nodes.find((n) => n.id === 'goal-g1')?.data.progress).toEqual({ done: 1, total: 3 });
   });
 
   it('attaches tickets to their goal and agents to their ticket', () => {

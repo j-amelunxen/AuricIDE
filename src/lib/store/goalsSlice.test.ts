@@ -10,11 +10,12 @@ import {
   getGoalSatisfaction,
   getRunsForGoal,
   getGoalWorkflowStage,
+  getGoalWorkProgress,
   planGoalMove,
 } from './goalsSlice';
 import { createPmSlice, type PmSlice } from './pmSlice';
 import { VERIFIED_EVIDENCE_KINDS, isVerifiedEvidence } from '../pm/enums';
-import type { GoalsState, PmGoal, PmGoalRun } from '../tauri/goals';
+import type { GoalsState, PmGoal, PmGoalRun, PmGoalStation } from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
 import type { PmRequirement } from '../tauri/requirements';
 
@@ -530,6 +531,50 @@ describe('goalsSlice persistence', () => {
   });
 });
 
+describe('getGoalWorkProgress', () => {
+  const station = (overrides: Partial<PmGoalStation> = {}): PmGoalStation => ({
+    id: 's1',
+    goalId: 'g1',
+    name: 'Step',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  });
+
+  it('counts verified stations in stations mode', () => {
+    const goal = makeGoal();
+    const stations = [
+      station({ goalId: goal.id, status: 'done', evidenceKind: 'proof' }),
+      station({ id: 's2', goalId: goal.id }),
+    ];
+    expect(getGoalWorkProgress([goal], [], stations, goal.id)).toEqual({
+      done: 1,
+      total: 2,
+      unit: 'stations',
+    });
+  });
+
+  it('counts done tickets in ticket mode', () => {
+    const goal = makeGoal();
+    const tickets = [makeTicket({ goalId: goal.id, status: 'done' })];
+    expect(getGoalWorkProgress([goal], tickets, [station({ goalId: goal.id })], goal.id)).toEqual({
+      done: 1,
+      total: 1,
+      unit: 'tickets',
+    });
+  });
+});
+
 describe('getGoalWorkflowStage', () => {
   const noReqs: PmRequirement[] = [];
 
@@ -555,8 +600,8 @@ describe('getGoalWorkflowStage', () => {
     expect(step.index).toBe(3);
   });
 
-  it('keeps a saved station-only line in planning until executable tickets exist', () => {
-    const goal = makeGoal();
+  it('keeps a saved station-only line in planning until tickets exist in ticket mode', () => {
+    const goal = makeGoal({ workMode: 'tickets' });
     const stations = [
       {
         id: 's1',
@@ -584,8 +629,8 @@ describe('getGoalWorkflowStage', () => {
     expect(step.hint).toMatch(/plan is saved.*create tickets/i);
   });
 
-  it('does not skip to achieved when checkpoints pass without executable tickets', () => {
-    const goal = makeGoal();
+  it('does not skip to achieved in ticket mode when checkpoints pass without tickets', () => {
+    const goal = makeGoal({ workMode: 'tickets' });
     const station = {
       id: 's1',
       goalId: goal.id,
@@ -605,6 +650,72 @@ describe('getGoalWorkflowStage', () => {
     };
 
     expect(getGoalWorkflowStage([goal], [], noReqs, [], [station], goal.id).stage).toBe('attach');
+  });
+
+  const station = (overrides: Partial<PmGoalStation> = {}): PmGoalStation => ({
+    id: 's1',
+    goalId: 'g1',
+    name: 'Draft the report',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  });
+
+  it('runs a station-only goal without tickets and shows the station progress', () => {
+    const goal = makeGoal();
+    const stations = [
+      station({ goalId: goal.id, status: 'done', evidenceKind: 'proof' }),
+      station({ id: 's2', goalId: goal.id, sortOrder: 1 }),
+    ];
+
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], stations, goal.id);
+
+    expect(step.stage).toBe('execute');
+    expect(step.index).toBe(3);
+    expect(step.hint).toMatch(/1 of 2 stations/i);
+    expect(step.hint).not.toMatch(/ticket/i);
+  });
+
+  it('reaches "done" for a station-only goal once every station is verified', () => {
+    const goal = makeGoal();
+    const stations = [
+      station({ goalId: goal.id, status: 'done', evidenceKind: 'proof' }),
+      station({ id: 's2', goalId: goal.id, kind: 'human', status: 'done', evidenceKind: 'human' }),
+    ];
+
+    expect(getGoalWorkflowStage([goal], [], noReqs, [], stations, goal.id).stage).toBe('done');
+  });
+
+  it('counts a claimed but unverified station as not yet done', () => {
+    const goal = makeGoal();
+    const stations = [station({ goalId: goal.id, status: 'done', evidenceKind: 'claim' })];
+
+    const step = getGoalWorkflowStage([goal], [], noReqs, [], stations, goal.id);
+
+    expect(step.stage).toBe('execute');
+    expect(step.hint).toMatch(/0 of 1 stations/i);
+  });
+
+  it('shows the stations of the sub-goals for a mission root without own stations', () => {
+    const root = makeGoal({ id: 'root' });
+    const child = makeGoal({ id: 'child', parentId: 'root' });
+    const stations = [station({ goalId: 'child', status: 'done', evidenceKind: 'judged' })];
+
+    const step = getGoalWorkflowStage([root, child], [], noReqs, [], stations, 'root');
+
+    expect(step.stage).toBe('execute');
+    expect(step.hint).toMatch(/1 of 1 stations/i);
+    expect(step.hint).toMatch(/sub-goal/i);
   });
 
   it('counts tickets on descendant goals as attached work', () => {

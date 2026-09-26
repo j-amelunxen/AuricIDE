@@ -3,6 +3,8 @@ import type { PmTicket } from '../../tauri/pm';
 import type { PmRequirement } from '../../tauri/requirements';
 import { isVerifiedEvidence } from '../../pm/enums';
 import { getGoalChildren, getGoalDescendants } from './goalTreeHelpers';
+import { resolveGoalWorkMode, type ResolvedGoalWorkMode } from '../../goals/workMode';
+import { decideGoalCompletion, type GoalCompletion } from '../../goals/goalCompletion';
 
 export interface GoalProgress {
   totalTickets: number;
@@ -21,6 +23,25 @@ export function getGoalProgress(
     totalTickets: scoped.length,
     doneTickets: scoped.filter((t) => t.status === 'done').length,
   };
+}
+
+/**
+ * Which mode the goal is worked in, resolved from its setting and from what
+ * its subtree has attached. Discarded tickets are off the board and do not
+ * count; the MCP twin (`evaluateGoal`) reads the same shape.
+ */
+export function getGoalWorkMode(
+  goals: PmGoal[],
+  tickets: PmTicket[],
+  stations: PmGoalStation[],
+  goalId: string
+): ResolvedGoalWorkMode {
+  const ids = new Set<string>([goalId, ...getGoalDescendants(goals, goalId).map((g) => g.id)]);
+  const goal = goals.find((g) => g.id === goalId);
+  return resolveGoalWorkMode(goal?.workMode, {
+    hasTickets: tickets.some((t) => !!t.goalId && ids.has(t.goalId) && t.status !== 'discarded'),
+    hasStations: stations.some((s) => ids.has(s.goalId)),
+  });
 }
 
 export interface GoalSatisfaction {
@@ -107,6 +128,74 @@ export function getGoalSatisfaction(
   return { satisfied: blockers.length === 0, blockers };
 }
 
+/**
+ * Whether the goal may become achieved, through the one completion transition
+ * (`decideGoalCompletion`). The MCP twin is `evaluateGoal(...).completion`.
+ */
+export function getGoalCompletion(
+  goals: PmGoal[],
+  tickets: PmTicket[],
+  requirements: PmRequirement[],
+  links: PmGoalRequirementLink[],
+  stations: PmGoalStation[],
+  goalId: string
+): GoalCompletion {
+  const ids = new Set<string>([goalId, ...getGoalDescendants(goals, goalId).map((g) => g.id)]);
+  return decideGoalCompletion({
+    satisfaction: getGoalSatisfaction(goals, tickets, requirements, links, stations, goalId),
+    workMode: getGoalWorkMode(goals, tickets, stations, goalId),
+    hasStations: stations.some((s) => ids.has(s.goalId)),
+  });
+}
+
+export interface GoalStationProgress {
+  /** Stations done with verified evidence (a bare claim does not count). */
+  done: number;
+  total: number;
+  /** True when the stations sit on sub-goals rather than on the goal itself. */
+  onSubGoals: boolean;
+}
+
+/** Station progress across the goal and its subtree, counted like satisfaction counts it. */
+export function getGoalStationProgress(
+  goals: PmGoal[],
+  stations: PmGoalStation[],
+  goalId: string
+): GoalStationProgress {
+  const ids = new Set<string>([goalId, ...getGoalDescendants(goals, goalId).map((g) => g.id)]);
+  const scoped = stations.filter((s) => ids.has(s.goalId));
+  return {
+    done: scoped.filter((s) => s.status === 'done' && isVerifiedEvidence(s.evidenceKind)).length,
+    total: scoped.length,
+    onSubGoals: scoped.length > 0 && !scoped.some((s) => s.goalId === goalId),
+  };
+}
+
+export interface GoalWorkProgress {
+  done: number;
+  total: number;
+  unit: 'stations' | 'tickets';
+}
+
+/**
+ * The progress a goal shows, in the unit of its work mode: verified stations
+ * for a stations goal, done tickets for a ticket goal. One helper for the goal
+ * tree, the orchestration graph and the Line of Goals.
+ */
+export function getGoalWorkProgress(
+  goals: PmGoal[],
+  tickets: PmTicket[],
+  stations: PmGoalStation[],
+  goalId: string
+): GoalWorkProgress {
+  if (getGoalWorkMode(goals, tickets, stations, goalId).mode === 'stations') {
+    const { done, total } = getGoalStationProgress(goals, stations, goalId);
+    return { done, total, unit: 'stations' };
+  }
+  const { doneTickets, totalTickets } = getGoalProgress(goals, tickets, goalId);
+  return { done: doneTickets, total: totalTickets, unit: 'tickets' };
+}
+
 export type GoalWorkflowStage = 'define' | 'attach' | 'execute' | 'done';
 
 export interface GoalWorkflowStep {
@@ -130,14 +219,17 @@ export function getGoalWorkflowStage(
   goalId: string
 ): GoalWorkflowStep {
   const goal = goals.find((g) => g.id === goalId);
-  const satisfaction = getGoalSatisfaction(goals, tickets, requirements, links, stations, goalId);
+  const completion = getGoalCompletion(goals, tickets, requirements, links, stations, goalId);
   const subtreeIds = new Set<string>([
     goalId,
     ...getGoalDescendants(goals, goalId).map((g) => g.id),
   ]);
   const hasTickets = tickets.some((t) => !!t.goalId && subtreeIds.has(t.goalId));
+  // Ticket mode needs tickets before it counts as done; stations mode is done
+  // when its stations are, with no ticket anywhere.
+  const readyToAchieve = completion.achievable && (completion.mode === 'stations' || hasTickets);
 
-  if (goal?.status === 'achieved' || (hasTickets && satisfaction.satisfied)) {
+  if (goal?.status === 'achieved' || readyToAchieve) {
     return {
       stage: 'done',
       index: 4,
@@ -157,6 +249,19 @@ export function getGoalWorkflowStage(
   }
 
   const hasStations = stations.some((s) => subtreeIds.has(s.goalId));
+
+  if (completion.mode === 'stations') {
+    if (!hasStations) {
+      return { stage: 'attach', index: 2, hint: 'Plan the stations of this goal.' };
+    }
+    const progress = getGoalStationProgress(goals, stations, goalId);
+    const where = progress.onSubGoals ? ' across its sub-goals' : '';
+    return {
+      stage: 'execute',
+      index: 3,
+      hint: `${progress.done} of ${progress.total} stations verified${where}. Work the stations with an agent or start the conductor.`,
+    };
+  }
 
   if (!hasTickets) {
     return {

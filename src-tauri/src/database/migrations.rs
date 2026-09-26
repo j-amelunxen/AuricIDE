@@ -366,5 +366,12 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         "ALTER TABLE pm_tickets ADD COLUMN skills TEXT NOT NULL DEFAULT '[]';",
     )?;
 
+    apply_migration(
+        conn,
+        20,
+        "add_goal_work_mode",
+        "ALTER TABLE pm_goals ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'auto';",
+    )?;
+
     Ok(())
 }

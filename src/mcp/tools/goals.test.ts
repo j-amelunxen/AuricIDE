@@ -86,6 +86,22 @@ describe('goal MCP tools', () => {
       expect(updated.achieved_at).not.toBeNull();
     });
 
+    it('stores the work mode per goal, auto by default', () => {
+      const goal = createGoal(db, { name: 'Research' }, 'mcp');
+      expect(goal.work_mode).toBe('auto');
+      const stations = createGoal(db, { name: 'Write', workMode: 'stations' }, 'mcp');
+      expect(stations.work_mode).toBe('stations');
+      expect(updateGoal(db, stations.id, { workMode: 'tickets' }).work_mode).toBe('tickets');
+    });
+
+    it('refuses a work mode it does not know', () => {
+      expect(() => createGoal(db, { name: 'X', workMode: 'sideways' }, 'mcp')).toThrow(
+        /work mode/i
+      );
+      const goal = createGoal(db, { name: 'Y' }, 'mcp');
+      expect(() => updateGoal(db, goal.id, { workMode: 'sideways' })).toThrow(/work mode/i);
+    });
+
     it('delete cascades to children via FK', () => {
       const p = createGoal(db, { name: 'P' }, 'mcp');
       const c = createGoal(db, { name: 'C', parentId: p.id }, 'mcp');

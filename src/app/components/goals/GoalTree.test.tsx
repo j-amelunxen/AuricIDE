@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { getGoalDropPosition, GoalTree } from './GoalTree';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
@@ -33,6 +33,27 @@ function makeTicket(overrides: Partial<PmTicket> = {}): PmTicket {
     statusUpdatedAt: '',
     sortOrder: 0,
     priority: 'normal',
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
+function makeStation(overrides: Partial<PmGoalStation> = {}): PmGoalStation {
+  return {
+    id: 's1',
+    goalId: 'g1',
+    name: 'Step',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
     createdAt: '',
     updatedAt: '',
     ...overrides,
@@ -89,6 +110,29 @@ describe('GoalTree', () => {
     ];
     render(<GoalTree goals={goals} tickets={tickets} selectedId={null} onSelect={() => {}} />);
     expect(screen.getByTestId('goal-progress-root').style.width).toBe('50%');
+  });
+
+  it('shows station progress for a goal worked without tickets', () => {
+    const goals = [makeGoal({ id: 'root' }), makeGoal({ id: 'child', parentId: 'root' })];
+    const stations = [
+      makeStation({ id: 's1', goalId: 'root', status: 'done', evidenceKind: 'proof' }),
+      makeStation({ id: 's2', goalId: 'child' }),
+    ];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        stations={stations}
+        selectedId={null}
+        onSelect={() => {}}
+      />
+    );
+    expect(screen.getByTestId('goal-progress-root').style.width).toBe('50%');
+    expect(screen.getByTestId('goal-progress-label-root')).toHaveTextContent('1/2');
+    expect(screen.getByTestId('goal-progress-label-root')).toHaveAttribute(
+      'title',
+      'Stations verified'
+    );
   });
 
   it('shows running agent badge', () => {

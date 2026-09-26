@@ -9,7 +9,15 @@ import type {
 import type { PmDependency, PmTicket } from '../tauri/pm';
 import type { PmRequirement } from '../tauri/requirements';
 import type { AgentInfo } from '../tauri/agents';
-import { getGoalDescendants, getGoalSatisfaction, getRootGoals } from '../store/goalsSlice';
+import {
+  getGoalChildren,
+  getGoalCompletion,
+  getGoalDescendants,
+  getGoalStationProgress,
+  getGoalWorkProgress,
+  getRootGoals,
+} from '../store/goalsSlice';
+import type { GoalWorkMode } from './workMode';
 import { orderedStations } from './stationOrder';
 import { staleStations } from '../evidence/staleness';
 import { lineHue } from './lineColors';
@@ -63,6 +71,13 @@ export interface GoalLine {
   blockers: string[];
   /** True when the line renders committed stations (reorderable), not derived tickets. */
   planCommitted: boolean;
+  /** How the goal is worked; drives what `progress` counts. */
+  workMode: GoalWorkMode;
+  /**
+   * Verified stations (stations mode) or done tickets (ticket mode) across the
+   * subtree — the number the card shows instead of a bare "no work attached".
+   */
+  progress: { done: number; total: number; unit: 'stations' | 'tickets' };
 }
 
 export interface GoalLinesInput {
@@ -144,7 +159,8 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
   // Subtree stations count toward satisfaction; drawn on the line are the
   // goal's own — child-goal stations surface through the blockers list.
   const goalStations = orderedStations(storedStations, goalId);
-  if (scopedTickets.length === 0 && scopedLinks.length === 0 && goalStations.length === 0) {
+  const subtreeHasStations = storedStations.some((st) => subtreeIds.has(st.goalId));
+  if (scopedTickets.length === 0 && scopedLinks.length === 0 && !subtreeHasStations) {
     return null;
   }
 
@@ -198,7 +214,9 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
       detail: r.status === 'verified' ? 'stamped, not machine-checked' : undefined,
     }));
 
-  const satisfaction = getGoalSatisfaction(
+  // The terminus follows the completion transition, the same rule the goal
+  // panel, the conductor and MCP evaluate_goal use.
+  const completion = getGoalCompletion(
     goals,
     tickets,
     requirements,
@@ -206,6 +224,7 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
     storedStations,
     goalId
   );
+  const satisfaction = { satisfied: completion.achievable, blockers: completion.blockers };
 
   const terminus: LineStation = {
     id: `terminus-${goalId}`,
@@ -257,6 +276,15 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
     const xs = spread(sequence.length, 0.06, 0.92);
     sequence.forEach((s, i) => (s.x = xs[i]));
     stations = [...sequence, terminus];
+  } else if (scopedTickets.length === 0 && subtreeHasStations) {
+    // --- Sub-goal line: a goal worked through its sub-goals' stations (a
+    // mission root). One stop per sub-goal, so the line shows progress
+    // instead of standing empty for want of tickets.
+    const stops = subGoalStops(goals, storedStations, goalId, agents);
+    const sequence = [...stops, ...gates];
+    const xs = spread(sequence.length, 0.06, 0.92);
+    sequence.forEach((st, i) => (st.x = xs[i]));
+    stations = [...sequence, terminus];
   } else {
     // --- Derived line: tickets as stations (goals without a committed plan) ---
     const doneStations = done.map((t) => ticketStation(t, 'done'));
@@ -287,7 +315,9 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
     const viaTicket = agent.spawnedByTicketId
       ? byTicketStation.get(agent.spawnedByTicketId)
       : undefined;
-    if (viaTicket) {
+    if (stations.some((st) => st.agentIds.includes(agent.id))) {
+      // Already perched on its sub-goal's stop.
+    } else if (viaTicket) {
       viaTicket.agentIds.push(agent.id);
     } else if (agent.spawnedByGoalId && subtreeIds.has(agent.spawnedByGoalId)) {
       frontStation.agentIds.push(agent.id);
@@ -330,7 +360,45 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
     satisfied: satisfaction.satisfied,
     blockers: satisfaction.blockers,
     planCommitted: goalStations.length > 0,
+    workMode: completion.mode,
+    progress: getGoalWorkProgress(goals, tickets, storedStations, goalId),
   };
+}
+
+/** One stop per sub-goal that has work, in the tree's order; running agents perch on it. */
+function subGoalStops(
+  goals: PmGoal[],
+  stations: PmGoalStation[],
+  goalId: string,
+  agents: AgentInfo[]
+): LineStation[] {
+  const running = agents.filter((a) => a.status === 'running');
+  let frontTaken = false;
+  const stops: LineStation[] = [];
+  const children = getGoalChildren(goals, goalId)
+    .filter((child) => child.status !== 'archived')
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  for (const child of children) {
+    const progress = getGoalStationProgress(goals, stations, child.id);
+    if (progress.total === 0 && child.status !== 'achieved') continue;
+    const childIds = new Set([child.id, ...getGoalDescendants(goals, child.id).map((g) => g.id)]);
+    const achieved = child.status === 'achieved';
+    const state: StationState = achieved ? 'done' : frontTaken ? 'planned' : 'front';
+    if (!achieved) frontTaken = true;
+    stops.push({
+      id: `goal-${child.id}`,
+      label: child.name,
+      kind: 'normal',
+      state,
+      evidence: 'proof', // the sub-goal's own completion check decides
+      x: 0,
+      agentIds: running
+        .filter((a) => a.spawnedByGoalId && childIds.has(a.spawnedByGoalId))
+        .map((a) => a.id),
+      detail: `${progress.done} of ${progress.total} stations verified`,
+    });
+  }
+  return stops;
 }
 
 /**

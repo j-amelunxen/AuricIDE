@@ -16,6 +16,65 @@ import type { Notification } from './types';
 export const LAUNCH_REQUEST_KEY_PREFIX = 'agent-launch:';
 export const LAUNCH_REQUEST_ORIGIN = 'request_agent_launch';
 
+/** What a launch request says; both writers (MCP and the conductor) fill it. */
+export interface LaunchRequestSpec {
+  uid: string;
+  goalId: string;
+  goalName: string;
+  /** What the started agent is told to do. */
+  prompt: string;
+  /** The folder the agent runs in: the requester's own, never one it names. */
+  folder: string;
+  projectPath: string;
+  projectName?: string | null;
+  provider?: string;
+  model?: string;
+  worktree?: boolean;
+  title?: string;
+}
+
+const MAX_BODY_LENGTH = 280;
+
+/**
+ * The one shape of a launch request row. MCP `request_agent_launch` and the
+ * conductor's stations mode both write it through here, so the row the native
+ * claim and directory checks read (`is_launch_request`, `stored_placement`) is
+ * the same whoever asked. It is always agent-written and so foreign: only a
+ * click or a launch grant starts it.
+ */
+export function buildLaunchRequest(spec: LaunchRequestSpec) {
+  const body =
+    spec.prompt.length > MAX_BODY_LENGTH
+      ? `${spec.prompt.slice(0, MAX_BODY_LENGTH - 3)}...`
+      : spec.prompt;
+  return {
+    uid: spec.uid,
+    title: spec.title?.trim() || `Agent requested for goal "${spec.goalName}"`,
+    body,
+    severity: 'info' as const,
+    source: 'agent' as const,
+    origin: LAUNCH_REQUEST_ORIGIN,
+    dedupeKey: `${LAUNCH_REQUEST_KEY_PREFIX}${spec.uid}`,
+    refKind: 'goal' as const,
+    refId: spec.goalId,
+    projectPath: spec.projectPath,
+    projectName: spec.projectName ?? null,
+    actions: [
+      {
+        id: 'start',
+        label: 'Start agent',
+        kind: 'spawn-agent' as const,
+        task: spec.prompt,
+        repoPath: spec.folder,
+        goalId: spec.goalId,
+        ...(spec.provider ? { provider: spec.provider } : {}),
+        ...(spec.model ? { model: spec.model } : {}),
+        ...(spec.worktree ? { useWorktree: true } : {}),
+      },
+    ],
+  };
+}
+
 export function isLaunchRequest(notification: Notification): boolean {
   return (
     notification.source === 'agent' &&

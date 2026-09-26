@@ -1,8 +1,9 @@
 import { isClosedTicketStatus, type ModelPower } from '@/lib/pm/enums';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmDependency, PmTestCase, PmTicket } from '@/lib/tauri/pm';
 import { getGoalDescendants } from '../goalsSlice';
+import { getStationGoalWork, ticketsWorkedAsTickets } from './conductorStationGoals';
 import { MAX_TICKET_ATTEMPTS, PRIORITY_ORDER, type ConductorPreflight } from './conductorTypes';
 
 /**
@@ -49,9 +50,27 @@ export function getConductorPreflight(input: {
   goalId: string | null;
   failedTickets: Record<string, number>;
   approvedTickets: string[];
+  /** Absent reads as "no stations": ticket-only callers need not pass it. */
+  stations?: PmGoalStation[];
 }): ConductorPreflight {
   const { tickets, dependencies, goals, goalId, failedTickets, approvedTickets } = input;
-  const scoped = goalId ? filterTicketsForGoal(tickets, goals, goalId) : tickets;
+  const stations = input.stations ?? [];
+  // Tickets of a stations goal are the goal agent's, exactly as in the tick.
+  const workable = ticketsWorkedAsTickets(tickets, goals, stations);
+  const scoped = goalId ? filterTicketsForGoal(workable, goals, goalId) : workable;
+  // Same predicate the tick uses to ask for goal agents, before anything is
+  // in flight.
+  const stationWork = getStationGoalWork({
+    goals,
+    tickets,
+    stations,
+    goalId,
+    notifications: [],
+    agents: [],
+    projectPath: null,
+    attempts: {},
+    judgeConfigured: false,
+  });
 
   // Dependencies resolve against ALL tickets: a blocker outside the goal scope
   // still blocks, exactly as it does in the tick.
@@ -69,6 +88,8 @@ export function getConductorPreflight(input: {
     inReview: 0,
     toTest: 0,
     exhausted: 0,
+    stationGoals: stationWork.inScope.length,
+    stationGoalsReady: stationWork.launchable.length,
   };
 
   for (const ticket of scoped) {

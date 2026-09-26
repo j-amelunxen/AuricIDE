@@ -39,7 +39,7 @@ fn test_pm_migration_creates_tables() {
     let migration_count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(migration_count, 19);
+    assert_eq!(migration_count, 20);
 }
 
 #[test]

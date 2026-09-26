@@ -539,6 +539,96 @@ describe('station-backed lines', () => {
   });
 });
 
+describe('lines without tickets', () => {
+  function station(
+    goalId: string,
+    overrides: Partial<import('../tauri/goals').PmGoalStation> = {}
+  ): import('../tauri/goals').PmGoalStation {
+    return {
+      id: uid('st'),
+      goalId,
+      name: 'Step',
+      kind: 'normal',
+      status: 'planned',
+      evidenceKind: 'claim',
+      predicate: { type: 'undefined' },
+      evidenceNote: '',
+      ticketId: null,
+      lane: 0,
+      sortOrder: 0,
+      lastCheckedAt: null,
+      doneAt: null,
+      createdAt: TS,
+      updatedAt: TS,
+      ...overrides,
+    };
+  }
+
+  it('reports station progress and the stations mode for a goal without tickets', () => {
+    const goal = makeGoal();
+    const stations = [
+      station(goal.id, { status: 'done', evidenceKind: 'proof' }),
+      station(goal.id, { status: 'done', evidenceKind: 'claim', sortOrder: 1 }),
+      station(goal.id, { sortOrder: 2 }),
+    ];
+    const line = buildGoalLine(makeInput({ goals: [goal], stations }), goal.id)!;
+
+    expect(line.workMode).toBe('stations');
+    expect(line.progress).toEqual({ done: 1, total: 3, unit: 'stations' });
+  });
+
+  it('reaches the terminus of a station-only goal once every station is verified', () => {
+    const goal = makeGoal();
+    const stations = [station(goal.id, { status: 'done', evidenceKind: 'judged' })];
+    const line = buildGoalLine(makeInput({ goals: [goal], stations }), goal.id)!;
+
+    expect(line.satisfied).toBe(true);
+    expect(line.stations.at(-1)!.state).toBe('done');
+  });
+
+  it('draws a mission root whose stations live on its sub-goals, one stop per sub-goal', () => {
+    const root = makeGoal({ name: 'Mission' });
+    const first = makeGoal({ parentId: root.id, name: 'Risks cleared', status: 'achieved' });
+    const second = makeGoal({ parentId: root.id, name: 'Reviews are data', sortOrder: 1 });
+    const stations = [
+      station(first.id, { status: 'done', evidenceKind: 'proof' }),
+      station(second.id, { status: 'done', evidenceKind: 'proof' }),
+      station(second.id, { sortOrder: 1 }),
+    ];
+    const agent = makeAgent({ spawnedByGoalId: second.id });
+
+    const lines = buildGoalLines(
+      makeInput({ goals: [root, first, second], stations, agents: [agent] })
+    );
+
+    expect(lines).toHaveLength(1);
+    const line = lines[0];
+    expect(line.goalId).toBe(root.id);
+    expect(line.workMode).toBe('stations');
+    expect(line.progress).toEqual({ done: 2, total: 3, unit: 'stations' });
+    const stops = line.stations.filter((s) => s.kind !== 'terminus');
+    expect(stops.map((s) => [s.label, s.state])).toEqual([
+      ['Risks cleared', 'done'],
+      ['Reviews are data', 'front'],
+    ]);
+    expect(stops[1].detail).toBe('1 of 2 stations verified');
+    expect(stops[1].agentIds).toEqual([agent.id]);
+    expect(line.now?.label).toBe('Reviews are data');
+  });
+
+  it('keeps ticket progress for a goal worked by tickets', () => {
+    const goal = makeGoal();
+    const tickets = [
+      makeTicket({ goalId: goal.id, status: 'done' }),
+      makeTicket({ goalId: goal.id, status: 'open' }),
+    ];
+    const line = buildGoalLine(makeInput({ goals: [goal], tickets }), goal.id)!;
+
+    expect(line.workMode).toBe('tickets');
+    expect(line.progress).toEqual({ done: 1, total: 2, unit: 'tickets' });
+  });
+});
+
 describe('stationIndexForX', () => {
   it('counts stations left of the drop point, excluding self and terminus', () => {
     const goal = makeGoal();

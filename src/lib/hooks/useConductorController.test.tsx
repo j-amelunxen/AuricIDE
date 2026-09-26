@@ -46,6 +46,7 @@ describe('useConductorController', () => {
       conductorModel: null,
       pmDraftTickets: [],
       goalsDraft: [],
+      goalStationsDraft: [],
       conductorReviewAssignments: {},
       selectedGoalId: null,
       rootPath: null,
@@ -155,6 +156,67 @@ describe('useConductorController', () => {
     expect(result.current.canStart).toBe(false);
     act(() => useStore.setState({ pmDraftTickets: [makeTicket({ status: 'done' })] }));
     rerender();
+    expect(result.current.canStart).toBe(true);
+  });
+
+  it('can start a stations goal that has no tickets', () => {
+    useStore.setState({
+      rootPath: '/tmp/project',
+      selectedGoalId: 'g1',
+      goalsDraft: [{ id: 'g1', name: 'Guide', status: 'active', parentId: null } as PmGoal],
+      goalStationsDraft: [
+        {
+          id: 's1',
+          goalId: 'g1',
+          name: 'Draft',
+          kind: 'normal',
+          status: 'planned',
+          evidenceKind: 'claim',
+          predicate: { type: 'undefined' },
+          evidenceNote: '',
+          ticketId: null,
+          lane: 0,
+          sortOrder: 0,
+          lastCheckedAt: null,
+          doneAt: null,
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+    });
+    const { result } = renderHook(() => useConductorController());
+    expect(result.current.preflight.stationGoals).toBe(1);
+    expect(result.current.canStart).toBe(true);
+    expect(result.current.startDisabledReason).toBeUndefined();
+  });
+
+  it('can start a stations goal whose stations are all verified, to close it', () => {
+    useStore.setState({
+      rootPath: '/tmp/project',
+      selectedGoalId: 'g1',
+      goalsDraft: [{ id: 'g1', name: 'Guide', status: 'active', parentId: null } as PmGoal],
+      goalStationsDraft: [
+        {
+          id: 's1',
+          goalId: 'g1',
+          name: 'Draft',
+          kind: 'normal',
+          status: 'done',
+          evidenceKind: 'judged',
+          predicate: { type: 'undefined' },
+          evidenceNote: 'done',
+          ticketId: null,
+          lane: 0,
+          sortOrder: 0,
+          lastCheckedAt: '2026-09-27 10:00:00',
+          doneAt: '2026-09-27 10:00:00',
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+    });
+    const { result } = renderHook(() => useConductorController());
+    expect(result.current.preflight.stationGoalsReady).toBe(0);
     expect(result.current.canStart).toBe(true);
   });
 

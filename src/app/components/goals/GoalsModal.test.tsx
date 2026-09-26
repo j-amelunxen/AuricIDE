@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { GoalsModal, buildGoalLaunchPrompt, buildMetaGoalSplitPrompt } from './GoalsModal';
+import { GoalsModal, buildMetaGoalSplitPrompt } from './GoalsModal';
+import { buildGoalLaunchPrompt } from '@/lib/goals/goalLaunchPrompt';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 
@@ -216,6 +217,66 @@ describe('buildGoalLaunchPrompt', () => {
   });
 });
 
+function makeStation(overrides: Partial<PmGoalStation> = {}): PmGoalStation {
+  return {
+    id: 's1',
+    goalId: 'g1',
+    name: 'Write the report',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
+describe('buildGoalLaunchPrompt in stations mode', () => {
+  const stations = [
+    makeStation(),
+    makeStation({
+      id: 's2',
+      name: 'Jennifer signs off',
+      kind: 'human',
+      evidenceKind: 'human',
+      predicate: { type: 'human' },
+      sortOrder: 1,
+    }),
+  ];
+
+  it('asks the agent to work the stations directly instead of creating an epic and tickets', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal(), stations, 'stations');
+
+    expect(prompt.startsWith('/goal\n\n')).toBe(true);
+    expect(prompt).toContain('1. Write the report (stationId: s1)');
+    expect(prompt).not.toMatch(/create_ticket|create_epic|list_epics/);
+    expect(prompt).toMatch(/mark_station_done[\s\S]*stationId[\s\S]*evidence/i);
+    expect(prompt).toMatch(/do not create (an )?epic/i);
+    expect(prompt).toMatch(/human stations?[\s\S]*(person|human)/i);
+    expect(prompt).toContain('evaluate_goal (id: "g1")');
+    expect(prompt).toContain('Work mode: stations');
+  });
+
+  it('points at the sub-goals when the stations live below the goal', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal(), [], 'stations');
+    expect(prompt).toMatch(/list_stations/);
+    expect(prompt).toMatch(/sub-goal/i);
+    expect(prompt).not.toMatch(/create_ticket/);
+  });
+
+  it('keeps the ticket contract as the default mode', () => {
+    expect(buildGoalLaunchPrompt(makeGoal(), stations)).toContain('create_ticket');
+    expect(buildGoalLaunchPrompt(makeGoal(), stations, 'tickets')).toContain('Work mode: tickets');
+  });
+});
+
 describe('buildMetaGoalSplitPrompt', () => {
   it('requires a rerun-safe atomic child-goal and ticket plan for the exact meta-goal id', () => {
     const prompt = buildMetaGoalSplitPrompt(makeGoal({ id: 'meta-99' }));
@@ -309,6 +370,25 @@ describe('GoalsModal', () => {
       expect.stringContaining('Ship orchestration')
     );
     expect(mocks.setSpawnDialogOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('launches a goal with stations and no tickets in stations mode', async () => {
+    storeState.selectedGoalId = 'g1';
+    storeState.goalStationsDraft = [makeStation()] as never[];
+    try {
+      const user = userEvent.setup();
+      render(<GoalsModal />);
+      expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent(
+        'Work stations with agent'
+      );
+      await user.click(screen.getByTestId('goal-launch-agent-btn'));
+
+      const task = mocks.setInitialAgentTask.mock.calls.at(-1)?.[0] as string;
+      expect(task).toContain('mark_station_done');
+      expect(task).not.toContain('create_ticket');
+    } finally {
+      storeState.goalStationsDraft = [];
+    }
   });
 
   it('opens the shared spawn dialog with the selected meta-goal split prompt', async () => {

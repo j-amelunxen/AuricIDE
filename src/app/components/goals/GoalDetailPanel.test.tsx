@@ -1,9 +1,10 @@
 import type { ComponentProps } from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalDetailPanel } from './GoalDetailPanel';
-import type { PmGoal } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import { useStore } from '@/lib/store';
 import type { PmTicket } from '@/lib/tauri/pm';
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
@@ -155,6 +156,65 @@ describe('GoalDetailPanel planning action', () => {
     const child = makeGoal({ id: 'child', parentId: goal.id });
     renderPanel(goal, [makeTicket({ goalId: child.id })], { goals: [goal, child] });
     expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent('Plan work with agent');
+  });
+});
+
+function makeStation(overrides: Partial<PmGoalStation> = {}): PmGoalStation {
+  return {
+    id: 's1',
+    goalId: 'g1',
+    name: 'Draft the article',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
+describe('GoalDetailPanel work mode', () => {
+  afterEach(() => useStore.setState({ goalStationsDraft: [] }));
+
+  it('offers to work the stations directly when the goal has stations and no tickets', () => {
+    useStore.setState({ goalStationsDraft: [makeStation()] });
+    renderPanel(makeGoal());
+
+    expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent(
+      'Work stations with agent'
+    );
+    expect(screen.getByTestId('goal-work-mode')).toHaveValue('auto');
+    expect(screen.getByTestId('goal-work-mode-reason')).toHaveTextContent(/stations/i);
+    expect(screen.getByTestId('goal-detail')).not.toHaveTextContent(
+      /create tickets before launching/i
+    );
+  });
+
+  it('switches the mode per goal and stores the choice on the goal', async () => {
+    useStore.setState({ goalStationsDraft: [makeStation()] });
+    const onUpdate = vi.fn();
+    renderPanel(makeGoal(), [], { onUpdate });
+
+    await userEvent.setup().selectOptions(screen.getByTestId('goal-work-mode'), 'tickets');
+
+    expect(onUpdate).toHaveBeenCalledWith('g1', { workMode: 'tickets' });
+  });
+
+  it('keeps ticket creation for a goal set to tickets mode', () => {
+    useStore.setState({ goalStationsDraft: [makeStation()] });
+    renderPanel(makeGoal({ workMode: 'tickets' }));
+
+    expect(screen.getByTestId('goal-launch-agent-btn')).toHaveTextContent(
+      'Create tickets with agent'
+    );
+    expect(screen.getByTestId('goal-work-mode-reason')).toHaveTextContent(/set on this goal/i);
   });
 });
 

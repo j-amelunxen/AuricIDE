@@ -36,15 +36,16 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
             conn.execute(
                 "INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, \
                  status, priority, goal_prompt, created_by, achieved_at, sort_order, \
-                 created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
+                 created_at, updated_at, work_mode) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
                  ON CONFLICT(id) DO UPDATE SET \
                  parent_id = excluded.parent_id, name = excluded.name, \
                  description = excluded.description, \
                  success_criteria = excluded.success_criteria, status = excluded.status, \
                  priority = excluded.priority, goal_prompt = excluded.goal_prompt, \
                  created_by = excluded.created_by, achieved_at = excluded.achieved_at, \
-                 sort_order = excluded.sort_order, updated_at = excluded.updated_at",
+                 sort_order = excluded.sort_order, updated_at = excluded.updated_at, \
+                 work_mode = excluded.work_mode",
                 params![
                     goal.id,
                     goal.parent_id,
@@ -58,7 +59,8 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
                     goal.achieved_at,
                     goal.sort_order,
                     goal.created_at,
-                    goal.updated_at
+                    goal.updated_at,
+                    goal.work_mode
                 ],
             )
             .map_err(|e| format!("Failed to upsert goal: {}", e))?;
@@ -148,7 +150,8 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
     let mut goal_stmt = conn
         .prepare(
             "SELECT id, parent_id, name, description, success_criteria, status, priority, \
-             goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at \
+             goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at, \
+             work_mode \
              FROM pm_goals ORDER BY sort_order, created_at",
         )
         .map_err(|e| format!("Failed to prepare goals query: {}", e))?;
@@ -168,6 +171,7 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
                 sort_order: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                work_mode: row.get(13)?,
             })
         })
         .map_err(|e| format!("Failed to query goals: {}", e))?

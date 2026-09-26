@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { GOAL_WORK_MODE_SETTINGS } from '../../lib/goals/workMode';
 import { resolveEpicId, resolveGoalId, resolveRequirementId, resolveTicketId } from './resolve';
 import {
   listGoals,
@@ -20,6 +21,15 @@ import {
 } from './goalsDb';
 
 export * from './goalsDb';
+
+const WORK_MODE_PARAM = z
+  .enum(GOAL_WORK_MODE_SETTINGS)
+  .optional()
+  .describe(
+    'How the goal is worked: "stations" (one goal agent works the stations and marks each done ' +
+      'with evidence, no tickets), "tickets" (epic + tickets, conductor per ticket) or "auto" ' +
+      '(default: stations when the goal has stations and no tickets, else tickets)'
+  );
 
 export function registerGoalTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
@@ -90,6 +100,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
         .optional()
         .describe('Canonical prompt used when launching agents for this goal'),
       sortOrder: z.number().optional(),
+      workMode: WORK_MODE_PARAM,
     }),
     execute: async (params) => {
       const parentId = params.parentId ? resolveGoalId(db, params.parentId) : undefined;
@@ -112,6 +123,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
       priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
       goalPrompt: z.string().optional(),
       sortOrder: z.number().optional(),
+      workMode: WORK_MODE_PARAM,
     }),
     execute: async ({ id, ...updates }) => {
       const resolved = resolveGoalId(db, id);
@@ -260,7 +272,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
   server.addTool({
     name: 'evaluate_goal',
     description:
-      'Machine-check a goal: reports satisfied/blockers from ticket statuses (whole subtree), linked requirement verification, and child goal achievement. Use before marking a goal achieved.',
+      'Machine-check a goal: reports satisfied/blockers from ticket statuses (whole subtree), linked requirement verification, station evidence and child goal achievement, plus workMode (stations or tickets, and why) and completion (achievable + blockers: the same rule the IDE uses to achieve a goal, with or without tickets). Use before marking a goal achieved.',
     parameters: z.object({
       id: z.string().describe('Goal ID (UUID or prefix)'),
     }),

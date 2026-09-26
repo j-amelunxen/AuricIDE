@@ -10,7 +10,8 @@ import {
   linkRequirementToGoal,
   linkTicketToGoal,
 } from '../../../mcp/tools/goals';
-import { getGoalSatisfaction } from './goalSatisfaction';
+import { getGoalCompletion, getGoalSatisfaction } from './goalSatisfaction';
+import type { GoalWorkMode, GoalWorkModeSetting } from '../../goals/workMode';
 
 type BlockerCategory =
   | 'empty-goal'
@@ -18,9 +19,12 @@ type BlockerCategory =
   | 'requirement-not-verified'
   | 'station-not-done'
   | 'station-unverified-evidence'
-  | 'child-not-achieved';
+  | 'child-not-achieved'
+  | 'stations-mode-without-stations';
 
 interface ContractFixture {
+  /** The stored work-mode setting of the root goal. */
+  workMode?: GoalWorkModeSetting;
   child?: { status: string };
   tickets?: Array<{ goal: 'root' | 'child'; status: string }>;
   requirements?: Array<{ status: string }>;
@@ -30,7 +34,13 @@ interface ContractFixture {
 interface ContractCase {
   id: string;
   fixture: ContractFixture;
-  expect: { satisfied: boolean; blockerCategories: BlockerCategory[] };
+  expect: {
+    satisfied: boolean;
+    blockerCategories: BlockerCategory[];
+    workMode?: GoalWorkMode;
+    achievable?: boolean;
+    completionCategories?: BlockerCategory[];
+  };
 }
 
 interface GoalSatisfactionContract {
@@ -50,6 +60,7 @@ function blockerCategories(blockers: string[]): BlockerCategory[] {
     if (blocker.includes('unverified claim')) return 'station-unverified-evidence';
     if (blocker.startsWith('Station ')) return 'station-not-done';
     if (blocker.startsWith('Sub-goal ')) return 'child-not-achieved';
+    if (blocker.startsWith('Stations mode: ')) return 'stations-mode-without-stations';
     throw new Error(`Uncategorised goal-satisfaction blocker: ${blocker}`);
   });
 }
@@ -71,6 +82,7 @@ function frontendFixture(fixture: ContractFixture): {
       status: 'active',
       priority: 'normal',
       goalPrompt: '',
+      ...(fixture.workMode ? { workMode: fixture.workMode } : {}),
       createdBy: 'ui',
       achievedAt: null,
       sortOrder: 0,
@@ -84,6 +96,7 @@ function frontendFixture(fixture: ContractFixture): {
       id: CHILD_ID,
       parentId: ROOT_ID,
       name: 'Child',
+      workMode: undefined,
       status: fixture.child.status as PmGoal['status'],
     });
   }
@@ -146,11 +159,15 @@ function frontendFixture(fixture: ContractFixture): {
   return { goals, tickets, requirements, links, stations };
 }
 
-function evaluateInSqlite(fixture: ContractFixture): { satisfied: boolean; blockers: string[] } {
+function evaluateInSqlite(fixture: ContractFixture): ReturnType<typeof evaluateGoal> {
   const db = createTestDb();
   try {
     db.prepare('INSERT INTO pm_epics (id, name) VALUES (?, ?)').run('epic-1', 'Epic');
-    const root = createGoal(db, { name: 'Root', status: 'active' }, 'contract');
+    const root = createGoal(
+      db,
+      { name: 'Root', status: 'active', workMode: fixture.workMode },
+      'contract'
+    );
     const goalIds = new Map([['root', root.id]]);
     if (fixture.child) {
       const child = createGoal(
@@ -226,6 +243,37 @@ describe(`goal satisfaction contract ${contract.version}`, () => {
         satisfied: frontendResult.satisfied,
         blockerCategories: blockerCategories(frontendResult.blockers),
       });
+    }
+  );
+
+  // The completion transition: the one place a goal becomes eligible for
+  // "achieved", with or without tickets. UI and MCP must not deviate on a
+  // single case, pinned in the contract or not.
+  it.each(contract.cases)(
+    '$id completes the same way in the UI and over MCP',
+    ({ fixture, expect: expected }) => {
+      const frontend = frontendFixture(fixture);
+      const ui = getGoalCompletion(
+        frontend.goals,
+        frontend.tickets,
+        frontend.requirements,
+        frontend.links,
+        frontend.stations,
+        ROOT_ID
+      );
+      const mcp = evaluateInSqlite(fixture).completion;
+
+      const normalise = (c: typeof ui) => ({
+        mode: c.mode,
+        achievable: c.achievable,
+        categories: blockerCategories(c.blockers),
+      });
+      expect(normalise(mcp)).toEqual(normalise(ui));
+      if (expected.workMode !== undefined) expect(ui.mode).toBe(expected.workMode);
+      if (expected.achievable !== undefined) expect(ui.achievable).toBe(expected.achievable);
+      if (expected.completionCategories !== undefined) {
+        expect(blockerCategories(ui.blockers)).toEqual(expected.completionCategories);
+      }
     }
   );
 });

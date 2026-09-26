@@ -1,7 +1,7 @@
-import type { PmGoal, PmGoalRun } from '../tauri/goals';
+import type { PmGoal, PmGoalRun, PmGoalStation } from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
 import type { AgentInfo } from '../tauri/agents';
-import { getGoalProgress, getRootGoals, getGoalChildren } from '../store/goalsSlice';
+import { getGoalWorkProgress, getRootGoals, getGoalChildren } from '../store/goalsSlice';
 
 export interface OrchestrationNodeData {
   label: string;
@@ -41,7 +41,9 @@ export function buildOrchestrationGraph(
   goals: PmGoal[],
   tickets: PmTicket[],
   agents: AgentInfo[],
-  runs: PmGoalRun[]
+  runs: PmGoalRun[],
+  /** Goal stations: a goal worked without tickets shows its station progress. */
+  stations: PmGoalStation[] = []
 ): { nodes: OrchestrationNode[]; edges: OrchestrationEdge[] } {
   const nodes: OrchestrationNode[] = [];
   const edges: OrchestrationEdge[] = [];
@@ -71,7 +73,7 @@ export function buildOrchestrationGraph(
 
   for (const goal of goals) {
     const goalDepth = depthOf.get(goal.id) ?? 0;
-    const progress = getGoalProgress(goals, tickets, goal.id);
+    const progress = getGoalWorkProgress(goals, tickets, stations, goal.id);
     nodes.push({
       id: `goal-${goal.id}`,
       type: 'orchestration',
@@ -81,7 +83,7 @@ export function buildOrchestrationGraph(
         kind: 'goal',
         status: goal.status,
         detail: goal.priority !== 'normal' ? goal.priority : undefined,
-        progress: { done: progress.doneTickets, total: progress.totalTickets },
+        progress: { done: progress.done, total: progress.total },
         entityId: goal.id,
       },
     });

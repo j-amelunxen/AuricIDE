@@ -147,6 +147,19 @@ export function GoalLineCard({
             style={{ backgroundColor: line.hue }}
           />
           <span className="text-sm font-bold text-foreground">{line.name}</span>
+          {line.progress.total > 0 && (
+            <span
+              data-testid={`goal-line-progress-${line.goalId}`}
+              title={
+                line.workMode === 'stations'
+                  ? 'Stations with verified evidence, across the goal and its sub-goals'
+                  : 'Done tickets, across the goal and its sub-goals'
+              }
+              className="font-mono text-[10px] tabular-nums text-foreground-muted"
+            >
+              {`${line.progress.done}/${line.progress.total} ${line.progress.unit}`}
+            </span>
+          )}
           <span
             className={`ml-auto font-mono text-[10px] uppercase tracking-[0.12em] tabular-nums ${flag.className}`}
           >

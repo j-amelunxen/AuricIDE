@@ -57,7 +57,7 @@ export function buildScheduledRunDeps(
     // schedule as it does to the Start button a human looks at.
     readyTicketCount: (goalId) => {
       const state = useStore.getState();
-      return getConductorPreflight({
+      const preflight = getConductorPreflight({
         tickets: state.pmDraftTickets ?? [],
         dependencies: state.pmDraftDependencies ?? [],
         goals: state.goalsDraft ?? [],
@@ -66,7 +66,11 @@ export function buildScheduledRunDeps(
         // run's would hide work this one would happily pick up.
         failedTickets: {},
         approvedTickets: [],
-      }).ready;
+        stations: state.goalStationsDraft ?? [],
+      });
+      // A stations goal is work too: the run asks for a goal agent or, with no
+      // agent work left, checks whether it is achieved. Same as the button.
+      return preflight.ready + preflight.stationGoals;
     },
     prepareConductorPanel: ({
       goalId,
