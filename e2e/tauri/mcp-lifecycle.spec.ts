@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -80,14 +81,21 @@ describe(`native MCP lifecycle (${phase})`, () => {
       { alpha, beta, serverSource }
     );
 
+    // `start_mcp` binds the canonical project root (`resolve_project_binding`)
+    // and reports that, not the spelling it was handed. The runner's sandbox
+    // lives under the OS temp dir, which on macOS is `/var/...`, a symlink to
+    // `/private/var/...` — so compare against the resolved path.
+    const canonicalAlpha = realpathSync(alpha);
+    const canonicalBeta = realpathSync(beta);
+
     assert.equal(result.alphaStart.status, 'running');
     assert.equal(result.alphaStart.phase, 'running');
-    assert.equal(result.alphaStart.projectPath, alpha);
+    assert.equal(result.alphaStart.projectPath, canonicalAlpha);
     assert.ok(result.alphaStart.pid);
 
     assert.equal(result.alphaAgain.pid, result.alphaStart.pid, 'same workspace must be idempotent');
     assert.equal(result.betaStart.status, 'running');
-    assert.equal(result.betaStart.projectPath, beta);
+    assert.equal(result.betaStart.projectPath, canonicalBeta);
     assert.notEqual(
       result.betaStart.pid,
       result.alphaStart.pid,
