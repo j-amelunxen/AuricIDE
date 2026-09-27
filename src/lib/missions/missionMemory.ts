@@ -22,6 +22,22 @@ export const MISSION_PHASES = [
 
 export type MissionPhase = (typeof MISSION_PHASES)[number];
 
+/**
+ * A mission's files are written in the user's language. The German spelling is
+ * the key the rest of the app uses; an English mission writes these instead.
+ */
+const ENGLISH_PHASES: Record<string, MissionPhase> = {
+  'not started': 'nicht begonnen',
+  'in progress': 'läuft',
+  blocked: 'blockiert',
+  'waiting for human': 'wartet auf Mensch',
+  achieved: 'erreicht',
+};
+
+function readPhase(raw: string): MissionPhase | null {
+  return MISSION_PHASES.find((p) => p === raw) ?? ENGLISH_PHASES[raw.toLowerCase()] ?? null;
+}
+
 export interface SubGoalState {
   /** `<NN>-<slug>`, from the frontmatter, else the file name. */
   goal: string;
@@ -196,12 +212,10 @@ function parseStates(files: MissionMemoryFile[], problems: MissionMemoryProblem[
       problems.push({ file, message: 'Frontmatter has no phase.' });
       continue;
     }
-    const phase = MISSION_PHASES.find((p) => p === rawPhase) ?? null;
+    const phase = readPhase(rawPhase);
     if (phase === null) {
-      problems.push({
-        file,
-        message: `Unknown phase "${rawPhase}"; expected one of: ${MISSION_PHASES.join(', ')}.`,
-      });
+      const known = [...MISSION_PHASES, ...Object.keys(ENGLISH_PHASES)].join(', ');
+      problems.push({ file, message: `Unknown phase "${rawPhase}"; expected one of: ${known}.` });
     }
     out.push({
       goal,
@@ -210,8 +224,9 @@ function parseStates(files: MissionMemoryFile[], problems: MissionMemoryProblem[
       rawPhase,
       updated: text(fields.updated),
       updatedBy: text(fields.updated_by),
-      nextStep: sectionText(body, 'Nächster Schritt'),
-      blockers: sectionBullets(body, 'Blocker').filter((b) => !/^nichts\b/i.test(b)),
+      nextStep: sectionText(body, 'Nächster Schritt') ?? sectionText(body, 'Next step'),
+      // "Blocker / wartet auf" and "Blockers / waiting on" share the prefix.
+      blockers: sectionBullets(body, 'Blocker').filter((b) => !/^(nichts|nothing|none)\b/i.test(b)),
       file,
     });
   }

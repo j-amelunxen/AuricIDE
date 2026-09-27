@@ -85,6 +85,45 @@ describe('loadMissionMemory — a healthy mission', () => {
   });
 });
 
+describe('loadMissionMemory — a mission written in English', () => {
+  it('reads English phases and headings as well as the German ones', async () => {
+    const memory = await load('mission-english');
+    expect(memory.problems).toEqual([]);
+    expect(memory.subGoals.map((s) => [s.goal, s.phase])).toEqual([
+      ['01-data-layer', 'erreicht'],
+      ['02-interface', 'wartet auf Mensch'],
+      ['03-release', 'läuft'],
+      ['04-rollout', 'nicht begonnen'],
+      ['05-support', 'blockiert'],
+    ]);
+    const ui = memory.subGoals[1];
+    expect(ui.nextStep).toBe('Render the list once the colour is decided.');
+    expect(ui.blockers).toEqual(['Colour choice, see notes/2026-01-11-02-question-colour.md']);
+    // "nothing" under Blockers is the English "nichts": no blocker.
+    expect(memory.subGoals[0].blockers).toEqual([]);
+    expect(memory.openQuestions.map((q) => q.title)).toEqual([
+      'Which colour marks a blocked sub-goal?',
+    ]);
+    expect(memory.reviews[0]).toMatchObject({ approved: true, latest: { decision: 'approve' } });
+    expect(memory.reviews[0].latest?.ratings.map((r) => r.label)).toEqual([
+      'Success criteria met',
+      'Solves the problem',
+      'Solved sensibly',
+      'Scope and rules respected',
+    ]);
+  });
+
+  it('names both spellings when a phase is unknown', () => {
+    const memory = parseMissionMemory({
+      state: [{ name: '01-a.md', content: '---\ngoal: 01-a\nphase: almost there\n---\n' }],
+      notes: [],
+      reviews: [],
+    });
+    expect(memory.problems[0].message).toMatch(/läuft/);
+    expect(memory.problems[0].message).toMatch(/in progress/);
+  });
+});
+
 describe('loadMissionMemory — broken files are reported, never swallowed', () => {
   it('names every broken file and why, and still reads the good ones', async () => {
     const memory = await load('mission-broken');
