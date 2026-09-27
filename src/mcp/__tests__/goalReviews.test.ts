@@ -93,15 +93,24 @@ describe('submit_goal_review', () => {
     });
 
     it('counts attempts per goal and lets the rule, not the reviewer, decide', async () => {
+      const major = {
+        severity: 'major' as const,
+        what: 'gate skipped',
+        where: 'goalsDb.ts',
+        why: 'a path closes without review',
+        scope: 'in_goal' as const,
+      };
       const first = await call(
         tool,
-        valid({ scores: { ...valid().scores, solution_quality: 3 }, reworkSteps: ['fix it'] })
+        valid({ scores: { ...valid().scores, solution_quality: 2 }, reworkSteps: ['fix it'] })
       );
-      const second = await call(tool, valid({ verdict: 'rework', reworkSteps: ['again'] }));
-      const third = await call(tool, valid({ verdict: 'rework', reworkSteps: ['once more'] }));
+      const rework = (step: string) =>
+        valid({ verdict: 'rework', findings: [major], reworkSteps: [step] });
+      const second = await call(tool, rework('again'));
+      const third = await call(tool, rework('once more'));
       expect(first.rejected || second.rejected || third.rejected).toBe(false);
       if (first.rejected || second.rejected || third.rejected) return;
-      // approve with a 3 is overruled to rework; the third rework hits the limit.
+      // approve with a 2 is overruled to rework; the third rework hits the limit.
       expect([first.row.verdict, first.row.decision, first.row.attempt]).toEqual([
         'approve',
         'rework',
