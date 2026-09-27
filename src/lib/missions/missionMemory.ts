@@ -460,6 +460,11 @@ function splitFrontmatter(
     if (line.trim() === '' || line.trim().startsWith('#')) continue;
     const m = line.match(/^([A-Za-z_][\w-]*):(?:\s+(.*))?$/);
     if (!m) return { error: `Frontmatter line ${i + 1} is not "key: value": ${line.trim()}` };
+    // A key written twice is ambiguous; letting either value win would decide
+    // silently whether a question is open or what a review decided.
+    if (Object.hasOwn(fields, m[1])) {
+      return { error: `Frontmatter line ${i + 1} repeats the key "${m[1]}".` };
+    }
     fields[m[1]] = unquote((m[2] ?? '').replace(/\s+#.*$/, '').trim());
   }
   return { fields, body: lines.slice(end + 1).join('\n') };
