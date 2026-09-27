@@ -68,7 +68,7 @@ describe('QAPanel', () => {
     fireEvent.click(setupButton);
 
     expect(mockSetInitialAgentTask).toHaveBeenCalledWith(
-      expect.stringContaining('Coverage-Informationen')
+      expect.stringContaining('Set up code coverage')
     );
     expect(mockSetSpawnDialogOpen).toHaveBeenCalledWith(true);
   });

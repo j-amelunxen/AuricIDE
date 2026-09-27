@@ -100,26 +100,26 @@ export function InboxDailyGoalsSection({
             <AuricIcon name="flag" className="text-[13px]" />
           </span>
           <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-200/90">
-            Tagesziele
+            Daily goals
           </h3>
           {goals.length > 0 && (
             <span
               data-testid="daily-goals-progress"
               className="rounded-full bg-amber-500/15 px-2 py-0.5 font-mono text-[9px] font-semibold text-amber-300"
             >
-              {progress.done}/{progress.total} erledigt
+              {progress.done}/{progress.total} done
             </span>
           )}
         </div>
 
         <button
           type="button"
-          aria-label="Tagesziele planen"
+          aria-label="Plan daily goals"
           onClick={onOpenPlanner}
           className="flex items-center gap-1 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 focus-visible:outline-2 focus-visible:outline-primary"
         >
           <AuricIcon name="edit" className="text-[12px]" />
-          Planen
+          Plan
         </button>
       </div>
 
@@ -129,7 +129,7 @@ export function InboxDailyGoalsSection({
           className="mb-2 flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-amber-400 bg-amber-400/10 py-2 text-[11px] font-semibold text-amber-300"
         >
           <AuricIcon name="flag" className="text-[13px]" />
-          <span>Aufgabe als Tagesziel ablegen</span>
+          <span>Drop task as daily goal</span>
         </div>
       )}
 
@@ -144,18 +144,16 @@ export function InboxDailyGoalsSection({
 
       {goals.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-2.5 text-center">
-          <p className="text-[11px] text-foreground-muted">
-            Noch keine Tagesziele für heute definiert.
-          </p>
+          <p className="text-[11px] text-foreground-muted">No daily goals set for today yet.</p>
           <p className="mt-1 text-[10px] text-foreground-muted/70">
-            Ziehe eine Aufgabe hierher oder plane deine Ziele.
+            Drag a task here or plan your goals.
           </p>
           <button
             type="button"
             onClick={onOpenPlanner}
             className="mt-2 text-[11px] font-medium text-amber-400 hover:underline"
           >
-            Tagesziele für deine Projekte planen →
+            Plan a goal for each project →
           </button>
         </div>
       ) : (
@@ -242,8 +240,8 @@ export function InboxDailyGoalsSection({
 
                   <button
                     type="button"
-                    title="Tagesziel entfernen"
-                    aria-label="Tagesziel entfernen"
+                    title="Remove daily goal"
+                    aria-label="Remove daily goal"
                     onClick={() => onToggleDailyGoal(item.id)}
                     className="rounded-lg p-1 text-amber-400 transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-primary"
                   >
@@ -256,7 +254,7 @@ export function InboxDailyGoalsSection({
 
           {allDone && (
             <div className="pt-1 text-center text-[10px] font-semibold text-emerald-400">
-              🎉 Alle Tagesziele für heute erreicht!
+              🎉 All daily goals for today reached!
             </div>
           )}
         </div>

@@ -73,7 +73,7 @@ describe('InboxDailyGoalsPlanner', () => {
 
   it('renders modal with projects when isOpen is true', () => {
     render(<InboxDailyGoalsPlanner {...defaultProps} />);
-    expect(screen.getByText(/Tagesziele planen/i)).toBeInTheDocument();
+    expect(screen.getByText(/Plan daily goals/i)).toBeInTheDocument();
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
   });
@@ -97,7 +97,7 @@ describe('InboxDailyGoalsPlanner', () => {
     );
 
     expect(screen.getByText('Sprint Goal Alpha')).toBeInTheDocument();
-    const removeBtn = screen.getByRole('button', { name: /Tagesziel entfernen/i });
+    const removeBtn = screen.getByRole('button', { name: /Remove daily goal/i });
     await user.click(removeBtn);
 
     expect(onToggleDailyGoal).toHaveBeenCalledWith('g-alpha');
@@ -128,20 +128,20 @@ describe('InboxDailyGoalsPlanner', () => {
       <InboxDailyGoalsPlanner {...defaultProps} onCreateAndSetDailyGoal={onCreateAndSetDailyGoal} />
     );
 
-    const input = screen.getByPlaceholderText(/Neues Tagesziel für Beta/i);
+    const input = screen.getByPlaceholderText(/New daily goal for Beta/i);
     await user.type(input, 'New Beta Feature{Enter}');
 
     expect(onCreateAndSetDailyGoal).toHaveBeenCalledWith('New Beta Feature', '/repo/beta');
   });
 
-  it('calls onClose when Fertig is clicked', async () => {
+  it('calls onClose when Done is clicked', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
 
     render(<InboxDailyGoalsPlanner {...defaultProps} onClose={onClose} />);
 
-    const fertigBtn = screen.getByRole('button', { name: /Fertig/i });
-    await user.click(fertigBtn);
+    const doneBtn = screen.getByRole('button', { name: /Done/i });
+    await user.click(doneBtn);
 
     expect(onClose).toHaveBeenCalled();
   });

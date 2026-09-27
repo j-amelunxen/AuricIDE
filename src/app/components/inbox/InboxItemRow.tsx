@@ -180,7 +180,7 @@ export function InboxItemRow({
         setInboxTaskDragData(e, { type: 'inbox-item', id: item.id });
       }}
       onDragEnd={() => setIsDragging(false)}
-      title={!editing ? 'In die Tagesziele ziehen' : undefined}
+      title={!editing ? 'Drag into daily goals' : undefined}
       className={`relative flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 transition-colors ${
         !editing ? 'cursor-grab active:cursor-grabbing' : ''
       } ${isDragging ? 'opacity-40' : ''}`}
@@ -220,7 +220,7 @@ export function InboxItemRow({
           {Boolean(item.dailyGoal) && (
             <>
               <span className="rounded bg-amber-500/15 px-1 py-0.5 font-semibold normal-case tracking-normal text-amber-300">
-                Tagesziel
+                Daily goal
               </span>
               <span aria-hidden="true">·</span>
             </>
@@ -325,8 +325,8 @@ export function InboxItemRow({
         {onToggleDailyGoal && (
           <button
             type="button"
-            title={item.dailyGoal ? 'Tagesziel entfernen' : 'Als Tagesziel festlegen'}
-            aria-label={item.dailyGoal ? 'Tagesziel entfernen' : 'Als Tagesziel festlegen'}
+            title={item.dailyGoal ? 'Remove daily goal' : 'Set as daily goal'}
+            aria-label={item.dailyGoal ? 'Remove daily goal' : 'Set as daily goal'}
             onClick={() => onToggleDailyGoal(item.id)}
             className={
               item.dailyGoal
