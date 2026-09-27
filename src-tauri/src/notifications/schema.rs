@@ -206,6 +206,19 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
           WHERE source = 'system' AND dedupe_key LIKE 'schedule:mcp-%';",
     )?;
 
+    // Goal 10, review r2: the IDE process that recorded a run `running`.
+    // Whatever write got lost afterwards, the next start finds runs whose
+    // owner is gone and marks them `interrupted`
+    // (`reconcile_orphaned_launch_runs_impl`). Rows from before carry 0,
+    // which no live process has. Mirrored in `src/mcp/notificationsDb.ts`,
+    // migration 9.
+    apply_migration(
+        conn,
+        9,
+        "add_launch_run_owner_pid",
+        "ALTER TABLE agent_launch_runs ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT 0;",
+    )?;
+
     Ok(())
 }
 
@@ -226,69 +239,4 @@ pub fn init_db(path: &Path) -> Result<Connection, String> {
     run_migrations(&conn)?;
 
     Ok(conn)
-}
-
-/// How long two file events must be apart before both are announced. A single
-/// insert touches the db, the WAL and the shm file, so without this the UI
-/// would drain three times for one notification.
-const WATCH_DEBOUNCE_MS: u64 = 300;
-
-/// Watches the inbox file and announces changes as `notifications-changed`.
-///
-/// This is the channel for everything written by another process — the MCP
-/// server, or a second app instance. The app's own dispatches update the store
-/// directly and do not wait for this; a drain triggered by our own write is a
-/// harmless no-op, since the client only asks for rows past its cursor.
-///
-/// Watches the containing directory rather than the file: SQLite in WAL mode
-/// writes the payload to `notifications.db-wal`, and a watch on the main file
-/// alone would miss most of it.
-pub fn watch_inbox<F>(db_path: &Path, on_change: F) -> Result<notify::RecommendedWatcher, String>
-where
-    F: Fn() + Send + 'static,
-{
-    use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
-
-    let dir = db_path
-        .parent()
-        .ok_or_else(|| "Notifications db has no parent directory".to_string())?
-        .to_path_buf();
-    let stem = db_path
-        .file_name()
-        .ok_or_else(|| "Notifications db has no file name".to_string())?
-        .to_string_lossy()
-        .to_string();
-
-    let last_emit = AtomicU64::new(0);
-    let started = std::time::Instant::now();
-
-    let mut watcher = RecommendedWatcher::new(
-        move |res: notify::Result<notify::Event>| {
-            let Ok(event) = res else { return };
-            let touches_inbox = event.paths.iter().any(|p| {
-                p.file_name()
-                    .map(|name| name.to_string_lossy().starts_with(&stem))
-                    .unwrap_or(false)
-            });
-            if !touches_inbox {
-                return;
-            }
-
-            let now = started.elapsed().as_millis() as u64;
-            let previous = last_emit.load(Ordering::Relaxed);
-            if now.saturating_sub(previous) < WATCH_DEBOUNCE_MS {
-                return;
-            }
-            last_emit.store(now, Ordering::Relaxed);
-            on_change();
-        },
-        Config::default().with_poll_interval(std::time::Duration::from_millis(500)),
-    )
-    .map_err(|e| format!("Failed to create notifications watcher: {}", e))?;
-
-    watcher
-        .watch(&dir, RecursiveMode::NonRecursive)
-        .map_err(|e| format!("Failed to watch notifications db: {}", e))?;
-
-    Ok(watcher)
 }

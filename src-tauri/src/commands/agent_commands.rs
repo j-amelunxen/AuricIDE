@@ -130,13 +130,69 @@ pub async fn list_interrupted_agents(
 pub async fn discard_interrupted_agent(
     agent_id: String,
     persistence: tauri::State<'_, AgentPersistenceState>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let mut p = persistence.lock().map_err(|e| e.to_string())?;
-    if p.discard_interrupted(&agent_id) {
-        Ok(())
-    } else {
-        Err(format!("Interrupted agent not found: {}", agent_id))
+    let served = {
+        let p = persistence.lock().map_err(|e| e.to_string())?;
+        p.interrupted()
+            .into_iter()
+            .find(|agent| agent.id == agent_id)
+            .ok_or_else(|| format!("Interrupted agent not found: {}", agent_id))?
+            .launch_request_uid
+            .filter(|uid| launch_request_exists(&app, uid))
+    };
+    let mut forget = || {
+        persistence
+            .lock()
+            .map_err(|_| "Agent persistence is unavailable".to_string())?
+            .take_interrupted(&agent_id)
+            .map(|_| ())
+    };
+    // Discarding is the human ending the run: the request learns it first,
+    // and only then is the anchor let go, so a failed write or a quit in
+    // between leaves the agent to be discarded again (review r2).
+    match served {
+        Some(uid) => {
+            let verdict = agents::launch_runs::killed(&uid, &agent_id);
+            agents::launch_runs::finish(
+                &agents::launch_runs::RETRY_DELAYS,
+                &std::thread::sleep,
+                &mut || {
+                    let inbox = app
+                        .try_state::<crate::notifications::NotificationsState>()
+                        .ok_or_else(|| "The inbox is unavailable".to_string())?;
+                    let conn = inbox
+                        .conn
+                        .lock()
+                        .map_err(|_| "The inbox is unavailable".to_string())?;
+                    crate::notifications::record_launch_run_impl(&conn, &verdict)
+                },
+                &mut forget,
+            )
+        }
+        None => forget(),
     }
+}
+
+/// Whether `agent_id`'s run for `uid` has its verdict.
+fn launch_run_is_final(app: &tauri::AppHandle, uid: &str, agent_id: &str) -> Result<bool, String> {
+    let inbox = app
+        .try_state::<crate::notifications::NotificationsState>()
+        .ok_or_else(|| "The inbox is unavailable; the run cannot be checked".to_string())?;
+    let conn = inbox
+        .conn
+        .lock()
+        .map_err(|_| "The inbox is unavailable; the run cannot be checked".to_string())?;
+    crate::notifications::launch_run_is_final_for(&conn, uid, agent_id)
+}
+
+fn launch_request_exists(app: &tauri::AppHandle, uid: &str) -> bool {
+    app.try_state::<crate::notifications::NotificationsState>()
+        .and_then(|inbox| {
+            let conn = inbox.conn.lock().ok()?;
+            crate::notifications::is_launch_request(&conn, uid).ok()
+        })
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -150,7 +206,23 @@ pub async fn resume_interrupted_agent(
 ) -> Result<AgentInfo, String> {
     let persisted = {
         let mut p = persistence.lock().map_err(|e| e.to_string())?;
-        p.take_interrupted(&agent_id)
+        // An agent whose run already has its verdict ended; resuming it would
+        // start a finished run again (review r4). It leaves the list instead.
+        if let Some(agent) = p.interrupted().into_iter().find(|a| a.id == agent_id) {
+            // Fail closed: a run whose state cannot be read is not resumed.
+            let ended = match agent.launch_request_uid.as_deref() {
+                Some(uid) => launch_run_is_final(&app, uid, &agent_id)?,
+                None => false,
+            };
+            let is_final = |_: &str, _: &str| ended;
+            if let Err(refusal) = agents::launch_runs::refuse_finished(&agent, &is_final) {
+                if let Err(error) = p.settle(std::slice::from_ref(&agent_id)) {
+                    eprintln!("Agent persistence: {error}");
+                }
+                return Err(refusal);
+            }
+        }
+        p.take_interrupted(&agent_id)?
             .ok_or_else(|| format!("Interrupted agent not found: {}", agent_id))?
     };
 
@@ -170,7 +242,11 @@ pub async fn resume_interrupted_agent(
         headless: Some(persisted.headless),
         spawned_by_ticket_id: persisted.spawned_by_ticket_id,
         spawned_by_goal_id: persisted.spawned_by_goal_id,
-        launch_request_uid: None,
+        // Keeps reporting to the request, as long as the request still exists:
+        // a cleared one would refuse the spawn outright.
+        launch_request_uid: persisted
+            .launch_request_uid
+            .filter(|uid| launch_request_exists(&app, uid)),
         agent_notification_uid: None,
         agent_notification_action_id: None,
     };

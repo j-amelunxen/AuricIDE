@@ -34,6 +34,10 @@ pub struct PersistedAgent {
     pub spawned_by_ticket_id: Option<String>,
     #[serde(default)]
     pub spawned_by_goal_id: Option<String>,
+    /// The launch request this agent serves. Kept so a restart can mark the
+    /// run `interrupted` and a resume can carry on reporting to it.
+    #[serde(default)]
+    pub launch_request_uid: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -79,15 +83,26 @@ impl AgentPersistence {
             .unwrap_or(0)
     }
 
-    pub fn record_spawn(&mut self, agent: PersistedAgent) {
+    pub fn record_spawn(&mut self, agent: PersistedAgent) -> Result<(), String> {
         self.active.retain(|a| a.id != agent.id);
         self.active.push(agent);
-        self.save();
+        self.save()
     }
 
-    pub fn record_exit(&mut self, agent_id: &str) {
-        self.active.retain(|a| a.id != agent_id);
-        self.save();
+    /// Lets go of an agent's restart anchor. The list without it is saved
+    /// first and becomes the state only once that worked: a failed save keeps
+    /// the anchor in memory and in the file, so the removal can be retried
+    /// and a later save of another agent does not drop it on the side.
+    pub fn record_exit(&mut self, agent_id: &str) -> Result<(), String> {
+        let remaining: Vec<PersistedAgent> = self
+            .active
+            .iter()
+            .filter(|a| a.id != agent_id)
+            .cloned()
+            .collect();
+        self.write(&self.interrupted, &remaining)?;
+        self.active = remaining;
+        Ok(())
     }
 
     /// Renames a persisted agent so a name given in the UI survives a restart.
@@ -103,7 +118,7 @@ impl AgentPersistence {
             }
         }
         if renamed {
-            self.save();
+            self.report(self.save());
         }
         renamed
     }
@@ -113,41 +128,79 @@ impl AgentPersistence {
     }
 
     /// Removes and returns an interrupted agent (for resume).
-    pub fn take_interrupted(&mut self, agent_id: &str) -> Option<PersistedAgent> {
-        let pos = self.interrupted.iter().position(|a| a.id == agent_id)?;
-        let agent = self.interrupted.remove(pos);
-        self.save();
-        Some(agent)
+    /// Drops left-behind agents whose run already has its verdict. Unlike
+    /// `take_interrupted`, they leave the list at once, whether or not the
+    /// file can be rewritten: an ended agent must never be offered for
+    /// resume (review r4). A save that fails is returned; every later
+    /// successful save writes the list without them, and until then each
+    /// start finds them ended again and drops them again.
+    pub fn settle(&mut self, agent_ids: &[String]) -> Result<(), String> {
+        let before = self.interrupted.len();
+        self.interrupted
+            .retain(|agent| !agent_ids.contains(&agent.id));
+        if self.interrupted.len() == before {
+            return Ok(());
+        }
+        self.save()
     }
 
-    pub fn discard_interrupted(&mut self, agent_id: &str) -> bool {
-        let before = self.interrupted.len();
-        self.interrupted.retain(|a| a.id != agent_id);
-        let removed = self.interrupted.len() != before;
-        if removed {
-            self.save();
+    /// Same rule as `record_exit`: saved first, changed after.
+    pub fn take_interrupted(&mut self, agent_id: &str) -> Result<Option<PersistedAgent>, String> {
+        let Some(pos) = self.interrupted.iter().position(|a| a.id == agent_id) else {
+            return Ok(None);
+        };
+        let mut remaining = self.interrupted.clone();
+        let agent = remaining.remove(pos);
+        self.write(&remaining, &self.active)?;
+        self.interrupted = remaining;
+        Ok(Some(agent))
+    }
+
+    pub fn discard_interrupted(&mut self, agent_id: &str) -> Result<bool, String> {
+        Ok(self.take_interrupted(agent_id)?.is_some())
+    }
+
+    /// For changes to the list of interrupted agents: losing one costs a
+    /// resume offer, not a run's status, so it is reported and not retried.
+    fn report(&self, outcome: Result<(), String>) {
+        if let Err(error) = outcome {
+            eprintln!("Agent persistence: {error}");
         }
-        removed
     }
 
     /// Writes interrupted + active agents. Interrupted ones stay in the file
     /// until resumed or discarded, so they survive further restarts too.
-    fn save(&self) {
-        let Some(path) = &self.path else { return };
+    ///
+    /// Atomic: the file is written beside the target and renamed over it, so
+    /// a crash mid-write leaves the previous version, never a torn one. The
+    /// file is the restart anchor of every running agent; an error is
+    /// returned, never swallowed.
+    pub fn save(&self) -> Result<(), String> {
+        self.write(&self.interrupted, &self.active)
+    }
+
+    fn write(
+        &self,
+        interrupted: &[PersistedAgent],
+        active: &[PersistedAgent],
+    ) -> Result<(), String> {
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
         let file = PersistenceFile {
-            agents: self
-                .interrupted
-                .iter()
-                .chain(self.active.iter())
-                .cloned()
-                .collect(),
+            agents: interrupted.iter().chain(active.iter()).cloned().collect(),
         };
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
         }
-        if let Ok(json) = serde_json::to_string_pretty(&file) {
-            let _ = std::fs::write(path, json);
-        }
+        let json = serde_json::to_string_pretty(&file)
+            .map_err(|e| format!("Failed to encode agent persistence: {e}"))?;
+        let staged = path.with_extension("json.tmp");
+        std::fs::write(&staged, json)
+            .map_err(|e| format!("Failed to write {}: {e}", staged.display()))?;
+        std::fs::rename(&staged, path)
+            .map_err(|e| format!("Failed to replace {}: {e}", path.display()))
     }
 }
 
@@ -179,7 +232,102 @@ mod tests {
             started_at: 42,
             spawned_by_ticket_id: None,
             spawned_by_goal_id: Some("goal-1".to_string()),
+            launch_request_uid: None,
         }
+    }
+
+    /// Blocks the staging file, so the next save fails.
+    fn block_saves(path: &std::path::Path) -> PathBuf {
+        let staged = path.with_extension("json.tmp");
+        std::fs::create_dir(&staged).unwrap();
+        staged
+    }
+
+    /// Review r3 of goal 10: an exit whose save failed keeps the anchor, in
+    /// memory and in the file, so the removal can be retried; once it lands,
+    /// a restart finds no agent that already ended.
+    #[test]
+    fn an_exit_that_could_not_be_saved_keeps_the_anchor_until_a_retry_lands() {
+        let path = temp_path("exit-anchor.json");
+        let mut p = AgentPersistence::load(Some(path.clone()));
+        p.record_spawn(sample_agent("agent-1")).unwrap();
+        let blocked = block_saves(&path);
+
+        assert!(p.record_exit("agent-1").is_err());
+        assert!(p.active.iter().any(|a| a.id == "agent-1"));
+        assert_eq!(
+            AgentPersistence::load(Some(path.clone()))
+                .interrupted()
+                .len(),
+            1
+        );
+
+        std::fs::remove_dir(blocked).unwrap();
+        p.record_exit("agent-1").unwrap();
+        assert!(AgentPersistence::load(Some(path)).interrupted().is_empty());
+    }
+
+    /// The same for taking an interrupted agent out (resume, discard).
+    #[test]
+    fn taking_an_interrupted_agent_that_could_not_be_saved_keeps_it() {
+        let path = temp_path("take-anchor.json");
+        AgentPersistence::load(Some(path.clone()))
+            .record_spawn(sample_agent("agent-1"))
+            .unwrap();
+        let mut p = AgentPersistence::load(Some(path.clone()));
+        let blocked = block_saves(&path);
+
+        assert!(p.take_interrupted("agent-1").is_err());
+        assert!(p.discard_interrupted("agent-1").is_err());
+        assert_eq!(p.interrupted().len(), 1);
+        assert_eq!(
+            AgentPersistence::load(Some(path.clone()))
+                .interrupted()
+                .len(),
+            1
+        );
+
+        std::fs::remove_dir(blocked).unwrap();
+        assert!(p.discard_interrupted("agent-1").unwrap());
+        assert!(AgentPersistence::load(Some(path)).interrupted().is_empty());
+    }
+
+    /// Review r1 of goal 10: a failed write of the restart anchor is an error
+    /// the caller sees, and never leaves a torn file behind.
+    #[test]
+    fn a_failed_save_is_reported_and_keeps_the_previous_file() {
+        let path = temp_path("anchors.json");
+        let mut p = AgentPersistence::load(Some(path.clone()));
+        p.record_spawn(sample_agent("agent-1")).unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        // The staging file cannot be created: a directory sits in its place.
+        std::fs::create_dir(path.with_extension("json.tmp")).unwrap();
+        assert!(p.record_spawn(sample_agent("agent-2")).is_err());
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    /// Goal 10, station 2: a restart must still know which request an
+    /// interrupted agent served, and files from before that field still load.
+    #[test]
+    fn the_launch_request_survives_a_restart_and_older_files_still_load() {
+        let path = temp_path("launch-uid.json");
+        let mut agent = sample_agent("agent-5");
+        agent.launch_request_uid = Some("req-1".to_string());
+        AgentPersistence::load(Some(path.clone()))
+            .record_spawn(agent)
+            .unwrap();
+
+        let restored = AgentPersistence::load(Some(path.clone())).interrupted();
+        assert_eq!(restored[0].launch_request_uid.as_deref(), Some("req-1"));
+
+        let old = r#"{"agents":[{"id":"agent-1","name":"a","model":"m","provider":"claude",
+            "task":"t","cwd":null,"permissionMode":null,"startedAt":1}]}"#;
+        std::fs::write(&path, old).unwrap();
+        let restored = AgentPersistence::load(Some(path)).interrupted();
+        assert_eq!(restored.len(), 1);
+        assert!(restored[0].launch_request_uid.is_none());
     }
 
     fn temp_path(name: &str) -> PathBuf {
@@ -199,8 +347,8 @@ mod tests {
     #[test]
     fn test_load_without_path_is_noop() {
         let mut p = AgentPersistence::load(None);
-        p.record_spawn(sample_agent("agent-1"));
-        p.record_exit("agent-1");
+        p.record_spawn(sample_agent("agent-1")).unwrap();
+        p.record_exit("agent-1").unwrap();
         assert!(p.interrupted().is_empty());
     }
 
@@ -208,7 +356,7 @@ mod tests {
     fn test_spawned_agent_survives_a_restart_as_interrupted() {
         let path = temp_path("agents.json");
         let mut p = AgentPersistence::load(Some(path.clone()));
-        p.record_spawn(sample_agent("agent-1"));
+        p.record_spawn(sample_agent("agent-1")).unwrap();
 
         // "Restart": load a fresh instance from the same file.
         let restarted = AgentPersistence::load(Some(path));
@@ -219,9 +367,9 @@ mod tests {
     fn test_exited_agent_does_not_survive_a_restart() {
         let path = temp_path("agents.json");
         let mut p = AgentPersistence::load(Some(path.clone()));
-        p.record_spawn(sample_agent("agent-1"));
-        p.record_spawn(sample_agent("agent-2"));
-        p.record_exit("agent-1");
+        p.record_spawn(sample_agent("agent-1")).unwrap();
+        p.record_spawn(sample_agent("agent-2")).unwrap();
+        p.record_exit("agent-1").unwrap();
 
         let restarted = AgentPersistence::load(Some(path));
         assert_eq!(restarted.interrupted(), vec![sample_agent("agent-2")]);
@@ -232,14 +380,14 @@ mod tests {
         let path = temp_path("agents.json");
         {
             let mut p = AgentPersistence::load(Some(path.clone()));
-            p.record_spawn(sample_agent("agent-1"));
+            p.record_spawn(sample_agent("agent-1")).unwrap();
         }
         {
             // Second run: agent-1 is interrupted, a new agent spawns and exits.
             let mut p = AgentPersistence::load(Some(path.clone()));
             assert_eq!(p.interrupted().len(), 1);
-            p.record_spawn(sample_agent("agent-2"));
-            p.record_exit("agent-2");
+            p.record_spawn(sample_agent("agent-2")).unwrap();
+            p.record_exit("agent-2").unwrap();
         }
         let third = AgentPersistence::load(Some(path));
         assert_eq!(third.interrupted(), vec![sample_agent("agent-1")]);
@@ -249,7 +397,7 @@ mod tests {
     fn test_rename_survives_a_restart() {
         let path = temp_path("agents.json");
         let mut p = AgentPersistence::load(Some(path.clone()));
-        p.record_spawn(sample_agent("agent-1"));
+        p.record_spawn(sample_agent("agent-1")).unwrap();
 
         assert!(p.rename("agent-1", "Docs sweep"));
 
@@ -262,7 +410,7 @@ mod tests {
         let path = temp_path("agents.json");
         {
             let mut p = AgentPersistence::load(Some(path.clone()));
-            p.record_spawn(sample_agent("agent-1"));
+            p.record_spawn(sample_agent("agent-1")).unwrap();
         }
         let mut second = AgentPersistence::load(Some(path.clone()));
         assert!(second.rename("agent-1", "Renamed while parked"));
@@ -282,10 +430,10 @@ mod tests {
         let path = temp_path("agents.json");
         {
             let mut p = AgentPersistence::load(Some(path.clone()));
-            p.record_spawn(sample_agent("agent-1"));
+            p.record_spawn(sample_agent("agent-1")).unwrap();
         }
         let mut p = AgentPersistence::load(Some(path.clone()));
-        let taken = p.take_interrupted("agent-1");
+        let taken = p.take_interrupted("agent-1").unwrap();
         assert_eq!(taken, Some(sample_agent("agent-1")));
         assert!(p.interrupted().is_empty());
 
@@ -297,7 +445,7 @@ mod tests {
     #[test]
     fn test_take_interrupted_unknown_id_returns_none() {
         let mut p = AgentPersistence::load(Some(temp_path("agents.json")));
-        assert_eq!(p.take_interrupted("agent-99"), None);
+        assert_eq!(p.take_interrupted("agent-99").unwrap(), None);
     }
 
     #[test]
@@ -305,11 +453,11 @@ mod tests {
         let path = temp_path("agents.json");
         {
             let mut p = AgentPersistence::load(Some(path.clone()));
-            p.record_spawn(sample_agent("agent-1"));
+            p.record_spawn(sample_agent("agent-1")).unwrap();
         }
         let mut p = AgentPersistence::load(Some(path.clone()));
-        assert!(p.discard_interrupted("agent-1"));
-        assert!(!p.discard_interrupted("agent-1"));
+        assert!(p.discard_interrupted("agent-1").unwrap());
+        assert!(!p.discard_interrupted("agent-1").unwrap());
 
         let reloaded = AgentPersistence::load(Some(path));
         assert!(reloaded.interrupted().is_empty());
@@ -320,8 +468,8 @@ mod tests {
         let path = temp_path("agents.json");
         {
             let mut p = AgentPersistence::load(Some(path.clone()));
-            p.record_spawn(sample_agent("agent-3"));
-            p.record_spawn(sample_agent("agent-11"));
+            p.record_spawn(sample_agent("agent-3")).unwrap();
+            p.record_spawn(sample_agent("agent-11")).unwrap();
         }
         let p = AgentPersistence::load(Some(path));
         assert_eq!(p.max_agent_number(), 11);

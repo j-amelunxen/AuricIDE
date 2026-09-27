@@ -51,7 +51,7 @@ export interface NotificationActionDeps {
 export class NotificationActionError extends Error {
   constructor(
     message: string,
-    readonly code: 'missing-project' | 'empty-combo'
+    readonly code: 'missing-project' | 'empty-combo' | 'provider-model'
   ) {
     super(message);
   }
@@ -59,6 +59,54 @@ export class NotificationActionError extends Error {
 
 /** Model of last resort when nothing has been launched on this machine yet. */
 const FALLBACK_MODEL = 'sonnet';
+
+/**
+ * Provider, model and permission mode as one pair. A model name and a
+ * permission mode only mean something inside the harness they were chosen
+ * for, so the remembered ones (the last launch) come along only when they
+ * belong to the provider that will run; otherwise that provider's own
+ * defaults apply.
+ *
+ * The final pair is then checked against what the chosen provider offers:
+ * a remembered model it does not offer (a stale or inconsistent preference)
+ * gives way to its default model; a model the payload names is refused. A
+ * named provider whose default model is not known here is refused too:
+ * guessing would start it with some other harness's model. Only a provider
+ * that lists no models at all leaves the name unchecked.
+ */
+function pairedLaunch(
+  action: Extract<NotificationAction, { kind: 'spawn-agent' }>,
+  remembered: ReturnType<typeof loadSpawnDefaults>,
+  providers: ProviderInfo[] | undefined
+): { provider?: string; model: string; permissionMode?: string } {
+  const provider = action.provider ?? remembered?.providerId;
+  const own = remembered && (!action.provider || action.provider === remembered.providerId);
+  const info = providers?.find((entry) => entry.id === provider);
+  const offered = (model: string | undefined) =>
+    model !== undefined && (!info?.models.length || info.models.some((m) => m.value === model));
+  const refuse = (message: string) => new NotificationActionError(message, 'provider-model');
+
+  if (action.model && info && !offered(action.model)) {
+    throw refuse(`Provider '${provider}' does not offer model '${action.model}'`);
+  }
+  if (action.model && provider && providers && !info) {
+    const elsewhere = providers.some((entry) => entry.models.some((m) => m.value === action.model));
+    if (elsewhere) throw refuse(`Model '${action.model}' belongs to another provider`);
+  }
+  const rememberedModel = own ? remembered?.model : undefined;
+  const model =
+    action.model ??
+    (info && !offered(rememberedModel) ? undefined : rememberedModel) ??
+    info?.defaultModel ??
+    (provider ? undefined : FALLBACK_MODEL);
+  if (!model) {
+    throw refuse(
+      `No model is known for provider '${provider}'; name one or start it from the dialog`
+    );
+  }
+  const permissionMode = own ? remembered?.permissionMode : info?.defaultPermissionMode;
+  return { provider, model, permissionMode };
+}
 
 /** The instruction, plus the reminder's Note when there is one. */
 function taskWithNote(task: string, note: string | null | undefined): string {
@@ -188,15 +236,18 @@ export function buildSpawnConfig(
   const worktree = action.useWorktree && cwd && !placement?.notificationUid;
   const defaults = loadSpawnDefaults(cwd) ?? loadSpawnDefaults();
   const trusted = context.trust === 'user';
+  const pair = pairedLaunch(action, defaults, context.providers);
 
   return {
     name: deriveAgentName(action.task, cwd?.split('/').filter(Boolean).pop()),
-    model: action.model ?? defaults?.model ?? FALLBACK_MODEL,
+    model: pair.model,
     task: trusted ? taskWithNote(action.task, action.note) : action.task,
     projectPath: placement ? placement.projectPath : (cwd ?? null),
     cwd,
-    provider: action.provider ?? defaults?.providerId,
-    permissionMode: (trusted ? action.permissionMode : undefined) ?? defaults?.permissionMode,
+    provider: pair.provider,
+    permissionMode:
+      (trusted ? action.permissionMode : undefined) ??
+      (pair.permissionMode as AgentConfig['permissionMode']),
     headless: (trusted ? action.headless : undefined) ?? defaults?.headless,
     spawnedByTicketId: action.ticketId,
     spawnedByGoalId: action.goalId,

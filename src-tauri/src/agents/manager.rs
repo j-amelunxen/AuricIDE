@@ -1,6 +1,4 @@
-use super::persistence::{
-    persisted_from_config, persistence_record_exit, persistence_record_spawn,
-};
+use super::persistence::{persisted_from_config, persistence_record_spawn};
 use super::project_binding::resolve_project_binding;
 
 pub(super) fn is_reserved_auric_env(key: &str) -> bool {
@@ -302,7 +300,7 @@ pub async fn spawn_agent_impl(
         }
     }
 
-    let child = pair
+    let mut child = pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("Failed to spawn agent PTY: {}", e))?;
@@ -328,6 +326,7 @@ pub async fn spawn_agent_impl(
         persisted_from_config(&persisted_config, &id, provider_id, now),
     );
 
+    let launch_request_uid = config.launch_request_uid.clone();
     let info = AgentInfo {
         id: id.clone(),
         name: config.name,
@@ -345,9 +344,22 @@ pub async fn spawn_agent_impl(
         spawned_by_goal_id: config.spawned_by_goal_id.clone(),
     };
 
+    // Recorded here, before the output pump exists and before the spawn
+    // returns: a run that ends at once reports `running` first, and a start
+    // that cannot be recorded is ended rather than left to run unrecorded.
+    let launch_run = super::launch_runs::started(launch_request_uid.as_deref(), &info);
+    let launch_request_uid = launch_run.as_ref().map(|run| run.request_uid.clone());
+    if let Some(run) = launch_run {
+        super::launch_runs::record_start(app, &run, || {
+            let _ = child.kill();
+            let _ = super::persistence::persistence_record_exit(app, &id);
+        })?;
+    }
+
     let process = AgentProcess {
         info: info.clone(),
         child,
+        launch_request_uid: launch_request_uid.clone(),
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
@@ -435,6 +447,7 @@ pub async fn spawn_agent_impl(
             let mut mgr = state_clone.lock().await;
             mgr.agents.remove(&id_clone)
         };
+        let report_exit = proc_opt.is_some();
 
         let exit_code: i32 = match proc_opt {
             Some(mut process) => tokio::task::spawn_blocking(move || {
@@ -465,7 +478,14 @@ pub async fn spawn_agent_impl(
             },
         );
 
-        persistence_record_exit(&app_clone, &id_clone);
+        // A kill got there first when the agent is gone from the manager: it
+        // reported the verdict and let go of the anchor itself.
+        if report_exit {
+            let verdict = launch_request_uid
+                .as_deref()
+                .map(|uid| super::launch_runs::ended(uid, &id_clone, exit_code));
+            super::launch_runs::end(&app_clone, &id_clone, verdict);
+        }
         on_exit(id_clone);
     });
 
@@ -510,7 +530,11 @@ pub async fn kill_agent_impl(
     drop(manager);
 
     let _ = process.child.kill();
-    persistence_record_exit(app, agent_id);
+    let verdict = process
+        .launch_request_uid
+        .as_deref()
+        .map(|uid| super::launch_runs::killed(uid, agent_id));
+    super::launch_runs::end(app, agent_id, verdict);
 
     let _ = app.emit(
         "agent-status",

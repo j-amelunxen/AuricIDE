@@ -157,6 +157,84 @@ describe('buildSpawnConfig', () => {
     expect(config.provider).toBe('codex');
   });
 
+  // Goal 10, station 3: a model or a permission mode only means something
+  // relative to one provider. The pair that is started is what is checked.
+  describe('provider and model are one pair', () => {
+    const PAIRED: ProviderInfo[] = [
+      ...PROVIDERS,
+      {
+        id: 'codex',
+        name: 'Codex',
+        models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
+        permissionModes: [{ value: 'workspace-write', label: 'Write', description: '' }],
+        defaultModel: 'gpt-5-codex',
+        defaultPermissionMode: 'workspace-write',
+      },
+    ];
+
+    it('never hands a named provider the remembered model of another one', () => {
+      localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify(REMEMBERED));
+
+      const config = build({ ...action, provider: 'codex' }, { providers: PAIRED });
+
+      expect({ provider: config.provider, model: config.model }).toEqual({
+        provider: 'codex',
+        model: 'gpt-5-codex',
+      });
+      expect(config.permissionMode).toBe('workspace-write');
+    });
+
+    it('keeps the remembered model when it belongs to the named provider', () => {
+      localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify(REMEMBERED));
+
+      const config = build({ ...action, provider: 'claude' }, { providers: PAIRED });
+
+      expect({ provider: config.provider, model: config.model }).toEqual({
+        provider: 'claude',
+        model: 'opus',
+      });
+      expect(config.permissionMode).toBe('acceptEdits');
+    });
+
+    it('refuses a named model that only another provider offers', () => {
+      expect(() =>
+        build({ ...action, provider: 'codex', model: 'opus' }, { providers: PAIRED })
+      ).toThrow(NotificationActionError);
+    });
+
+    // Review r1: the remembered pair itself can be stale or inconsistent.
+    it('replaces a remembered model the chosen provider does not offer', () => {
+      localStorage.setItem(
+        SPAWN_DEFAULTS_KEY,
+        JSON.stringify({
+          providerId: 'codex',
+          model: 'opus',
+          permissionMode: 'acceptEdits',
+          headless: false,
+        })
+      );
+
+      const config = build({ ...action, provider: 'codex' }, { providers: PAIRED });
+
+      expect({ provider: config.provider, model: config.model }).toEqual({
+        provider: 'codex',
+        model: 'gpt-5-codex',
+      });
+    });
+
+    it('refuses a named model the chosen provider does not offer', () => {
+      expect(() =>
+        build({ ...action, provider: 'codex', model: 'made-up' }, { providers: PAIRED })
+      ).toThrow(NotificationActionError);
+    });
+
+    it('refuses to guess a model for a named provider it knows nothing about', () => {
+      localStorage.setItem(SPAWN_DEFAULTS_KEY, JSON.stringify(REMEMBERED));
+
+      expect(() => build({ ...action, provider: 'codex' }, { providers: [] })).toThrow(/model/i);
+    });
+  });
+
   // The whole point of configuring a schedule: the button starts an agent that
   // can actually work, without a permission prompt on every step.
   it('takes the permission mode from a payload the user wrote', () => {

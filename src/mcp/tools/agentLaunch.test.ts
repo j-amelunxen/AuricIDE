@@ -548,7 +548,7 @@ describe('get_agent_run', () => {
     });
   });
 
-  it.each(['failed', 'killed'])('reports a %s run', async (status) => {
+  it.each(['failed', 'killed', 'interrupted'])('reports a %s run', async (status) => {
     const uid = await requestUid();
     runRow(uid, status);
     expect((await call('get_agent_run', { uid })).status).toBe(status);
