@@ -134,6 +134,8 @@ pub(crate) fn make_test_station(id: &str, goal_id: &str, sort_order: i32) -> PmG
     }
 }
 
+mod goal_judge_spike_tests;
+mod goals_sync_contract_tests;
 mod goals_tests;
 mod kv_tests;
 mod pm_tests;

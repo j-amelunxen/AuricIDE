@@ -24,7 +24,7 @@ vi.mock('../tauri/agents', () => ({
 
 vi.mock('../tauri/goals', () => ({
   goalsLoad: vi.fn(async () => ({ goals: [], goalRuns: [], requirementLinks: [] })),
-  goalsSave: vi.fn(async () => undefined),
+  goalsSave: vi.fn(async () => ({ conflicts: [] })),
   goalsClear: vi.fn(async () => undefined),
 }));
 
@@ -163,6 +163,7 @@ describe('the goal run of a launch request is stored at once', () => {
     saved.clear();
     vi.mocked(goalsSave).mockImplementation(async (_path, payload) => {
       for (const run of payload.goalRuns) saved.set(run.id, run);
+      return { conflicts: [] };
     });
     // @ts-expect-error - Partial store for testing (only agent+goals slices)
     store = createStore<StoreState>()((...a) => ({

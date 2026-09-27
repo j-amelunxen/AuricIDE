@@ -21,6 +21,7 @@ import { GoalTicketsSection } from './detail/GoalTicketsSection';
 import { GoalRequirementsSection } from './detail/GoalRequirementsSection';
 import { GoalRunsSection } from './detail/GoalRunsSection';
 import { MissionLaunchGrantSection } from './detail/MissionLaunchGrantSection';
+import { GoalConflictNotice } from './detail/GoalConflictNotice';
 
 export { GoalWorkflowStepper } from './detail/GoalWorkflowStepper';
 export { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
@@ -187,6 +188,8 @@ export function GoalDetailPanel({
           </span>
         </div>
       </div>
+
+      <GoalConflictNotice goalId={goal.id} />
 
       {/* Workflow stepper */}
       {workflowStep && <GoalWorkflowStepper workflowStep={workflowStep} />}
