@@ -100,12 +100,14 @@ describe('loadMissionMemory — broken files are reported, never swallowed', () 
       'notes/2026-01-05-01-frage-tippfehler-status.md',
       'notes/2026-01-06-01-kind-tippfehler.md',
       'notes/2026-01-07-01-frage-beantwortet-ohne-status.md',
+      'notes/2026-01-09-01-frage-doppelter-status.md',
       'reviews/01-x-2026-01-01-r1.md',
       'reviews/01-x-2026-01-02-r2.md',
       'reviews/02-y-approved.md',
       'reviews/03-z-approved.md',
       'reviews/05-v-approved.md',
       'reviews/06-u-approved.md',
+      'reviews/08-s-2026-01-01-r1.md',
     ]);
     const why = Object.fromEntries(memory.problems.map((p) => [p.file, p.message]));
     expect(why['state/01-ohne-frontmatter.md']).toMatch(/frontmatter/i);
@@ -128,6 +130,11 @@ describe('loadMissionMemory — broken files are reported, never swallowed', () 
     expect(why['reviews/03-z-approved.md']).toMatch(/03-z-2026-01-01-r9\.md/);
     expect(why['reviews/05-v-approved.md']).toMatch(/rework/);
     expect(why['reviews/06-u-approved.md']).toMatch(/review of 07-t/);
+    // A key written twice is ambiguous: neither value may win quietly.
+    expect(why['notes/2026-01-09-01-frage-doppelter-status.md']).toMatch(
+      /line 6 repeats the key "status"/
+    );
+    expect(why['reviews/08-s-2026-01-01-r1.md']).toMatch(/line 7 repeats the key "decision"/);
   });
 
   it('counts an approval only when it names an approving review of its own goal', async () => {

@@ -10,7 +10,9 @@
  * Throws when the value is absolute or climbs out of the project.
  */
 export function normalizeMissionPath(raw: string | null | undefined): string | null {
-  const trimmed = raw?.trim() ?? '';
+  // Backslash is a separator too, so `..\x` and `\\server\share` meet the same rules
+  // as their forward-slash spellings.
+  const trimmed = (raw?.trim() ?? '').replace(/\\/g, '/');
   if (trimmed === '') return null;
   if (trimmed.startsWith('/') || trimmed.startsWith('~') || /^[A-Za-z]:/.test(trimmed)) {
     throw new Error(
