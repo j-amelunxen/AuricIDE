@@ -1,10 +1,144 @@
 use super::pm::with_transaction;
 use super::types::{
-    GoalsState, GoalsSyncPayload, PmGoal, PmGoalRequirementLink, PmGoalRun, PmGoalStation,
+    GoalSyncConflict, GoalsState, GoalsSyncPayload, GoalsSyncResult, PmGoal, PmGoalRequirementLink,
+    PmGoalRun, PmGoalStation,
 };
+use rusqlite::types::Value as SqlValue;
 use rusqlite::{params, Connection};
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::HashMap;
 
-pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<(), String> {
+fn snake_case(key: &str) -> String {
+    let mut out = String::with_capacity(key.len() + 4);
+    for c in key.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('_');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn sql_value(v: &Value) -> Result<SqlValue, String> {
+    match v {
+        Value::Null => Ok(SqlValue::Null),
+        Value::String(s) => Ok(SqlValue::Text(s.clone())),
+        Value::Bool(b) => Ok(SqlValue::Integer(i64::from(*b))),
+        Value::Number(n) => n
+            .as_i64()
+            .map(SqlValue::Integer)
+            .ok_or_else(|| format!("Unsupported number {n}")),
+        other => Err(format!("Unsupported column value {other}")),
+    }
+}
+
+/// Bookkeeping that every edit on either side rewrites; it never clashes.
+const NEVER_CLASHES: &[&str] = &["updated_at"];
+
+fn current_row(
+    conn: &Connection,
+    table: &str,
+    id: &str,
+) -> Result<Option<HashMap<String, SqlValue>>, String> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT * FROM {table} WHERE id = ?1"))
+        .map_err(|e| format!("Failed to read {table} row: {e}"))?;
+    let names: Vec<String> = stmt.column_names().iter().map(|n| n.to_string()).collect();
+    let mut rows = stmt
+        .query(params![id])
+        .map_err(|e| format!("Failed to read {table} row: {e}"))?;
+    let Some(row) = rows
+        .next()
+        .map_err(|e| format!("Failed to read {table} row: {e}"))?
+    else {
+        return Ok(None);
+    };
+    let mut out = HashMap::new();
+    for (i, name) in names.into_iter().enumerate() {
+        let value: SqlValue = row
+            .get(i)
+            .map_err(|e| format!("Failed to read {table}.{name}: {e}"))?;
+        out.insert(name, value);
+    }
+    Ok(Some(out))
+}
+
+/// Writes only the columns where `row` differs from `base` — the edit the UI
+/// actually made. Every other column keeps whatever is in the database now,
+/// including a value an MCP agent wrote after the UI loaded. A row that no
+/// longer exists matches nothing and is not brought back.
+///
+/// It is a compare-and-swap: when one of those columns now holds a third
+/// value, written by someone else since `base` was read, nothing of the row is
+/// written and the clash is returned. Neither side may overwrite a status the
+/// other has not seen; the store keeps the edit and asks the person.
+fn update_changed<T: Serialize>(
+    conn: &Connection,
+    table: &str,
+    id: &str,
+    row: &T,
+    base: &T,
+) -> Result<Option<GoalSyncConflict>, String> {
+    let to_map = |v: &T| match serde_json::to_value(v) {
+        Ok(Value::Object(map)) => Ok(map),
+        Ok(_) => Err(format!("{table} row is not an object")),
+        Err(e) => Err(format!("Failed to serialize {table} row: {e}")),
+    };
+    let (row, base) = (to_map(row)?, to_map(base)?);
+    let mut changed = Vec::new();
+    for (key, value) in &row {
+        if key == "id" || base.get(key) == Some(value) {
+            continue;
+        }
+        let base_value = base
+            .get(key)
+            .map(sql_value)
+            .transpose()?
+            .unwrap_or(SqlValue::Null);
+        changed.push((snake_case(key), sql_value(value)?, base_value));
+    }
+    if changed.is_empty() {
+        return Ok(None);
+    }
+    let Some(current) = current_row(conn, table, id)? else {
+        return Ok(None);
+    };
+    let mut clashing: Vec<String> = changed
+        .iter()
+        .filter(|(column, mine, was)| {
+            let now = current.get(column).unwrap_or(&SqlValue::Null);
+            !NEVER_CLASHES.contains(&column.as_str()) && now != was && now != mine
+        })
+        .map(|(column, _, _)| column.clone())
+        .collect();
+    if !clashing.is_empty() {
+        clashing.sort();
+        return Ok(Some(GoalSyncConflict {
+            table: table.to_string(),
+            id: id.to_string(),
+            columns: clashing,
+        }));
+    }
+    let assignments: Vec<String> = changed.iter().map(|(c, _, _)| format!("{c} = ?")).collect();
+    let mut values: Vec<SqlValue> = changed.into_iter().map(|(_, v, _)| v).collect();
+    values.push(SqlValue::Text(id.to_string()));
+    conn.execute(
+        &format!("UPDATE {table} SET {} WHERE id = ?", assignments.join(", ")),
+        rusqlite::params_from_iter(values),
+    )
+    .map_err(|e| format!("Failed to update {table} row: {e}"))?;
+    Ok(None)
+}
+
+// code-gate: complexity-cyclomatic, complexity-function-length - three table upserts in one transaction, one branch per table; splitting them apart would scatter one sync contract
+pub fn goals_sync_impl(
+    conn: &Connection,
+    payload: &GoalsSyncPayload,
+) -> Result<GoalsSyncResult, String> {
+    let mut conflicts = Vec::new();
     with_transaction(conn, || {
         // Goals may arrive in any order; defer FK checks so a child can be
         // upserted before its parent within the transaction.
@@ -32,7 +166,27 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
                 .map_err(|e| format!("Failed to delete goal station: {}", e))?;
         }
 
+        let base_goals: HashMap<&str, &PmGoal> = payload
+            .base_goals
+            .iter()
+            .map(|g| (g.id.as_str(), g))
+            .collect();
+        let base_runs: HashMap<&str, &PmGoalRun> = payload
+            .base_goal_runs
+            .iter()
+            .map(|r| (r.id.as_str(), r))
+            .collect();
+        let base_stations: HashMap<&str, &PmGoalStation> = payload
+            .base_stations
+            .iter()
+            .map(|s| (s.id.as_str(), s))
+            .collect();
+
         for goal in &payload.goals {
+            if let Some(base) = base_goals.get(goal.id.as_str()) {
+                conflicts.extend(update_changed(conn, "pm_goals", &goal.id, goal, *base)?);
+                continue;
+            }
             conn.execute(
                 "INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, \
                  status, priority, goal_prompt, created_by, achieved_at, sort_order, \
@@ -67,6 +221,10 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
         }
 
         for run in &payload.goal_runs {
+            if let Some(base) = base_runs.get(run.id.as_str()) {
+                conflicts.extend(update_changed(conn, "pm_goal_runs", &run.id, run, *base)?);
+                continue;
+            }
             conn.execute(
                 "INSERT INTO pm_goal_runs (id, goal_id, agent_id, ticket_id, prompt, model, \
                  provider, source, outcome, summary, started_at, finished_at) \
@@ -106,6 +264,16 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
         }
 
         for station in &payload.stations {
+            if let Some(base) = base_stations.get(station.id.as_str()) {
+                conflicts.extend(update_changed(
+                    conn,
+                    "pm_goal_stations",
+                    &station.id,
+                    station,
+                    *base,
+                )?);
+                continue;
+            }
             conn.execute(
                 "INSERT INTO pm_goal_stations (id, goal_id, name, kind, status, \
                  evidence_kind, predicate, evidence_note, source_context, ticket_id, lane, sort_order, \
@@ -143,7 +311,8 @@ pub fn goals_sync_impl(conn: &Connection, payload: &GoalsSyncPayload) -> Result<
         }
 
         Ok(())
-    })
+    })?;
+    Ok(GoalsSyncResult { conflicts })
 }
 
 pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {

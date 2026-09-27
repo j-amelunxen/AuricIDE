@@ -166,6 +166,14 @@ export interface GoalsSyncPayload extends GoalsState {
   deletedRunIds: string[];
   deletedLinkIds: string[];
   deletedStationIds: string[];
+  /**
+   * The persisted rows the sent rows were edited from. With a base, Rust writes
+   * only the columns that differ from it, so a concurrent MCP write to another
+   * column survives; without one the row is new and upserted whole.
+   */
+  baseGoals?: PmGoal[];
+  baseGoalRuns?: PmGoalRun[];
+  baseStations?: PmGoalStation[];
 }
 
 import { invoke } from './invoke';
@@ -175,11 +183,32 @@ export async function goalsLoad(projectPath: string): Promise<GoalsState> {
   return { ...wire, stations: (wire.stations ?? []).map(parseStationRow) };
 }
 
-export async function goalsSave(projectPath: string, payload: GoalsSyncPayload): Promise<void> {
-  await invoke('goals_save', {
+/** A row the sync left as the database has it: the same columns changed on both sides. */
+export interface GoalsSyncConflict {
+  table: string;
+  id: string;
+  /** snake_case column names, sorted. */
+  columns: string[];
+}
+
+export interface GoalsSyncResult {
+  conflicts: GoalsSyncConflict[];
+}
+
+export async function goalsSave(
+  projectPath: string,
+  payload: GoalsSyncPayload
+): Promise<GoalsSyncResult> {
+  const result = await invoke<GoalsSyncResult | null>('goals_save', {
     projectPath,
-    payload: { ...payload, stations: payload.stations.map(serializeStationRow) },
+    payload: {
+      ...payload,
+      stations: payload.stations.map(serializeStationRow),
+      baseStations: (payload.baseStations ?? []).map(serializeStationRow),
+    },
   });
+  // A backend from before the compare-and-swap returns nothing: no conflicts.
+  return { conflicts: result?.conflicts ?? [] };
 }
 
 export async function goalsClear(projectPath: string): Promise<void> {

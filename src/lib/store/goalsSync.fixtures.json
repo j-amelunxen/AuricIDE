@@ -1,0 +1,700 @@
+{
+  "about": "Shared cases for goals_sync_impl (Rust, goals_sync_contract_tests.rs) and its test port (goalsSyncPort.testing.ts). seed is synced first, concurrent is a foreign writer's field-level UPDATE/DELETE (what the MCP server does), then payload is synced. expect lists column values by table and id; absent lists ids that must be gone. A payload row with a matching base row (baseGoals/baseGoalRuns/baseStations) is a three-way update: only columns whose value differs from the base are written, and a row that no longer exists is not brought back. A row without a base is inserted or fully overwritten. A three-way update is also a compare-and-swap: when a column the payload changed was changed in the database too, to a different value, the whole row is left as the database has it and the sync reports it under conflicts (table, id, the columns that clash). updated_at is bookkeeping and never clashes. Cases without conflicts expect none.",
+  "defaults": {
+    "goal": {
+      "parentId": null,
+      "name": "Goal",
+      "description": "",
+      "successCriteria": "",
+      "status": "active",
+      "priority": "normal",
+      "goalPrompt": "",
+      "createdBy": "ui",
+      "achievedAt": null,
+      "sortOrder": 0,
+      "createdAt": "2026-01-01 00:00:00",
+      "updatedAt": "2026-01-01 00:00:00",
+      "workMode": "auto"
+    },
+    "station": {
+      "name": "Station",
+      "kind": "normal",
+      "status": "planned",
+      "evidenceKind": "claim",
+      "predicate": "{\"type\":\"undefined\"}",
+      "evidenceNote": "",
+      "sourceContext": "null",
+      "ticketId": null,
+      "lane": 0,
+      "sortOrder": 0,
+      "lastCheckedAt": null,
+      "doneAt": null,
+      "createdAt": "2026-01-01 00:00:00",
+      "updatedAt": "2026-01-01 00:00:00"
+    },
+    "run": {
+      "agentId": "agent-1",
+      "ticketId": null,
+      "prompt": "",
+      "model": "",
+      "provider": "claude",
+      "source": "ui",
+      "outcome": "running",
+      "summary": "",
+      "startedAt": "2026-01-01 00:00:00",
+      "finishedAt": null
+    }
+  },
+  "cases": [
+    {
+      "name": "a payload row overwrites every column a foreign writer changed",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "status": "achieved"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "description": "edited in the UI"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "status": "active",
+            "description": "edited in the UI"
+          }
+        }
+      }
+    },
+    {
+      "name": "a payload station overwrites a foreign done-claim",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goal_stations",
+          "id": "s1",
+          "set": {
+            "status": "done",
+            "evidence_note": "mcp claim"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goal_stations": {
+          "s1": {
+            "status": "planned",
+            "evidence_note": ""
+          }
+        }
+      }
+    },
+    {
+      "name": "a run upsert keeps started_at and overwrites outcome",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "goalRuns": [
+          {
+            "id": "r1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goal_runs",
+          "id": "r1",
+          "set": {
+            "outcome": "success",
+            "started_at": "2026-02-02 00:00:00"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [],
+        "goalRuns": [
+          {
+            "id": "r1",
+            "goalId": "g1",
+            "startedAt": "2026-03-03 00:00:00"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goal_runs": {
+          "r1": {
+            "outcome": "running",
+            "started_at": "2026-02-02 00:00:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "a row absent from the payload is left alone",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          },
+          {
+            "id": "g2"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g2",
+          "set": {
+            "status": "achieved"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "name": "renamed"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "name": "renamed"
+          },
+          "g2": {
+            "status": "achieved"
+          }
+        }
+      }
+    },
+    {
+      "name": "a payload row a foreign writer deleted is inserted again",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "delete": true
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "status": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "deleted goal ids cascade to their stations",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "payload": {
+        "goals": [],
+        "deletedGoalIds": ["g1"]
+      },
+      "absent": {
+        "pm_goals": ["g1"],
+        "pm_goal_stations": ["s1"]
+      }
+    },
+    {
+      "name": "with a base, only columns that differ from the base are written",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "status": "achieved",
+            "achieved_at": "2026-02-02 00:00:00"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "description": "edited in the UI",
+            "updatedAt": "2026-03-03 00:00:00"
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "status": "achieved",
+            "achieved_at": "2026-02-02 00:00:00",
+            "description": "edited in the UI",
+            "updated_at": "2026-03-03 00:00:00"
+          }
+        }
+      }
+    },
+    {
+      "name": "with a base, a column changed on both sides keeps the database value and reports a conflict",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "status": "in_review"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "status": "paused"
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "status": "in_review"
+          }
+        }
+      },
+      "conflicts": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "columns": ["status"]
+        }
+      ]
+    },
+    {
+      "name": "with a base, both sides setting the same value is not a conflict",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "status": "paused"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "status": "paused",
+            "description": "edited in the UI"
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "status": "paused",
+            "description": "edited in the UI"
+          }
+        }
+      },
+      "conflicts": []
+    },
+    {
+      "name": "with a base, a conflict holds back the row's other edits too",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "status": "in_review"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "status": "paused",
+            "description": "edited in the UI"
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "status": "in_review",
+            "description": ""
+          }
+        }
+      },
+      "conflicts": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "columns": ["status"]
+        }
+      ]
+    },
+    {
+      "name": "with a base, updated_at changed on both sides is not a conflict",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "status": "in_review",
+            "updated_at": "2026-09-27 01:00:00"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "description": "edited in the UI",
+            "updatedAt": "2026-09-27 02:00:00"
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "status": "in_review",
+            "description": "edited in the UI",
+            "updated_at": "2026-09-27 02:00:00"
+          }
+        }
+      },
+      "conflicts": []
+    },
+    {
+      "name": "with a base, a station done-claim changed on both sides is a conflict",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goal_stations",
+          "id": "s1",
+          "set": {
+            "status": "done",
+            "evidence_note": "agent claim"
+          }
+        }
+      ],
+      "payload": {
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1",
+            "status": "fog"
+          }
+        ],
+        "baseStations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goal_stations": {
+          "s1": {
+            "status": "done",
+            "evidence_note": "agent claim"
+          }
+        }
+      },
+      "conflicts": [
+        {
+          "table": "pm_goal_stations",
+          "id": "s1",
+          "columns": ["status"]
+        }
+      ]
+    },
+    {
+      "name": "with a base, a station keeps a foreign done-claim",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goal_stations",
+          "id": "s1",
+          "set": {
+            "status": "done",
+            "evidence_note": "mcp claim"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1",
+            "name": "renamed"
+          }
+        ],
+        "baseStations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goal_stations": {
+          "s1": {
+            "status": "done",
+            "evidence_note": "mcp claim",
+            "name": "renamed"
+          }
+        }
+      }
+    },
+    {
+      "name": "with a base, a run keeps a foreign outcome",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "goalRuns": [
+          {
+            "id": "r1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goal_runs",
+          "id": "r1",
+          "set": {
+            "outcome": "success"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [],
+        "goalRuns": [
+          {
+            "id": "r1",
+            "goalId": "g1",
+            "summary": "from the UI"
+          }
+        ],
+        "baseGoalRuns": [
+          {
+            "id": "r1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goal_runs": {
+          "r1": {
+            "outcome": "success",
+            "summary": "from the UI"
+          }
+        }
+      }
+    },
+    {
+      "name": "with a base, a row a foreign writer deleted stays deleted",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "delete": true
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "name": "renamed"
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1"
+          }
+        ],
+        "stations": [
+          {
+            "id": "s1",
+            "goalId": "g1",
+            "name": "renamed"
+          }
+        ],
+        "baseStations": [
+          {
+            "id": "s1",
+            "goalId": "g1"
+          }
+        ]
+      },
+      "absent": {
+        "pm_goals": ["g1"],
+        "pm_goal_stations": ["s1"]
+      }
+    }
+  ]
+}

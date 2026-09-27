@@ -325,3 +325,18 @@ describe('GoalDetailPanel ticket browser', () => {
     expect(onUnlinkTicket).toHaveBeenCalledWith('t1');
   });
 });
+
+describe('GoalDetailPanel conflicts with an agent', () => {
+  afterEach(() => useStore.setState({ goals: [], goalsDraft: [], goalConflicts: [] }));
+
+  it('asks the person to settle a clash on this goal', () => {
+    const mine = makeGoal({ status: 'archived' });
+    useStore.setState({
+      goals: [makeGoal({ status: 'in_progress' })],
+      goalsDraft: [mine],
+      goalConflicts: [{ table: 'pm_goals', id: 'g1', columns: ['status'], base: makeGoal() }],
+    });
+    renderPanel(mine);
+    expect(screen.getByTestId('goal-conflict-notice')).toHaveTextContent('agent: in_progress');
+  });
+});

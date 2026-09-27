@@ -280,6 +280,33 @@ pub struct GoalsSyncPayload {
     pub deleted_link_ids: Vec<String>,
     #[serde(default)]
     pub deleted_station_ids: Vec<String>,
+    /// The persisted rows the draft rows above were edited from. A row with a
+    /// base is written three-way: only columns that differ from its base, so a
+    /// concurrent MCP write to any other column survives, and a row deleted
+    /// meanwhile stays deleted. A row without a base is new and is upserted.
+    #[serde(default)]
+    pub base_goals: Vec<PmGoal>,
+    #[serde(default)]
+    pub base_goal_runs: Vec<PmGoalRun>,
+    #[serde(default)]
+    pub base_stations: Vec<PmGoalStation>,
+}
+
+/// A row `goals_sync_impl` left as the database has it, because a column the
+/// payload changed was meanwhile changed to a different value by someone else.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalSyncConflict {
+    pub table: String,
+    pub id: String,
+    /// The clashing columns, snake_case, sorted.
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalsSyncResult {
+    pub conflicts: Vec<GoalSyncConflict>,
 }
 
 /// How many spawn prompts the per-project history retains; older rows are pruned.
