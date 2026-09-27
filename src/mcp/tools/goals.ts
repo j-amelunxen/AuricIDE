@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { GOAL_WORK_MODE_SETTINGS } from '../../lib/goals/workMode';
+import { GOAL_STATUSES } from '../../lib/pm/enums';
 import { resolveEpicId, resolveGoalId, resolveRequirementId, resolveTicketId } from './resolve';
 import {
   listGoals,
@@ -37,10 +38,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
     description:
       'List goals (the declarative layer above tickets: desired world states with machine-checkable success criteria). Optionally filter by status or parent.',
     parameters: z.object({
-      status: z
-        .enum(['draft', 'active', 'in_progress', 'achieved', 'failed', 'archived'])
-        .optional()
-        .describe('Filter by goal status'),
+      status: z.enum(GOAL_STATUSES).optional().describe('Filter by goal status'),
       parentId: z.string().optional().describe('Only children of this goal (UUID or prefix)'),
     }),
     execute: async ({ status, parentId }) => {
@@ -90,10 +88,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
         .string()
         .optional()
         .describe('Machine-checkable markdown checklist defining "achieved"'),
-      status: z
-        .enum(['draft', 'active', 'in_progress', 'achieved', 'failed', 'archived'])
-        .optional()
-        .describe('Initial status (default draft)'),
+      status: z.enum(GOAL_STATUSES).optional().describe('Initial status (default draft)'),
       priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
       goalPrompt: z
         .string()
@@ -117,9 +112,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
       parentId: z.string().nullable().optional().describe('New parent (null to make root)'),
       description: z.string().optional(),
       successCriteria: z.string().optional(),
-      status: z
-        .enum(['draft', 'active', 'in_progress', 'achieved', 'failed', 'archived'])
-        .optional(),
+      status: z.enum(GOAL_STATUSES).optional(),
       priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
       goalPrompt: z.string().optional(),
       sortOrder: z.number().optional(),

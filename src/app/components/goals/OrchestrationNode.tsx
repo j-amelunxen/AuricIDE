@@ -19,6 +19,7 @@ const STATUS_DOTS: Record<string, string> = {
   active: 'bg-sky-400',
   open: 'bg-gray-400',
   in_progress: 'bg-amber-400 animate-pulse',
+  in_review: 'bg-violet-400',
   running: 'bg-green-400 animate-pulse',
   done: 'bg-green-400',
   achieved: 'bg-green-400',

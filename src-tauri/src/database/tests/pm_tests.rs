@@ -21,6 +21,7 @@ fn test_pm_migration_creates_tables() {
         "pm_goal_requirement_links",
         "pm_goal_stations",
         "pm_ticket_reviews",
+        "pm_goal_reviews",
     ];
     for table in &tables {
         let exists: bool = conn
@@ -39,7 +40,7 @@ fn test_pm_migration_creates_tables() {
     let migration_count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(migration_count, 20);
+    assert_eq!(migration_count, 21);
 }
 
 #[test]

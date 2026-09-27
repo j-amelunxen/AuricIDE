@@ -1,0 +1,50 @@
+{
+  "comment": "Contract of pm_goal_reviews (migration 21). Read by src/mcp/__tests__/goalReviewsSchema.test.ts and by src-tauri/src/database/tests/schema_tests.rs, so both migrations must produce the same table. Change this file first, then both sides.",
+  "migration": { "id": 21, "name": "create_pm_goal_reviews" },
+  "columns": [
+    { "name": "id", "type": "TEXT", "notnull": false, "pk": true },
+    { "name": "goal_id", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "verdict", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "decision", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "criteria_met", "type": "INTEGER", "notnull": true, "pk": false },
+    { "name": "solves_problem", "type": "INTEGER", "notnull": true, "pk": false },
+    { "name": "solution_quality", "type": "INTEGER", "notnull": true, "pk": false },
+    { "name": "scope_respected", "type": "INTEGER", "notnull": true, "pk": false },
+    { "name": "reason", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "criteria", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "findings", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "rework_steps", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "reviewer", "type": "TEXT", "notnull": true, "pk": false },
+    { "name": "attempt", "type": "INTEGER", "notnull": true, "pk": false },
+    { "name": "created_at", "type": "TEXT", "notnull": true, "pk": false }
+  ],
+  "validRow": {
+    "id": "rev-1",
+    "goal_id": "goal-1",
+    "verdict": "approve",
+    "decision": "approve",
+    "criteria_met": 5,
+    "solves_problem": 4,
+    "solution_quality": 4,
+    "scope_respected": 5,
+    "reason": "All criteria met.",
+    "criteria": "[{\"criterion\":\"K1\",\"met\":\"yes\",\"evidence\":\"test log\"}]",
+    "findings": "[]",
+    "rework_steps": "[]",
+    "reviewer": "codex",
+    "attempt": 1
+  },
+  "rejectedRows": [
+    { "case": "score below 1", "set": { "criteria_met": 0 } },
+    { "case": "score above 5", "set": { "scope_respected": 6 } },
+    { "case": "unknown verdict", "set": { "verdict": "pass" } },
+    { "case": "unknown decision", "set": { "decision": "maybe" } },
+    { "case": "blank reason", "set": { "reason": "   " } },
+    { "case": "findings not JSON", "set": { "findings": "not json" } },
+    { "case": "findings not an array", "set": { "findings": "{}" } },
+    { "case": "rework_steps not an array", "set": { "rework_steps": "\"do it\"" } },
+    { "case": "criteria not an array", "set": { "criteria": "null" } },
+    { "case": "attempt below 1", "set": { "attempt": 0 } },
+    { "case": "unknown goal", "set": { "goal_id": "no-such-goal" } }
+  ]
+}

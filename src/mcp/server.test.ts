@@ -41,3 +41,11 @@ describe('createMcpServer: launch tools follow the inbox', () => {
     expect(registeredToolNames()).not.toContain('get_agent_run');
   });
 });
+
+describe('createMcpServer: reviews', () => {
+  it('offers submit_goal_review beside the unchanged submit_ticket_review', () => {
+    expect(registeredToolNames()).toEqual(
+      expect.arrayContaining(['submit_goal_review', 'submit_ticket_review'])
+    );
+  });
+});
