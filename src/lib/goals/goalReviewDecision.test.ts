@@ -27,19 +27,19 @@ describe('decideGoalReview: examples', () => {
   it('approves a clean approve', () => {
     expect(decideGoalReview(review(), { attempt: 1 })).toEqual({
       decision: 'approve',
-      reasons: ['all criteria met, all scores >= 4, no blocker'],
+      reasons: ['all criteria met, no score below 3, no critical/high finding in this goal'],
     });
   });
 
-  it('overrules an approve that carries a score below 4', () => {
-    const result = decideGoalReview(review({ scores: { ...allAt(5), solution_quality: 3 } }), {
+  it('overrules an approve that carries a score below 3', () => {
+    const result = decideGoalReview(review({ scores: { ...allAt(5), solution_quality: 2 } }), {
       attempt: 1,
     });
     expect(result).toEqual({
       decision: 'rework',
       reasons: [
         'reviewer said approve, but the rule does not allow it',
-        'scores below 4: solution_quality=3',
+        'scores below 3: solution_quality=2',
       ],
     });
   });
@@ -64,14 +64,42 @@ describe('decideGoalReview: examples', () => {
     });
     expect(decideGoalReview(followUp, { attempt: 1 }).decision).toBe('approve');
     const unscoped = review({ findings: [{ severity: 'blocker', what: 'F1' }] });
-    expect(decideGoalReview(unscoped, { attempt: 1 }).reasons).toContain('1 blocker finding(s)');
+    expect(decideGoalReview(unscoped, { attempt: 1 }).reasons).toContain(
+      '1 critical/high finding(s) in this goal'
+    );
+  });
+
+  it('holds a goal back for a major finding, but not for a minor one', () => {
+    const major = review({ findings: [{ severity: 'major', scope: 'in_goal', what: 'F1' }] });
+    expect(decideGoalReview(major, { attempt: 1 }).decision).toBe('rework');
+    const minor = review({ findings: [{ severity: 'minor', scope: 'in_goal', what: 'F1' }] });
+    expect(decideGoalReview(minor, { attempt: 1 }).decision).toBe('approve');
+  });
+
+  it('overrules a rework request that names nothing critical or high', () => {
+    const result = decideGoalReview(review({ verdict: 'rework' }), { attempt: 1 });
+    expect(result).toEqual({
+      decision: 'approve',
+      reasons: [
+        'reviewer asked for rework, but named nothing critical or high: approved',
+        'all criteria met, no score below 3, no critical/high finding in this goal',
+      ],
+    });
   });
 
   it('escalates a rework once the attempt limit is reached', () => {
-    const result = decideGoalReview(review({ verdict: 'rework' }), { attempt: 3 });
+    const withMajor = review({
+      verdict: 'rework',
+      findings: [{ severity: 'major', scope: 'in_goal', what: 'F1' }],
+    });
+    const result = decideGoalReview(withMajor, { attempt: 3 });
     expect(result).toEqual({
       decision: 'escalate',
-      reasons: ['reviewer requested rework', 'attempt 3 of 3: rework limit reached'],
+      reasons: [
+        'reviewer requested rework',
+        '1 critical/high finding(s) in this goal',
+        'attempt 3 of 3: rework limit reached',
+      ],
     });
   });
 
@@ -107,6 +135,7 @@ const FINDINGS: GoalReviewInput['findings'][] = [
   [{ severity: 'blocker', scope: 'in_goal', what: 'F' }],
   [{ severity: 'blocker', scope: 'follow_up', what: 'F' }],
   [{ severity: 'major', scope: 'in_goal', what: 'F' }],
+  [{ severity: 'minor', scope: 'in_goal', what: 'F' }],
 ];
 
 function* space() {
@@ -114,7 +143,7 @@ function* space() {
     { length: 16 },
     (_, mask) =>
       Object.fromEntries(
-        GOAL_REVIEW_SCORE_KEYS.map((key, i) => [key, mask & (1 << i) ? 3 : 4])
+        GOAL_REVIEW_SCORE_KEYS.map((key, i) => [key, mask & (1 << i) ? 2 : 3])
       ) as GoalReviewScores
   );
   for (const verdict of GOAL_REVIEW_VERDICTS)
@@ -136,23 +165,27 @@ function* space() {
 const isClean = (input: GoalReviewInput, formalReasons: string[]) =>
   GOAL_REVIEW_SCORE_KEYS.every((key) => input.scores[key] >= GOAL_REVIEW_MIN_SCORE) &&
   input.criteria.every((c) => c.met === 'yes' || c.met === 'human_pending') &&
-  !input.findings.some((f) => f.severity === 'blocker' && (f.scope ?? 'in_goal') === 'in_goal') &&
+  !input.findings.some(
+    (f) => ['blocker', 'major'].includes(f.severity) && (f.scope ?? 'in_goal') === 'in_goal'
+  ) &&
   formalReasons.length === 0;
 
 describe('decideGoalReview: properties over the whole space', () => {
-  it('approves exactly when the reviewer approves and nothing stands in the way', () => {
+  it('approves exactly when the reviewer did not escalate and nothing stands in the way', () => {
     for (const { input, attempt, formalReasons } of space()) {
       const { decision } = decideGoalReview(input, { attempt, formalReasons });
-      const shouldApprove = input.verdict === 'approve' && isClean(input, formalReasons);
+      const shouldApprove = input.verdict !== 'escalate' && isClean(input, formalReasons);
       expect(decision === 'approve', JSON.stringify({ input, attempt })).toBe(shouldApprove);
     }
   });
 
-  it('never approves against the reviewer, and always escalates an escalation', () => {
+  it('always escalates an escalation, and approves a rework only when it names nothing serious', () => {
     for (const { input, attempt, formalReasons } of space()) {
       const { decision } = decideGoalReview(input, { attempt, formalReasons });
-      if (input.verdict !== 'approve') expect(decision).not.toBe('approve');
       if (input.verdict === 'escalate') expect(decision).toBe('escalate');
+      if (input.verdict === 'rework' && decision === 'approve') {
+        expect(isClean(input, formalReasons)).toBe(true);
+      }
     }
   });
 
@@ -160,7 +193,9 @@ describe('decideGoalReview: properties over the whole space', () => {
     for (const { input, attempt, formalReasons } of space()) {
       const { decision } = decideGoalReview(input, { attempt, formalReasons });
       if (attempt >= 3) expect(decision).not.toBe('rework');
-      if (attempt < 3 && input.verdict === 'rework') expect(decision).toBe('rework');
+      if (attempt < 3 && input.verdict === 'rework' && !isClean(input, formalReasons)) {
+        expect(decision).toBe('rework');
+      }
     }
   });
 
