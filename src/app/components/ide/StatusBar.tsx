@@ -16,6 +16,7 @@ export interface StatusBarProps {
   onProblemsClick?: () => void;
 }
 
+// code-gate: complexity-parameter-count - one destructured props object, not positional parameters
 export function StatusBar({
   branch,
   syncStatus,
@@ -33,7 +34,10 @@ export function StatusBar({
     >
       <div className="flex items-center gap-4">
         {branch && (
-          <button className="flex items-center gap-1.5 hover:text-primary transition-colors">
+          <button
+            data-testid="status-branch"
+            className="flex items-center gap-1.5 hover:text-primary transition-colors"
+          >
             <AuricIcon name="source" aria-hidden="true" className="text-[12px]" />
             <span>{branch}</span>
           </button>
