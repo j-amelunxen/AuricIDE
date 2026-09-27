@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   loadMissionMemory,
   type MissionFs,
@@ -34,6 +34,13 @@ const PHASE_STYLES: Record<MissionPhase, string> = {
   'wartet auf Mensch': 'bg-amber-500/15 text-amber-400',
   erreicht: 'bg-emerald-500/15 text-emerald-400',
 };
+
+function announce(memory: MissionMemory): string {
+  const broken = memory.problems.length;
+  const read = `${memory.subGoals.length} sub-goals, ${memory.openQuestions.length} open questions`;
+  if (broken === 0) return `Mission read: ${read}.`;
+  return `Mission read: ${read}. ${broken === 1 ? '1 file needs' : `${broken} files need`} fixing.`;
+}
 
 const chipCls = 'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium';
 
@@ -72,6 +79,7 @@ export function MissionOverviewSection({ missionPath, labelCls, fs }: MissionOve
   const loading = result?.key !== key;
   const memory = result?.memory ?? null;
   const refresh = () => setVersion((v) => v + 1);
+  const headingId = useId();
 
   const empty =
     memory !== null &&
@@ -81,9 +89,20 @@ export function MissionOverviewSection({ missionPath, labelCls, fs }: MissionOve
     memory.problems.length === 0;
 
   return (
-    <div data-testid="mission-overview" className="space-y-3">
+    <section
+      data-testid="mission-overview"
+      aria-labelledby={headingId}
+      aria-busy={loading}
+      className="space-y-3"
+    >
+      {/* One polite announcement per read, so a refresh is heard, not only seen. */}
+      <p role="status" className="sr-only">
+        {loading ? 'Reading mission…' : memory ? announce(memory) : ''}
+      </p>
       <div className="flex items-center gap-2">
-        <label className={labelCls}>Mission</label>
+        <h3 id={headingId} className={labelCls}>
+          Mission
+        </h3>
         <span
           data-testid="mission-path"
           className="min-w-0 truncate text-[9px] text-foreground-muted"
@@ -185,7 +204,7 @@ export function MissionOverviewSection({ missionPath, labelCls, fs }: MissionOve
           </ul>
         </section>
       )}
-    </div>
+    </section>
   );
 }
 

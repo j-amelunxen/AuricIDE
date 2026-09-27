@@ -104,6 +104,18 @@ describe('MissionOverviewSection — an approval that does not hold', () => {
   });
 });
 
+describe('MissionOverviewSection — for screen readers', () => {
+  it('is a named section that says when it is busy and announces what it found', async () => {
+    renderMission('mission-broken');
+    const section = screen.getByRole('region', { name: 'Mission' });
+    expect(section).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('Reading mission');
+    await loaded();
+    expect(section).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByRole('status')).toHaveTextContent('18 files need fixing');
+  });
+});
+
 describe('MissionOverviewSection — broken and empty missions', () => {
   it('names every broken file next to what could still be read', async () => {
     renderMission('mission-broken');
@@ -111,15 +123,17 @@ describe('MissionOverviewSection — broken and empty missions', () => {
     const problems = within(screen.getByTestId('mission-problems')).getAllByTestId(
       'mission-problem'
     );
-    expect(problems).toHaveLength(16);
+    expect(problems).toHaveLength(18);
     expect(problems[0]).toHaveTextContent('state/01-ohne-frontmatter.md');
-    expect(screen.getByTestId('mission-problems')).toHaveTextContent('16 files need fixing');
+    expect(screen.getByTestId('mission-problems')).toHaveTextContent('18 files need fixing');
     // A typo in a question's status or an invented review decision is shown as
     // broken, never as a missing question or as a review result.
     const typo = problems.find((p) => p.textContent?.includes('2026-01-05-01-frage-tippfehler'));
     expect(typo).toHaveTextContent('opne');
     const invented = problems.find((p) => p.textContent?.includes('01-x-2026-01-02-r2.md'));
     expect(invented).toHaveTextContent('vielleicht');
+    const doubled = problems.find((p) => p.textContent?.includes('2026-01-09-01-frage-doppelter'));
+    expect(doubled).toHaveTextContent('"status"');
     expect(
       screen.queryByText('vielleicht', { selector: '[data-testid="mission-review-decision"]' })
     ).toBeNull();
