@@ -37,6 +37,8 @@
 /.claude/
 *.zip
 run_dev.local.sh
+/missions/
+/findings/
 
 # lock files (pnpm is used)
 package-lock.json
