@@ -16,6 +16,7 @@ describe('normalizeMissionPath', () => {
   it('tidies the spellings people type for the same folder', () => {
     expect(normalizeMissionPath('  ./missions//sample/ ')).toBe('missions/sample');
     expect(normalizeMissionPath('missions/./sample')).toBe('missions/sample');
+    expect(normalizeMissionPath('missions\\sample')).toBe('missions/sample');
   });
 
   it('refuses an absolute path, because the project may move', () => {
@@ -23,11 +24,16 @@ describe('normalizeMissionPath', () => {
       /relative to the project/i
     );
     expect(() => normalizeMissionPath('~/missions/sample')).toThrow(/relative to the project/i);
+    expect(() => normalizeMissionPath('C:\\work\\missions')).toThrow(/relative to the project/i);
+    expect(() => normalizeMissionPath('\\\\server\\share\\missions')).toThrow(
+      /relative to the project/i
+    );
   });
 
   it('refuses a path that climbs out of the project', () => {
     expect(() => normalizeMissionPath('../other/missions/sample')).toThrow(/inside the project/i);
     expect(() => normalizeMissionPath('missions/../../elsewhere')).toThrow(/inside the project/i);
+    expect(() => normalizeMissionPath('..\\outside')).toThrow(/inside the project/i);
   });
 
   it('refuses a path that points at the project root itself', () => {
