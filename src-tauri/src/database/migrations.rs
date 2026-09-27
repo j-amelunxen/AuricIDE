@@ -410,5 +410,26 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS idx_goal_reviews_goal ON pm_goal_reviews(goal_id, created_at);",
     )?;
 
+    // A root goal's mission folder, relative to the project. Keep in sync with
+    // src/mcp/db.ts migration 22. SQLite has no ADD COLUMN IF NOT EXISTS, and the
+    // DDL and the `_migrations` marker are separate statements: a crash between
+    // them would leave a column that fails the rerun, so the SQL only runs when
+    // the column is missing.
+    let sql = if column_exists(conn, "pm_goals", "mission_path")? {
+        ""
+    } else {
+        "ALTER TABLE pm_goals ADD COLUMN mission_path TEXT;"
+    };
+    apply_migration(conn, 22, "add_goal_mission_path", sql)?;
+
     Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info(?1) WHERE name = ?2",
+        params![table, column],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to inspect {}.{}: {}", table, column, e))
 }

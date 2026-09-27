@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { isVerifiedEvidence } from '../../lib/pm/enums';
 import { GOAL_WORK_MODE_SETTINGS, resolveGoalWorkMode } from '../../lib/goals/workMode';
+import { normalizeMissionPath } from '../../lib/missions/missionPath';
 import { decideGoalCompletion, type GoalCompletion } from '../../lib/goals/goalCompletion';
 import { createTicket, type CreateTicketParams, type Ticket } from './tickets';
 
@@ -16,6 +17,8 @@ export interface GoalRow {
   goal_prompt: string;
   /** `auto` | `stations` | `tickets`, resolved by `resolveGoalWorkMode`. */
   work_mode: string;
+  /** A root goal's mission folder, relative to the project (`normalizeMissionPath`). */
+  mission_path: string | null;
   created_by: string;
   achieved_at: string | null;
   sort_order: number;
@@ -100,6 +103,15 @@ function checkedWorkMode(value: string | undefined): string | undefined {
   return value;
 }
 
+/** A mission belongs to the whole tree, so only its root may point at it. */
+function checkMissionOnRoot(parentId: string | null, missionPath: string | null): void {
+  if (parentId !== null && missionPath !== null) {
+    throw new Error(
+      'Only a root goal can point at a mission folder; clear missionPath (null) or keep the goal at the root'
+    );
+  }
+}
+
 export function createGoal(
   db: Database.Database,
   params: {
@@ -112,6 +124,7 @@ export function createGoal(
     goalPrompt?: string;
     sortOrder?: number;
     workMode?: string;
+    missionPath?: string | null;
   },
   createdBy: string
 ): GoalRow {
@@ -119,11 +132,13 @@ export function createGoal(
     throw new Error(`Parent goal '${params.parentId}' not found`);
   }
   const workMode = checkedWorkMode(params.workMode) ?? 'auto';
+  const missionPath = normalizeMissionPath(params.missionPath);
+  checkMissionOnRoot(params.parentId ?? null, missionPath);
   const id = crypto.randomUUID();
   const ts = now();
   db.prepare(
-    `INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, status, priority, goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at, work_mode)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`
+    `INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, status, priority, goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at, work_mode, mission_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
   ).run(
     id,
     params.parentId ?? null,
@@ -137,7 +152,8 @@ export function createGoal(
     params.sortOrder ?? 0,
     ts,
     ts,
-    workMode
+    workMode,
+    missionPath
   );
   return getGoal(db, id) as GoalRow;
 }
@@ -155,9 +171,23 @@ export function updateGoal(
     goalPrompt: string;
     sortOrder: number;
     workMode: string;
+    missionPath: string | null;
   }>
 ): GoalRow {
   checkedWorkMode(updates.workMode);
+  if (updates.missionPath !== undefined || updates.parentId !== undefined) {
+    const existing = getGoal(db, id);
+    if (!existing) throw new Error(`Goal '${id}' not found`);
+    const missionPath =
+      updates.missionPath !== undefined
+        ? normalizeMissionPath(updates.missionPath)
+        : existing.mission_path;
+    checkMissionOnRoot(
+      updates.parentId !== undefined ? updates.parentId : existing.parent_id,
+      missionPath
+    );
+    if (updates.missionPath !== undefined) updates = { ...updates, missionPath };
+  }
   const fieldMap: Record<string, string> = {
     name: 'name',
     parentId: 'parent_id',
@@ -168,6 +198,7 @@ export function updateGoal(
     goalPrompt: 'goal_prompt',
     sortOrder: 'sort_order',
     workMode: 'work_mode',
+    missionPath: 'mission_path',
   };
 
   const setClauses: string[] = [];

@@ -40,7 +40,7 @@ fn test_run_migrations_creates_tables() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 21);
+    assert_eq!(count, 22);
 
     // kv_store table should exist
     let table_exists: bool = conn
@@ -62,7 +62,7 @@ fn test_run_migrations_idempotent() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 21);
+    assert_eq!(count, 22);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_init_db_creates_db_file() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 21);
+    assert_eq!(count, 22);
 }
 
 // --- pm_goal_reviews (migration 21) ---
@@ -276,4 +276,77 @@ fn goal_reviews_migration_recovers_from_a_crash_before_its_marker() {
             "{label}: constraints still hold"
         );
     }
+}
+
+// --- pm_goals.mission_path (migration 22) ---
+
+fn goal_column(conn: &Connection, column: &str) -> Option<(i64, Option<String>)> {
+    conn.query_row(
+        "SELECT \"notnull\", dflt_value FROM pragma_table_info('pm_goals') WHERE name = ?1",
+        [column],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .ok()
+}
+
+#[test]
+fn mission_path_migration_adds_a_nullable_column_and_keeps_existing_goals() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+    // Roll back to a database from before migration 22 that already holds a goal.
+    conn.execute_batch(
+        "ALTER TABLE pm_goals DROP COLUMN mission_path;
+         DELETE FROM _migrations WHERE id = 22;
+         INSERT INTO pm_goals (id, name) VALUES ('old', 'Written before 22');",
+    )
+    .unwrap();
+    assert_eq!(goal_column(&conn, "mission_path"), None);
+
+    run_migrations(&conn).unwrap();
+
+    assert_eq!(goal_column(&conn, "mission_path"), Some((0, None)));
+    let (name, mission): (String, Option<String>) = conn
+        .query_row(
+            "SELECT name, mission_path FROM pm_goals WHERE id = 'old'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(name, "Written before 22");
+    assert_eq!(mission, None);
+    let marker: String = conn
+        .query_row("SELECT name FROM _migrations WHERE id = 22", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(marker, "add_goal_mission_path");
+}
+
+/// Fault injection: the process died after migration 22 added its column but
+/// before `_migrations` recorded it. SQLite has no `ADD COLUMN IF NOT EXISTS`,
+/// so a plain rerun would fail on "duplicate column" and the project would no
+/// longer open.
+#[test]
+fn mission_path_migration_recovers_from_a_crash_before_its_marker() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+    conn.execute("DELETE FROM _migrations WHERE id = 22", [])
+        .unwrap();
+
+    run_migrations(&conn).unwrap();
+
+    let columns: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('pm_goals') WHERE name = 'mission_path'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(columns, 1);
+    let markers: i64 = conn
+        .query_row("SELECT COUNT(*) FROM _migrations WHERE id = 22", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(markers, 1);
 }

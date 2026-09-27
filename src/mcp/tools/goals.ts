@@ -23,6 +23,11 @@ import {
 
 export * from './goalsDb';
 
+const MISSION_PATH_DESCRIPTION =
+  'Root goals only: the mission folder this goal stands for, relative to the project ' +
+  '(e.g. "missions/<slug>"). The goal view then shows the mission\'s phases, open questions ' +
+  'and reviews from <folder>/shared.';
+
 const WORK_MODE_PARAM = z
   .enum(GOAL_WORK_MODE_SETTINGS)
   .optional()
@@ -96,6 +101,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
         .describe('Canonical prompt used when launching agents for this goal'),
       sortOrder: z.number().optional(),
       workMode: WORK_MODE_PARAM,
+      missionPath: z.string().optional().describe(MISSION_PATH_DESCRIPTION),
     }),
     execute: async (params) => {
       const parentId = params.parentId ? resolveGoalId(db, params.parentId) : undefined;
@@ -117,6 +123,11 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
       goalPrompt: z.string().optional(),
       sortOrder: z.number().optional(),
       workMode: WORK_MODE_PARAM,
+      missionPath: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(`${MISSION_PATH_DESCRIPTION} null or "" removes the link.`),
     }),
     execute: async ({ id, ...updates }) => {
       const resolved = resolveGoalId(db, id);

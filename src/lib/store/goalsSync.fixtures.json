@@ -14,7 +14,8 @@
       "sortOrder": 0,
       "createdAt": "2026-01-01 00:00:00",
       "updatedAt": "2026-01-01 00:00:00",
-      "workMode": "auto"
+      "workMode": "auto",
+      "missionPath": null
     },
     "station": {
       "name": "Station",
@@ -694,6 +695,113 @@
       "absent": {
         "pm_goals": ["g1"],
         "pm_goal_stations": ["s1"]
+      }
+    },
+    {
+      "name": "with a base, a mission link set by an agent survives a UI save of another field",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "mission_path": "missions/sample"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "description": "edited in the UI"
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "mission_path": "missions/sample",
+            "description": "edited in the UI"
+          }
+        }
+      }
+    },
+    {
+      "name": "with a base, a mission link cleared in the UI is written as null",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1",
+            "missionPath": "missions/sample"
+          }
+        ]
+      },
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "missionPath": null
+          }
+        ],
+        "baseGoals": [
+          {
+            "id": "g1",
+            "missionPath": "missions/sample"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "mission_path": null
+          }
+        }
+      }
+    },
+    {
+      "name": "without a base, a payload row writes its mission link over a foreign one",
+      "seed": {
+        "goals": [
+          {
+            "id": "g1",
+            "missionPath": "missions/seeded"
+          }
+        ]
+      },
+      "concurrent": [
+        {
+          "table": "pm_goals",
+          "id": "g1",
+          "set": {
+            "mission_path": "missions/foreign"
+          }
+        }
+      ],
+      "payload": {
+        "goals": [
+          {
+            "id": "g1",
+            "missionPath": "missions/from-ui"
+          }
+        ]
+      },
+      "expect": {
+        "pm_goals": {
+          "g1": {
+            "mission_path": "missions/from-ui"
+          }
+        }
       }
     }
   ]

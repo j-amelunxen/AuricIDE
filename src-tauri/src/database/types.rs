@@ -188,6 +188,11 @@ pub struct PmGoal {
     /// the frontend (`resolveGoalWorkMode`); a payload without it is `auto`.
     #[serde(default = "default_goal_work_mode")]
     pub work_mode: String,
+    /// Root goals only: the mission folder, relative to the project root. The
+    /// rule for what a valid value is lives with its writers (MCP and
+    /// `src/lib/missions/missionPath.ts`); a payload without it is `None`.
+    #[serde(default)]
+    pub mission_path: Option<String>,
     pub created_by: String,
     pub achieved_at: Option<String>,
     pub sort_order: i32,
