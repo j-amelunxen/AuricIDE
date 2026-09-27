@@ -53,18 +53,18 @@ function getStation(db: Database.Database, id: string): StationRow | undefined {
     StationRow | undefined;
 }
 
-function parsePredicateParam(raw: string | undefined): string {
+function parsePredicateParam(raw: string | undefined, field = 'predicate'): string {
   if (!raw) return '{"type":"undefined"}';
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error(`predicate must be valid JSON, received: ${raw.slice(0, 80)}`);
+    throw new Error(`${field} must be valid JSON, received: ${raw.slice(0, 80)}`);
   }
   // Same field-by-field validation as the planner (type + required fields +
   // no tautological file_exists globs). Incomplete predicates used to slip
   // through and launder a claim into machine "proof".
-  const predicate = parsePredicate('predicate', parsed);
+  const predicate = parsePredicate(field, parsed);
   return JSON.stringify(predicate);
 }
 
@@ -117,56 +117,117 @@ export function stationRowToDomain(row: StationRow): PmGoalStation {
   };
 }
 
-export function createStation(
-  db: Database.Database,
-  params: {
-    goalId: string;
-    name: string;
-    kind?: string;
-    predicate?: string;
-    ticketId?: string;
-    afterStationId?: string;
-  }
-): StationRow {
-  const kind = assertOneOf('kind', params.kind ?? 'normal', STATION_KINDS);
+interface StationSpec {
+  name: string;
+  kind?: string;
+  predicate?: string;
+  ticketId?: string;
+}
+
+interface ValidatedStation {
+  name: string;
+  kind: string;
+  evidenceKind: string;
+  predicate: string;
+  ticketId: string | null;
+}
+
+/** Kind and predicate rules shared by create_station and create_stations. `field`
+ * prefixes every error, so a batch names the entry that failed. */
+function validateStation(spec: StationSpec, field: string): Omit<ValidatedStation, 'ticketId'> {
+  const kind = assertOneOf(`${field}kind`, spec.kind ?? 'normal', STATION_KINDS);
   // Invariant: a human step always carries the human predicate, whatever an
   // agent passed. Otherwise create_station(kind:'human', predicate:file_exists)
   // would mint a "person only" station the evidence engine happily clears.
-  const predicate = kind === 'human' ? '{"type":"human"}' : parsePredicateParam(params.predicate);
-  const evidenceKind = kind === 'human' ? 'human' : 'claim';
-  const existing = listStations(db, params.goalId);
-  let sortOrder = existing.length;
-  if (params.afterStationId) {
-    const after = existing.findIndex((s) => s.id === params.afterStationId);
-    if (after === -1) throw new Error(`Station '${params.afterStationId}' not found on this goal`);
-    sortOrder = after + 1;
+  const predicate =
+    kind === 'human'
+      ? '{"type":"human"}'
+      : parsePredicateParam(spec.predicate, `${field}predicate`);
+  return { name: spec.name, kind, evidenceKind: kind === 'human' ? 'human' : 'claim', predicate };
+}
+
+/** Inserts validated stations as one contiguous block (after `afterStationId`,
+ * else at the end) and renumbers the line so orders stay dense. */
+function insertStations(
+  db: Database.Database,
+  goalId: string,
+  stations: ValidatedStation[],
+  afterStationId?: string
+): string[] {
+  const existing = listStations(db, goalId);
+  let insertAt = existing.length;
+  if (afterStationId) {
+    const after = existing.findIndex((s) => s.id === afterStationId);
+    if (after === -1) throw new Error(`Station '${afterStationId}' not found on this goal`);
+    insertAt = after + 1;
   }
-  const id = crypto.randomUUID();
-  const ts = now();
-  db.prepare(
+  const insert = db.prepare(
     `INSERT INTO pm_goal_stations
      (id, goal_id, name, kind, status, evidence_kind, predicate, evidence_note, ticket_id,
       lane, sort_order, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'planned', ?, ?, '', ?, 0, ?, ?, ?)`
-  ).run(
-    id,
-    params.goalId,
-    params.name,
-    kind,
-    evidenceKind,
-    predicate,
-    params.ticketId ?? null,
-    sortOrder,
-    ts,
-    ts
   );
-  // Renumber everything after the insertion point so orders stay dense.
-  const rows = listStations(db, params.goalId);
+  const ts = now();
+  const ids = stations.map((s, i) => {
+    const id = crypto.randomUUID();
+    insert.run(
+      id,
+      goalId,
+      s.name,
+      s.kind,
+      s.evidenceKind,
+      s.predicate,
+      s.ticketId,
+      insertAt + i,
+      ts,
+      ts
+    );
+    return id;
+  });
   const renumber = db.prepare('UPDATE pm_goal_stations SET sort_order = ? WHERE id = ?');
-  rows
-    .sort((a, b) => a.sort_order - b.sort_order || (a.id === id ? -1 : 0))
-    .forEach((row, i) => renumber.run(i, row.id));
+  [
+    ...existing.slice(0, insertAt).map((r) => r.id),
+    ...ids,
+    ...existing.slice(insertAt).map((r) => r.id),
+  ].forEach((id, i) => renumber.run(i, id));
+  return ids;
+}
+
+export function createStation(
+  db: Database.Database,
+  params: StationSpec & { goalId: string; afterStationId?: string }
+): StationRow {
+  const station = { ...validateStation(params, ''), ticketId: params.ticketId ?? null };
+  const [id] = insertStations(db, params.goalId, [station], params.afterStationId);
   return getStation(db, id)!;
+}
+
+/**
+ * Creates many stations in one call, all or nothing: every entry is validated
+ * exactly like create_station before anything is written, and the inserts run
+ * in one transaction, so a database failure halfway rolls back the rows before it.
+ */
+export function createStations(
+  db: Database.Database,
+  params: { goalId: string; stations: StationSpec[]; afterStationId?: string }
+): StationRow[] {
+  if (params.stations.length === 0) throw new Error('stations must contain at least one entry');
+  const validated = params.stations.map((spec, i) => {
+    const field = `stations[${i}].`;
+    let ticketId: string | null = null;
+    if (spec.ticketId) {
+      try {
+        ticketId = resolveTicketId(db, spec.ticketId);
+      } catch (err) {
+        throw new Error(`${field}ticketId: ${(err as Error).message}`);
+      }
+    }
+    return { ...validateStation(spec, field), ticketId };
+  });
+  const ids = db.transaction(() =>
+    insertStations(db, params.goalId, validated, params.afterStationId)
+  )();
+  return ids.map((id) => getStation(db, id)!);
 }
 
 /**
@@ -244,6 +305,22 @@ export function updateStation(
   return getStation(db, id)!;
 }
 
+/** The per-station fields, shared by create_station and each create_stations entry. */
+const stationFields = {
+  name: z.string().min(1).describe('Short imperative step name'),
+  kind: z.enum(STATION_KINDS).optional().describe('normal | gate | human (default normal)'),
+  predicate: z
+    .string()
+    .optional()
+    .describe(
+      'JSON predicate, e.g. {"type":"file_exists","glob":"docs/*.md"}. Defaults to {"type":"undefined"} — an honest "check to be defined".'
+    ),
+  ticketId: z
+    .string()
+    .optional()
+    .describe('Ticket ID or unique prefix of a ticket this station wraps'),
+};
+
 export function registerStationTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
     name: 'list_stations',
@@ -261,15 +338,7 @@ export function registerStationTools(server: FastMCP, db: Database.Database): vo
       'Add a station to a goal line. kind "human" marks a step only a person can clear (a call, an email, a sign-off).',
     parameters: z.object({
       goalId: z.string().describe('Goal ID (UUID or unique prefix)'),
-      name: z.string().min(1).describe('Short imperative step name'),
-      kind: z.enum(STATION_KINDS).optional().describe('normal | gate | human (default normal)'),
-      predicate: z
-        .string()
-        .optional()
-        .describe(
-          'JSON predicate, e.g. {"type":"file_exists","glob":"docs/*.md"}. Defaults to {"type":"undefined"} — an honest "check to be defined".'
-        ),
-      ticketId: z.string().optional().describe('Link a ticket this station wraps'),
+      ...stationFields,
       afterStationId: z.string().optional().describe('Insert after this station'),
     }),
     execute: async ({ goalId, name, kind, predicate, ticketId, afterStationId }) =>
@@ -280,6 +349,28 @@ export function registerStationTools(server: FastMCP, db: Database.Database): vo
           kind,
           predicate,
           ticketId: ticketId ? resolveTicketId(db, ticketId) : undefined,
+          afterStationId: afterStationId ? resolveStationId(db, afterStationId) : undefined,
+        })
+      ),
+  });
+
+  server.addTool({
+    name: 'create_stations',
+    description:
+      'Add several stations to a goal line in one call, in the given order. Each entry is validated exactly like create_station; if any entry is invalid, nothing is created and the error names the entry (stations[i]).',
+    parameters: z.object({
+      goalId: z.string().describe('Goal ID (UUID or unique prefix)'),
+      stations: z.array(z.object(stationFields)).min(1).describe('Stations to append, in order'),
+      afterStationId: z
+        .string()
+        .optional()
+        .describe('Insert the whole block after this station instead of at the end'),
+    }),
+    execute: async ({ goalId, stations, afterStationId }) =>
+      JSON.stringify(
+        createStations(db, {
+          goalId: resolveGoalId(db, goalId),
+          stations,
           afterStationId: afterStationId ? resolveStationId(db, afterStationId) : undefined,
         })
       ),

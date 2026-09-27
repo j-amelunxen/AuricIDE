@@ -47,7 +47,7 @@ AI agents working in AuricIDE require programmatic, structured access to project
 | **canvas**        | `list_canvases`, `read_canvas`, `write_canvas`                                                         | Project `.canvas` files    |
 | **requirements**  | `list_requirements`, `get_requirement`, `create_requirement`, `verify_requirement`                     | SQLite `pm_requirements`   |
 | **goals**         | `list_goals`, `get_goal`, `create_goal`, `evaluate_goal`, `decompose_goal`                             | SQLite `pm_goals`          |
-| **stations**      | `list_stations`, `create_station`, `advance_station`, `verify_station`                                 | SQLite `pm_goal_stations`  |
+| **stations**      | `list_stations`, `create_station`, `create_stations`, `advance_station`, `verify_station`              | SQLite `pm_goal_stations`  |
 | **knowledge**     | `query_knowledge_graph`, `index_knowledge`                                                             | Project markdown notes     |
 | **reviews**       | `record_ticket_review`, `get_latest_review`                                                            | SQLite `pm_ticket_reviews` |
 | **notifications** | `notify`, `notify_ask`, `schedule_create`                                                              | Global `notifications.db`  |
