@@ -140,6 +140,27 @@ describe('buildGoalLaunchPrompt', () => {
     expect(prompt).toContain('evaluate_goal');
   });
 
+  it('sends the agent to read the whole goal through get_goal before anything else', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal({ id: 'g-7' }));
+    expect(prompt).toContain('## Read the full goal first');
+    expect(prompt).toContain('get_goal (id: "g-7")');
+    expect(prompt.indexOf('Read the full goal first')).toBeLessThan(
+      prompt.indexOf('## Working agreement')
+    );
+  });
+
+  it('carries only an excerpt of a long description', () => {
+    const description = `${'lorem ipsum '.repeat(80)}FINAL-SENTENCE`;
+    const prompt = buildGoalLaunchPrompt(makeGoal({ description }));
+    expect(prompt).toContain('## Description (excerpt: first 400 of');
+    expect(prompt).not.toContain('FINAL-SENTENCE');
+  });
+
+  it('keeps the success criteria next to an explicit goal prompt, marked complete', () => {
+    const prompt = buildGoalLaunchPrompt(makeGoal({ goalPrompt: 'Custom prompt' }));
+    expect(prompt).toContain('## Success criteria (complete)\n- conductor completes a goal');
+  });
+
   it('tells the planning agent to attach tickets via goalId', () => {
     const prompt = buildGoalLaunchPrompt(makeGoal());
     expect(prompt).toContain('goalId');
