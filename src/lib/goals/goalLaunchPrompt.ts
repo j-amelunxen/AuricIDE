@@ -1,4 +1,5 @@
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import { goalBriefSections } from './goalBrief';
 import type { GoalWorkMode } from './workMode';
 
 const TICKET_AGREEMENT = (goal: PmGoal): string =>
@@ -35,7 +36,10 @@ const STATION_AGREEMENT = (goal: PmGoal, hasOwnLine: boolean): string =>
   'every station you can do is done, or you are blocked.';
 
 /**
- * Builds the launch prompt for a goal: explicit goalPrompt wins, else generated.
+ * Builds the launch prompt for a goal. The goal itself travels as a brief
+ * (`goalBriefSections`): read the full goal via get_goal first, then a marked
+ * excerpt of description and success criteria; an explicit goalPrompt is
+ * carried whole, since it is the user's instruction to the agent.
  * The working agreement follows the goal's work mode: in ticket mode the agent
  * turns the line into an epic and tickets, in stations mode it works the
  * stations itself and marks each one done with evidence.
@@ -46,12 +50,10 @@ export function buildGoalLaunchPrompt(
   mode: GoalWorkMode = 'tickets'
 ): string {
   const parts = [`# Goal: ${goal.name} (goalId: ${goal.id})`];
-  if (goal.goalPrompt.trim()) {
-    parts.push(`## Goal instructions\n${goal.goalPrompt}`);
-  } else {
-    if (goal.description) parts.push(goal.description);
-    if (goal.successCriteria) parts.push(`## Success criteria\n${goal.successCriteria}`);
-  }
+  const [readFirst, ...excerpts] = goalBriefSections(goal);
+  parts.push(readFirst);
+  if (goal.goalPrompt.trim()) parts.push(`## Goal instructions\n${goal.goalPrompt}`);
+  parts.push(...excerpts);
   const savedLine = stations
     .filter((station) => station.goalId === goal.id)
     .sort((a, b) => a.sortOrder - b.sortOrder);

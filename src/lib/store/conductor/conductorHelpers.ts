@@ -1,3 +1,4 @@
+import { goalBriefSections } from '@/lib/goals/goalBrief';
 import { isClosedTicketStatus, type ModelPower } from '@/lib/pm/enums';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
@@ -149,10 +150,7 @@ export function buildConductorPrompt(
         'Use this exact goalId with the auric-pm MCP tools (e.g. get_goal, evaluate_goal) · ' +
         'do not look it up by name.'
     );
-    if (goal.description) sections.push(goal.description);
-    if (goal.successCriteria) {
-      sections.push(`The goal counts as achieved when:\n${goal.successCriteria}`);
-    }
+    sections.push(...goalBriefSections(goal));
   }
 
   if (testCases.length > 0) {

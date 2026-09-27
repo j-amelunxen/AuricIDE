@@ -391,6 +391,17 @@ describe('conductor pure helpers', () => {
     expect(prompt).toContain('g-42');
   });
 
+  it('buildConductorPrompt carries the goal as a brief: get_goal first, then marked excerpts', () => {
+    const ticket = makeTicket({ name: 'Implement login' });
+    const description = `${'lorem ipsum '.repeat(80)}FINAL-SENTENCE`;
+    const goal = makeGoal({ id: 'g-42', description, successCriteria: '- users can log in' });
+    const prompt = buildConductorPrompt(ticket, goal, []);
+    expect(prompt).toContain('get_goal (id: "g-42")');
+    expect(prompt).toContain('## Description (excerpt: first 400 of');
+    expect(prompt).not.toContain('FINAL-SENTENCE');
+    expect(prompt).toContain('## Success criteria (complete)\n- users can log in');
+  });
+
   it('starts the prompt with /goal when the ticket serves a goal', () => {
     const ticket = makeTicket({ name: 'Implement login' });
     const goal = makeGoal({ id: 'g-42', name: 'Ship auth' });
