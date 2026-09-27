@@ -26,14 +26,14 @@ export function QAPanel() {
 
   const handleSetupCoverage = () => {
     setInitialAgentTask(
-      'Ich möchte Coverage-Informationen in diesem Projekt aufsetzen. Bitte prüfe die vorhandene Test-Infrastruktur (z.B. Vitest) und konfiguriere Coverage-Reporting (z.B. mit v8 oder istanbul).'
+      'Set up code coverage for this project. Check the existing test infrastructure (e.g. Vitest) and configure coverage reporting (e.g. with v8 or istanbul).'
     );
     setSpawnDialogOpen(true);
   };
 
   const handleConfigureCoverageLocation = () => {
     setInitialAgentTask(
-      'Bitte suche im Projekt nach vorhandenen coverage-Ausgabedateien (z.B. coverage-summary.json, coverage-final.json, lcov.info) und teile mir den genauen relativen Pfad mit, damit ich ihn als Coverage-Quelle konfigurieren kann.'
+      'Search this project for existing coverage output files (e.g. coverage-summary.json, coverage-final.json, lcov.info) and tell me the exact relative path, so I can configure it as the coverage source.'
     );
     setSpawnDialogOpen(true);
   };

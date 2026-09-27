@@ -41,8 +41,8 @@ describe('InboxDailyGoalsSection', () => {
 
     render(<InboxDailyGoalsSection {...defaultProps} onOpenPlanner={onOpenPlanner} />);
 
-    expect(screen.getByRole('heading', { name: /Tagesziele/i })).toBeInTheDocument();
-    const planBtn = screen.getByRole('button', { name: /Tagesziele planen/i });
+    expect(screen.getByRole('heading', { name: /Daily goals/i })).toBeInTheDocument();
+    const planBtn = screen.getByRole('button', { name: /Plan daily goals/i });
     expect(planBtn).toBeInTheDocument();
 
     await user.click(planBtn);
@@ -69,7 +69,7 @@ describe('InboxDailyGoalsSection', () => {
     expect(screen.getByText('Task 2')).toBeInTheDocument();
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
-    expect(screen.getByTestId('daily-goals-progress')).toHaveTextContent('0/2 erledigt');
+    expect(screen.getByTestId('daily-goals-progress')).toHaveTextContent('0/2 done');
   });
 
   it('calls onToggleDailyGoal when removing a goal', async () => {
@@ -85,7 +85,7 @@ describe('InboxDailyGoalsSection', () => {
       />
     );
 
-    const removeBtn = screen.getByRole('button', { name: /Tagesziel entfernen/i });
+    const removeBtn = screen.getByRole('button', { name: /Remove daily goal/i });
     await user.click(removeBtn);
 
     expect(onToggleDailyGoal).toHaveBeenCalledWith('g1');

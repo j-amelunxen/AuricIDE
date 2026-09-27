@@ -70,7 +70,7 @@ describe('InboxPanel - Daily Goals Integration', () => {
     };
   });
 
-  it('renders Tagesziele section at the top of InboxPanel', () => {
+  it('renders the daily goals section at the top of InboxPanel', () => {
     const goal = makeItem({ id: 'g1', title: 'Sprint Goal Alpha', dailyGoal: true });
     storeState.inboxItems = [goal];
 
@@ -79,24 +79,24 @@ describe('InboxPanel - Daily Goals Integration', () => {
     const section = screen.getByTestId('inbox-daily-goals-section');
     expect(section).toBeInTheDocument();
     expect(within(section).getByText('Sprint Goal Alpha')).toBeInTheDocument();
-    expect(screen.getByTestId('daily-goals-progress')).toHaveTextContent('0/1 erledigt');
+    expect(screen.getByTestId('daily-goals-progress')).toHaveTextContent('0/1 done');
   });
 
-  it('opens daily goals planner when clicking Planen button', async () => {
+  it('opens daily goals planner when clicking the Plan button', async () => {
     const user = userEvent.setup();
 
     render(<InboxPanel variant="sidebar" onOpenProject={vi.fn()} />);
 
-    const planBtn = screen.getByRole('button', { name: /Tagesziele planen/i });
+    const planBtn = screen.getByRole('button', { name: /Plan daily goals/i });
     await user.click(planBtn);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(
-      screen.getByText(/Wähle pro Projekt genau ein Mini-Sprint-Ziel für den Tag/i)
+      screen.getByText(/Pick one mini-sprint goal per project for today/i)
     ).toBeInTheDocument();
   });
 
-  it('sets an inbox item as daily goal when dropped into Tagesziele', () => {
+  it('sets an inbox item as daily goal when dropped into daily goals', () => {
     const item = makeItem({ id: 'unsorted-1', title: 'Plan launch', dailyGoal: false });
     storeState.inboxItems = [item];
 
@@ -122,7 +122,7 @@ describe('InboxPanel - Daily Goals Integration', () => {
     expect(mockSetDailyGoal).toHaveBeenCalledWith('unsorted-1', true);
   });
 
-  it('captures an overview ticket as daily goal when dropped into Tagesziele', () => {
+  it('captures an overview ticket as daily goal when dropped into daily goals', () => {
     const assignedItem = makeItem({
       id: 'assigned-1',
       projectPath: '/repos/alpha',

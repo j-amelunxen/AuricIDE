@@ -66,10 +66,10 @@ export function InboxDailyGoalsPlanner({
                 id="daily-goals-planner-title"
                 className="text-[14px] font-bold tracking-wide text-foreground"
               >
-                Tagesziele planen
+                Plan daily goals
               </h2>
               <p className="text-[11px] text-foreground-muted">
-                Wähle pro Projekt genau ein Mini-Sprint-Ziel für den Tag.
+                Pick one mini-sprint goal per project for today.
               </p>
             </div>
           </div>
@@ -87,7 +87,7 @@ export function InboxDailyGoalsPlanner({
         {/* Status bar */}
         <div className="border-b border-white/5 bg-white/[0.01] px-4 py-2">
           <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-amber-300">
-            {plannedCount} von {projects.length} Projekten haben ein Tagesziel
+            {plannedCount} of {projects.length} projects have a daily goal
           </span>
         </div>
 
@@ -95,7 +95,7 @@ export function InboxDailyGoalsPlanner({
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {projects.length === 0 ? (
             <p className="py-8 text-center text-[12px] text-foreground-muted">
-              Keine Projekte gefunden. Öffne oder favorisiere ein Projekt, um Tagesziele zu planen.
+              No projects found. Open or star a project to plan daily goals.
             </p>
           ) : (
             projects.map((project) => {
@@ -131,11 +131,11 @@ export function InboxDailyGoalsPlanner({
 
                       <button
                         type="button"
-                        aria-label="Tagesziel entfernen"
+                        aria-label="Remove daily goal"
                         onClick={() => onToggleDailyGoal(currentGoal.id)}
                         className="flex-shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold text-foreground-muted hover:bg-white/10 hover:text-foreground"
                       >
-                        Entfernen
+                        Remove
                       </button>
                     </div>
                   ) : (
@@ -143,7 +143,7 @@ export function InboxDailyGoalsPlanner({
                       {openTickets.length > 0 && (
                         <div>
                           <p className="mb-1 text-[9px] font-bold uppercase tracking-wider text-foreground-muted/60">
-                            Aus vorhandenen Tickets wählen:
+                            Pick from open tickets:
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {openTickets.slice(0, 6).map((ticket) => (
@@ -163,7 +163,7 @@ export function InboxDailyGoalsPlanner({
                       <div className="flex items-center gap-1.5 pt-1">
                         <input
                           type="text"
-                          placeholder={`Neues Tagesziel für ${project.name}...`}
+                          placeholder={`New daily goal for ${project.name}...`}
                           value={draftInputs[project.path] ?? ''}
                           onChange={(e) => handleInputChange(project.path, e.target.value)}
                           onKeyDown={(e) => {
@@ -180,7 +180,7 @@ export function InboxDailyGoalsPlanner({
                           disabled={!(draftInputs[project.path] ?? '').trim()}
                           className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-amber-500/20 hover:text-amber-300 disabled:opacity-40"
                         >
-                          Hinzufügen
+                          Add
                         </button>
                       </div>
                     </div>
@@ -198,7 +198,7 @@ export function InboxDailyGoalsPlanner({
             onClick={onClose}
             className="rounded-xl bg-primary px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-primary"
           >
-            Fertig
+            Done
           </button>
         </div>
       </div>

@@ -41,7 +41,7 @@ export function InboxOverviewTicketRow({
         }
       }}
       onDragEnd={() => setIsDragging(false)}
-      title={projectPath ? 'In die Tagesziele ziehen' : undefined}
+      title={projectPath ? 'Drag into daily goals' : undefined}
       className={`relative flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 transition-colors ${
         projectPath ? 'cursor-grab active:cursor-grabbing' : ''
       } ${isDragging ? 'opacity-40' : ''}`}
@@ -62,8 +62,8 @@ export function InboxOverviewTicketRow({
       {onSetDailyGoal && (
         <button
           type="button"
-          title="Als Tagesziel setzen"
-          aria-label="Als Tagesziel setzen"
+          title="Set as daily goal"
+          aria-label="Set as daily goal"
           onClick={onSetDailyGoal}
           className="rounded-lg p-1 text-foreground-muted transition-colors hover:bg-white/10 hover:text-amber-400 focus-visible:outline-2 focus-visible:outline-primary"
         >
