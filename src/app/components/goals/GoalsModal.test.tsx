@@ -136,33 +136,52 @@ describe('buildGoalLaunchPrompt', () => {
     expect(prompt).toContain('create_ticket');
   });
 
-  it('generates a prompt from name, description and criteria', () => {
+  it('points at the goal instead of carrying its description and criteria', () => {
     const prompt = buildGoalLaunchPrompt(makeGoal());
     expect(prompt).toContain('Ship orchestration');
-    expect(prompt).toContain('end to end');
-    expect(prompt).toContain('conductor completes a goal');
+    expect(prompt).not.toContain('end to end');
+    expect(prompt).not.toContain('conductor completes a goal');
     expect(prompt).toContain('evaluate_goal');
   });
 
   it('sends the agent to read the whole goal through get_goal before anything else', () => {
     const prompt = buildGoalLaunchPrompt(makeGoal({ id: 'g-7' }));
-    expect(prompt).toContain('## Read the full goal first');
+    expect(prompt).toContain('## Read the goal first');
     expect(prompt).toContain('get_goal (id: "g-7")');
-    expect(prompt.indexOf('Read the full goal first')).toBeLessThan(
+    expect(prompt.indexOf('Read the goal first')).toBeLessThan(
       prompt.indexOf('## Working agreement')
     );
   });
 
-  it('carries only an excerpt of a long description', () => {
-    const description = `${'lorem ipsum '.repeat(80)}FINAL-SENTENCE`;
-    const prompt = buildGoalLaunchPrompt(makeGoal({ description }));
-    expect(prompt).toContain('## Description (excerpt: first 400 of');
-    expect(prompt).not.toContain('FINAL-SENTENCE');
+  it('carries an explicit goal prompt whole, as the user wrote it', () => {
+    const goalPrompt = `Read missions/x/01-a.md. ${'rule '.repeat(60)}LAST-RULE`;
+    const prompt = buildGoalLaunchPrompt(makeGoal({ goalPrompt }));
+    expect(prompt).toContain(`## Goal instructions\n${goalPrompt}`);
   });
 
-  it('keeps the success criteria next to an explicit goal prompt, marked complete', () => {
-    const prompt = buildGoalLaunchPrompt(makeGoal({ goalPrompt: 'Custom prompt' }));
-    expect(prompt).toContain('## Success criteria (complete)\n- conductor completes a goal');
+  it('in stations mode, leaves the line to list_stations instead of listing it', () => {
+    const stations = Array.from({ length: 12 }, (_, i) =>
+      makeStation({ id: `station-${i}`, name: `Station number ${i}`, sortOrder: i })
+    );
+    const prompt = buildGoalLaunchPrompt(makeGoal({ id: 'g1' }), stations, 'stations');
+    expect(prompt).not.toContain('Station number 3');
+    expect(prompt).toContain('list_stations (goalId: "g1")');
+    expect(prompt).toContain('mark_station_done');
+  });
+
+  it('stays short enough for a /goal condition, with room for the user to add notes', () => {
+    const long = 'lorem ipsum '.repeat(300);
+    const stations = Array.from({ length: 12 }, (_, i) =>
+      makeStation({ id: `station-${i}`, name: `Station number ${i}`, sortOrder: i })
+    );
+    const goal = makeGoal({
+      id: 'df7f93e9-93af-4b71-8d3c-41a9e99580e7',
+      description: long,
+      successCriteria: long,
+    });
+    // /goal accepts at most 4000 characters; without a goal prompt the frame stays far below.
+    expect(buildGoalLaunchPrompt(goal, stations, 'stations').length).toBeLessThan(1200);
+    expect(buildGoalLaunchPrompt(goal, stations, 'tickets').length).toBeLessThan(2400);
   });
 
   it('tells the planning agent to attach tickets via goalId', () => {
@@ -280,10 +299,11 @@ describe('buildGoalLaunchPrompt in stations mode', () => {
     const prompt = buildGoalLaunchPrompt(makeGoal(), stations, 'stations');
 
     expect(prompt.startsWith('/goal\n\n')).toBe(true);
-    expect(prompt).toContain('1. Write the report (stationId: s1)');
+    expect(prompt).not.toContain('Write the report');
+    expect(prompt).toContain('list_stations (goalId: "g1")');
     expect(prompt).not.toMatch(/create_ticket|create_epic|list_epics/);
     expect(prompt).toMatch(/mark_station_done[\s\S]*stationId[\s\S]*evidence/i);
-    expect(prompt).toMatch(/do not create (an )?epic/i);
+    expect(prompt).toMatch(/no epic, no tickets/i);
     expect(prompt).toMatch(/human stations?[\s\S]*(person|human)/i);
     expect(prompt).toContain('evaluate_goal (id: "g1")');
     expect(prompt).toContain('Work mode: stations');
