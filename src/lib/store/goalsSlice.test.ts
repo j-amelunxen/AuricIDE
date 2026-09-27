@@ -522,6 +522,38 @@ describe('goalsSlice persistence', () => {
     expect(payload.deletedGoalIds).toEqual(['doomed']);
   });
 
+  it('a mission link an agent set while the UI had edits survives the next save', async () => {
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [makeGoal({ id: 'root' })],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+    });
+    const store = createTestStore();
+    await store.getState().loadGoals('/project');
+    store.getState().updateGoal('root', { name: 'Renamed in the UI' });
+    // Meanwhile an agent pointed the goal at its mission over MCP.
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [makeGoal({ id: 'root', missionPath: 'missions/sample' })],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+    });
+    await store.getState().loadGoals('/project');
+    expect(store.getState().goalsDraft[0]).toMatchObject({
+      name: 'Renamed in the UI',
+      missionPath: 'missions/sample',
+    });
+
+    await store.getState().saveGoals('/project');
+    const payload = mockGoalsSave.mock.calls[0][1] as {
+      goals: PmGoal[];
+      baseGoals: PmGoal[];
+    };
+    expect(payload.goals[0]).toMatchObject({ missionPath: 'missions/sample' });
+    expect(payload.baseGoals[0]).toMatchObject({ missionPath: 'missions/sample' });
+  });
+
   it('saveGoals adopts rows MCP agents wrote concurrently', async () => {
     const store = createTestStore();
     store.getState().addGoal(makeGoal({ id: 'local' }));

@@ -348,6 +348,18 @@ function applyMigrations(db: Database.Database): void {
     `);
     record(21, 'create_pm_goal_reviews');
   }
+
+  // Migration #22: a root goal's mission folder, relative to the project (keep in
+  // sync with src-tauri/src/database/migrations.rs). The column may already exist
+  // without its marker when the Rust side died between the two, so check first:
+  // SQLite has no ADD COLUMN IF NOT EXISTS.
+  if (!applied(22)) {
+    const columns = db.prepare('PRAGMA table_info(pm_goals)').all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === 'mission_path')) {
+      db.exec('ALTER TABLE pm_goals ADD COLUMN mission_path TEXT');
+    }
+    record(22, 'add_goal_mission_path');
+  }
 }
 
 function runMigrations(db: Database.Database): void {

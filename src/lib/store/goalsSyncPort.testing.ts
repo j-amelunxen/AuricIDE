@@ -44,6 +44,7 @@ const GOAL_COLUMNS = [
   'created_at',
   'updated_at',
   'work_mode',
+  'mission_path',
 ] as const;
 
 const RUN_COLUMNS = [

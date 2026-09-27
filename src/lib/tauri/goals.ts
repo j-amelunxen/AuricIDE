@@ -21,6 +21,11 @@ export interface PmGoal {
    * behaving as they did.
    */
   workMode?: GoalWorkModeSetting;
+  /**
+   * Root goals only: the mission folder this goal stands for, relative to the
+   * project root (`normalizeMissionPath`). Absent or null means no mission.
+   */
+  missionPath?: string | null;
   /** Provenance: which actor created this goal. */
   createdBy: GoalActor;
   achievedAt: string | null;

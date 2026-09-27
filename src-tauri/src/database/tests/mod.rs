@@ -92,6 +92,7 @@ pub(crate) fn make_test_goal(id: &str, parent_id: Option<&str>) -> PmGoal {
         priority: "normal".to_string(),
         goal_prompt: "".to_string(),
         work_mode: "auto".to_string(),
+        mission_path: None,
         created_by: "ui".to_string(),
         achieved_at: None,
         sort_order: 0,
