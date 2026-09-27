@@ -301,3 +301,20 @@ fn test_goal_payload_without_work_mode_deserializes_as_auto() {
     let goal: PmGoal = serde_json::from_str(json).unwrap();
     assert_eq!(goal.work_mode, "auto");
 }
+
+/// `in_review` (a reviewer's verdict is pending) is a goal status the backend
+/// stores verbatim: it has no goal-status vocabulary of its own, so the round
+/// trip is what "known on the Rust side" means. The vocabulary lives in
+/// src/lib/pm/enums.ts.
+#[test]
+fn test_goal_in_review_survives_save_and_load() {
+    let conn = setup_in_memory_db();
+    let mut goal = make_test_goal("g1", None);
+    goal.status = "in_review".to_string();
+
+    goals_sync_impl(&conn, &sync_payload(vec![goal], vec![], vec![])).unwrap();
+    let state = goals_load_impl(&conn).unwrap();
+
+    assert_eq!(state.goals[0].status, "in_review");
+    assert_eq!(state.goals[0].achieved_at, None);
+}

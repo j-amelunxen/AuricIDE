@@ -15,6 +15,7 @@ import { registerGoalTools } from './tools/goals';
 import { registerStationTools } from './tools/stations';
 import { registerKnowledgeTools } from './tools/knowledge';
 import { registerReviewTools } from './tools/reviews';
+import { registerGoalReviewTools } from './tools/goalReviews';
 import { registerNotificationTools } from './tools/notifications';
 import { registerAgentLaunchTools } from './tools/agentLaunch';
 import { openNotificationsDb } from './notificationsDb';
@@ -82,6 +83,7 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   registerStationTools(server, db);
   registerKnowledgeTools(server, projectRoot);
   registerReviewTools(server, db);
+  registerGoalReviewTools(server, db);
   attachNotificationTools(server, db, projectRoot);
 
   return server;
