@@ -85,6 +85,7 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
   // Re-evaluated when agents change, so a request held back at the limit
   // starts once a slot frees up.
   const agents = useStore((s) => s.agents);
+  const providersLoaded = useStore((s) => s.providers.length > 0);
   // Grants in force with their usage, as last read from the inbox db. Empty
   // until read, and empty again when a read fails: nothing starts (fail
   // closed) until a retry reads them.
@@ -117,17 +118,22 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
   // instance's own save or revoke, on every change to the inbox file (another
   // app instance granting, revoking or freeing a slot), after each start
   // under a grant, and on the retry timer.
+  // Reads can overlap (two changes in quick succession) and answer out of
+  // order; only the newest read may set the grants, or an answer from before
+  // a grant would put the ungranted state back until the next change.
   useEffect(() => {
     let live = true;
+    let newestRead = 0;
     reloadGrants.current = () => {
+      const read = ++newestRead;
       listLaunchGrants()
         .then((list) => {
-          if (!live) return;
+          if (!live || read !== newestRead) return;
           grants.current = list;
           reevaluate();
         })
         .catch(() => {
-          if (!live) return;
+          if (!live || read !== newestRead) return;
           grants.current = [];
           scheduleRetry();
         });
@@ -206,6 +212,9 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
 
     for (const { notification, action } of agentCandidates) {
       if (attempted.current.has(notification.uid)) continue;
+      // An agent start checks provider and model against the provider list;
+      // until it is in, wait (see the launch-request pass below).
+      if (!providersLoaded) continue;
       attempted.current.add(notification.uid);
       void startAgentFromNotification(notification, action, notificationTrust(notification));
     }
@@ -217,6 +226,11 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
     // grant row and the goal tree in project.db, right before the spawn. A
     // request held back is not marked attempted, so it is looked at again
     // when an agent finishes, the inbox changes or the retry comes due.
+    //
+    // Nothing starts before the provider list is in: provider and model are
+    // checked as a pair against it (`buildSpawnConfig`), and a request that
+    // arrives while the app is still opening must wait, not fail.
+    if (!providersLoaded) return;
     const store = useStore.getState();
     // Requests already attempted here are left out before the batch is
     // counted, so one that is settling cannot take a slot in the count.
@@ -257,7 +271,7 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
         reloadGrants.current();
       });
     }
-  }, [notifications, agents, openProject, grantTick, scheduleRetry]);
+  }, [notifications, agents, openProject, grantTick, scheduleRetry, providersLoaded]);
 }
 
 type AutoStartAction = Extract<NotificationAction, { kind: 'spawn-agent' | 'run-skill' }>;

@@ -234,7 +234,8 @@ interface LaunchRunRow {
 
 /**
  * What became of a launch request: `pending` (waiting for a click or a
- * grant), `running`, `completed`, `failed`, `killed`, `declined` (dismissed
+ * grant), `running`, `interrupted` (the IDE was closed while it ran; a resume
+ * reopens it), `completed`, `failed`, `killed`, `declined` (dismissed
  * in the inbox) or `gone` (cleared, unknown, or another project's).
  */
 export function getAgentRun(
@@ -312,7 +313,8 @@ export function registerAgentLaunchTools(
     name: 'get_agent_run',
     description:
       'Read what became of a request_agent_launch: status pending (waiting for a click or a ' +
-      'grant), running, completed, failed, killed, declined or gone, plus the agent, provider, ' +
+      'grant), running, interrupted (the IDE closed while it ran; resuming it continues), ' +
+      'completed, failed, killed, declined or gone, plus the agent, provider, ' +
       'model and a short summary of its output once it finished. Poll at a human pace.',
     parameters: z.object({ uid: z.string().describe('The uid request_agent_launch returned') }),
     execute: async ({ uid }) => JSON.stringify(getAgentRun(inboxDb, uid, defaults.projectPath)),

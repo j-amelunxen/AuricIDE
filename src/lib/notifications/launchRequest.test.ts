@@ -188,9 +188,25 @@ describe('a launch request as the IDE sees it', () => {
     expect(config.headless).not.toBe(true);
   });
 
-  // The chosen provider reaches the spawn untouched, whichever it is; the
+  // The chosen provider reaches the spawn untouched, whichever it is, with a
+  // model of its own (goal 10: the pair is checked, not the id alone); the
   // Rust spawn path then applies the project policy one last time.
-  it.each(['claude', 'codex', 'grok'])('launches the requested %s provider', (provider) => {
+  const PROVIDERS = [
+    { id: 'claude', defaultModel: 'opus' },
+    { id: 'codex', defaultModel: 'gpt-5-codex' },
+    { id: 'grok', defaultModel: 'grok-4' },
+  ].map((entry) => ({
+    ...entry,
+    name: entry.id,
+    models: [{ value: entry.defaultModel, label: entry.defaultModel }],
+    permissionModes: [],
+    defaultPermissionMode: 'default',
+  }));
+  it.each([
+    ['claude', 'opus'],
+    ['codex', 'gpt-5-codex'],
+    ['grok', 'grok-4'],
+  ])('launches the requested %s provider with its own model', (provider, model) => {
     localStorage.setItem(
       SPAWN_DEFAULTS_KEY,
       JSON.stringify({
@@ -204,10 +220,10 @@ describe('a launch request as the IDE sees it', () => {
     const [action] = parse(row);
     const config = buildSpawnConfig(
       action as Extract<NotificationAction, { kind: 'spawn-agent' }>,
-      onClick(row)
+      { ...onClick(row), providers: PROVIDERS }
     );
 
-    expect(config.provider).toBe(provider);
+    expect({ provider: config.provider, model: config.model }).toEqual({ provider, model });
   });
 
   it('carries the request uid into the launch so the run can be reported', () => {

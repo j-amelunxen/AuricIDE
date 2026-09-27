@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { UNATTENDED_AFTER_MS } from '@/lib/conductor/scheduledRun';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { Notification } from '@/lib/notifications/types';
@@ -48,6 +48,7 @@ vi.mock('@/lib/tauri/notifications', async (importOriginal) => ({
 }));
 
 import { useStore } from '@/lib/store';
+import { SPAWN_DEFAULTS_KEY } from '@/lib/agents/spawnDefaults';
 import { LAUNCH_RETRY_MS, useScheduledConductorRuns } from './useScheduledConductorRuns';
 
 const REPO = '/tmp/project-a';
@@ -187,7 +188,17 @@ describe('useScheduledConductorRuns', () => {
       goalsDraft: [],
       agents: [],
       openTabs: [],
-      providers: [],
+      // As in the running app: agent starts wait for this list (goal 10).
+      providers: [
+        {
+          id: 'claude',
+          name: 'Claude',
+          models: [],
+          permissionModes: [],
+          defaultModel: 'opus',
+          defaultPermissionMode: 'default',
+        },
+      ],
       startConductor,
       conductorTick,
       markNotificationRead,
@@ -344,6 +355,33 @@ describe('useScheduledConductorRuns', () => {
     expect(markNotificationRead).toHaveBeenCalledWith('n-agent');
   });
 
+  // Goal 10, station 3: a reminder that fires while the app is still opening
+  // waits for the provider list instead of starting an unchecked pair.
+  it('waits for the provider list before an agent auto launch', async () => {
+    mockIdleForMs.mockReturnValue(0);
+    useStore.setState({ providers: [], notifications: [autoAgentNotification()] });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    expect(spawnNewAgent).not.toHaveBeenCalled();
+
+    act(() =>
+      useStore.setState({
+        providers: [
+          {
+            id: 'claude',
+            name: 'Claude',
+            models: [],
+            permissionModes: [],
+            defaultModel: 'opus',
+            defaultPermissionMode: 'default',
+          },
+        ],
+      })
+    );
+
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalledTimes(1));
+  });
+
   it('starts an agent auto launch even while you are typing and another agent runs', async () => {
     mockIdleForMs.mockReturnValue(0);
     useStore.setState({
@@ -403,6 +441,24 @@ describe('useScheduledConductorRuns', () => {
 });
 
 describe('useScheduledConductorRuns: launch requests under a grant', () => {
+  const PROVIDERS = [
+    {
+      id: 'claude',
+      name: 'Claude',
+      models: [{ value: 'opus', label: 'Opus' }],
+      permissionModes: [],
+      defaultModel: 'opus',
+      defaultPermissionMode: 'default',
+    },
+    {
+      id: 'codex',
+      name: 'Codex',
+      models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
+      permissionModes: [],
+      defaultModel: 'gpt-5-codex',
+      defaultPermissionMode: 'workspace-write',
+    },
+  ];
   const ROOT = 'goal-root';
   const SUB = 'goal-sub';
   let spawnNewAgent: Mock;
@@ -492,7 +548,7 @@ describe('useScheduledConductorRuns: launch requests under a grant', () => {
       ],
       agents: [],
       openTabs: [],
-      providers: [],
+      providers: PROVIDERS,
       markNotificationRead,
       answerNotification,
       showToast,
@@ -775,6 +831,96 @@ describe('useScheduledConductorRuns: launch requests under a grant', () => {
       requestUid: 'req-1',
       grantId: grantTable.rows[0].id,
     });
+  });
+
+  // Goal 10, station 1: another instance grants while an earlier read is still
+  // in flight. The announcements come in order, the answers need not: a read
+  // started before the grant that answers last must not put the old state back.
+  it('starts a waiting request when an older grant read answers after a newer one', async () => {
+    useStore.setState({ notifications: [launchRequest()] });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await settle();
+    let answerStale: (rows: typeof grantTable.rows) => void = () => undefined;
+    mockListGrants.mockImplementationOnce(() => new Promise((resolve) => (answerStale = resolve)));
+    inboxChanged.fire();
+    grantMission();
+    inboxChanged.fire();
+    await settle();
+    answerStale([]);
+    await settle();
+
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalledTimes(1));
+  });
+
+  // Goal 10, station 3: the pair that is actually started. The last launch
+  // was Claude with Opus; the request names Codex and no model.
+  it("starts a request naming another provider with that provider's own model", async () => {
+    localStorage.setItem(
+      SPAWN_DEFAULTS_KEY,
+      JSON.stringify({
+        providerId: 'claude',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+        headless: false,
+      })
+    );
+    grantMission();
+    const request = launchRequest();
+    (request.actions as Array<Record<string, unknown>>)[0].provider = 'codex';
+    useStore.setState({ notifications: [request] });
+    renderHook(() => useScheduledConductorRuns(openProject));
+
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalledTimes(1));
+    expect(spawnNewAgent.mock.calls[0][0]).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+    localStorage.removeItem(SPAWN_DEFAULTS_KEY);
+  });
+
+  // Review r1: a remembered pair that no longer fits (Codex with Opus) is not
+  // started as it is; Codex gets its own model.
+  it("starts a request with a remembered but mismatched pair on the provider's own model", async () => {
+    localStorage.setItem(
+      SPAWN_DEFAULTS_KEY,
+      JSON.stringify({
+        providerId: 'codex',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+        headless: false,
+      })
+    );
+    grantMission();
+    const request = launchRequest();
+    (request.actions as Array<Record<string, unknown>>)[0].provider = 'codex';
+    useStore.setState({ notifications: [request] });
+    renderHook(() => useScheduledConductorRuns(openProject));
+
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalledTimes(1));
+    expect(spawnNewAgent.mock.calls[0][0]).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+    localStorage.removeItem(SPAWN_DEFAULTS_KEY);
+  });
+
+  // Without the provider list no pair can be checked; a start right after the
+  // app opened must wait for it, not fail the request.
+  it('waits for the provider list before starting a request', async () => {
+    grantMission();
+    const request = launchRequest();
+    (request.actions as Array<Record<string, unknown>>)[0].provider = 'codex';
+    useStore.setState({ providers: [], notifications: [request] });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await vi.waitFor(() => expect(mockListGrants).toHaveBeenCalled());
+    // Long enough for an ungated start to claim, fail and answer the request.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    expect(spawnNewAgent).not.toHaveBeenCalled();
+    expect(answerNotification).not.toHaveBeenCalled();
+
+    act(() => useStore.setState({ providers: PROVIDERS }));
+
+    await vi.waitFor(() => expect(spawnNewAgent).toHaveBeenCalledTimes(1));
   });
 
   it('starts waiting requests on grant only up to the limit', async () => {

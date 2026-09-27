@@ -219,6 +219,13 @@ function runMigrations(db: Database.Database): void {
     `);
     record(8, 'mark_legacy_mcp_schedule_reminders');
   }
+
+  // Mirrors inbox migration 9 (`notifications/schema.rs`): the IDE process
+  // that recorded a launch run `running`, so a restart can tell orphans.
+  if (!applied(9)) {
+    db.exec('ALTER TABLE agent_launch_runs ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT 0;');
+    record(9, 'add_launch_run_owner_pid');
+  }
 }
 
 export function openNotificationsDb(path: string): Database.Database {

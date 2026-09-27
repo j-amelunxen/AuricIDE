@@ -79,9 +79,11 @@ export interface AgentLaunchRunInput {
   agentName?: string | null;
   provider?: string | null;
   model?: string | null;
-  status: 'running' | 'completed' | 'failed' | 'killed';
+  status: 'running' | 'interrupted' | 'completed' | 'failed' | 'killed';
   summary?: string | null;
   error?: string | null;
+  /** The frontend's writes: they add the summary, never a status. */
+  summaryOnly?: boolean;
 }
 
 export async function notificationsRecordLaunchRun(input: AgentLaunchRunInput): Promise<void> {
