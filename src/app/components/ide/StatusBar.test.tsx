@@ -20,6 +20,11 @@ describe('StatusBar', () => {
     expect(screen.getByText('main')).toBeInTheDocument();
   });
 
+  it('marks the branch button so end-to-end tests can find it', () => {
+    render(<StatusBar branch="main" />);
+    expect(screen.getByTestId('status-branch')).toHaveTextContent('main');
+  });
+
   it('displays encoding', () => {
     render(<StatusBar encoding="UTF-8" />);
     expect(screen.getByText('UTF-8')).toBeInTheDocument();
