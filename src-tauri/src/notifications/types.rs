@@ -9,12 +9,12 @@ pub const NOTIFICATION_CAP: usize = 1000;
 
 pub struct NotificationsState {
     pub conn: Mutex<Connection>,
-    /// Holds the inbox file watcher for the process lifetime. Dropping it
+    /// Holds the inbox watch for the process lifetime. Dropping it
     /// would cut off every dispatch that did not come from this app — the
     /// MCP server's writes would sit in the database unseen. Never read: being
     /// owned is the whole job.
     #[allow(dead_code)]
-    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    pub watcher: Mutex<Option<super::InboxWatch>>,
 }
 
 /// Where the inbox lives inside the app data directory. Also handed to the
@@ -93,12 +93,17 @@ pub struct AgentLaunchRunInput {
     pub provider: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
-    /// `running`, `completed`, `failed` or `killed`.
+    /// `running`, `interrupted`, `completed`, `failed` or `killed`.
     pub status: String,
     #[serde(default)]
     pub summary: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+    /// Set by the frontend: it adds the summary it derived from the logs and
+    /// never a status. The status is the backend's alone (review r2): an
+    /// `idle` the store saw first must not turn a kill into `completed`.
+    #[serde(default)]
+    pub summary_only: bool,
 }
 
 /// Jennifer's standing permission for one mission root, as the UI asks for

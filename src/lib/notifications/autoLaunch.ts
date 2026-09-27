@@ -79,8 +79,9 @@ function sqliteUtcMs(value: string | null): number | null {
 function isUnderRoot(goalId: string, rootId: string, parents: Map<string, string | null>): boolean {
   let current: string | null | undefined = goalId;
   for (let hops = 0; current && hops <= parents.size; hops += 1) {
-    if (current === rootId) return true;
+    // Existence first: a deleted root is not its own root (goal 10).
     if (!parents.has(current)) return false;
+    if (current === rootId) return true;
     current = parents.get(current);
   }
   return false;

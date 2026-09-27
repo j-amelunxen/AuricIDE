@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GOAL_STATUSES,
+  isClosedGoalStatus,
   isClosedTicketStatus,
   isHiddenTicketStatus,
   MODEL_POWERS,
@@ -57,10 +58,18 @@ describe('project state vocabulary', () => {
       'draft',
       'active',
       'in_progress',
+      'in_review',
       'achieved',
       'failed',
       'archived',
     ]);
+  });
+
+  // in_review: the work is claimed done and a reviewer's verdict is pending.
+  // Still open work (it counts toward nothing achieved), but nobody works it meanwhile.
+  it('closes a goal only when achieved, failed or archived, never while in review', () => {
+    expect(GOAL_STATUSES.filter(isClosedGoalStatus)).toEqual(['achieved', 'failed', 'archived']);
+    expect(isClosedGoalStatus('in_review')).toBe(false);
   });
 
   it('pins the requirement lifecycle', () => {

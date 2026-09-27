@@ -1,6 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FastMCP } from 'fastmcp';
+import { z } from 'zod';
+import { GOAL_STATUSES } from '../../lib/pm/enums';
 import type Database from 'better-sqlite3';
-import { createGoal, evaluateGoal } from '../tools/goals';
+import {
+  createGoal,
+  evaluateGoal,
+  getGoal,
+  listGoals,
+  registerGoalTools,
+  updateGoal,
+} from '../tools/goals';
 import { createTestDb } from '../db';
 
 function seedEpic(db: Database.Database, id: string): void {
@@ -118,5 +128,42 @@ describe('evaluateGoal — the SQL twin of getGoalSatisfaction', () => {
     const result = evaluateGoal(db, root.id);
     expect(result.satisfied).toBe(false);
     expect(result.blockers).toContain('Station "Child step" is planned');
+  });
+});
+
+describe('goal tools: the status vocabulary', () => {
+  function statusParams(db: Database.Database) {
+    const addTool = vi.spyOn(FastMCP.prototype, 'addTool');
+    registerGoalTools(new FastMCP({ name: 'test', version: '1.0.0' }), db);
+    const tools = addTool.mock.calls.map(
+      ([t]) => t as unknown as { name: string; parameters: z.ZodObject<z.ZodRawShape> }
+    );
+    addTool.mockRestore();
+    return ['list_goals', 'create_goal', 'update_goal'].map((name) => {
+      const tool = tools.find((t) => t.name === name);
+      if (!tool) throw new Error(`${name} was not registered`);
+      return { name, status: tool.parameters.shape.status as z.ZodType };
+    });
+  }
+
+  it('accepts every goal status, in_review included, and nothing else', () => {
+    const db = createTestDb();
+    for (const { name, status } of statusParams(db)) {
+      for (const value of GOAL_STATUSES) {
+        expect(status.safeParse(value).success, `${name} ${value}`).toBe(true);
+      }
+      expect(status.safeParse('in_review').success, name).toBe(true);
+      expect(status.safeParse('done').success, name).toBe(false);
+    }
+    db.close();
+  });
+
+  it('stores and filters a goal in review without stamping it achieved', () => {
+    const db = createTestDb();
+    const goal = createGoal(db, { name: 'Under review' }, 'mcp');
+    updateGoal(db, goal.id, { status: 'in_review' });
+    expect(getGoal(db, goal.id)).toMatchObject({ status: 'in_review', achieved_at: null });
+    expect(listGoals(db, { status: 'in_review' }).map((g) => g.id)).toEqual([goal.id]);
+    db.close();
   });
 });

@@ -86,6 +86,8 @@ pub struct AgentStatusEvent {
 pub struct AgentProcess {
     pub info: AgentInfo,
     pub child: Box<dyn PtyChild + Send + Sync>,
+    /// The launch request this agent serves; a kill reports to it.
+    pub launch_request_uid: Option<String>,
 }
 
 pub struct AgentManager {

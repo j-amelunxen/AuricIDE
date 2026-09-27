@@ -4,7 +4,6 @@ import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { drainHeartbeatKinds } from '@/lib/agents/events/registry';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { announceHeadlessFinish, shouldNotifyHeadlessFinish } from '@/lib/agents/headlessFinish';
-import { recordLaunchStart } from '@/lib/agents/launchRunTracking';
 import { uniqueAgentName } from '@/lib/agents/naming';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
@@ -77,7 +76,7 @@ export async function handleSpawnNewAgent(
       };
     }
   }
-  const agent = await spawnAgent(spawnConfig);
+  const agent = await registering(() => spawnAgent(spawnConfig));
   const name = uniqueAgentName(
     agent.name,
     get().agents.map((a) => a.name)
@@ -138,7 +137,7 @@ export async function handleSpawnNewAgent(
       }
     }
   }
-  recordLaunchStart(spawnConfig, named);
+  replayEarlyStop(agent.id, get, set);
   return named;
 }
 
@@ -263,6 +262,51 @@ export function handleDismissFinishedAgent(
   });
 }
 
+/**
+ * Stops that arrived for an agent the store did not know yet. A run can end
+ * before `spawnAgent` or `resumeInterruptedAgent` has returned — the process
+ * exits at once, and its `agent-status` event overtakes the IPC answer.
+ * Dropping that event left the agent, its goal run and its launch request
+ * `running` for good; the spawn replays it once the agent is registered.
+ *
+ * Kept exactly as long as a spawn or resume is in flight, with no cap on how
+ * many: while one is pending, any unknown stop may be its agent's (review r2
+ * rejected a fixed limit that dropped the 51st). With none pending, an
+ * unknown stop belongs to nobody here and is not kept, and the next spawn
+ * starts from an empty map.
+ */
+const earlyStops = new Map<string, AgentInfo['status']>();
+let pendingRegistrations = 0;
+
+/** Runs a spawn or resume while early stops are kept for it. */
+async function registering<T>(start: () => Promise<T>): Promise<T> {
+  // Leftovers belong to no registration: every earlier one has replayed its
+  // stop by now (the replay runs right after this call returns).
+  if (pendingRegistrations === 0) earlyStops.clear();
+  pendingRegistrations += 1;
+  try {
+    return await start();
+  } finally {
+    pendingRegistrations -= 1;
+  }
+}
+
+function rememberEarlyStop(agentId: string, status: AgentInfo['status']): void {
+  if (pendingRegistrations > 0) earlyStops.set(agentId, status);
+}
+
+/** Applies a stop that arrived before `agentId` was registered, if any. */
+function replayEarlyStop(
+  agentId: string,
+  get: () => AgentSlice,
+  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+): void {
+  const early = earlyStops.get(agentId);
+  if (!early) return;
+  earlyStops.delete(agentId);
+  handleUpdateAgentStatus(agentId, early, get, set);
+}
+
 export function handleUpdateAgentStatus(
   agentId: string,
   status: AgentInfo['status'],
@@ -270,6 +314,9 @@ export function handleUpdateAgentStatus(
   set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
 ): void {
   const agent = get().agents.find((a) => a.id === agentId);
+  // Everything below is a no-op for an agent the store does not know; the
+  // replay after registration is what then takes effect.
+  if (!agent && (status === 'idle' || status === 'error')) rememberEarlyStop(agentId, status);
   if (status === 'error') {
     if (agent && agent.status !== 'error' && !willConductorRetry(get(), agentId)) {
       const toaster = get() as AgentSlice & {
@@ -428,13 +475,41 @@ export async function handleKillAgentsForRepoPath(
   void flushAgentLog();
 }
 
+/**
+ * The goal run the interrupted agent left `running` belongs to the agent that
+ * resumes it: without moving it, nothing would ever close it (review r2).
+ * A launch request's run is written through at once, like at a spawn.
+ */
+function rebindRunningGoalRun(
+  fromAgentId: string,
+  toAgentId: string,
+  launchRequestUid: string | null | undefined,
+  get: () => AgentSlice,
+  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+): void {
+  const goals = get() as AgentSlice & Partial<GoalsSlice> & { rootPath?: string | null };
+  const run = goals.goalRunsDraft?.find(
+    (entry) => entry.agentId === fromAgentId && entry.outcome === 'running'
+  );
+  if (!run || !goals.goalRunsDraft) return;
+  set({
+    goalRunsDraft: goals.goalRunsDraft.map((entry) =>
+      entry.id === run.id ? { ...entry, agentId: toAgentId } : entry
+    ),
+  } as Partial<AgentSlice>);
+  const projectPath = get().agentSpawnConfigs[toAgentId]?.projectPath ?? goals.rootPath;
+  if (launchRequestUid && projectPath && goals.persistGoalRun) {
+    goals.persistGoalRun(projectPath, run.id).catch(() => undefined);
+  }
+}
+
 export async function handleResumeInterruptedAgent(
   agentId: string,
   get: () => AgentSlice,
-  set: (update: Partial<AgentSlice>) => void
+  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
 ): Promise<AgentInfo> {
   const interrupted = get().interruptedAgents.find((a) => a.id === agentId);
-  const agent = await resumeInterruptedAgentApi(agentId);
+  const agent = await registering(() => resumeInterruptedAgentApi(agentId));
   set({
     interruptedAgents: get().interruptedAgents.filter((a) => a.id !== agentId),
     agents: [...get().agents, agent],
@@ -457,11 +532,17 @@ export async function handleResumeInterruptedAgent(
               headless: interrupted.headless,
               spawnedByTicketId: interrupted.spawnedByTicketId ?? undefined,
               spawnedByGoalId: interrupted.spawnedByGoalId ?? undefined,
+              // The backend resumes with the same request (agent_commands.rs);
+              // the frontend's summary must reach it too.
+              launchRequestUid: interrupted.launchRequestUid ?? undefined,
             },
           },
         }
       : {}),
   });
+  rebindRunningGoalRun(agentId, agent.id, interrupted?.launchRequestUid, get, set);
+  // A resumed run can end before this call returned, just like a new one.
+  replayEarlyStop(agent.id, get, set);
   const comboResume = get() as AgentSlice & {
     rebindSkillComboAgent?: (fromAgentId: string, toAgentId: string) => void;
   };
@@ -476,10 +557,22 @@ export async function handleDiscardInterruptedAgent(
 ): Promise<void> {
   try {
     await discardInterruptedAgentApi(agentId);
-  } catch {
-    // Already gone on backend
+  } catch (error) {
+    const message = String(error instanceof Error ? error.message : error);
+    // Already gone on the backend is a discard; anything else means the end
+    // of its run could not be recorded, and the backend kept the agent so the
+    // discard can be tried again.
+    if (!message.includes('not found')) {
+      const toaster = get() as AgentSlice & {
+        showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
+      };
+      toaster.showToast?.(`Could not discard the agent: ${message}`, 'error');
+      return;
+    }
   }
   set({ interruptedAgents: get().interruptedAgents.filter((a) => a.id !== agentId) });
+  // Its process is long gone; the goal run it left running ends here.
+  completeRunForAgent(get(), agentId, 'killed');
   const combo = get() as AgentSlice & {
     cancelSkillCombosForAgents?: (agentIds: string[]) => void;
   };

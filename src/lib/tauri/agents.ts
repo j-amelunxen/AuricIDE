@@ -169,6 +169,8 @@ export interface InterruptedAgent {
   startedAt: number;
   spawnedByTicketId?: string | null;
   spawnedByGoalId?: string | null;
+  /** The launch request it served; a resume keeps reporting to it. */
+  launchRequestUid?: string | null;
 }
 
 export async function listInterruptedAgents(): Promise<InterruptedAgent[]> {

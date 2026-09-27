@@ -133,6 +133,15 @@ describe('grantedAgentLaunches: negative (MET-09-trust)', () => {
     expect(launched([n])).toEqual([]);
   });
 
+  // Goal 10, station 4: the root was deleted while its grant is still in
+  // force. Neither the root itself nor a goal still pointing at it counts.
+  it('starts nothing for a deleted root, not even a request on the root itself', () => {
+    const withoutRoot = goals.filter((goal) => goal.id !== 'root');
+    const forRoot = request({ uid: 'a' }, action({ goalId: 'root' }));
+    const forSub = request({ uid: 'b' }, action({ goalId: 'sub' }));
+    expect(launched([forRoot, forSub], context({ goals: withoutRoot }))).toEqual([]);
+  });
+
   it('starts nothing for an unknown goal', () => {
     const n = request({}, action({ goalId: 'ghost' }));
     expect(launched([n])).toEqual([]);

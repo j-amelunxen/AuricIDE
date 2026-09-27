@@ -1,11 +1,23 @@
 import type { ComponentProps } from 'react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import { useStore } from '@/lib/store';
 import type { PmTicket } from '@/lib/tauri/pm';
+import { MISSION_FIXTURES } from '@/lib/missions/missionFs.testing';
+
+// The mission panel reads through the Tauri fs wrappers; here they read the
+// fixture missions from disk, so the panel sees real files.
+vi.mock('@/lib/tauri/fs', async (importOriginal) => {
+  const disk = (await import('@/lib/missions/missionFs.testing')).diskMissionFs;
+  return {
+    ...(await importOriginal<typeof import('@/lib/tauri/fs')>()),
+    readDirectory: disk.readDirectory,
+    readFile: disk.readFile,
+  };
+});
 
 function makeGoal(overrides: Partial<PmGoal> = {}): PmGoal {
   return {
@@ -323,5 +335,74 @@ describe('GoalDetailPanel ticket browser', () => {
     await user.click(screen.getByTestId('goal-ticket-unlink-t1'));
 
     expect(onUnlinkTicket).toHaveBeenCalledWith('t1');
+  });
+});
+
+describe('GoalDetailPanel conflicts with an agent', () => {
+  afterEach(() => useStore.setState({ goals: [], goalsDraft: [], goalConflicts: [] }));
+
+  it('asks the person to settle a clash on this goal', () => {
+    const mine = makeGoal({ status: 'archived' });
+    useStore.setState({
+      goals: [makeGoal({ status: 'in_progress' })],
+      goalsDraft: [mine],
+      goalConflicts: [{ table: 'pm_goals', id: 'g1', columns: ['status'], base: makeGoal() }],
+    });
+    renderPanel(mine);
+    expect(screen.getByTestId('goal-conflict-notice')).toHaveTextContent('agent: in_progress');
+  });
+});
+
+describe('GoalDetailPanel mission overview', () => {
+  afterEach(() => useStore.setState({ rootPath: null }));
+
+  it('shows the mission of a root goal, read from its folder in the project', async () => {
+    useStore.setState({ rootPath: MISSION_FIXTURES });
+    renderPanel(makeGoal({ missionPath: 'mission-sample' }));
+    const overview = await screen.findByTestId('mission-overview');
+    expect(within(overview).getByTestId('mission-path')).toHaveTextContent('mission-sample');
+    await waitFor(() => expect(within(overview).getAllByTestId('mission-subgoal')).toHaveLength(3));
+    expect(within(overview).getAllByTestId('mission-question')).toHaveLength(1);
+    expect(within(overview).getAllByTestId('mission-review').length).toBeGreaterThan(0);
+  });
+
+  it('shows a broken mission as broken, inside the goal view', async () => {
+    useStore.setState({ rootPath: MISSION_FIXTURES });
+    renderPanel(makeGoal({ missionPath: 'mission-broken' }));
+    const overview = await screen.findByTestId('mission-overview');
+    await waitFor(() =>
+      expect(within(overview).getAllByTestId('mission-problem').length).toBeGreaterThan(0)
+    );
+  });
+
+  it('says so when the mission folder does not exist', async () => {
+    useStore.setState({ rootPath: MISSION_FIXTURES });
+    renderPanel(makeGoal({ missionPath: 'mission-that-is-not-there' }));
+    const overview = await screen.findByTestId('mission-overview');
+    await waitFor(() => expect(within(overview).getByTestId('mission-problems')).toBeVisible());
+  });
+
+  it('shows nothing for a root goal without a mission', () => {
+    useStore.setState({ rootPath: MISSION_FIXTURES });
+    renderPanel(makeGoal());
+    expect(screen.queryByTestId('mission-overview')).toBeNull();
+  });
+
+  it('shows nothing for a sub-goal, even with a mission path written into the database', () => {
+    useStore.setState({ rootPath: MISSION_FIXTURES });
+    renderPanel(makeGoal({ parentId: 'root', missionPath: 'mission-sample' }));
+    expect(screen.queryByTestId('mission-overview')).toBeNull();
+  });
+
+  it('never reads a folder outside the project', () => {
+    useStore.setState({ rootPath: `${MISSION_FIXTURES}/mission-sample` });
+    renderPanel(makeGoal({ missionPath: '../mission-broken' }));
+    expect(screen.queryByTestId('mission-overview')).toBeNull();
+  });
+
+  it('shows nothing without an open project', () => {
+    useStore.setState({ rootPath: null });
+    renderPanel(makeGoal({ missionPath: 'mission-sample' }));
+    expect(screen.queryByTestId('mission-overview')).toBeNull();
   });
 });

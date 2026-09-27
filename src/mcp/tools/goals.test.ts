@@ -102,6 +102,55 @@ describe('goal MCP tools', () => {
       expect(() => updateGoal(db, goal.id, { workMode: 'sideways' })).toThrow(/work mode/i);
     });
 
+    it('lets a root goal point at its mission folder, relative to the project', () => {
+      const goal = createGoal(db, { name: 'Mission' }, 'mcp');
+      expect(goal.mission_path).toBeNull();
+      const pointed = createGoal(db, { name: 'Pointed', missionPath: './missions/sample/' }, 'mcp');
+      expect(pointed.mission_path).toBe('missions/sample');
+      expect(updateGoal(db, goal.id, { missionPath: 'missions/other' }).mission_path).toBe(
+        'missions/other'
+      );
+    });
+
+    it('clears the mission link with null or a blank value', () => {
+      const goal = createGoal(db, { name: 'M', missionPath: 'missions/sample' }, 'mcp');
+      expect(updateGoal(db, goal.id, { missionPath: null }).mission_path).toBeNull();
+      updateGoal(db, goal.id, { missionPath: 'missions/sample' });
+      expect(updateGoal(db, goal.id, { missionPath: '  ' }).mission_path).toBeNull();
+    });
+
+    it('leaves the mission link alone when an update does not mention it', () => {
+      const goal = createGoal(db, { name: 'M', missionPath: 'missions/sample' }, 'mcp');
+      expect(updateGoal(db, goal.id, { name: 'Renamed' }).mission_path).toBe('missions/sample');
+    });
+
+    it('refuses a mission path outside the project and writes nothing', () => {
+      expect(() =>
+        createGoal(db, { name: 'X', missionPath: '/abs/missions/sample' }, 'mcp')
+      ).toThrow(/relative to the project/i);
+      expect(listGoals(db)).toHaveLength(0);
+      const goal = createGoal(db, { name: 'Y' }, 'mcp');
+      expect(() => updateGoal(db, goal.id, { name: 'Z', missionPath: '../elsewhere' })).toThrow(
+        /inside the project/i
+      );
+      expect(getGoal(db, goal.id)).toMatchObject({ name: 'Y', mission_path: null });
+    });
+
+    it('keeps the mission link on root goals only', () => {
+      const root = createGoal(db, { name: 'Root', missionPath: 'missions/sample' }, 'mcp');
+      expect(() =>
+        createGoal(db, { name: 'Child', parentId: root.id, missionPath: 'missions/x' }, 'mcp')
+      ).toThrow(/root goal/i);
+      const child = createGoal(db, { name: 'Child', parentId: root.id }, 'mcp');
+      expect(() => updateGoal(db, child.id, { missionPath: 'missions/x' })).toThrow(/root goal/i);
+      // Moving a goal that carries a mission under a parent needs the link cleared too.
+      const other = createGoal(db, { name: 'Other' }, 'mcp');
+      expect(() => updateGoal(db, root.id, { parentId: other.id })).toThrow(/root goal/i);
+      expect(getGoal(db, root.id)?.parent_id).toBeNull();
+      const moved = updateGoal(db, root.id, { parentId: other.id, missionPath: null });
+      expect(moved).toMatchObject({ parent_id: other.id, mission_path: null });
+    });
+
     it('delete cascades to children via FK', () => {
       const p = createGoal(db, { name: 'P' }, 'mcp');
       const c = createGoal(db, { name: 'C', parentId: p.id }, 'mcp');

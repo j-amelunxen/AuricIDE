@@ -310,7 +310,7 @@ pub fn goals_save(
     project_path: String,
     payload: GoalsSyncPayload,
     state: tauri::State<'_, DatabaseState>,
-) -> Result<(), String> {
+) -> Result<database::GoalsSyncResult, String> {
     let connections = state.connections.lock().unwrap();
     let conn = connections
         .get(&project_path)
