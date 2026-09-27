@@ -22,6 +22,8 @@ import { GoalRequirementsSection } from './detail/GoalRequirementsSection';
 import { GoalRunsSection } from './detail/GoalRunsSection';
 import { MissionLaunchGrantSection } from './detail/MissionLaunchGrantSection';
 import { GoalConflictNotice } from './detail/GoalConflictNotice';
+import { MissionOverviewSection } from './detail/MissionOverviewSection';
+import { resolveMissionDir } from '@/lib/missions/missionPath';
 
 export { GoalWorkflowStepper } from './detail/GoalWorkflowStepper';
 export { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
@@ -78,6 +80,8 @@ export function GoalDetailPanel({
 }: GoalDetailPanelProps) {
   const stations = useStore((s) => s.goalStationsDraft);
   const rootPath = useStore((s) => s.rootPath);
+  // Only a root goal stands for a mission; the stored path is project-relative.
+  const missionDir = goal?.parentId === null ? resolveMissionDir(rootPath, goal.missionPath) : null;
 
   // The card and its "Mark achieved" button follow the completion transition,
   // the same rule as the conductor and MCP evaluate_goal.
@@ -201,6 +205,11 @@ export function GoalDetailPanel({
           satisfaction={{ satisfied: completion.achievable, blockers: completion.blockers }}
           onAchieve={onAchieve}
         />
+      )}
+
+      {/* Mission root: what its shared memory says, read from the files */}
+      {missionDir && (
+        <MissionOverviewSection key={missionDir} missionPath={missionDir} labelCls={labelCls} />
       )}
 
       {/* Actions */}
