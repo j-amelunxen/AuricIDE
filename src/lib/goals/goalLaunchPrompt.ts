@@ -1,5 +1,4 @@
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
-import { goalBriefSections } from './goalBrief';
 import type { GoalWorkMode } from './workMode';
 
 const TICKET_AGREEMENT = (goal: PmGoal): string =>
@@ -18,28 +17,29 @@ const TICKET_AGREEMENT = (goal: PmGoal): string =>
   'criteria are met or you are blocked.';
 
 const STATION_AGREEMENT = (goal: PmGoal, hasOwnLine: boolean): string =>
-  'Work mode: stations. ' +
-  `Work autonomously toward this goal. Its goalId is "${goal.id}". Use this exact ` +
-  'value with the auric-pm MCP tools, do not look it up by name. Do not create an epic or ' +
-  'tickets for this goal: its stations are the plan. ' +
+  `Work mode: stations. Use goalId "${goal.id}" exactly with the auric-pm tools. ` +
+  'No epic, no tickets: the stations are the plan. ' +
   (hasOwnLine
-    ? 'Work the saved line directly, in its order. '
-    : 'Its stations live on its sub-goals: call get_goal_tree and list_stations for each ' +
-      'sub-goal, and work them in order. ') +
-  'For each station, do the work, then call mark_station_done with its stationId and an ' +
-  'evidenceNote that says what you did and where the evidence lives (file path, command, ' +
-  'commit). A done station counts once its evidence is verified. Leave human stations to a ' +
-  'person: never mark them done yourself, say what the person has to check. ' +
-  `Use list_stations (goalId: "${goal.id}") to see where the line stands and ` +
-  `evaluate_goal (id: "${goal.id}") to check progress, and record findings via ` +
-  'write_finding. Do NOT call record_goal_run: this run is already recorded. Exit when ' +
-  'every station you can do is done, or you are blocked.';
+    ? `list_stations (goalId: "${goal.id}") gives the line in order. `
+    : 'Its stations live on its sub-goals: get_goal_tree, then list_stations per sub-goal. ') +
+  'Work them in order; after each one, call mark_station_done with its stationId and an ' +
+  'evidenceNote saying what you did and where the evidence is. Human stations belong to a ' +
+  'person: never mark them, say what to check. ' +
+  `evaluate_goal (id: "${goal.id}") shows progress; record findings via write_finding. ` +
+  'Do not call record_goal_run. Stop when every station you can do is done, or you are blocked.';
+
+/** The goal lives in the IDE; the prompt points at it rather than copying it. */
+const READ_GOAL_FIRST = (goal: PmGoal): string =>
+  `## Read the goal first\nCall get_goal (id: "${goal.id}") before anything else and read ` +
+  'its description, success criteria and goal prompt. This prompt only points at them.';
 
 /**
- * Builds the launch prompt for a goal. The goal itself travels as a brief
- * (`goalBriefSections`): read the full goal via get_goal first, then a marked
- * excerpt of description and success criteria; an explicit goalPrompt is
- * carried whole, since it is the user's instruction to the agent.
+ * Builds the launch prompt for a goal. It points at the goal instead of copying
+ * it: get_goal gives description and criteria, list_stations the line. Copying
+ * them made prompts too long for a /goal condition (4000 characters) and paid
+ * for the same text on every turn. An explicit goalPrompt is carried whole,
+ * since it is the user's instruction to the agent; the ticket mode still lists
+ * the saved line, because its agent links a ticket to each stationId.
  * The working agreement follows the goal's work mode: in ticket mode the agent
  * turns the line into an epic and tickets, in stations mode it works the
  * stations itself and marks each one done with evidence.
@@ -50,14 +50,12 @@ export function buildGoalLaunchPrompt(
   mode: GoalWorkMode = 'tickets'
 ): string {
   const parts = [`# Goal: ${goal.name} (goalId: ${goal.id})`];
-  const [readFirst, ...excerpts] = goalBriefSections(goal);
-  parts.push(readFirst);
+  parts.push(READ_GOAL_FIRST(goal));
   if (goal.goalPrompt.trim()) parts.push(`## Goal instructions\n${goal.goalPrompt}`);
-  parts.push(...excerpts);
   const savedLine = stations
     .filter((station) => station.goalId === goal.id)
     .sort((a, b) => a.sortOrder - b.sortOrder);
-  if (savedLine.length > 0) {
+  if (savedLine.length > 0 && mode !== 'stations') {
     parts.push(
       `## Saved line\n${savedLine
         .map(
