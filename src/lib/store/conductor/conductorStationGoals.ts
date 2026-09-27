@@ -1,5 +1,6 @@
 import { isLaunchRequest } from '@/lib/notifications/launchRequest';
 import type { Notification } from '@/lib/notifications/types';
+import { isClosedGoalStatus } from '@/lib/pm/enums';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
@@ -22,12 +23,6 @@ import { MAX_TICKET_ATTEMPTS } from './conductorTypes';
 
 /** Rows that never reached the database carry this id (notificationsSlice). */
 const LOCAL_ONLY_ID = 0;
-
-const CLOSED_GOAL_STATUSES: ReadonlySet<PmGoal['status']> = new Set([
-  'achieved',
-  'failed',
-  'archived',
-]);
 
 export interface StationGoalWork {
   /** Every open stations goal in scope: a run can at least check whether it is achieved. */
@@ -74,7 +69,7 @@ function stationGoalsInScope(input: StationGoalInput): PmGoal[] {
   const scope = [...(root ? [root] : []), ...getGoalDescendants(goals, goalId)];
   return scope.filter(
     (goal) =>
-      !CLOSED_GOAL_STATUSES.has(goal.status) &&
+      !isClosedGoalStatus(goal.status) &&
       stations.some((s) => s.goalId === goal.id) &&
       getGoalWorkMode(goals, tickets, stations, goal.id).mode === 'stations'
   );
@@ -103,7 +98,14 @@ export function getStationGoalWork(input: StationGoalInput): StationGoalWork {
     work.inScope.push(goal.id);
     const own = input.stations.filter((s) => s.goalId === goal.id);
     const judgePending = input.judgeConfigured && own.some(awaitsJudge);
-    if (hasOpenRequest(input, goal.id) || hasLiveAgent(input, goal.id) || judgePending) {
+    // A goal in review waits for its verdict; a second agent would work what is being judged.
+    const reviewPending = goal.status === 'in_review';
+    if (
+      hasOpenRequest(input, goal.id) ||
+      hasLiveAgent(input, goal.id) ||
+      judgePending ||
+      reviewPending
+    ) {
       work.inFlight.push(goal.id);
       continue;
     }

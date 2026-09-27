@@ -253,6 +253,17 @@ describe('launch runs and claims in the MCP view of the inbox', () => {
     ).run(uid);
   }
 
+  // Mirrors inbox migration 9: the owner of a running launch run.
+  it('records which IDE process owns a launch run', () => {
+    const columns = (
+      db.prepare('PRAGMA table_info(agent_launch_runs)').all() as Array<{
+        name: string;
+        dflt_value: string | null;
+      }>
+    ).filter((column) => column.name === 'owner_pid');
+    expect(columns).toEqual([expect.objectContaining({ name: 'owner_pid', dflt_value: '0' })]);
+  });
+
   it('has the claim, usage and grant tables the IDE writes', () => {
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'agent_launch_%'")

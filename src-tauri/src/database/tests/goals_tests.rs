@@ -301,3 +301,54 @@ fn test_goal_payload_without_work_mode_deserializes_as_auto() {
     let goal: PmGoal = serde_json::from_str(json).unwrap();
     assert_eq!(goal.work_mode, "auto");
 }
+
+#[test]
+fn test_goal_mission_path_roundtrips_and_defaults_to_none() {
+    let conn = setup_in_memory_db();
+
+    let mut mission_goal = make_test_goal("g1", None);
+    mission_goal.mission_path = Some("missions/sample".to_string());
+    let payload = sync_payload(
+        vec![mission_goal, make_test_goal("g2", None)],
+        vec![],
+        vec![],
+    );
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    let g1 = state.goals.iter().find(|g| g.id == "g1").unwrap();
+    let g2 = state.goals.iter().find(|g| g.id == "g2").unwrap();
+    assert_eq!(g1.mission_path.as_deref(), Some("missions/sample"));
+    assert_eq!(g2.mission_path, None);
+
+    let json = serde_json::to_value(g1).unwrap();
+    assert_eq!(json["missionPath"], "missions/sample");
+    assert!(serde_json::to_value(g2).unwrap()["missionPath"].is_null());
+}
+
+#[test]
+fn test_goal_payload_without_mission_path_deserializes_as_none() {
+    let json = r#"{"id":"g1","parentId":null,"name":"Goal","description":"",
+        "successCriteria":"","status":"draft","priority":"normal","goalPrompt":"",
+        "createdBy":"ui","achievedAt":null,"sortOrder":0,
+        "createdAt":"2026-01-01 00:00:00","updatedAt":"2026-01-01 00:00:00"}"#;
+    let goal: PmGoal = serde_json::from_str(json).unwrap();
+    assert_eq!(goal.mission_path, None);
+}
+
+/// `in_review` (a reviewer's verdict is pending) is a goal status the backend
+/// stores verbatim: it has no goal-status vocabulary of its own, so the round
+/// trip is what "known on the Rust side" means. The vocabulary lives in
+/// src/lib/pm/enums.ts.
+#[test]
+fn test_goal_in_review_survives_save_and_load() {
+    let conn = setup_in_memory_db();
+    let mut goal = make_test_goal("g1", None);
+    goal.status = "in_review".to_string();
+
+    goals_sync_impl(&conn, &sync_payload(vec![goal], vec![], vec![])).unwrap();
+    let state = goals_load_impl(&conn).unwrap();
+
+    assert_eq!(state.goals[0].status, "in_review");
+    assert_eq!(state.goals[0].achieved_at, None);
+}

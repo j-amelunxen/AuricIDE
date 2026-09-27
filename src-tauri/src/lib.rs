@@ -118,6 +118,14 @@ pub fn run() {
                     ) {
                         eprintln!("Launch claims: could not free orphaned slots: {error}");
                     }
+                    // Runs whose IDE process is gone cannot be running,
+                    // whichever of their writes got lost.
+                    if let Err(error) = notifications::reconcile_orphaned_launch_runs_impl(
+                        &conn,
+                        &notifications::process_is_alive,
+                    ) {
+                        eprintln!("Launch runs: could not mark orphaned runs: {error}");
+                    }
                     app.manage(notifications::NotificationsState {
                         conn: std::sync::Mutex::new(conn),
                         watcher: std::sync::Mutex::new(watcher),
@@ -210,7 +218,34 @@ pub fn run() {
                 .lock()
                 .map(|p| p.max_agent_number())
                 .unwrap_or(0);
+            // Agents whose run already has its verdict ended; only letting go
+            // of their anchor did not land. They are not offered for resume.
+            if let (Some(inbox), Ok(mut p)) = (
+                app.try_state::<notifications::NotificationsState>(),
+                persistence.lock(),
+            ) {
+                if let Ok(conn) = inbox.conn.lock() {
+                    let is_final = |uid: &str, agent: &str| {
+                        notifications::launch_run_is_final_for(&conn, uid, agent).unwrap_or(false)
+                    };
+                    let ended = agents::launch_runs::settled(&p.interrupted(), &is_final);
+                    if let Err(error) = p.settle(&ended) {
+                        // They are out of the list already; the file follows
+                        // with the next save that works.
+                        eprintln!("Agent persistence: {error}");
+                    }
+                }
+            }
+            // The launch runs of the others would otherwise report `running`
+            // for good.
+            let left_behind = persistence
+                .lock()
+                .map(|p| p.interrupted())
+                .unwrap_or_default();
             app.manage(persistence);
+            for run in agents::launch_runs::interrupted(&left_behind) {
+                agents::launch_runs::record(app.handle(), run);
+            }
             if max_restored > 0 {
                 let manager_state = app.state::<AgentManagerState>().inner().clone();
                 tauri::async_runtime::block_on(async move {

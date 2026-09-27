@@ -1,6 +1,7 @@
 use super::operations::*;
 use super::schema::*;
 use super::types::*;
+use super::watch::*;
 use rusqlite::{params, Connection};
 
 fn test_db() -> Connection {
@@ -508,6 +509,7 @@ fn run(uid: &str, status: &str) -> AgentLaunchRunInput {
         status: status.to_string(),
         summary: None,
         error: None,
+        summary_only: false,
     }
 }
 
@@ -557,6 +559,248 @@ fn a_finished_run_is_not_reopened() {
     record_launch_run_impl(&conn, &run("req-1", "running")).unwrap();
 
     assert_eq!(stored(&conn, "req-1").1, "failed");
+}
+
+// Goal 10, station 2: the backend owns the run's status; the frontend only
+// adds the summary it derives from the logs, and may do so after the end.
+#[test]
+fn a_summary_from_the_frontend_lands_after_the_backend_finished_the_run() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "running")).unwrap();
+    record_launch_run_impl(&conn, &run("req-1", "completed")).unwrap();
+
+    // The store saw the exit as failed; the backend's verdict stands.
+    let mut late = run("req-1", "failed");
+    late.summary = Some("Tests green".to_string());
+    record_launch_run_impl(&conn, &late).unwrap();
+
+    let (_, status, summary, _) = stored(&conn, "req-1");
+    assert_eq!(status, "completed");
+    assert_eq!(summary.as_deref(), Some("Tests green"));
+}
+
+#[test]
+fn a_summary_for_another_agent_does_not_land() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "completed")).unwrap();
+
+    let mut other = run("req-1", "completed");
+    other.agent_id = "agent-9".to_string();
+    other.summary = Some("not mine".to_string());
+    record_launch_run_impl(&conn, &other).unwrap();
+
+    let (agent, _, summary, _) = stored(&conn, "req-1");
+    assert_eq!(agent, "agent-3");
+    assert!(summary.is_none());
+}
+
+/// An IDE restart leaves the run `interrupted`, not `running` forever; a
+/// resume is a new agent on the same request and reopens it.
+#[test]
+fn an_interrupted_run_is_reopened_by_the_resumed_agent() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "running")).unwrap();
+    record_launch_run_impl(&conn, &run("req-1", "interrupted")).unwrap();
+    assert_eq!(stored(&conn, "req-1").1, "interrupted");
+
+    let mut resumed = run("req-1", "running");
+    resumed.agent_id = "agent-12".to_string();
+    record_launch_run_impl(&conn, &resumed).unwrap();
+
+    let (agent, status, _, finished) = stored(&conn, "req-1");
+    assert_eq!((agent.as_str(), status.as_str()), ("agent-12", "running"));
+    assert!(finished.is_none());
+}
+
+fn run_of(uid: &str, agent: &str, status: &str) -> AgentLaunchRunInput {
+    AgentLaunchRunInput {
+        agent_id: agent.to_string(),
+        ..run(uid, status)
+    }
+}
+
+fn identity(conn: &Connection, uid: &str) -> (Option<String>, Option<String>, Option<String>) {
+    conn.query_row(
+        "SELECT agent_name, provider, model FROM agent_launch_runs WHERE request_uid = ?1",
+        params![uid],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+    .expect("row")
+}
+
+/// Review r1: the boot-time `interrupted` of the old agent arrives after the
+/// resumed agent already reported `running`. It must not overwrite it.
+#[test]
+fn a_late_interrupted_of_the_old_agent_leaves_the_resumed_one_running() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "running")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "interrupted")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-12", "running")).unwrap();
+
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "interrupted")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "failed")).unwrap();
+
+    let (agent, status, _, _) = stored(&conn, "req-1");
+    assert_eq!((agent.as_str(), status.as_str()), ("agent-12", "running"));
+}
+
+/// A late verdict of an agent that no longer owns the run frees no slot.
+#[test]
+fn a_late_verdict_of_the_old_agent_keeps_the_slot() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    claim_at(&mut conn, "req-1", 5, 5).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "running")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "interrupted")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-12", "running")).unwrap();
+
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "failed")).unwrap();
+    let claims: i64 = conn
+        .query_row("SELECT COUNT(*) FROM agent_launch_claims", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(claims, 1);
+
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-12", "completed")).unwrap();
+    let claims: i64 = conn
+        .query_row("SELECT COUNT(*) FROM agent_launch_claims", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(claims, 0);
+}
+
+/// Review r2: whatever write got lost — the verdict, the restart anchor, a
+/// discard — a run whose IDE process is gone is not `running` after the next
+/// start. The owner is the process that recorded `running`.
+#[test]
+fn a_running_run_of_a_dead_instance_is_interrupted_at_the_next_start() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    launch_request(&mut conn, "req-2");
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-1", "running")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-2", "agent-2", "running")).unwrap();
+    let us = std::process::id();
+    conn.execute(
+        "UPDATE agent_launch_runs SET owner_pid = 999999 WHERE request_uid = 'req-2'",
+        [],
+    )
+    .unwrap();
+
+    let reconciled = reconcile_orphaned_launch_runs_impl(&conn, &|pid| pid == us).unwrap();
+
+    assert_eq!(reconciled, 1);
+    assert_eq!(stored(&conn, "req-1").1, "running");
+    assert_eq!(stored(&conn, "req-2").1, "interrupted");
+}
+
+/// Review r2: a resumed agent that ends before its own `running` landed takes
+/// the interrupted run over; the late `running` does not reopen it.
+#[test]
+fn a_verdict_of_the_resumed_agent_takes_over_the_interrupted_run() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "running")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-2", "interrupted")).unwrap();
+
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-12", "completed")).unwrap();
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-12", "running")).unwrap();
+
+    let (agent, status, _, _) = stored(&conn, "req-1");
+    assert_eq!((agent.as_str(), status.as_str()), ("agent-12", "completed"));
+}
+
+/// Review r2: the frontend saw `idle` for a killed agent and reports it; its
+/// write carries the summary only, the backend's `killed` stands.
+#[test]
+fn a_frontend_summary_never_sets_the_status() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-3", "running")).unwrap();
+
+    let frontend = AgentLaunchRunInput {
+        summary: Some("half done".to_string()),
+        summary_only: true,
+        ..run_of("req-1", "agent-3", "completed")
+    };
+    record_launch_run_impl(&conn, &frontend).unwrap();
+    assert_eq!(stored(&conn, "req-1").1, "running");
+
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-3", "killed")).unwrap();
+    let (_, status, summary, _) = stored(&conn, "req-1");
+    assert_eq!(status, "killed");
+    assert_eq!(summary.as_deref(), Some("half done"));
+}
+
+/// Review r1: the exit overtook the spawn record. The late `running` of the
+/// same agent fills in who it was, and does not reopen the run.
+#[test]
+fn a_late_running_of_a_finished_agent_only_fills_in_its_identity() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    let bare = AgentLaunchRunInput {
+        agent_name: None,
+        provider: None,
+        model: None,
+        ..run_of("req-1", "agent-3", "completed")
+    };
+    record_launch_run_impl(&conn, &bare).unwrap();
+
+    record_launch_run_impl(&conn, &run_of("req-1", "agent-3", "running")).unwrap();
+
+    assert_eq!(stored(&conn, "req-1").1, "completed");
+    assert_eq!(
+        identity(&conn, "req-1"),
+        (
+            Some("Worker".to_string()),
+            Some("codex".to_string()),
+            Some("gpt".to_string())
+        )
+    );
+}
+
+#[test]
+fn a_finished_run_is_not_marked_interrupted() {
+    let mut conn = test_db();
+    launch_request(&mut conn, "req-1");
+    record_launch_run_impl(&conn, &run("req-1", "completed")).unwrap();
+
+    record_launch_run_impl(&conn, &run("req-1", "interrupted")).unwrap();
+
+    assert_eq!(stored(&conn, "req-1").1, "completed");
+}
+
+/// Fault injection: the MCP server (or a second instance) holds the write
+/// lock for 300 ms. The IDE's write waits (rusqlite opens with a 5 s busy
+/// timeout) instead of failing with "database is locked". Guards that default,
+/// which nothing in `init_db` states.
+#[test]
+fn recording_a_run_waits_for_another_writer_instead_of_failing() {
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    let mut ours = init_db(&path).unwrap();
+    launch_request(&mut ours, "req-1");
+    let other = init_db(&path).unwrap();
+    other
+        .execute_batch("BEGIN IMMEDIATE; UPDATE notifications SET title = title;")
+        .unwrap();
+    let holder = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        other.execute_batch("COMMIT").unwrap();
+    });
+
+    let result = record_launch_run_impl(&ours, &run("req-1", "running"));
+    holder.join().unwrap();
+
+    assert_eq!(result, Ok(()));
+    assert_eq!(stored(&ours, "req-1").1, "running");
 }
 
 #[test]
@@ -992,6 +1236,56 @@ fn ancestry_is_read_from_the_project_database() {
     assert!(!goal_is_under_root_in_project(&path, "missing", "root-1").unwrap());
     assert!(!goal_is_under_root_in_project(&path, "loop-a", "root-1").unwrap());
     assert!(goal_is_under_root_in_project("/no/such/project", "goal-1", "root-1").is_err());
+}
+
+/// Goal 10, station 4: a deleted mission root no longer exists for a grant —
+/// not as its own root, and not as the parent a surviving goal still names.
+#[test]
+fn a_deleted_root_is_under_nothing_and_nothing_is_under_it() {
+    let project = project_with_goals(&[("root-1", None), ("goal-1", Some("root-1"))]);
+    let path = project.path().to_string_lossy().into_owned();
+    Connection::open(project.path().join(".auric/project.db"))
+        .unwrap()
+        .execute("DELETE FROM pm_goals WHERE id = 'root-1'", [])
+        .unwrap();
+
+    assert!(!goal_is_under_root_in_project(&path, "root-1", "root-1").unwrap());
+    assert!(!goal_is_under_root_in_project(&path, "goal-1", "root-1").unwrap());
+}
+
+/// The same at the claim: a request waiting on the root itself, the root
+/// deleted through another connection after the grant was given.
+#[test]
+fn a_request_on_a_deleted_root_is_not_claimed() {
+    let project = project_with_goals(&[("root-1", None)]);
+    let path = project.path().to_string_lossy().into_owned();
+    let mut conn = test_db();
+    let mut request = input("Agent requested");
+    request.uid = Some("req-1".to_string());
+    request.source = "agent".to_string();
+    request.origin = Some("request_agent_launch".to_string());
+    request.dedupe_key = Some("agent-launch:req-1".to_string());
+    request.ref_kind = Some("goal".to_string());
+    request.ref_id = Some("root-1".to_string());
+    request.project_path = Some(path.clone());
+    dispatch_impl(&mut conn, &request).unwrap();
+    let mut grant = grant_input("g1", "root-1", 2, 5);
+    grant.project_path = path.clone();
+    save_launch_grant_impl(&mut conn, &grant).unwrap();
+    Connection::open(project.path().join(".auric/project.db"))
+        .unwrap()
+        .execute("DELETE FROM pm_goals WHERE id = 'root-1'", [])
+        .unwrap();
+
+    let outcome = claim_launch_impl(
+        &mut conn,
+        &claim_input("req-1", "g1"),
+        &goal_is_under_root_in_project,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, LaunchClaimOutcome::OutsideRoot);
+    assert_eq!(launch_grant_usage_impl(&conn, "g1").unwrap(), 0);
 }
 
 /// The goal is under the granted root when the UI loaded it; a second
@@ -1518,4 +1812,62 @@ fn the_native_claim_agrees_with_the_lean_oracle_only_when_intact() {
         eprintln!("oracle mutant '{name}': {caught} disagreeing traces");
         assert!(caught > 0, "mutant '{name}' survived the corpus");
     }
+}
+
+/// Goal 10, station 1: a grant written by a second instance 50 ms after an
+/// earlier write must still be announced, after it landed. Both connections
+/// stay open, as a second instance and the MCP server keep theirs: macOS then
+/// reports no file event for either write, and before the fix nothing was
+/// announced at all (and a second event inside the 300 ms window was dropped).
+#[test]
+fn the_watcher_announces_a_grant_written_right_after_another_write() {
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    let mut first = init_db(&path).unwrap();
+    let mut second = init_db(&path).unwrap();
+    let calls = Arc::new(Mutex::new(Vec::<Instant>::new()));
+    let sink = Arc::clone(&calls);
+    let _watcher = watch_inbox(&path, move || sink.lock().unwrap().push(Instant::now())).unwrap();
+    // FSEvents needs a moment before the stream delivers anything.
+    std::thread::sleep(Duration::from_millis(500));
+
+    save_launch_grant_impl(&mut first, &grant_input("g1", "root-1", 2, 5)).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    save_launch_grant_impl(&mut second, &grant_input("g2", "root-2", 2, 5)).unwrap();
+    let granted = Instant::now();
+
+    let deadline = granted + Duration::from_secs(5);
+    while Instant::now() < deadline && !calls.lock().unwrap().iter().any(|at| *at >= granted) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let calls = calls.lock().unwrap();
+    assert!(
+        calls.iter().any(|at| *at >= granted),
+        "second grant never announced ({} announcement(s) before it)",
+        calls.len()
+    );
+}
+
+#[test]
+fn a_dropped_inbox_watch_announces_nothing_more() {
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    let mut writer = init_db(&path).unwrap();
+    let calls = Arc::new(Mutex::new(0usize));
+    let sink = Arc::clone(&calls);
+    let watch = watch_inbox(&path, move || *sink.lock().unwrap() += 1).unwrap();
+    drop(watch);
+    std::thread::sleep(Duration::from_millis(700));
+    let before = *calls.lock().unwrap();
+
+    save_launch_grant_impl(&mut writer, &grant_input("g1", "root-1", 2, 5)).unwrap();
+    std::thread::sleep(Duration::from_millis(1500));
+
+    assert_eq!(*calls.lock().unwrap(), before);
 }

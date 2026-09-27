@@ -314,6 +314,52 @@ function applyMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE pm_goals ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'auto'");
     record(20, 'add_goal_work_mode');
   }
+
+  // Migration #21: goal reviews with rating (keep in sync with
+  // src-tauri/src/database/migrations.rs; contract in goalReviewsSchema.fixtures.json).
+  if (!applied(21)) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pm_goal_reviews (
+        id               TEXT PRIMARY KEY,
+        goal_id          TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+        verdict          TEXT NOT NULL CHECK (verdict IN ('approve', 'rework', 'escalate')),
+        decision         TEXT NOT NULL CHECK (decision IN ('approve', 'rework', 'escalate')),
+        criteria_met     INTEGER NOT NULL
+                         CHECK (typeof(criteria_met) = 'integer' AND criteria_met BETWEEN 1 AND 5),
+        solves_problem   INTEGER NOT NULL
+                         CHECK (typeof(solves_problem) = 'integer' AND solves_problem BETWEEN 1 AND 5),
+        solution_quality INTEGER NOT NULL
+                         CHECK (typeof(solution_quality) = 'integer' AND solution_quality BETWEEN 1 AND 5),
+        scope_respected  INTEGER NOT NULL
+                         CHECK (typeof(scope_respected) = 'integer' AND scope_respected BETWEEN 1 AND 5),
+        reason           TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+        criteria         TEXT NOT NULL DEFAULT '[]'
+                         CHECK (json_valid(criteria) AND json_type(criteria) = 'array'),
+        findings         TEXT NOT NULL DEFAULT '[]'
+                         CHECK (json_valid(findings) AND json_type(findings) = 'array'),
+        rework_steps     TEXT NOT NULL DEFAULT '[]'
+                         CHECK (json_valid(rework_steps) AND json_type(rework_steps) = 'array'),
+        reviewer         TEXT NOT NULL DEFAULT '',
+        attempt          INTEGER NOT NULL CHECK (typeof(attempt) = 'integer' AND attempt >= 1),
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (goal_id, attempt)
+      );
+      CREATE INDEX IF NOT EXISTS idx_goal_reviews_goal ON pm_goal_reviews(goal_id, created_at);
+    `);
+    record(21, 'create_pm_goal_reviews');
+  }
+
+  // Migration #22: a root goal's mission folder, relative to the project (keep in
+  // sync with src-tauri/src/database/migrations.rs). The column may already exist
+  // without its marker when the Rust side died between the two, so check first:
+  // SQLite has no ADD COLUMN IF NOT EXISTS.
+  if (!applied(22)) {
+    const columns = db.prepare('PRAGMA table_info(pm_goals)').all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === 'mission_path')) {
+      db.exec('ALTER TABLE pm_goals ADD COLUMN mission_path TEXT');
+    }
+    record(22, 'add_goal_mission_path');
+  }
 }
 
 function runMigrations(db: Database.Database): void {

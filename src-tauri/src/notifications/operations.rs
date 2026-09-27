@@ -277,7 +277,7 @@ pub fn delete_impl(conn: &Connection, uids: &[String]) -> Result<(), String> {
 /// A launch request is a row MCP `request_agent_launch` wrote: agent source,
 /// that origin, and the `agent-launch:` key. The MCP `notify` tools refuse
 /// both the origin and the key prefix, so plain `notify` cannot shape one.
-fn is_launch_request(conn: &Connection, uid: &str) -> Result<bool, String> {
+pub fn is_launch_request(conn: &Connection, uid: &str) -> Result<bool, String> {
     conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM notifications
           WHERE uid = ?1 AND source = 'agent' AND origin = 'request_agent_launch'
@@ -288,13 +288,35 @@ fn is_launch_request(conn: &Connection, uid: &str) -> Result<bool, String> {
     .map_err(|e| format!("Failed to look up launch request: {}", e))
 }
 
-const LAUNCH_RUN_STATUSES: [&str; 4] = ["running", "completed", "failed", "killed"];
+const LAUNCH_RUN_STATUSES: [&str; 5] = ["running", "interrupted", "completed", "failed", "killed"];
 
 /// Records what became of an agent launch request.
 ///
 /// Only a row that really is a launch request (see `is_launch_request`)
-/// gets a run, and a finished run is final: a late "running" from a slow
-/// event must not reopen it.
+/// gets a run. The backend writes the status (`agents::launch_runs`): at
+/// spawn, at exit, at kill, and `interrupted` for a run the last IDE session
+/// left behind. Writes arrive from threads and processes in any order, so
+/// every transition is bound to the agent that owns the run:
+///
+/// - `running` opens a new run, reopens an `interrupted` one (a resume is a
+///   new agent on the same request), or refreshes the owner's own record,
+///   and stamps this process as the owner (`owner_pid`).
+/// - An `interrupted` run belongs to nobody alive: `running` or a verdict of
+///   any agent takes it over (a resumed agent may end before its own
+///   `running` landed). Otherwise `interrupted` and a verdict apply only to
+///   the owner's open run: a late write of an old agent never touches the
+///   run a resumed agent now owns.
+/// - The frontend sends `summary_only`: it never sets a status.
+/// - A verdict is final. A late `running` of the same agent cannot reopen
+///   it; like any write of the owner it only fills in missing name,
+///   provider and model.
+/// - An `interrupted` run does not free a slot: the claim of an instance
+///   that really died is freed by its dead pid
+///   (`release_orphaned_launch_claims_impl`), and a second instance sharing
+///   the persistence file may call a live agent interrupted.
+///
+/// The frontend's summary may arrive after the backend's verdict; it is taken
+/// for the owner as long as the run has none.
 pub fn record_launch_run_impl(
     conn: &Connection,
     input: &AgentLaunchRunInput,
@@ -302,22 +324,26 @@ pub fn record_launch_run_impl(
     if !LAUNCH_RUN_STATUSES.contains(&input.status.as_str()) {
         return Err(format!("Unknown launch run status '{}'", input.status));
     }
-    let finished = input.status != "running";
-    if finished {
-        // Frees the slot even when the request row is already gone.
-        release_launch_claim_impl(conn, &input.request_uid)?;
-    }
+    let finished =
+        !input.summary_only && !matches!(input.status.as_str(), "running" | "interrupted");
     if !is_launch_request(conn, &input.request_uid)? {
+        if finished {
+            // Frees the slot even when the request row is already gone.
+            release_launch_claim_impl(conn, &input.request_uid)?;
+        }
         return Err(format!(
             "'{}' is not an agent launch request",
             input.request_uid
         ));
     }
+    if input.summary_only {
+        return record_launch_run_summary(conn, input);
+    }
     conn.execute(
         "INSERT INTO agent_launch_runs
             (request_uid, agent_id, agent_name, provider, model, status, summary, error,
-             finished_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CASE WHEN ?9 THEN datetime('now') END)
+             finished_at, owner_pid)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CASE WHEN ?9 THEN datetime('now') END, ?10)
          ON CONFLICT(request_uid) DO UPDATE SET
             agent_id = excluded.agent_id,
             agent_name = COALESCE(excluded.agent_name, agent_name),
@@ -327,8 +353,12 @@ pub fn record_launch_run_impl(
             summary = COALESCE(excluded.summary, summary),
             error = COALESCE(excluded.error, error),
             finished_at = excluded.finished_at,
+            owner_pid = CASE WHEN excluded.status = 'running'
+                             THEN excluded.owner_pid ELSE owner_pid END,
             updated_at = datetime('now')
-         WHERE agent_launch_runs.status = 'running'",
+         WHERE (agent_launch_runs.status = 'interrupted' AND excluded.status <> 'interrupted')
+            OR (agent_launch_runs.status = 'running'
+                AND agent_launch_runs.agent_id = excluded.agent_id)",
         params![
             input.request_uid,
             input.agent_id,
@@ -339,10 +369,105 @@ pub fn record_launch_run_impl(
             input.summary,
             input.error,
             finished,
+            std::process::id(),
         ],
     )
     .map_err(|e| format!("Failed to record launch run: {}", e))?;
+    conn.execute(
+        "UPDATE agent_launch_runs SET
+            agent_name = COALESCE(agent_name, ?3),
+            provider = COALESCE(provider, ?4),
+            model = COALESCE(model, ?5)
+          WHERE request_uid = ?1 AND agent_id = ?2",
+        params![
+            input.request_uid,
+            input.agent_id,
+            input.agent_name,
+            input.provider,
+            input.model
+        ],
+    )
+    .map_err(|e| format!("Failed to record launch run identity: {}", e))?;
+    // The slot is freed by the verdict that counts, not by a late one of an
+    // agent that no longer owns the run.
+    if finished && run_ended_by(conn, input)? {
+        release_launch_claim_impl(conn, &input.request_uid)?;
+    }
+    record_launch_run_summary(conn, input)
+}
+
+/// The frontend's part: the summary it derived from the logs, for the agent
+/// that owns the run, as long as the run has none.
+fn record_launch_run_summary(conn: &Connection, input: &AgentLaunchRunInput) -> Result<(), String> {
+    if input.summary.is_some() {
+        conn.execute(
+            "UPDATE agent_launch_runs SET summary = ?3, updated_at = datetime('now')
+              WHERE request_uid = ?1 AND agent_id = ?2 AND summary IS NULL",
+            params![input.request_uid, input.agent_id, input.summary],
+        )
+        .map_err(|e| format!("Failed to record launch run summary: {}", e))?;
+    }
     Ok(())
+}
+
+fn run_ended_by(conn: &Connection, input: &AgentLaunchRunInput) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM agent_launch_runs
+          WHERE request_uid = ?1 AND agent_id = ?2 AND status = ?3)",
+        params![input.request_uid, input.agent_id, input.status],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to read launch run: {}", e))
+}
+
+/// Runs a dead IDE instance left `running`: marked `interrupted`.
+///
+/// A run's status is written by the process that owns it, and any of those
+/// writes can be lost: a failed write, a crash before the retry, a quit. A
+/// run whose owner is no longer alive cannot be running, so the next start
+/// of any instance corrects it here; a live instance's runs are left alone.
+pub fn reconcile_orphaned_launch_runs_impl(
+    conn: &Connection,
+    is_alive: &dyn Fn(u32) -> bool,
+) -> Result<usize, String> {
+    let owners: Vec<i64> = conn
+        .prepare("SELECT DISTINCT owner_pid FROM agent_launch_runs WHERE status = 'running'")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<i64>>>()
+        })
+        .map_err(|e| format!("Failed to read launch run owners: {}", e))?;
+    let mut reconciled = 0;
+    for owner in owners {
+        let alive = u32::try_from(owner).is_ok_and(|pid| pid != 0 && is_alive(pid));
+        if !alive {
+            reconciled += conn
+                .execute(
+                    "UPDATE agent_launch_runs SET status = 'interrupted', updated_at = datetime('now')
+                      WHERE status = 'running' AND owner_pid = ?1",
+                    params![owner],
+                )
+                .map_err(|e| format!("Failed to mark orphaned launch runs: {}", e))?;
+        }
+    }
+    Ok(reconciled)
+}
+
+/// Whether `agent_id`'s run for this request already has its verdict.
+pub fn launch_run_is_final_for(
+    conn: &Connection,
+    request_uid: &str,
+    agent_id: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM agent_launch_runs
+          WHERE request_uid = ?1 AND agent_id = ?2
+            AND status IN ('completed', 'failed', 'killed'))",
+        params![request_uid, agent_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to read launch run: {}", e))
 }
 
 /// Hard ceilings, mirrored from `src/lib/notifications/launchGrants.ts` and
@@ -542,16 +667,16 @@ pub fn goal_is_under_root_in_project(
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|e| format!("Failed to open project database: {}", e))?;
+    // Every step, the root included, must be a row that exists right now: a
+    // deleted root is under nothing and nothing is under it, even while a
+    // grant for it is still in force and a goal still names it as parent.
     let mut current = Some(goal_id.to_string());
     let mut seen = std::collections::HashSet::new();
     while let Some(id) = current {
-        if id == root_id {
-            return Ok(true);
-        }
         if !seen.insert(id.clone()) {
             return Ok(false);
         }
-        current = match db.query_row(
+        let parent = match db.query_row(
             "SELECT parent_id FROM pm_goals WHERE id = ?1",
             params![id],
             |row| row.get::<_, Option<String>>(0),
@@ -560,6 +685,10 @@ pub fn goal_is_under_root_in_project(
             Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(false),
             Err(e) => return Err(format!("Failed to read goal tree: {}", e)),
         };
+        if id == root_id {
+            return Ok(true);
+        }
+        current = parent;
     }
     Ok(false)
 }

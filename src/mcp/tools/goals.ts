@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
 import { z } from 'zod';
 import { GOAL_WORK_MODE_SETTINGS } from '../../lib/goals/workMode';
+import { GOAL_STATUSES } from '../../lib/pm/enums';
 import { resolveEpicId, resolveGoalId, resolveRequirementId, resolveTicketId } from './resolve';
 import {
   listGoals,
@@ -22,6 +23,11 @@ import {
 
 export * from './goalsDb';
 
+const MISSION_PATH_DESCRIPTION =
+  'Root goals only: the mission folder this goal stands for, relative to the project ' +
+  '(e.g. "missions/<slug>"). The goal view then shows the mission\'s phases, open questions ' +
+  'and reviews from <folder>/shared.';
+
 const WORK_MODE_PARAM = z
   .enum(GOAL_WORK_MODE_SETTINGS)
   .optional()
@@ -37,10 +43,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
     description:
       'List goals (the declarative layer above tickets: desired world states with machine-checkable success criteria). Optionally filter by status or parent.',
     parameters: z.object({
-      status: z
-        .enum(['draft', 'active', 'in_progress', 'achieved', 'failed', 'archived'])
-        .optional()
-        .describe('Filter by goal status'),
+      status: z.enum(GOAL_STATUSES).optional().describe('Filter by goal status'),
       parentId: z.string().optional().describe('Only children of this goal (UUID or prefix)'),
     }),
     execute: async ({ status, parentId }) => {
@@ -90,10 +93,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
         .string()
         .optional()
         .describe('Machine-checkable markdown checklist defining "achieved"'),
-      status: z
-        .enum(['draft', 'active', 'in_progress', 'achieved', 'failed', 'archived'])
-        .optional()
-        .describe('Initial status (default draft)'),
+      status: z.enum(GOAL_STATUSES).optional().describe('Initial status (default draft)'),
       priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
       goalPrompt: z
         .string()
@@ -101,6 +101,7 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
         .describe('Canonical prompt used when launching agents for this goal'),
       sortOrder: z.number().optional(),
       workMode: WORK_MODE_PARAM,
+      missionPath: z.string().optional().describe(MISSION_PATH_DESCRIPTION),
     }),
     execute: async (params) => {
       const parentId = params.parentId ? resolveGoalId(db, params.parentId) : undefined;
@@ -117,13 +118,16 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
       parentId: z.string().nullable().optional().describe('New parent (null to make root)'),
       description: z.string().optional(),
       successCriteria: z.string().optional(),
-      status: z
-        .enum(['draft', 'active', 'in_progress', 'achieved', 'failed', 'archived'])
-        .optional(),
+      status: z.enum(GOAL_STATUSES).optional(),
       priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
       goalPrompt: z.string().optional(),
       sortOrder: z.number().optional(),
       workMode: WORK_MODE_PARAM,
+      missionPath: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(`${MISSION_PATH_DESCRIPTION} null or "" removes the link.`),
     }),
     execute: async ({ id, ...updates }) => {
       const resolved = resolveGoalId(db, id);

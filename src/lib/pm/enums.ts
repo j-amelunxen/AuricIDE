@@ -36,15 +36,23 @@ export function isClosedTicketStatus(status: string): boolean {
 export const PRIORITIES = ['low', 'normal', 'high', 'critical'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+// 'in_review' is a goal whose work is claimed done while a reviewer's verdict
+// (pm_goal_reviews) is pending: still open, but no agent works it meanwhile.
 export const GOAL_STATUSES = [
   'draft',
   'active',
   'in_progress',
+  'in_review',
   'achieved',
   'failed',
   'archived',
 ] as const;
 export type GoalStatusValue = (typeof GOAL_STATUSES)[number];
+
+/** No longer an obligation. A goal in review is not closed: its verdict is still out. */
+export function isClosedGoalStatus(status: string): boolean {
+  return status === 'achieved' || status === 'failed' || status === 'archived';
+}
 
 export const REQUIREMENT_STATUSES = [
   'draft',

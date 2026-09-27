@@ -9,6 +9,16 @@ import type {
   PmGoalRun,
   PmGoalStation,
 } from '../tauri/goals';
+import { editedRows, findClashes, rebaseDraft } from '../goals/draftMerge';
+import {
+  mergeConflicts,
+  pinClashes,
+  withPinnedBases,
+  type GoalConflict,
+  type GoalConflictChoice,
+  type GoalConflictTable,
+} from '../goals/goalConflicts';
+import type { ToastSlice } from './toastSlice';
 import { insertHumanStation, moveStation } from '../goals/stationOrder';
 import {
   goalsLoad as ipcGoalsLoad,
@@ -83,6 +93,11 @@ export interface GoalsSlice {
   goalRequirementLinksDraft: PmGoalRequirementLink[];
   goalStationsDraft: PmGoalStation[];
   goalsDirty: boolean;
+  /**
+   * Rows the person and an agent changed at the same time. The database keeps
+   * the agent's value, the draft keeps the person's, until the person decides.
+   */
+  goalConflicts: GoalConflict[];
   currentGoalsProject: string | null;
   // UI state
   goalsModalOpen: boolean;
@@ -120,6 +135,8 @@ export interface GoalsSlice {
   moveStationTo: (goalId: string, stationId: string, toIndex: number) => void;
   quickAddHumanStation: (goalId: string, name: string) => void;
   discardGoalChanges: () => void;
+  /** 'mine' keeps the draft value for the next save, 'theirs' takes the database's. */
+  resolveGoalConflict: (table: GoalConflictTable, id: string, choice: GoalConflictChoice) => void;
   setGoalsModalOpen: (open: boolean) => void;
   setSelectedGoalId: (id: string | null) => void;
   setOrchestrationOpen: (open: boolean) => void;
@@ -147,6 +164,47 @@ function clearGoalLinkOnTickets(state: GoalsSlice, deletedGoalIds: Set<string>):
   }
 }
 
+/** The persisted rows as the person's edits see them: conflicted rows pinned. */
+function pinnedBases(state: GoalsSlice) {
+  return {
+    goals: withPinnedBases(state.goals, state.goalConflicts, 'pm_goals'),
+    goalRuns: withPinnedBases(state.goalRuns, state.goalConflicts, 'pm_goal_runs'),
+    goalStations: withPinnedBases(state.goalStations, state.goalConflicts, 'pm_goal_stations'),
+  };
+}
+
+/**
+ * Folds `found` into the known conflicts against the freshly loaded rows and
+ * says so once per newly conflicted row. The toast is the only interruption:
+ * a clash means an agent and the person disagree, which the person must see.
+ */
+function noteConflicts(
+  state: GoalsSlice,
+  found: GoalConflict[],
+  fresh: { goals: PmGoal[]; goalRuns: PmGoalRun[]; stations: PmGoalStation[] }
+): GoalConflict[] {
+  const rows: Record<GoalConflictTable, { id: string }[]> = {
+    pm_goals: fresh.goals,
+    pm_goal_runs: fresh.goalRuns,
+    pm_goal_stations: fresh.stations,
+  };
+  const merged = mergeConflicts(state.goalConflicts, found, (table, id) =>
+    rows[table].some((r) => r.id === id)
+  );
+  const known = new Set(state.goalConflicts.map((c) => `${c.table}/${c.id}`));
+  const added = merged.filter((c) => !known.has(`${c.table}/${c.id}`));
+  if (added.length > 0) {
+    const showToast = (state as Partial<ToastSlice>).showToast;
+    showToast?.(
+      added.length === 1
+        ? `An agent changed ${added[0].columns.join(', ')} while you were editing it. Your change is not saved yet: keep it or take the agent's value.`
+        : `An agent changed ${added.length} goal items while you were editing them. Your changes are not saved yet: keep them or take the agent's values.`,
+      'error'
+    );
+  }
+  return merged;
+}
+
 export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   goals: [],
   goalsLoading: IDLE_LOAD_STATE.loading,
@@ -159,6 +217,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   goalRequirementLinksDraft: [],
   goalStationsDraft: [],
   goalsDirty: false,
+  goalConflicts: [],
   currentGoalsProject: null,
   goalsModalOpen: false,
   selectedGoalId: null,
@@ -186,44 +245,50 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
             goalStations: state.stations,
             goalStationsDraft: state.stations,
             goalsDirty: false,
+            goalConflicts: [],
             currentGoalsProject: projectPath,
           });
         } else {
-          // Dirty draft: keep local edits, but adopt rows created since the last
-          // load (e.g. goals an MCP agent decomposed) so they are not invisible.
-          const {
-            goals,
-            goalsDraft,
-            goalRuns,
-            goalRunsDraft,
-            goalRequirementLinksDraft,
-            goalStations,
-            goalStationsDraft,
-          } = get();
-          const knownGoalIds = new Set([...goals, ...goalsDraft].map((g) => g.id));
-          const knownRunIds = new Set([...goalRuns, ...goalRunsDraft].map((r) => r.id));
-          const knownLinkIds = new Set(
-            [...get().goalRequirementLinks, ...goalRequirementLinksDraft].map((l) => l.id)
-          );
-          const knownStationIds = new Set([...goalStations, ...goalStationsDraft].map((s) => s.id));
+          // Dirty draft: keep the fields the person edited, take everything
+          // else from the database — values an MCP agent changed on existing
+          // rows as much as rows it created. A draft left stale here would be
+          // written back on the next save (MET-01). A field both sides changed
+          // keeps the person's value and pins the row's base, so the reload
+          // alone never counts the agent's value as seen.
+          const { goalsDraft, goalRunsDraft, goalRequirementLinks } = get();
+          const { goalRequirementLinksDraft, goalStationsDraft } = get();
+          const bases = pinnedBases(get());
+          const found = [
+            ...pinClashes(
+              'pm_goals',
+              findClashes(goalsDraft, bases.goals, state.goals),
+              bases.goals
+            ),
+            ...pinClashes(
+              'pm_goal_runs',
+              findClashes(goalRunsDraft, bases.goalRuns, state.goalRuns),
+              bases.goalRuns
+            ),
+            ...pinClashes(
+              'pm_goal_stations',
+              findClashes(goalStationsDraft, bases.goalStations, state.stations),
+              bases.goalStations
+            ),
+          ];
           set({
             goals: state.goals,
             goalRuns: state.goalRuns,
             goalRequirementLinks: state.requirementLinks,
             goalStations: state.stations,
-            goalsDraft: [...goalsDraft, ...state.goals.filter((g) => !knownGoalIds.has(g.id))],
-            goalRunsDraft: [
-              ...goalRunsDraft,
-              ...state.goalRuns.filter((r) => !knownRunIds.has(r.id)),
-            ],
-            goalRequirementLinksDraft: [
-              ...goalRequirementLinksDraft,
-              ...state.requirementLinks.filter((l) => !knownLinkIds.has(l.id)),
-            ],
-            goalStationsDraft: [
-              ...goalStationsDraft,
-              ...state.stations.filter((s) => !knownStationIds.has(s.id)),
-            ],
+            goalsDraft: rebaseDraft(goalsDraft, bases.goals, state.goals),
+            goalRunsDraft: rebaseDraft(goalRunsDraft, bases.goalRuns, state.goalRuns),
+            goalRequirementLinksDraft: rebaseDraft(
+              goalRequirementLinksDraft,
+              goalRequirementLinks,
+              state.requirementLinks
+            ),
+            goalStationsDraft: rebaseDraft(goalStationsDraft, bases.goalStations, state.stations),
+            goalConflicts: noteConflicts(get(), found, state),
             currentGoalsProject: projectPath,
           });
         }
@@ -243,18 +308,28 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         goalRequirementLinksDraft,
         goalStationsDraft,
       } = get();
+      const bases = pinnedBases(get());
 
-      // Row-level sync: upsert the draft, delete only what the user deleted
-      // locally (present in the persisted baseline but gone from the draft).
+      // Send only what the person changed, each edit with the row it was made
+      // from (a conflicted row with its pinned base): Rust writes just the
+      // differing columns, and only while the database still holds that base,
+      // so whatever an MCP agent wrote meanwhile survives. Deletions are the
+      // rows in the persisted baseline that are gone from the draft.
       const draftGoalIds = new Set(goalsDraft.map((g) => g.id));
       const draftRunIds = new Set(goalRunsDraft.map((r) => r.id));
       const draftLinkIds = new Set(goalRequirementLinksDraft.map((l) => l.id));
       const draftStationIds = new Set(goalStationsDraft.map((s) => s.id));
-      await ipcGoalsSave(projectPath, {
-        goals: goalsDraft,
-        goalRuns: goalRunsDraft,
-        requirementLinks: goalRequirementLinksDraft,
-        stations: goalStationsDraft,
+      const editedGoals = editedRows(goalsDraft, bases.goals);
+      const editedRuns = editedRows(goalRunsDraft, bases.goalRuns);
+      const editedStations = editedRows(goalStationsDraft, bases.goalStations);
+      const result = await ipcGoalsSave(projectPath, {
+        goals: editedGoals.rows,
+        goalRuns: editedRuns.rows,
+        requirementLinks: editedRows(goalRequirementLinksDraft, goalRequirementLinks).rows,
+        stations: editedStations.rows,
+        baseGoals: editedGoals.bases,
+        baseGoalRuns: editedRuns.bases,
+        baseStations: editedStations.bases,
         deletedGoalIds: goals.filter((g) => !draftGoalIds.has(g.id)).map((g) => g.id),
         deletedRunIds: goalRuns.filter((r) => !draftRunIds.has(r.id)).map((r) => r.id),
         deletedLinkIds: goalRequirementLinks
@@ -262,33 +337,92 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
           .map((l) => l.id),
         deletedStationIds: goalStations.filter((s) => !draftStationIds.has(s.id)).map((s) => s.id),
       });
+      const found = result.conflicts.flatMap((c) => {
+        const sent: Record<GoalConflictTable, { id: string }[]> = {
+          pm_goals: editedGoals.bases,
+          pm_goal_runs: editedRuns.bases,
+          pm_goal_stations: editedStations.bases,
+        };
+        const table = c.table as GoalConflictTable;
+        return sent[table] ? pinClashes(table, [c], sent[table]) : [];
+      });
+      const refused = (table: GoalConflictTable) =>
+        new Set(found.filter((c) => c.table === table).map((c) => c.id));
 
-      // Re-read and adopt rows MCP agents wrote concurrently. The draft was
-      // just persisted, so anything unknown in the DB is a concurrent write.
+      // The database now holds the saved edits plus whatever MCP agents wrote.
+      // It becomes the new baseline; edits made while the save was in flight
+      // are re-applied on top of it rather than dropped. A row the sync
+      // refused was not saved: its edit is re-applied against its pinned base.
       const loaded = await ipcGoalsLoad(projectPath);
-      const mergedGoals = [...goalsDraft, ...loaded.goals.filter((g) => !draftGoalIds.has(g.id))];
-      const mergedRuns = [
-        ...goalRunsDraft,
-        ...loaded.goalRuns.filter((r) => !draftRunIds.has(r.id)),
+      const now = get();
+      const savedFrom = <T extends { id: string }>(
+        saved: T[],
+        pinned: T[],
+        table: GoalConflictTable
+      ): T[] => {
+        const ids = refused(table);
+        const pins = new Map(pinned.map((r) => [r.id, r]));
+        return saved.map((r) => (ids.has(r.id) ? (pins.get(r.id) ?? r) : r));
+      };
+      const savedBases = {
+        goals: savedFrom(goalsDraft, bases.goals, 'pm_goals'),
+        goalRuns: savedFrom(goalRunsDraft, bases.goalRuns, 'pm_goal_runs'),
+        goalStations: savedFrom(goalStationsDraft, bases.goalStations, 'pm_goal_stations'),
+      };
+      const rebased = {
+        goalsDraft: rebaseDraft(now.goalsDraft, savedBases.goals, loaded.goals),
+        goalRunsDraft: rebaseDraft(now.goalRunsDraft, savedBases.goalRuns, loaded.goalRuns),
+        goalRequirementLinksDraft: rebaseDraft(
+          now.goalRequirementLinksDraft,
+          goalRequirementLinksDraft,
+          loaded.requirementLinks
+        ),
+        goalStationsDraft: rebaseDraft(
+          now.goalStationsDraft,
+          savedBases.goalStations,
+          loaded.stations
+        ),
+      };
+      // The window between the sync and this load: the person may have edited
+      // a field that an agent changed in the database meanwhile. Same check as
+      // a watcher reload, against what the save left in the database.
+      const inFlight = [
+        ...pinClashes(
+          'pm_goals',
+          findClashes(now.goalsDraft, savedBases.goals, loaded.goals),
+          savedBases.goals
+        ),
+        ...pinClashes(
+          'pm_goal_runs',
+          findClashes(now.goalRunsDraft, savedBases.goalRuns, loaded.goalRuns),
+          savedBases.goalRuns
+        ),
+        ...pinClashes(
+          'pm_goal_stations',
+          findClashes(now.goalStationsDraft, savedBases.goalStations, loaded.stations),
+          savedBases.goalStations
+        ),
       ];
-      const mergedLinks = [
-        ...goalRequirementLinksDraft,
-        ...loaded.requirementLinks.filter((l) => !draftLinkIds.has(l.id)),
-      ];
-      const mergedStations = [
-        ...goalStationsDraft,
-        ...loaded.stations.filter((s) => !draftStationIds.has(s.id)),
-      ];
+      const editedMeanwhile =
+        now.goalsDraft !== goalsDraft ||
+        now.goalRunsDraft !== goalRunsDraft ||
+        now.goalRequirementLinksDraft !== goalRequirementLinksDraft ||
+        now.goalStationsDraft !== goalStationsDraft;
+      // Pins of rows that went through are released: those edits are saved.
+      const kept = now.goalConflicts.filter((c) => refused(c.table).has(c.id));
+      const goalConflicts = noteConflicts(
+        { ...now, goalConflicts: kept },
+        [...found, ...inFlight],
+        loaded
+      );
       set({
-        goals: mergedGoals,
-        goalsDraft: mergedGoals,
-        goalRuns: mergedRuns,
-        goalRunsDraft: mergedRuns,
-        goalRequirementLinks: mergedLinks,
-        goalRequirementLinksDraft: mergedLinks,
-        goalStations: mergedStations,
-        goalStationsDraft: mergedStations,
-        goalsDirty: false,
+        goals: loaded.goals,
+        goalRuns: loaded.goalRuns,
+        goalRequirementLinks: loaded.requirementLinks,
+        goalStations: loaded.stations,
+        ...rebased,
+        goalConflicts,
+        goalsDirty: editedMeanwhile || goalConflicts.length > 0,
       });
     };
 
@@ -315,6 +449,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalStations: [],
       goalStationsDraft: [],
       goalsDirty: false,
+      goalConflicts: [],
     });
   },
 
@@ -329,6 +464,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalStations: [],
       goalStationsDraft: [],
       goalsDirty: false,
+      goalConflicts: [],
     }),
 
   addGoal: (goal) => set((s) => ({ goalsDraft: [...s.goalsDraft, goal], goalsDirty: true })),
@@ -439,8 +575,40 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalRequirementLinksDraft: goalRequirementLinks,
       goalStationsDraft: goalStations,
       goalsDirty: false,
+      goalConflicts: [],
     });
   },
+
+  resolveGoalConflict: (table, id, choice) =>
+    set((s) => {
+      const goalConflicts = s.goalConflicts.filter((c) => !(c.table === table && c.id === id));
+      // 'mine': dropping the pin makes the database row the base, so the
+      // agent's value now counts as seen and the next save may replace it.
+      if (choice === 'mine') return { goalConflicts };
+      // 'theirs': the clashing fields go back to what the database holds; the
+      // person's other edits on the row stay and are saved against it.
+      const columns = s.goalConflicts.find((c) => c.table === table && c.id === id)?.columns ?? [];
+      const takeTheirs = <T extends { id: string }>(draft: T[], persisted: T[]): T[] => {
+        const theirs = persisted.find((r) => r.id === id);
+        if (!theirs) return draft;
+        return draft.map((r) => {
+          if (r.id !== id) return r;
+          const merged = { ...r };
+          for (const column of columns as (keyof T)[]) merged[column] = theirs[column];
+          return merged;
+        });
+      };
+      if (table === 'pm_goals') {
+        return { goalConflicts, goalsDraft: takeTheirs(s.goalsDraft, s.goals) };
+      }
+      if (table === 'pm_goal_runs') {
+        return { goalConflicts, goalRunsDraft: takeTheirs(s.goalRunsDraft, s.goalRuns) };
+      }
+      return {
+        goalConflicts,
+        goalStationsDraft: takeTheirs(s.goalStationsDraft, s.goalStations),
+      };
+    }),
 
   addStation: (station) =>
     set((s) => ({

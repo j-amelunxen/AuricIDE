@@ -3,6 +3,7 @@
 import { useState, useMemo, type DragEvent, type MouseEvent } from 'react';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
+import type { GoalStatusValue } from '@/lib/pm/enums';
 import {
   getGoalChildren,
   getGoalDescendants,
@@ -13,10 +14,14 @@ import {
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 
-export const GOAL_STATUS_STYLES: Record<string, { dot: string; label: string; text: string }> = {
+export const GOAL_STATUS_STYLES: Record<
+  GoalStatusValue,
+  { dot: string; label: string; text: string }
+> = {
   draft: { dot: 'bg-gray-400', label: 'Draft', text: 'text-gray-300' },
   active: { dot: 'bg-sky-400', label: 'Active', text: 'text-sky-300' },
   in_progress: { dot: 'bg-amber-400 animate-pulse', label: 'In Progress', text: 'text-amber-300' },
+  in_review: { dot: 'bg-violet-400', label: 'In Review', text: 'text-violet-300' },
   achieved: { dot: 'bg-green-400', label: 'Achieved', text: 'text-green-300' },
   failed: { dot: 'bg-red-400', label: 'Failed', text: 'text-red-300' },
   archived: { dot: 'bg-gray-600', label: 'Archived', text: 'text-gray-500' },

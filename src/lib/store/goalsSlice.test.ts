@@ -22,7 +22,9 @@ import type { PmRequirement } from '../tauri/requirements';
 const mockGoalsLoad = vi.fn<(...args: unknown[]) => Promise<GoalsState>>(() =>
   Promise.resolve({ goals: [], goalRuns: [], requirementLinks: [], stations: [] })
 );
-const mockGoalsSave = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
+const mockGoalsSave = vi.fn<(...args: unknown[]) => Promise<{ conflicts: never[] }>>(() =>
+  Promise.resolve({ conflicts: [] })
+);
 const mockGoalsClear = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 const mockInitProjectDb = vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve());
 
@@ -478,13 +480,20 @@ describe('goalsSlice persistence', () => {
   it('saveGoals persists draft and clears dirty flag', async () => {
     const store = createTestStore();
     store.getState().addGoal(makeGoal());
+    // After a save the database is the new baseline; this one holds the row.
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [makeGoal()],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+    });
     await store.getState().saveGoals('/project');
     expect(mockGoalsSave).toHaveBeenCalledTimes(1);
     expect(store.getState().goalsDirty).toBe(false);
     expect(store.getState().goals.length).toBe(1);
   });
 
-  it('saveGoals sends row-level deletions instead of replace-all', async () => {
+  it('saveGoals sends only edited rows, with their base, and row-level deletions', async () => {
     mockGoalsLoad.mockResolvedValueOnce({
       goals: [makeGoal({ id: 'keep' }), makeGoal({ id: 'doomed' })],
       goalRuns: [],
@@ -493,15 +502,56 @@ describe('goalsSlice persistence', () => {
     });
     const store = createTestStore();
     await store.getState().loadGoals('/project');
+    store.getState().addGoal(makeGoal({ id: 'fresh' }));
+    store.getState().updateGoal('keep', { status: 'archived' });
     store.getState().deleteGoal('doomed');
     await store.getState().saveGoals('/project');
 
     const payload = mockGoalsSave.mock.calls[0][1] as {
-      goals: { id: string }[];
+      goals: { id: string; status: string }[];
+      baseGoals: { id: string; status: string }[];
       deletedGoalIds: string[];
     };
-    expect(payload.goals.map((g) => g.id)).toEqual(['keep']);
+    // An untouched row is not sent at all: resending it is how a stale draft
+    // used to overwrite what an MCP agent had written meanwhile.
+    expect(payload.goals.map((g) => [g.id, g.status])).toEqual([
+      ['keep', 'archived'],
+      ['fresh', 'active'],
+    ]);
+    expect(payload.baseGoals.map((g) => [g.id, g.status])).toEqual([['keep', 'active']]);
     expect(payload.deletedGoalIds).toEqual(['doomed']);
+  });
+
+  it('a mission link an agent set while the UI had edits survives the next save', async () => {
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [makeGoal({ id: 'root' })],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+    });
+    const store = createTestStore();
+    await store.getState().loadGoals('/project');
+    store.getState().updateGoal('root', { name: 'Renamed in the UI' });
+    // Meanwhile an agent pointed the goal at its mission over MCP.
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [makeGoal({ id: 'root', missionPath: 'missions/sample' })],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+    });
+    await store.getState().loadGoals('/project');
+    expect(store.getState().goalsDraft[0]).toMatchObject({
+      name: 'Renamed in the UI',
+      missionPath: 'missions/sample',
+    });
+
+    await store.getState().saveGoals('/project');
+    const payload = mockGoalsSave.mock.calls[0][1] as {
+      goals: PmGoal[];
+      baseGoals: PmGoal[];
+    };
+    expect(payload.goals[0]).toMatchObject({ missionPath: 'missions/sample' });
+    expect(payload.baseGoals[0]).toMatchObject({ missionPath: 'missions/sample' });
   });
 
   it('saveGoals adopts rows MCP agents wrote concurrently', async () => {

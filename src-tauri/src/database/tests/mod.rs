@@ -92,6 +92,7 @@ pub(crate) fn make_test_goal(id: &str, parent_id: Option<&str>) -> PmGoal {
         priority: "normal".to_string(),
         goal_prompt: "".to_string(),
         work_mode: "auto".to_string(),
+        mission_path: None,
         created_by: "ui".to_string(),
         achieved_at: None,
         sort_order: 0,
@@ -134,6 +135,8 @@ pub(crate) fn make_test_station(id: &str, goal_id: &str, sort_order: i32) -> PmG
     }
 }
 
+mod goal_judge_spike_tests;
+mod goals_sync_contract_tests;
 mod goals_tests;
 mod kv_tests;
 mod pm_tests;
