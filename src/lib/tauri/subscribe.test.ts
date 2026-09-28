@@ -21,6 +21,36 @@ describe('subscribeToTauriEvent', () => {
     });
   });
 
+  it('reports once the listener is registered, not before', async () => {
+    let resolveListen: (fn: () => void) => void = () => undefined;
+    mockListen.mockImplementation(
+      () => new Promise<() => void>((resolve) => (resolveListen = resolve))
+    );
+    const onListening = vi.fn();
+
+    subscribeToTauriEvent('demo-event', vi.fn(), 'unavailable', onListening);
+    await vi.waitFor(() => expect(mockListen).toHaveBeenCalled());
+    expect(onListening).not.toHaveBeenCalled();
+
+    resolveListen(vi.fn());
+    await vi.waitFor(() => expect(onListening).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not report listening for a subscription disposed in flight', async () => {
+    let resolveListen: (fn: () => void) => void = () => undefined;
+    mockListen.mockImplementation(
+      () => new Promise<() => void>((resolve) => (resolveListen = resolve))
+    );
+    const onListening = vi.fn();
+
+    const dispose = subscribeToTauriEvent('demo-event', vi.fn(), 'unavailable', onListening);
+    await vi.waitFor(() => expect(mockListen).toHaveBeenCalled());
+    dispose();
+    resolveListen(vi.fn());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onListening).not.toHaveBeenCalled();
+  });
+
   it('hands the payload to the callback, not the event envelope', async () => {
     const callback = vi.fn();
     mockListen.mockImplementation(

@@ -1,0 +1,541 @@
+{
+  "_comment": [
+    "The single source of truth for the agent-control socket protocol (docs/design-agent-control.md).",
+    "Two implementations read this file: src-tauri/src/control_socket (cargo test, via include_str!)",
+    "parses the requests and must produce responses of the shapes below; src/mcp/controlClient.ts",
+    "(Vitest) builds the requests and validates every response against the same shapes, and the",
+    "TS mock socket server answers with these responses. Add a case here before changing either side."
+  ],
+  "errorCodes": [
+    "invalid_request",
+    "unknown_method",
+    "invalid_params",
+    "unknown_agent",
+    "agent_not_running",
+    "headless_no_stdin",
+    "provider_denied",
+    "frontend_unavailable",
+    "forbidden_agent_caller",
+    "internal"
+  ],
+  "clientOnlyErrorCodes": ["app_not_running", "timeout", "contract_violation"],
+  "limits": {
+    "defaultTailBytes": 16384,
+    "maxTailBytes": 262144,
+    "bufferBytesPerAgent": 262144,
+    "finishedAgentsKept": 20,
+    "frontendTimeoutMs": 30000,
+    "connectionIdleTimeoutMs": 60000
+  },
+  "enter": "\r",
+  "environment": {
+    "ideAgentMarker": "AURIC_IDE_AGENT",
+    "_comment": "Set to 1 on every agent process the IDE spawns (and so inherited by any MCP server that agent starts). auric-mcp --control refuses to start while it is set."
+  },
+  "events": {
+    "controlRequest": "control-request",
+    "agentInputSent": "agent-input-sent",
+    "respondCommand": "control_respond",
+    "readyCommand": "control_ready"
+  },
+  "spawnRefusals": [
+    {
+      "code": "provider_denied",
+      "pattern": "is not permitted in this project",
+      "sample": "Provider 'grok' is not permitted in this project. Its provider policy decides which agents may run here — change it under Settings → Project → Providers."
+    },
+    {
+      "code": "invalid_params",
+      "pattern": "is not installed in AuricIDE",
+      "sample": "Provider 'nope' is not installed in AuricIDE. Import its config under Settings → Providers, or pick an installed one."
+    }
+  ],
+  "requests": [
+    {
+      "name": "list_agents without params",
+      "raw": "{\"id\":1,\"method\":\"list_agents\"}",
+      "expected": {
+        "id": 1,
+        "method": "list_agents",
+        "params": {}
+      }
+    },
+    {
+      "name": "string ids are echoed as strings",
+      "raw": "{\"id\":\"a\",\"method\":\"list_projects\",\"params\":{}}",
+      "expected": {
+        "id": "a",
+        "method": "list_projects",
+        "params": {}
+      }
+    },
+    {
+      "name": "read_output defaults tailBytes",
+      "raw": "{\"id\":2,\"method\":\"read_output\",\"params\":{\"agentId\":\"agent-1\"}}",
+      "expected": {
+        "id": 2,
+        "method": "read_output",
+        "params": {
+          "agentId": "agent-1",
+          "tailBytes": 16384,
+          "sinceOffset": null
+        }
+      }
+    },
+    {
+      "name": "read_output clamps tailBytes to the maximum",
+      "raw": "{\"id\":3,\"method\":\"read_output\",\"params\":{\"agentId\":\"agent-1\",\"tailBytes\":999999999}}",
+      "expected": {
+        "id": 3,
+        "method": "read_output",
+        "params": {
+          "agentId": "agent-1",
+          "tailBytes": 262144,
+          "sinceOffset": null
+        }
+      }
+    },
+    {
+      "name": "read_output with sinceOffset",
+      "raw": "{\"id\":4,\"method\":\"read_output\",\"params\":{\"agentId\":\"agent-1\",\"sinceOffset\":120}}",
+      "expected": {
+        "id": 4,
+        "method": "read_output",
+        "params": {
+          "agentId": "agent-1",
+          "tailBytes": 16384,
+          "sinceOffset": 120
+        }
+      }
+    },
+    {
+      "name": "send_input defaults enter to true",
+      "raw": "{\"id\":5,\"method\":\"send_input\",\"params\":{\"agentId\":\"agent-2\",\"text\":\"hallo\"}}",
+      "expected": {
+        "id": 5,
+        "method": "send_input",
+        "params": {
+          "agentId": "agent-2",
+          "text": "hallo",
+          "enter": true
+        }
+      }
+    },
+    {
+      "name": "send_input empty text with enter is a nudge",
+      "raw": "{\"id\":6,\"method\":\"send_input\",\"params\":{\"agentId\":\"agent-2\",\"text\":\"\",\"enter\":true}}",
+      "expected": {
+        "id": 6,
+        "method": "send_input",
+        "params": {
+          "agentId": "agent-2",
+          "text": "",
+          "enter": true
+        }
+      }
+    },
+    {
+      "name": "spawn with only the required fields",
+      "raw": "{\"id\":7,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"run the tests\"}}",
+      "expected": {
+        "id": 7,
+        "method": "spawn",
+        "params": {
+          "projectPath": "/tmp/example-project",
+          "prompt": "run the tests",
+          "provider": null,
+          "model": null,
+          "permissionMode": null,
+          "headless": null,
+          "name": null
+        }
+      }
+    },
+    {
+      "name": "kill",
+      "raw": "{\"id\":8,\"method\":\"kill\",\"params\":{\"agentId\":\"agent-3\"}}",
+      "expected": {
+        "id": 8,
+        "method": "kill",
+        "params": {
+          "agentId": "agent-3"
+        }
+      }
+    },
+    {
+      "name": "not JSON",
+      "raw": "{ nope",
+      "expectedError": {
+        "id": null,
+        "code": "invalid_request"
+      }
+    },
+    {
+      "name": "method missing",
+      "raw": "{\"id\":9}",
+      "expectedError": {
+        "id": 9,
+        "code": "invalid_request"
+      }
+    },
+    {
+      "name": "unknown method",
+      "raw": "{\"id\":10,\"method\":\"reboot\"}",
+      "expectedError": {
+        "id": 10,
+        "code": "unknown_method"
+      }
+    },
+    {
+      "name": "read_output without agentId",
+      "raw": "{\"id\":11,\"method\":\"read_output\",\"params\":{}}",
+      "expectedError": {
+        "id": 11,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "send_input without text",
+      "raw": "{\"id\":12,\"method\":\"send_input\",\"params\":{\"agentId\":\"agent-2\"}}",
+      "expectedError": {
+        "id": 12,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "send_input with empty text and no enter writes nothing",
+      "raw": "{\"id\":13,\"method\":\"send_input\",\"params\":{\"agentId\":\"agent-2\",\"text\":\"\",\"enter\":false}}",
+      "expectedError": {
+        "id": 13,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "spawn without prompt",
+      "raw": "{\"id\":14,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\"}}",
+      "expectedError": {
+        "id": 14,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "negative sinceOffset",
+      "raw": "{\"id\":15,\"method\":\"read_output\",\"params\":{\"agentId\":\"agent-1\",\"sinceOffset\":-1}}",
+      "expectedError": {
+        "id": 15,
+        "code": "invalid_params"
+      }
+    }
+  ],
+  "responses": {
+    "list_agents": {
+      "id": 1,
+      "ok": true,
+      "result": {
+        "agents": [
+          {
+            "id": "agent-1",
+            "name": "Fix the parser",
+            "model": "sonnet",
+            "provider": "claude",
+            "status": "running",
+            "currentTask": "fix the parser",
+            "startedAt": 1790000000000,
+            "lastActivityAt": 1790000005000,
+            "projectPath": "/tmp/example-project",
+            "repoPath": "/tmp/example-project",
+            "spawnedByTicketId": null,
+            "spawnedByGoalId": null,
+            "headless": false,
+            "outputBytes": 5120
+          }
+        ]
+      }
+    },
+    "read_output": {
+      "id": 2,
+      "ok": true,
+      "result": {
+        "agentId": "agent-1",
+        "status": "running",
+        "text": "Reading src/parser.ts\n",
+        "startOffset": 5098,
+        "endOffset": 5120,
+        "truncated": false
+      }
+    },
+    "send_input": {
+      "id": 5,
+      "ok": true,
+      "result": {
+        "agentId": "agent-2",
+        "bytesWritten": 6
+      }
+    },
+    "kill": {
+      "id": 8,
+      "ok": true,
+      "result": {
+        "agentId": "agent-3",
+        "killed": true
+      }
+    },
+    "spawn": {
+      "id": 7,
+      "ok": true,
+      "result": {
+        "agentId": "agent-4"
+      }
+    },
+    "list_projects": {
+      "id": "a",
+      "ok": true,
+      "result": {
+        "projects": [
+          {
+            "path": "/tmp/pinned-project",
+            "name": "pinned-project",
+            "starred": true,
+            "isOpen": false,
+            "initialized": true,
+            "lastOpenedAt": 1789990000000,
+            "runningAgents": 0,
+            "description": "Customer portal; ask before touching billing.",
+            "descriptionSource": "user"
+          },
+          {
+            "path": "/tmp/example-project",
+            "name": "example-project",
+            "starred": true,
+            "isOpen": true,
+            "initialized": true,
+            "lastOpenedAt": 1790000000000,
+            "runningAgents": 1,
+            "description": "A small example service that parses invoices.",
+            "descriptionSource": "readme"
+          },
+          {
+            "path": "/tmp/other-project",
+            "name": "other-project",
+            "starred": false,
+            "isOpen": false,
+            "initialized": false,
+            "lastOpenedAt": null,
+            "runningAgents": 0,
+            "description": null,
+            "descriptionSource": null
+          }
+        ]
+      }
+    },
+    "error": {
+      "id": 5,
+      "ok": false,
+      "error": {
+        "code": "headless_no_stdin",
+        "message": "agent-2 runs headless and does not read input"
+      }
+    }
+  },
+  "invalidResponses": [
+    {
+      "name": "ok without result",
+      "method": "kill",
+      "raw": {
+        "id": 8,
+        "ok": true
+      }
+    },
+    {
+      "name": "unknown error code",
+      "method": "kill",
+      "raw": {
+        "id": 8,
+        "ok": false,
+        "error": {
+          "code": "oops",
+          "message": "x"
+        }
+      }
+    },
+    {
+      "name": "agent status outside the enum",
+      "method": "read_output",
+      "raw": {
+        "id": 2,
+        "ok": true,
+        "result": {
+          "agentId": "agent-1",
+          "status": "sleeping",
+          "text": "",
+          "startOffset": 0,
+          "endOffset": 0,
+          "truncated": false
+        }
+      }
+    },
+    {
+      "name": "list_agents without outputBytes",
+      "method": "list_agents",
+      "raw": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "agents": [
+            {
+              "id": "agent-1",
+              "name": "x",
+              "model": "m",
+              "provider": "p",
+              "status": "running",
+              "startedAt": 1,
+              "headless": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "list_projects without initialized",
+      "method": "list_projects",
+      "raw": {
+        "id": "a",
+        "ok": true,
+        "result": {
+          "projects": [
+            {
+              "path": "/p",
+              "name": "p",
+              "starred": false,
+              "isOpen": false,
+              "lastOpenedAt": null,
+              "runningAgents": 0,
+              "description": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "descriptionSource outside the enum",
+      "method": "list_projects",
+      "raw": {
+        "id": "a",
+        "ok": true,
+        "result": {
+          "projects": [
+            {
+              "path": "/p",
+              "name": "p",
+              "starred": false,
+              "isOpen": false,
+              "initialized": true,
+              "lastOpenedAt": null,
+              "runningAgents": 0,
+              "description": "d",
+              "descriptionSource": "llm"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "projectDescription": {
+    "_comment": "How Rust derives ProjectEntry.description and descriptionSource. A description the user set on a starred project wins; otherwise a pure function over file contents. The cases are run by the Rust tests (the TS side only validates the shape).",
+    "maxChars": 200,
+    "cases": [
+      {
+        "name": "a user description wins over the README",
+        "user": "Customer portal; ask before touching billing.",
+        "readme": "# Portal\n\nSomething else.\n",
+        "packageJson": null,
+        "cargoToml": null,
+        "expected": "Customer portal; ask before touching billing.",
+        "expectedSource": "user"
+      },
+      {
+        "name": "a blank user description falls through to the README",
+        "user": "   ",
+        "readme": "# Portal\n\nFrom the README.\n",
+        "packageJson": null,
+        "cargoToml": null,
+        "expected": "From the README.",
+        "expectedSource": "readme"
+      },
+      {
+        "name": "a user description is kept verbatim apart from trimming, even past maxChars",
+        "user": "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ",
+        "readme": null,
+        "packageJson": null,
+        "cargoToml": null,
+        "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "expectedSource": "user"
+      },
+      {
+        "name": "README: first paragraph after the title",
+        "readme": "# Invoice Parser\n\nA small example service that parses invoices.\nIt runs nightly.\n\n## Setup\n",
+        "packageJson": null,
+        "cargoToml": null,
+        "expected": "A small example service that parses invoices. It runs nightly.",
+        "user": null,
+        "expectedSource": "readme"
+      },
+      {
+        "name": "README badges and HTML lines are skipped",
+        "readme": "# X\n\n[![build](https://x/y.svg)](https://x)\n<p align=\"center\"><img src=\"logo.png\"></p>\n\nThe real description.\n",
+        "packageJson": null,
+        "cargoToml": null,
+        "expected": "The real description.",
+        "user": null,
+        "expectedSource": "readme"
+      },
+      {
+        "name": "no README paragraph falls back to package.json",
+        "readme": "# Only a title\n",
+        "packageJson": "{\"name\":\"x\",\"description\":\"From package.json\"}",
+        "cargoToml": null,
+        "expected": "From package.json",
+        "user": null,
+        "expectedSource": "package"
+      },
+      {
+        "name": "then Cargo.toml",
+        "readme": null,
+        "packageJson": null,
+        "cargoToml": "[package]\nname = \"x\"\ndescription = \"From Cargo\"\n",
+        "expected": "From Cargo",
+        "user": null,
+        "expectedSource": "cargo"
+      },
+      {
+        "name": "nothing found",
+        "readme": null,
+        "packageJson": "{\"name\":\"x\"}",
+        "cargoToml": null,
+        "expected": null,
+        "user": null,
+        "expectedSource": null
+      },
+      {
+        "name": "markdown emphasis and links are flattened",
+        "readme": "# T\n\nBuilds **fast** [docs](https://example.com/docs) with `pnpm`.\n",
+        "packageJson": null,
+        "cargoToml": null,
+        "expected": "Builds fast docs with pnpm.",
+        "user": null,
+        "expectedSource": "readme"
+      },
+      {
+        "name": "long text keeps whole words, at most maxChars including the ellipsis",
+        "readme": "# T\n\nword word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word \n",
+        "packageJson": null,
+        "cargoToml": null,
+        "expected": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word…",
+        "user": null,
+        "expectedSource": "readme"
+      }
+    ],
+    "userMaxChars": 300,
+    "sources": ["user", "readme", "package", "cargo"]
+  }
+}

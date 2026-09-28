@@ -135,28 +135,10 @@ pub fn readable_details(raw: &str) -> String {
 /// Remove ANSI escape sequences and the box-drawing characters `rich` uses to
 /// frame its error panels. Both survive into a `<p>` as visual noise.
 fn strip_decoration(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    let mut chars = raw.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' {
-            // CSI sequences end on a byte in the range @ to ~.
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                for next in chars.by_ref() {
-                    if ('\u{40}'..='\u{7e}').contains(&next) {
-                        break;
-                    }
-                }
-            }
-            continue;
-        }
-        if is_box_drawing(ch) {
-            out.push(' ');
-            continue;
-        }
-        out.push(ch);
-    }
-    out
+    crate::ansi::strip_ansi(raw)
+        .chars()
+        .map(|ch| if is_box_drawing(ch) { ' ' } else { ch })
+        .collect()
 }
 
 fn is_box_drawing(ch: char) -> bool {

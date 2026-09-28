@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { FastMCP } from 'fastmcp';
-import { resolveMcpCliBinding } from './cli';
+import { resolveMcpCliMode } from './cli';
 import { registerContextTools } from './tools/context';
 import { registerDependencyTools } from './tools/dependencies';
 import { registerEpicTools } from './tools/epics';
@@ -18,6 +18,7 @@ import { registerReviewTools } from './tools/reviews';
 import { registerGoalReviewTools } from './tools/goalReviews';
 import { registerNotificationTools } from './tools/notifications';
 import { registerAgentLaunchTools } from './tools/agentLaunch';
+import { registerAgentControlTools } from './tools/agentControl';
 import { openNotificationsDb } from './notificationsDb';
 
 /**
@@ -95,21 +96,39 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   return server;
 }
 
+/**
+ * `auric-mcp --control`: the agent-control tools and nothing else — no project,
+ * no database. For clients outside the IDE; see `docs/design-agent-control.md`.
+ */
+export function createControlServer(): FastMCP {
+  const server = new FastMCP({
+    name: 'auric-control',
+    version: '1.0.0',
+  });
+  registerAgentControlTools(server);
+  return server;
+}
+
 const isMainModule =
   (import.meta as ImportMeta & { main?: boolean }).main === true ||
   (typeof process !== 'undefined' && process.argv[1]?.includes('server'));
 
-// CLI entry point: `auric-mcp --project-root <project-directory>`
+// CLI entry point: `auric-mcp --project-root <project-directory>` or `auric-mcp --control`
 if (isMainModule) {
-  import('./db')
-    .then(({ openDatabase }) => {
-      const { projectRoot, databasePath } = resolveMcpCliBinding(process.argv.slice(2));
-      const db = openDatabase(databasePath);
-      const server = createMcpServer(db, projectRoot);
-      server.start({ transportType: 'stdio' });
+  Promise.resolve()
+    .then(async () => {
+      const mode = resolveMcpCliMode(process.argv.slice(2));
+      if (mode.mode === 'control') {
+        await createControlServer().start({ transportType: 'stdio' });
+        return;
+      }
+      const { openDatabase } = await import('./db');
+      const db = openDatabase(mode.databasePath);
+      const server = createMcpServer(db, mode.projectRoot);
+      await server.start({ transportType: 'stdio' });
     })
     .catch((error) => {
-      console.error(`[auric-pm] ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[auric-mcp] ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     });
 }

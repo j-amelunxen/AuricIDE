@@ -14,6 +14,7 @@ import { nextAttentionAgentId, withReviewFlags } from '@/lib/agents/attention';
 import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { type OutputBatch } from '@/lib/agents/outputBatcher';
 import { installLaneSummarySubscriber } from '@/lib/agents/laneSummarySubscriber';
+import { installControlBridge } from '@/lib/agents/controlBridge';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useBatchedAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useAgentConsoleAutoOpen } from '@/lib/hooks/useAgentConsoleAutoOpen';
@@ -111,6 +112,11 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
   // agent starts waiting on input, an agent stops) for as long as the IDE is
   // mounted — the console rail needs a summary whether or not it is open.
   useEffect(() => installLaneSummarySubscriber(), []);
+
+  // Spawn and kill requests from the agent-control socket (`auric-mcp
+  // --control`) run through the same store actions as the UI, and input typed
+  // through it shows up in the feed. See docs/design-agent-control.md.
+  useEffect(() => installControlBridge(() => useStore.getState()), []);
 
   // A project's own agent settings — its commit prompt, its ticket pattern —
   // replace the previous project's as soon as it is opened. Credentials it

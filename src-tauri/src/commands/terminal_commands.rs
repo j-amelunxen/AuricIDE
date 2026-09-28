@@ -133,9 +133,15 @@ pub async fn shell_write(
     data: String,
     state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
+    write_to_session(&state, &id, &data).await
+}
+
+/// The one way into a PTY session's stdin: the console's keystrokes and the
+/// control socket's `send_input` both go through here.
+pub async fn write_to_session(state: &TerminalState, id: &str, data: &str) -> Result<(), String> {
     let session_arc = {
         let sessions = state.sessions.lock().unwrap();
-        sessions.get(&id).cloned().ok_or("Session not found")?
+        sessions.get(id).cloned().ok_or("Session not found")?
     };
 
     let mut session = session_arc.lock().await;
@@ -145,7 +151,7 @@ pub async fn shell_write(
             println!("I/O Error writing to session '{}': {}", id, err_msg);
             drop(session);
             let mut sessions = state.sessions.lock().unwrap();
-            sessions.remove(&id);
+            sessions.remove(id);
             return Err(format!("Terminal session closed: {}", err_msg));
         }
         let _ = writer.flush();

@@ -2323,6 +2323,29 @@ describe('agentSlice – event extraction', () => {
   });
 });
 
+describe('recordAgentSentMessage', () => {
+  it('records input typed from outside the UI without writing to the PTY again', async () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    const agents = await import('../tauri/agents');
+    vi.mocked(agents.sendToAgent).mockClear();
+
+    store.getState().recordAgentSentMessage('agent-1', 'from outside');
+    await store.getState().sendAgentInput('agent-1', 'from the ui\n');
+
+    expect(agents.sendToAgent).toHaveBeenCalledTimes(1);
+    expect(store.getState().agentSentMessages['agent-1']).toEqual([
+      expect.objectContaining({ text: 'from outside', seq: 0 }),
+      expect.objectContaining({ text: 'from the ui', seq: 1 }),
+    ]);
+  });
+
+  it('skips a bare nudge, same as sendAgentInput', () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    store.getState().recordAgentSentMessage('agent-1', '  ');
+    expect(store.getState().agentSentMessages['agent-1']).toBeUndefined();
+  });
+});
+
 describe('sendAgentInput', () => {
   it('writes the exact bytes given to the agent PTY', async () => {
     const store = createStore<AgentSlice>()(createAgentSlice);

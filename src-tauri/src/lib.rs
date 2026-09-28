@@ -1,10 +1,12 @@
 mod agent_log;
 mod agent_persistence;
 mod agents;
+mod ansi;
 mod app_config;
 mod cc_usage;
 mod clipboard;
 pub mod commands;
+mod control_socket;
 pub mod crashlog;
 mod database;
 mod delivery;
@@ -271,12 +273,19 @@ pub fn run() {
             // Pre-resolve the login-shell environment in the background so the
             // first agent spawn doesn't pay for it (see agents::warm_shell_env_cache).
             tauri::async_runtime::spawn(agents::warm_shell_env_cache());
+
+            // External agent control (`docs/design-agent-control.md`). Last,
+            // so every state a request can touch is managed before the first
+            // connection is accepted.
+            control_socket::start(app.handle());
             Ok(())
         })
         .manage(DatabaseState {
             connections: Mutex::new(HashMap::new()),
         })
         .manage(agents::new_agent_manager_state())
+        .manage(agents::output_buffer::new_output_buffers_state())
+        .manage(control_socket::PendingRequestsState::default())
         .manage(mcp::McpServerState::new())
         .manage(Arc::new(recent_creations::RecentCreations::default()))
         .manage(WatcherState {
@@ -286,6 +295,8 @@ pub fn run() {
             sessions: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
+            control_socket::control_respond,
+            control_socket::control_ready,
             read_directory,
             exists,
             is_dir,

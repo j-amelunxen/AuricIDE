@@ -369,6 +369,40 @@ Supporting modules in `src/lib/agents/`:
 - `colors.ts` — the marker palette. Explicit hex, not theme tokens: "the red
   one" must stay red whatever accent the user picked.
 
+### Steering the fleet from outside (`auric-mcp --control`)
+
+A client outside the IDE (another Claude Code session, a script) can list every
+agent across all projects, read its console, type into it, kill it and spawn a
+new one. The contract is `docs/design-agent-control.md`, the machine-checkable
+half `src/lib/agents/agentControl.fixtures.json` (read by Rust and TS — change
+it first), the reasoning ADR 0003.
+
+- **Path.** `auric-mcp --control` (tools in `src/mcp/tools/agentControl.ts`)
+  talks NDJSON over `<app_data_dir>/control.sock`, served by
+  `src-tauri/src/control_socket/`. List, read and type are answered in Rust;
+  spawn and kill go to the frontend (`controlBridge.ts`) so they take the same
+  store actions as the UI buttons. The bridge reports `control_ready`; requests
+  carry `expiresAt` so a timed-out spawn is never carried out late.
+- **IDE agents are refused at the socket, whatever the provider.** Rust reads
+  the peer PID and walks its parents; a running agent among them gets
+  `forbidden_agent_caller`. The `AURIC_IDE_AGENT=1` marker on every agent only
+  makes `--control` stop early — Codex, for one, does not pass arbitrary env
+  vars to MCP servers, so the marker alone would not hold.
+- **Console text is cleaned on append** (`agents/output_buffer.rs`, stateful
+  `AnsiStripper` in `ansi.rs`): 256 KiB per agent, 20 finished kept, offsets
+  count cleaned bytes. A redrawing TUI still yields fragments, not a transcript.
+- **Enter is `\r`** (`TERMINAL_ENTER`, `src/lib/agents/terminalKeys.ts`). `\n`
+  only adds a line in Claude Code's input box and never submits — every UI send
+  path used it until the first real run showed it.
+- **`list_projects` explains each project**: `initialized` (spawn needs
+  `.auric/project.db`), `runningAgents`, and a `description` — the one the
+  user set on a starred tile ("Set description…" in Quick Access), else the
+  README's first paragraph, `package.json`, `Cargo.toml`.
+- **Dev and installed build share the socket path.** Whoever starts first
+  serves it; the second logs and runs without one. Real-app checks:
+  `node scripts/probe-agent-control.mjs`, and
+  `cargo test control_socket_against_running_app -- --ignored --nocapture`.
+
 ### The console feed reads like a group chat, on purpose
 
 The Agent Console's feed (`ActivityFeed.tsx`) interleaves every agent, and with

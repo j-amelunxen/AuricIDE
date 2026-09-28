@@ -127,7 +127,10 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   sendAgentInput: async (agentId, text) => {
     await sendToAgent(agentId, text);
+    get().recordAgentSentMessage(agentId, text);
+  },
 
+  recordAgentSentMessage: (agentId, text) => {
     const trimmed = text.trim();
     if (!trimmed) return;
 

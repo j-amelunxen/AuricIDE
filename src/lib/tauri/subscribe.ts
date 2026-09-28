@@ -11,7 +11,9 @@
 export function subscribeToTauriEvent<T>(
   eventName: string,
   callback: (payload: T) => void,
-  unavailableWarning: string
+  unavailableWarning: string,
+  /** Called once the listener is registered — events emitted from then on arrive. */
+  onListening?: () => void
 ): () => void {
   let disposed = false;
   let unlisten: (() => void) | null = null;
@@ -38,6 +40,7 @@ export function subscribeToTauriEvent<T>(
           }
         } else {
           unlisten = fn;
+          onListening?.();
         }
       });
     })

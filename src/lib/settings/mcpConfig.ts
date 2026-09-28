@@ -17,6 +17,26 @@ export function buildMcpConfig(launchSpec: McpLaunchSpec): {
   };
 }
 
+function shellWord(word: string): string {
+  return /^[A-Za-z0-9_./:=@%+-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The Claude Code command that registers the agent-control server
+ * (`auric-mcp --control`, docs/design-agent-control.md) for the user. Built
+ * from the launch spec the app already hands its own agents, so the runtime
+ * path is the one this install actually ships; only the mode differs.
+ */
+export function buildControlAddCommand(launchSpec: McpLaunchSpec): string {
+  const [runtime] = launchSpec.args;
+  return [
+    'claude mcp add --scope user auric-control --',
+    shellWord(launchSpec.command),
+    shellWord(runtime ?? '<runtime>/server.mjs'),
+    '--control',
+  ].join(' ');
+}
+
 export type InitMcpResult = 'created' | 'updated';
 
 /**
