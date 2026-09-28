@@ -168,3 +168,31 @@ fn worktree_merge_rejects_a_path_we_did_not_create() {
     let err = git_worktree_merge_into_default_impl(&path, &path, None).unwrap_err();
     assert!(err.contains("Auric-managed"), "{err}");
 }
+
+#[test]
+fn worktree_list_reports_branch_dirty_and_ahead_from_the_checkout() {
+    let dir = TempDir::new().unwrap();
+    let path = committed_repo(&dir);
+    let wt = git_worktree_add_impl(&path, "work").unwrap();
+    commit_in(&wt.path, "b.txt", "from agent", "agent work");
+    fs::write(Path::new(&wt.path).join("c.txt"), "uncommitted").unwrap();
+
+    let listed = git_worktree_list_impl(&path).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].branch, wt.branch);
+    assert!(listed[0].dirty);
+    assert!(listed[0].branch_ahead);
+}
+
+#[test]
+fn worktree_list_is_clean_and_not_ahead_right_after_add() {
+    let dir = TempDir::new().unwrap();
+    let path = committed_repo(&dir);
+    git_worktree_add_impl(&path, "fresh").unwrap();
+
+    let listed = git_worktree_list_impl(&path).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(!listed[0].dirty);
+    assert!(!listed[0].branch_ahead);
+    assert!(listed[0].is_auric);
+}
