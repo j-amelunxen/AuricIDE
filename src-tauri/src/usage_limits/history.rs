@@ -57,24 +57,68 @@ struct HistoryFile {
     samples: Vec<UsageSample>,
 }
 
+/// What identifies one version of the history file on disk. A write from
+/// anywhere else (a second app instance shares the data directory) renames a
+/// new file into place, which changes the inode and the modification time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FileStamp {
+    len: u64,
+    modified: std::time::SystemTime,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+impl FileStamp {
+    fn of(metadata: &fs::Metadata) -> Option<Self> {
+        Some(Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok()?,
+            #[cfg(unix)]
+            inode: std::os::unix::fs::MetadataExt::ino(metadata),
+        })
+    }
+
+    fn of_path(path: &Path) -> Option<Self> {
+        Self::of(&fs::metadata(path).ok()?)
+    }
+}
+
+/// The parsed file as last read or written, valid while the file on disk
+/// still carries `stamp`. Saves re-reading and re-parsing the whole trail on
+/// every status-line drop; anything that changes the file makes it miss.
+struct CachedHistory {
+    stamp: FileStamp,
+    samples: Vec<UsageSample>,
+}
+
 pub struct UsageHistoryState {
     path: PathBuf,
-    lock: Mutex<()>,
+    lock: Mutex<Option<CachedHistory>>,
 }
 
 impl UsageHistoryState {
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
-            lock: Mutex::new(()),
+            lock: Mutex::new(None),
         }
     }
 
     /// Every stored sample, oldest first. A missing or unreadable file is an
     /// empty trail — a forecast is never worth refusing to start over.
     pub fn read(&self) -> Vec<UsageSample> {
-        let _guard = self.lock.lock();
-        read_samples(&self.path)
+        let mut cache = self.lock.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(cached) = cache.as_ref() {
+            if Some(cached.stamp) == FileStamp::of_path(&self.path) {
+                return cached.samples.clone();
+            }
+        }
+        let (samples, stamp) = load_samples(&self.path);
+        *cache = stamp.map(|stamp| CachedHistory {
+            stamp,
+            samples: samples.clone(),
+        });
+        samples
     }
 
     /// Appends `snapshot` as a sample, collapsing it into the provider's
@@ -84,8 +128,14 @@ impl UsageHistoryState {
         if snapshot.windows.is_empty() {
             return Ok(());
         }
-        let _guard = self.lock.lock();
-        let mut samples = read_samples(&self.path);
+        let mut cache = self.lock.lock().unwrap_or_else(|p| p.into_inner());
+        // Taken, not borrowed: the slot is refilled only by a successful
+        // write below, so every other exit leaves it empty and the next call
+        // reads the file again.
+        let mut samples = match cache.take() {
+            Some(cached) if Some(cached.stamp) == FileStamp::of_path(&self.path) => cached.samples,
+            _ => load_samples(&self.path).0,
+        };
         let cutoff = snapshot.observed_at.saturating_sub(RETENTION_SECS);
         samples.retain(|sample| sample.observed_at >= cutoff);
 
@@ -104,13 +154,23 @@ impl UsageHistoryState {
             }
             if snapshot.observed_at - last.observed_at < BUCKET_SECS {
                 *last = incoming;
-                return write_samples_atomic(&self.path, &samples);
+                return write_and_cache(&self.path, samples, &mut cache);
             }
         }
 
         samples.push(incoming);
-        write_samples_atomic(&self.path, &samples)
+        write_and_cache(&self.path, samples, &mut cache)
     }
+}
+
+fn write_and_cache(
+    path: &Path,
+    samples: Vec<UsageSample>,
+    cache: &mut Option<CachedHistory>,
+) -> Result<(), String> {
+    let stamp = write_samples_atomic(path, &samples)?;
+    *cache = stamp.map(|stamp| CachedHistory { stamp, samples });
+    Ok(())
 }
 
 fn sample_from(snapshot: &UsageSnapshot) -> UsageSample {
@@ -131,18 +191,29 @@ fn sample_window_from(window: &UsageWindow) -> UsageSampleWindow {
     }
 }
 
+#[cfg(test)]
 fn read_samples(path: &Path) -> Vec<UsageSample> {
+    load_samples(path).0
+}
+
+/// The stored samples, plus the stamp of the file they came from when it
+/// parsed and was not replaced while being read — only then is it cacheable.
+fn load_samples(path: &Path) -> (Vec<UsageSample>, Option<FileStamp>) {
     if !path.exists() {
-        return Vec::new();
+        return (Vec::new(), None);
     }
+    let before = FileStamp::of_path(path);
     let parsed = fs::read_to_string(path)
         .ok()
         .and_then(|contents| serde_json::from_str::<HistoryFile>(&contents).ok());
     match parsed {
-        Some(file) => file.samples,
+        Some(file) => {
+            let stamp = before.filter(|stamp| FileStamp::of_path(path) == Some(*stamp));
+            (file.samples, stamp)
+        }
         None => {
             preserve_corrupt_history(path);
-            Vec::new()
+            (Vec::new(), None)
         }
     }
 }
@@ -153,7 +224,9 @@ fn preserve_corrupt_history(path: &Path) {
     let _ = fs::copy(path, backup);
 }
 
-fn write_samples_atomic(path: &Path, samples: &[UsageSample]) -> Result<(), String> {
+/// Returns the stamp the renamed file carries, taken from the written handle
+/// so no other writer can slip in between.
+fn write_samples_atomic(path: &Path, samples: &[UsageSample]) -> Result<Option<FileStamp>, String> {
     let parent = path
         .parent()
         .ok_or_else(|| "Usage limits history has no parent directory".to_string())?;
@@ -168,8 +241,12 @@ fn write_samples_atomic(path: &Path, samples: &[UsageSample]) -> Result<(), Stri
     file.write_all(&payload)
         .and_then(|_| file.sync_all())
         .map_err(|error| error.to_string())?;
+    let stamp = file
+        .metadata()
+        .ok()
+        .and_then(|metadata| FileStamp::of(&metadata));
     fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+    Ok(stamp)
 }
 
 #[cfg(test)]
@@ -319,5 +396,70 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
             .collect();
         assert!(leftovers.is_empty());
+    }
+
+    /// A warm cache must produce the same bytes on disk as a cold state that
+    /// reads the file before every write.
+    #[test]
+    fn a_warm_cache_writes_the_same_file_as_reading_every_time() {
+        let readings = [
+            snapshot("codex", 20.0, 1_000),
+            snapshot("claude", 12.0, 1_100),
+            snapshot("codex", 21.0, 1_200),
+            snapshot("codex", 30.0, 1_000 + BUCKET_SECS),
+            snapshot("codex", 5.0, 900),
+            snapshot("claude", 50.0, 1_000 + RETENTION_SECS + 10),
+        ];
+        let warm_dir = tempfile::tempdir().unwrap();
+        let cold_dir = tempfile::tempdir().unwrap();
+        let warm = state_in(warm_dir.path());
+        for reading in &readings {
+            warm.record(reading).unwrap();
+            state_in(cold_dir.path()).record(reading).unwrap();
+        }
+        assert_eq!(
+            fs::read(history_path_in(warm_dir.path())).unwrap(),
+            fs::read(history_path_in(cold_dir.path())).unwrap()
+        );
+        assert_eq!(warm.read(), state_in(cold_dir.path()).read());
+    }
+
+    #[test]
+    fn a_file_replaced_by_another_writer_is_read_again() {
+        // Dev and production builds share the data directory, so the file
+        // can change under a running instance.
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_in(dir.path());
+        state.record(&snapshot("codex", 20.0, 1_000)).unwrap();
+
+        let other = state_in(dir.path());
+        other.record(&snapshot("claude", 12.0, 1_100)).unwrap();
+        assert_eq!(state.read().len(), 2, "read sees the other writer");
+
+        other.record(&snapshot("gemini", 7.0, 1_150)).unwrap();
+        state.record(&snapshot("codex", 22.0, 1_200)).unwrap();
+        let providers: Vec<String> = state.read().into_iter().map(|s| s.provider).collect();
+        assert_eq!(providers, ["codex", "claude", "gemini"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unchanged_file_is_served_from_the_cache() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = history_path_in(dir.path());
+        let state = state_in(dir.path());
+        state.record(&snapshot("codex", 20.0, 1_000)).unwrap();
+
+        // Unreadable, but untouched: same inode, length and mtime. Only a
+        // cache hit can still answer; a disk read would come back empty.
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&path).is_ok() {
+            return; // running as root, permissions do not bite
+        }
+        let stored = state.read();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].windows[0].used_percent, 20.0);
     }
 }
