@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, type DragEvent, type MouseEvent } from 'react';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { GoalStatusValue } from '@/lib/pm/enums';
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/lib/store/goalsSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { GoalDependencyChips } from './GoalDependencyChips';
 
 export const GOAL_STATUS_STYLES: Record<
   GoalStatusValue,
@@ -32,6 +33,8 @@ interface GoalTreeProps {
   tickets: PmTicket[];
   /** Goal stations: a goal worked without tickets shows its station progress. */
   stations?: PmGoalStation[];
+  /** "Waits for" edges and bundle scoping; a goal shows its own chips from these. */
+  dependencies?: PmGoalDependency[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onMoveGoal?: (draggedId: string, targetId: string, position: GoalDropPosition) => void;
@@ -71,12 +74,14 @@ export function getGoalDropPosition(
   return ratio < 0.25 ? 'before' : ratio > 0.75 ? 'after' : 'inside';
 }
 
+// code-gate: complexity-cyclomatic, complexity-function-length, complexity-parameter-count - recursive tree-node row (drag/drop, menu, collapse, progress, badges, children); chips already split out to GoalDependencyChips, splitting the rest would scatter one visual row across files
 function GoalNode({
   goal,
   depth,
   goals,
   tickets,
   stations = [],
+  dependencies = [],
   selectedId,
   onSelect,
   onMoveGoal,
@@ -181,6 +186,8 @@ function GoalNode({
           </span>
         )}
 
+        <GoalDependencyChips goal={goal} goals={goals} dependencies={dependencies} />
+
         {percent !== null && (
           <span className="flex w-24 shrink-0 items-center gap-1.5">
             <span className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
@@ -217,6 +224,7 @@ function GoalNode({
             goals={goals}
             tickets={tickets}
             stations={stations}
+            dependencies={dependencies}
             selectedId={selectedId}
             onSelect={onSelect}
             onMoveGoal={onMoveGoal}
@@ -240,6 +248,7 @@ export function GoalTree({
   goals,
   tickets,
   stations,
+  dependencies,
   selectedId,
   onSelect,
   onMoveGoal,
@@ -426,6 +435,7 @@ export function GoalTree({
           goals={goals}
           tickets={tickets}
           stations={stations}
+          dependencies={dependencies}
           selectedId={selectedId}
           onSelect={onSelect}
           onMoveGoal={onMoveGoal}

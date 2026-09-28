@@ -1,0 +1,909 @@
+{
+  "comment": "Shared contract for goal dependencies. src/lib/goals/goalDependencies.test.ts and src-tauri/src/database/goal_deps.rs both run every case. `errors` lists the rejected edges in edge order (Rust checks goalId, dependsOnGoalId and code). `blocked` and `waves` are TypeScript-only (the backend validates, it does not schedule). `deltaCases`: introducedDependencyErrors(before, after) — the errors a write may be rejected for; both sides run them too.",
+  "cases": [
+    {
+      "name": "serial chain",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "C",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        },
+        {
+          "goalId": "C",
+          "dependsOnGoalId": "B"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "A": false,
+        "B": true,
+        "C": true
+      },
+      "waves": {
+        "P": [["A"], ["B"], ["C"]]
+      }
+    },
+    {
+      "name": "no edges means parallel",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [],
+      "errors": [],
+      "blocked": {
+        "A": false,
+        "B": false
+      },
+      "waves": {
+        "P": [["A", "B"]]
+      }
+    },
+    {
+      "name": "diamond with an achieved start",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "achieved"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "C",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "D",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        },
+        {
+          "goalId": "C",
+          "dependsOnGoalId": "A"
+        },
+        {
+          "goalId": "D",
+          "dependsOnGoalId": "B"
+        },
+        {
+          "goalId": "D",
+          "dependsOnGoalId": "C"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "A": false,
+        "B": false,
+        "C": false,
+        "D": true
+      },
+      "waves": {
+        "P": [["A"], ["B", "C"], ["D"]]
+      }
+    },
+    {
+      "name": "waiting for one bundle member waits for the whole bundle",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "achieved"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "achieved",
+          "bundle": "api"
+        },
+        {
+          "id": "C",
+          "parentId": "P",
+          "status": "active",
+          "bundle": "api"
+        },
+        {
+          "id": "D",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        },
+        {
+          "goalId": "D",
+          "dependsOnGoalId": "B"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "B": false,
+        "C": false,
+        "D": true
+      },
+      "waves": {
+        "P": [["A"], ["B", "C"], ["D"]]
+      }
+    },
+    {
+      "name": "archived dependency unblocks",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "archived"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "B": false
+      }
+    },
+    {
+      "name": "failed dependency keeps blocking",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "failed"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "B": true
+      }
+    },
+    {
+      "name": "blocking is inherited by the subtree",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B1",
+          "parentId": "B",
+          "status": "active"
+        },
+        {
+          "id": "B1a",
+          "parentId": "B1",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "B": true,
+        "B1": true,
+        "B1a": true,
+        "A": false
+      }
+    },
+    {
+      "name": "a grandchild edge orders its top-level siblings",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B1",
+          "parentId": "B",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B1",
+          "dependsOnGoalId": "A"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "B": false,
+        "B1": true
+      },
+      "waves": {
+        "P": [["A"], ["B"]]
+      }
+    },
+    {
+      "name": "self edge",
+      "goals": [
+        {
+          "id": "A",
+          "parentId": null,
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "A"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "A",
+          "code": "self"
+        }
+      ]
+    },
+    {
+      "name": "unknown goal",
+      "goals": [
+        {
+          "id": "A",
+          "parentId": null,
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "ghost"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "ghost",
+          "code": "unknown-goal"
+        }
+      ]
+    },
+    {
+      "name": "edge onto an ancestor deadlocks",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "A1",
+          "parentId": "A",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "A1",
+          "dependsOnGoalId": "P"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "A1",
+          "dependsOnGoalId": "P",
+          "code": "ancestor"
+        }
+      ]
+    },
+    {
+      "name": "edge onto a descendant",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "P",
+          "dependsOnGoalId": "A"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "P",
+          "dependsOnGoalId": "A",
+          "code": "descendant"
+        }
+      ]
+    },
+    {
+      "name": "edge inside one bundle",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active",
+          "bundle": "api"
+        },
+        {
+          "id": "C",
+          "parentId": "P",
+          "status": "active",
+          "bundle": " api "
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "C",
+          "dependsOnGoalId": "B"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "C",
+          "dependsOnGoalId": "B",
+          "code": "same-bundle"
+        }
+      ]
+    },
+    {
+      "name": "direct cycle, second edge is rejected",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        },
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "B"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "B",
+          "code": "cycle"
+        }
+      ]
+    },
+    {
+      "name": "cycle through a bundle",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "B",
+          "parentId": "P",
+          "status": "active",
+          "bundle": "x"
+        },
+        {
+          "id": "C",
+          "parentId": "P",
+          "status": "active",
+          "bundle": "x"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        },
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "C"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "C",
+          "code": "cycle"
+        }
+      ]
+    },
+    {
+      "name": "cycle through inheritance",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "Y",
+          "parentId": "P",
+          "status": "active"
+        },
+        {
+          "id": "X",
+          "parentId": "Y",
+          "status": "active"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "Y",
+          "dependsOnGoalId": "A"
+        },
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "X"
+        }
+      ],
+      "errors": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "X",
+          "code": "cycle"
+        }
+      ]
+    },
+    {
+      "name": "same bundle label under different parents is two bundles",
+      "goals": [
+        {
+          "id": "P",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "Q",
+          "parentId": null,
+          "status": "active"
+        },
+        {
+          "id": "A",
+          "parentId": "P",
+          "status": "active",
+          "bundle": "x"
+        },
+        {
+          "id": "B",
+          "parentId": "Q",
+          "status": "active",
+          "bundle": "x"
+        }
+      ],
+      "edges": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A"
+        }
+      ],
+      "errors": [],
+      "blocked": {
+        "B": true,
+        "A": false
+      }
+    }
+  ],
+  "deltaCases": [
+    {
+      "name": "an old bad edge does not block an unrelated new edge",
+      "before": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          },
+          {
+            "id": "C",
+            "parentId": "P",
+            "status": "active"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          }
+        ]
+      },
+      "after": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          },
+          {
+            "id": "C",
+            "parentId": "P",
+            "status": "active"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          },
+          {
+            "goalId": "C",
+            "dependsOnGoalId": "A"
+          }
+        ]
+      },
+      "errors": []
+    },
+    {
+      "name": "a bundle change that puts an edge inside one bundle is introduced",
+      "before": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          }
+        ]
+      },
+      "after": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A",
+          "code": "same-bundle"
+        }
+      ]
+    },
+    {
+      "name": "a move under the dependency target is introduced",
+      "before": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "P",
+            "status": "active"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          }
+        ]
+      },
+      "after": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "B",
+            "status": "active"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "goalId": "B",
+          "dependsOnGoalId": "A",
+          "code": "descendant"
+        }
+      ]
+    },
+    {
+      "name": "a bundle change that closes a cycle is introduced",
+      "before": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "P",
+            "status": "active"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active"
+          },
+          {
+            "id": "C",
+            "parentId": "P",
+            "status": "active"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          },
+          {
+            "goalId": "A",
+            "dependsOnGoalId": "C"
+          }
+        ]
+      },
+      "after": {
+        "goals": [
+          {
+            "id": "P",
+            "parentId": null,
+            "status": "active"
+          },
+          {
+            "id": "A",
+            "parentId": "P",
+            "status": "active"
+          },
+          {
+            "id": "B",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          },
+          {
+            "id": "C",
+            "parentId": "P",
+            "status": "active",
+            "bundle": "x"
+          }
+        ],
+        "edges": [
+          {
+            "goalId": "B",
+            "dependsOnGoalId": "A"
+          },
+          {
+            "goalId": "A",
+            "dependsOnGoalId": "C"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "goalId": "A",
+          "dependsOnGoalId": "C",
+          "code": "cycle"
+        }
+      ]
+    }
+  ]
+}

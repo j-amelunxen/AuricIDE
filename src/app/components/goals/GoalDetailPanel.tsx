@@ -5,6 +5,7 @@ import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '@/lib/tauri/goals
 import type { PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
 import {
+  getGoalBlockers,
   getGoalDescendants,
   getGoalCompletion,
   getGoalWorkMode,
@@ -12,6 +13,7 @@ import {
   getRunsForGoal,
 } from '@/lib/store/goalsSlice';
 import { GOAL_WORK_MODE_SETTINGS, type GoalWorkModeSetting } from '@/lib/goals/workMode';
+import { summarizeBlockers } from '@/lib/orchestration/blockerLabel';
 import { useStore } from '@/lib/store';
 import { GOAL_STATUS_STYLES } from './GoalTree';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -20,9 +22,12 @@ import { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
 import { GoalTicketsSection } from './detail/GoalTicketsSection';
 import { GoalRequirementsSection } from './detail/GoalRequirementsSection';
 import { GoalRunsSection } from './detail/GoalRunsSection';
+import { GoalTiming } from './detail/GoalTiming';
 import { MissionLaunchGrantSection } from './detail/MissionLaunchGrantSection';
 import { GoalConflictNotice } from './detail/GoalConflictNotice';
 import { MissionOverviewSection } from './detail/MissionOverviewSection';
+import { GoalDependenciesSection } from './detail/GoalDependenciesSection';
+import { SubGoalPlanGraph } from './SubGoalPlanGraph';
 import { resolveMissionDir } from '@/lib/missions/missionPath';
 
 export { GoalWorkflowStepper } from './detail/GoalWorkflowStepper';
@@ -60,6 +65,7 @@ const inputCls =
   'w-full rounded-lg bg-white/5 px-3 py-1.5 text-xs text-foreground outline-none placeholder:text-foreground-muted/50 focus:ring-1 focus:ring-primary/30';
 const labelCls = 'mb-1 block text-[10px] font-bold uppercase tracking-wide text-foreground-muted';
 
+// code-gate: complexity-function-length, complexity-parameter-count - top-level goal detail panel; pre-existing wide callback/data surface from GoalsModal (16 props before this work), already split into detail/* sections — bagging the callbacks would relocate, not remove, the coupling
 export function GoalDetailPanel({
   goal,
   goals,
@@ -80,6 +86,12 @@ export function GoalDetailPanel({
 }: GoalDetailPanelProps) {
   const stations = useStore((s) => s.goalStationsDraft);
   const rootPath = useStore((s) => s.rootPath);
+  const goalDependencies = useStore((s) => s.goalDependenciesDraft);
+  const addGoalDependency = useStore((s) => s.addGoalDependency);
+  const removeGoalDependency = useStore((s) => s.removeGoalDependency);
+  const setGoalBundle = useStore((s) => s.setGoalBundle);
+  const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
+  const showToast = useStore((s) => s.showToast);
   // Only a root goal stands for a mission; the stored path is project-relative.
   const missionDir = goal?.parentId === null ? resolveMissionDir(rootPath, goal.missionPath) : null;
 
@@ -134,6 +146,12 @@ export function GoalDetailPanel({
   }
 
   const style = GOAL_STATUS_STYLES[goal.status] ?? GOAL_STATUS_STYLES.draft;
+  // A blocked goal's launch is refused, not silently allowed to start work a
+  // dependency has not cleared for yet — see summarizeBlockers for wording.
+  const launchBlockedReason = summarizeBlockers(
+    goals,
+    getGoalBlockers(goals, goalDependencies, goal.id)
+  );
 
   return (
     <div data-testid="goal-detail" className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -195,6 +213,20 @@ export function GoalDetailPanel({
 
       <GoalConflictNotice goalId={goal.id} />
 
+      {/* Dependencies: what this goal waits for, and its bundle */}
+      <GoalDependenciesSection
+        key={goal.id}
+        goal={goal}
+        goals={goals}
+        dependencies={goalDependencies}
+        onAddDependency={addGoalDependency}
+        onRemoveDependency={removeGoalDependency}
+        onSetBundle={setGoalBundle}
+        onError={(message) => showToast(message, 'error')}
+        labelCls={labelCls}
+        inputCls={inputCls}
+      />
+
       {/* Workflow stepper */}
       {workflowStep && <GoalWorkflowStepper workflowStep={workflowStep} />}
 
@@ -246,27 +278,42 @@ export function GoalDetailPanel({
         )}
         <div className="flex flex-wrap items-start gap-2">
           <div className="max-w-52">
-            <button
-              data-testid="goal-launch-agent-btn"
-              aria-describedby="goal-direct-agent-guidance"
-              onClick={() => onLaunchAgent(goal)}
-              className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors"
+            <span
+              data-testid="goal-launch-agent-disabled-explanation"
+              tabIndex={launchBlockedReason ? 0 : undefined}
+              aria-describedby={launchBlockedReason ? 'goal-launch-disabled-reason' : undefined}
+              className="inline-block"
             >
-              <AuricIcon name="rocket_launch" className="text-sm" />
-              {workMode?.mode === 'stations'
-                ? 'Work stations with agent'
-                : subtreeHasTickets
-                  ? 'Plan work with agent'
-                  : 'Create tickets with agent'}
-            </button>
+              <button
+                data-testid="goal-launch-agent-btn"
+                aria-describedby="goal-direct-agent-guidance"
+                disabled={!!launchBlockedReason}
+                onClick={() => onLaunchAgent(goal)}
+                className="flex items-center gap-1.5 rounded-lg bg-primary/15 border border-primary/25 px-3 py-1.5 text-[11px] font-medium text-primary-light hover:bg-primary/25 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <AuricIcon name="rocket_launch" className="text-sm" />
+                {workMode?.mode === 'stations'
+                  ? 'Work stations with agent'
+                  : subtreeHasTickets
+                    ? 'Plan work with agent'
+                    : 'Create tickets with agent'}
+              </button>
+            </span>
+            {launchBlockedReason && (
+              <span id="goal-launch-disabled-reason" className="sr-only">
+                Waits for {launchBlockedReason}.
+              </span>
+            )}
             <p
               id="goal-direct-agent-guidance"
               data-testid="goal-direct-agent-guidance"
               className="mt-1 text-[9px] leading-snug text-foreground-muted"
             >
-              {workMode?.mode === 'stations'
-                ? 'Works the stations directly and marks each one done with evidence. No tickets.'
-                : 'Creates or plans tickets directly on this goal.'}
+              {launchBlockedReason
+                ? `Waits for ${launchBlockedReason}.`
+                : workMode?.mode === 'stations'
+                  ? 'Works the stations directly and marks each one done with evidence. No tickets.'
+                  : 'Creates or plans tickets directly on this goal.'}
             </p>
           </div>
           <div className="max-w-56">
@@ -319,6 +366,14 @@ export function GoalDetailPanel({
           </button>
         </div>
       </div>
+
+      {/* Sub-goal plan: renders nothing below two children */}
+      <SubGoalPlanGraph
+        goals={goals}
+        dependencies={goalDependencies}
+        parentId={goal.id}
+        onSelectGoal={setSelectedGoalId}
+      />
 
       {/* Description */}
       <div>
@@ -383,6 +438,8 @@ export function GoalDetailPanel({
 
       {/* Runs */}
       <GoalRunsSection goalRuns={goalRuns} labelCls={labelCls} />
+
+      <GoalTiming goalId={goal.id} status={goal.status} />
 
       {/* Mission root: Jennifer's launch grant */}
       {goal.parentId === null && rootPath && (

@@ -5,6 +5,8 @@ import { isVerifiedEvidence } from '../../pm/enums';
 import { getGoalChildren, getGoalDescendants } from './goalTreeHelpers';
 import { resolveGoalWorkMode, type ResolvedGoalWorkMode } from '../../goals/workMode';
 import { decideGoalCompletion, type GoalCompletion } from '../../goals/goalCompletion';
+import { normalizeBundle } from '../../goals/goalDependencies';
+import { getBundleHold } from './goalDependencyAdapters';
 
 export interface GoalProgress {
   totalTickets: number;
@@ -51,25 +53,22 @@ export interface GoalSatisfaction {
 }
 
 /**
- * A goal is satisfied when every ticket attached to it (and its subtree) is
- * done, every linked requirement is verified, every station of its line is
- * done, and every direct child goal is achieved. This is the
- * machine-checkable core of "goal = desired world state".
- *
- * The `stations` parameter is REQUIRED on purpose: an open human station
- * ("call the customer") that satisfaction cannot see would let the conductor
- * auto-achieve a goal right past it. A silent default would compile at
- * exactly the call site someone forgot. This function has an SQL twin in
- * src/mcp/tools/goals.ts (evaluateGoal) — change both together.
+ * The four conditions a goal must meet on its own: every ticket attached to
+ * it (and its subtree) done, every linked requirement verified, every station
+ * of its line done, every direct child goal achieved. "Own" because a
+ * bundle's `ownSatisfied` check (see `getGoalSatisfaction`) must ask this and
+ * nothing more — asking the bundle-aware answer here would make members wait
+ * on each other.
  */
-export function getGoalSatisfaction(
+// code-gate: complexity-cyclomatic - four independent blocker kinds plus the vacuous-goal guard; unchanged since before this was extracted out of getGoalSatisfaction
+export function ownGoalBlockers(
   goals: PmGoal[],
   tickets: PmTicket[],
   requirements: PmRequirement[],
   links: PmGoalRequirementLink[],
   stations: PmGoalStation[],
   goalId: string
-): GoalSatisfaction {
+): string[] {
   const blockers: string[] = [];
   const subtreeIds = new Set<string>([
     goalId,
@@ -123,6 +122,46 @@ export function getGoalSatisfaction(
     blockers.push(
       'This goal has no attached tickets, linked requirements, child goals, or goal-line stations. Add work before running the conductor.'
     );
+  }
+
+  return blockers;
+}
+
+/**
+ * A goal is satisfied when it meets its own four conditions (see
+ * `ownGoalBlockers`) and, if it sits in a bundle, every bundle mate does too:
+ * members are only ever achieved together (`bundleHold`/`getBundleHold`).
+ * This does not recurse into bundle logic for the mates it checks — it asks
+ * only whether each mate's own conditions are met, never whether the mate's
+ * own bundle is held, so a bundle can never wait on itself.
+ *
+ * The `stations` parameter is REQUIRED on purpose: an open human station
+ * ("call the customer") that satisfaction cannot see would let the conductor
+ * auto-achieve a goal right past it. A silent default would compile at
+ * exactly the call site someone forgot. This function has an SQL twin in
+ * src/mcp/tools/goals.ts (evaluateGoal) — change both together.
+ */
+export function getGoalSatisfaction(
+  goals: PmGoal[],
+  tickets: PmTicket[],
+  requirements: PmRequirement[],
+  links: PmGoalRequirementLink[],
+  stations: PmGoalStation[],
+  goalId: string
+): GoalSatisfaction {
+  const blockers = ownGoalBlockers(goals, tickets, requirements, links, stations, goalId);
+
+  const holdingMates = getBundleHold(
+    goals,
+    goalId,
+    (id) => ownGoalBlockers(goals, tickets, requirements, links, stations, id).length === 0
+  );
+  if (holdingMates.length > 0) {
+    const label = normalizeBundle(goals.find((g) => g.id === goalId)?.bundle);
+    for (const mateId of holdingMates) {
+      const mate = goals.find((g) => g.id === mateId);
+      blockers.push(`Bundle "${label}": waiting for ${mate?.name ?? mateId}`);
+    }
   }
 
   return { satisfied: blockers.length === 0, blockers };

@@ -2,22 +2,26 @@ import { isLaunchRequest } from '@/lib/notifications/launchRequest';
 import type { Notification } from '@/lib/notifications/types';
 import { isClosedGoalStatus } from '@/lib/pm/enums';
 import type { AgentInfo } from '@/lib/tauri/agents';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
-import { getGoalDescendants } from '../goals/goalTreeHelpers';
+import { getGoalChildren, getGoalDescendants } from '../goals/goalTreeHelpers';
+import { isGoalBlockedByDependency } from '../goals/goalDependencyAdapters';
 import { getGoalWorkMode } from '../goals/goalSatisfaction';
 import { MAX_TICKET_ATTEMPTS } from './conductorTypes';
 
 /**
  * How a conductor run works a goal in stations mode: not by spawning one
- * agent per ticket, but by asking for one goal agent per goal whose own line
- * still has agent work. The ask is a launch request, the same row MCP
- * `request_agent_launch` writes, so the start goes through the one launch path
- * (click or launch grant, its limit and budget, the native directory check)
- * and never around it.
+ * agent per ticket, but by spawning one goal agent per goal whose own line
+ * still has agent work (`conductorGoalAgents.ts`). Starting the run on a goal
+ * is the approval for its tree, so the agent starts headless right away,
+ * like a ticket agent, rather than waiting on a launch request.
+ *
+ * A launch request someone else wrote for the goal (MCP
+ * `request_agent_launch`) still counts as work in flight: the conductor does
+ * not start a second agent beside the one that request will start.
  *
  * Only a goal-scoped run does this. An unscoped run ("all tickets") stays on
- * tickets, so pressing Start without a goal never fans out requests across the
+ * tickets, so pressing Start without a goal never fans agents out across the
  * whole project.
  */
 
@@ -33,6 +37,8 @@ export interface StationGoalWork {
   inFlight: string[];
   /** Goals with open agent work whose attempts are used up. */
   exhausted: string[];
+  /** Goals held by a dependency edge (`isGoalBlockedByDependency`) — not their turn yet. */
+  blocked: string[];
 }
 
 export interface StationGoalInput {
@@ -43,10 +49,12 @@ export interface StationGoalInput {
   notifications: Notification[];
   agents: AgentInfo[];
   projectPath: string | null;
-  /** goalId -> launch requests this run already wrote for it. */
+  /** goalId -> goal agents this run already spawned for it. */
   attempts: Record<string, number>;
   /** A judge is configured, so a fresh claim will still get its verdict. */
   judgeConfigured: boolean;
+  /** Edges gating goal launchability. Absent reads as "no dependencies". */
+  goalDependencies?: PmGoalDependency[];
 }
 
 /** An open station an agent may work: not human, not a gate, not done. */
@@ -93,9 +101,22 @@ function hasLiveAgent(input: StationGoalInput, goalId: string): boolean {
 }
 
 export function getStationGoalWork(input: StationGoalInput): StationGoalWork {
-  const work: StationGoalWork = { inScope: [], launchable: [], inFlight: [], exhausted: [] };
+  const work: StationGoalWork = {
+    inScope: [],
+    launchable: [],
+    inFlight: [],
+    exhausted: [],
+    blocked: [],
+  };
+  const goalDependencies = input.goalDependencies ?? [];
   for (const goal of stationGoalsInScope(input)) {
     work.inScope.push(goal.id);
+    // Held up by a dependency edge: not the agent's turn yet, whatever state
+    // its own stations are in.
+    if (isGoalBlockedByDependency(input.goals, goalDependencies, goal.id)) {
+      work.blocked.push(goal.id);
+      continue;
+    }
     const own = input.stations.filter((s) => s.goalId === goal.id);
     const judgePending = input.judgeConfigured && own.some(awaitsJudge);
     // A goal in review waits for its verdict; a second agent would work what is being judged.
@@ -140,4 +161,50 @@ export function ticketsWorkedAsTickets(
     return known;
   };
   return tickets.filter((t) => !t.goalId || !isStationsGoal(t.goalId));
+}
+
+export interface PlanningWork {
+  /** Goals with no work attached that the run may spawn a planning agent for now. */
+  launchable: PmGoal[];
+  /** Goals whose planning agent is still running. */
+  inFlight: string[];
+  /** Goals still empty after every planning attempt. */
+  exhausted: string[];
+}
+
+/**
+ * A goal in scope with nothing to work: no stations, no tickets and no
+ * sub-goals. Without a plan it would only ever end the run blocked, so the
+ * conductor spawns an agent that lays one out. A goal held by a dependency
+ * waits for its turn like any other; its plan could still change by then.
+ */
+function hasNoWork(input: StationGoalInput, goal: PmGoal): boolean {
+  return (
+    !isClosedGoalStatus(goal.status) &&
+    !input.stations.some((s) => s.goalId === goal.id) &&
+    !input.tickets.some((t) => t.goalId === goal.id) &&
+    getGoalChildren(input.goals, goal.id).length === 0
+  );
+}
+
+export function getPlanningWork(
+  input: StationGoalInput & { planAttempts: Record<string, number> }
+): PlanningWork {
+  const work: PlanningWork = { launchable: [], inFlight: [], exhausted: [] };
+  const { goals, goalId } = input;
+  if (!goalId) return work;
+  const root = goals.find((g) => g.id === goalId);
+  const scope = [...(root ? [root] : []), ...getGoalDescendants(goals, goalId)];
+  for (const goal of scope) {
+    if (!hasNoWork(input, goal)) continue;
+    if (isGoalBlockedByDependency(goals, input.goalDependencies ?? [], goal.id)) continue;
+    if (hasLiveAgent(input, goal.id)) {
+      work.inFlight.push(goal.id);
+    } else if ((input.planAttempts[goal.id] ?? 0) >= MAX_TICKET_ATTEMPTS) {
+      work.exhausted.push(goal.id);
+    } else {
+      work.launchable.push(goal);
+    }
+  }
+  return work;
 }

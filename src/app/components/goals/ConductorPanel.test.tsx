@@ -302,6 +302,7 @@ describe('ConductorPanel preflight', () => {
     exhausted: 0,
     stationGoals: 0,
     stationGoalsReady: 0,
+    stationGoalsBlocked: 0,
   };
 
   it('says what a run would pick up before it starts', () => {

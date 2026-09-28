@@ -1,13 +1,9 @@
 'use client';
 
-import { Fragment, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useStore } from '@/lib/store';
 import { computeTicketMetrics, formatDuration } from '@/lib/pm/metrics';
-
-function statusLabel(status: string): string {
-  const words = status.replace(/_/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
+import { statusLabel, TimingCard, type TimingRow } from './TimingCard';
 
 interface TicketTimingProps {
   ticketId: string;
@@ -33,48 +29,22 @@ export function TicketTiming({ ticketId, status }: TicketTimingProps) {
     return computeTicketMetrics(entries, [{ id: ticketId, epicId: '', status }])[0];
   }, [history, ticketId, status]);
 
-  const closedSpells = Object.entries(metrics.timeInStatus);
-  const hasAnything =
-    metrics.timeInCurrentStatus !== null ||
-    closedSpells.length > 0 ||
-    metrics.cycleTime !== null ||
-    metrics.leadTime !== null;
+  const rows: TimingRow[] = [];
+  if (metrics.timeInCurrentStatus !== null) {
+    rows.push({
+      label: statusLabel(metrics.currentStatus),
+      value: formatDuration(metrics.timeInCurrentStatus),
+    });
+  }
+  for (const [spellStatus, ms] of Object.entries(metrics.timeInStatus)) {
+    rows.push({ label: statusLabel(spellStatus), value: formatDuration(ms) });
+  }
+  if (metrics.cycleTime !== null) {
+    rows.push({ label: 'Cycle', value: formatDuration(metrics.cycleTime) });
+  }
+  if (metrics.leadTime !== null) {
+    rows.push({ label: 'Lead', value: formatDuration(metrics.leadTime) });
+  }
 
-  if (!hasAnything) return null;
-
-  return (
-    <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-foreground-muted mb-2">
-        Timing
-      </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-        {metrics.timeInCurrentStatus !== null && (
-          <>
-            <dt className="text-foreground-muted">{statusLabel(metrics.currentStatus)}</dt>
-            <dd className="text-right text-foreground">
-              {formatDuration(metrics.timeInCurrentStatus)}
-            </dd>
-          </>
-        )}
-        {closedSpells.map(([spellStatus, ms]) => (
-          <Fragment key={spellStatus}>
-            <dt className="text-foreground-muted">{statusLabel(spellStatus)}</dt>
-            <dd className="text-right text-foreground">{formatDuration(ms)}</dd>
-          </Fragment>
-        ))}
-        {metrics.cycleTime !== null && (
-          <>
-            <dt className="text-foreground-muted">Cycle</dt>
-            <dd className="text-right text-foreground">{formatDuration(metrics.cycleTime)}</dd>
-          </>
-        )}
-        {metrics.leadTime !== null && (
-          <>
-            <dt className="text-foreground-muted">Lead</dt>
-            <dd className="text-right text-foreground">{formatDuration(metrics.leadTime)}</dd>
-          </>
-        )}
-      </dl>
-    </div>
-  );
+  return <TimingCard rows={rows} />;
 }

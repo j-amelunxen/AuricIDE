@@ -39,12 +39,53 @@ describe('getStationGoalWork: goal status', () => {
   // flight, and must not start a second agent on work that is being judged.
   it('keeps a goal in review in flight, never launchable', () => {
     const work = getStationGoalWork(inputFor('in_review'));
-    expect(work).toEqual({ inScope: ['g1'], launchable: [], inFlight: ['g1'], exhausted: [] });
+    expect(work).toEqual({
+      inScope: ['g1'],
+      launchable: [],
+      inFlight: ['g1'],
+      exhausted: [],
+      blocked: [],
+    });
   });
 
   it('leaves closed goals out of scope', () => {
     for (const status of ['achieved', 'failed', 'archived'] as const) {
       expect(getStationGoalWork(inputFor(status)).inScope).toEqual([]);
     }
+  });
+});
+
+describe('getStationGoalWork: dependency gate', () => {
+  it('holds a stations goal blocked by an unfinished dependency out of launchable', () => {
+    const input = inputFor('in_progress');
+    const blocker = { id: 'g0', parentId: null, name: 'G0', status: 'active' } as PmGoal;
+    const input2: StationGoalInput = {
+      ...input,
+      goals: [blocker, ...input.goals],
+      goalDependencies: [
+        { id: 'e1', goalId: 'g1', dependsOnGoalId: 'g0', createdAt: '2026-01-01 00:00:00' },
+      ],
+    };
+    const work = getStationGoalWork(input2);
+    expect(work).toEqual({
+      inScope: ['g1'],
+      launchable: [],
+      inFlight: [],
+      exhausted: [],
+      blocked: ['g1'],
+    });
+  });
+
+  it('launches once the dependency releases', () => {
+    const input = inputFor('in_progress');
+    const blocker = { id: 'g0', parentId: null, name: 'G0', status: 'achieved' } as PmGoal;
+    const input2: StationGoalInput = {
+      ...input,
+      goals: [blocker, ...input.goals],
+      goalDependencies: [
+        { id: 'e1', goalId: 'g1', dependsOnGoalId: 'g0', createdAt: '2026-01-01 00:00:00' },
+      ],
+    };
+    expect(getStationGoalWork(input2).launchable.map((g) => g.id)).toEqual(['g1']);
   });
 });

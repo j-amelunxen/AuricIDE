@@ -22,7 +22,9 @@ import {
   type FullConductorStore,
   type RunOverridable,
 } from './conductor/conductorTypes';
+import type { PmGoal } from '../tauri/goals';
 import type { GoalsSlice } from './goalsSlice';
+import { getGoalDescendants } from './goals/goalTreeHelpers';
 
 export {
   CONDUCTOR_HEARTBEAT_MS,
@@ -140,6 +142,26 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     }
   };
 
+  /**
+   * Starting a run on a goal is the go-ahead for its whole tree: a draft in it
+   * (mission-to-goals registers every sub-goal as one, for review) is the plan
+   * the run was just told to carry out. Left as drafts, the run would work
+   * them and then never close them. Closed goals keep their status.
+   */
+  const activateDraftGoals = (rootId: string): void => {
+    const full = cross();
+    const goals = full.goalsDraft ?? [];
+    const tree = [goals.find((g) => g.id === rootId), ...getGoalDescendants(goals, rootId)];
+    const drafts = tree.filter((g): g is PmGoal => g?.status === 'draft');
+    if (drafts.length === 0) return;
+    for (const goal of drafts) full.updateGoal?.(goal.id, { status: 'active' });
+    addDecision({
+      action: 'start',
+      detail: `Activated ${drafts.length} draft goal(s): ${drafts.map((g) => g.name).join(', ')}`,
+    });
+    void persist();
+  };
+
   const reviewCtx: ConductorReviewContext = {
     get,
     set,
@@ -182,6 +204,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorTicketBudget: null,
     conductorRunSpawned: 0,
     conductorGoalAttempts: {},
+    conductorPlanAttempts: {},
 
     startConductor: (goalId, options) => {
       const rememberToRestore = <K extends keyof RunOverridable>(key: K): void => {
@@ -207,6 +230,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         conductorTicketBudget: options?.ticketBudget ?? null,
         conductorRunSpawned: 0,
         conductorGoalAttempts: {},
+        conductorPlanAttempts: {},
         ...(options?.maxConcurrent !== undefined && {
           conductorMaxConcurrent: options.maxConcurrent,
         }),
@@ -228,6 +252,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         action: 'start',
         detail: goalId ? `${startedBy} for goal ${goalId}` : `${startedBy} (all tickets)`,
       });
+      if (goalId) activateDraftGoals(goalId);
       stopHeartbeat();
       heartbeat = setInterval(() => {
         void get()

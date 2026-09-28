@@ -1,9 +1,10 @@
 import { goalBriefSections } from '@/lib/goals/goalBrief';
 import { isClosedTicketStatus, type ModelPower } from '@/lib/pm/enums';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
-import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmDependency, PmTestCase, PmTicket } from '@/lib/tauri/pm';
 import { getGoalDescendants } from '../goalsSlice';
+import { isGoalBlockedByDependency } from '../goals/goalDependencyAdapters';
 import { getStationGoalWork, ticketsWorkedAsTickets } from './conductorStationGoals';
 import { MAX_TICKET_ATTEMPTS, PRIORITY_ORDER, type ConductorPreflight } from './conductorTypes';
 
@@ -44,6 +45,24 @@ export function filterTicketsForGoal(
   return tickets.filter((t) => !!t.goalId && ids.has(t.goalId));
 }
 
+/**
+ * Tickets whose goal (or an inherited edge from an ancestor) is not held by a
+ * dependency: the ones the conductor may actually consider for a launch this
+ * tick. A blocked-goal ticket stays put — still open, just not this run's turn
+ * — so callers filter with this before `getUnblockedOpenTickets`, not instead
+ * of it.
+ */
+export function ticketsWithUnblockedGoal(
+  tickets: PmTicket[],
+  goals: PmGoal[],
+  goalDependencies: PmGoalDependency[]
+): PmTicket[] {
+  return tickets.filter(
+    (t) => !t.goalId || !isGoalBlockedByDependency(goals, goalDependencies, t.goalId)
+  );
+}
+
+// code-gate: complexity-cyclomatic - one status-bucketing function: each scoped ticket lands in exactly one of 8 mutually exclusive counters; splitting it would scatter that single classification across several functions
 export function getConductorPreflight(input: {
   tickets: PmTicket[];
   dependencies: PmDependency[];
@@ -53,9 +72,12 @@ export function getConductorPreflight(input: {
   approvedTickets: string[];
   /** Absent reads as "no stations": ticket-only callers need not pass it. */
   stations?: PmGoalStation[];
+  /** Absent reads as "no goal dependencies". */
+  goalDependencies?: PmGoalDependency[];
 }): ConductorPreflight {
   const { tickets, dependencies, goals, goalId, failedTickets, approvedTickets } = input;
   const stations = input.stations ?? [];
+  const goalDependencies = input.goalDependencies ?? [];
   // Tickets of a stations goal are the goal agent's, exactly as in the tick.
   const workable = ticketsWorkedAsTickets(tickets, goals, stations);
   const scoped = goalId ? filterTicketsForGoal(workable, goals, goalId) : workable;
@@ -71,12 +93,16 @@ export function getConductorPreflight(input: {
     projectPath: null,
     attempts: {},
     judgeConfigured: false,
+    goalDependencies,
   });
 
   // Dependencies resolve against ALL tickets: a blocker outside the goal scope
-  // still blocks, exactly as it does in the tick.
+  // still blocks, exactly as it does in the tick. A ticket whose goal is held
+  // by a goal dependency is excluded the same way the tick excludes it before
+  // spawning, so it reads here as "blocked" rather than "ready".
+  const launchableTickets = ticketsWithUnblockedGoal(scoped, goals, goalDependencies);
   const unblocked = new Set(
-    getUnblockedOpenTickets(scoped, dependencies, tickets).map((t) => t.id)
+    getUnblockedOpenTickets(launchableTickets, dependencies, tickets).map((t) => t.id)
   );
 
   const result: ConductorPreflight = {
@@ -91,6 +117,7 @@ export function getConductorPreflight(input: {
     exhausted: 0,
     stationGoals: stationWork.inScope.length,
     stationGoalsReady: stationWork.launchable.length,
+    stationGoalsBlocked: stationWork.blocked.length,
   };
 
   for (const ticket of scoped) {

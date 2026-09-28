@@ -15,12 +15,18 @@ import {
 } from './goalsSlice';
 import { createPmSlice, type PmSlice } from './pmSlice';
 import { VERIFIED_EVIDENCE_KINDS, isVerifiedEvidence } from '../pm/enums';
-import type { GoalsState, PmGoal, PmGoalRun, PmGoalStation } from '../tauri/goals';
+import type {
+  GoalsState,
+  PmGoal,
+  PmGoalDependency,
+  PmGoalRun,
+  PmGoalStation,
+} from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
 import type { PmRequirement } from '../tauri/requirements';
 
 const mockGoalsLoad = vi.fn<(...args: unknown[]) => Promise<GoalsState>>(() =>
-  Promise.resolve({ goals: [], goalRuns: [], requirementLinks: [], stations: [] })
+  Promise.resolve({ goals: [], goalRuns: [], requirementLinks: [], stations: [], dependencies: [] })
 );
 const mockGoalsSave = vi.fn<(...args: unknown[]) => Promise<{ conflicts: never[] }>>(() =>
   Promise.resolve({ conflicts: [] })
@@ -242,6 +248,35 @@ describe('goalsSlice progress + satisfaction', () => {
     expect(result.blockers.join(' ')).toContain('Sub goal');
   });
 
+  it('getGoalSatisfaction blocks a bundle member on its unfinished mate', () => {
+    const goals = [
+      makeGoal({ id: 'b', parentId: 'p', bundle: 'api', name: 'API server' }),
+      makeGoal({ id: 'c', parentId: 'p', bundle: 'api', name: 'API client' }),
+      makeGoal({ id: 'p' }),
+    ];
+    const tickets = [
+      makeTicket({ id: 't1', goalId: 'b', status: 'done' }),
+      makeTicket({ id: 't2', goalId: 'c', status: 'open' }),
+    ];
+    const result = getGoalSatisfaction(goals, tickets, [], [], [], 'b');
+    expect(result.satisfied).toBe(false);
+    expect(result.blockers).toEqual(['Bundle "api": waiting for API client']);
+  });
+
+  it('getGoalSatisfaction is satisfied once every bundle member met its own conditions', () => {
+    const goals = [
+      makeGoal({ id: 'b', parentId: 'p', bundle: 'api' }),
+      makeGoal({ id: 'c', parentId: 'p', bundle: 'api' }),
+      makeGoal({ id: 'p' }),
+    ];
+    const tickets = [
+      makeTicket({ id: 't1', goalId: 'b', status: 'done' }),
+      makeTicket({ id: 't2', goalId: 'c', status: 'done' }),
+    ];
+    expect(getGoalSatisfaction(goals, tickets, [], [], [], 'b').satisfied).toBe(true);
+    expect(getGoalSatisfaction(goals, tickets, [], [], [], 'c').satisfied).toBe(true);
+  });
+
   it('getRunsForGoal filters runs, newest first', () => {
     const runs = [
       makeRun({ id: 'a', goalId: 'g1', startedAt: '2026-01-01 00:00:00' }),
@@ -423,6 +458,202 @@ describe('goalsSlice draft CRUD', () => {
   });
 });
 
+describe('goal dependencies and bundles', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function seedTwoGoals(store: ReturnType<typeof createTestStore>) {
+    store.getState().addGoal(makeGoal({ id: 'a' }));
+    store.getState().addGoal(makeGoal({ id: 'b' }));
+  }
+
+  it('addGoalDependency records the edge and marks the draft dirty', () => {
+    const store = createTestStore();
+    seedTwoGoals(store);
+    const result = store.getState().addGoalDependency('b', 'a');
+    expect(result).toEqual({ ok: true });
+    expect(store.getState().goalDependenciesDraft).toMatchObject([
+      { goalId: 'b', dependsOnGoalId: 'a' },
+    ]);
+    expect(store.getState().goalsDirty).toBe(true);
+    expect(store.getState().goals).toEqual([]); // persisted side untouched until save
+  });
+
+  it('addGoalDependency is a no-op when the exact edge already exists', () => {
+    const store = createTestStore();
+    seedTwoGoals(store);
+    store.getState().addGoalDependency('b', 'a');
+    store.getState().addGoalDependency('b', 'a');
+    expect(store.getState().goalDependenciesDraft).toHaveLength(1);
+  });
+
+  it('addGoalDependency rejects a self edge without adding it', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal({ id: 'a' }));
+    const result = store.getState().addGoalDependency('a', 'a');
+    expect(result).toMatchObject({ ok: false, error: { code: 'self' } });
+    expect(store.getState().goalDependenciesDraft).toEqual([]);
+  });
+
+  it('addGoalDependency rejects an edge that would cycle', () => {
+    const store = createTestStore();
+    seedTwoGoals(store);
+    store.getState().addGoalDependency('b', 'a');
+    const result = store.getState().addGoalDependency('a', 'b');
+    expect(result).toMatchObject({ ok: false, error: { code: 'cycle' } });
+    // The rejected edge never lands in the draft.
+    expect(store.getState().goalDependenciesDraft).toHaveLength(1);
+  });
+
+  it('removeGoalDependency drops the edge', () => {
+    const store = createTestStore();
+    seedTwoGoals(store);
+    store.getState().addGoalDependency('b', 'a');
+    store.getState().removeGoalDependency('b', 'a');
+    expect(store.getState().goalDependenciesDraft).toEqual([]);
+  });
+
+  it('deleteGoal drops edges that touch the deleted goal on either side', () => {
+    const store = createTestStore();
+    seedTwoGoals(store);
+    store.getState().addGoalDependency('b', 'a');
+    store.getState().deleteGoal('a');
+    expect(store.getState().goalDependenciesDraft).toEqual([]);
+  });
+
+  it('setGoalBundle normalizes blank labels to no bundle', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal({ id: 'a' }));
+    expect(store.getState().setGoalBundle('a', '  api  ')).toEqual({ ok: true });
+    expect(store.getState().goalsDraft[0].bundle).toBe('api');
+    expect(store.getState().setGoalBundle('a', '   ')).toEqual({ ok: true });
+    expect(store.getState().goalsDraft[0].bundle).toBeNull();
+  });
+
+  it('setGoalBundle rejects a label that would put a dependency edge inside one bundle', () => {
+    const store = createTestStore();
+    seedTwoGoals(store);
+    store.getState().addGoalDependency('b', 'a');
+    expect(store.getState().setGoalBundle('b', 'x')).toEqual({ ok: true });
+    // b (bundle x) already depends on a; bundling a into the same "x" group
+    // would make that edge a same-bundle violation, so the change is refused.
+    const result = store.getState().setGoalBundle('a', 'x');
+    expect(result).toMatchObject({ ok: false, error: { code: 'same-bundle' } });
+    expect(store.getState().goalsDraft.find((g) => g.id === 'a')?.bundle).toBeUndefined();
+  });
+
+  it('addGoalDependency tolerates a pre-existing problem elsewhere in the draft', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal({ id: 'a' }));
+    store.getState().addGoal(makeGoal({ id: 'b' }));
+    store.getState().addGoal(makeGoal({ id: 'c' }));
+    store.getState().addGoal(makeGoal({ id: 'd' }));
+    // As if a cycle between c and d had reached the draft by some other route
+    // (an older build, a load nobody has rebased yet). Adding an unrelated
+    // edge between a and b must not be blocked by a problem it did not cause.
+    store.setState({
+      goalDependenciesDraft: [
+        { id: 'cd', goalId: 'c', dependsOnGoalId: 'd', createdAt: '2026-01-01 00:00:00' },
+        { id: 'dc', goalId: 'd', dependsOnGoalId: 'c', createdAt: '2026-01-01 00:00:00' },
+      ],
+    });
+    const result = store.getState().addGoalDependency('b', 'a');
+    expect(result).toEqual({ ok: true });
+    expect(store.getState().goalDependenciesDraft).toHaveLength(3);
+  });
+
+  it('setGoalBundle tolerates a pre-existing problem elsewhere in the draft', () => {
+    const store = createTestStore();
+    store.getState().addGoal(makeGoal({ id: 'a' }));
+    store.getState().addGoal(makeGoal({ id: 'c' }));
+    store.getState().addGoal(makeGoal({ id: 'd' }));
+    store.setState({
+      goalDependenciesDraft: [
+        { id: 'cd', goalId: 'c', dependsOnGoalId: 'd', createdAt: '2026-01-01 00:00:00' },
+        { id: 'dc', goalId: 'd', dependsOnGoalId: 'c', createdAt: '2026-01-01 00:00:00' },
+      ],
+    });
+    expect(store.getState().setGoalBundle('a', 'shared')).toEqual({ ok: true });
+  });
+
+  // QA repro: the UI drafts B -> A locally while, unseen, MCP writes A -> B
+  // straight to the database. Saving both would cycle forever; before this
+  // fix the frontend kept resending the same edge on every retry.
+  it('a save an MCP write made invalid unsticks itself: the stuck edge is dropped and the next save succeeds', async () => {
+    const store = createTestStore();
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [makeGoal({ id: 'a' }), makeGoal({ id: 'b' })],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+      dependencies: [],
+    });
+    await store.getState().loadGoals('/p');
+    store.getState().addGoalDependency('b', 'a');
+
+    mockGoalsSave.mockRejectedValueOnce(new Error('Goal dependency rejected (cycle): A → B'));
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [makeGoal({ id: 'a' }), makeGoal({ id: 'b' })],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+      dependencies: [
+        { id: 'mcp-1', goalId: 'a', dependsOnGoalId: 'b', createdAt: '2026-01-01 00:00:00' },
+      ],
+    });
+
+    await expect(store.getState().saveGoals('/p')).rejects.toThrow('Goal dependency rejected');
+
+    // The recovery reload dropped the local edge that cycles with MCP's.
+    expect(store.getState().goalDependenciesDraft).toEqual([
+      expect.objectContaining({ id: 'mcp-1' }),
+    ]);
+
+    // The next save is no longer stuck behind the same rejected edge.
+    await expect(store.getState().saveGoals('/p')).resolves.toBeUndefined();
+  });
+
+  it('rebase never resurrects a locally deleted edge, and never resends one it only just learned about', async () => {
+    const store = createTestStore();
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+      dependencies: [
+        { id: 'e1', goalId: 'b', dependsOnGoalId: 'a', createdAt: '2026-01-01 00:00:00' },
+      ],
+    });
+    await store.getState().loadGoals('/p');
+    store.getState().removeGoalDependency('b', 'a');
+
+    // A reload while dirty: the backend still holds e1 (this frontend has not
+    // saved the deletion yet) plus a brand-new MCP edge it has never fetched.
+    mockGoalsLoad.mockResolvedValueOnce({
+      goals: [],
+      goalRuns: [],
+      requirementLinks: [],
+      stations: [],
+      dependencies: [
+        { id: 'e1', goalId: 'b', dependsOnGoalId: 'a', createdAt: '2026-01-01 00:00:00' },
+        { id: 'mcp-1', goalId: 'c', dependsOnGoalId: 'a', createdAt: '2026-01-01 00:00:00' },
+      ],
+    });
+    await store.getState().loadGoals('/p');
+    expect(store.getState().goalDependenciesDraft.map((d) => d.id)).toEqual(['mcp-1']);
+
+    await store.getState().saveGoals('/p');
+    const payload = mockGoalsSave.mock.calls.at(-1)![1] as {
+      dependencies: PmGoalDependency[];
+      deletedDependencyIds: string[];
+    };
+    // The local deletion is sent; the edge MCP wrote is neither resent nor deleted.
+    expect(payload.deletedDependencyIds).toEqual(['e1']);
+    expect(payload.dependencies).toEqual([]);
+  });
+});
+
 describe('goalsSlice load status', () => {
   // A scheduled conductor run opens a project and then waits for
   // `!goalsLoading` before it starts (`launchScheduledConductor` in
@@ -451,6 +682,7 @@ describe('goalsSlice persistence', () => {
       goalRuns: [makeRun()],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     const store = createTestStore();
     await store.getState().loadGoals('/project');
@@ -469,6 +701,7 @@ describe('goalsSlice persistence', () => {
       goalRuns: [makeRun({ id: 'mcp-run', goalId: 'mcp-created' })],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     await store.getState().loadGoals('/project');
     // Local unsaved edit survives AND the MCP-created rows become visible
@@ -486,6 +719,7 @@ describe('goalsSlice persistence', () => {
       goalRuns: [],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     await store.getState().saveGoals('/project');
     expect(mockGoalsSave).toHaveBeenCalledTimes(1);
@@ -499,6 +733,7 @@ describe('goalsSlice persistence', () => {
       goalRuns: [],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     const store = createTestStore();
     await store.getState().loadGoals('/project');
@@ -528,6 +763,7 @@ describe('goalsSlice persistence', () => {
       goalRuns: [],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     const store = createTestStore();
     await store.getState().loadGoals('/project');
@@ -538,6 +774,7 @@ describe('goalsSlice persistence', () => {
       goalRuns: [],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     await store.getState().loadGoals('/project');
     expect(store.getState().goalsDraft[0]).toMatchObject({
@@ -563,6 +800,7 @@ describe('goalsSlice persistence', () => {
       goalRuns: [],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     await store.getState().saveGoals('/project');
 
@@ -897,6 +1135,7 @@ describe('goal stations in the draft double-buffer', () => {
       goalRuns: [],
       requirementLinks: [],
       stations: [stationFixture({ id: 'from-mcp' }) as never],
+      dependencies: [],
     });
     await store.getState().loadGoals('/p');
     const ids = store.getState().goalStationsDraft.map((s) => s.id);
@@ -911,6 +1150,7 @@ describe('goal stations in the draft double-buffer', () => {
       goalRuns: [],
       requirementLinks: [],
       stations: [stationFixture({ id: 'persisted' }) as never],
+      dependencies: [],
     });
     await store.getState().loadGoals('/p');
     store.getState().deleteStation('persisted');

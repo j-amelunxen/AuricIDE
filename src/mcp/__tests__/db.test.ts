@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestDb, openDatabase } from '../db';
+import { createTestDb, openDatabase, runMigrations } from '../db';
 
 const concurrentOpenWorker = `
   import { existsSync, writeFileSync } from 'node:fs';
@@ -85,11 +85,11 @@ describe('openDatabase', () => {
     db.close();
   });
 
-  it('records all 21 migrations (ids 1-13, 15-22; 14 is Rust-only)', () => {
+  it('records all 23 migrations (ids 1-13, 15-24; 14 is Rust-only)', () => {
     const dbPath = join(tempDir, 'test.db');
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(21);
+    expect(row.cnt).toBe(23);
     const stationRow = db
       .prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 15')
       .get() as { cnt: number };
@@ -121,6 +121,46 @@ describe('openDatabase', () => {
     db.close();
   });
 
+  it('backfills one snapshot per existing goal (migration 24, twin of the Rust one)', () => {
+    const db = openDatabase(join(tempDir, 'test.db'));
+    // Roll back to before 24 and seed goals as an older app left them.
+    db.exec(`
+      DROP TABLE pm_goal_status_history;
+      DELETE FROM _migrations WHERE id = 24;
+      INSERT INTO pm_goals (id, name, status, updated_at)
+        VALUES ('open', 'Open', 'in_progress', '2026-09-01 10:00:00');
+      INSERT INTO pm_goals (id, name, status, achieved_at, updated_at)
+        VALUES ('done', 'Done', 'achieved', '2026-08-01 09:00:00', '2026-08-05 09:00:00');
+    `);
+    runMigrations(db);
+    // A second run must not add a second snapshot.
+    db.exec('DELETE FROM _migrations WHERE id = 24');
+    runMigrations(db);
+
+    const rows = db
+      .prepare(
+        'SELECT goal_id, from_status, to_status, changed_at, source FROM pm_goal_status_history ORDER BY goal_id'
+      )
+      .all();
+    expect(rows).toEqual([
+      {
+        goal_id: 'done',
+        from_status: null,
+        to_status: 'achieved',
+        changed_at: '2026-08-01 09:00:00',
+        source: 'backfill',
+      },
+      {
+        goal_id: 'open',
+        from_status: null,
+        to_status: 'in_progress',
+        changed_at: '2026-09-01 10:00:00',
+        source: 'backfill',
+      },
+    ]);
+    db.close();
+  });
+
   it('adds a nullable mission_path to goals (migration 22, twin of the Rust one)', () => {
     const db = openDatabase(join(tempDir, 'test.db'));
     const cols = db.prepare('PRAGMA table_info(pm_goals)').all() as Array<{
@@ -139,13 +179,59 @@ describe('openDatabase', () => {
     db.close();
   });
 
+  it('adds pm_goal_dependencies and a nullable bundle column on goals (migration 23)', () => {
+    const db = openDatabase(join(tempDir, 'test.db'));
+    const tables = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name = 'pm_goal_dependencies'"
+      )
+      .all() as Array<{ name: string }>;
+    expect(tables).toHaveLength(1);
+
+    const cols = db.prepare('PRAGMA table_info(pm_goals)').all() as Array<{
+      name: string;
+      notnull: number;
+      dflt_value: string | null;
+    }>;
+    expect(cols.find((c) => c.name === 'bundle')).toMatchObject({ notnull: 0, dflt_value: null });
+
+    const name = db.prepare('SELECT name FROM _migrations WHERE id = 23').get() as {
+      name: string;
+    };
+    expect(name.name).toBe('goal_dependencies');
+
+    db.prepare("INSERT INTO pm_goals (id, name, status) VALUES ('g1', 'Goal', 'active')").run();
+    db.prepare("INSERT INTO pm_goals (id, name, status) VALUES ('g2', 'Other', 'active')").run();
+    // created_at has no DEFAULT (matches the Rust twin: the caller always
+    // supplies it, since the frontend/MCP payload owns the timestamp).
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id) VALUES ('d0', 'g1', 'g2')`
+        )
+        .run()
+    ).toThrow(/NOT NULL/);
+    const ts = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id, created_at) VALUES ('d1', 'g1', 'g2', ?)`
+    ).run(ts);
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id, created_at) VALUES ('d2', 'g1', 'g2', ?)`
+        )
+        .run(ts)
+    ).toThrow();
+    db.close();
+  });
+
   it('is idempotent — opening same DB twice causes no error', () => {
     const dbPath = join(tempDir, 'test.db');
     const db1 = openDatabase(dbPath);
     db1.close();
     const db2 = openDatabase(dbPath);
     const row = db2.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(21);
+    expect(row.cnt).toBe(23);
     db2.close();
   });
 
@@ -192,7 +278,7 @@ describe('openDatabase', () => {
 
     const db = new Database(dbPath, { readonly: true });
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(21);
+    expect(row.cnt).toBe(23);
     db.close();
   }, 20_000);
 
@@ -268,10 +354,10 @@ describe('openDatabase', () => {
     setup.close();
 
     // Now open with our migrations — the JS side applies the missing
-    // #13 and #15-#22 on top
+    // #13 and #15-#24 on top
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(21);
+    expect(row.cnt).toBe(23);
     db.close();
   });
 });

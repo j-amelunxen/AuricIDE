@@ -1,7 +1,9 @@
+use super::goal_deps::{introduced_dependency_errors, GoalDependencyEdge, GoalDependencyGoal};
+use super::goal_history::{record_goal_status_changes, stored_goal_statuses};
 use super::pm::with_transaction;
 use super::types::{
-    GoalSyncConflict, GoalsState, GoalsSyncPayload, GoalsSyncResult, PmGoal, PmGoalRequirementLink,
-    PmGoalRun, PmGoalStation,
+    GoalSyncConflict, GoalsState, GoalsSyncPayload, GoalsSyncResult, PmGoal, PmGoalDependency,
+    PmGoalRequirementLink, PmGoalRun, PmGoalStation,
 };
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{params, Connection};
@@ -145,6 +147,13 @@ pub fn goals_sync_impl(
         conn.execute_batch("PRAGMA defer_foreign_keys = ON;")
             .map_err(|e| format!("Failed to defer foreign keys: {}", e))?;
 
+        // The graph as this sync found it — before any of its own writes —
+        // so a pre-existing bad edge (an older build, a hand edit, an MCP
+        // call from before a rule existed) never blocks an unrelated save.
+        // Only what THIS sync introduces gets rejected.
+        let goals_before = load_dependency_goals(conn)?;
+        let edges_before = load_dependency_edges(conn)?;
+
         for id in &payload.deleted_goal_ids {
             // Cascades to child goals, runs, and requirement links
             conn.execute("DELETE FROM pm_goals WHERE id = ?1", params![id])
@@ -165,6 +174,13 @@ pub fn goals_sync_impl(
             conn.execute("DELETE FROM pm_goal_stations WHERE id = ?1", params![id])
                 .map_err(|e| format!("Failed to delete goal station: {}", e))?;
         }
+        for id in &payload.deleted_dependency_ids {
+            conn.execute(
+                "DELETE FROM pm_goal_dependencies WHERE id = ?1",
+                params![id],
+            )
+            .map_err(|e| format!("Failed to delete goal dependency: {}", e))?;
+        }
 
         let base_goals: HashMap<&str, &PmGoal> = payload
             .base_goals
@@ -182,6 +198,11 @@ pub fn goals_sync_impl(
             .map(|s| (s.id.as_str(), s))
             .collect();
 
+        // Stored statuses before and after the goal writes; the difference is
+        // what goes into the status history (see `goal_history`).
+        let goal_ids: Vec<&str> = payload.goals.iter().map(|g| g.id.as_str()).collect();
+        let statuses_before = stored_goal_statuses(conn, &goal_ids)?;
+
         for goal in &payload.goals {
             if let Some(base) = base_goals.get(goal.id.as_str()) {
                 conflicts.extend(update_changed(conn, "pm_goals", &goal.id, goal, *base)?);
@@ -190,8 +211,8 @@ pub fn goals_sync_impl(
             conn.execute(
                 "INSERT INTO pm_goals (id, parent_id, name, description, success_criteria, \
                  status, priority, goal_prompt, created_by, achieved_at, sort_order, \
-                 created_at, updated_at, work_mode, mission_path) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15) \
+                 created_at, updated_at, work_mode, mission_path, bundle) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16) \
                  ON CONFLICT(id) DO UPDATE SET \
                  parent_id = excluded.parent_id, name = excluded.name, \
                  description = excluded.description, \
@@ -199,7 +220,8 @@ pub fn goals_sync_impl(
                  priority = excluded.priority, goal_prompt = excluded.goal_prompt, \
                  created_by = excluded.created_by, achieved_at = excluded.achieved_at, \
                  sort_order = excluded.sort_order, updated_at = excluded.updated_at, \
-                 work_mode = excluded.work_mode, mission_path = excluded.mission_path",
+                 work_mode = excluded.work_mode, mission_path = excluded.mission_path, \
+                 bundle = excluded.bundle",
                 params![
                     goal.id,
                     goal.parent_id,
@@ -215,11 +237,14 @@ pub fn goals_sync_impl(
                     goal.created_at,
                     goal.updated_at,
                     goal.work_mode,
-                    goal.mission_path
+                    goal.mission_path,
+                    goal.bundle
                 ],
             )
             .map_err(|e| format!("Failed to upsert goal: {}", e))?;
         }
+        let statuses_after = stored_goal_statuses(conn, &goal_ids)?;
+        record_goal_status_changes(conn, &statuses_before, &statuses_after, "ui")?;
 
         for run in &payload.goal_runs {
             if let Some(base) = base_runs.get(run.id.as_str()) {
@@ -311,21 +336,104 @@ pub fn goals_sync_impl(
             .map_err(|e| format!("Failed to upsert goal station: {}", e))?;
         }
 
+        // Dependency rows are immutable — no compare-and-swap, just an upsert
+        // that leaves an existing edge exactly as it is. The UNIQUE(goal_id,
+        // depends_on_goal_id) pair means a second attempt to add the same
+        // edge is silently a no-op rather than a duplicate row.
+        for dependency in &payload.dependencies {
+            conn.execute(
+                "INSERT OR IGNORE INTO pm_goal_dependencies \
+                 (id, goal_id, depends_on_goal_id, created_at) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    dependency.id,
+                    dependency.goal_id,
+                    dependency.depends_on_goal_id,
+                    dependency.created_at
+                ],
+            )
+            .map_err(|e| format!("Failed to insert goal dependency: {}", e))?;
+        }
+
+        // The payload writes goals and edges independently; only their result
+        // together can create a cycle or a same-bundle edge. Reject only what
+        // THIS sync introduced (comparing against `goals_before`/`edges_before`),
+        // never the full graph — a pre-existing bad edge must not make every
+        // later, unrelated save fail too.
+        let goals_after = load_dependency_goals(conn)?;
+        let edges_after = load_dependency_edges(conn)?;
+        if let Some(error) = introduced_dependency_errors(
+            (&goals_before, &edges_before),
+            (&goals_after, &edges_after),
+        )
+        .into_iter()
+        .next()
+        {
+            return Err(format!(
+                "Goal dependency rejected ({}): {} → {}",
+                error.code.as_str(),
+                error.goal_id,
+                error.depends_on_goal_id
+            ));
+        }
+
         Ok(())
     })?;
     Ok(GoalsSyncResult { conflicts })
 }
 
-pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
-    let mut goal_stmt = conn
+fn load_dependency_goals(conn: &Connection) -> Result<Vec<GoalDependencyGoal>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, parent_id, bundle FROM pm_goals")
+        .map_err(|e| format!("Failed to prepare goal dependency validation query: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(GoalDependencyGoal {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                bundle: row.get(2)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query goals for dependency validation: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read a goal row for dependency validation: {}", e))?;
+    Ok(rows)
+}
+
+fn load_dependency_edges(conn: &Connection) -> Result<Vec<GoalDependencyEdge>, String> {
+    // Ordered the same way `goals_load_impl` orders `dependencies`: whichever
+    // edge closes a loop is the one added later, not whichever the table scan
+    // happens to visit first.
+    let mut stmt = conn
+        .prepare(
+            "SELECT goal_id, depends_on_goal_id FROM pm_goal_dependencies \
+             ORDER BY created_at, id",
+        )
+        .map_err(|e| format!("Failed to prepare dependency edges query: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(GoalDependencyEdge {
+                goal_id: row.get(0)?,
+                depends_on_goal_id: row.get(1)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query dependency edges: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read a dependency edge row: {}", e))?;
+    Ok(rows)
+}
+
+// code-gate: complexity-cyclomatic - one `row.get()?` per PmGoal field (16 columns); each is a mechanical, independently-failing extraction, not a decision to split
+fn load_goals(conn: &Connection) -> Result<Vec<PmGoal>, String> {
+    let mut stmt = conn
         .prepare(
             "SELECT id, parent_id, name, description, success_criteria, status, priority, \
              goal_prompt, created_by, achieved_at, sort_order, created_at, updated_at, \
-             work_mode, mission_path \
+             work_mode, mission_path, bundle \
              FROM pm_goals ORDER BY sort_order, created_at",
         )
         .map_err(|e| format!("Failed to prepare goals query: {}", e))?;
-    let goals: Vec<PmGoal> = goal_stmt
+    let rows = stmt
         .query_map([], |row| {
             Ok(PmGoal {
                 id: row.get(0)?,
@@ -343,20 +451,24 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
                 updated_at: row.get(12)?,
                 work_mode: row.get(13)?,
                 mission_path: row.get(14)?,
+                bundle: row.get(15)?,
             })
         })
         .map_err(|e| format!("Failed to query goals: {}", e))?
         .filter_map(|r| r.ok())
         .collect();
+    Ok(rows)
+}
 
-    let mut run_stmt = conn
+fn load_goal_runs(conn: &Connection) -> Result<Vec<PmGoalRun>, String> {
+    let mut stmt = conn
         .prepare(
             "SELECT id, goal_id, agent_id, ticket_id, prompt, model, provider, source, \
              outcome, summary, started_at, finished_at \
              FROM pm_goal_runs ORDER BY started_at",
         )
         .map_err(|e| format!("Failed to prepare goal runs query: {}", e))?;
-    let goal_runs: Vec<PmGoalRun> = run_stmt
+    let rows = stmt
         .query_map([], |row| {
             Ok(PmGoalRun {
                 id: row.get(0)?,
@@ -376,14 +488,17 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
         .map_err(|e| format!("Failed to query goal runs: {}", e))?
         .filter_map(|r| r.ok())
         .collect();
+    Ok(rows)
+}
 
-    let mut link_stmt = conn
+fn load_goal_requirement_links(conn: &Connection) -> Result<Vec<PmGoalRequirementLink>, String> {
+    let mut stmt = conn
         .prepare(
             "SELECT id, goal_id, requirement_id, created_at \
              FROM pm_goal_requirement_links ORDER BY created_at",
         )
         .map_err(|e| format!("Failed to prepare goal requirement links query: {}", e))?;
-    let requirement_links: Vec<PmGoalRequirementLink> = link_stmt
+    let rows = stmt
         .query_map([], |row| {
             Ok(PmGoalRequirementLink {
                 id: row.get(0)?,
@@ -395,8 +510,12 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
         .map_err(|e| format!("Failed to query goal requirement links: {}", e))?
         .filter_map(|r| r.ok())
         .collect();
+    Ok(rows)
+}
 
-    let mut station_stmt = conn
+// code-gate: complexity-cyclomatic - one `row.get()?` per PmGoalStation field (16 columns); each is a mechanical, independently-failing extraction, not a decision to split
+fn load_goal_stations(conn: &Connection) -> Result<Vec<PmGoalStation>, String> {
+    let mut stmt = conn
         .prepare(
             "SELECT id, goal_id, name, kind, status, evidence_kind, predicate, \
              evidence_note, source_context, ticket_id, lane, sort_order, last_checked_at, done_at, \
@@ -404,7 +523,7 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
              FROM pm_goal_stations ORDER BY goal_id, sort_order, created_at",
         )
         .map_err(|e| format!("Failed to prepare goal stations query: {}", e))?;
-    let stations: Vec<PmGoalStation> = station_stmt
+    let rows = stmt
         .query_map([], |row| {
             Ok(PmGoalStation {
                 id: row.get(0)?,
@@ -428,18 +547,49 @@ pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
         .map_err(|e| format!("Failed to query goal stations: {}", e))?
         .filter_map(|r| r.ok())
         .collect();
+    Ok(rows)
+}
 
+/// Full dependency rows for `GoalsState` — not to be confused with
+/// `load_dependency_goals`/`load_dependency_edges` above, which load the
+/// pared-down shape `goal_deps::validate_goal_dependencies` takes.
+fn load_goal_dependencies(conn: &Connection) -> Result<Vec<PmGoalDependency>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, goal_id, depends_on_goal_id, created_at \
+             FROM pm_goal_dependencies ORDER BY created_at, id",
+        )
+        .map_err(|e| format!("Failed to prepare goal dependencies query: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(PmGoalDependency {
+                id: row.get(0)?,
+                goal_id: row.get(1)?,
+                depends_on_goal_id: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query goal dependencies: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+pub fn goals_load_impl(conn: &Connection) -> Result<GoalsState, String> {
     Ok(GoalsState {
-        goals,
-        goal_runs,
-        requirement_links,
-        stations,
+        goals: load_goals(conn)?,
+        goal_runs: load_goal_runs(conn)?,
+        requirement_links: load_goal_requirement_links(conn)?,
+        stations: load_goal_stations(conn)?,
+        dependencies: load_goal_dependencies(conn)?,
     })
 }
 
 pub fn goals_clear_impl(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
-        "DELETE FROM pm_goal_stations;
+        "DELETE FROM pm_goal_status_history;
+         DELETE FROM pm_goal_dependencies;
+         DELETE FROM pm_goal_stations;
          DELETE FROM pm_goal_requirement_links;
          DELETE FROM pm_goal_runs;
          DELETE FROM pm_goals;",

@@ -33,6 +33,10 @@ const mocks = {
   conductorTick: vi.fn(async () => undefined),
   approveConductorTicket: vi.fn(async () => undefined),
   dismissConductorApproval: vi.fn(),
+  addGoalDependency: vi.fn(() => ({ ok: true }) as const),
+  removeGoalDependency: vi.fn(),
+  setGoalBundle: vi.fn(() => ({ ok: true }) as const),
+  showToast: vi.fn(),
 };
 
 type User = ReturnType<typeof userEvent.setup>;
@@ -93,6 +97,7 @@ const storeState = {
   goalRunsDraft: [],
   goalRequirementLinksDraft: [],
   goalStationsDraft: [],
+  goalDependenciesDraft: [],
   goalConflicts: [],
   goals: [],
   goalRuns: [],

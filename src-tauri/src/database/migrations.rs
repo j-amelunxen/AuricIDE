@@ -34,6 +34,7 @@ pub(crate) fn apply_migration(
     Ok(())
 }
 
+// code-gate: complexity-cyclomatic, complexity-function-length - one flat, ordered list of migrations; each `?` is one step, and splitting it would scatter the order that matters
 pub fn run_migrations(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (
@@ -421,6 +422,59 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         "ALTER TABLE pm_goals ADD COLUMN mission_path TEXT;"
     };
     apply_migration(conn, 22, "add_goal_mission_path", sql)?;
+
+    // A goal's bundle label plus the edges between goals — what waits for what.
+    // See src/lib/goals/goalDependencies.ts for the semantics and
+    // src/lib/goals/goalDependencies.fixtures.json for the shared test contract
+    // with `database::goal_deps::validate_goal_dependencies`. Keep in sync with
+    // src/mcp/db.ts migration 23. The bundle column follows the same
+    // ADD-COLUMN-only-if-missing rule as migration 22; the table is a plain
+    // `CREATE TABLE IF NOT EXISTS`, so it is safe to run unconditionally.
+    let bundle_column = if column_exists(conn, "pm_goals", "bundle")? {
+        ""
+    } else {
+        "ALTER TABLE pm_goals ADD COLUMN bundle TEXT;"
+    };
+    let sql = format!(
+        "{bundle_column}
+        CREATE TABLE IF NOT EXISTS pm_goal_dependencies (
+            id TEXT PRIMARY KEY,
+            goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+            depends_on_goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL,
+            UNIQUE(goal_id, depends_on_goal_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pm_goal_deps_goal ON pm_goal_dependencies(goal_id);
+        CREATE INDEX IF NOT EXISTS idx_pm_goal_deps_target ON pm_goal_dependencies(depends_on_goal_id);"
+    );
+    apply_migration(conn, 23, "goal_dependencies", &sql)?;
+
+    // Goal status history, the goal twin of pm_status_history (migration 8).
+    // Keep in sync with src/mcp/db.ts migration 24. The backfill is one
+    // snapshot per goal — its status now, dated to achieved_at or updated_at —
+    // because earlier transitions were never recorded; source 'backfill' says
+    // so instead of inventing them. Idempotent, so a crash between the DDL and
+    // the marker does not double the snapshot.
+    apply_migration(
+        conn,
+        24,
+        "create_pm_goal_status_history",
+        "CREATE TABLE IF NOT EXISTS pm_goal_status_history (
+            id TEXT PRIMARY KEY,
+            goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+            from_status TEXT,
+            to_status TEXT NOT NULL,
+            changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            source TEXT NOT NULL DEFAULT 'ui'
+        );
+        CREATE INDEX IF NOT EXISTS idx_goal_status_history_goal
+            ON pm_goal_status_history(goal_id, changed_at);
+        INSERT INTO pm_goal_status_history (id, goal_id, from_status, to_status, changed_at, source)
+        SELECT hex(randomblob(16)), g.id, NULL, g.status,
+               COALESCE(g.achieved_at, g.updated_at), 'backfill'
+        FROM pm_goals g
+        WHERE NOT EXISTS (SELECT 1 FROM pm_goal_status_history h WHERE h.goal_id = g.id);",
+    )?;
 
     Ok(())
 }

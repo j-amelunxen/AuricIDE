@@ -2,7 +2,14 @@
 
 import { useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ReactFlow, Background, BackgroundVariant, Controls, type Node } from '@xyflow/react';
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MarkerType,
+  type Node,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useStore } from '@/lib/store';
 import {
@@ -35,6 +42,7 @@ function OrchestrationModalContent() {
   const tickets = useStore((s) => s.pmDraftTickets);
   const agents = useStore((s) => s.agents);
   const goalRunsDraft = useStore((s) => s.goalRunsDraft);
+  const goalDependenciesDraft = useStore((s) => s.goalDependenciesDraft);
   const conductorRunning = useStore((s) => s.conductorRunning);
   const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
   const setGoalsModalOpen = useStore((s) => s.setGoalsModalOpen);
@@ -50,18 +58,38 @@ function OrchestrationModalContent() {
   const { nodes, edges } = useMemo(
     () =>
       orchestrationOpen
-        ? buildOrchestrationGraph(goalsDraft, tickets, agents, goalRunsDraft, goalStationsDraft)
+        ? buildOrchestrationGraph(
+            goalsDraft,
+            tickets,
+            agents,
+            goalRunsDraft,
+            goalStationsDraft,
+            goalDependenciesDraft
+          )
         : { nodes: [], edges: [] },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- agents is represented by agentSignature
-    [orchestrationOpen, goalsDraft, tickets, agentSignature, goalRunsDraft, goalStationsDraft]
+    [
+      orchestrationOpen,
+      goalsDraft,
+      tickets,
+      agentSignature,
+      goalRunsDraft,
+      goalStationsDraft,
+      goalDependenciesDraft,
+    ]
   );
 
   const rfEdges = useMemo(
     () =>
-      edges.map((e) => ({
-        ...e,
-        style: { stroke: e.animated ? 'var(--primary)' : 'rgba(255,255,255,0.25)' },
-      })),
+      edges.map((e) =>
+        e.kind === 'dependency'
+          ? {
+              ...e,
+              style: { stroke: 'rgba(255,255,255,0.3)', strokeDasharray: '4,4' },
+              markerEnd: { type: MarkerType.ArrowClosed, color: 'rgba(255,255,255,0.4)' },
+            }
+          : { ...e, style: { stroke: e.animated ? 'var(--primary)' : 'rgba(255,255,255,0.25)' } }
+      ),
     [edges]
   );
 

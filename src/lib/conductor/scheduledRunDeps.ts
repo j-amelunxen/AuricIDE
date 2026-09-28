@@ -68,7 +68,7 @@ export function buildScheduledRunDeps(
         approvedTickets: [],
         stations: state.goalStationsDraft ?? [],
       });
-      // A stations goal is work too: the run asks for a goal agent or, with no
+      // A stations goal is work too: the run spawns a goal agent or, with no
       // agent work left, checks whether it is achieved. Same as the button.
       return preflight.ready + preflight.stationGoals;
     },

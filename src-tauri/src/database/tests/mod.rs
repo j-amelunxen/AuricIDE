@@ -93,6 +93,7 @@ pub(crate) fn make_test_goal(id: &str, parent_id: Option<&str>) -> PmGoal {
         goal_prompt: "".to_string(),
         work_mode: "auto".to_string(),
         mission_path: None,
+        bundle: None,
         created_by: "ui".to_string(),
         achieved_at: None,
         sort_order: 0,
@@ -135,6 +136,20 @@ pub(crate) fn make_test_station(id: &str, goal_id: &str, sort_order: i32) -> PmG
     }
 }
 
+pub(crate) fn make_test_dependency(
+    id: &str,
+    goal_id: &str,
+    depends_on_goal_id: &str,
+) -> PmGoalDependency {
+    PmGoalDependency {
+        id: id.to_string(),
+        goal_id: goal_id.to_string(),
+        depends_on_goal_id: depends_on_goal_id.to_string(),
+        created_at: "2026-01-01 00:00:00".to_string(),
+    }
+}
+
+mod goal_history_tests;
 mod goal_judge_spike_tests;
 mod goals_sync_contract_tests;
 mod goals_tests;

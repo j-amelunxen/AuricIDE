@@ -26,6 +26,12 @@ export interface PmGoal {
    * project root (`normalizeMissionPath`). Absent or null means no mission.
    */
   missionPath?: string | null;
+  /**
+   * Sibling scoping label: goals under the same parent with the same trimmed
+   * `bundle` close together (`bundleHold` in `goalDependencies.ts`). Blank or
+   * absent means no bundle.
+   */
+  bundle?: string | null;
   /** Provenance: which actor created this goal. */
   createdBy: GoalActor;
   achievedAt: string | null;
@@ -55,6 +61,19 @@ export interface PmGoalRequirementLink {
   id: string;
   goalId: string;
   requirementId: string;
+  createdAt: string;
+}
+
+/**
+ * An edge `goalId -> dependsOnGoalId`: `goalId` is blocked until the target
+ * reaches `achieved` or `archived` (see `goalDependencies.ts`). Immutable once
+ * written — inserted or deleted, never edited — so it needs no compare-and-swap
+ * base the way goal, run and station rows do.
+ */
+export interface PmGoalDependency {
+  id: string;
+  goalId: string;
+  dependsOnGoalId: string;
   createdAt: string;
 }
 
@@ -152,6 +171,7 @@ export interface GoalsState {
   goalRuns: PmGoalRun[];
   requirementLinks: PmGoalRequirementLink[];
   stations: PmGoalStation[];
+  dependencies: PmGoalDependency[];
 }
 
 /** GoalsState as loaded over IPC, before predicates are parsed. */
@@ -160,6 +180,8 @@ interface GoalsStateWire {
   goalRuns: PmGoalRun[];
   requirementLinks: PmGoalRequirementLink[];
   stations?: PmGoalStationWire[];
+  /** Absent from a backend older than this feature: reads as no dependencies. */
+  dependencies?: PmGoalDependency[];
 }
 
 /**
@@ -171,6 +193,7 @@ export interface GoalsSyncPayload extends GoalsState {
   deletedRunIds: string[];
   deletedLinkIds: string[];
   deletedStationIds: string[];
+  deletedDependencyIds: string[];
   /**
    * The persisted rows the sent rows were edited from. With a base, Rust writes
    * only the columns that differ from it, so a concurrent MCP write to another
@@ -185,7 +208,11 @@ import { invoke } from './invoke';
 
 export async function goalsLoad(projectPath: string): Promise<GoalsState> {
   const wire = await invoke<GoalsStateWire>('goals_load', { projectPath });
-  return { ...wire, stations: (wire.stations ?? []).map(parseStationRow) };
+  return {
+    ...wire,
+    stations: (wire.stations ?? []).map(parseStationRow),
+    dependencies: wire.dependencies ?? [],
+  };
 }
 
 /** A row the sync left as the database has it: the same columns changed on both sides. */

@@ -19,6 +19,11 @@ import {
   completeGoalRun,
   listGoalRuns,
   evaluateGoal,
+  addGoalDependency,
+  removeGoalDependency,
+  listGoalDependencies,
+  goalDependsOnIds,
+  goalBlockedByInfo,
 } from './goalsDb';
 
 export * from './goalsDb';
@@ -37,6 +42,7 @@ const WORK_MODE_PARAM = z
       '(default: stations when the goal has stations and no tickets, else tickets)'
   );
 
+// code-gate: complexity-function-length - a flat MCP tool registration list (one server.addTool block per tool); splitting it up would only move each block into its own function, scattering the one place that lists every goal tool the server exposes
 export function registerGoalTools(server: FastMCP, db: Database.Database): void {
   server.addTool({
     name: 'list_goals',
@@ -56,7 +62,8 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
 
   server.addTool({
     name: 'get_goal',
-    description: 'Get a single goal by UUID or unique prefix, including its runs',
+    description:
+      'Get a single goal by UUID or unique prefix, including its runs, bundle, the goals it depends on, and what is currently blocking it',
     parameters: z.object({
       id: z.string().describe('Goal ID (UUID or unique prefix)'),
     }),
@@ -64,7 +71,16 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
       const resolved = resolveGoalId(db, id);
       const goal = getGoal(db, resolved);
       if (!goal) return JSON.stringify({ error: 'Goal not found' });
-      return JSON.stringify({ ...goal, runs: listGoalRuns(db, resolved) }, null, 2);
+      return JSON.stringify(
+        {
+          ...goal,
+          dependsOn: goalDependsOnIds(db, resolved),
+          blockedBy: goalBlockedByInfo(db, resolved),
+          runs: listGoalRuns(db, resolved),
+        },
+        null,
+        2
+      );
     },
   });
 
@@ -102,6 +118,23 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
       sortOrder: z.number().optional(),
       workMode: WORK_MODE_PARAM,
       missionPath: z.string().optional().describe(MISSION_PATH_DESCRIPTION),
+      bundle: z
+        .string()
+        .optional()
+        .describe(
+          'Groups this goal with its siblings (same parent) that share the same label: they only ' +
+            'become achieved together, once every member has met its own conditions. A dependency ' +
+            'onto one member is a dependency onto the whole bundle.'
+        ),
+      dependsOn: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Goals this one must wait for: an exact goal id, a unique id prefix, or the exact name of ' +
+            'a sibling (same parent). Blocked until every target reaches achieved or archived; a ' +
+            'failed target keeps blocking. Rejected if it would create a cycle or cross into an ' +
+            "ancestor, descendant, or this goal's own bundle."
+        ),
     }),
     execute: async (params) => {
       const parentId = params.parentId ? resolveGoalId(db, params.parentId) : undefined;
@@ -128,6 +161,14 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
         .nullable()
         .optional()
         .describe(`${MISSION_PATH_DESCRIPTION} null or "" removes the link.`),
+      bundle: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(
+          'Bundle label shared with siblings that must become achieved together; null or "" removes ' +
+            'this goal from its bundle.'
+        ),
     }),
     execute: async ({ id, ...updates }) => {
       const resolved = resolveGoalId(db, id);
@@ -154,9 +195,18 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
   server.addTool({
     name: 'decompose_goal',
     description:
-      'Decompose a goal into sub-goals in one atomic step (the orchestrator use case). Children are created with status=active.',
+      'Decompose a goal into sub-goals in one atomic step (the orchestrator use case). Children are ' +
+      'created with status=active, in the given order, after any existing children.',
     parameters: z.object({
       parentId: z.string().describe('Goal to decompose (UUID or prefix)'),
+      mode: z
+        .enum(['parallel', 'serial'])
+        .optional()
+        .describe(
+          'Default "parallel": children only wait on what their own dependsOn names. "serial" ' +
+            'additionally chains each child after the previous one in the listed order, on top of ' +
+            'any explicit dependsOn — use it for a simple A-then-B-then-C line.'
+        ),
       children: z
         .array(
           z.object({
@@ -165,14 +215,36 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
             successCriteria: z.string().optional(),
             priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
             goalPrompt: z.string().optional(),
+            key: z
+              .string()
+              .optional()
+              .describe(
+                "A local label for this child, usable by another child's dependsOn within this same " +
+                  'call — checked before goal ids or sibling names, and cleared once the call returns.'
+              ),
+            dependsOn: z
+              .array(z.string())
+              .optional()
+              .describe(
+                "What this child must wait for: a key from this same call, or an existing goal's " +
+                  'id, unique id prefix, or exact sibling name. Blocked until every target reaches ' +
+                  'achieved or archived.'
+              ),
+            bundle: z
+              .string()
+              .optional()
+              .describe(
+                'Groups this child with siblings that share the label: they become achieved only ' +
+                  'together, once every member has met its own conditions.'
+              ),
           })
         )
         .min(1)
         .describe('Sub-goals to create'),
     }),
-    execute: async ({ parentId, children }) => {
+    execute: async ({ parentId, children, mode }) => {
       const resolved = resolveGoalId(db, parentId);
-      return JSON.stringify(decomposeGoal(db, resolved, children, 'mcp'));
+      return JSON.stringify(decomposeGoal(db, resolved, children, 'mcp', mode ?? 'parallel'));
     },
   });
 
@@ -283,6 +355,65 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
     execute: async ({ id }) => {
       const resolved = resolveGoalId(db, id);
       return JSON.stringify(evaluateGoal(db, resolved), null, 2);
+    },
+  });
+
+  server.addTool({
+    name: 'add_goal_dependency',
+    description:
+      'Add a wait-for edge: goalId (and its whole subtree) stays blocked until dependsOnGoalId reaches ' +
+      'achieved or archived (a failed target keeps blocking). A dependency onto a bundled goal applies ' +
+      'to every member of its bundle. Rejected — without changing anything — if the edge would create a ' +
+      'cycle, target an ancestor or descendant of goalId, or cross into its own bundle. Adding an edge ' +
+      'that already exists is a no-op.',
+    parameters: z.object({
+      goalId: z.string().describe('The goal that will wait (UUID or prefix)'),
+      dependsOnGoalId: z.string().describe('The goal it waits for (UUID or prefix)'),
+    }),
+    execute: async ({ goalId, dependsOnGoalId }) => {
+      const from = resolveGoalId(db, goalId);
+      const to = resolveGoalId(db, dependsOnGoalId);
+      return JSON.stringify(addGoalDependency(db, from, to));
+    },
+  });
+
+  server.addTool({
+    name: 'remove_goal_dependency',
+    description: 'Remove a wait-for edge between two goals, if it exists. Never rejected.',
+    parameters: z.object({
+      goalId: z.string().describe('The waiting goal (UUID or prefix)'),
+      dependsOnGoalId: z
+        .string()
+        .describe('The goal it should no longer wait for (UUID or prefix)'),
+    }),
+    execute: async ({ goalId, dependsOnGoalId }) => {
+      const from = resolveGoalId(db, goalId);
+      const to = resolveGoalId(db, dependsOnGoalId);
+      return JSON.stringify(removeGoalDependency(db, from, to));
+    },
+  });
+
+  server.addTool({
+    name: 'list_goal_dependencies',
+    description:
+      "Inspect the dependency graph. Pass parentId to see one parent's children as topological waves " +
+      '(each inner array of goal ids can run in parallel; later arrays wait on something in an earlier ' +
+      "one; bundle members always share a wave) plus that scope's edges, bundles and blocked children. " +
+      'Pass goalId instead to see just that one goal: the edges touching it, its own bundle, and whether ' +
+      'it is currently blocked. Pass neither for every edge, bundle and blocked goal in the project (no ' +
+      'waves — those need a parent to be meaningful).',
+    parameters: z.object({
+      goalId: z.string().optional().describe('Scope to one goal (UUID or prefix)'),
+      parentId: z
+        .string()
+        .optional()
+        .describe("Scope to one parent's children, with topological waves (UUID or prefix)"),
+    }),
+    execute: async ({ goalId, parentId }) => {
+      const scope: { goalId?: string; parentId?: string } = {};
+      if (goalId) scope.goalId = resolveGoalId(db, goalId);
+      if (parentId) scope.parentId = resolveGoalId(db, parentId);
+      return JSON.stringify(listGoalDependencies(db, scope), null, 2);
     },
   });
 }

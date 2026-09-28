@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
@@ -404,5 +404,169 @@ describe('GoalDetailPanel mission overview', () => {
     useStore.setState({ rootPath: null });
     renderPanel(makeGoal({ missionPath: 'mission-sample' }));
     expect(screen.queryByTestId('mission-overview')).toBeNull();
+  });
+});
+
+describe('GoalDetailPanel dependencies', () => {
+  afterEach(() => useStore.setState({ goalsDraft: [], goalDependenciesDraft: [], toasts: [] }));
+
+  it('shows a waits-for chip and removes it through the store', async () => {
+    const user = userEvent.setup();
+    const goal = makeGoal({ id: 'g1', parentId: 'root' });
+    const sibling = makeGoal({ id: 'g2', parentId: 'root', name: 'Backend ready' });
+    useStore.setState({
+      goalsDraft: [goal, sibling],
+      goalDependenciesDraft: [{ id: 'dep-1', goalId: 'g1', dependsOnGoalId: 'g2', createdAt: '' }],
+    });
+
+    renderPanel(goal, [], { goals: [goal, sibling] });
+    expect(screen.getByTestId('goal-depends-chip-g2')).toHaveTextContent('Backend ready');
+
+    await user.click(screen.getByTestId('goal-depends-unlink-g2'));
+    expect(useStore.getState().goalDependenciesDraft).toHaveLength(0);
+    expect(screen.queryByTestId('goal-depends-chip-g2')).toBeNull();
+  });
+
+  it('adds a dependency picked from the sibling list', async () => {
+    const user = userEvent.setup();
+    const goal = makeGoal({ id: 'g1', parentId: 'root' });
+    const sibling = makeGoal({ id: 'g2', parentId: 'root', name: 'Backend ready' });
+    useStore.setState({ goalsDraft: [goal, sibling], goalDependenciesDraft: [] });
+
+    renderPanel(goal, [], { goals: [goal, sibling] });
+    await user.selectOptions(screen.getByTestId('goal-depends-picker'), 'g2');
+
+    expect(useStore.getState().goalDependenciesDraft).toEqual([
+      expect.objectContaining({ goalId: 'g1', dependsOnGoalId: 'g2' }),
+    ]);
+    expect(await screen.findByTestId('goal-depends-chip-g2')).toBeInTheDocument();
+  });
+
+  it('surfaces a rejected dependency as an error toast, not a silent no-op', async () => {
+    const user = userEvent.setup();
+    // g1 already waits for g2. Picking g2 to also wait for g1 through g2's
+    // own panel would close the loop, so the store must reject it — the
+    // picker itself has no cycle check, only the store does.
+    const g1 = makeGoal({ id: 'g1', parentId: 'root', name: 'First' });
+    const g2 = makeGoal({ id: 'g2', parentId: 'root', name: 'Second' });
+    useStore.setState({
+      goalsDraft: [g1, g2],
+      goalDependenciesDraft: [{ id: 'dep-1', goalId: 'g1', dependsOnGoalId: 'g2', createdAt: '' }],
+    });
+
+    renderPanel(g2, [], { goals: [g1, g2] });
+    await user.selectOptions(screen.getByTestId('goal-depends-picker'), 'g1');
+
+    expect(useStore.getState().goalDependenciesDraft).toHaveLength(1); // rejected, not added
+    expect(useStore.getState().toasts.at(-1)).toMatchObject({ variant: 'error' });
+  });
+
+  it('sets the bundle label when the input is blurred', () => {
+    const goal = makeGoal({ id: 'g1', parentId: 'root' });
+    useStore.setState({ goalsDraft: [goal], goalDependenciesDraft: [] });
+
+    renderPanel(goal, [], { goals: [goal] });
+    const input = screen.getByTestId('goal-bundle-input') as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: 'api' } });
+    input.blur();
+
+    expect(useStore.getState().goalsDraft.find((g) => g.id === 'g1')?.bundle).toBe('api');
+  });
+
+  it('shows no bundle members without a second sibling in the same bundle', () => {
+    const goal = makeGoal({ id: 'g1', parentId: 'root', bundle: 'api' });
+    useStore.setState({ goalsDraft: [goal], goalDependenciesDraft: [] });
+    renderPanel(goal, [], { goals: [goal] });
+    expect(screen.getByText('Runs in parallel with siblings.')).toBeInTheDocument();
+  });
+
+  it('follows a bundle changed elsewhere instead of writing a stale draft back', () => {
+    const goal = makeGoal({ id: 'g1', parentId: 'root', bundle: 'old' });
+    useStore.setState({ goalsDraft: [goal], goalDependenciesDraft: [] });
+    const { rerender } = renderPanel(goal, [], { goals: [goal] });
+
+    // Simulates an MCP agent (or another session) changing the bundle while
+    // this panel stays open on the same goal — the prop changes, the section
+    // does not remount.
+    const updatedGoal = { ...goal, bundle: 'new' };
+    rerender(
+      <GoalDetailPanel
+        goal={updatedGoal}
+        goals={[updatedGoal]}
+        tickets={[]}
+        requirements={[]}
+        requirementLinks={[]}
+        runs={[]}
+        onUpdate={vi.fn()}
+        onDelete={vi.fn()}
+        onAchieve={vi.fn()}
+        onAddSubGoal={vi.fn()}
+        onLaunchAgent={vi.fn()}
+        onSplitGoal={vi.fn()}
+        onLinkRequirement={vi.fn()}
+        onUnlinkRequirement={vi.fn()}
+        onLinkTicket={vi.fn()}
+        onUnlinkTicket={vi.fn()}
+      />
+    );
+
+    const input = screen.getByTestId('goal-bundle-input') as HTMLInputElement;
+    expect(input.value).toBe('new');
+
+    const setGoalBundleSpy = vi.spyOn(useStore.getState(), 'setGoalBundle');
+    input.focus();
+    input.blur();
+    expect(setGoalBundleSpy).not.toHaveBeenCalled();
+    expect(input.value).toBe('new');
+  });
+});
+
+describe('GoalDetailPanel manual launch respects dependencies', () => {
+  afterEach(() => useStore.setState({ goalsDraft: [], goalDependenciesDraft: [] }));
+
+  it('disables the launch button with a visible reason while the goal is blocked', () => {
+    const a = makeGoal({ id: 'a', parentId: 'root', name: 'Backend' });
+    const b = makeGoal({ id: 'b', parentId: 'root', name: 'Frontend' });
+    useStore.setState({
+      goalsDraft: [a, b],
+      goalDependenciesDraft: [{ id: 'dep-1', goalId: 'b', dependsOnGoalId: 'a', createdAt: '' }],
+    });
+
+    renderPanel(b, [], { goals: [a, b] });
+
+    const button = screen.getByTestId('goal-launch-agent-btn');
+    expect(button).toBeDisabled();
+    expect(screen.getByTestId('goal-direct-agent-guidance')).toHaveTextContent(
+      'Waits for Backend.'
+    );
+  });
+
+  it('keeps the launch button enabled once nothing blocks the goal', () => {
+    const a = makeGoal({ id: 'a', parentId: 'root', name: 'Backend', status: 'achieved' });
+    const b = makeGoal({ id: 'b', parentId: 'root', name: 'Frontend' });
+    useStore.setState({
+      goalsDraft: [a, b],
+      goalDependenciesDraft: [{ id: 'dep-1', goalId: 'b', dependsOnGoalId: 'a', createdAt: '' }],
+    });
+
+    renderPanel(b, [], { goals: [a, b] });
+
+    expect(screen.getByTestId('goal-launch-agent-btn')).not.toBeDisabled();
+  });
+
+  it('does not fire onLaunchAgent from a disabled, blocked button', async () => {
+    const user = userEvent.setup();
+    const onLaunchAgent = vi.fn();
+    const a = makeGoal({ id: 'a', parentId: 'root', name: 'Backend' });
+    const b = makeGoal({ id: 'b', parentId: 'root', name: 'Frontend' });
+    useStore.setState({
+      goalsDraft: [a, b],
+      goalDependenciesDraft: [{ id: 'dep-1', goalId: 'b', dependsOnGoalId: 'a', createdAt: '' }],
+    });
+
+    renderPanel(b, [], { goals: [a, b], onLaunchAgent });
+    await user.click(screen.getByTestId('goal-launch-agent-btn'));
+    expect(onLaunchAgent).not.toHaveBeenCalled();
   });
 });

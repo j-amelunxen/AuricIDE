@@ -360,7 +360,60 @@ function applyMigrations(db: Database.Database): void {
     }
     record(22, 'add_goal_mission_path');
   }
+
+  // Migration #23: goal dependencies (serial/parallel/bundle scheduling) and a
+  // goal's bundle label. Keep in sync with src-tauri/src/database/migrations.rs
+  // and validated against the same contract as src/lib/goals/goalDependencies.ts
+  // (goalDependencies.fixtures.json). Same PRAGMA-guarded ADD COLUMN pattern as
+  // migration #22: the column may already exist without its marker if the Rust
+  // side died between the two.
+  if (!applied(23)) {
+    const columns = db.prepare('PRAGMA table_info(pm_goals)').all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === 'bundle')) {
+      db.exec('ALTER TABLE pm_goals ADD COLUMN bundle TEXT');
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pm_goal_dependencies (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+        depends_on_goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        UNIQUE(goal_id, depends_on_goal_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pm_goal_deps_goal ON pm_goal_dependencies(goal_id);
+      CREATE INDEX IF NOT EXISTS idx_pm_goal_deps_target ON pm_goal_dependencies(depends_on_goal_id);
+    `);
+    record(23, 'goal_dependencies');
+  }
+
+  // Migration #24: goal status history, the goal twin of pm_status_history.
+  // Keep in sync with src-tauri/src/database/migrations.rs migration 24. The
+  // backfill is one snapshot per goal (its status now, dated to achieved_at or
+  // updated_at): earlier transitions were never recorded, and the snapshot
+  // says so with source 'backfill' rather than inventing them. Idempotent, so
+  // a crash between the DDL and the marker does not double the snapshot.
+  if (!applied(24)) {
+    db.exec(GOAL_STATUS_HISTORY_MIGRATION);
+    record(24, 'create_pm_goal_status_history');
+  }
 }
+
+const GOAL_STATUS_HISTORY_MIGRATION = `
+  CREATE TABLE IF NOT EXISTS pm_goal_status_history (
+    id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL REFERENCES pm_goals(id) ON DELETE CASCADE,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    source TEXT NOT NULL DEFAULT 'ui'
+  );
+  CREATE INDEX IF NOT EXISTS idx_goal_status_history_goal
+    ON pm_goal_status_history(goal_id, changed_at);
+  INSERT INTO pm_goal_status_history (id, goal_id, from_status, to_status, changed_at, source)
+  SELECT hex(randomblob(16)), g.id, NULL, g.status, COALESCE(g.achieved_at, g.updated_at), 'backfill'
+  FROM pm_goals g
+  WHERE NOT EXISTS (SELECT 1 FROM pm_goal_status_history h WHERE h.goal_id = g.id);
+`;
 
 function runMigrations(db: Database.Database): void {
   db.transaction(() => applyMigrations(db)).immediate();

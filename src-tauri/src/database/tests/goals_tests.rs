@@ -336,6 +336,239 @@ fn test_goal_payload_without_mission_path_deserializes_as_none() {
     assert_eq!(goal.mission_path, None);
 }
 
+#[test]
+fn test_goal_bundle_roundtrips_and_defaults_to_none() {
+    let conn = setup_in_memory_db();
+
+    let mut bundled = make_test_goal("g1", None);
+    bundled.bundle = Some("api".to_string());
+    let payload = sync_payload(vec![bundled, make_test_goal("g2", None)], vec![], vec![]);
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    let g1 = state.goals.iter().find(|g| g.id == "g1").unwrap();
+    let g2 = state.goals.iter().find(|g| g.id == "g2").unwrap();
+    assert_eq!(g1.bundle.as_deref(), Some("api"));
+    assert_eq!(g2.bundle, None);
+}
+
+#[test]
+fn test_goal_dependencies_roundtrip_ordered_by_created_at() {
+    let conn = setup_in_memory_db();
+    let mut payload = sync_payload(
+        vec![
+            make_test_goal("a", None),
+            make_test_goal("b", None),
+            make_test_goal("c", None),
+        ],
+        vec![],
+        vec![],
+    );
+    payload.dependencies = vec![
+        make_test_dependency("e2", "c", "b"),
+        make_test_dependency("e1", "b", "a"),
+    ];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(state.dependencies.len(), 2);
+    // Both rows share the same created_at fixture value, so id breaks the tie.
+    assert_eq!(state.dependencies[0].id, "e1");
+    assert_eq!(state.dependencies[1].id, "e2");
+    assert_eq!(state.dependencies[0].goal_id, "b");
+    assert_eq!(state.dependencies[0].depends_on_goal_id, "a");
+}
+
+#[test]
+fn test_a_repeated_dependency_id_is_left_exactly_as_it_is() {
+    let conn = setup_in_memory_db();
+    let mut payload = sync_payload(
+        vec![make_test_goal("a", None), make_test_goal("b", None)],
+        vec![],
+        vec![],
+    );
+    payload.dependencies = vec![make_test_dependency("e1", "b", "a")];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    // Dependency rows are immutable: sending the same id again is a no-op,
+    // even with different (nonsensical) column values.
+    payload.dependencies = vec![PmGoalDependency {
+        id: "e1".to_string(),
+        goal_id: "a".to_string(),
+        depends_on_goal_id: "b".to_string(),
+        created_at: "2099-01-01 00:00:00".to_string(),
+    }];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(state.dependencies.len(), 1);
+    assert_eq!(state.dependencies[0].goal_id, "b");
+    assert_eq!(state.dependencies[0].depends_on_goal_id, "a");
+}
+
+#[test]
+fn test_deleted_dependency_ids_remove_only_listed_rows() {
+    let conn = setup_in_memory_db();
+    let mut payload = sync_payload(
+        vec![
+            make_test_goal("a", None),
+            make_test_goal("b", None),
+            make_test_goal("c", None),
+        ],
+        vec![],
+        vec![],
+    );
+    payload.dependencies = vec![
+        make_test_dependency("e1", "b", "a"),
+        make_test_dependency("e2", "c", "b"),
+    ];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    payload.dependencies = vec![];
+    payload.deleted_dependency_ids = vec!["e1".to_string()];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(state.dependencies.len(), 1);
+    assert_eq!(state.dependencies[0].id, "e2");
+}
+
+#[test]
+fn test_deleting_a_goal_cascades_its_dependency_edges() {
+    let conn = setup_in_memory_db();
+    let mut payload = sync_payload(
+        vec![make_test_goal("a", None), make_test_goal("b", None)],
+        vec![],
+        vec![],
+    );
+    payload.dependencies = vec![make_test_dependency("e1", "b", "a")];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    payload.goals = vec![make_test_goal("b", None)];
+    payload.dependencies = vec![];
+    payload.deleted_goal_ids = vec!["a".to_string()];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(state.dependencies.len(), 0);
+}
+
+#[test]
+fn test_goals_clear_also_clears_dependencies() {
+    let conn = setup_in_memory_db();
+    let mut payload = sync_payload(
+        vec![make_test_goal("a", None), make_test_goal("b", None)],
+        vec![],
+        vec![],
+    );
+    payload.dependencies = vec![make_test_dependency("e1", "b", "a")];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    goals_clear_impl(&conn).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(state.dependencies.len(), 0);
+}
+
+#[test]
+fn test_a_cyclic_dependency_edge_rolls_back_the_whole_sync() {
+    let conn = setup_in_memory_db();
+    let mut payload = sync_payload(
+        vec![
+            make_test_goal("a", None),
+            make_test_goal("b", None),
+            make_test_goal("c", None),
+        ],
+        vec![],
+        vec![],
+    );
+    payload.dependencies = vec![make_test_dependency("e1", "b", "a")];
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    // b -> a already exists; adding a -> b closes a cycle. Also carries an
+    // unrelated goal rename, which must not survive the rollback either.
+    let mut renamed_c = make_test_goal("c", None);
+    renamed_c.name = "Renamed while the cycle was rejected".to_string();
+    let mut cyclic = sync_payload(vec![renamed_c], vec![], vec![]);
+    cyclic.dependencies = vec![make_test_dependency("e2", "a", "b")];
+
+    let result = goals_sync_impl(&conn, &cyclic);
+    let error = result.expect_err("a cyclic edge must be rejected");
+    assert_eq!(error, "Goal dependency rejected (cycle): a → b");
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(
+        state.dependencies.len(),
+        1,
+        "the rejected edge must not persist"
+    );
+    assert_eq!(state.dependencies[0].id, "e1");
+    assert_eq!(
+        state.goals.iter().find(|g| g.id == "c").unwrap().name,
+        "Goal c",
+        "the whole transaction rolls back, not just the rejected edge"
+    );
+}
+
+/// A row that reached the database by some route other than `goals_sync` — an
+/// older build, a hand edit, an MCP call from before a rule existed — must not
+/// turn every later sync into a rejection. `goals_sync_impl` only rejects what
+/// THIS sync introduces (`introduced_dependency_errors`), never the graph as a
+/// whole.
+#[test]
+fn test_a_preexisting_bad_edge_tolerates_unrelated_syncs_but_not_new_errors() {
+    let conn = setup_in_memory_db();
+    let mut a = make_test_goal("a", Some("p"));
+    a.bundle = Some("x".to_string());
+    let mut b = make_test_goal("b", Some("p"));
+    b.bundle = Some("x".to_string());
+    let payload = sync_payload(
+        vec![
+            make_test_goal("p", None),
+            a,
+            b,
+            make_test_goal("c", Some("p")),
+        ],
+        vec![],
+        vec![],
+    );
+    goals_sync_impl(&conn, &payload).unwrap();
+
+    // A same-bundle edge (b and a are both bundle "x") that `goals_sync` would
+    // reject — inserted directly, as if by an older build or a hand edit.
+    conn.execute(
+        "INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id, created_at) \
+         VALUES ('bad', 'b', 'a', '2026-01-01 00:00:00')",
+        [],
+    )
+    .unwrap();
+
+    // An unrelated sync — a brand new, valid edge — must still go through
+    // despite the pre-existing problem.
+    let mut unrelated = sync_payload(vec![], vec![], vec![]);
+    unrelated.dependencies = vec![make_test_dependency("e1", "c", "a")];
+    goals_sync_impl(&conn, &unrelated).unwrap();
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(state.dependencies.len(), 2);
+    assert!(state.dependencies.iter().any(|d| d.id == "bad"));
+    assert!(state.dependencies.iter().any(|d| d.id == "e1"));
+
+    // A sync that introduces its OWN new error is still rejected, even while
+    // the old one is tolerated.
+    let mut broken = sync_payload(vec![], vec![], vec![]);
+    broken.dependencies = vec![make_test_dependency("e2", "c", "c")];
+    let error = goals_sync_impl(&conn, &broken).expect_err("a new self edge must be rejected");
+    assert_eq!(error, "Goal dependency rejected (self): c → c");
+
+    let state = goals_load_impl(&conn).unwrap();
+    assert_eq!(
+        state.dependencies.len(),
+        2,
+        "the newly rejected edge must not persist; the old bad edge is untouched"
+    );
+}
+
 /// `in_review` (a reviewer's verdict is pending) is a goal status the backend
 /// stores verbatim: it has no goal-status vocabulary of its own, so the round
 /// trip is what "known on the Rust side" means. The vocabulary lives in

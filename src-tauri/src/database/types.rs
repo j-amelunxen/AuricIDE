@@ -193,6 +193,12 @@ pub struct PmGoal {
     /// `src/lib/missions/missionPath.ts`); a payload without it is `None`.
     #[serde(default)]
     pub mission_path: Option<String>,
+    /// Sibling-scoped label: goals with the same parent and the same trimmed,
+    /// non-blank `bundle` close together. See
+    /// `src/lib/goals/goalDependencies.ts` (`normalizeBundle`, `bundleHold`).
+    /// A payload without it is `None`, i.e. no bundle.
+    #[serde(default)]
+    pub bundle: Option<String>,
     pub created_by: String,
     pub achieved_at: Option<String>,
     pub sort_order: i32,
@@ -256,6 +262,20 @@ pub fn default_station_source_context() -> String {
     "null".to_string()
 }
 
+/// One edge in the waits-for graph: `goal_id` is blocked until
+/// `depends_on_goal_id` is `achieved` or `archived` (see
+/// `src/lib/goals/goalDependencies.ts`). Rows are immutable — created once by
+/// `add_goal_dependency` or a sync upsert, never edited in place — so sync
+/// only ever inserts or deletes one, no compare-and-swap.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PmGoalDependency {
+    pub id: String,
+    pub goal_id: String,
+    pub depends_on_goal_id: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct GoalsState {
@@ -264,6 +284,8 @@ pub struct GoalsState {
     pub requirement_links: Vec<PmGoalRequirementLink>,
     #[serde(default)]
     pub stations: Vec<PmGoalStation>,
+    #[serde(default)]
+    pub dependencies: Vec<PmGoalDependency>,
 }
 
 /// Row-level sync payload: upserts + explicit deletions. Unlike a replace-all
@@ -277,6 +299,11 @@ pub struct GoalsSyncPayload {
     pub requirement_links: Vec<PmGoalRequirementLink>,
     #[serde(default)]
     pub stations: Vec<PmGoalStation>,
+    /// New edges to insert. Immutable rows: an id already present is left
+    /// exactly as it is (`INSERT OR IGNORE`), never a candidate for
+    /// `update_changed` — a payload without this field upserts nothing.
+    #[serde(default)]
+    pub dependencies: Vec<PmGoalDependency>,
     #[serde(default)]
     pub deleted_goal_ids: Vec<String>,
     #[serde(default)]
@@ -285,6 +312,8 @@ pub struct GoalsSyncPayload {
     pub deleted_link_ids: Vec<String>,
     #[serde(default)]
     pub deleted_station_ids: Vec<String>,
+    #[serde(default)]
+    pub deleted_dependency_ids: Vec<String>,
     /// The persisted rows the draft rows above were edited from. A row with a
     /// base is written three-way: only columns that differ from its base, so a
     /// concurrent MCP write to any other column survives, and a row deleted

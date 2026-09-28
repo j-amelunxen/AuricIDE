@@ -16,7 +16,7 @@ import type { Notification } from './types';
 export const LAUNCH_REQUEST_KEY_PREFIX = 'agent-launch:';
 export const LAUNCH_REQUEST_ORIGIN = 'request_agent_launch';
 
-/** What a launch request says; both writers (MCP and the conductor) fill it. */
+/** What a launch request says; MCP `request_agent_launch` fills it. */
 export interface LaunchRequestSpec {
   uid: string;
   goalId: string;
@@ -36,10 +36,10 @@ export interface LaunchRequestSpec {
 const MAX_BODY_LENGTH = 280;
 
 /**
- * The one shape of a launch request row. MCP `request_agent_launch` and the
- * conductor's stations mode both write it through here, so the row the native
- * claim and directory checks read (`is_launch_request`, `stored_placement`) is
- * the same whoever asked. It is always agent-written and so foreign: only a
+ * The one shape of a launch request row. MCP `request_agent_launch` writes it
+ * through here, so the row the native claim and directory checks read
+ * (`is_launch_request`, `stored_placement`) has one definition. The conductor
+ * does not write one: it spawns its goal agents itself (`conductorGoalAgents.ts`). It is always agent-written and so foreign: only a
  * click or a launch grant starts it.
  */
 export function buildLaunchRequest(spec: LaunchRequestSpec) {

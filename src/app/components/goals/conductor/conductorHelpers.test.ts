@@ -14,6 +14,7 @@ const EMPTY: ConductorPreflight = {
   exhausted: 0,
   stationGoals: 0,
   stationGoalsReady: 0,
+  stationGoalsBlocked: 0,
 };
 
 describe('preflightLabel', () => {

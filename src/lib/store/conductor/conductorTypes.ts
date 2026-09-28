@@ -92,6 +92,8 @@ export interface ConductorPreflight {
   stationGoals: number;
   /** Of those, the ones a run would ask a goal agent for right away. */
   stationGoalsReady: number;
+  /** Of those, the ones held by a dependency edge — not their turn yet. */
+  stationGoalsBlocked: number;
 }
 
 export interface CrossSlices {
@@ -164,10 +166,13 @@ export interface ConductorSlice {
   conductorTicketBudget: number | null;
   /** Distinct tickets spawned this run. A retry of an already-spawned ticket
    *  does not add to this — see the budget gate in conductorTick. A stations
-   *  goal the run asked a goal agent for counts here once, like a ticket. */
+   *  goal the run spawned a goal agent for counts here once, like a ticket,
+   *  and so does a goal it spawned a planning agent for. */
   conductorRunSpawned: number;
-  /** goalId -> launch requests this run wrote for a stations goal; reset on start. */
+  /** goalId -> goal agents this run spawned for a stations goal; reset on start. */
   conductorGoalAttempts: Record<string, number>;
+  /** goalId -> planning agents this run spawned for a goal with no work yet; reset on start. */
+  conductorPlanAttempts: Record<string, number>;
   startConductor: (
     goalId: string | null,
     options?: {

@@ -8,9 +8,11 @@ import {
   evaluateGoal,
   getGoal,
   listGoals,
+  recordGoalRun,
   registerGoalTools,
   updateGoal,
 } from '../tools/goals';
+import { listGoalStatusHistory } from '../tools/history';
 import { createTestDb } from '../db';
 
 function seedEpic(db: Database.Database, id: string): void {
@@ -165,5 +167,47 @@ describe('goal tools: the status vocabulary', () => {
     expect(getGoal(db, goal.id)).toMatchObject({ status: 'in_review', achieved_at: null });
     expect(listGoals(db, { status: 'in_review' }).map((g) => g.id)).toEqual([goal.id]);
     db.close();
+  });
+});
+
+describe('goal status history (MCP writers)', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = createTestDb();
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  const transitions = (goalId: string) =>
+    listGoalStatusHistory(db, goalId).map((r) => [r.from_status, r.to_status, r.source]);
+
+  it('records creation with the status the goal was created in', () => {
+    const goal = createGoal(db, { name: 'G', status: 'active' }, 'agent');
+    expect(transitions(goal.id)).toEqual([[null, 'active', 'mcp']]);
+  });
+
+  it('records a status change through update_goal, but not a re-set or another field', () => {
+    const goal = createGoal(db, { name: 'G' }, 'agent');
+    updateGoal(db, goal.id, { status: 'draft' });
+    updateGoal(db, goal.id, { name: 'Renamed' });
+    updateGoal(db, goal.id, { status: 'in_review' });
+    expect(transitions(goal.id)).toEqual([
+      [null, 'draft', 'mcp'],
+      ['draft', 'in_review', 'mcp'],
+    ]);
+  });
+
+  it('records the move into in_progress when a run starts, and only then', () => {
+    const goal = createGoal(db, { name: 'G', status: 'active' }, 'agent');
+    recordGoalRun(db, { goalId: goal.id, agentId: 'a1', prompt: 'p' });
+    // Already in progress: a second run changes nothing.
+    recordGoalRun(db, { goalId: goal.id, agentId: 'a2', prompt: 'p' });
+    expect(transitions(goal.id)).toEqual([
+      [null, 'active', 'mcp'],
+      ['active', 'in_progress', 'mcp'],
+    ]);
   });
 });

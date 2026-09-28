@@ -55,6 +55,7 @@ export const DECISION_ICONS: Record<ConductorDecision['action'], { icon: string;
  * Reads the preflight as a sentence a human can act on: what the run will pick
  * up first, then what it will leave alone and why.
  */
+// code-gate: complexity-cyclomatic - one sentence built from ~8 independent preflight categories, each its own if; splitting by category would scatter the priority order this sentence depends on
 export function preflightLabel(
   preflight: ConductorPreflight,
   selectedGoalName: string | null
