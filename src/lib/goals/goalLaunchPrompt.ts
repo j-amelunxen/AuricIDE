@@ -16,17 +16,43 @@ const TICKET_AGREEMENT = (goal: PmGoal): string =>
   'call record_goal_run: this run is already recorded. Exit when the success ' +
   'criteria are met or you are blocked.';
 
-const STATION_AGREEMENT = (goal: PmGoal, hasOwnLine: boolean): string =>
+const ATTENDED_HUMAN_STATIONS =
+  'Human stations belong to a person: never mark them, say what to check. ';
+
+/**
+ * Nobody reads an unattended agent's output, so "say what to check" would be
+ * said to no one, and stopping at the station would leave the rest undone.
+ */
+const UNATTENDED_HUMAN_STATIONS =
+  'Nobody is reading your output. Human stations belong to a person: never mark them and ' +
+  'never wait or ask for one. When you reach one, call request_human_check with its ' +
+  'stationId and the concrete steps a person has to check, then continue with the next ' +
+  'station. This overrides any instruction above to wait for a person. ';
+
+const STATION_AGREEMENT = (goal: PmGoal, hasOwnLine: boolean, unattended: boolean): string =>
   `Work mode: stations. Use goalId "${goal.id}" exactly with the auric-pm tools. ` +
   'No epic, no tickets: the stations are the plan. ' +
   (hasOwnLine
     ? `list_stations (goalId: "${goal.id}") gives the line in order. `
     : 'Its stations live on its sub-goals: get_goal_tree, then list_stations per sub-goal. ') +
   'Work them in order; after each one, call mark_station_done with its stationId and an ' +
-  'evidenceNote saying what you did and where the evidence is. Human stations belong to a ' +
-  'person: never mark them, say what to check. ' +
+  'evidenceNote saying what you did and where the evidence is. ' +
+  (unattended ? UNATTENDED_HUMAN_STATIONS : ATTENDED_HUMAN_STATIONS) +
   `evaluate_goal (id: "${goal.id}") shows progress; record findings via write_finding. ` +
-  'Do not call record_goal_run. Stop when every station you can do is done, or you are blocked.';
+  'Do not call record_goal_run. ' +
+  (unattended
+    ? 'Stop when only human stations are left open, or you are blocked.'
+    : 'Stop when every station you can do is done, or you are blocked.');
+
+export interface GoalLaunchOptions {
+  /**
+   * The agent runs headless with nobody watching (a conductor run). It gets
+   * no /goal command: its stop hook refuses to let the agent end while the
+   * goal is unmet, and an open human station keeps it unmet, so the agent
+   * would never exit. The conductor checks completion itself afterwards.
+   */
+  unattended?: boolean;
+}
 
 /** The goal lives in the IDE; the prompt points at it rather than copying it. */
 const READ_GOAL_FIRST = (goal: PmGoal): string =>
@@ -47,7 +73,8 @@ const READ_GOAL_FIRST = (goal: PmGoal): string =>
 export function buildGoalLaunchPrompt(
   goal: PmGoal,
   stations: PmGoalStation[] = [],
-  mode: GoalWorkMode = 'tickets'
+  mode: GoalWorkMode = 'tickets',
+  { unattended = false }: GoalLaunchOptions = {}
 ): string {
   const parts = [`# Goal: ${goal.name} (goalId: ${goal.id})`];
   parts.push(READ_GOAL_FIRST(goal));
@@ -67,11 +94,14 @@ export function buildGoalLaunchPrompt(
   }
   parts.push(
     `## Working agreement\n${
-      mode === 'stations' ? STATION_AGREEMENT(goal, savedLine.length > 0) : TICKET_AGREEMENT(goal)
+      mode === 'stations'
+        ? STATION_AGREEMENT(goal, savedLine.length > 0, unattended)
+        : TICKET_AGREEMENT(goal)
     }`
   );
-  // Launching an agent for a goal invokes the /goal command first.
-  return `/goal\n\n${parts.join('\n\n')}`;
+  const body = parts.join('\n\n');
+  // A launch someone watches invokes the /goal command first.
+  return unattended ? body : `/goal\n\n${body}`;
 }
 
 /**

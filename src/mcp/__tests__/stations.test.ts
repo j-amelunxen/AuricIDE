@@ -6,11 +6,13 @@ import {
   listStations,
   markStationDone,
   reorderStation,
+  requestHumanCheck,
   resolveStationId,
   stationRowToDomain,
   updateStation,
 } from '../tools/stations';
 import { createTestDb } from '../db';
+import { createTestNotificationsDb } from '../notificationsDb';
 
 describe('station tools', () => {
   let db: Database.Database;
@@ -153,5 +155,83 @@ describe('station tools', () => {
     createStation(db, { goalId, name: 'Doomed' });
     db.prepare('DELETE FROM pm_goals WHERE id = ?').run(goalId);
     expect(listStations(db, goalId)).toHaveLength(0);
+  });
+});
+
+describe('request_human_check', () => {
+  let db: Database.Database;
+  let inbox: Database.Database;
+  let goalId: string;
+  const where = { projectPath: '/repo', projectName: 'repo' };
+
+  beforeEach(() => {
+    db = createTestDb();
+    inbox = createTestNotificationsDb();
+    goalId = createGoal(db, { name: 'Voice feels natural' }, 'mcp').id;
+  });
+
+  afterEach(() => {
+    db.close();
+    inbox.close();
+  });
+
+  const rows = () =>
+    inbox.prepare('SELECT * FROM notifications ORDER BY id').all() as {
+      title: string;
+      body: string;
+      severity: string;
+      source: string;
+      ref_kind: string;
+      ref_id: string;
+      dedupe_key: string;
+      project_path: string;
+    }[];
+
+  it('stores the steps on the station and leaves it open', () => {
+    const s = createStation(db, { goalId, name: 'Test the speakers', kind: 'human' });
+    const result = requestHumanCheck(db, inbox, s.id, '1. Start the server', where);
+    expect(result.station.evidence_note).toBe('1. Start the server');
+    expect(result.station.status).toBe('planned');
+    expect(result.station.evidence_kind).toBe('human');
+    expect(result.station.done_at).toBeNull();
+    expect(result.notified).toBe(true);
+  });
+
+  it('writes one warning that opens the goal, again only once when asked twice', () => {
+    const s = createStation(db, { goalId, name: 'Test the speakers', kind: 'human' });
+    requestHumanCheck(db, inbox, s.id, 'first', where);
+    requestHumanCheck(db, inbox, s.id, 'second', where);
+    const written = rows();
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({
+      title: 'Check needed: Test the speakers',
+      body: 'second',
+      severity: 'warn',
+      source: 'agent',
+      ref_kind: 'goal',
+      ref_id: goalId,
+      dedupe_key: `station:${s.id}:human-check`,
+      project_path: '/repo',
+    });
+  });
+
+  it('refuses a station an agent can do itself', () => {
+    const s = createStation(db, { goalId, name: 'Build it' });
+    expect(() => requestHumanCheck(db, inbox, s.id, 'check', where)).toThrow(/not a human/i);
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('refuses a human station a person already ticked', () => {
+    const s = createStation(db, { goalId, name: 'Sign off', kind: 'human' });
+    db.prepare("UPDATE pm_goal_stations SET status = 'done' WHERE id = ?").run(s.id);
+    expect(() => requestHumanCheck(db, inbox, s.id, 'check', where)).toThrow(/already done/i);
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('still records the steps when no inbox is reachable, and says nobody was told', () => {
+    const s = createStation(db, { goalId, name: 'Sign off', kind: 'human' });
+    const result = requestHumanCheck(db, null, s.id, 'look at it', where);
+    expect(result.station.evidence_note).toBe('look at it');
+    expect(result.notified).toBe(false);
   });
 });

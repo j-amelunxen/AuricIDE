@@ -23,6 +23,8 @@ function itemKey(item: ForYouItem): string {
       return `approval-${item.ticketId}`;
     case 'unclaimed':
       return `unclaimed-${item.goalId}`;
+    case 'human-station':
+      return `human-${item.stationId}`;
   }
 }
 

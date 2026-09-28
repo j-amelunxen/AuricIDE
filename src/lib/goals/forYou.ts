@@ -1,14 +1,16 @@
 import type { AttentionReason } from '../agents/attention';
 import { agentAttention, sortByUrgency, withReviewFlags } from '../agents/attention';
-import type { GoalLinesInput } from './goalLinesLayout';
+import type { GoalLinesInput, LineStation } from './goalLinesLayout';
 import { buildGoalLines } from './goalLinesLayout';
 
 /**
  * One entry in the "For you" queue — the single ranked list of everything on
  * the board that needs a human right now. The agent portion reuses the fleet
  * panel's one definition of "needs attention" (attention.ts); this module
- * only adds the two board-level reasons agents cannot carry: an approval
- * gate, and a line with ready work that nobody is working.
+ * only adds the board-level reasons agents cannot carry: an approval gate,
+ * a line with ready work that nobody is working, and a human station whose
+ * agent work before it is done (an unattended agent hands those over and
+ * moves on, so they collect here rather than in a terminal nobody reads).
  */
 export type ForYouItem =
   | {
@@ -19,7 +21,8 @@ export type ForYouItem =
       label: string;
     }
   | { kind: 'approval'; ticketId: string; goalId: string | null; label: string }
-  | { kind: 'unclaimed'; goalId: string; label: string };
+  | { kind: 'unclaimed'; goalId: string; label: string }
+  | { kind: 'human-station'; stationId: string; goalId: string; label: string };
 
 export interface ForYouInput extends GoalLinesInput {
   reviewedAgentIds: readonly string[];
@@ -32,8 +35,8 @@ const AGENT_LABEL: Record<AttentionReason, (name: string) => string> = {
 };
 
 /**
- * The queue, most urgent first: failures, then prompts, then approvals and
- * unclaimed lines, then stalls. Stalls rank below the board items on
+ * The queue, most urgent first: failures, then prompts, then approvals,
+ * unclaimed lines and human stations, then stalls. Stalls rank below the board items on
  * purpose — waiting is normal, silence is a question; an approval is a
  * definite ask.
  */
@@ -74,7 +77,17 @@ export function buildForYouQueue(input: ForYouInput): ForYouItem[] {
   const lines = buildGoalLines(input);
   const approvals: ForYouItem[] = [];
   const unclaimed: ForYouItem[] = [];
+  const humanStations: ForYouItem[] = [];
   for (const line of lines) {
+    const waiting = humanStationsDue(line.stations);
+    for (const station of waiting) {
+      humanStations.push({
+        kind: 'human-station',
+        stationId: station.id,
+        goalId: line.goalId,
+        label: `"${station.label}" needs you`,
+      });
+    }
     const readyStations = line.stations.filter(
       (s) => s.state === 'planned' && s.ticketId !== undefined
     );
@@ -89,7 +102,9 @@ export function buildForYouQueue(input: ForYouInput): ForYouItem[] {
       }
     }
     const hasRunningAgent = line.stations.some((s) => s.agentIds.length > 0);
-    const hasReadyWork = readyStations.length > 0 || line.now !== null;
+    // A front that only a person can clear is listed above, not as unclaimed.
+    const agentFront = line.now !== null && line.now.kind !== 'human';
+    const hasReadyWork = readyStations.length > 0 || agentFront;
     if (!hasRunningAgent && hasReadyWork && !goalsWithAgentItems.has(line.goalId)) {
       unclaimed.push({
         kind: 'unclaimed',
@@ -99,5 +114,16 @@ export function buildForYouQueue(input: ForYouInput): ForYouItem[] {
     }
   }
 
-  return [...hardAgentItems, ...approvals, ...unclaimed, ...stalledItems];
+  return [...hardAgentItems, ...approvals, ...unclaimed, ...humanStations, ...stalledItems];
+}
+
+/** Open human stations with no open agent station before them on the line. */
+function humanStationsDue(stations: readonly LineStation[]): LineStation[] {
+  const due: LineStation[] = [];
+  for (const station of stations) {
+    if (station.state === 'done') continue;
+    if (station.kind === 'human') due.push(station);
+    else if (station.kind === 'normal') break;
+  }
+  return due;
 }

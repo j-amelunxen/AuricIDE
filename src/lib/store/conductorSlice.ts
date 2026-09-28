@@ -28,6 +28,7 @@ import { getGoalDescendants } from './goals/goalTreeHelpers';
 
 export {
   CONDUCTOR_HEARTBEAT_MS,
+  GOAL_AGENT_TIMEOUT_MS,
   MAX_CONDUCTOR_DECISIONS,
   MAX_TICKET_ATTEMPTS,
   REVIEW_TIMEOUT_MS,
@@ -205,6 +206,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorRunSpawned: 0,
     conductorGoalAttempts: {},
     conductorPlanAttempts: {},
+    conductorSpawnFailureNotified: false,
 
     startConductor: (goalId, options) => {
       const rememberToRestore = <K extends keyof RunOverridable>(key: K): void => {
@@ -231,6 +233,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         conductorRunSpawned: 0,
         conductorGoalAttempts: {},
         conductorPlanAttempts: {},
+        conductorSpawnFailureNotified: false,
         ...(options?.maxConcurrent !== undefined && {
           conductorMaxConcurrent: options.maxConcurrent,
         }),

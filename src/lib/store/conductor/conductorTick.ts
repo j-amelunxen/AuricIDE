@@ -12,6 +12,7 @@ import {
   modelForPower,
   ticketsWithUnblockedGoal,
 } from './conductorHelpers';
+import { withHumanWaitsFirst } from './conductorHumanStations';
 import { applyVerdict } from './conductorReview';
 import {
   getPlanningWork,
@@ -20,6 +21,12 @@ import {
 } from './conductorStationGoals';
 import { spawnGoalAgents } from './conductorGoalAgents';
 import {
+  notifySpawnFailure,
+  spawnFailureReason,
+  withSpawnFailureReason,
+} from './conductorSpawnFailure';
+import {
+  GOAL_AGENT_TIMEOUT_MS,
   MAX_TICKET_ATTEMPTS,
   PENDING_REVIEW,
   PENDING_SPAWN,
@@ -83,6 +90,43 @@ function collectGoalAgentWork(
   };
 }
 
+/**
+ * Watchdog: a goal or planning agent this run started that is still running
+ * past GOAL_AGENT_TIMEOUT_MS is ended. While it lives its goal counts as in
+ * flight and holds a slot, so one agent that never exits would hold the run.
+ * Its attempt was counted at spawn; the next tick retries or gives up as for
+ * any agent that ended with work open. Agents a person started are left alone.
+ */
+function endOverdueGoalAgents(
+  ctx: ConductorTickContext,
+  goals: PmGoal[],
+  goalId: string,
+  nowMs: number
+): void {
+  const full = ctx.cross();
+  const inRun = new Set([goalId, ...getGoalDescendants(goals, goalId).map((g) => g.id)]);
+  const spawnConfigs = full.agentSpawnConfigs ?? {};
+  for (const agent of full.agents ?? []) {
+    if (
+      spawnConfigs[agent.id]?.runSource !== 'conductor' ||
+      agent.status !== 'running' ||
+      agent.spawnedByTicketId ||
+      !agent.spawnedByGoalId ||
+      !inRun.has(agent.spawnedByGoalId) ||
+      nowMs - agent.startedAt <= GOAL_AGENT_TIMEOUT_MS
+    ) {
+      continue;
+    }
+    const name = goals.find((g) => g.id === agent.spawnedByGoalId)?.name ?? agent.spawnedByGoalId;
+    ctx.addDecision({
+      action: 'fail',
+      detail: `Agent for "${name}" still running after ${GOAL_AGENT_TIMEOUT_MS / 3_600_000} h · ended`,
+      agentId: agent.id,
+    });
+    void full.killRunningAgent?.(agent.id);
+  }
+}
+
 /** The goal list this tick works with: finished sub-goals of a scoped run closed first. */
 function goalsAfterSweep(ctx: ConductorTickContext, goalId: string | null): PmGoal[] {
   const goals = ctx.cross().goalsDraft ?? [];
@@ -117,6 +161,8 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       if (reviewer && reviewer !== PENDING_REVIEW) void full.killRunningAgent?.(reviewer);
     }
   }
+
+  if (goalId) endOverdueGoalAgents(ctx, goals, goalId, nowMs);
 
   // A judge rejected a ticket-linked station claim (done+claim, with a
   // lastCheckedAt stamp): the station half judged it, the conductor owns
@@ -238,7 +284,13 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
         goalId
       );
       const goalName = goals.find((g) => g.id === goalId)?.name ?? null;
-      const emitGoalBlocked = (blockers: string[]) => {
+      const emitGoalBlocked = (found: string[]) => {
+        const { blockers, onlyHuman } = withHumanWaitsFirst(
+          found,
+          goals,
+          full.goalStationsDraft ?? [],
+          goalId
+        );
         halt();
         addDecision({
           action: 'stop',
@@ -248,7 +300,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
         void notifyConductor('goal_blocked', blockers.join('; '));
         notifyInbox({
           severity: 'warn',
-          title: `Goal blocked: ${goalName ?? goalId}`,
+          title: `${onlyHuman ? 'Goal waits for you' : 'Goal blocked'}: ${goalName ?? goalId}`,
           body: blockers.join(' · '),
           refKind: 'goal',
           refId: goalId,
@@ -394,6 +446,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     }));
 
     let agent;
+    let spawnError: string | null = null;
     try {
       agent = await full.spawnNewAgent?.({
         name: `conductor:${ticket.name.slice(0, 40)}`,
@@ -407,8 +460,9 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
         spawnedByGoalId: effectiveGoalId,
         runSource: 'conductor',
       });
-    } catch {
+    } catch (err) {
       agent = undefined;
+      spawnError = spawnFailureReason(err);
     }
 
     if (!agent) {
@@ -424,9 +478,10 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       });
       addDecision({
         action: 'fail',
-        detail: `Failed to launch agent for "${ticket.name}"`,
+        detail: withSpawnFailureReason(`Failed to launch agent for "${ticket.name}"`, spawnError),
         ticketId: ticket.id,
       });
+      notifySpawnFailure(ctx, spawnError);
       mutated = true;
       continue;
     }
