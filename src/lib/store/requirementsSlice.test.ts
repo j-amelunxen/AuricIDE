@@ -447,3 +447,19 @@ describe('requirementsSlice', () => {
     });
   });
 });
+
+describe('loadRequirements reload without changes', () => {
+  it('leaves the store untouched when the same project reloads unchanged data', async () => {
+    const req = makeRequirement();
+    mockRequirementsLoad.mockResolvedValueOnce({ requirements: [{ ...req }], testLinks: [] });
+    const store = createTestStore();
+    await store.getState().loadRequirements('/project');
+    mockRequirementsLoad.mockResolvedValueOnce({ requirements: [{ ...req }], testLinks: [] });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    await store.getState().loadRequirements('/project');
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+});

@@ -24,12 +24,18 @@ export function describeLoadError(error: unknown): string {
 /**
  * Runs a load and reports its status through `set`. Failures are recorded, not
  * thrown: a load is triggered by opening a surface, and nobody is awaiting it.
+ *
+ * A `background` load refreshes data that is already on screen (a reload after
+ * an agent wrote to the database). It does not announce `loading: true` — the
+ * data is not missing, and flipping the flag on every write re-renders
+ * whatever shows a spinner for nothing.
  */
 export async function trackLoad(
   set: (state: LoadState) => void,
-  run: () => Promise<void>
+  run: () => Promise<void>,
+  { background = false }: { background?: boolean } = {}
 ): Promise<void> {
-  set({ loading: true, error: null });
+  if (!background) set({ loading: true, error: null });
   try {
     await run();
     set({ loading: false, error: null });

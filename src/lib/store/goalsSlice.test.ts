@@ -1279,3 +1279,27 @@ describe('VERIFIED_EVIDENCE_KINDS — the shared satisfaction rule', () => {
     expect(isVerifiedEvidence('human')).toBe(true);
   });
 });
+
+// Same reason as refreshPmData: every MCP write reloads goals, and a reload
+// that brings nothing new must not re-render anything.
+describe('loadGoals reload without changes', () => {
+  it('leaves the store untouched when the same project reloads unchanged data', async () => {
+    const state = {
+      goals: [makeGoal()],
+      goalRuns: [makeRun()],
+      requirementLinks: [],
+      stations: [],
+      dependencies: [],
+    };
+    mockGoalsLoad.mockResolvedValueOnce(structuredClone(state));
+    const store = createTestStore();
+    await store.getState().loadGoals('/project');
+    mockGoalsLoad.mockResolvedValueOnce(structuredClone(state));
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    await store.getState().loadGoals('/project');
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+});

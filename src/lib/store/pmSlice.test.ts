@@ -1104,3 +1104,64 @@ describe('load status', () => {
     expect(store.getState().pmLoadError).toBeNull();
   });
 });
+
+// A background reload runs on every project.db write an agent makes over MCP.
+// When the database holds what the store already shows, touching the store
+// re-renders every subscriber for nothing — the page included.
+describe('refreshPmData without changes', () => {
+  it('leaves the store untouched when the database is unchanged', async () => {
+    const epic = makeEpic({ id: 'e1' });
+    const ticket = makeTicket({ id: 't1' });
+    const store = createTestStore();
+    store.setState({
+      pmEpics: [epic],
+      pmTickets: [ticket],
+      pmTestCases: [],
+      pmDependencies: [],
+      pmDraftEpics: [epic],
+      pmDraftTickets: [ticket],
+      pmDraftTestCases: [],
+      pmDraftDependencies: [],
+      pmStatusHistory: [],
+      pmDirty: false,
+    });
+    mockPmLoad.mockResolvedValueOnce({
+      epics: [{ ...epic }],
+      tickets: [{ ...ticket }],
+      testCases: [],
+      dependencies: [],
+    });
+    mockPmLoadHistory.mockResolvedValueOnce([]);
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    await store.getState().refreshPmData('/project');
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('keeps unchanged tickets by reference when one ticket changed', async () => {
+    const a = makeTicket({ id: 'a', name: 'A' });
+    const b = makeTicket({ id: 'b', name: 'B' });
+    const store = createTestStore();
+    store.setState({
+      pmTickets: [a, b],
+      pmDraftTickets: [a, b],
+      pmDirty: false,
+    });
+    mockPmLoad.mockResolvedValueOnce({
+      epics: [],
+      tickets: [{ ...a }, { ...b, name: 'B2', updatedAt: 'later' }],
+      testCases: [],
+      dependencies: [],
+    });
+    mockPmLoadHistory.mockResolvedValueOnce([]);
+
+    await store.getState().refreshPmData('/project');
+
+    const { pmTickets, pmDraftTickets } = store.getState();
+    expect(pmTickets[0]).toBe(a);
+    expect(pmDraftTickets[0]).toBe(a);
+    expect(pmDraftTickets[1].name).toBe('B2');
+  });
+});

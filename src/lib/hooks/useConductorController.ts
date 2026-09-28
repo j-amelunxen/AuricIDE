@@ -36,7 +36,6 @@ export function useConductorController() {
   const failedTickets = useStore((s) => s.conductorFailedTickets);
   const approvedTickets = useStore((s) => s.conductorApprovedTickets);
   const rootPath = useStore((s) => s.rootPath);
-  const agents = useStore((s) => s.agents);
 
   const startConductor = useStore((s) => s.startConductor);
   const stopConductor = useStore((s) => s.stopConductor);
@@ -60,14 +59,17 @@ export function useConductorController() {
   // run launched and that are still alive. Assignment slots held by a spawn in
   // flight carry a placeholder rather than an agent id and so match nothing —
   // which is right, there is no process behind them to lose.
-  const runningAgentCount = useMemo(() => {
+  // Selected as a number, not derived from the agents array: agents replace
+  // it every couple of seconds while they stream, and the hosts of this hook
+  // (Mission Control, the Goals modal) should re-render only when it changes.
+  const runningAgentCount = useStore((s) => {
     // Defensive reads mirror conductorTick's: these maps may not exist yet.
     const assigned = new Set([
-      ...Object.values(assignments ?? {}),
-      ...Object.values(reviewAssignments ?? {}),
+      ...Object.values(s.conductorAssignments ?? {}),
+      ...Object.values(s.conductorReviewAssignments ?? {}),
     ]);
-    return (agents ?? []).filter((a) => a.status === 'running' && assigned.has(a.id)).length;
-  }, [assignments, reviewAssignments, agents]);
+    return (s.agents ?? []).filter((a) => a.status === 'running' && assigned.has(a.id)).length;
+  });
 
   // Scoped to the SELECTED goal, not the running one: this answers "what would
   // happen if I pressed Start now".

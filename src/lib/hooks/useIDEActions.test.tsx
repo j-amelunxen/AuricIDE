@@ -38,12 +38,6 @@ vi.mock('@/lib/hooks/useActiveDiffLoader', () => ({ useActiveDiffLoader: () => u
 vi.mock('@/lib/hooks/useCloseTabShortcut', () => ({ useCloseTabShortcut: () => undefined }));
 vi.mock('@/lib/hooks/useMenuCommands', () => ({ useMenuCommands: () => undefined }));
 vi.mock('@/lib/hooks/useNotificationInbox', () => ({ useNotificationInbox: () => undefined }));
-const mockScheduledConductorRuns = vi.fn();
-vi.mock('@/lib/hooks/useScheduledConductorRuns', () => ({
-  useScheduledConductorRuns: (openProject: (path: string) => Promise<void>) =>
-    mockScheduledConductorRuns(openProject),
-}));
-vi.mock('@/lib/inbox/useInboxData', () => ({ useInboxData: () => undefined }));
 vi.mock('@/lib/hooks/useTitleBarGutter', () => ({ useTitleBarGutter: () => undefined }));
 
 vi.mock('@/lib/tauri/providers', () => ({ listProviders: vi.fn(async () => []) }));
@@ -192,18 +186,6 @@ describe('useIDEActions – the file watcher’s route to the tree refresh', () 
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-describe('useIDEActions – the scheduled conductor watcher', () => {
-  // The hook is mocked away everywhere else, so nothing otherwise proves it is
-  // even mounted, let alone handed a real project opener. An automatic run for
-  // another project needs exactly that opener; without it the switch is the
-  // one thing that cannot work, and no unit test would notice.
-  it('mounts the watcher with the real project opener', () => {
-    mockScheduledConductorRuns.mockClear();
-    renderHook(() => useIDEActions(state, handlers));
-    expect(mockScheduledConductorRuns).toHaveBeenCalledWith(handlers.handleOpenRecent);
   });
 });
 

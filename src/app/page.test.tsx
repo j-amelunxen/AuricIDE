@@ -21,6 +21,28 @@ const renders = vi.hoisted(() => {
   };
 });
 
+// Counts renders of the page component itself: `useIDEState` runs once per
+// Home render and nowhere else.
+vi.mock('@/lib/hooks/useIDEState', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/hooks/useIDEState')>();
+  return {
+    ...actual,
+    useIDEState: () => {
+      renders.counts.set('Home', (renders.counts.get('Home') ?? 0) + 1);
+      return actual.useIDEState();
+    },
+  };
+});
+// The scheduled-run watcher is mounted by the page; this captures the project
+// opener it is handed, so a test can prove it is the real one.
+const scheduledRuns = vi.hoisted(() => ({
+  openProject: null as ((path: string) => Promise<void>) | null,
+}));
+vi.mock('@/lib/hooks/useScheduledConductorRuns', () => ({
+  useScheduledConductorRuns: (openProject: (path: string) => Promise<void>) => {
+    scheduledRuns.openProject = openProject;
+  },
+}));
 vi.mock('./components/ide/Header', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./components/ide/Header')>();
   return { ...actual, Header: renders.counted('Header', actual.Header) };
@@ -75,7 +97,8 @@ vi.stubGlobal(
 );
 
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn().mockResolvedValue(null),
+  // Commands that return a list must return one, as the Rust side does.
+  invoke: vi.fn(async (cmd: string) => (cmd === 'inbox_list' ? [] : null)),
   convertFileSrc: (path: string) => `asset://localhost${path}`,
 }));
 
@@ -597,6 +620,24 @@ describe('Home page', () => {
   });
 });
 
+describe('Home page — the scheduled-run watcher', () => {
+  // An automatic conductor run for another project needs a real project
+  // opener; handed anything else, the switch is the one thing that cannot
+  // work, and the hook's own tests (which mock the opener) would not notice.
+  it('is mounted with an opener that really opens the project', async () => {
+    scheduledRuns.openProject = null;
+    useStore.setState({ rootPath: null });
+    render(<Home />);
+    expect(scheduledRuns.openProject).toBeTypeOf('function');
+
+    await act(async () => {
+      await scheduledRuns.openProject!('/test/other-project');
+    });
+
+    expect(useStore.getState().rootPath).toBe('/test/other-project');
+  });
+});
+
 describe('FileWatcher debouncing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -757,6 +798,26 @@ describe('Home page — store writes re-render only what displays them', () => {
 
     expect(rendered()).toEqual([]);
     act(() => useStore.setState({ fileSearchOpen: false }));
+  });
+
+  // The page root re-renders everything below that is not memoized. Agents
+  // replace their array every couple of seconds while they stream, so the
+  // root must not subscribe to it — not even through a watcher hook.
+  it('an agent update does not re-render the page itself', async () => {
+    await mountProject();
+
+    act(() => useStore.setState({ agents: [agent('a1', 'writing')] }));
+
+    expect(renders.counts.get('Home') ?? 0).toBe(0);
+  });
+
+  it('a notification or inbox write does not re-render the page itself', async () => {
+    await mountProject();
+
+    act(() => useStore.setState({ notifications: [] }));
+    act(() => useStore.setState({ inboxItems: [] }));
+
+    expect(renders.counts.get('Home') ?? 0).toBe(0);
   });
 
   it('a cursor move re-renders only the status bar', async () => {

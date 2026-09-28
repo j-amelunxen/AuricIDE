@@ -19,6 +19,9 @@ const HOT_STORE_KEYS = [
   'diagnostics',
   'cursorPos',
   'inboxItems',
+  // Every MCP ticket update an agent makes lands here.
+  'pmDraftEpics',
+  'pmDraftTickets',
 ] as const satisfies readonly (keyof StoreState)[];
 
 type HotStoreKey = (typeof HOT_STORE_KEYS)[number];

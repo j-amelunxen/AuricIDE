@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { useStore } from '@/lib/store';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
@@ -10,6 +10,7 @@ import { ConductorPanel } from '../goals/ConductorPanel';
 import { TicketStatusChip } from '../pm/TicketStatusChip';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import type { PmTicket } from '@/lib/tauri/pm';
 
 const STALE_DAYS = 30;
 
@@ -139,6 +140,33 @@ export interface MissionControlProps {
   onCloseProject?: () => void;
 }
 
+/**
+ * One open ticket. Memoized on the ticket object: reloads keep unchanged
+ * tickets by reference (`reuseRows`), so an agent updating one ticket over MCP
+ * re-renders one row, not the whole list.
+ */
+const TicketRow = memo(function TicketRow({
+  ticket,
+  rootPath,
+}: {
+  ticket: PmTicket;
+  rootPath: string | null;
+}) {
+  const setInboxTicketStatus = useStore((s) => s.setInboxTicketStatus);
+  return (
+    <li className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
+      <p className="min-w-0 flex-1 truncate text-left text-[12px] text-foreground">{ticket.name}</p>
+      <TicketStatusChip
+        status={ticket.status}
+        onSetStatus={(status) => {
+          if (rootPath === null) return;
+          void setInboxTicketStatus(rootPath, ticket.id, status);
+        }}
+      />
+    </li>
+  );
+});
+
 export function MissionControl({
   onCreateSpec,
   onOpenAgents,
@@ -149,10 +177,11 @@ export function MissionControl({
   const allFilePaths = useStore((s) => s.allFilePaths);
   const tickets = useStore((s) => s.pmDraftTickets);
   const requirements = useStore((s) => s.requirementsDraft);
-  const agents = useStore((s) => s.agents);
+  // The count only: agents report activity every few seconds, and this view
+  // must not re-render its ticket list for that.
+  const runningAgents = useStore((s) => s.agents.filter((a) => a.status === 'running').length);
   const goals = useStore((s) => s.goalsDraft);
 
-  const setInboxTicketStatus = useStore((s) => s.setInboxTicketStatus);
   const openWorkPlace = useStore((s) => s.openWorkPlace);
   const closeWorkPlace = useStore((s) => s.closeWorkPlace);
   const loadPmData = useStore((s) => s.loadPmData);
@@ -177,7 +206,6 @@ export function MissionControl({
   const specDocs = specPaths.length;
   const liveTickets = tickets.filter((t) => !isClosedTicketStatus(t.status));
   const openTickets = liveTickets.length;
-  const runningAgents = agents.filter((a) => a.status === 'running').length;
 
   const relevantTruths = requirements.filter(
     (r) => r.status === 'active' || r.status === 'implemented' || r.status === 'verified'
@@ -426,21 +454,7 @@ export function MissionControl({
             </div>
             <ul className="space-y-1.5 p-2">
               {liveTickets.map((ticket) => (
-                <li
-                  key={ticket.id}
-                  className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2"
-                >
-                  <p className="min-w-0 flex-1 truncate text-left text-[12px] text-foreground">
-                    {ticket.name}
-                  </p>
-                  <TicketStatusChip
-                    status={ticket.status}
-                    onSetStatus={(status) => {
-                      if (rootPath === null) return;
-                      void setInboxTicketStatus(rootPath, ticket.id, status);
-                    }}
-                  />
-                </li>
+                <TicketRow key={ticket.id} ticket={ticket} rootPath={rootPath} />
               ))}
             </ul>
           </div>

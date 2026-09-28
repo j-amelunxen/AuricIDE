@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
 import { withPersistFeedback } from './persistFeedback';
 import { IDLE_LOAD_STATE, trackLoad } from './loadState';
+import { writeChanged } from './stableRefs';
 import type {
   PmRequirement,
   PmRequirementTestLink,
@@ -124,7 +125,11 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
 
   loadRequirements: (projectPath) =>
     trackLoad(
-      (s) => set({ requirementsLoading: s.loading, requirementsLoadError: s.error }),
+      (s) =>
+        writeChanged(set, get(), {
+          requirementsLoading: s.loading,
+          requirementsLoadError: s.error,
+        }),
       async () => {
         await initProjectDb(projectPath);
         const state: RequirementsState = await ipcRequirementsLoad(projectPath);
@@ -137,7 +142,7 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
         const isNewProject = currentRequirementsProject !== projectPath;
 
         if (!requirementsDirty || isNewProject) {
-          set({
+          writeChanged(set, get(), {
             requirements,
             requirementsDraft: requirements,
             requirementTestLinks: state.testLinks,
@@ -146,13 +151,14 @@ export const createRequirementsSlice: StateCreator<RequirementsSlice> = (set, ge
             currentRequirementsProject: projectPath,
           });
         } else {
-          set({
+          writeChanged(set, get(), {
             requirements,
             requirementTestLinks: state.testLinks,
             currentRequirementsProject: projectPath,
           });
         }
-      }
+      },
+      { background: get().currentRequirementsProject === projectPath }
     ),
 
   saveRequirements: (projectPath) =>

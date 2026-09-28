@@ -24,6 +24,9 @@ function stallContext(): Record<string, unknown> {
   const activeTab = state.openTabs.find((tab) => tab.id === state.activeTabId);
   const metrics = collectStoreMetrics();
   return {
+    // A visible but unfocused window (behind another app) may still be
+    // throttled by the OS; this tells such a stall apart from a real one.
+    focused: document.hasFocus(),
     agentsRunning: state.agents.filter((a) => a.status === 'running').length,
     activeTabExt: activeTab?.name.split('.').pop() ?? null,
     agentConsoleOpen: state.agentConsoleOpen,

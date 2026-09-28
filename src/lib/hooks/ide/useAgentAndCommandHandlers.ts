@@ -42,6 +42,10 @@ function contextBoundAction(id: string): () => void {
 const changedFileCount = memoizeByInput((repoStates: StoreState['repoStates']) =>
   selectChangedFileCount({ repoStates })
 );
+const openTicketCount = memoizeByInput(
+  (tickets: StoreState['pmDraftTickets']) =>
+    tickets.filter((t) => !isClosedTicketStatus(t.status)).length
+);
 const unsortedInboxCount = memoizeByInput(
   (items: StoreState['inboxItems'] | undefined) => unsortedInboxItems(items ?? []).length
 );
@@ -412,10 +416,7 @@ export function useAgentAndCommandHandlers({
   // changes, not on every git refresh or inbox write.
   const scBadge = useStore((s) => changedFileCount(s.repoStates));
   const unsortedInbox = useStore((s) => unsortedInboxCount(s.inboxItems));
-  const openTicketsCount = useMemo(
-    () => state.pmDraftTickets.filter((t) => !isClosedTicketStatus(t.status)).length,
-    [state.pmDraftTickets]
-  );
+  const openTicketsCount = useStore((s) => openTicketCount(s.pmDraftTickets));
   const itemsWithBadge = useMemo(() => {
     const badged = activityItems.map((item) => {
       if (item.id === 'source-control')

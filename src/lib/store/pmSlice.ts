@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { writeChanged } from './stableRefs';
 import { withPersistFeedback } from './persistFeedback';
 import { IDLE_LOAD_STATE, trackLoad } from './loadState';
 import type {
@@ -277,7 +278,9 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
         JSON.stringify(mergedTestCases) !== JSON.stringify(fresh.testCases) ||
         JSON.stringify(mergedDeps) !== JSON.stringify(fresh.dependencies);
 
-      set({
+      // Runs on every project.db write an agent makes; only what really
+      // changed reaches the store, so an unchanged reload re-renders nothing.
+      writeChanged(set, get(), {
         pmEpics: fresh.epics,
         pmTickets: fresh.tickets,
         pmTestCases: fresh.testCases,

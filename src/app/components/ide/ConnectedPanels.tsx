@@ -3,6 +3,8 @@
 import { memo } from 'react';
 import { useStore } from '@/lib/store';
 import { useAttentionTitle } from '@/lib/hooks/useAttentionTitle';
+import { useScheduledConductorRuns } from '@/lib/hooks/useScheduledConductorRuns';
+import { useInboxData } from '@/lib/inbox/useInboxData';
 import { AgentsPanel, type AgentsPanelProps } from '../agents/AgentsPanel';
 import { TerminalPanel, type ExtraTerminal } from '../terminal/TerminalPanel';
 import { StatusBar, type StatusBarProps } from './StatusBar';
@@ -21,6 +23,23 @@ import { StatusBar, type StatusBarProps } from './StatusBar';
  * on useNow — mounting it here instead of in Home keeps the 1 Hz timer off
  * the page root, which would otherwise re-render the whole IDE every second.
  */
+/**
+ * Background work that needs hot store fields: the zero-click half of
+ * scheduled launches (it re-evaluates when agents or notifications change)
+ * and the app-wide inbox data (kept warm for the capture badge and the start
+ * screen before the inbox panel ever mounts). Run from the page root, every
+ * agent activity bump re-rendered the whole IDE; here it re-renders nothing.
+ */
+export const BackgroundWatchers = memo(function BackgroundWatchers({
+  openProject,
+}: {
+  openProject: (path: string) => Promise<void>;
+}): null {
+  useScheduledConductorRuns(openProject);
+  useInboxData();
+  return null;
+});
+
 export const AttentionTitle = memo(function AttentionTitle(): null {
   const agents = useStore((s) => s.agents);
   const reviewedAgentIds = useStore((s) => s.reviewedAgentIds);
