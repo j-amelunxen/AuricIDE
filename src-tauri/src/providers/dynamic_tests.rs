@@ -873,3 +873,104 @@ fn an_ordinary_model_name_is_left_unquoted() {
         );
     }
 }
+
+// ── Write sandbox (Antigravity-shaped config) ─────────────────────
+
+fn sandboxed_config() -> ProviderConfig {
+    serde_json::from_str(
+        r#"{
+      "id": "antigravity",
+      "name": "Antigravity CLI",
+      "executable": "agy",
+      "arguments": [
+        { "type": "headless", "flag": "--print-timeout 1h -p", "interactiveFlag": "-i" },
+        { "type": "task", "quote": true },
+        { "type": "permission", "map": {
+            "auto": "--dangerously-skip-permissions",
+            "bypassPermissions": "--dangerously-skip-permissions",
+            "default": ""
+          }, "fallback": "" }
+      ],
+      "writeSandbox": {
+        "writable": ["~/.gemini"],
+        "exemptPermissionModes": ["bypassPermissions"]
+      },
+      "info": { "models": [], "permissionModes": [], "defaultModel": "auto", "defaultPermissionMode": "auto" },
+      "versionCheck": { "command": "agy", "args": ["--version"] },
+      "promptTemplate": "agy -p \""
+    }"#,
+    )
+    .unwrap()
+}
+
+#[test]
+fn write_sandbox_follows_the_resolved_permission_mode() {
+    let provider = DynamicProvider::new(sandboxed_config());
+    // No mode requested (the conductor): the default `auto` is confined.
+    assert_eq!(
+        provider.write_sandbox(None, false, false),
+        Some(vec!["~/.gemini".to_string()])
+    );
+    assert!(provider
+        .write_sandbox(Some("default"), false, false)
+        .is_some());
+    // The explicit no-guardrails mode, by name or by the legacy flag, is not.
+    assert_eq!(
+        provider.write_sandbox(Some("bypassPermissions"), false, false),
+        None
+    );
+    assert_eq!(provider.write_sandbox(None, true, false), None);
+}
+
+#[test]
+fn a_provider_without_write_sandbox_runs_unconfined() {
+    let provider = DynamicProvider::new(get_gemini_config());
+    assert_eq!(provider.write_sandbox(None, false, false), None);
+}
+
+#[test]
+fn headless_print_timeout_precedes_the_task_and_stays_out_of_interactive() {
+    let provider = DynamicProvider::new(sandboxed_config());
+    let headless = provider.build_spawn_command("auto", "task", None, false, false, true);
+    assert_eq!(
+        headless.command,
+        "agy --print-timeout 1h -p \"task\" --dangerously-skip-permissions"
+    );
+    let interactive = provider.build_spawn_command("auto", "task", None, false, false, false);
+    assert_eq!(
+        interactive.command,
+        "agy -i \"task\" --dangerously-skip-permissions"
+    );
+}
+
+/// A CLI with only a global MCP config (the Antigravity CLI) binds through the
+/// environment alone: `AURIC_MCP_CONFIG` names the per-project config that the
+/// global `auric-mcp/bridge.mjs` entry then serves. That counts as a binding,
+/// so the spawn is not refused, and the command line is left alone.
+#[test]
+fn an_environment_only_binding_is_a_binding() {
+    let mut value: serde_json::Value = serde_json::from_str(
+        r#"{
+      "id": "antigravity", "name": "Antigravity CLI", "executable": "agy",
+      "arguments": [{ "type": "task", "quote": true }],
+      "projectBinding": { "environment": { "AURIC_MCP_CONFIG": "{mcpConfigPath}" } },
+      "info": { "models": [], "permissionModes": [], "defaultModel": "auto", "defaultPermissionMode": "auto" },
+      "versionCheck": { "command": "agy", "args": ["--version"] },
+      "promptTemplate": "agy -p \""
+    }"#,
+    )
+    .unwrap();
+    value["allowUnboundMcp"] = serde_json::Value::Bool(false);
+    let provider = DynamicProvider::new(serde_json::from_value(value).unwrap());
+    let binding = ProviderProjectBinding::new("/repo/A", "/repo/A/.auric/project.db")
+        .with_mcp_config_path("/app data/project-a.mcp.json");
+    let injection = project_binding_injection_for("antigravity", &provider, &binding).unwrap();
+    assert!(injection.arguments.is_empty());
+    assert_eq!(
+        injection.env_vars,
+        vec![(
+            "AURIC_MCP_CONFIG".to_string(),
+            "/app data/project-a.mcp.json".to_string()
+        )]
+    );
+}

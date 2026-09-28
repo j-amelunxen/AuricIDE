@@ -299,6 +299,18 @@ pub trait AgentProvider: Send + Sync {
     fn allows_unbound_mcp(&self) -> bool {
         false
     }
+
+    /// Extra writable paths when this provider's agents must run under
+    /// AuricIDE's write sandbox for the resolved permission mode, `None` when
+    /// they run unconfined. See `agents::write_sandbox`.
+    fn write_sandbox(
+        &self,
+        _permission_mode: Option<&str>,
+        _dangerously_ignore_permissions: bool,
+        _auto_accept_edits: bool,
+    ) -> Option<Vec<String>> {
+        None
+    }
 }
 
 // ── DynamicProvider Configuration ────────────────────────────────────
@@ -351,6 +363,18 @@ pub struct ProjectBindingInjectionConfig {
     pub environment: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteSandboxConfig {
+    /// Paths beyond the workspace the CLI itself has to write (its own state,
+    /// its login). `~/` is the user's home.
+    #[serde(default)]
+    pub writable: Vec<String>,
+    /// Permission modes that deliberately run without guardrails.
+    #[serde(default)]
+    pub exempt_permission_modes: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
@@ -365,6 +389,11 @@ pub struct ProviderConfig {
     /// config the CLI discovers itself. Off unless the config says so.
     #[serde(default)]
     pub allow_unbound_mcp: bool,
+    /// Runs the agent under AuricIDE's write sandbox: it may write inside its
+    /// workspace and nowhere else on the machine. For CLIs whose own sandbox
+    /// is missing or too coarse to leave the workspace writable.
+    #[serde(default)]
+    pub write_sandbox: Option<WriteSandboxConfig>,
     pub info: ProviderConfigInfo,
     pub version_check: VersionCheck,
     pub prompt_template: String,

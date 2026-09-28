@@ -5,6 +5,7 @@ pub mod persistence;
 pub mod project_binding;
 pub mod shell_env;
 pub mod types;
+pub mod write_sandbox;
 
 pub use manager::*;
 pub use persistence::*;

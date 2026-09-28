@@ -160,6 +160,46 @@ fn bind_to_project_mcp(
     }))
 }
 
+/// Runs the agent under `write_sandbox` when its provider config asks for it
+/// for the permission mode this launch resolves to. Applied last, so the
+/// sandbox wraps the finished command line and everything it starts.
+fn confine_writes_if_declared(
+    spawn_cmd: crate::providers::SpawnCommand,
+    app: &AppHandle,
+    provider: &dyn crate::providers::AgentProvider,
+    config: &AgentConfig,
+    binding: Option<&super::project_binding::ResolvedProjectBinding>,
+) -> Result<crate::providers::SpawnCommand, String> {
+    let Some(provider_writable) = provider.write_sandbox(
+        config.permission_mode.as_deref(),
+        config.dangerously_ignore_permissions.unwrap_or(false),
+        config.auto_accept_edits.unwrap_or(false),
+    ) else {
+        return Ok(spawn_cmd);
+    };
+    super::write_sandbox::ensure_supported()?;
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("The write sandbox needs the home directory: {e}"))?;
+    let notifications_db = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|app_data| crate::notifications::db_path_in(&app_data));
+    let paths = super::write_sandbox::writable_paths(&super::write_sandbox::SandboxInputs {
+        cwd: config.cwd.as_deref().map(std::path::Path::new),
+        project_root: binding.map(|b| b.project_root()),
+        home: &home,
+        provider_writable: &provider_writable,
+        notifications_db: notifications_db.as_deref(),
+    })?;
+    Ok(super::write_sandbox::confine(
+        spawn_cmd,
+        &super::write_sandbox::profile(&paths),
+    ))
+}
+
 /// Sub-goal 09: an agent answering an MCP launch request starts only where
 /// that request may run. Checked against the inbox row, not the frontend's
 /// word, before any PTY exists.
@@ -272,6 +312,13 @@ pub async fn spawn_agent_impl(
         )?;
     }
     let spawn_cmd = attach_usage_sidecar(spawn_cmd, app);
+    let spawn_cmd = confine_writes_if_declared(
+        spawn_cmd,
+        app,
+        provider.as_ref(),
+        &config,
+        project_binding.as_ref(),
+    )?;
 
     let mut cmd = CommandBuilder::new(shell);
     for arg in args {

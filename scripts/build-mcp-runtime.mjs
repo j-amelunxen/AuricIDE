@@ -35,6 +35,16 @@ const bundle = spawnSync(
 );
 if (bundle.status !== 0) process.exit(bundle.status ?? 1);
 
+// For agent CLIs that read MCP servers only from one global config: that entry
+// points at bridge.mjs, which becomes the server of the config the IDE bound
+// the agent to (src/mcp/configBridge.ts). Node built-ins only, nothing external.
+const bridge = spawnSync(
+  bun,
+  ['build', 'src/mcp/configBridge.ts', '--target=node', '--outfile', join(output, 'bridge.mjs')],
+  { cwd: root, stdio: 'inherit' }
+);
+if (bridge.status !== 0) process.exit(bridge.status ?? 1);
+
 const sqlitePackage = require.resolve('better-sqlite3/package.json');
 const sqliteRequire = createRequire(sqlitePackage);
 for (const dependency of ['better-sqlite3', 'bindings', 'file-uri-to-path']) {
