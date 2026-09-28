@@ -1,3 +1,4 @@
+import { appendCapped } from '../appendCapped';
 import { stripAnsi } from '../../terminal/ansi';
 import { createLineBuffer } from './lineBuffer';
 
@@ -71,5 +72,5 @@ export function createStreamCapture(): StreamCapture {
 /** Appends new lines to an agent's stream, dropping the oldest past the cap. */
 export function appendStreamLines(existing: StreamLine[], incoming: StreamLine[]): StreamLine[] {
   if (incoming.length === 0) return existing;
-  return [...existing, ...incoming].slice(-MAX_STREAM_LINES);
+  return appendCapped(existing, incoming, MAX_STREAM_LINES);
 }

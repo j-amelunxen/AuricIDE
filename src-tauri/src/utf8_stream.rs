@@ -23,6 +23,14 @@ impl Utf8StreamDecoder {
     /// bytes of an incomplete sequence are retained for the next call.
     /// Genuinely invalid bytes become U+FFFD, like `from_utf8_lossy`.
     pub fn push(&mut self, chunk: &[u8]) -> String {
+        // Fast path: nothing held back and the chunk is complete UTF-8 — the
+        // common case for PTY output. Decoding straight from `chunk` skips
+        // the copy into `pending` and yields exactly what the loop below would.
+        if self.pending.is_empty() {
+            if let Ok(s) = std::str::from_utf8(chunk) {
+                return s.to_owned();
+            }
+        }
         self.pending.extend_from_slice(chunk);
         let mut out = String::new();
 
@@ -160,5 +168,40 @@ mod tests {
         // Chunk ends mid-ä: the 'w' must come through, the 0xC3 must wait.
         assert_eq!(dec.push(&[b'w', 0xC3]), "w");
         assert_eq!(dec.push(&[0xA4]), "ä");
+    }
+
+    /// The fast path (empty `pending`, valid chunk) must not change what any
+    /// sequence of pushes decodes to — including a valid chunk arriving right
+    /// after a held-back tail, which has to take the slow path.
+    #[test]
+    fn fast_path_is_equivalent_to_decoding_the_concatenation() {
+        let chunks: [&[u8]; 7] = [
+            b"plain ",
+            "w\u{00E4}re ".as_bytes(),
+            &[0xE2, 0x97],
+            &[0x90, b' '],
+            b"ok",
+            &[b'a', 0xFF, b'b'],
+            "\u{1F680}".as_bytes(),
+        ];
+        let mut dec = Utf8StreamDecoder::new();
+        let mut out = String::new();
+        let mut all = Vec::new();
+        for chunk in chunks {
+            out.push_str(&dec.push(chunk));
+            all.extend_from_slice(chunk);
+        }
+        out.push_str(&dec.finish());
+        assert_eq!(out, String::from_utf8_lossy(&all));
+    }
+
+    #[test]
+    fn a_valid_chunk_after_a_held_back_tail_still_resolves_the_tail() {
+        let mut dec = Utf8StreamDecoder::new();
+        assert_eq!(dec.push(&[0xC3]), "");
+        // "yz" is valid on its own, but `pending` is not empty: the orphaned
+        // 0xC3 must still become U+FFFD instead of vanishing.
+        assert_eq!(dec.push(b"yz"), "\u{FFFD}yz");
+        assert_eq!(dec.finish(), "");
     }
 }

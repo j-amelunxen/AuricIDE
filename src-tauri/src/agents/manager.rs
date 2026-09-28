@@ -431,46 +431,10 @@ pub async fn spawn_agent_impl(
     let state_clone = state.clone();
 
     tauri::async_runtime::spawn(async move {
-        let mut decoder = crate::utf8_stream::Utf8StreamDecoder::new();
-        let mut accum = String::new();
-        let mut has_produced_output = false;
-        let mut last_emit = std::time::Instant::now();
-        let batch_interval = std::time::Duration::from_millis(32);
-
-        loop {
-            let timeout = tokio::time::sleep(batch_interval);
-            tokio::pin!(timeout);
-
-            tokio::select! {
-                data = rx.recv() => {
-                    match data {
-                        Some(bytes) => {
-                            has_produced_output = true;
-                            accum.push_str(&decoder.push(&bytes));
-
-                            if accum.len() > 16384 || last_emit.elapsed() >= batch_interval {
-                                let data = std::mem::take(&mut accum);
-                                emit_agent_output(&app_clone, &id_clone, &rp_clone, data).await;
-                                last_emit = std::time::Instant::now();
-                            }
-                        }
-                        None => break,
-                    }
-                }
-                _ = &mut timeout => {
-                    if !accum.is_empty() {
-                        let data = std::mem::take(&mut accum);
-                        emit_agent_output(&app_clone, &id_clone, &rp_clone, data).await;
-                        last_emit = std::time::Instant::now();
-                    }
-                }
-            }
-        }
-
-        accum.push_str(&decoder.finish());
-        if !accum.is_empty() {
-            emit_agent_output(&app_clone, &id_clone, &rp_clone, accum).await;
-        }
+        let has_produced_output = pump_agent_output(&mut rx, OUTPUT_BATCH_INTERVAL, |data| {
+            emit_agent_output(&app_clone, &id_clone, &rp_clone, data)
+        })
+        .await;
 
         if !has_produced_output {
             let error_msg = format!("\r\n\x1b[31mError: Agent process terminated without output. Check if '{}' CLI is installed.\x1b[0m\r\n", cli_name);
@@ -540,6 +504,63 @@ pub async fn spawn_agent_impl(
     manager.agents.insert(id, process);
 
     Ok((info, writer, pair.master))
+}
+
+/// Longest a decoded chunk waits in the batch before it is emitted.
+const OUTPUT_BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(32);
+
+/// A batch this large is emitted at once instead of waiting out the interval.
+const OUTPUT_FLUSH_BYTES: usize = 16384;
+
+/// Drains the PTY reader's channel into batched `emit` calls until it closes.
+/// Returns whether any bytes arrived at all.
+///
+/// Batching bounds: a chunk is emitted with the batch at once when the batch
+/// passes `OUTPUT_FLUSH_BYTES` or `interval` has passed since the last emit;
+/// otherwise it waits at most until `last_emit + interval`. Closing the
+/// channel flushes the rest, decoder tail included. With nothing buffered the
+/// task only waits on the channel, so an idle agent costs no timer wake-ups.
+async fn pump_agent_output<F, Fut>(
+    rx: &mut tokio::sync::mpsc::Receiver<Vec<u8>>,
+    interval: std::time::Duration,
+    mut emit: F,
+) -> bool
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    let mut decoder = crate::utf8_stream::Utf8StreamDecoder::new();
+    let mut accum = String::new();
+    let mut has_produced_output = false;
+    let mut last_emit = tokio::time::Instant::now();
+
+    loop {
+        let data = if accum.is_empty() {
+            rx.recv().await
+        } else {
+            tokio::select! {
+                data = rx.recv() => data,
+                _ = tokio::time::sleep_until(last_emit + interval) => {
+                    emit(std::mem::take(&mut accum)).await;
+                    last_emit = tokio::time::Instant::now();
+                    continue;
+                }
+            }
+        };
+        let Some(bytes) = data else { break };
+        has_produced_output = true;
+        accum.push_str(&decoder.push(&bytes));
+        if accum.len() > OUTPUT_FLUSH_BYTES || last_emit.elapsed() >= interval {
+            emit(std::mem::take(&mut accum)).await;
+            last_emit = tokio::time::Instant::now();
+        }
+    }
+
+    accum.push_str(&decoder.finish());
+    if !accum.is_empty() {
+        emit(accum).await;
+    }
+    has_produced_output
 }
 
 pub async fn emit_agent_output(
@@ -652,4 +673,113 @@ pub async fn cleanup_all_agents(app: AppHandle) {
     let state = app.state::<AgentManagerState>();
     let mut manager = state.lock().await;
     manager.agents.clear();
+}
+
+#[cfg(test)]
+mod output_pump_tests {
+    use super::{pump_agent_output, OUTPUT_FLUSH_BYTES};
+    use std::time::{Duration, Instant};
+    use tokio::sync::mpsc;
+
+    type Emitted = mpsc::UnboundedReceiver<(Instant, String)>;
+
+    /// Runs the pump on its own task; every emit lands on the returned channel.
+    fn start(
+        interval: Duration,
+    ) -> (
+        mpsc::Sender<Vec<u8>>,
+        Emitted,
+        tokio::task::JoinHandle<bool>,
+    ) {
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
+        let (out_tx, out_rx) = mpsc::unbounded_channel();
+        let pump = tokio::spawn(async move {
+            pump_agent_output(&mut rx, interval, move |data| {
+                let out = out_tx.clone();
+                async move {
+                    let _ = out.send((Instant::now(), data));
+                }
+            })
+            .await
+        });
+        (tx, out_rx, pump)
+    }
+
+    async fn next(out: &mut Emitted) -> (Instant, String) {
+        tokio::time::timeout(Duration::from_secs(5), out.recv())
+            .await
+            .expect("an emit within 5 s")
+            .expect("pump still has its emitter")
+    }
+
+    #[tokio::test]
+    async fn quick_chunks_merge_and_flush_at_the_deadline_while_the_channel_is_open() {
+        let interval = Duration::from_millis(60);
+        let started = Instant::now();
+        let (tx, mut out, pump) = start(interval);
+        tx.send(b"ab".to_vec()).await.unwrap();
+        tx.send(b"cd".to_vec()).await.unwrap();
+
+        let (at, text) = next(&mut out).await;
+        assert_eq!(text, "abcd");
+        assert!(at - started >= interval, "held for the batch interval");
+
+        drop(tx);
+        assert!(pump.await.unwrap());
+        assert!(out.recv().await.is_none(), "nothing left after the flush");
+    }
+
+    #[tokio::test]
+    async fn a_batch_over_the_threshold_is_emitted_without_waiting() {
+        let (tx, mut out, pump) = start(Duration::from_secs(3600));
+        let big = vec![b'x'; OUTPUT_FLUSH_BYTES + 1];
+        tx.send(big).await.unwrap();
+
+        let (_, text) = next(&mut out).await;
+        assert_eq!(text.len(), OUTPUT_FLUSH_BYTES + 1);
+        drop(tx);
+        assert!(pump.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn closing_the_channel_flushes_the_batch_and_the_decoder_tail() {
+        let (tx, mut out, pump) = start(Duration::from_secs(3600));
+        tx.send(vec![b'w', 0xC3]).await.unwrap();
+        tx.send(vec![0xA4, b'r', 0xE2]).await.unwrap();
+        drop(tx);
+
+        assert!(pump.await.unwrap());
+        let mut all = String::new();
+        while let Ok((_, text)) = out.try_recv() {
+            all.push_str(&text);
+        }
+        assert_eq!(all, "wär\u{FFFD}");
+    }
+
+    #[tokio::test]
+    async fn a_run_without_bytes_reports_no_output_and_emits_nothing() {
+        let (tx, mut out, pump) = start(Duration::from_millis(10));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        drop(tx);
+        assert!(!pump.await.unwrap());
+        assert!(out.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_chunk_after_an_idle_interval_is_emitted_on_arrival() {
+        let interval = Duration::from_millis(30);
+        let (tx, mut out, pump) = start(interval);
+        tokio::time::sleep(interval * 3).await;
+        let sent = Instant::now();
+        tx.send(b"late".to_vec()).await.unwrap();
+
+        let (at, text) = next(&mut out).await;
+        assert_eq!(text, "late");
+        assert!(
+            at - sent < interval,
+            "no extra batching after an idle spell"
+        );
+        drop(tx);
+        assert!(pump.await.unwrap());
+    }
 }
