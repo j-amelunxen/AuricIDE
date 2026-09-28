@@ -1,3 +1,4 @@
+import { appendCapped, appendCappedLog } from '../../agents/appendCapped';
 import { deriveAgentActivity } from '@/lib/agents/activity';
 import { detectAwaitingInput } from '@/lib/agents/awaitingInput';
 import { pushHeartbeat } from '@/lib/agents/events/heartbeat';
@@ -67,22 +68,14 @@ export function handleAppendAgentLogBatch(
   for (const [agentId, chunks, arrivedAt] of batch) {
     if (chunks.length === 0 || wasAgentRemoved(agentId)) continue;
     const meta = agentLogMeta[agentId] ?? { seq: 0, bytes: 0 };
-    let updated = [...(agentLogs[agentId] ?? []), ...chunks];
-    let bytes = meta.bytes;
-    for (const chunk of chunks) bytes += chunk.length;
-
     // Trim oldest chunks past either cap, but always keep the newest chunk.
-    let drop = 0;
-    while (
-      updated.length - drop > 1 &&
-      (updated.length - drop > MAX_AGENT_LOGS || bytes > MAX_AGENT_LOG_BYTES)
-    ) {
-      bytes -= updated[drop].length;
-      drop++;
-    }
-    if (drop > 0) {
-      updated = updated.slice(drop);
-    }
+    const { logs: updated, bytes } = appendCappedLog(
+      agentLogs[agentId] ?? [],
+      chunks,
+      meta.bytes,
+      MAX_AGENT_LOGS,
+      MAX_AGENT_LOG_BYTES
+    );
     agentLogs[agentId] = updated;
     agentLogMeta[agentId] = { seq: meta.seq + chunks.length, bytes };
 
@@ -115,9 +108,7 @@ export function handleAppendAgentLogBatch(
 
     if (newEvents.length > 0) {
       agentEvents ??= { ...state.agentEvents };
-      agentEvents[agentId] = [...(agentEvents[agentId] ?? []), ...newEvents].slice(
-        -MAX_AGENT_EVENTS
-      );
+      agentEvents[agentId] = appendCapped(agentEvents[agentId] ?? [], newEvents, MAX_AGENT_EVENTS);
     }
     if (newStreamLines.length > 0) {
       agentStreamLines ??= { ...state.agentStreamLines };
