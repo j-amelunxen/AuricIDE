@@ -30,6 +30,23 @@ export function isContentOnlyKind(kind: string): boolean {
   );
 }
 
+/**
+ * Whether an event can change which paths exist. A kind that only touches
+ * content never can. Otherwise the watcher's `exists` settles it against the
+ * file index: a rename over a file the index already lists (how agents and
+ * editors save) leaves the set of paths as it was, and so does a temp file
+ * that was gone again by the time the batch was sent. Without either fact,
+ * assume it did.
+ */
+export function changesPathSet(
+  event: FsChangeEvent,
+  isIndexedPath?: (path: string) => boolean
+): boolean {
+  if (isContentOnlyKind(event.kind)) return false;
+  if (event.exists === undefined || !isIndexedPath) return true;
+  return event.exists !== isIndexedPath(event.path);
+}
+
 function isIgnoreFile(path: string): boolean {
   return /(^|[\\/])\.gitignore$/.test(path);
 }
@@ -58,6 +75,8 @@ export interface FsEventRouterOptions {
    * whether any open station cares is the callback's job.
    */
   onEvidenceChange?: () => void;
+  /** Whether the project file index lists a path (see `changesPathSet`). */
+  isIndexedPath?: (path: string) => boolean;
   treeDebounceMs?: number;
   /**
    * Longest a tree refresh may be postponed by fresh events. Without it a
@@ -85,6 +104,7 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
     onTreeChange,
     onProjectDataChange,
     onEvidenceChange,
+    isIndexedPath,
     treeDebounceMs = 300,
     treeMaxWaitMs = 1000,
     dataDebounceMs = 500,
@@ -117,7 +137,7 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
         dataTimer = setTimeout(onProjectDataChange, dataDebounceMs);
       } else {
         dirtyDirs.add(parentDirOf(event.path));
-        if (!isContentOnlyKind(event.kind)) summary.structural = true;
+        if (changesPathSet(event, isIndexedPath)) summary.structural = true;
         if (isIgnoreFile(event.path)) summary.ignoreRulesChanged = true;
         clearTimeout(treeTimer);
         treeTimer = setTimeout(flushTree, treeDebounceMs);

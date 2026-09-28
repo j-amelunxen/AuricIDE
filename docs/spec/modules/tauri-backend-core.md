@@ -44,7 +44,7 @@ AuricIDE is a desktop application running on macOS. The Tauri Backend Core provi
   - `init_project_db(path: String) -> Result<(), String>`: Opens `<project>/.auric/project.db` and runs schema migrations.
   - `close_project_db(path: String) -> Result<(), String>`: Flushes SQLite WAL and closes open connection.
 - **File System Watching**:
-  - `watch_directory(path: String) -> Result<(), String>`: Attaches `notify` watcher; emits `file-event` on disk mutations.
+  - `watch_directory(path: String) -> Result<(), String>`: Attaches `notify` watcher; collects a burst of disk mutations for 150 ms and emits it as one `file-events` batch (`{path, kind, exists}` per path).
   - `read_directory(path: String) -> Result<Vec<FileEntry>, String>`: Lists directory entries leveraging `recent_creations` caching.
 
 ---

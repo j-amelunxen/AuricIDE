@@ -56,25 +56,53 @@ pub fn is_atomic_write_temp(path: &str) -> bool {
     }
 }
 
+/// True for the project database and its side files. The watcher must let
+/// these through: a write to them is how the frontend learns that an MCP
+/// agent changed PM data.
+fn is_project_db_path(path: &str) -> bool {
+    [
+        "/.auric/project.db",
+        "/.auric/project.db-wal",
+        "/.auric/project.db-shm",
+        "/.auric/project.db-journal",
+    ]
+    .iter()
+    .any(|suffix| path.ends_with(suffix))
+}
+
+/// Folders whose contents never reach the explorer as watcher events: VCS
+/// internals, dependencies, caches and build output. Matched as `/<name>/`,
+/// so the folder itself still shows up; only what is written inside it is
+/// dropped.
+const WATCHER_IGNORED_DIRS: &[&str] = &[
+    "/.git/",
+    "/node_modules/",
+    "/target/",
+    "/.next/",
+    "/.turbo/",
+    "/__pycache__/",
+    "/.venv/",
+    "/venv/",
+    "/.pytest_cache/",
+    "/.mypy_cache/",
+    "/.ruff_cache/",
+    "/coverage/",
+    "/playwright-report/",
+    "/test-results/",
+    "/out/",
+    "/dist/",
+    "/build/",
+    "/.svelte-kit/",
+    "/.gradle/",
+    "/.nuxt/",
+    "/.parcel-cache/",
+    "/.cache/",
+];
+
 /// Returns true if the path should be filtered out from file watcher events.
 pub fn should_filter_watcher_path(path: &str) -> bool {
-    path.contains("/.git/")
-        || path.contains("/node_modules/")
-        || path.contains("/target/")
-        || path.contains("/.next/")
-        || path.contains("/.turbo/")
-        || path.contains("/__pycache__/")
-        || path.contains("/.venv/")
-        || path.contains("/venv/")
-        || path.contains("/.pytest_cache/")
-        || path.contains("/.mypy_cache/")
-        || path.contains("/.ruff_cache/")
-        || path.contains("/coverage/")
-        || path.contains("/playwright-report/")
-        || path.contains("/test-results/")
-        || path.contains("/out/")
-        || path.contains("/dist/")
-        || path.contains("/.cache/")
+    (path.contains("/.auric/") && !is_project_db_path(path))
+        || WATCHER_IGNORED_DIRS.iter().any(|dir| path.contains(dir))
         || path.ends_with("/.DS_Store")
         || path.ends_with("/Thumbs.db")
         || is_atomic_write_temp(path)

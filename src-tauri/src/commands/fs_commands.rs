@@ -133,7 +133,12 @@ pub async fn list_all_files(root_path: String) -> Result<Vec<String>, String> {
     if !root.is_dir() {
         return Err("Invalid root path".to_string());
     }
-    list_all_files_impl(root)
+    let root = root.to_path_buf();
+    // A full walk blocks; on a large tree it would stall an async worker and
+    // every other command queued behind it.
+    tauri::async_runtime::spawn_blocking(move || list_all_files_impl(&root))
+        .await
+        .map_err(|e| format!("File listing aborted: {e}"))?
 }
 
 /// Every file under `root`. Besides Quick Open this list answers goal-station
@@ -163,7 +168,18 @@ pub async fn get_project_files_info(root_path: String) -> Result<Vec<ProjectFile
         return Err("Invalid root path".to_string());
     }
 
-    let entries: Vec<ProjectFileInfo> = WalkDir::new(root)
+    let root = root.to_path_buf();
+    // Walks and reads every text file; kept off the async workers like
+    // `list_all_files`.
+    tauri::async_runtime::spawn_blocking(move || project_files_info_impl(&root))
+        .await
+        .map_err(|e| format!("Project file scan aborted: {e}"))
+}
+
+/// Line counts for every text file under `root`, pruned like
+/// `list_all_files_impl`.
+pub fn project_files_info_impl(root: &Path) -> Vec<ProjectFileInfo> {
+    WalkDir::new(root)
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
@@ -208,9 +224,7 @@ pub async fn get_project_files_info(root_path: String) -> Result<Vec<ProjectFile
                 line_count,
             })
         })
-        .collect();
-
-    Ok(entries)
+        .collect()
 }
 
 #[tauri::command]

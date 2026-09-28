@@ -488,3 +488,71 @@ fn the_file_index_keeps_build_output_that_evidence_can_point_at() {
         ]
     );
 }
+
+#[tokio::test]
+async fn list_all_files_command_returns_the_blocking_walk_unchanged() {
+    use crate::commands::fs_commands::list_all_files;
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    for path in ["a.md", "src/b.rs", "node_modules/p/index.js", ".git/HEAD"] {
+        let file = root.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "x").unwrap();
+    }
+
+    let mut from_command = list_all_files(root.to_string_lossy().to_string())
+        .await
+        .unwrap();
+    let mut from_walk = list_all_files_impl(root).unwrap();
+    from_command.sort();
+    from_walk.sort();
+    assert_eq!(from_command, from_walk);
+    assert_eq!(from_command.len(), 2);
+
+    let missing = root.join("nope").to_string_lossy().to_string();
+    assert_eq!(
+        list_all_files(missing).await.unwrap_err(),
+        "Invalid root path"
+    );
+}
+
+#[tokio::test]
+async fn project_files_info_counts_lines_of_text_files_only() {
+    use crate::commands::fs_commands::get_project_files_info;
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("target")).unwrap();
+    fs::write(root.join("src/a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+    fs::write(root.join("notes.md"), "one").unwrap();
+    fs::write(root.join("logo.png"), [0u8, 1, 2]).unwrap();
+    fs::write(root.join("target/c.rs"), "skipped\n").unwrap();
+
+    let mut info: Vec<(String, String, usize)> =
+        get_project_files_info(root.to_string_lossy().to_string())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|f| {
+                let rel = f
+                    .path
+                    .strip_prefix(&root.to_string_lossy().to_string())
+                    .unwrap()
+                    .to_string();
+                (rel, f.extension, f.line_count)
+            })
+            .collect();
+    info.sort();
+    assert_eq!(
+        info,
+        vec![
+            ("/notes.md".to_string(), "md".to_string(), 1),
+            ("/src/a.rs".to_string(), "rs".to_string(), 2),
+        ]
+    );
+    assert!(
+        get_project_files_info(root.join("nope").to_string_lossy().to_string())
+            .await
+            .is_err()
+    );
+}

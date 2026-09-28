@@ -227,3 +227,58 @@ describe('createFsEventRouter change summary', () => {
     });
   });
 });
+
+// Agents save by writing a temp file and renaming it over the original. The
+// rename event alone looks structural, and a structural flush re-lists the
+// whole project. The watcher reports whether the path exists once the burst
+// settled, and the router compares that with what the file index knows.
+describe('createFsEventRouter with existence facts', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const known = new Set(['/p/a.md', '/p/dir']);
+  const flushWith = (events: Array<{ path: string; kind: string; exists?: boolean }>) => {
+    const onTreeChange = vi.fn();
+    const r = createFsEventRouter({
+      onTreeChange,
+      onProjectDataChange: vi.fn(),
+      isIndexedPath: (path) => known.has(path),
+    });
+    for (const e of events) r.handle(e);
+    vi.advanceTimersByTime(1_000);
+    return onTreeChange.mock.calls[0][1];
+  };
+
+  it('treats a rename over a file the index already has as a content write', () => {
+    expect(flushWith([{ path: '/p/a.md', kind: 'Modify(Name(Any))', exists: true }])).toMatchObject(
+      { structural: false }
+    );
+  });
+
+  it('still sees a new file as structural', () => {
+    expect(flushWith([{ path: '/p/new.md', kind: 'Create(File)', exists: true }])).toMatchObject({
+      structural: true,
+    });
+  });
+
+  it('still sees a removed file or folder as structural', () => {
+    expect(flushWith([{ path: '/p/a.md', kind: 'Remove(File)', exists: false }])).toMatchObject({
+      structural: true,
+    });
+    expect(flushWith([{ path: '/p/dir', kind: 'Modify(Name(Any))', exists: false }])).toMatchObject(
+      { structural: true }
+    );
+  });
+
+  it('ignores a temp file that came and went within the burst', () => {
+    expect(
+      flushWith([{ path: '/p/.a.md.swp', kind: 'Remove(File)', exists: false }])
+    ).toMatchObject({ structural: false });
+  });
+
+  it('stays structural when the watcher did not say whether the path exists', () => {
+    expect(flushWith([{ path: '/p/a.md', kind: 'Modify(Name(Any))' }])).toMatchObject({
+      structural: true,
+    });
+  });
+});
