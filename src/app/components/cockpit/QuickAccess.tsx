@@ -20,6 +20,7 @@ import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
 import { PROJECT_TILE_COLUMNS, PROJECT_TILE_GRID } from './projectGrid';
 import { ProjectBadgeField } from './ProjectBadgeField';
+import { ProjectDescriptionDialog } from './ProjectDescriptionDialog';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
 import { ProjectTile } from './ProjectTile';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
@@ -73,6 +74,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   // this component opens the dialog.
   const [settingsPath, setSettingsPath] = useState<string | null>(null);
   const [wheelPath, setWheelPath] = useState<string | null>(null);
+  const [descriptionPath, setDescriptionPath] = useState<string | null>(null);
   const [sort, setSort] = useState<QuickAccessSort>(() =>
     parseQuickAccessSort(readAppPref(APP_CONFIG_KEYS.quickAccessSort))
   );
@@ -86,6 +88,10 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   // the live record if it changes underneath.
   const settingsProject = settingsPath
     ? starredProjects.find((p) => p.path === settingsPath)
+    : undefined;
+
+  const descriptionProject = descriptionPath
+    ? starredProjects.find((p) => p.path === descriptionPath)
     : undefined;
 
   const menuProject = contextMenu
@@ -164,6 +170,11 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
               }
             });
           },
+        },
+        {
+          label: 'Set description…',
+          icon: 'edit_note',
+          action: () => setDescriptionPath(contextMenu.path),
         },
         {
           label: sort === 'badge' ? 'Sort projects by name' : 'Sort projects by badge',
@@ -292,6 +303,12 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
               <ProjectBadgeField project={menuProject} onDone={() => setContextMenu(null)} />
             ) : undefined
           }
+        />
+      )}
+      {descriptionProject && (
+        <ProjectDescriptionDialog
+          project={descriptionProject}
+          onClose={() => setDescriptionPath(null)}
         />
       )}
       {settingsProject && (

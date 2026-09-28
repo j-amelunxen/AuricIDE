@@ -438,6 +438,27 @@ describe('QuickAccess', () => {
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
+    it('opens the description dialog from "Set description…" and shows it on the tile', async () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/website', name: 'website', starredAt: 1, description: 'Marketing site.' },
+        ],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      expect(screen.getByTestId('quick-access-tile-/a/website')).toHaveAttribute(
+        'title',
+        expect.stringContaining('Marketing site.')
+      );
+
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/website'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /set description/i }));
+
+      expect(screen.getByRole('dialog', { name: 'Describe website' })).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: 'Project description' })).toHaveValue(
+        'Marketing site.'
+      );
+    });
+
     it('copies the working directory path to the clipboard via "Copy Working Directory"', async () => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       Object.assign(navigator, { clipboard: { writeText } });

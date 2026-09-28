@@ -295,7 +295,9 @@ export function ProjectTile({
           }}
           onPointerUp={handlePointerUp}
           onPointerCancel={() => dispatch({ type: 'cancel' })}
-          title={label}
+          // The description rides along as the hover's second line: it is what
+          // agents read about this project, and a tile has no room for prose.
+          title={project.description ? `${label}\n${project.description}` : label}
           // A glyph or emoji tile has no text content of its own, so the name
           // has to be stated rather than left to the title attribute.
           aria-label={label}

@@ -42,6 +42,11 @@ export interface StarredProjectSettings {
    * save must not mention this field, or a lane mark disappears with it.
    */
   badge?: ProjectBadge | null;
+  /**
+   * Same tri-state as `badge`: omit to keep, `null` clears, a string sets it.
+   * Rust trims it and caps it at 300 characters.
+   */
+  description?: string | null;
 }
 
 export interface StarredProject {
@@ -53,6 +58,8 @@ export interface StarredProject {
   combos?: QuickAccessCombo[];
   wheelSlots?: (string | null)[];
   badge?: ProjectBadge;
+  /** What the owner says the project is for; see `src/lib/quickAccess/description.ts`. */
+  description?: string;
 }
 
 /**

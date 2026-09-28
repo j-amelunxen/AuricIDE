@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import * as nativeStarredProjects from '../tauri/starredProjects';
+import { normalizeProjectDescription } from '../quickAccess/description';
 import { normalizeProjectBadge } from '../quickAccess/badge';
 import { normalizeWheelSlots } from '../quickAccess/wheel';
 import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
@@ -101,6 +102,8 @@ export interface StarredProjectsSlice {
   setStarredProjectWheelSlots: (path: string, wheelSlots: (string | null)[]) => void;
   /** `null` clears the badge. A blank text clears it too, after normalisation. */
   setStarredProjectBadge: (path: string, badge: ProjectBadge | null) => void;
+  /** `null` (or blank) clears it, and the README-derived description applies again. */
+  setStarredProjectDescription: (path: string, description: string | null) => void;
 }
 
 function loadLegacyProjects(): StarredProject[] {
@@ -222,6 +225,11 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
         if (normalized) next.badge = normalized;
         else delete next.badge;
       }
+      if (settings.description !== undefined) {
+        const description = normalizeProjectDescription(settings.description);
+        if (description) next.description = description;
+        else delete next.description;
+      }
       return next;
     });
     set({ starredProjects: updated });
@@ -290,6 +298,18 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
       combos: quickAccessCombos(target),
       wheelSlots: quickAccessWheelSlots(target),
       badge,
+    });
+  },
+
+  setStarredProjectDescription: (path, description) => {
+    const target = get().starredProjects.find((p) => p.path === path);
+    if (!target) return;
+    get().updateStarredProjectSettings(path, {
+      icon: target.icon,
+      skills: quickAccessSkills(target),
+      combos: quickAccessCombos(target),
+      wheelSlots: quickAccessWheelSlots(target),
+      description: normalizeProjectDescription(description),
     });
   },
 
