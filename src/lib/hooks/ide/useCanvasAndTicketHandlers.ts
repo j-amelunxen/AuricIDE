@@ -10,10 +10,10 @@ import type { ObsidianNode, ObsidianEdge, ObsidianColor } from '@/lib/obsidian-c
 import type { PmTicket, PmDependency } from '@/lib/tauri/pm';
 import { persistInBackground } from '@/lib/store/persistFeedback';
 import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
 
 export function useCanvasAndTicketHandlers(
-  state: ReturnType<typeof useIDEState>,
+  state: IDEState,
   handleFileSelect: (path: string) => Promise<void>
 ) {
   const handleCanvasNodesChange = useCallback(

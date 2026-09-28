@@ -9,7 +9,7 @@ import { heartbeatSeries } from '@/lib/agents/events/heartbeat';
 import { consoleAgentState, CONSOLE_STATE_RANK } from '@/lib/agents/consoleState';
 import { projectLabel } from '@/lib/agents/lanes';
 import type { AgentColor } from '@/lib/agents/colors';
-import { useNow } from '@/lib/hooks/useNow';
+import { useNowWhen } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
 import {
@@ -54,6 +54,9 @@ export interface ProjectSectionProps {
   layout?: TreemapGroupCell;
 }
 
+/** Stable, so a memoized cell of an agent without events is not re-rendered. */
+const NO_EVENTS: AgentEvent[] = [];
+
 /**
  * One project's terrain in the Agent Console: its running/finished agents as
  * cards, sorted so whichever needs a human sits first. Owns its own spawn and
@@ -79,7 +82,14 @@ export function ProjectSection({
   onOpenProject,
   layout,
 }: ProjectSectionProps) {
-  const now = useNow();
+  // The section reads the clock for its agents' console states (the sort) and
+  // the heartbeat's minute buckets; the cards tick their own durations.
+  const now = useNowWhen((t) =>
+    [
+      Math.floor(t / 60_000),
+      ...agents.map((a) => consoleAgentState(a, reviewedAgentIds.includes(a.id), t)),
+    ].join('|')
+  );
   const { confirm, confirmDialog } = useConfirm();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -256,7 +266,7 @@ export function ProjectSection({
             >
               <TreemapAgentCell
                 agent={agent}
-                events={agentEvents[agent.id] ?? []}
+                events={agentEvents[agent.id] ?? NO_EVENTS}
                 reviewed={reviewed}
                 color={agentColors[agent.id]}
                 width={cell.w}

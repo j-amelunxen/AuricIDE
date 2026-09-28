@@ -29,6 +29,7 @@ import {
   withoutColors,
 } from './agentStateHelpers';
 import { MAX_FINISHED_AGENTS, UNGROUPED_REPO_KEY, type AgentSlice } from './agentTypes';
+import { markAgentsRemoved } from './removedAgents';
 
 export async function handleSpawnNewAgent(
   config: AgentConfig,
@@ -206,6 +207,7 @@ export async function handleKillRunningAgent(
   completeRunForAgent(get(), agentId, 'killed');
 
   const remainingAgents = get().agents.filter((a) => a.id !== agentId);
+  markAgentsRemoved([agentId]);
   set({
     agents: remainingAgents,
     ...withoutAgentRecords(get(), agentId),
@@ -240,6 +242,7 @@ export function handleDismissFinishedAgent(
   const endedLogs = agentLogs[agentId] ?? [];
   const { [agentId]: _config, ...remainingConfigs } = get().agentSpawnConfigs;
   const remainingAgents = agents.filter((a) => a.id !== agentId);
+  markAgentsRemoved([agentId]);
   set({
     agentSpawnConfigs: remainingConfigs,
     agents: remainingAgents,
@@ -411,6 +414,7 @@ export function handleUpdateAgentStatus(
   const oldestFirst = [...finished].sort((a, b) => a.startedAt - b.startedAt);
   const evictedIds = new Set(oldestFirst.slice(0, excess).map((a) => a.id));
   const remainingAgents = updatedAgents.filter((a) => !evictedIds.has(a.id));
+  markAgentsRemoved(evictedIds);
 
   set({
     agents: remainingAgents,
@@ -458,6 +462,7 @@ export async function handleKillAgentsForRepoPath(
   };
   combo.cancelSkillCombosForAgents?.([...killedIds]);
   const remainingAgents = agents.filter((a) => !killedIds.has(a.id));
+  markAgentsRemoved(killedIds);
   set({
     agents: remainingAgents,
     agentLogs: Object.fromEntries(Object.entries(agentLogs).filter(([id]) => !killedIds.has(id))),

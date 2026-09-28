@@ -7,6 +7,8 @@ export interface SharedPromiseCache<T> {
   get(key: string, factory: () => Promise<T>): Promise<T>;
   /** Forgets every cached entry. */
   clear(): void;
+  /** Entries currently held, in flight or within the TTL. */
+  size(): number;
 }
 
 interface CacheEntry<T> {
@@ -25,8 +27,17 @@ interface CacheEntry<T> {
 export function createSharedPromiseCache<T>(options: { ttlMs: number }): SharedPromiseCache<T> {
   const entries = new Map<string, CacheEntry<T>>();
 
+  // Keys rarely repeat (a finish's key carries its own output), so an expired
+  // entry is never read again; drop it rather than hold it for the session.
+  function pruneExpired(now: number): void {
+    for (const [key, entry] of entries) {
+      if (entry.settledAt !== null && now - entry.settledAt >= options.ttlMs) entries.delete(key);
+    }
+  }
+
   function get(key: string, factory: () => Promise<T>): Promise<T> {
     const now = Date.now();
+    pruneExpired(now);
     const cached = entries.get(key);
     if (cached && (cached.settledAt === null || now - cached.settledAt < options.ttlMs)) {
       return cached.promise;
@@ -49,5 +60,5 @@ export function createSharedPromiseCache<T>(options: { ttlMs: number }): SharedP
     entries.clear();
   }
 
-  return { get, clear };
+  return { get, clear, size: () => entries.size };
 }

@@ -128,6 +128,7 @@ vi.mock('@codemirror/view', () => ({
   keymap: { of: () => [] },
   lineNumbers: () => [],
 }));
+vi.mock('./externalContentSync', () => ({ editorHistory: () => [] }));
 vi.mock('@codemirror/state', () => ({
   EditorState: { create: (cfg: unknown) => cfg },
   Compartment: class {
@@ -141,7 +142,8 @@ vi.mock('@codemirror/state', () => ({
   Facet: { define: () => ({ of: () => [] }) },
 }));
 
-import { getLanguageExtension, getLintableFileType } from './setup';
+import { buildHeadingTitleIndex, getLanguageExtension, getLintableFileType } from './setup';
+import { useStore } from '@/lib/store';
 
 describe('getLanguageExtension', () => {
   it('returns markdown for .md files', () => {
@@ -334,5 +336,30 @@ describe('getLintableFileType', () => {
 
   it('returns none for .py files', () => {
     expect(getLintableFileType('script.py')).toBe('none');
+  });
+});
+
+// Every markdown tab switch reconfigures the lint facets. Rebuilding the title
+// map from an unchanged heading index hands the facet a new value for nothing.
+describe('buildHeadingTitleIndex', () => {
+  function withHeadingIndex(headingIndex: Map<string, Array<{ title: string }>>) {
+    vi.mocked(useStore.getState).mockReturnValue({ headingIndex } as unknown as ReturnType<
+      typeof useStore.getState
+    >);
+  }
+
+  it('returns the same map while the heading index is unchanged', () => {
+    withHeadingIndex(new Map([['/a.md', [{ title: 'Intro' }]]]));
+    const first = buildHeadingTitleIndex();
+    expect(first.get('/a.md')).toEqual(['Intro']);
+    expect(buildHeadingTitleIndex()).toBe(first);
+  });
+
+  it('rebuilds once the heading index is replaced', () => {
+    withHeadingIndex(new Map([['/a.md', [{ title: 'Intro' }]]]));
+    const first = buildHeadingTitleIndex();
+    withHeadingIndex(new Map([['/a.md', [{ title: 'Other' }]]]));
+    expect(buildHeadingTitleIndex().get('/a.md')).toEqual(['Other']);
+    expect(buildHeadingTitleIndex()).not.toBe(first);
   });
 });

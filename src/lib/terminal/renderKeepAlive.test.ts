@@ -67,3 +67,35 @@ describe('createRenderKeepAlive', () => {
     expect(h.pendingFrames()).toBe(0);
   });
 });
+
+describe('createRenderKeepAlive – visibility', () => {
+  it('does not start pumping for a terminal nobody can see', () => {
+    const h = harness();
+    const ka = createRenderKeepAlive(h.raf, h.caf, h.now, 400, () => false);
+    ka.nudge();
+    expect(h.pendingFrames()).toBe(0);
+  });
+
+  it('stops a running loop once the terminal is hidden, even while writes continue', () => {
+    const h = harness();
+    let visible = true;
+    const ka = createRenderKeepAlive(h.raf, h.caf, h.now, 400, () => visible);
+    ka.nudge();
+    visible = false;
+    for (let i = 0; i < 10; i++) {
+      ka.nudge(); // a steady stream into a background tab
+      h.tick(32);
+    }
+    expect(h.pendingFrames()).toBe(0);
+  });
+
+  it('pumps again on the next write after the terminal becomes visible', () => {
+    const h = harness();
+    let visible = false;
+    const ka = createRenderKeepAlive(h.raf, h.caf, h.now, 400, () => visible);
+    ka.nudge();
+    visible = true;
+    ka.nudge();
+    expect(h.pendingFrames()).toBe(1);
+  });
+});

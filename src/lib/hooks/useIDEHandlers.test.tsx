@@ -3,7 +3,7 @@ import { render, renderHook, screen, waitFor, within } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import type { SetStateAction } from 'react';
 import { CONTEXT_BOUND_COMMANDS, useIDEHandlers } from './useIDEHandlers';
-import { type useIDEState } from './useIDEState';
+import type { IDEState } from './ide/liveIDEState';
 import { defaultCommands } from '@/lib/commands/registry';
 
 // Mock Tauri FS
@@ -104,6 +104,7 @@ const mockBumpProjectDirtyEpoch = vi.fn();
 let mockScmView: 'changes' | 'history' | 'compare' = 'changes';
 let mockScratchDir: string | null = null;
 let mockScratches: { name: string; path: string }[] = [];
+let mockInboxItems: IDEState['inboxItems'] = [];
 const mockInitScratches = vi.fn(async () => {});
 const mockRefreshScratches = vi.fn(async () => {});
 const mockGetBacklinksFor = vi.fn((_name: string) => [] as string[]);
@@ -154,6 +155,9 @@ vi.mock('@/lib/store', () => {
     showToast: mockShowToast,
     scratchDir: mockScratchDir,
     scratches: mockScratches,
+    inboxItems: mockInboxItems,
+    diagnostics: new Map(),
+    cursorPos: { line: 0, col: 0 },
     initScratches: mockInitScratches,
     refreshScratches: mockRefreshScratches,
     getBacklinksFor: mockGetBacklinksFor,
@@ -216,7 +220,7 @@ describe('useIDEHandlers', () => {
     closeProject: vi.fn(),
     setActiveActivity: vi.fn(),
     pmDraftTickets: [],
-    inboxItems: [] as ReturnType<typeof useIDEState>['inboxItems'],
+    inboxItems: [] as IDEState['inboxItems'],
     cursorPos: { line: 0, col: 0 },
     diagnostics: new Map(),
     getDiagnosticCounts: () => ({ errors: 0, warnings: 0 }),
@@ -1007,7 +1011,10 @@ describe('useIDEHandlers', () => {
           ],
         },
       ];
-      mockReadDirectory.mockResolvedValue([{ name: 'lib', path: '/p/src/lib', isDirectory: true }]);
+      // A changed timestamp makes the listing news, so the folder is rewritten.
+      mockReadDirectory.mockResolvedValue([
+        { name: 'lib', path: '/p/src/lib', isDirectory: true, createdAt: 5 },
+      ]);
 
       const { result } = renderHook(() => useIDEHandlers(mockState));
       await result.current.handleRefreshDirs(['/p/src']);
@@ -1019,6 +1026,107 @@ describe('useIDEHandlers', () => {
           children: [grandchild],
         }),
       ]);
+    });
+
+    it('saving .gitignore in place neither rediscovers repos nor walks the project', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [{ path: '/p/.gitignore', name: '.gitignore', isDirectory: false }];
+      mockReadDirectory.mockResolvedValue([
+        { name: '.gitignore', path: '/p/.gitignore', isDirectory: false },
+      ]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p'], {
+        structural: false,
+        ignoreRulesChanged: true,
+      });
+
+      expect(mockRefreshGitStatus).toHaveBeenCalled();
+      expect(mockDiscoverAndRefreshGit).not.toHaveBeenCalled();
+      expect(mockListAllFiles).not.toHaveBeenCalled();
+    });
+
+    it('rediscovers repos when the root gains an entry', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [];
+      mockReadDirectory.mockResolvedValue([{ name: 'api', path: '/p/api', isDirectory: true }]);
+      mockListAllFiles.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p'], {
+        structural: true,
+        ignoreRulesChanged: false,
+      });
+
+      expect(mockDiscoverAndRefreshGit).toHaveBeenCalledWith('/p');
+      expect(mockListAllFiles).toHaveBeenCalledWith('/p');
+    });
+
+    it('re-stamps badges in loaded folders when ignore rules change', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [{ path: 'build/', status: 'ignored', staged: null, unstaged: null }];
+      const out = { path: '/p/build/out.js', name: 'out.js', isDirectory: false };
+      mockFileTree = [
+        { path: '/p/build', name: 'build', isDirectory: true, expanded: true, children: [out] },
+      ];
+      mockReadDirectory.mockResolvedValue([{ name: 'build', path: '/p/build', isDirectory: true }]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p'], {
+        structural: false,
+        ignoreRulesChanged: true,
+      });
+
+      const lastTree = vi.mocked(mockState.setFileTree).mock.calls.at(-1)?.[0];
+      expect(lastTree?.[0].children?.[0]).toMatchObject({
+        path: '/p/build/out.js',
+        gitStatus: 'ignored',
+      });
+    });
+
+    it('runs one refresh at a time and folds what arrives meanwhile into one more', async () => {
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [];
+      let release!: () => void;
+      mockRefreshGitStatus.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (release = resolve))
+      );
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      const summary = { structural: false, ignoreRulesChanged: false };
+      const first = result.current.handleRefreshDirs(['/p/a'], summary);
+      const second = result.current.handleRefreshDirs(['/p/b'], summary);
+      const third = result.current.handleRefreshDirs(['/p/c'], summary);
+      await Promise.resolve();
+      expect(mockRefreshGitStatus).toHaveBeenCalledTimes(1);
+
+      release();
+      await Promise.all([first, second, third]);
+      expect(mockRefreshGitStatus).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not rewrite a folder whose listing did not change', async () => {
+      // Every tree write re-renders the explorer; a refresh that learns
+      // nothing must not cost one.
+      mockState.rootPath = '/p';
+      mockFileStatuses = [];
+      mockFileTree = [
+        {
+          path: '/p/src',
+          name: 'src',
+          isDirectory: true,
+          children: [{ path: '/p/src/lib', name: 'lib', isDirectory: true, children: [] }],
+        },
+      ];
+      mockReadDirectory.mockResolvedValue([{ name: 'lib', path: '/p/src/lib', isDirectory: true }]);
+
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+      await result.current.handleRefreshDirs(['/p/src']);
+
+      expect(mockState.setDirectoryChildren).not.toHaveBeenCalled();
     });
   });
 
@@ -2483,7 +2591,7 @@ describe('useIDEHandlers', () => {
     });
 
     it('badges the inbox rail item with the unsorted count only', () => {
-      mockState.inboxItems = [
+      mockInboxItems = [
         makeInboxItem('a', null),
         makeInboxItem('b', null),
         makeInboxItem('c', '/repos/alpha'),
@@ -2496,7 +2604,7 @@ describe('useIDEHandlers', () => {
     });
 
     it('leaves the inbox badge unset when nothing is unsorted', () => {
-      mockState.inboxItems = [];
+      mockInboxItems = [];
       const { result } = renderHook(() => useIDEHandlers(mockState));
 
       const inboxItem = result.current.itemsWithBadge.find((i) => i.id === 'inbox');

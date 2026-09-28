@@ -12,13 +12,15 @@ import { TIPS, activityItems, visibleActivityItems } from '@/lib/ide/constants';
 import { activityClick } from '@/lib/ide/leftPanel';
 import { unsortedInboxItems } from '@/lib/inbox/unsortedInboxItems';
 import { selectChangedFileCount } from '@/lib/store/gitSlice';
+import { memoizeByInput } from '@/lib/store/memoizeByInput';
+import type { StoreState } from '@/lib/store';
 import {
   joinProjectPath,
   scaffoldProjectFiles,
   type NewProjectOptions,
 } from '@/lib/project/newProject';
 import { repoForGlobalGitAction } from './useGitActionHandlers';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
 
 export const CONTEXT_BOUND_COMMANDS: Record<string, string> = {
   'agent.kill-all': 'Kill All lives in the Agents panel, per repository. It asks before it acts.',
@@ -37,6 +39,13 @@ function contextBoundAction(id: string): () => void {
   return () => useStore.getState().showToast(hint, 'info');
 }
 
+const changedFileCount = memoizeByInput((repoStates: StoreState['repoStates']) =>
+  selectChangedFileCount({ repoStates })
+);
+const unsortedInboxCount = memoizeByInput(
+  (items: StoreState['inboxItems'] | undefined) => unsortedInboxItems(items ?? []).length
+);
+
 const DAILY_TIP = (() => {
   const dayOfYear = Math.floor(
     (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
@@ -45,7 +54,7 @@ const DAILY_TIP = (() => {
 })();
 
 export interface UseAgentAndCommandHandlersProps {
-  state: ReturnType<typeof useIDEState>;
+  state: IDEState;
   handleRefresh: (dir?: string, isRoot?: boolean) => Promise<unknown>;
   leaveWorkPlace: () => Promise<boolean>;
   handleNewFile: () => Promise<void>;
@@ -399,7 +408,10 @@ export function useAgentAndCommandHandlers({
     [commands, state]
   );
 
-  const scBadge = selectChangedFileCount({ repoStates: state.repoStates });
+  // Counts, not the collections: the page re-renders when a badge number
+  // changes, not on every git refresh or inbox write.
+  const scBadge = useStore((s) => changedFileCount(s.repoStates));
+  const unsortedInbox = useStore((s) => unsortedInboxCount(s.inboxItems));
   const openTicketsCount = useMemo(
     () => state.pmDraftTickets.filter((t) => !isClosedTicketStatus(t.status)).length,
     [state.pmDraftTickets]
@@ -416,13 +428,12 @@ export function useAgentAndCommandHandlers({
           badge: state.notificationsUnreadCount > 0 ? state.notificationsUnreadCount : undefined,
         };
       if (item.id === 'inbox') {
-        const unsorted = unsortedInboxItems(state.inboxItems ?? []).length;
-        return { ...item, badge: unsorted > 0 ? unsorted : undefined };
+        return { ...item, badge: unsortedInbox > 0 ? unsortedInbox : undefined };
       }
       return item;
     });
     return visibleActivityItems(badged, Boolean(state.rootPath));
-  }, [scBadge, openTicketsCount, state.notificationsUnreadCount, state.inboxItems, state.rootPath]);
+  }, [scBadge, openTicketsCount, state.notificationsUnreadCount, unsortedInbox, state.rootPath]);
 
   const dailyTip = DAILY_TIP;
 

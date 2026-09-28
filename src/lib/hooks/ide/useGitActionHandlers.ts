@@ -7,7 +7,7 @@ import { relativeToRepo } from '@/lib/git/repos';
 import { selectRepoForPath } from '@/lib/store/gitSlice';
 import { buildAgenticCommitTask } from '@/lib/git/agenticCommit';
 import type { GitRepoRef } from '@/lib/tauri/git';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
 
 export function repoForGlobalGitAction(store: {
   activeTabId: string | null;
@@ -22,10 +22,7 @@ export function repoForGlobalGitAction(store: {
   return store.repos.length === 1 ? store.repos[0].path : null;
 }
 
-export function useGitActionHandlers(
-  state: ReturnType<typeof useIDEState>,
-  handleRefresh: () => Promise<unknown>
-) {
+export function useGitActionHandlers(state: IDEState, handleRefresh: () => Promise<unknown>) {
   const handleCommit = useCallback(
     async (repoPath: string, options?: { push?: boolean }) => {
       if (state.agentSettings.agenticCommit) {

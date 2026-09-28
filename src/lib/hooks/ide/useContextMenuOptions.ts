@@ -5,7 +5,7 @@ import { type FileTreeNode } from '@/app/components/explorer/FileExplorer';
 import { revealInFileManager } from '@/lib/tauri/opener';
 import { toGitignoreEntry } from '@/lib/git/gitignore';
 import { type ContextMenuOption } from '@/app/components/ide/ContextMenu';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
 
 /** Label matches each OS's own file manager, following VS Code's convention. */
 function revealInFileManagerLabel(): string {
@@ -17,7 +17,7 @@ function revealInFileManagerLabel(): string {
 }
 
 export interface UseContextMenuOptionsProps {
-  state: ReturnType<typeof useIDEState>;
+  state: IDEState;
   clipboard: { path: string; isDirectory: boolean } | null;
   setClipboard: (c: { path: string; isDirectory: boolean } | null) => void;
   handleCopyPath: (path: string) => void;

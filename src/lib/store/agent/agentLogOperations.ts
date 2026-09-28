@@ -21,110 +21,146 @@ import {
   MAX_AGENT_LOG_BYTES,
   MAX_AGENT_LOGS,
   MAX_LOADED_HISTORY,
+  type AgentLogBatch,
   type AgentSlice,
 } from './agentTypes';
+import { wasAgentRemoved } from './removedAgents';
+
+type AgentLogSet = (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void;
 
 export function handleAppendAgentLog(
   agentId: string,
   log: string,
   get: () => AgentSlice,
-  set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
+  set: AgentLogSet
+): void {
+  handleAppendAgentLogBatch([[agentId, [log]]], get, set);
+}
+
+/**
+ * Appends several agents' chunks with one store update.
+ *
+ * Agent output arrives many times a second per agent, and every `set` runs
+ * every store listener. The output listener therefore collects chunks and
+ * hands them over here once per frame (`outputBatcher.ts`). The result is
+ * exactly what appending the chunks one by one would have produced — same
+ * order, same trimming, `seq` advanced once per chunk, each chunk stamped
+ * with the time it arrived.
+ *
+ * Chunks for an agent the user already removed are dropped (`removedAgents.ts`).
+ */
+export function handleAppendAgentLogBatch(
+  batch: AgentLogBatch,
+  get: () => AgentSlice,
+  set: AgentLogSet
 ): void {
   const state = get();
-  const existing = state.agentLogs[agentId] ?? [];
-  const meta = state.agentLogMeta[agentId] ?? { seq: 0, bytes: 0 };
-  let updated = [...existing, log];
-  let bytes = meta.bytes + log.length;
-
-  // Trim oldest chunks past either cap, but always keep the newest chunk.
-  let drop = 0;
-  while (
-    updated.length - drop > 1 &&
-    (updated.length - drop > MAX_AGENT_LOGS || bytes > MAX_AGENT_LOG_BYTES)
-  ) {
-    bytes -= updated[drop].length;
-    drop++;
-  }
-  if (drop > 0) {
-    updated = updated.slice(drop);
-  }
-
-  // Throttle lastActivityAt bumps: replacing the agents array on every
-  // streamed chunk forces every agents-derived memo (orchestration graph,
-  // fleet panel, goal badges) to recompute many times per second.
-  const agent = state.agents.find((a) => a.id === agentId);
   const now = Date.now();
-  const shouldBumpActivity =
-    agent !== undefined && now - (agent.lastActivityAt ?? 0) > AGENT_ACTIVITY_BUMP_MS;
+  const agentLogs = { ...state.agentLogs };
+  const agentLogMeta = { ...state.agentLogMeta };
+  let agentEvents: AgentSlice['agentEvents'] | null = null;
+  let agentStreamLines: AgentSlice['agentStreamLines'] | null = null;
+  let agentHeartbeat: AgentSlice['agentHeartbeat'] | null = null;
+  const bumped = new Map<string, string[]>();
+  let bumpedAny = false;
 
-  const newEvents = extractorForAgent(agentId, agent?.provider).push(log, now);
+  for (const [agentId, chunks, arrivedAt] of batch) {
+    if (chunks.length === 0 || wasAgentRemoved(agentId)) continue;
+    const meta = agentLogMeta[agentId] ?? { seq: 0, bytes: 0 };
+    let updated = [...(agentLogs[agentId] ?? []), ...chunks];
+    let bytes = meta.bytes;
+    for (const chunk of chunks) bytes += chunk.length;
 
-  recordAgentLogEvents(
-    { id: agentId, name: agent?.name ?? agentId, repoPath: agent?.repoPath },
-    newEvents
-  );
+    // Trim oldest chunks past either cap, but always keep the newest chunk.
+    let drop = 0;
+    while (
+      updated.length - drop > 1 &&
+      (updated.length - drop > MAX_AGENT_LOGS || bytes > MAX_AGENT_LOG_BYTES)
+    ) {
+      bytes -= updated[drop].length;
+      drop++;
+    }
+    if (drop > 0) {
+      updated = updated.slice(drop);
+    }
+    agentLogs[agentId] = updated;
+    agentLogMeta[agentId] = { seq: meta.seq + chunks.length, bytes };
 
-  const newStreamLines = streamCaptureForAgent(agentId).push(log, now);
+    // Throttle lastActivityAt bumps: replacing the agents array on every
+    // streamed chunk forces every agents-derived memo (orchestration graph,
+    // fleet panel, goal badges) to recompute many times per second.
+    const agent = state.agents.find((a) => a.id === agentId);
+    const shouldBumpActivity =
+      agent !== undefined && now - (agent.lastActivityAt ?? 0) > AGENT_ACTIVITY_BUMP_MS;
 
-  accumulateHeartbeatKinds(
-    agentId,
-    newEvents.map((event) => event.kind)
-  );
+    const extractor = extractorForAgent(agentId, agent?.provider);
+    const capture = streamCaptureForAgent(agentId);
+    const newEvents: ReturnType<typeof extractor.push> = [];
+    const newStreamLines: ReturnType<typeof capture.push> = [];
+    chunks.forEach((chunk, i) => {
+      const at = arrivedAt?.[i] ?? now;
+      newEvents.push(...extractor.push(chunk, at));
+      newStreamLines.push(...capture.push(chunk, at));
+    });
 
-  const flushedKinds = shouldBumpActivity ? drainHeartbeatKinds(agentId) : [];
+    recordAgentLogEvents(
+      { id: agentId, name: agent?.name ?? agentId, repoPath: agent?.repoPath },
+      newEvents
+    );
+
+    accumulateHeartbeatKinds(
+      agentId,
+      newEvents.map((event) => event.kind)
+    );
+
+    if (newEvents.length > 0) {
+      agentEvents ??= { ...state.agentEvents };
+      agentEvents[agentId] = [...(agentEvents[agentId] ?? []), ...newEvents].slice(
+        -MAX_AGENT_EVENTS
+      );
+    }
+    if (newStreamLines.length > 0) {
+      agentStreamLines ??= { ...state.agentStreamLines };
+      agentStreamLines[agentId] = appendStreamLines(
+        agentStreamLines[agentId] ?? [],
+        newStreamLines
+      );
+    }
+    if (shouldBumpActivity) {
+      bumpedAny = true;
+      bumped.set(agentId, updated);
+      const flushedKinds = drainHeartbeatKinds(agentId);
+      if (flushedKinds.length > 0) {
+        agentHeartbeat ??= { ...state.agentHeartbeat };
+        agentHeartbeat[agentId] = pushHeartbeat(agentHeartbeat[agentId] ?? [], flushedKinds, now);
+      }
+    }
+  }
 
   set({
-    agentLogs: {
-      ...state.agentLogs,
-      [agentId]: updated,
-    },
-    agentLogMeta: {
-      ...state.agentLogMeta,
-      [agentId]: { seq: meta.seq + 1, bytes },
-    },
-    ...(newEvents.length > 0
+    agentLogs,
+    agentLogMeta,
+    ...(agentEvents ? { agentEvents } : {}),
+    ...(agentStreamLines ? { agentStreamLines } : {}),
+    ...(agentHeartbeat ? { agentHeartbeat } : {}),
+    ...(bumpedAny
       ? {
-          agentEvents: {
-            ...state.agentEvents,
-            [agentId]: [...(state.agentEvents[agentId] ?? []), ...newEvents].slice(
-              -MAX_AGENT_EVENTS
-            ),
-          },
-        }
-      : {}),
-    ...(newStreamLines.length > 0
-      ? {
-          agentStreamLines: {
-            ...state.agentStreamLines,
-            [agentId]: appendStreamLines(state.agentStreamLines[agentId] ?? [], newStreamLines),
-          },
-        }
-      : {}),
-    ...(shouldBumpActivity
-      ? {
-          ...(flushedKinds.length > 0
-            ? {
-                agentHeartbeat: {
-                  ...state.agentHeartbeat,
-                  [agentId]: pushHeartbeat(state.agentHeartbeat[agentId] ?? [], flushedKinds, now),
-                },
-              }
-            : {}),
-          agents: state.agents.map((a) =>
-            a.id === agentId
+          agents: state.agents.map((a) => {
+            const logs = bumped.get(a.id);
+            return logs
               ? {
                   ...a,
                   lastActivityAt: now,
-                  currentActivity: deriveAgentActivity(updated) ?? a.currentActivity,
-                  awaitingInput: detectAwaitingInput(updated),
+                  currentActivity: deriveAgentActivity(logs) ?? a.currentActivity,
+                  awaitingInput: detectAwaitingInput(logs),
                 }
-              : a
-          ),
+              : a;
+          }),
         }
       : {}),
   });
 
-  if (shouldBumpActivity) void flushAgentLog();
+  if (bumpedAny) void flushAgentLog();
 }
 
 export async function handleLoadAgentLogHistory(

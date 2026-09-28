@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { EditorView } from '@codemirror/view';
 import type { Compartment } from '@codemirror/state';
 import { useStore } from '@/lib/store';
@@ -7,6 +7,9 @@ import { repoForPath, relativeToRepo } from '@/lib/git/repos';
 import { createGitGutter, diffToLineChanges } from '@/lib/editor/gitGutterExtension';
 import { createBlameGutter } from '@/lib/editor/blameGutterExtension';
 import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
+import { createStatusSignatureSelector } from '@/lib/git/statusSignature';
+
+const NO_STATUSES: never[] = [];
 
 interface UseEditorGitExtensionsOptions {
   viewRef: React.RefObject<EditorView | null>;
@@ -20,16 +23,13 @@ export function useEditorGitExtensions({
   filePath,
 }: UseEditorGitExtensionsOptions) {
   const isDirty = useStore((s) => s.openTabs.find((t) => t.id === filePath)?.isDirty ?? false);
+  const signatureOf = useMemo(() => createStatusSignatureSelector(), []);
   const statusSignature = useStore((s) => {
     if (!filePath) return '';
     const repo = repoForPath(filePath, s.repos);
     if (!repo) return '';
     const relativePath = relativeToRepo(filePath, repo.path);
-    const fileStatuses = s.repoStates[repo.path]?.fileStatuses ?? [];
-    return fileStatuses
-      .filter((f) => f.path === relativePath)
-      .map((f) => f.status)
-      .join(',');
+    return signatureOf(s.repoStates[repo.path]?.fileStatuses ?? NO_STATUSES, relativePath);
   });
 
   // Last-saved gutter, not live keystrokes: skip while the buffer is dirty,

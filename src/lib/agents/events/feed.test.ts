@@ -116,6 +116,34 @@ describe('mergeStreamFeed', () => {
     expect(feed[0]).toMatchObject({ agentId: 'a', text: 'hello', at: 1 });
   });
 
+  it('matches a full sort of every line, ties across agents included', () => {
+    // Reference: what the merge used to do — copy every line, stable sort.
+    const reference = (lines: Record<string, StreamLine[]>, agents: AgentInfo[], limit: number) =>
+      agents
+        .flatMap((a) => (lines[a.id] ?? []).map((l) => ({ ...l, agentId: a.id })))
+        .sort((x, y) => y.at - x.at || y.seq - x.seq)
+        .slice(0, limit);
+    let seed = 7;
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed % n;
+    };
+    const agents = [agent('a'), agent('b'), agent('c')];
+    for (let round = 0; round < 20; round++) {
+      const lines: Record<string, StreamLine[]> = {};
+      for (const { id } of agents) {
+        let at = 0;
+        lines[id] = Array.from({ length: rand(40) }, (_, seq) => {
+          at += rand(3); // repeated timestamps, within and across agents
+          return line(`${id}${seq}`, at, seq);
+        });
+      }
+      for (const limit of [5, 50, 1_000]) {
+        expect(mergeStreamFeed(lines, agents, limit)).toEqual(reference(lines, agents, limit));
+      }
+    }
+  });
+
   it('breaks a same-timestamp tie by seq, newest first', () => {
     // One PTY chunk yields several lines with the identical `at`; without the
     // seq tiebreaker a newest-first stream would print them backwards.

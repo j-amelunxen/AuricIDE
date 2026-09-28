@@ -38,6 +38,14 @@ export interface AgentLogMeta {
   bytes: number;
 }
 
+/**
+ * Chunks per agent, in arrival order, with each chunk's arrival time. Without
+ * times (a direct `appendAgentLog`), a chunk is stamped when it is appended.
+ */
+export type AgentLogBatch = ReadonlyArray<
+  readonly [agentId: string, chunks: readonly string[], arrivedAt?: readonly number[]]
+>;
+
 export type LogRecords = Pick<AgentSlice, 'agentLogs' | 'agentLogMeta'>;
 
 export type AgentRuntimeRecords = Pick<
@@ -156,6 +164,8 @@ export interface AgentSlice {
   dismissFinishedAgent: (agentId: string) => void;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
   appendAgentLog: (agentId: string, log: string) => void;
+  /** Several agents' chunks in one store update; see `handleAppendAgentLogBatch`. */
+  appendAgentLogBatch: (batch: AgentLogBatch) => void;
   /**
    * Trims the stored history to its configured bounds, then reads it back.
    * A no-op while persistence is off — nothing was written, so there is

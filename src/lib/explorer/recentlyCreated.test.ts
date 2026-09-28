@@ -3,6 +3,7 @@ import {
   RECENTLY_CREATED_WINDOW_MS,
   collectCreatedAt,
   collectModifiedAt,
+  dirsWithRecentlyCreatedFile,
   hasRecentlyCreatedFile,
   isRecentlyCreated,
   isRecentlyModified,
@@ -177,5 +178,51 @@ describe('nextRecentlyCreatedExpiry', () => {
     expect(
       nextRecentlyCreatedExpiry([NOW - RECENTLY_CREATED_WINDOW_MS, undefined], NOW)
     ).toBeNull();
+  });
+});
+
+describe('dirsWithRecentlyCreatedFile', () => {
+  const recent = NOW - 1000;
+  const old = NOW - RECENTLY_CREATED_WINDOW_MS - 1;
+  const tree = [
+    {
+      path: '/a',
+      isDirectory: true,
+      children: [
+        {
+          path: '/a/b',
+          isDirectory: true,
+          children: [{ path: '/a/b/new.ts', isDirectory: false, createdAt: recent }],
+        },
+        { path: '/a/old.ts', isDirectory: false, createdAt: old },
+      ],
+    },
+    {
+      path: '/collapsed',
+      isDirectory: true,
+      newestFileCreatedAt: recent,
+    },
+    { path: '/empty-new', isDirectory: true, createdAt: recent, children: [] },
+    {
+      path: '/stale',
+      isDirectory: true,
+      children: [{ path: '/stale/x.ts', isDirectory: false, createdAt: old }],
+    },
+    { path: '/top.ts', isDirectory: false, createdAt: recent },
+  ];
+
+  it('marks exactly the folders hasRecentlyCreatedFile marks, in one walk', () => {
+    const dirs = dirsWithRecentlyCreatedFile(tree, NOW);
+
+    expect([...dirs].sort()).toEqual(['/a', '/a/b', '/collapsed']);
+    const walk = (nodes: typeof tree): void => {
+      for (const node of nodes) {
+        if (node.isDirectory) {
+          expect(dirs.has(node.path), node.path).toBe(hasRecentlyCreatedFile(node, NOW));
+        }
+        walk((node.children ?? []) as typeof tree);
+      }
+    };
+    walk(tree);
   });
 });

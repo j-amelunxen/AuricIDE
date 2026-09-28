@@ -6,12 +6,9 @@ import { type FileNode } from '@/lib/store/fileTreeSlice';
 import { readDirectory } from '@/lib/tauri/fs';
 import { resolveGitStatusForPath } from '@/lib/git/resolveGitStatus';
 import { statusesByRepo } from './useTreeRefresh';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
 
-export function useFileTreeSelection(
-  state: ReturnType<typeof useIDEState>,
-  leaveWorkPlace: () => Promise<boolean>
-) {
+export function useFileTreeSelection(state: IDEState, leaveWorkPlace: () => Promise<boolean>) {
   const handleFileSelect = useCallback(
     async (path: string) => {
       if (useStore.getState().pmDirty) {

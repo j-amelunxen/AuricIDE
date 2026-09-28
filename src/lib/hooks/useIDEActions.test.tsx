@@ -24,7 +24,10 @@ vi.mock('@/lib/hooks/useFileWatcher', () => ({
 
 // The rest each own their own tests; here they only need to not touch a
 // backend that does not exist in this environment.
-vi.mock('@/lib/hooks/useAgentEvents', () => ({ useAgentEvents: () => undefined }));
+vi.mock('@/lib/hooks/useAgentEvents', () => ({
+  useAgentEvents: () => undefined,
+  useBatchedAgentEvents: () => undefined,
+}));
 vi.mock('@/lib/hooks/useAgentConsoleAutoOpen', () => ({
   useAgentConsoleAutoOpen: () => undefined,
 }));
@@ -92,13 +95,15 @@ vi.mock('@/lib/store', () => ({
       // open stations that lane returns immediately, which is what this is for.
       goalStationsDraft: [],
       setInboxCaptureOpen: mockSetInboxCaptureOpen,
+      // The project-open link index commits through the store directly.
+      bulkSetLinkEntries: vi.fn(),
     }),
   },
 }));
 
 import type { FsChangeEvent } from '@/lib/tauri/watcher';
 import { useIDEActions } from './useIDEActions';
-import { type useIDEState } from './useIDEState';
+import type { IDEState } from './ide/liveIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
 
 /**
@@ -122,7 +127,7 @@ const state = {
   setProjectFilesInfo: vi.fn(),
   appendAgentLog: vi.fn(),
   updateAgentStatus: vi.fn(),
-} as unknown as ReturnType<typeof useIDEState>;
+} as unknown as IDEState;
 
 const handlers = {
   handleRefresh: vi.fn(),
@@ -176,11 +181,14 @@ describe('useIDEActions – the file watcher’s route to the tree refresh', () 
     try {
       renderHook(() => useIDEActions(state, handlers));
 
-      notifyWatcher?.({ path: '/p/src/lib/example.ts', kind: 'modify' });
+      notifyWatcher?.({ path: '/p/src/lib/example.ts', kind: 'Modify(Data(Content))' });
       // Past the router's tree debounce, whose timing is its own file's business.
       vi.advanceTimersByTime(1_000);
 
-      expect(handlers.handleRefreshDirs).toHaveBeenCalledWith(['/p/src/lib']);
+      expect(handlers.handleRefreshDirs).toHaveBeenCalledWith(['/p/src/lib'], {
+        structural: false,
+        ignoreRulesChanged: false,
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -219,7 +227,7 @@ describe('useIDEActions – what a freshly opened project knows about the keys',
       initProjectDb: vi.fn(),
       loadPmData: vi.fn(),
       closeProjectDb: vi.fn(),
-    } as unknown as ReturnType<typeof useIDEState>;
+    } as unknown as IDEState;
 
     renderHook(() => useIDEActions(opened, handlers));
 

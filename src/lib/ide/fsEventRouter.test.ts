@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { createFsEventRouter, isProjectDbPath } from './fsEventRouter';
+import { createFsEventRouter, isContentOnlyKind, isProjectDbPath } from './fsEventRouter';
 
 describe('isProjectDbPath', () => {
   it('matches the project SQLite database and its WAL/SHM side files', () => {
@@ -152,5 +152,78 @@ describe('evidence lane', () => {
     expect(onEvidenceChange).toHaveBeenCalledTimes(1);
     router.dispose();
     vi.useRealTimers();
+  });
+});
+
+describe('isContentOnlyKind', () => {
+  it('treats data and metadata writes as content-only', () => {
+    expect(isContentOnlyKind('Modify(Data(Content))')).toBe(true);
+    expect(isContentOnlyKind('Modify(Data(Any))')).toBe(true);
+    expect(isContentOnlyKind('Modify(Metadata(Any))')).toBe(true);
+    expect(isContentOnlyKind('Access(Close(Write))')).toBe(true);
+  });
+
+  it('treats anything that can change the set of paths as structural', () => {
+    expect(isContentOnlyKind('Create(File)')).toBe(false);
+    expect(isContentOnlyKind('Remove(File)')).toBe(false);
+    expect(isContentOnlyKind('Modify(Name(Any))')).toBe(false);
+    // Unknown shapes are structural: the safe answer is the expensive one.
+    expect(isContentOnlyKind('Any')).toBe(false);
+    expect(isContentOnlyKind('Other')).toBe(false);
+  });
+});
+
+describe('createFsEventRouter change summary', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const flushWith = (events: Array<{ path: string; kind: string }>) => {
+    const onTreeChange = vi.fn();
+    const r = createFsEventRouter({ onTreeChange, onProjectDataChange: vi.fn() });
+    for (const e of events) r.handle(e);
+    vi.advanceTimersByTime(1_000);
+    expect(onTreeChange).toHaveBeenCalledTimes(1);
+    return onTreeChange.mock.calls[0][1];
+  };
+
+  it('reports a burst of content writes as non-structural', () => {
+    expect(
+      flushWith([
+        { path: '/p/a.md', kind: 'Modify(Data(Content))' },
+        { path: '/p/b.md', kind: 'Modify(Data(Content))' },
+      ])
+    ).toEqual({ structural: false, ignoreRulesChanged: false });
+  });
+
+  it('reports a burst with one create as structural', () => {
+    expect(
+      flushWith([
+        { path: '/p/a.md', kind: 'Modify(Data(Content))' },
+        { path: '/p/new.md', kind: 'Create(File)' },
+      ])
+    ).toMatchObject({ structural: true });
+  });
+
+  it('notices a changed ignore file anywhere in the project', () => {
+    expect(flushWith([{ path: '/p/.gitignore', kind: 'Modify(Data(Content))' }])).toEqual({
+      structural: false,
+      ignoreRulesChanged: true,
+    });
+    expect(flushWith([{ path: '/p/sub/.gitignore', kind: 'Modify(Data(Content))' }])).toMatchObject(
+      { ignoreRulesChanged: true }
+    );
+  });
+
+  it('starts every burst with a clean summary', () => {
+    const onTreeChange = vi.fn();
+    const r = createFsEventRouter({ onTreeChange, onProjectDataChange: vi.fn() });
+    r.handle({ path: '/p/new.md', kind: 'Create(File)' });
+    vi.advanceTimersByTime(1_000);
+    r.handle({ path: '/p/new.md', kind: 'Modify(Data(Content))' });
+    vi.advanceTimersByTime(1_000);
+    expect(onTreeChange.mock.calls[1][1]).toEqual({
+      structural: false,
+      ignoreRulesChanged: false,
+    });
   });
 });

@@ -193,13 +193,28 @@ export function mergeStreamFeed(
   agents: AgentInfo[],
   limit = 1_000
 ): StreamFeedEntry[] {
+  // Each agent's lines are already oldest first, so the newest `limit` of the
+  // whole fleet are found by walking the agents' tails together — a k-way
+  // merge. This runs whenever any agent prints while the console shows all
+  // output; copying and sorting every retained line of every agent each time
+  // cost far more than the thousand rows it keeps. Ties go to the agent
+  // listed first, exactly as the stable sort this replaced ordered them.
+  const lists = agents.map((agent) => agentStreamLines[agent.id] ?? []);
+  const cursors = lists.map((lines) => lines.length - 1);
   const entries: StreamFeedEntry[] = [];
-  for (const agent of agents) {
-    for (const line of agentStreamLines[agent.id] ?? []) {
-      entries.push({ ...line, agentId: agent.id });
+  while (entries.length < limit) {
+    let pick = -1;
+    for (let i = 0; i < lists.length; i++) {
+      if (cursors[i] < 0) continue;
+      if (pick === -1 || newestFirst(lists[i][cursors[i]], lists[pick][cursors[pick]]) < 0) {
+        pick = i;
+      }
     }
+    if (pick === -1) break;
+    entries.push({ ...lists[pick][cursors[pick]], agentId: agents[pick].id });
+    cursors[pick]--;
   }
-  return entries.sort(newestFirst).slice(0, limit);
+  return entries;
 }
 
 /**

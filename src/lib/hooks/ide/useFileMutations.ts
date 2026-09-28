@@ -21,10 +21,10 @@ import { copyToClipboard } from '@/lib/tauri/clipboard';
 import { computeBacklinkWarning } from '@/lib/refactoring/backlinkWarning';
 import { computeFileRenameChanges } from '@/lib/refactoring/renameFile';
 import { applyChangesToContent } from '@/lib/refactoring/applyRenameChanges';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
 
 export function useFileMutations(
-  state: ReturnType<typeof useIDEState>,
+  state: IDEState,
   clipboard: { path: string; isDirectory: boolean } | null,
   handleRefresh: (dir?: string, isRoot?: boolean) => Promise<unknown>,
   handleFileSelect: (path: string) => Promise<void>,

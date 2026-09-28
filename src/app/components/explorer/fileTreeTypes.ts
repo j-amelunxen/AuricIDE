@@ -59,6 +59,23 @@ export function flattenVisibleTree(nodes: FileTreeNode[]): FlatTreeEntry[] {
   return out;
 }
 
+export interface VisibleRow {
+  node: FileTreeNode;
+  depth: number;
+}
+
+/** The visible rows in on-screen order with their nesting depth — what the explorer renders. */
+export function flattenVisibleNodes(nodes: FileTreeNode[], depth = 0): VisibleRow[] {
+  const out: VisibleRow[] = [];
+  for (const node of nodes) {
+    out.push({ node, depth });
+    if (node.isDirectory && node.expanded && node.children?.length) {
+      out.push(...flattenVisibleNodes(node.children, depth + 1));
+    }
+  }
+  return out;
+}
+
 export function findNode(nodes: FileTreeNode[], path: string): FileTreeNode | undefined {
   for (const node of nodes) {
     if (node.path === path) return node;
@@ -82,8 +99,4 @@ export function computeRange(
   const [start, end] =
     anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
   return paths.slice(start, end + 1);
-}
-
-export function focusRow(path: string): void {
-  document.querySelector<HTMLElement>(`[data-testid="tree-item-${path}"]`)?.focus();
 }

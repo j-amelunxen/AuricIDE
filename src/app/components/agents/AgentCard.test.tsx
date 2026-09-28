@@ -8,6 +8,7 @@ import { useStore } from '@/lib/store';
 // Mock useNow to return current time (avoids stale module-scope timestamps)
 vi.mock('@/lib/hooks/useNow', () => ({
   useNow: () => Date.now(),
+  useNowWhen: () => Date.now(),
 }));
 
 vi.mock('@/lib/tauri/terminal', () => ({

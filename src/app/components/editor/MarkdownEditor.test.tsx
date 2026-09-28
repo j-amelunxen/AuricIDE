@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockEditorState = vi.hoisted(() => ({
   onUpdate: undefined as ((update: unknown) => void) | undefined,
+  addToHistory: { of: (value: unknown) => ({ type: 'addToHistory', value }) },
+  dispatched: [] as Array<{ annotations?: unknown }>,
 }));
 import { MarkdownEditor } from './MarkdownEditor';
 
@@ -237,17 +239,20 @@ vi.mock('@codemirror/view', () => {
       config.parent?.appendChild(this.dom);
     }
     destroy() {}
-    dispatch(tr?: { changes?: unknown; annotations?: { type: unknown; value: unknown } }) {
+    dispatch(tr?: {
+      changes?: unknown;
+      annotations?: { type: unknown; value: unknown } | Array<{ type: unknown; value: unknown }>;
+    }) {
+      if (tr) mockEditorState.dispatched.push(tr);
       if (tr?.changes !== undefined && mockEditorState.onUpdate) {
-        const annotation = tr.annotations;
+        const annotations = [tr.annotations ?? []].flat();
         mockEditorState.onUpdate({
           docChanged: true,
           selectionSet: false,
           transactions: [
             {
               docChanged: true,
-              annotation: (type: unknown) =>
-                annotation && annotation.type === type ? annotation.value : undefined,
+              annotation: (type: unknown) => annotations.find((a) => a.type === type)?.value,
             },
           ],
           state: {
@@ -290,6 +295,7 @@ vi.mock('@codemirror/state', () => ({
       return type;
     },
   },
+  Transaction: { addToHistory: mockEditorState.addToHistory },
   Compartment: class {
     of() {
       return [];
@@ -407,6 +413,17 @@ describe('MarkdownEditor', () => {
     rerender(<MarkdownEditor content="content B" onChange={onChange} />);
 
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the tab switch out of the undo history', () => {
+    // Undoable, the swap let Cmd+Z restore the previous file's text into this
+    // one and autosave it (externalContentSync.test.ts covers the history itself).
+    const { rerender } = render(<MarkdownEditor content="content A" onChange={vi.fn()} />);
+    mockEditorState.dispatched.length = 0;
+    rerender(<MarkdownEditor content="content B" onChange={vi.fn()} />);
+
+    const swap = mockEditorState.dispatched.find((tr) => 'changes' in tr);
+    expect([swap?.annotations].flat()).toContainEqual({ type: 'addToHistory', value: false });
   });
 
   describe('git gutter', () => {

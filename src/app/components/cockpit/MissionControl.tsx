@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { useStore } from '@/lib/store';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
@@ -168,8 +168,11 @@ export function MissionControl({
 
   // "Spec" means documents under a specs/ directory — README, changelogs and
   // scattered notes don't count as specification.
-  const specPaths = allFilePaths.filter((p) =>
-    /(^|\/)specs\/.*\.(md|markdown|excalidraw)$/i.test(p)
+  // Memoized: the project's whole file list, filtered by regex, would
+  // otherwise be rescanned on every render (agent activity renders this).
+  const specPaths = useMemo(
+    () => allFilePaths.filter((p) => /(^|\/)specs\/.*\.(md|markdown|excalidraw)$/i.test(p)),
+    [allFilePaths]
   );
   const specDocs = specPaths.length;
   const liveTickets = tickets.filter((t) => !isClosedTicketStatus(t.status));

@@ -3,6 +3,52 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Home from './page';
 import { useStore } from '@/lib/store';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
+import type { AgentInfo } from '@/lib/tauri/agents';
+
+// Render counters for the memoized panels. Each wrapper calls the real
+// component as a function, so behaviour is unchanged — it only notes that the
+// panel rendered, which with `memo` means its props actually changed.
+const renders = vi.hoisted(() => {
+  const counts = new Map<string, number>();
+  return {
+    counts,
+    counted<P>(name: string, component: (props: P) => React.ReactNode) {
+      return function Counted(props: P) {
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+        return component(props);
+      };
+    },
+  };
+});
+
+vi.mock('./components/ide/Header', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/ide/Header')>();
+  return { ...actual, Header: renders.counted('Header', actual.Header) };
+});
+vi.mock('./components/ide/ActivityBar', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/ide/ActivityBar')>();
+  return { ...actual, ActivityBar: renders.counted('ActivityBar', actual.ActivityBar) };
+});
+vi.mock('./components/ide/StatusBar', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/ide/StatusBar')>();
+  return { ...actual, StatusBar: renders.counted('StatusBar', actual.StatusBar) };
+});
+vi.mock('./components/editor/TabBar', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/editor/TabBar')>();
+  return { ...actual, TabBar: renders.counted('TabBar', actual.TabBar) };
+});
+vi.mock('./components/terminal/TerminalPanel', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/terminal/TerminalPanel')>();
+  return { ...actual, TerminalPanel: renders.counted('TerminalPanel', actual.TerminalPanel) };
+});
+vi.mock('./components/agents/AgentsPanel', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/agents/AgentsPanel')>();
+  return { ...actual, AgentsPanel: renders.counted('AgentsPanel', actual.AgentsPanel) };
+});
+vi.mock('./components/explorer/FileExplorer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/explorer/FileExplorer')>();
+  return { ...actual, FileExplorer: renders.counted('FileExplorer', actual.FileExplorer) };
+});
 
 // jsdom stubs needed by xterm.js and IntersectionObserver
 Object.defineProperty(window, 'matchMedia', {
@@ -297,6 +343,7 @@ vi.mock('@/lib/tauri/pm', () => ({
 
 vi.mock('@/lib/hooks/useAgentEvents', () => ({
   useAgentEvents: vi.fn(),
+  useBatchedAgentEvents: vi.fn(),
 }));
 
 vi.mock('@/lib/canvas/markdownParser', () => ({
@@ -626,5 +673,97 @@ describe('FileWatcher debouncing', () => {
 
     // One refresh, not 20 — readDirectory called exactly once
     expect(mockReadDirectory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Home page — store writes re-render only what displays them', () => {
+  const PANELS = [
+    'Header',
+    'ActivityBar',
+    'StatusBar',
+    'TabBar',
+    'TerminalPanel',
+    'AgentsPanel',
+    'FileExplorer',
+  ] as const;
+
+  const agent = (id: string, activity: string): AgentInfo => ({
+    id,
+    name: id,
+    status: 'running',
+    model: 'm',
+    provider: 'p',
+    currentActivity: activity,
+    startedAt: 0,
+  });
+
+  const tree = [
+    { name: 'src', path: '/test/project/src', isDirectory: true, expanded: false, children: [] },
+    { name: 'a.md', path: '/test/project/a.md', isDirectory: false },
+  ];
+
+  /** Mount an open project and let the mount-time effects settle, then zero the counters. */
+  async function mountProject() {
+    useStore.setState({
+      rootPath: '/test/project',
+      fileTree: tree,
+      agents: [agent('a1', 'reading')],
+      activeTabId: null,
+      openTabs: [],
+    });
+    render(<Home />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    for (const name of PANELS) {
+      expect(renders.counts.get(name) ?? 0, `${name} never mounted`).toBeGreaterThan(0);
+    }
+    renders.counts.clear();
+  }
+
+  const rendered = () => PANELS.filter((name) => (renders.counts.get(name) ?? 0) > 0);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    renders.counts.clear();
+  });
+
+  it('an agent update re-renders the agent panels and nothing else', async () => {
+    await mountProject();
+
+    act(() => useStore.setState({ agents: [agent('a1', 'writing')] }));
+
+    expect(rendered()).toEqual(['TerminalPanel', 'AgentsPanel']);
+  });
+
+  it('a file-tree update re-renders the explorer and nothing else', async () => {
+    await mountProject();
+
+    act(() =>
+      useStore.setState({
+        fileTree: [...tree, { name: 'b.md', path: '/test/project/b.md', isDirectory: false }],
+      })
+    );
+
+    expect(rendered()).toEqual(['FileExplorer']);
+  });
+
+  it('a page re-render for something no panel shows leaves every memoized panel alone', async () => {
+    await mountProject();
+
+    // Home itself selects this, so the page re-renders — the panels' props,
+    // callbacks included, must come out identical.
+    act(() => useStore.setState({ fileSearchOpen: true }));
+
+    expect(rendered()).toEqual([]);
+    act(() => useStore.setState({ fileSearchOpen: false }));
+  });
+
+  it('a cursor move re-renders only the status bar', async () => {
+    await mountProject();
+
+    act(() => useStore.setState({ cursorPos: { line: 7, col: 3 } }));
+
+    expect(rendered()).toEqual(['StatusBar']);
   });
 });

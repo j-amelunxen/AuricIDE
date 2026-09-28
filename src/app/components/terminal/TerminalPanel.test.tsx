@@ -1,16 +1,21 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { TerminalPanel } from './TerminalPanel';
 
+const xtermRenders = vi.hoisted(() => ({ count: 0 }));
+
 // Mock XtermTerminal since it requires real DOM APIs (canvas, matchMedia, etc.)
 vi.mock('./XtermTerminal', () => ({
-  XtermTerminal: ({ id, cwd }: { id: string; cwd?: string }) => (
-    <div data-testid={`xterm-${id}`} data-cwd={cwd ?? ''}>
-      Terminal: {id}
-    </div>
-  ),
+  XtermTerminal: ({ id, cwd }: { id: string; cwd?: string }) => {
+    xtermRenders.count++;
+    return (
+      <div data-testid={`xterm-${id}`} data-cwd={cwd ?? ''}>
+        Terminal: {id}
+      </div>
+    );
+  },
 }));
 
 const testAgents: AgentInfo[] = [
@@ -125,5 +130,37 @@ describe('TerminalPanel', () => {
       expect(term1).toHaveAttribute('data-cwd', '/project/src/components');
       expect(term2).toHaveAttribute('data-cwd', '/project/src/utils');
     });
+  });
+});
+
+describe('TerminalPanel – the 1-second tick', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps the terminals out of the per-second re-render the live tab badge needs', () => {
+    vi.useFakeTimers();
+    const live: AgentInfo = { ...testAgents[0], lastActivityAt: Date.now() };
+    render(<TerminalPanel agents={[live]} selectedAgentId="agent-1" />);
+    const before = xtermRenders.count;
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    expect(xtermRenders.count).toBe(before);
+  });
+
+  it('still lets the live badge follow the clock', () => {
+    vi.useFakeTimers();
+    const live: AgentInfo = { ...testAgents[0], lastActivityAt: Date.now() };
+    const { container } = render(<TerminalPanel agents={[live]} />);
+    expect(container.querySelector('.animate-ping')).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(container.querySelector('.animate-ping')).toBeNull();
   });
 });

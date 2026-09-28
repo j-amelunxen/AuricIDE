@@ -1,5 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useStore } from '@/lib/store';
+import { createStatusSignatureSelector } from '@/lib/git/statusSignature';
+
+const NO_STATUSES: never[] = [];
 
 /**
  * Keeps the active staged/unstaged/combined/ref diff tab in sync with git
@@ -23,13 +26,10 @@ export function useActiveDiffLoader() {
     if (!s.activeTabId) return undefined;
     return s.diffByTabId[s.activeTabId]?.filePath;
   });
+  const signatureOf = useMemo(() => createStatusSignatureSelector(), []);
   const statusSignature = useStore((s) => {
     if (!filePath || !repoPath) return '';
-    const fileStatuses = s.repoStates[repoPath]?.fileStatuses ?? [];
-    return fileStatuses
-      .filter((f) => f.path === filePath)
-      .map((f) => f.status)
-      .join(',');
+    return signatureOf(s.repoStates[repoPath]?.fileStatuses ?? NO_STATUSES, filePath);
   });
 
   useEffect(() => {

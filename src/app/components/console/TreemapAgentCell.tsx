@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import {
@@ -55,7 +55,11 @@ export interface TreemapAgentCellProps {
  * and a user marker only ever sits on the left edge. Clicking the cell
  * (not a nested control) opens Focus.
  */
-export function TreemapAgentCell({
+/**
+ * Memoized: a streaming fleet re-renders the console several times a second,
+ * and a cell whose agent, events and geometry are unchanged has nothing new.
+ */
+export const TreemapAgentCell = memo(function TreemapAgentCell({
   agent,
   events,
   reviewed,
@@ -74,10 +78,14 @@ export function TreemapAgentCell({
   const offerMerge = useWorktreeMergeOffer(confirm);
   const sendAgentInput = useStore((s) => s.sendAgentInput);
   const showToast = useStore((s) => s.showToast);
-  const logTail = useStore((s) => s.agentLogs[agent.id] ?? EMPTY_LOGS);
   const [replyText, setReplyText] = useState('');
 
   const state = consoleAgentState(agent, reviewed, now);
+  const roomy = width >= 260 && height >= 140;
+  // The raw log is read only to draw a waiting prompt. Subscribing to it
+  // regardless re-rendered every cell on every output batch.
+  const readsTail = roomy && state === 'yours';
+  const logTail = useStore((s) => (readsTail ? (s.agentLogs[agent.id] ?? EMPTY_LOGS) : EMPTY_LOGS));
   const label = consoleStateLabel(state, reviewed);
   const lastEvent = events.at(-1);
   const markerHex = agentColorHex(color);
@@ -86,10 +94,9 @@ export function TreemapAgentCell({
     lastEvent,
     currentActivity: agent.currentActivity,
   });
-  const roomy = width >= 260 && height >= 140;
   const isRunningLike = state === 'yours' || state === 'stalled' || state === 'working';
-  const menuOptions = roomy && state === 'yours' ? parsePermissionMenu(logTail) : null;
-  const tailLines = roomy && state === 'yours' ? promptTailLines(logTail) : [];
+  const menuOptions = readsTail ? parsePermissionMenu(logTail) : null;
+  const tailLines = readsTail ? promptTailLines(logTail) : [];
 
   const handleStop = async () => {
     const go = await confirm({
@@ -273,4 +280,4 @@ export function TreemapAgentCell({
       {confirmDialog}
     </div>
   );
-}
+});

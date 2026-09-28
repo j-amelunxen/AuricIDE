@@ -97,13 +97,15 @@ export function ConsoleAgentCard({
   const offerMerge = useWorktreeMergeOffer(confirm);
   const sendAgentInput = useStore((s) => s.sendAgentInput);
   const showToast = useStore((s) => s.showToast);
-  // Scoped to this one agent's id, so a chunk streamed for any other agent in
-  // the fleet does not force this card to re-render — same trick AgentCard
-  // uses for its own log preview.
-  const logTail = useStore((s) => s.agentLogs[agent.id] ?? EMPTY_LOGS);
   const [replyText, setReplyText] = useState('');
 
   const state = consoleAgentState(agent, reviewed, now);
+  // Scoped to this one agent's id, and only while a waiting prompt is drawn
+  // from it: otherwise every output batch — this agent's or any other's —
+  // re-rendered the card to show nothing new. Same trick AgentCard uses for
+  // its own log preview.
+  const readsTail = state === 'yours';
+  const logTail = useStore((s) => (readsTail ? (s.agentLogs[agent.id] ?? EMPTY_LOGS) : EMPTY_LOGS));
   const label = consoleStateLabel(state, reviewed);
   const lastEvent = events.at(-1);
   const filesChanged = filesTouched(events);
@@ -119,8 +121,8 @@ export function ConsoleAgentCard({
   });
 
   const isRunningLike = state === 'yours' || state === 'stalled' || state === 'working';
-  const menuOptions = state === 'yours' ? parsePermissionMenu(logTail) : null;
-  const tailLines = state === 'yours' ? promptTailLines(logTail) : [];
+  const menuOptions = readsTail ? parsePermissionMenu(logTail) : null;
+  const tailLines = readsTail ? promptTailLines(logTail) : [];
 
   const handleStop = async () => {
     const go = await confirm({

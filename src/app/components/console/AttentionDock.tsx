@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { AttentionPop } from '@/lib/agents/attentionDock';
 import type { AttentionReason } from '@/lib/agents/attention';
 import { projectLabel } from '@/lib/agents/lanes';
@@ -30,7 +31,7 @@ export interface AttentionDockProps {
  * Only agents that already need a human appear here — they pop in as they
  * start waiting, fail, or stall. A clean finish stays in the feed.
  */
-export function AttentionDock({ pops, onFocus }: AttentionDockProps) {
+export const AttentionDock = memo(function AttentionDock({ pops, onFocus }: AttentionDockProps) {
   return (
     <aside
       data-testid="attention-dock"
@@ -95,4 +96,4 @@ export function AttentionDock({ pops, onFocus }: AttentionDockProps) {
       )}
     </aside>
   );
-}
+});

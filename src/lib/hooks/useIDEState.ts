@@ -9,6 +9,14 @@ import { type BottomTab } from '@/app/components/ide/BottomPanelTabs';
 import { type ExtraTerminal } from '@/app/components/terminal/TerminalPanel';
 import { type SettingsCategory } from '@/app/components/ide/SettingsModal';
 
+/**
+ * The page-level state `Home` renders from. Everything selected here re-renders
+ * the whole page when it changes, so fields that change constantly and are
+ * displayed by one panel only — agents, the file tree, per-repo git state,
+ * diagnostics, the cursor — are deliberately not selected here. The panels that
+ * show them select them themselves; handlers reach them through
+ * `useLiveIDEState` (`ide/liveIDEState.ts`).
+ */
 export function useIDEState() {
   const [activeActivity, setActiveActivityRaw] = useState('explorer');
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -39,7 +47,6 @@ export function useIDEState() {
   const workPlaceOpen = useStore((s) => s.workPlaceOpen);
   const rootPath = useStore((s) => s.rootPath);
   const setRootPath = useStore((s) => s.setRootPath);
-  const fileTree = useStore((s) => s.fileTree);
   const setFileTree = useStore((s) => s.setFileTree);
   const setDirectoryChildren = useStore((s) => s.setDirectoryChildren);
   const selectedPath = useStore((s) => s.selectedPath);
@@ -58,7 +65,6 @@ export function useIDEState() {
   const renamePath = useStore((s) => s.renamePath);
   const showToast = useStore((s) => s.showToast);
   const repos = useStore((s) => s.repos);
-  const repoStates = useStore((s) => s.repoStates);
   const activeRepoPath = useStore((s) => s.activeRepoPath);
   const setCommitMessage = useStore((s) => s.setCommitMessage);
   const stageFile = useStore((s) => s.stageFile);
@@ -67,7 +73,6 @@ export function useIDEState() {
   const unstageAll = useStore((s) => s.unstageAll);
   const commit = useStore((s) => s.commit);
   const push = useStore((s) => s.push);
-  const agents = useStore((s) => s.agents);
   const spawnNewAgent = useStore((s) => s.spawnNewAgent);
   const killRunningAgent = useStore((s) => s.killRunningAgent);
   const updateAgentStatus = useStore((s) => s.updateAgentStatus);
@@ -75,17 +80,12 @@ export function useIDEState() {
   const selectedAgentId = useStore((s) => s.selectedAgentId);
   const selectAgent = useStore((s) => s.selectAgent);
   const killAgentsForRepoPath = useStore((s) => s.killAgentsForRepoPath);
-  const interruptedAgents = useStore((s) => s.interruptedAgents);
   const loadInterruptedAgents = useStore((s) => s.loadInterruptedAgents);
   const resumeInterruptedAgent = useStore((s) => s.resumeInterruptedAgent);
   const discardInterruptedAgent = useStore((s) => s.discardInterruptedAgent);
-  const minimizedAgentIds = useStore((s) => s.minimizedAgentIds);
   const renameRunningAgent = useStore((s) => s.renameRunningAgent);
   const dismissFinishedAgent = useStore((s) => s.dismissFinishedAgent);
-  const collapsedAgentRepos = useStore((s) => s.collapsedAgentRepos);
   const toggleAgentRepoCollapsed = useStore((s) => s.toggleAgentRepoCollapsed);
-  const agentColors = useStore((s) => s.agentColors);
-  const reviewedAgentIds = useStore((s) => s.reviewedAgentIds);
   const retryFailedAgent = useStore((s) => s.retryFailedAgent);
   const setAgentColor = useStore((s) => s.setAgentColor);
   const setAgentMinimized = useStore((s) => s.setAgentMinimized);
@@ -95,7 +95,6 @@ export function useIDEState() {
   const selectNode = useStore((s) => s.selectNode);
   const addTerminalLog = useStore((s) => s.addTerminalLog);
   const clearTerminalLogs = useStore((s) => s.clearTerminalLogs);
-  const cursorPos = useStore((s) => s.cursorPos);
   const setCursorPos = useStore((s) => s.setCursorPos);
   const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useStore((s) => s.setCommandPaletteOpen);
@@ -148,7 +147,6 @@ export function useIDEState() {
   const clearEntityIndex = useStore((s) => s.clearEntityIndex);
   const clearHeadingIndex = useStore((s) => s.clearHeadingIndex);
   const clearLinkIndex = useStore((s) => s.clearLinkIndex);
-  const diagnostics = useStore((s) => s.diagnostics);
   const getDiagnosticCounts = useStore((s) => s.getDiagnosticCounts);
   const setProblemsPanelOpen = useStore((s) => s.setProblemsPanelOpen);
   const setPmModalOpen = useStore((s) => s.setPmModalOpen);
@@ -179,7 +177,6 @@ export function useIDEState() {
   const scratchDir = useStore((s) => s.scratchDir);
   const scratches = useStore((s) => s.scratches);
   const notificationsUnreadCount = useStore((s) => s.notificationsUnreadCount);
-  const inboxItems = useStore((s) => s.inboxItems);
   const scratchStatus = useStore((s) => s.scratchStatus);
   const initScratches = useStore((s) => s.initScratches);
   const refreshScratches = useStore((s) => s.refreshScratches);
@@ -268,7 +265,6 @@ export function useIDEState() {
     setSettingsInitialCategory,
     rootPath,
     setRootPath,
-    fileTree,
     setFileTree,
     setDirectoryChildren,
     selectedPath,
@@ -287,7 +283,6 @@ export function useIDEState() {
     renamePath,
     showToast,
     repos,
-    repoStates,
     activeRepoPath,
     setCommitMessage,
     stageFile,
@@ -296,7 +291,6 @@ export function useIDEState() {
     unstageAll,
     commit,
     push,
-    agents,
     spawnNewAgent,
     killRunningAgent,
     updateAgentStatus,
@@ -304,18 +298,13 @@ export function useIDEState() {
     selectedAgentId,
     selectAgent,
     killAgentsForRepoPath,
-    interruptedAgents,
     loadInterruptedAgents,
     resumeInterruptedAgent,
     discardInterruptedAgent,
-    minimizedAgentIds,
     setAgentMinimized,
     renameRunningAgent,
     dismissFinishedAgent,
-    collapsedAgentRepos,
     toggleAgentRepoCollapsed,
-    agentColors,
-    reviewedAgentIds,
     retryFailedAgent,
     setAgentColor,
     canvasNodes,
@@ -324,7 +313,6 @@ export function useIDEState() {
     selectNode,
     addTerminalLog,
     clearTerminalLogs,
-    cursorPos,
     setCursorPos,
     commandPaletteOpen,
     setCommandPaletteOpen,
@@ -371,7 +359,6 @@ export function useIDEState() {
     clearEntityIndex,
     clearHeadingIndex,
     clearLinkIndex,
-    diagnostics,
     getDiagnosticCounts,
     setProblemsPanelOpen,
     setPmModalOpen,
@@ -402,7 +389,6 @@ export function useIDEState() {
     scratchDir,
     scratches,
     notificationsUnreadCount,
-    inboxItems,
     scratchStatus,
     initScratches,
     refreshScratches,

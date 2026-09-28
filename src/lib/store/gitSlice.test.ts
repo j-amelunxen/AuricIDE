@@ -101,6 +101,42 @@ describe('gitSlice', () => {
     expect(store.getState().projectDirtyEpoch).toBe(2);
   });
 
+  describe('refresh write budget', () => {
+    it("writes all repos' statuses in one store update, not one per repo", async () => {
+      const { discoverGitRepos } = await import('../tauri/git');
+      vi.mocked(discoverGitRepos).mockResolvedValue([repoRoot, repoApi, repoWeb]);
+      await store.getState().discoverAndRefreshGit('/w');
+
+      const writes = vi.fn();
+      const unsubscribe = store.subscribe((next, prev) => {
+        if (next.repoStates !== prev.repoStates) writes();
+      });
+      const { getGitStatus } = await import('../tauri/git');
+      vi.mocked(getGitStatus).mockResolvedValueOnce([
+        file('other.md', 'modified', null, 'modified'),
+      ]);
+      await store.getState().refreshGitStatus();
+      unsubscribe();
+
+      expect(writes).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps every reference when a refresh finds nothing new', async () => {
+      const { discoverGitRepos } = await import('../tauri/git');
+      // Real IPC hands back fresh objects every time; so must the mock.
+      vi.mocked(discoverGitRepos).mockImplementation(async () => [{ ...repoRoot }, { ...repoApi }]);
+      await store.getState().discoverAndRefreshGit('/w');
+      const before = store.getState();
+
+      await store.getState().discoverAndRefreshGit('/w');
+      const after = store.getState();
+
+      expect(after.repos).toBe(before.repos);
+      expect(after.repoStates).toBe(before.repoStates);
+      expect(after.agentWorktrees).toBe(before.agentWorktrees);
+    });
+  });
+
   describe('discoverAndRefreshGit', () => {
     it('discovers repos and refreshes status + branch for each', async () => {
       const { discoverGitRepos } = await import('../tauri/git');

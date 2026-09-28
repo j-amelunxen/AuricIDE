@@ -1,4 +1,12 @@
-import { Annotation, type Transaction } from '@codemirror/state';
+import { history } from '@codemirror/commands';
+import {
+  Annotation,
+  Compartment,
+  Transaction,
+  type EditorState,
+  type Extension,
+  type TransactionSpec,
+} from '@codemirror/state';
 
 /**
  * Marks a transaction that mirrors the buffer from outside the editor — a tab
@@ -20,4 +28,33 @@ export function isExternalContentSync(update: {
 }): boolean {
   const changing = update.transactions.filter((tr) => tr.docChanged);
   return changing.length > 0 && changing.every((tr) => tr.annotation(externalContentSync));
+}
+
+// History sits in its own compartment so an external swap can drop it: a state
+// field only restarts empty when it leaves the configuration and comes back.
+const historyCompartment = new Compartment();
+
+/** The editor's undo history, in the compartment `externalContentReplacement` resets. */
+export function editorHistory(): Extension {
+  return historyCompartment.of(history());
+}
+
+/**
+ * The transactions that swap the whole buffer for `content` from outside the
+ * editor, to be dispatched in order. The one editor serves every tab, so undo
+ * must not reach across a swap: the swap itself would restore the previous
+ * file's text, and earlier events mapped through it still apply — a deletion's
+ * inverse is an insertion and would re-insert the previous file's text. Either
+ * arrives as an unannotated change, which autosave writes to disk. So the swap
+ * stays out of the history, and the history is emptied with it.
+ */
+export function externalContentReplacement(state: EditorState, content: string): TransactionSpec[] {
+  return [
+    {
+      changes: { from: 0, to: state.doc.length, insert: content },
+      annotations: [externalContentSync.of(true), Transaction.addToHistory.of(false)],
+      effects: historyCompartment.reconfigure([]),
+    },
+    { effects: historyCompartment.reconfigure(history()) },
+  ];
 }
