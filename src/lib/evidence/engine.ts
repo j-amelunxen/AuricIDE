@@ -40,26 +40,37 @@ const GLOB_MAX_LEN = 512;
 export function globMatch(glob: string, path: string): boolean {
   if (typeof glob !== 'string' || typeof path !== 'string') return false;
   if (glob.length > GLOB_MAX_LEN) return false;
+  // The match is anchored to the end, so whatever literal text follows the
+  // glob's last wildcard has to be how the path ends. Checking that first
+  // turns the common miss — one station glob against every project file —
+  // into a string comparison instead of a table walk per segment.
+  if (!path.endsWith(literalTail(glob))) return false;
   // Candidate starts: index 0 and every index just past a '/', mirroring the
   // old `(^|/)` anchor.
-  const starts = [0];
+  if (anchoredGlobMatch(glob, path)) return true;
   for (let i = 0; i < path.length; i++) {
-    if (path[i] === '/') starts.push(i + 1);
+    if (path[i] === '/' && anchoredGlobMatch(glob, path.slice(i + 1))) return true;
   }
-  return starts.some((s) => anchoredGlobMatch(glob, path.slice(s)));
+  return false;
+}
+
+/** The glob's text after its last wildcard (`*` or `?`); all of it if none. */
+function literalTail(glob: string): string {
+  const last = Math.max(glob.lastIndexOf('*'), glob.lastIndexOf('?'));
+  return glob.slice(last + 1);
 }
 
 /** True if `glob` matches the whole of `text` (end-anchored), computed with a
- * memo table so no (glob, text) position pair is explored more than once. */
+ * memo table so no (glob, text) position pair is explored more than once. The
+ * table is one flat typed array: 0 unknown, 1 no, 2 yes. */
 function anchoredGlobMatch(glob: string, text: string): boolean {
   const g = glob.length;
   const t = text.length;
-  const memo: (boolean | undefined)[][] = Array.from({ length: g + 1 }, () =>
-    new Array<boolean | undefined>(t + 1).fill(undefined)
-  );
+  const width = t + 1;
+  const memo = new Uint8Array((g + 1) * width);
   const solve = (gi: number, ti: number): boolean => {
-    const cached = memo[gi][ti];
-    if (cached !== undefined) return cached;
+    const cached = memo[gi * width + ti];
+    if (cached !== 0) return cached === 2;
     let res: boolean;
     if (gi === g) {
       res = ti === t;
@@ -74,7 +85,7 @@ function anchoredGlobMatch(glob: string, text: string): boolean {
     } else {
       res = ti < t && glob[gi] === text[ti] && solve(gi + 1, ti + 1);
     }
-    memo[gi][ti] = res;
+    memo[gi * width + ti] = res ? 2 : 1;
     return res;
   };
   return solve(0, 0);
@@ -150,17 +161,43 @@ export function applyCheckResult(
   };
 }
 
-/** Runs the check for one station and writes the outcome to the store. */
-export async function checkStation(stationId: string): Promise<CheckOutcome> {
-  const state = useStore.getState();
-  const station = state.goalStationsDraft.find((s: PmGoalStation) => s.id === stationId);
-  if (!station) return 'not-checkable';
+/** True when the updates change what the station says, not only when it was
+ * last looked at. */
+function changesStation(station: PmGoalStation, updates: Partial<PmGoalStation>): boolean {
+  return (Object.keys(updates) as (keyof PmGoalStation)[]).some(
+    (key) => key !== 'lastCheckedAt' && updates[key] !== station[key]
+  );
+}
+
+/**
+ * Evaluates one station and applies the outcome to the store, without saving.
+ * With `onlyIfChanged`, a result that merely repeats the last one leaves the
+ * station alone — `lastCheckedAt` included.
+ */
+async function applyStationCheck(
+  stationId: string,
+  onlyIfChanged: boolean
+): Promise<{ outcome: CheckOutcome; written: boolean }> {
+  const station = useStore
+    .getState()
+    .goalStationsDraft.find((s: PmGoalStation) => s.id === stationId);
+  if (!station) return { outcome: 'not-checkable', written: false };
   const result = await evaluatePredicate(station.predicate, buildEvidenceContext());
   const updates = applyCheckResult(station, result);
-  if (updates === null) return 'not-checkable';
+  if (updates === null) return { outcome: 'not-checkable', written: false };
+  const outcome: CheckOutcome = result!.pass ? 'passed' : 'failed';
+  if (onlyIfChanged && !changesStation(station, updates)) return { outcome, written: false };
   useStore.getState().updateStation(stationId, updates);
-  if (state.rootPath) void useStore.getState().saveGoals(state.rootPath);
-  return result!.pass ? 'passed' : 'failed';
+  return { outcome, written: true };
+}
+
+/** Runs the check for one station and writes the outcome to the store. A
+ * person asked for this check, so it is recorded even when nothing changed. */
+export async function checkStation(stationId: string): Promise<CheckOutcome> {
+  const { outcome, written } = await applyStationCheck(stationId, false);
+  const { rootPath } = useStore.getState();
+  if (written && rootPath) void useStore.getState().saveGoals(rootPath);
+  return outcome;
 }
 
 /**
@@ -168,9 +205,19 @@ export async function checkStation(stationId: string): Promise<CheckOutcome> {
  * stations with machine predicates — the front and its successor. Evidence
  * appears where work happens; checking the whole line on every event would
  * be noise and cost for nothing.
+ *
+ * The sweep runs after every burst of file changes, and a save writes
+ * project.db, which the watcher reports back as a full data reload. So it
+ * writes only results that differ from the last one, and saves once at the
+ * end. `skipJudged` leaves LLM-judged stations out: a file change is no reason
+ * to ask the judge again, and the sweep after an agent finishes still does.
  */
-export async function checkFrontStations(goalId?: string): Promise<void> {
-  const { goalStationsDraft } = useStore.getState();
+export async function checkFrontStations(
+  goalId?: string,
+  { skipJudged = false }: { skipJudged?: boolean } = {}
+): Promise<void> {
+  const { goalStationsDraft, rootPath } = useStore.getState();
+  let touched = false;
   const goalIds = goalId
     ? [goalId]
     : [...new Set(goalStationsDraft.map((s: PmGoalStation) => s.goalId))];
@@ -181,6 +228,7 @@ export async function checkFrontStations(goalId?: string): Promise<void> {
         s.kind !== 'human' &&
         s.predicate.type !== 'human' &&
         s.predicate.type !== 'undefined' &&
+        !(skipJudged && s.predicate.type === 'judged') &&
         s.status !== 'fog'
     );
     for (const station of pending.slice(0, 2)) {
@@ -189,13 +237,15 @@ export async function checkFrontStations(goalId?: string): Promise<void> {
       // belt to that suspenders — a store write or an unforeseen error here
       // stops at this station, not at every goal ordered after it.
       try {
-        await checkStation(station.id);
+        const { written } = await applyStationCheck(station.id, true);
+        touched ||= written;
       } catch {
         // Deliberately swallowed: a broken check is not a reason to stop
         // checking everything else. The station keeps its prior state.
       }
     }
   }
+  if (touched && rootPath) void useStore.getState().saveGoals(rootPath);
 }
 
 /**
