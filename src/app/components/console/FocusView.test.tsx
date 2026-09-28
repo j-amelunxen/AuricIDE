@@ -74,7 +74,7 @@ describe('FocusView layout', () => {
     expect(screen.getByTestId('stage-terminal')).toHaveTextContent('agent-focused');
   });
 
-  it('sends the stage input followed by a newline on Enter and clears it', async () => {
+  it('sends the stage input followed by Enter (\\r) on Enter and clears it', async () => {
     const user = userEvent.setup();
     render(<FocusView {...baseProps()} />);
 
@@ -82,7 +82,7 @@ describe('FocusView layout', () => {
     const input = screen.getByPlaceholderText('Send instruction to this agent · Enter to send');
     await user.type(input, 'run the tests{Enter}');
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-focused', 'run the tests\n');
+    expect(sendToAgent).toHaveBeenCalledWith('agent-focused', 'run the tests\r');
     expect(input).toHaveValue('');
   });
 });

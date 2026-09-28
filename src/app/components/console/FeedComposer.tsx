@@ -6,7 +6,7 @@ import type { Lane } from '@/lib/agents/lanes';
 export interface FeedComposerProps {
   /** The lane the composer targets, or `null` when nothing is selected. */
   lane: Lane | null;
-  /** Fires with the trimmed text — the caller appends `\n` and sends it. */
+  /** Fires with the trimmed text — the caller appends Enter (`TERMINAL_ENTER`) and sends it. */
   onSend: (text: string) => void;
 }
 
