@@ -238,7 +238,21 @@ pub fn apply_starred_settings(
     if let Some(update) = settings.badge {
         target.badge = update.and_then(normalize_badge);
     }
+    if let Some(update) = settings.description {
+        target.description = update.as_deref().and_then(normalize_user_description);
+    }
     true
+}
+
+/// Trimmed and capped at [`USER_DESCRIPTION_MAX_CHARS`]; blank clears it.
+pub fn normalize_user_description(text: &str) -> Option<String> {
+    let text: String = text
+        .trim()
+        .chars()
+        .take(USER_DESCRIPTION_MAX_CHARS)
+        .collect();
+    let text = text.trim_end();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// Trim, collapse whitespace, cap at [`BADGE_MAX_CHARS`], drop a trailing cut.
@@ -278,6 +292,7 @@ pub fn push_starred_project(projects: &mut Vec<StarredProject>, path: String, st
         combos: Vec::new(),
         wheel_slots: Vec::new(),
         badge: None,
+        description: None,
     });
 }
 

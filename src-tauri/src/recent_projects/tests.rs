@@ -50,6 +50,7 @@ fn starred(path: &str, starred_at: u64) -> StarredProject {
         combos: Vec::new(),
         wheel_slots: Vec::new(),
         badge: None,
+        description: None,
     }
 }
 
@@ -102,6 +103,10 @@ fn starred_store_reads_pre_settings_file() {
     assert_eq!(loaded, vec![starred("/a", 1)]);
     assert!(loaded[0].icon.is_none());
     assert!(loaded[0].skills.is_empty());
+    assert!(
+        loaded[0].description.is_none(),
+        "files from before descriptions read"
+    );
 }
 
 #[test]
@@ -188,6 +193,7 @@ fn apply_settings_updates_only_the_named_project() {
             combos: Vec::new(),
             wheel_slots: None,
             badge: None,
+            description: None,
         },
     );
 
@@ -591,4 +597,93 @@ fn a_badge_roundtrips_through_the_starred_file() {
     write_starred_store_atomic(&path, std::slice::from_ref(&project)).unwrap();
 
     assert_eq!(read_starred_store(&path).unwrap().unwrap(), vec![project]);
+}
+
+fn set_description(projects: &mut [StarredProject], description: Option<Option<String>>) {
+    apply_starred_settings(
+        projects,
+        "/a",
+        StarredProjectSettings {
+            description,
+            ..StarredProjectSettings::default()
+        },
+    );
+}
+
+#[test]
+fn a_user_description_is_trimmed_capped_cleared_when_blank_and_kept_when_unmentioned() {
+    let mut projects = vec![starred("/a", 1)];
+
+    set_description(&mut projects, Some(Some("  Customer portal.  ".into())));
+    assert_eq!(projects[0].description.as_deref(), Some("Customer portal."));
+
+    // Another settings save that does not mention it leaves it alone.
+    set_description(&mut projects, None);
+    assert_eq!(projects[0].description.as_deref(), Some("Customer portal."));
+
+    set_description(&mut projects, Some(Some("x".repeat(400))));
+    assert_eq!(
+        projects[0].description.as_ref().map(|d| d.chars().count()),
+        Some(USER_DESCRIPTION_MAX_CHARS)
+    );
+
+    set_description(&mut projects, Some(Some("   ".into())));
+    assert_eq!(projects[0].description, None);
+}
+
+#[test]
+fn the_settings_payload_tells_an_absent_description_from_a_cleared_one() {
+    let absent: StarredProjectSettings = serde_json::from_str("{}").unwrap();
+    assert_eq!(absent.description, None);
+    let cleared: StarredProjectSettings = serde_json::from_str(r#"{"description":null}"#).unwrap();
+    assert_eq!(cleared.description, Some(None));
+}
+
+#[test]
+fn a_user_description_is_capped_on_a_character_boundary() {
+    let mut projects = vec![starred("/a", 1)];
+    set_description(&mut projects, Some(Some("ä".repeat(400))));
+    assert_eq!(
+        projects[0].description,
+        Some("ä".repeat(USER_DESCRIPTION_MAX_CHARS))
+    );
+}
+
+/// The path `starred_projects_update_settings` takes, with the payload as the
+/// frontend sends it and the record as it comes back.
+#[test]
+fn the_settings_command_path_accepts_and_returns_the_description_in_camel_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("starred-projects.json");
+    write_starred_store_atomic(&path, &[starred("/a", 1)]).unwrap();
+    let state = StarredProjectsState::initialize(path.clone());
+
+    let settings: StarredProjectSettings =
+        serde_json::from_str(r#"{"description":"  Customer portal.  "}"#).unwrap();
+    let returned = state
+        .update(|projects| {
+            assert!(apply_starred_settings(projects, "/a", settings));
+        })
+        .unwrap();
+    let wire = serde_json::to_value(&returned).unwrap();
+    assert_eq!(wire[0]["description"], "Customer portal.");
+
+    // Persisted, and cleared again by an explicit null.
+    assert_eq!(
+        read_starred_store(&path).unwrap().unwrap()[0]
+            .description
+            .as_deref(),
+        Some("Customer portal.")
+    );
+    let clear: StarredProjectSettings = serde_json::from_str(r#"{"description":null}"#).unwrap();
+    let returned = state
+        .update(|projects| {
+            apply_starred_settings(projects, "/a", clear);
+        })
+        .unwrap();
+    let wire = serde_json::to_value(&returned).unwrap();
+    assert!(
+        wire[0].get("description").is_none(),
+        "an absent description is left out, like the badge"
+    );
 }

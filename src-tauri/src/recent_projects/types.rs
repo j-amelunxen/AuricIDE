@@ -16,6 +16,9 @@ pub const MAX_STEPS_PER_COMBO: usize = 8;
 pub const WHEEL_SLOT_COUNT: usize = 6;
 /// Twin of `BADGE_MAX_CHARS` in `src/lib/quickAccess/badge.ts`.
 pub const BADGE_MAX_CHARS: usize = 6;
+/// A user's own description of a starred project, cut to this when saved
+/// (`projectDescription.userMaxChars` in `agentControl.fixtures.json`).
+pub const USER_DESCRIPTION_MAX_CHARS: usize = 300;
 pub const LEGACY_KEY: &str = "auric-recent-projects";
 pub const LEGACY_STARRED_KEY: &str = "auric-starred-projects";
 
@@ -97,6 +100,14 @@ where
     Ok(Some(Option::<ProjectBadge>::deserialize(deserializer)?))
 }
 
+/// Present-versus-absent for the description, the same way as for the badge.
+fn description_update<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<String>::deserialize(deserializer)?))
+}
+
 /// The per-project Quick Access settings, as one blob. They live INSIDE the
 /// starred record on purpose: unstarring a project drops its settings with it,
 /// which is the behaviour without any cleanup logic to get wrong.
@@ -120,6 +131,13 @@ pub struct StarredProjectSettings {
         skip_serializing_if = "Option::is_none"
     )]
     pub badge: Option<Option<ProjectBadge>>,
+    /// Same three states as `badge`. Blank text clears it.
+    #[serde(
+        default,
+        deserialize_with = "description_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<Option<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -138,6 +156,10 @@ pub struct StarredProject {
     pub wheel_slots: Vec<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub badge: Option<ProjectBadge>,
+    /// What the project is for, in the user's words. Wins over anything
+    /// derived from the folder in the control socket's `list_projects`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl StarredProject {
@@ -164,6 +186,9 @@ impl StarredProject {
         }
         if self.badge.is_none() {
             self.badge = other.badge;
+        }
+        if self.description.is_none() {
+            self.description = other.description;
         }
         if self.name.trim().is_empty() {
             self.name = other.name;
