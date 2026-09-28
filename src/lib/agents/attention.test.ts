@@ -7,6 +7,7 @@ import {
   withReviewFlags,
   sortByUrgency,
   AGENT_STALL_MS,
+  HEADLESS_STALL_MS,
 } from './attention';
 import { AGENT_LIVE_WINDOW_MS } from './liveness';
 
@@ -191,5 +192,64 @@ describe('stall window sanity', () => {
     // Waiting is normal (thinking, long tool calls); stalled is the escalation.
     // If the two windows ever converge, every pause becomes an alarm.
     expect(AGENT_STALL_MS).toBeGreaterThanOrEqual(AGENT_LIVE_WINDOW_MS * 10);
+  });
+});
+
+describe('agentAttention – headless agents', () => {
+  // A headless CLI (`claude -p`) prints nothing until it is done, so its
+  // silence says nothing. Only a run far past any ordinary length escalates.
+  const headless = (overrides: Partial<Parameters<typeof agentAttention>[0]> = {}) =>
+    agent({
+      headless: true,
+      startedAt: NOW - 14 * 60_000,
+      lastActivityAt: NOW - 14 * 60_000,
+      ...overrides,
+    });
+
+  it('stays calm about a headless agent that has been silent for minutes', () => {
+    expect(agentAttention(headless(), NOW)).toBeNull();
+  });
+
+  it('flags a headless run that outlasts the ceiling', () => {
+    const startedAt = NOW - HEADLESS_STALL_MS - 1;
+    expect(agentAttention(headless({ startedAt, lastActivityAt: NOW - 1_000 }), NOW)).toBe(
+      'stalled'
+    );
+  });
+
+  it('measures the ceiling from launch, not from the last output', () => {
+    // An early line of output must not restart the clock.
+    const startedAt = NOW - HEADLESS_STALL_MS - 1;
+    expect(agentAttention(headless({ startedAt, lastActivityAt: NOW }), NOW)).toBe('stalled');
+  });
+
+  it('still surfaces a question from a headless agent', () => {
+    expect(agentAttention(headless({ awaitingInput: true }), NOW)).toBe('needs-input');
+  });
+
+  it('keeps the interactive stall window for agents that are not headless', () => {
+    expect(
+      agentAttention(agent({ headless: false, lastActivityAt: NOW - AGENT_STALL_MS - 1 }), NOW)
+    ).toBe('stalled');
+  });
+
+  it('orders a long headless run by how long it has been running', () => {
+    const fleet = [
+      {
+        id: 'newer',
+        status: 'running' as const,
+        headless: true,
+        startedAt: NOW - HEADLESS_STALL_MS - 1_000,
+        lastActivityAt: NOW,
+      },
+      {
+        id: 'older',
+        status: 'running' as const,
+        headless: true,
+        startedAt: NOW - HEADLESS_STALL_MS - 60_000,
+        lastActivityAt: NOW,
+      },
+    ];
+    expect(sortByUrgency(fleet, NOW).map((a) => a.id)).toEqual(['older', 'newer']);
   });
 });

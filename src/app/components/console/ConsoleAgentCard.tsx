@@ -106,7 +106,7 @@ export function ConsoleAgentCard({
   // its own log preview.
   const readsTail = state === 'yours';
   const logTail = useStore((s) => (readsTail ? (s.agentLogs[agent.id] ?? EMPTY_LOGS) : EMPTY_LOGS));
-  const label = consoleStateLabel(state, reviewed);
+  const label = consoleStateLabel(state, reviewed, agent.headless);
   const lastEvent = events.at(-1);
   const filesChanged = filesTouched(events);
   const markerHex = agentColorHex(color);

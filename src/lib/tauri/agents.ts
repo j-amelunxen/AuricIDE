@@ -31,6 +31,11 @@ export interface AgentInfo {
   repoPath?: string;
   spawnedByTicketId?: string;
   spawnedByGoalId?: string;
+  /**
+   * True when the CLI runs unattended (`claude -p`, `codex exec`). Such a run
+   * may print nothing until it ends, so its silence is not read as a stall.
+   */
+  headless?: boolean;
   /** Set when this agent was spawned to REVIEW a ticket (conductor judge, agent
    * form). Frontend-only provenance, distinct from spawnedByTicketId so a
    * reviewer is never mistaken for the implementer of the ticket. */

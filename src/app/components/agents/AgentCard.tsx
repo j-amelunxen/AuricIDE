@@ -228,6 +228,7 @@ export function AgentCard({
             taskSummary={taskSummary}
             objectiveRepeatsName={objectiveRepeatsName}
             state={state}
+            headless={agent.headless}
             replyError={replyError}
             setReplyError={setReplyError}
             sendReply={sendReply}

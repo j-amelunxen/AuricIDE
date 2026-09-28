@@ -20,6 +20,9 @@ export function agentState(agent: AgentInfo, now: number): AgentState {
       // agent looking live while it is in fact blocked on the user.
       if (agent.awaitingInput) return 'needs-input';
       if (isAgentLive(agent, now)) return 'working';
+      // A headless CLI is silent by nature; below the ceiling that silence
+      // is the work, not a pause in it.
+      if (agent.headless && agentAttention(agent, now) !== 'stalled') return 'working';
       // Waiting is normal — thinking, long tool calls. Silence past the stall
       // window is the escalation; the attention model owns that threshold.
       return agentAttention(agent, now) === 'stalled' ? 'stalled' : 'waiting';
@@ -44,3 +47,12 @@ export const AGENT_STATE_LABEL: Record<AgentState, string> = {
   error: 'Failed',
   queued: 'Queued',
 };
+
+/**
+ * The label for a state, aware of headless runs. Their escalation is about
+ * length, not silence, so the chip asks about that instead of "Stalled?".
+ */
+export function agentStateLabel(state: AgentState, headless?: boolean): string {
+  if (state === 'stalled' && headless) return 'Long run?';
+  return AGENT_STATE_LABEL[state];
+}

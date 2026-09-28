@@ -9,6 +9,14 @@ import type { AgentInfo } from '../tauri/agents';
 export const AGENT_STALL_MS = 120_000;
 
 /**
+ * The same escalation for a headless agent, counted from launch. A headless
+ * CLI (`claude -p`, the conductor's default) often prints nothing until it is
+ * done, so its silence carries no signal at all — only a run far past any
+ * ordinary length is a reason to pull the human in.
+ */
+export const HEADLESS_STALL_MS = 45 * 60_000;
+
+/**
  * Why an agent needs a human right now, or null while it doesn't.
  *
  * This is the panel's single definition of "needs attention": the system
@@ -19,7 +27,12 @@ export const AGENT_STALL_MS = 120_000;
 export type AttentionReason = 'error' | 'needs-input' | 'stalled';
 
 /** The slice of an agent the attention model reads. */
-export type AttentionInput = Pick<AgentInfo, 'status' | 'lastActivityAt' | 'awaitingInput'> & {
+export type AttentionInput = Pick<
+  AgentInfo,
+  'status' | 'lastActivityAt' | 'awaitingInput' | 'headless'
+> & {
+  /** Launch time — the clock a headless agent's stall is measured on. */
+  startedAt?: number;
   /**
    * True once the user opened this stopped agent's outcome. A reviewed
    * failure stops claiming attention: the acknowledgement is the review, and
@@ -37,8 +50,20 @@ export function agentAttention(agent: AttentionInput, now: number): AttentionRea
   if (agent.awaitingInput) return 'needs-input';
   // No recorded activity yet means the agent never spoke — its silence starts
   // at launch, and flagging that would cry wolf on every spawn.
-  if (agent.lastActivityAt === undefined) return null;
-  return now - agent.lastActivityAt >= AGENT_STALL_MS ? 'stalled' : null;
+  const since = quietSince(agent);
+  if (since === undefined) return null;
+  const limit = agent.headless ? HEADLESS_STALL_MS : AGENT_STALL_MS;
+  return now - since >= limit ? 'stalled' : null;
+}
+
+/**
+ * Where the stall clock starts: the last output for an interactive agent, the
+ * launch for a headless one — an early line of output must not restart the
+ * clock on a run whose output says nothing about its progress.
+ */
+function quietSince(agent: AttentionInput): number | undefined {
+  if (agent.headless) return agent.startedAt ?? agent.lastActivityAt;
+  return agent.lastActivityAt;
 }
 
 /** True when the agent has a reason to pull the user in. */
@@ -63,7 +88,7 @@ function waitingSince(
     case 'error':
       return agent.finishedAt ?? agent.startedAt ?? 0;
     case 'stalled':
-      return agent.lastActivityAt ?? 0;
+      return quietSince(agent) ?? 0;
     // A redrawing prompt keeps bumping lastActivityAt, so there is no honest
     // timestamp — equal keys keep the stable fleet order among themselves.
     case 'needs-input':

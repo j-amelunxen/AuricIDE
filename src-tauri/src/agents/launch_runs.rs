@@ -247,6 +247,7 @@ mod tests {
             repo_path: Some("/repo".to_string()),
             spawned_by_ticket_id: None,
             spawned_by_goal_id: None,
+            headless: false,
         }
     }
 

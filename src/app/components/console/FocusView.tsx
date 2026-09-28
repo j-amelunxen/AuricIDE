@@ -57,7 +57,7 @@ export function FocusView({
 
   const reviewed = reviewedAgentIds.includes(agent.id);
   const state = consoleAgentState(agent, reviewed, now);
-  const label = consoleStateLabel(state, reviewed);
+  const label = consoleStateLabel(state, reviewed, agent.headless);
 
   // One scale across the stage and the rail: the rail exists to be compared
   // against the focused agent, which a per-chart scale would make impossible.
@@ -134,7 +134,7 @@ export function FocusView({
         {sortedOthers.map((other) => {
           const otherReviewed = reviewedAgentIds.includes(other.id);
           const otherState = consoleAgentState(other, otherReviewed, now);
-          const otherLabel = consoleStateLabel(otherState, otherReviewed);
+          const otherLabel = consoleStateLabel(otherState, otherReviewed, other.headless);
           const rightNow = describeRightNow({
             state: otherState,
             lastEvent: agentEvents[other.id]?.at(-1),

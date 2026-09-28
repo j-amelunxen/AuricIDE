@@ -773,3 +773,32 @@ describe('AgentCard combo controls', () => {
     expect(screen.queryByRole('button', { name: 'Cancel combo' })).toBeNull();
   });
 });
+
+describe('AgentCard – a long headless run', () => {
+  // A headless CLI never reads stdin, so an Enter nudge would promise a fix
+  // that cannot happen. Past the ceiling the card asks, it does not offer.
+  const longRun: AgentInfo = {
+    ...runningAgent,
+    id: 'agent-headless',
+    headless: true,
+    startedAt: Date.now() - 50 * 60_000,
+    lastActivityAt: Date.now() - 50 * 60_000,
+  };
+
+  it('asks "Long run?" and offers no nudge', () => {
+    render(<AgentCard agent={longRun} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-state')).toHaveTextContent('Long run?');
+    expect(screen.queryByRole('button', { name: /nudge/i })).not.toBeInTheDocument();
+  });
+
+  it('reads as working with its runtime while silent below the ceiling', () => {
+    const quiet = {
+      ...longRun,
+      startedAt: Date.now() - 14 * 60_000,
+      lastActivityAt: Date.now() - 14 * 60_000,
+    };
+    render(<AgentCard agent={quiet} onKill={vi.fn()} />);
+    expect(screen.getByTestId('agent-state')).toHaveTextContent('Working');
+    expect(screen.getByTestId('agent-runtime')).not.toHaveTextContent(/quiet/);
+  });
+});

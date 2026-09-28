@@ -86,7 +86,7 @@ export const TreemapAgentCell = memo(function TreemapAgentCell({
   // regardless re-rendered every cell on every output batch.
   const readsTail = roomy && state === 'yours';
   const logTail = useStore((s) => (readsTail ? (s.agentLogs[agent.id] ?? EMPTY_LOGS) : EMPTY_LOGS));
-  const label = consoleStateLabel(state, reviewed);
+  const label = consoleStateLabel(state, reviewed, agent.headless);
   const lastEvent = events.at(-1);
   const markerHex = agentColorHex(color);
   const rightNow = describeRightNow({
