@@ -735,8 +735,10 @@ describe('ActivityFeed composer', () => {
     expect(screen.getByText('Select a lane to message one agent')).toBeInTheDocument();
   });
 
-  it('sends the composer text to the selected agent with a trailing newline', async () => {
+  it('sends the composer text to the selected agent followed by Enter (\\r)', async () => {
     const user = userEvent.setup();
+    const { sendToAgent } = await import('@/lib/tauri/agents');
+    vi.mocked(sendToAgent).mockClear();
     setFeedState({ agentEvents });
     render(<ActivityFeed />);
 
@@ -744,6 +746,8 @@ describe('ActivityFeed composer', () => {
     await user.type(screen.getByLabelText('Message Waitlist'), 'go on');
     await user.keyboard('{Enter}');
 
+    // A TUI submits only on \r; \n would just add a line to its input box.
+    expect(sendToAgent).toHaveBeenCalledWith('a1', 'go on\r');
     expect(screen.getByText('go on')).toBeInTheDocument();
   });
 

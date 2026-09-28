@@ -14,6 +14,7 @@ import { LOG_PREVIEW_CHUNKS } from './card/cardConstants';
 import { AgentCardHeader } from './card/AgentCardHeader';
 import { AgentCardStatusBody } from './card/AgentCardStatusBody';
 import { AgentCardTerminalBody } from './card/AgentCardTerminalBody';
+import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 
 export { AgentCardHeader } from './card/AgentCardHeader';
 export { AgentCardStatusBody } from './card/AgentCardStatusBody';
@@ -140,7 +141,7 @@ export function AgentCard({
     setReplyError(null);
     try {
       const { writeToShell } = await import('@/lib/tauri/terminal');
-      await writeToShell(`agent-${agent.id}`, `${message}\n`);
+      await writeToShell(`agent-${agent.id}`, `${message}${TERMINAL_ENTER}`);
       input.value = '';
     } catch {
       setReplyError('Message could not be delivered. The agent may have exited.');

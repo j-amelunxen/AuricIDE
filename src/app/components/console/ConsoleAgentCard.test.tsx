@@ -240,7 +240,7 @@ describe('ConsoleAgentCard inline permission answers', () => {
     expect(screen.getByRole('button', { name: /^3 No$/ })).toBeInTheDocument();
   });
 
-  it('sends the option number followed by a newline when a menu button is clicked', async () => {
+  it('sends the option number followed by Enter (\\r) when a menu button is clicked', async () => {
     const user = userEvent.setup();
     useStore.setState({
       agentLogs: { 'agent-1': ['Do you want to proceed?\n❯ 1. Yes\n  2. No\n'] },
@@ -250,7 +250,7 @@ describe('ConsoleAgentCard inline permission answers', () => {
     const { sendToAgent } = await import('@/lib/tauri/agents');
     await user.click(screen.getByRole('button', { name: '1 Yes' }));
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-1', '1\n');
+    expect(sendToAgent).toHaveBeenCalledWith('agent-1', '1\r');
   });
 
   it('shows a Sent toast after answering', async () => {
@@ -265,7 +265,7 @@ describe('ConsoleAgentCard inline permission answers', () => {
     expect(useStore.getState().toasts.at(-1)?.message).toBe(`Sent to ${agent().name}`);
   });
 
-  it('sends free text followed by a newline on Enter and clears the field', async () => {
+  it('sends free text followed by Enter (\\r) on Enter and clears the field', async () => {
     const user = userEvent.setup();
     useStore.setState({
       agentLogs: { 'agent-1': ['Some ordinary output with no menu\n'] },
@@ -276,11 +276,11 @@ describe('ConsoleAgentCard inline permission answers', () => {
     const input = screen.getByPlaceholderText('Or send an instruction');
     await user.type(input, 'run the tests{Enter}');
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\n');
+    expect(sendToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\r');
     expect(input).toHaveValue('');
   });
 
-  it('shows Send Enter for a stalled agent and sends a bare newline', async () => {
+  it('shows Send Enter for a stalled agent and sends a bare Enter', async () => {
     const user = userEvent.setup();
     render(
       <ConsoleAgentCard {...baseProps({ agent: agent({ lastActivityAt: NOW - 130_000 }) })} />
@@ -289,7 +289,7 @@ describe('ConsoleAgentCard inline permission answers', () => {
     const { sendToAgent } = await import('@/lib/tauri/agents');
     await user.click(screen.getByRole('button', { name: 'Send Enter' }));
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-1', '\n');
+    expect(sendToAgent).toHaveBeenCalledWith('agent-1', '\r');
   });
 
   it('offers no Send Enter button for a running, non-stalled agent', () => {

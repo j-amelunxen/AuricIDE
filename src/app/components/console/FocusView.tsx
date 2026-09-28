@@ -18,6 +18,7 @@ import { useStore } from '@/lib/store';
 import { XtermTerminal } from '@/app/components/terminal/XtermTerminal';
 import { Heartbeat, CONSOLE_STATE_HEARTBEAT_TONE } from './Heartbeat';
 import { PhaseChip } from './PhaseChip';
+import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 
 const THUMB_TONE: Record<'yours' | 'error' | 'other', string> = {
   yours: 'border-amber-500/45',
@@ -70,7 +71,7 @@ export function FocusView({
   const sendInstruction = () => {
     const trimmed = instruction.trim();
     if (!trimmed) return;
-    void sendAgentInput(agent.id, `${trimmed}\n`);
+    void sendAgentInput(agent.id, `${trimmed}${TERMINAL_ENTER}`);
     setInstruction('');
   };
 

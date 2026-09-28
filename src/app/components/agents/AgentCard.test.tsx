@@ -528,7 +528,7 @@ describe('AgentCard – replying from the card', () => {
     const input = await openTerminal(user);
     await user.type(input, 'yes{Enter}');
 
-    expect(writeToShell).toHaveBeenCalledWith('agent-agent-1', 'yes\n');
+    expect(writeToShell).toHaveBeenCalledWith('agent-agent-1', 'yes\r');
     expect(input).toHaveValue('');
   });
 
@@ -602,7 +602,7 @@ describe('AgentCard – nudging a stalled agent', () => {
     render(<AgentCard agent={stalled} onKill={vi.fn()} />);
 
     await user.click(screen.getByRole('button', { name: /nudge/i }));
-    expect(writeToShell).toHaveBeenCalledWith('agent-agent-stalled', '\n');
+    expect(writeToShell).toHaveBeenCalledWith('agent-agent-stalled', '\r');
   });
 
   it('offers no nudge while the agent is merely waiting', () => {
@@ -639,7 +639,7 @@ describe('AgentCard – quick reply while blocked on input', () => {
     render(<AgentCard agent={blocked} onKill={vi.fn()} />);
 
     await user.type(screen.getByPlaceholderText('Reply to agent...'), '1{Enter}');
-    expect(writeToShell).toHaveBeenCalledWith('agent-agent-live', '1\n');
+    expect(writeToShell).toHaveBeenCalledWith('agent-agent-live', '1\r');
   });
 
   it('shows no quick reply while the agent is merely working', () => {

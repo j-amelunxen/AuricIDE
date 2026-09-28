@@ -17,6 +17,7 @@ import { useStore } from '@/lib/store';
 import { parsePermissionMenu, promptTailLines } from '@/lib/agents/permissionMenu';
 import { Heartbeat, CONSOLE_STATE_HEARTBEAT_TONE } from './Heartbeat';
 import { PhaseChip } from './PhaseChip';
+import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 
 function footprintLabel(files: string[]): string {
   if (files.length === 0) return 'No files changed yet';
@@ -148,7 +149,7 @@ export function ConsoleAgentCard({
   const sendReply = () => {
     const trimmed = replyText.trim();
     if (!trimmed) return;
-    send(`${trimmed}\n`);
+    send(`${trimmed}${TERMINAL_ENTER}`);
     setReplyText('');
   };
 
@@ -247,7 +248,7 @@ export function ConsoleAgentCard({
               key={option.send}
               type="button"
               title={option.label}
-              onClick={() => send(`${option.send}\n`)}
+              onClick={() => send(`${option.send}${TERMINAL_ENTER}`)}
               className={`rounded border px-2 py-1 font-mono text-[11px] transition-colors ${answerToneClass(
                 option.label
               )}`}
@@ -289,7 +290,7 @@ export function ConsoleAgentCard({
         {state === 'stalled' && (
           <button
             type="button"
-            onClick={() => send('\n')}
+            onClick={() => send(TERMINAL_ENTER)}
             className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-foreground-muted transition-colors hover:border-orange-400/50 hover:text-orange-300"
           >
             Send Enter

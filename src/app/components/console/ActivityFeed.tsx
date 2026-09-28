@@ -26,6 +26,7 @@ import { FeedComposer } from './FeedComposer';
 import { FeedGroupBlock } from './FeedGroupBlock';
 import { FeedToggle } from './FeedToggle';
 import { AttentionDock } from './AttentionDock';
+import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 
 /**
  * What the feed is showing.
@@ -240,7 +241,7 @@ export function ActivityFeed({ hint, onFocus }: ActivityFeedProps = {}) {
   const handleComposerSend = useCallback(
     (text: string) => {
       if (!selectedLaneId) return;
-      void sendAgentInput(selectedLaneId, `${text}\n`);
+      void sendAgentInput(selectedLaneId, `${text}${TERMINAL_ENTER}`);
     },
     [selectedLaneId, sendAgentInput]
   );

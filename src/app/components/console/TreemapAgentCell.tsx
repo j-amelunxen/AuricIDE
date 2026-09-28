@@ -17,6 +17,7 @@ import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';
 import { useStore } from '@/lib/store';
 import { parsePermissionMenu, promptTailLines } from '@/lib/agents/permissionMenu';
 import { PhaseChip } from './PhaseChip';
+import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -174,7 +175,7 @@ export const TreemapAgentCell = memo(function TreemapAgentCell({
               key={option.send}
               type="button"
               title={option.label}
-              onClick={() => send(`${option.send}\n`)}
+              onClick={() => send(`${option.send}${TERMINAL_ENTER}`)}
               className={`rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${answerToneClass(
                 option.label
               )}`}
@@ -190,7 +191,7 @@ export const TreemapAgentCell = memo(function TreemapAgentCell({
               if (e.key === 'Enter') {
                 const trimmed = replyText.trim();
                 if (!trimmed) return;
-                send(`${trimmed}\n`);
+                send(`${trimmed}${TERMINAL_ENTER}`);
                 setReplyText('');
               }
             }}
@@ -223,7 +224,7 @@ export const TreemapAgentCell = memo(function TreemapAgentCell({
         {state === 'stalled' && roomy && (
           <button
             type="button"
-            onClick={() => send('\n')}
+            onClick={() => send(TERMINAL_ENTER)}
             className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-foreground-muted hover:text-orange-300"
           >
             Send Enter
