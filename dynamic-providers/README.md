@@ -128,6 +128,39 @@ If the CLI has no per-launch way to receive an MCP config at all, set
 the CLI discovers on its own, and the reserved `AURIC_*` variables above are
 still exported. Declared `projectBinding` material always wins over this flag.
 
+A CLI that reads MCP servers only from one global config (the Antigravity CLI
+has no `--mcp-config` flag) binds through the environment instead:
+
+```json
+"projectBinding": { "environment": { "AURIC_MCP_CONFIG": "{mcpConfigPath}" } }
+```
+
+and its global config gets one fixed entry that points at the packaged bridge,
+e.g. `agy mcp add auric-pm -- node /Applications/AuricIDE.app/Contents/Resources/auric-mcp/bridge.mjs`.
+The bridge serves the `auric-pm` server of the file `AURIC_MCP_CONFIG` names —
+the same per-project config other CLIs receive as a flag — and, started without
+it, answers with no tools at once. It must never hang: the Antigravity CLI
+blocks its whole turn on an MCP server that does not finish its handshake.
+
+`writeSandbox` (optional, macOS) starts the agent under AuricIDE's write
+sandbox: writes are allowed in its working directory, the bound project, a
+worktree's shared `.git`, the temp dirs, the common package-manager caches and
+the paths listed here, and nowhere else. Reads and network stay open. Modes in
+`exemptPermissionModes` run unconfined; on other platforms a confined provider
+is refused rather than started without it. Use it for a CLI whose own sandbox
+is missing or unusable (the Antigravity CLI's `--sandbox` denies shell writes
+in the workspace too):
+
+```json
+"writeSandbox": {
+  "writable": ["~/.gemini"],
+  "exemptPermissionModes": ["bypassPermissions", "yolo"]
+}
+```
+
+`node scripts/probe-agy-headless.mjs` measures how the installed Antigravity CLI
+behaves headless (timeouts, sandbox, MCP env, stdin); run it after an update.
+
 An agent launched without a project receives neither the descriptor nor the
 fixed variables. This makes provider configs reusable for general agents while
 keeping an MCP-capable launch immutably tied to the project selected at spawn.

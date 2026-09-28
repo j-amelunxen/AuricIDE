@@ -9,6 +9,29 @@ impl DynamicProvider {
         Self { config }
     }
 
+    /// The permission mode a launch runs under: the requested one, the legacy
+    /// booleans, or the provider's configured default — the same key the
+    /// permission argument and the write sandbox are looked up by.
+    fn resolved_permission_mode(
+        &self,
+        permission_mode: Option<&str>,
+        dangerously_ignore_permissions: bool,
+        auto_accept_edits: bool,
+    ) -> String {
+        if let Some(mode) = permission_mode {
+            mode.to_string()
+        } else if dangerously_ignore_permissions {
+            // Legacy mapping
+            "bypassPermissions".to_string()
+        } else if auto_accept_edits {
+            "acceptEdits".to_string()
+        } else {
+            // No explicit mode requested: the provider's configured
+            // defaultPermissionMode (dynamic-providers/*.json) decides.
+            self.config.info.default_permission_mode.clone()
+        }
+    }
+
     fn render_binding_template(
         template: &str,
         binding: &ProviderProjectBinding,
@@ -102,18 +125,11 @@ impl AgentProvider for DynamicProvider {
                     }
                 }
                 ArgumentConfig::Permission { map, fallback } => {
-                    let mode_key = if let Some(m) = permission_mode {
-                        m.to_string()
-                    } else if dangerously_ignore_permissions {
-                        // Legacy mapping
-                        "bypassPermissions".to_string()
-                    } else if auto_accept_edits {
-                        "acceptEdits".to_string()
-                    } else {
-                        // No explicit mode requested: the provider's configured
-                        // defaultPermissionMode (dynamic-providers/*.json) decides.
-                        self.config.info.default_permission_mode.clone()
-                    };
+                    let mode_key = self.resolved_permission_mode(
+                        permission_mode,
+                        dangerously_ignore_permissions,
+                        auto_accept_edits,
+                    );
 
                     let flag_val = map
                         .get(&mode_key)
@@ -147,6 +163,24 @@ impl AgentProvider for DynamicProvider {
 
     fn allows_unbound_mcp(&self) -> bool {
         self.config.allow_unbound_mcp
+    }
+
+    fn write_sandbox(
+        &self,
+        permission_mode: Option<&str>,
+        dangerously_ignore_permissions: bool,
+        auto_accept_edits: bool,
+    ) -> Option<Vec<String>> {
+        let sandbox = self.config.write_sandbox.as_ref()?;
+        let mode = self.resolved_permission_mode(
+            permission_mode,
+            dangerously_ignore_permissions,
+            auto_accept_edits,
+        );
+        if sandbox.exempt_permission_modes.contains(&mode) {
+            return None;
+        }
+        Some(sandbox.writable.clone())
     }
 
     fn project_binding_injection(&self, binding: &ProviderProjectBinding) -> SpawnInjection {

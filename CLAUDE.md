@@ -156,6 +156,26 @@ not the requested one: an unknown name falls back to the registry default, so
 checking the request would let a deny list be dodged by naming a provider that
 does not exist.
 
+### The write sandbox and CLIs with only a global MCP config
+
+A provider config may set `writeSandbox` (`dynamic-providers/README.md`). Its
+agents then run under a macOS Seatbelt profile (`agents/write_sandbox.rs`,
+applied last in `spawn_agent_impl`): writes only in the cwd, the bound project,
+a worktree's shared `.git`, temp dirs, package caches and the paths the config
+names; reads and network stay open; `exemptPermissionModes` run unconfined; on
+other platforms the spawn is refused rather than run without it. It exists
+because the Antigravity CLI's own `--sandbox` denies shell writes in the
+workspace too, and without it the CLI writes anywhere.
+
+The same CLI has no `--mcp-config` flag, so it binds through the environment:
+`projectBinding.environment` exports `AURIC_MCP_CONFIG={mcpConfigPath}`, and
+one global entry in its MCP config runs `auric-mcp/bridge.mjs`
+(`src/mcp/configBridge.ts`), which becomes that file's `auric-pm` server. The
+bridge must never leave the CLI waiting — it blocks its whole turn on a server
+that does not answer — so unbound, or when the server dies before its first
+reply, it answers as a server with no tools. `scripts/probe-agy-headless.mjs`
+and the ignored `agy_headless_end_to_end` test check the real CLI.
+
 ## State Management (Zustand)
 
 All frontend state lives in a single combined Zustand store (`src/lib/store/index.ts`), composed of slices using `StateCreator`. The `StoreState` intersection in that file is the authoritative list — read it rather than trusting a count copied into prose:
