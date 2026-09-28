@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { useStore } from '@/lib/store';
@@ -49,9 +49,7 @@ describe('McpSettingsContent', () => {
     expect(snippet.textContent).toContain('/test/project');
     expect(snippet.textContent).toContain('auric-pm');
     expect(snippet.textContent).not.toContain('/test/project/src/mcp/server.ts');
-    expect(
-      await screen.findByText((content) => content.includes('/app/auric-mcp/server.mjs'))
-    ).toBe(snippet);
+    await waitFor(() => expect(snippet.textContent).toContain('/app/auric-mcp/server.mjs'));
   });
 
   it('renders copy button', () => {
@@ -99,5 +97,16 @@ describe('McpSettingsContent', () => {
     useStore.setState({ rootPath: null });
     render(<McpSettingsContent />);
     expect(screen.getByTestId('mcp-init-button')).toBeDisabled();
+  });
+
+  it('offers the Claude Code command for the agent-control server, from the real runtime', async () => {
+    render(<McpSettingsContent />);
+    const command = screen.getByTestId('mcp-control-command');
+    expect(
+      await screen.findByText((content) =>
+        content.includes('auric-control -- node /app/auric-mcp/server.mjs --control')
+      )
+    ).toBe(command);
+    expect(screen.getByRole('button', { name: /copy control command/i })).toBeInTheDocument();
   });
 });

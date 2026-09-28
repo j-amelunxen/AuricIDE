@@ -1,9 +1,46 @@
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
+import { IDE_AGENT_MARKER } from '../lib/agents/agentControl.contract';
 
 export interface McpCliBinding {
   projectRoot: string;
   databasePath: string;
+}
+
+/**
+ * The two ways the server runs. `project` is what the IDE hands its own agents
+ * (PM tools for one project); `control` is for clients outside the IDE and
+ * offers only the agent-control tools (`docs/design-agent-control.md`).
+ */
+export type McpCliMode = ({ mode: 'project' } & McpCliBinding) | { mode: 'control' };
+
+const USAGE =
+  'Usage: auric-mcp --project-root <project-directory> | auric-mcp --control (unsupported arguments)';
+
+/**
+ * Picks the server mode from the command line. `--control` is refused inside a
+ * process the IDE spawned for an agent (`AURIC_IDE_AGENT` marks those): typing
+ * into a console can answer a permission prompt, so one agent must never be
+ * able to approve another's.
+ */
+export function resolveMcpCliMode(
+  args: readonly string[],
+  env: Readonly<Record<string, string | undefined>> = process.env
+): McpCliMode {
+  if (args.includes('--control')) {
+    if (args.length !== 1) throw new Error(USAGE);
+    // The marker is set on every IDE agent; AURIC_AGENT_CWD only on those with
+    // a project binding. The socket checks the caller's ancestry as well.
+    const marker = [IDE_AGENT_MARKER, 'AURIC_AGENT_CWD'].find((name) => env[name]);
+    if (marker) {
+      throw new Error(
+        '--control is for clients outside AuricIDE; refusing to start inside an IDE agent ' +
+          `(${marker} is set)`
+      );
+    }
+    return { mode: 'control' };
+  }
+  return { mode: 'project', ...resolveMcpCliBinding(args) };
 }
 
 /**
@@ -13,7 +50,7 @@ export interface McpCliBinding {
  */
 export function resolveMcpCliBinding(args: readonly string[]): McpCliBinding {
   if (args.length !== 2 || args[0] !== '--project-root') {
-    throw new Error('Usage: auric-mcp --project-root <project-directory> (unsupported arguments)');
+    throw new Error(USAGE);
   }
 
   const requested = args[1]?.trim();

@@ -627,3 +627,55 @@ fn agent_info_tells_the_frontend_the_run_is_headless() {
     let json = serde_json::to_value(&info).expect("serializes");
     assert_eq!(json["headless"], serde_json::Value::Bool(true));
 }
+
+const CONTROL_FIXTURES: &str = include_str!("../../../src/lib/agents/agentControl.fixtures.json");
+
+fn control_fixtures() -> serde_json::Value {
+    serde_json::from_str(CONTROL_FIXTURES).unwrap()
+}
+
+#[test]
+fn every_agent_process_carries_the_ide_agent_marker() {
+    let fixtures = control_fixtures();
+    assert_eq!(fixtures["environment"]["ideAgentMarker"], IDE_AGENT_MARKER);
+
+    let mut cmd = CommandBuilder::new("true");
+    let shell = [(IDE_AGENT_MARKER.to_string(), "0".to_string())];
+    let spawn = [(IDE_AGENT_MARKER.to_string(), String::new())];
+    super::manager::apply_agent_env(&mut cmd, &shell, &spawn);
+    assert_eq!(
+        cmd.get_env(IDE_AGENT_MARKER),
+        Some(std::ffi::OsStr::new("1")),
+        "neither the login shell nor a provider may clear the marker"
+    );
+}
+
+#[test]
+fn spawn_refusals_carry_the_sentences_the_control_bridge_maps() {
+    let fixtures = control_fixtures();
+    let pattern = |code: &str| {
+        fixtures["spawnRefusals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["code"] == code)
+            .and_then(|r| r["pattern"].as_str())
+            .unwrap_or_else(|| panic!("no spawnRefusals entry for {code}"))
+            .to_string()
+    };
+    let (registry, _) = registry_and_default();
+
+    let denied = resolve_permitted_provider(Some("crush"), &registry, &deny(&["crush"]))
+        .err()
+        .unwrap();
+    assert!(denied.contains(&pattern("provider_denied")), "{denied}");
+
+    let missing = resolve_permitted_provider(
+        Some("not-a-real-provider"),
+        &registry,
+        &ProviderPolicy::default(),
+    )
+    .err()
+    .unwrap();
+    assert!(missing.contains(&pattern("invalid_params")), "{missing}");
+}

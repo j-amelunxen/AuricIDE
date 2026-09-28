@@ -13,7 +13,12 @@ vi.mock('@/lib/tauri/mcp', () => ({
   mcpLaunchSpec: (...args: unknown[]) => mockMcpLaunchSpec(...args),
 }));
 
-import { buildMcpConfig, buildMcpServerEntry, initMcpJson } from './mcpConfig';
+import {
+  buildControlAddCommand,
+  buildMcpConfig,
+  buildMcpServerEntry,
+  initMcpJson,
+} from './mcpConfig';
 
 const launchSpec = {
   command: 'node',
@@ -108,5 +113,31 @@ describe('initMcpJson', () => {
 
     await expect(initMcpJson('/test/project')).rejects.toThrow(/invalid/i);
     expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildControlAddCommand', () => {
+  it('registers the same runtime in control mode for Claude Code', () => {
+    expect(
+      buildControlAddCommand({
+        command: 'node',
+        args: [
+          '/Applications/AuricIDE.app/Contents/Resources/auric-mcp/server.mjs',
+          '--project-root',
+          '/p',
+        ],
+      })
+    ).toBe(
+      'claude mcp add --scope user auric-control -- node ' +
+        '/Applications/AuricIDE.app/Contents/Resources/auric-mcp/server.mjs --control'
+    );
+  });
+
+  it('quotes a runtime path the shell would split', () => {
+    expect(
+      buildControlAddCommand({ command: 'node', args: ["/Users/jen/My Apps/it's/server.mjs"] })
+    ).toBe(
+      `claude mcp add --scope user auric-control -- node '/Users/jen/My Apps/it'\\''s/server.mjs' --control`
+    );
   });
 });

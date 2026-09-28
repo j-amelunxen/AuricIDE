@@ -161,6 +161,12 @@ export interface AgentSlice {
    * Console. The caller decides the exact bytes; this is only the wire.
    */
   sendAgentInput: (agentId: string, text: string) => Promise<void>;
+  /**
+   * The bookkeeping half of `sendAgentInput`: records what was typed in the
+   * feed without writing it. For input that already reached the PTY another
+   * way (the control socket's `agent-input-sent`). A bare nudge is not recorded.
+   */
+  recordAgentSentMessage: (agentId: string, text: string) => void;
   dismissFinishedAgent: (agentId: string) => void;
   updateAgentStatus: (agentId: string, status: AgentInfo['status']) => void;
   appendAgentLog: (agentId: string, log: string) => void;

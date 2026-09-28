@@ -8,6 +8,34 @@ pub(super) fn is_reserved_auric_env(key: &str) -> bool {
     )
 }
 use super::shell_env::cached_login_shell_env;
+
+/// Set on every agent process the IDE spawns, and so inherited by every MCP
+/// server that agent starts. `auric-mcp --control` refuses to run under it:
+/// one agent must not be able to steer another (`docs/design-agent-control.md`).
+pub const IDE_AGENT_MARKER: &str = "AURIC_IDE_AGENT";
+
+pub(super) fn apply_agent_env(
+    cmd: &mut CommandBuilder,
+    shell_env: &[(String, String)],
+    spawn_env: &[(String, String)],
+) {
+    for (key, value) in shell_env {
+        // Project authority must come exclusively from the resolved binding
+        // above. In particular, a deliberately general agent must not inherit
+        // a stale binding from the shell that launched AuricIDE.
+        if !is_reserved_auric_env(key) {
+            cmd.env(key, value);
+        }
+    }
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+
+    for (key, value) in spawn_env {
+        cmd.env(key, value);
+    }
+    // Last, so neither the shell nor a provider config can clear it.
+    cmd.env(IDE_AGENT_MARKER, "1");
+}
 use super::types::*;
 use crate::agent_persistence::AgentPersistenceState;
 use crate::providers::ProviderRegistryState;
@@ -326,20 +354,11 @@ pub async fn spawn_agent_impl(
     }
     cmd.arg(&spawn_cmd.command);
 
-    for (key, value) in cached_login_shell_env().await {
-        // Project authority must come exclusively from the resolved binding
-        // above. In particular, a deliberately general agent must not inherit
-        // a stale binding from the shell that launched AuricIDE.
-        if !is_reserved_auric_env(key) {
-            cmd.env(key, value);
-        }
-    }
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("COLORTERM", "truecolor");
-
-    for (key, value) in &spawn_cmd.env_vars {
-        cmd.env(key, value);
-    }
+    apply_agent_env(
+        &mut cmd,
+        cached_login_shell_env().await,
+        &spawn_cmd.env_vars,
+    );
 
     if let Some(ref cwd) = config.cwd {
         if std::path::Path::new(cwd).is_dir() {
@@ -429,15 +448,25 @@ pub async fn spawn_agent_impl(
     let rp_clone = info.repo_path.clone();
     let cli_name = provider_id.to_string();
     let state_clone = state.clone();
+    // Absent only where no app manages it (tests); the console still works.
+    let output_buffers = app
+        .try_state::<super::output_buffer::OutputBuffersState>()
+        .map(|buffers| buffers.inner().clone());
 
     tauri::async_runtime::spawn(async move {
         let has_produced_output = pump_agent_output(&mut rx, OUTPUT_BATCH_INTERVAL, |data| {
+            if let Some(buffers) = &output_buffers {
+                buffers.append(&id_clone, &data);
+            }
             emit_agent_output(&app_clone, &id_clone, &rp_clone, data)
         })
         .await;
 
         if !has_produced_output {
             let error_msg = format!("\r\n\x1b[31mError: Agent process terminated without output. Check if '{}' CLI is installed.\x1b[0m\r\n", cli_name);
+            if let Some(buffers) = &output_buffers {
+                buffers.append(&id_clone, &error_msg);
+            }
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -479,6 +508,9 @@ pub async fn spawn_agent_impl(
         } else {
             AgentStatus::Error
         };
+        if let Some(buffers) = &output_buffers {
+            buffers.finish(&id_clone, status.clone());
+        }
 
         let _ = app_clone.emit(
             "agent-status",
@@ -599,6 +631,11 @@ pub async fn kill_agent_impl(
     drop(manager);
 
     let _ = process.child.kill();
+    // Finished now, not when the PTY closes: a grandchild that inherited the
+    // PTY can keep it open long after the agent itself is gone.
+    if let Some(buffers) = app.try_state::<super::output_buffer::OutputBuffersState>() {
+        buffers.finish(agent_id, AgentStatus::Idle);
+    }
     let verdict = process
         .launch_request_uid
         .as_deref()

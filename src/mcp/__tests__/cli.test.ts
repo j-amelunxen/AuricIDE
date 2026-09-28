@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveMcpCliBinding } from '../cli';
+import fixtures from '../../lib/agents/agentControl.fixtures.json';
+import { resolveMcpCliBinding, resolveMcpCliMode } from '../cli';
 
 describe('resolveMcpCliBinding', () => {
   const dirs: string[] = [];
@@ -52,5 +53,45 @@ describe('resolveMcpCliBinding', () => {
     symlinkSync(outside, join(root, '.auric', 'project.db'));
 
     expect(() => resolveMcpCliBinding(['--project-root', root])).toThrow(/escapes/i);
+  });
+});
+
+describe('resolveMcpCliMode', () => {
+  it('starts the control server for exactly --control', () => {
+    expect(resolveMcpCliMode(['--control'], {})).toEqual({ mode: 'control' });
+  });
+
+  it('refuses --control inside an agent the IDE spawned', () => {
+    expect(() => resolveMcpCliMode(['--control'], { AURIC_AGENT_CWD: '/tmp/x' })).toThrow(
+      /AURIC_AGENT_CWD/
+    );
+  });
+
+  it('refuses --control under the IDE agent marker the fixtures name', () => {
+    expect(() =>
+      resolveMcpCliMode(['--control'], { [fixtures.environment.ideAgentMarker]: '1' })
+    ).toThrow(new RegExp(fixtures.environment.ideAgentMarker));
+  });
+
+  it('refuses --control with extra arguments', () => {
+    expect(() => resolveMcpCliMode(['--control', '--project-root', '/a'], {})).toThrow(
+      /unsupported/i
+    );
+  });
+
+  it('keeps the project binding for --project-root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'auric-mcp-mode-'));
+    try {
+      mkdirSync(join(root, '.auric'));
+      writeFileSync(join(root, '.auric', 'project.db'), '');
+      const mode = resolveMcpCliMode(['--project-root', root], { AURIC_AGENT_CWD: root });
+      expect(mode).toMatchObject({ mode: 'project', projectRoot: realpathSync(root) });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('names both modes when the arguments fit neither', () => {
+    expect(() => resolveMcpCliMode([], {})).toThrow(/--project-root.*--control/);
   });
 });
