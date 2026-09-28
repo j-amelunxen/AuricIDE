@@ -8,7 +8,9 @@ import {
   startReview,
   type ConductorReviewContext,
 } from './conductor/conductorReview';
+import { conductorRunScope, liveConductorGoalAgentIds } from './conductor/conductorHelpers';
 import { executeConductorTick, type ConductorTickContext } from './conductor/conductorTick';
+import { normalizeConductorWorkCap } from './conductor/workCap';
 import {
   CONDUCTOR_HEARTBEAT_MS,
   MAX_CONDUCTOR_DECISIONS,
@@ -72,7 +74,8 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       | 'conductorProviderId'
       | 'conductorJudgeForm'
       | 'conductorJudgeProviderId'
-      | 'conductorJudgeModel',
+      | 'conductorJudgeModel'
+      | 'conductorWorkCap',
     value: string
   ): void => {
     const rootPath = (get() as { rootPath?: string | null }).rootPath;
@@ -196,6 +199,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorLastRun: null,
     conductorRunStartedAt: null,
     conductorRunCompleted: 0,
+    conductorWorkCap: null,
     conductorRequireReview: false,
     conductorJudgeForm: 'llm',
     conductorJudgeProviderId: null,
@@ -281,20 +285,32 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       const runningReviewIds = Object.values(get().conductorReviewAssignments).filter(
         (a) => a !== PENDING_REVIEW
       );
-      [...runningAgentIds, ...runningReviewIds].forEach(
-        (agentId) => void full.killRunningAgent?.(agentId)
+      // Goal and planning agents are keyed by goal, not ticket, so the
+      // assignment maps above never hold them.
+      const goalAgentIds = liveConductorGoalAgentIds(
+        full.agents ?? [],
+        full.agentSpawnConfigs ?? {},
+        conductorRunScope({ ...full, conductorGoalId: get().conductorGoalId })
       );
+      const killed = [...runningAgentIds, ...goalAgentIds];
+      [...killed, ...runningReviewIds].forEach((agentId) => void full.killRunningAgent?.(agentId));
       addDecision({
         action: 'stop',
         detail:
           reason ??
-          (runningAgentIds.length > 0
-            ? `Conductor stopped · killing ${runningAgentIds.length} running agent(s)`
+          (killed.length > 0
+            ? `Conductor stopped · killing ${killed.length} running agent(s)`
             : 'Conductor stopped'),
       });
     },
 
     setConductorMaxConcurrent: (n) => set({ conductorMaxConcurrent: Math.max(1, n) }),
+
+    setConductorWorkCap: (n) => {
+      const cap = normalizeConductorWorkCap(n);
+      set({ conductorWorkCap: cap });
+      persistProjectValue('conductorWorkCap', cap === null ? '' : String(cap));
+    },
 
     setConductorProviderId: (id) => {
       set({ conductorProviderId: id || null });

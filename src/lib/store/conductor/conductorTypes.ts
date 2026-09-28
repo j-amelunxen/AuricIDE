@@ -169,6 +169,13 @@ export interface ConductorSlice {
   conductorReviewAssignments: Record<string, string>;
   /** ticketId -> epoch ms the review started, for the watchdog timeout. */
   conductorReviewStartedAt: Record<string, number>;
+  /**
+   * How many tickets or goals the next manual run may start. Null means no
+   * limit. Remembered per project. A scheduled run has its own budget and
+   * does not change this. Each ticket, stations goal, and planning goal
+   * counts once; a retry does not.
+   */
+  conductorWorkCap: number | null;
   /** Cap on implementer launches this run; null = unlimited (today's behaviour). */
   conductorTicketBudget: number | null;
   /** Distinct tickets spawned this run. A retry of an already-spawned ticket
@@ -203,6 +210,8 @@ export interface ConductorSlice {
   ) => void;
   stopConductor: (reason?: string) => void;
   setConductorMaxConcurrent: (n: number) => void;
+  /** Null clears the cap (the run does not stop after a count). */
+  setConductorWorkCap: (n: number | null) => void;
   setConductorProviderId: (id: string | null) => void;
   setConductorModel: (model: string | null) => void;
   setConductorRequireReview: (v: boolean) => void;

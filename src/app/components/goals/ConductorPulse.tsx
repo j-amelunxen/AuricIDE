@@ -1,15 +1,25 @@
 'use client';
 
 import { useStore } from '@/lib/store';
+import {
+  conductorRunScope,
+  countConductorGoalAgents,
+} from '@/lib/store/conductor/conductorHelpers';
 
 /** Header pulse for conductor state. Click opens Goals. */
 export function ConductorPulse() {
   const running = useStore((s) => s.conductorRunning);
-  const assignments = useStore((s) => s.conductorAssignments);
+  // Ticket implementers, reviewers and goal/planning agents all hold a slot.
+  // Selected as a number so streaming agent updates do not re-render the chip.
+  const workingCount = useStore(
+    (s) =>
+      Object.keys(s.conductorAssignments ?? {}).length +
+      Object.keys(s.conductorReviewAssignments ?? {}).length +
+      countConductorGoalAgents(s.agents ?? [], s.agentSpawnConfigs ?? {}, conductorRunScope(s))
+  );
   const pendingApprovals = useStore((s) => s.conductorPendingApprovals);
   const openWorkPlace = useStore((s) => s.openWorkPlace);
 
-  const workingCount = Object.keys(assignments).length;
   const waitingCount = pendingApprovals.length;
 
   return (

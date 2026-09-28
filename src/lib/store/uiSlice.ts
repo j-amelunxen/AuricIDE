@@ -9,6 +9,7 @@ import {
   setProjectConfigValue,
   PROJECT_CONFIG_DEFAULTS,
 } from '@/lib/config/projectConfig';
+import { normalizeConductorWorkCap } from '@/lib/store/conductor/workCap';
 
 export const MAX_TERMINAL_LOGS = 10_000;
 
@@ -257,6 +258,9 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
       conductorJudgeForm: stored.conductorJudgeForm === 'agent' ? 'agent' : 'llm',
       conductorJudgeProviderId: stored.conductorJudgeProviderId || null,
       conductorJudgeModel: stored.conductorJudgeModel || null,
+      conductorWorkCap: normalizeConductorWorkCap(
+        stored.conductorWorkCap ? Number(stored.conductorWorkCap) : null
+      ),
     }));
   },
 

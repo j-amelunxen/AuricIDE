@@ -8,7 +8,10 @@ describe('ConductorPulse', () => {
     useStore.setState({
       conductorRunning: false,
       conductorAssignments: {},
+      conductorReviewAssignments: {},
       conductorPendingApprovals: [],
+      agents: [],
+      agentSpawnConfigs: {},
       workPlaceOpen: false,
       workTab: 'goals',
     });
@@ -28,6 +31,36 @@ describe('ConductorPulse', () => {
     });
     render(<ConductorPulse />);
     expect(screen.getByTestId('conductor-pulse')).toHaveTextContent('3 working');
+  });
+
+  it('counts goal agents the conductor started, not only ticket agents', () => {
+    useStore.setState({
+      conductorRunning: true,
+      conductorAssignments: {},
+      conductorReviewAssignments: {},
+      agents: [
+        {
+          id: 'goal-agent',
+          name: 'conductor:goal:Guide',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          spawnedByGoalId: 'g1',
+        },
+      ],
+      agentSpawnConfigs: {
+        'goal-agent': {
+          name: 'conductor:goal:Guide',
+          model: 'sonnet',
+          task: '',
+          spawnedByGoalId: 'g1',
+          runSource: 'conductor',
+        },
+      },
+    });
+    render(<ConductorPulse />);
+    expect(screen.getByTestId('conductor-pulse')).toHaveTextContent('1 working');
   });
 
   it('pulses while running', () => {

@@ -2124,7 +2124,12 @@ describe('conductor on a stations goal (no tickets)', () => {
     function seedGoalAgent({
       runSource = 'conductor',
       ...overrides
-    }: { runSource?: 'ui' | 'conductor'; startedAt?: number; spawnedByGoalId?: string } = {}) {
+    }: {
+      runSource?: 'ui' | 'conductor';
+      startedAt?: number;
+      spawnedByGoalId?: string;
+      projectPath?: string;
+    } = {}) {
       const agent = {
         id: 'goal-agent',
         name: 'Goal agent',
@@ -2185,6 +2190,42 @@ describe('conductor on a stations goal (no tickets)', () => {
       seedGoalAgent({ runSource: 'ui' });
       store.getState().startConductor('g1');
       await store.getState().conductorTick();
+      expect(kill).not.toHaveBeenCalled();
+    });
+
+    it('stopConductor ends a running conductor goal agent', async () => {
+      const kill = withKillSpy();
+      seedGoalAgent({ startedAt: Date.now() - 60_000 });
+      store.getState().startConductor('g1');
+      store.getState().stopConductor();
+      expect(kill).toHaveBeenCalledWith('goal-agent');
+    });
+
+    it('stopConductor leaves a goal agent a person started alone', async () => {
+      const kill = withKillSpy();
+      seedGoalAgent({ runSource: 'ui', startedAt: Date.now() - 60_000 });
+      store.getState().startConductor('g1');
+      store.getState().stopConductor();
+      expect(kill).not.toHaveBeenCalled();
+    });
+
+    it('stopConductor leaves a conductor goal agent of another run alone', async () => {
+      const kill = withKillSpy();
+      // Left over from an earlier run on a goal this run does not cover.
+      seedGoalAgent({ spawnedByGoalId: 'elsewhere', startedAt: Date.now() - 60_000 });
+      store.getState().startConductor('g1');
+      store.getState().stopConductor();
+      expect(kill).not.toHaveBeenCalled();
+      expect(store.getState().conductorDecisions.find((d) => d.action === 'stop')?.detail).toBe(
+        'Conductor stopped'
+      );
+    });
+
+    it('stopConductor leaves a conductor goal agent of another project alone', async () => {
+      const kill = withKillSpy();
+      seedGoalAgent({ projectPath: '/other', startedAt: Date.now() - 60_000 });
+      store.getState().startConductor(null);
+      store.getState().stopConductor();
       expect(kill).not.toHaveBeenCalled();
     });
 

@@ -1,12 +1,105 @@
 import { goalBriefSections } from '@/lib/goals/goalBrief';
 import { isClosedTicketStatus, type ModelPower } from '@/lib/pm/enums';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
+import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmDependency, PmTestCase, PmTicket } from '@/lib/tauri/pm';
 import { getGoalDescendants } from '../goalsSlice';
 import { isGoalBlockedByDependency } from '../goals/goalDependencyAdapters';
 import { getStationGoalWork, ticketsWorkedAsTickets } from './conductorStationGoals';
 import { MAX_TICKET_ATTEMPTS, PRIORITY_ORDER, type ConductorPreflight } from './conductorTypes';
+
+/**
+ * A goal or planning agent the conductor started. These never enter
+ * `conductorAssignments` (that map is keyed by ticket), so anything that
+ * counts or stops the run's agents has to add them through this.
+ * Agents a person started for a goal are not the conductor's to count or end.
+ */
+export function isConductorGoalAgent(
+  agent: Pick<AgentInfo, 'id' | 'spawnedByGoalId' | 'spawnedByTicketId'>,
+  spawnConfigs: Record<string, AgentConfig>
+): boolean {
+  return (
+    spawnConfigs[agent.id]?.runSource === 'conductor' &&
+    Boolean(agent.spawnedByGoalId) &&
+    !agent.spawnedByTicketId
+  );
+}
+
+/**
+ * What a conductor run covers: the open project and, for a scoped run, its
+ * goal and everything below it. Goal agents outlive the run that started them
+ * (a budget stop leaves them working), so "a conductor goal agent" alone says
+ * nothing about whether it is this run's to count or to end.
+ */
+export interface ConductorRunScope {
+  rootPath: string | null;
+  goalId: string | null;
+  goals: PmGoal[];
+}
+
+/** The scope of the run the store holds, read from the fields that decide it. */
+export function conductorRunScope(s: {
+  rootPath?: string | null;
+  conductorGoalId?: string | null;
+  goalsDraft?: PmGoal[];
+}): ConductorRunScope {
+  return {
+    rootPath: s.rootPath ?? null,
+    goalId: s.conductorGoalId ?? null,
+    goals: s.goalsDraft ?? [],
+  };
+}
+
+/** Whether `goalId` is `rootId` or lies below it. Walks up, so it costs the depth. */
+function isGoalWithin(goals: PmGoal[], goalId: string, rootId: string): boolean {
+  const seen = new Set<string>();
+  let current: string | null = goalId;
+  while (current && !seen.has(current)) {
+    if (current === rootId) return true;
+    seen.add(current); // guards against corrupted cyclic data
+    const at: string = current;
+    current = goals.find((g) => g.id === at)?.parentId ?? null;
+  }
+  return false;
+}
+
+function isInRun(agent: AgentInfo, scope: ConductorRunScope): boolean {
+  // An agent without a project path predates the field; its goal still decides.
+  if (agent.projectPath && scope.rootPath && agent.projectPath !== scope.rootPath) return false;
+  if (!scope.goalId) return true;
+  return isGoalWithin(scope.goals, agent.spawnedByGoalId ?? '', scope.goalId);
+}
+
+function isLiveGoalAgent(
+  agent: AgentInfo,
+  spawnConfigs: Record<string, AgentConfig>,
+  scope: ConductorRunScope
+): boolean {
+  return (
+    (agent.status === 'running' || agent.status === 'queued') &&
+    isConductorGoalAgent(agent, spawnConfigs) &&
+    isInRun(agent, scope)
+  );
+}
+
+/** Ids of this run's goal and planning agents that are still alive. */
+export function liveConductorGoalAgentIds(
+  agents: AgentInfo[],
+  spawnConfigs: Record<string, AgentConfig>,
+  scope: ConductorRunScope
+): string[] {
+  return agents.filter((a) => isLiveGoalAgent(a, spawnConfigs, scope)).map((a) => a.id);
+}
+
+/** How many of them there are — a number, so a store selector stays stable. */
+export function countConductorGoalAgents(
+  agents: AgentInfo[],
+  spawnConfigs: Record<string, AgentConfig>,
+  scope: ConductorRunScope
+): number {
+  return agents.filter((a) => isLiveGoalAgent(a, spawnConfigs, scope)).length;
+}
 
 /**
  * Mirrors the MCP `fetch_next_unblocked_task` semantics: a ticket is blocked

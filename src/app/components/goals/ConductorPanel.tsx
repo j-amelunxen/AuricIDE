@@ -25,6 +25,12 @@ export interface ConductorPanelProps {
   running: boolean;
   scopeGoalName: string | null;
   maxConcurrent: number;
+  /** Saved cap for the next manual run. Null means no limit. */
+  workCap: number | null;
+  /** Budget of the run that is going now, or null when that run has no cap. */
+  runBudget: number | null;
+  /** How many tickets or goals the current run has already started. */
+  runSpawned: number;
   activeAgentCount: number;
   /**
    * Agents Stop would actually kill — implementers and reviewers alike. Not the
@@ -59,6 +65,7 @@ export interface ConductorPanelProps {
   onStart: () => void;
   onStop: () => void;
   onSetMaxConcurrent: (n: number) => void;
+  onSetWorkCap: (n: number | null) => void;
   onSetProvider: (id: string | null) => void;
   onSetModel: (model: string | null) => void;
   onSetRequireReview: (v: boolean) => void;
@@ -73,6 +80,9 @@ export function ConductorPanel({
   running,
   scopeGoalName,
   maxConcurrent,
+  workCap,
+  runBudget,
+  runSpawned,
   activeAgentCount,
   runningAgentCount,
   pendingApprovals,
@@ -94,6 +104,7 @@ export function ConductorPanel({
   onStart,
   onStop,
   onSetMaxConcurrent,
+  onSetWorkCap,
   onSetProvider,
   onSetModel,
   onSetRequireReview,
@@ -154,8 +165,12 @@ export function ConductorPanel({
           />
           <span className="flex-shrink-0 text-[11px] font-bold text-foreground">Conductor</span>
           {running ? (
-            <span className="truncate text-[11px] text-foreground-muted">
+            <span
+              data-testid="conductor-running-status"
+              className="truncate text-[11px] text-foreground-muted"
+            >
               {`working${scopeGoalName ? ` on "${scopeGoalName}"` : ' (all tickets)'} · ${activeAgentCount} agent(s)`}
+              {runBudget !== null ? ` · ${runSpawned} of ${runBudget}` : ''}
             </span>
           ) : lastRun ? (
             <span
@@ -165,7 +180,7 @@ export function ConductorPanel({
             >
               {lastRunLabel(lastRun)}
               {lastRun.ticketBudget !== null
-                ? ` · ${lastRun.spawned} of ${lastRun.ticketBudget} tickets started`
+                ? ` · ${lastRun.spawned} of ${lastRun.ticketBudget} started`
                 : ''}
               {` · ${lastRun.completed} done`}
               {lastRun.failed > 0 ? `, ${lastRun.failed} failed` : ''}
@@ -214,7 +229,9 @@ export function ConductorPanel({
               disabled={!canStart}
               title={
                 canStart
-                  ? 'Autonomously work all unblocked tickets in scope'
+                  ? workCap
+                    ? `Start up to ${workCap} tickets or goals, then stop`
+                    : 'Autonomously work all unblocked tickets in scope'
                   : (startDisabledReason ?? 'Open a project first')
               }
               className="flex items-center gap-1.5 rounded-lg bg-green-500/15 border border-green-500/25 px-3 py-1 text-[11px] font-bold text-green-300 hover:bg-green-500/25 transition-colors disabled:opacity-40"
@@ -231,6 +248,8 @@ export function ConductorPanel({
         running={running}
         maxConcurrent={maxConcurrent}
         onSetMaxConcurrent={onSetMaxConcurrent}
+        workCap={workCap}
+        onSetWorkCap={onSetWorkCap}
         providerList={providerList}
         providerId={providerId}
         onSetProvider={onSetProvider}

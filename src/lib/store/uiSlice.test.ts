@@ -1,7 +1,8 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import type { ProjectConfig } from '@/lib/config/projectConfig';
 
 const setProjectConfigValue = vi.fn(async () => {});
-const loadProjectConfig = vi.fn(async () => ({
+const loadProjectConfig = vi.fn(async (): Promise<Partial<ProjectConfig>> => ({
   agenticCommit: true,
   agenticCommitPrompt: 'default prompt',
   branchTicketPattern: '([A-Z]+-\\d+)',
@@ -479,6 +480,58 @@ describe('uiSlice – the conductor provider', () => {
     await useStore.getState().loadProjectAgentSettings('/tmp/project');
 
     expect(useStore.getState().conductorProviderId).toBeNull();
+  });
+
+  it('saves how many tickets or goals a manual run may start', async () => {
+    useStore.setState({ rootPath: '/tmp/project' });
+    setProjectConfigValue.mockClear();
+
+    useStore.getState().setConductorWorkCap(5);
+
+    expect(useStore.getState().conductorWorkCap).toBe(5);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(setProjectConfigValue).toHaveBeenCalledWith('/tmp/project', 'conductorWorkCap', '5');
+
+    useStore.getState().setConductorWorkCap(null);
+    expect(useStore.getState().conductorWorkCap).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(setProjectConfigValue).toHaveBeenCalledWith('/tmp/project', 'conductorWorkCap', '');
+  });
+
+  it('cuts a cap above the ceiling down, and treats zero as no limit', () => {
+    useStore.getState().setConductorWorkCap(80);
+    expect(useStore.getState().conductorWorkCap).toBe(50);
+
+    useStore.getState().setConductorWorkCap(0);
+    expect(useStore.getState().conductorWorkCap).toBeNull();
+  });
+
+  it('restores a saved cap when the project opens, and clears one the project has not set', async () => {
+    useStore.setState({ conductorWorkCap: 9 });
+    loadProjectConfig.mockResolvedValueOnce({
+      agenticCommit: true,
+      agenticCommitPrompt: 'p',
+      branchTicketPattern: 'x',
+      commitProviderId: '',
+      conductorProviderId: '',
+      conductorWorkCap: '5',
+    });
+
+    await useStore.getState().loadProjectAgentSettings('/tmp/project');
+    expect(useStore.getState().conductorWorkCap).toBe(5);
+
+    useStore.setState({ conductorWorkCap: 9 });
+    loadProjectConfig.mockResolvedValueOnce({
+      agenticCommit: true,
+      agenticCommitPrompt: 'p',
+      branchTicketPattern: 'x',
+      commitProviderId: '',
+      conductorProviderId: '',
+      conductorWorkCap: '',
+    });
+
+    await useStore.getState().loadProjectAgentSettings('/tmp/project');
+    expect(useStore.getState().conductorWorkCap).toBeNull();
   });
 });
 
