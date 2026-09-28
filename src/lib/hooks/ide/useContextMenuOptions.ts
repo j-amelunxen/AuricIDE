@@ -211,8 +211,14 @@ export function useContextMenuOptions({
     }
 
     return options;
+    // `state` is the live proxy and never changes identity (see liveIDEState),
+    // so the fields read above must be listed or the menu stays empty.
   }, [
     state,
+    state.contextMenu,
+    state.rootPath,
+    state.selectedPaths,
+    state.repos,
     clipboard,
     setClipboard,
     handleCopyPath,
