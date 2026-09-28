@@ -1,4 +1,4 @@
-use crate::commands::fs_commands::move_path;
+use crate::commands::fs_commands::{list_all_files_impl, move_path};
 use crate::commands::fs_utils::{
     birth_time_of_file, ensure_scratch_dir, is_atomic_write_temp, read_directory_dated_by,
     read_directory_impl, should_filter_watcher_path, walk_files_with_birth_time, write_file_impl,
@@ -450,4 +450,41 @@ fn test_move_path_rejects_folder_into_own_subtree() {
 
     assert!(err.contains("into itself"));
     assert!(folder.exists());
+}
+
+#[test]
+fn the_file_index_keeps_build_output_that_evidence_can_point_at() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    for path in [
+        "notes/a.md",
+        "coverage/lcov.info",
+        ".next/server/page.js",
+        "node_modules/p/index.js",
+        ".auric/project.db",
+        ".git/HEAD",
+    ] {
+        let file = root.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "").unwrap();
+    }
+
+    let mut listed: Vec<String> = list_all_files_impl(root)
+        .unwrap()
+        .into_iter()
+        .map(|p| {
+            p.strip_prefix(&root.to_string_lossy().to_string())
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    listed.sort();
+    assert_eq!(
+        listed,
+        vec![
+            "/.next/server/page.js",
+            "/coverage/lcov.info",
+            "/notes/a.md"
+        ]
+    );
 }
