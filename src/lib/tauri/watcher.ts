@@ -3,6 +3,11 @@ import { invoke } from './invoke';
 export interface FsChangeEvent {
   path: string;
   kind: string;
+  /**
+   * Whether the path existed when the watcher sent its batch. Absent means
+   * unknown, and callers must then assume the worst.
+   */
+  exists?: boolean;
 }
 
 export async function watchDirectory(path: string): Promise<void> {
@@ -22,8 +27,10 @@ export function onFsChange(callback: (event: FsChangeEvent) => void): () => void
       const { listen } = await import('@tauri-apps/api/event');
       if (disposed) return;
 
-      const unsub = await listen<FsChangeEvent>('file-event', (event) => {
-        callback(event.payload);
+      // Rust collects a burst of changes into one batch rather than one IPC
+      // message per path; the callback still sees them one at a time.
+      const unsub = await listen<FsChangeEvent[]>('file-events', (event) => {
+        for (const change of event.payload) callback(change);
       });
 
       if (disposed) {

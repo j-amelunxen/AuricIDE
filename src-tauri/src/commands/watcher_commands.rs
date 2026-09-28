@@ -2,10 +2,18 @@ use super::fs_utils::{birth_time_of_file, should_filter_watcher_path, walk_files
 use crate::recent_creations::RecentCreations;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::Emitter;
+
+/// How long a burst of filesystem events is collected before it crosses to
+/// the webview as one message. The frontend debounces its tree refresh at
+/// 300 ms anyway; this only stops a build or an agent from sending one IPC
+/// message per touched path.
+const BATCH_WINDOW: Duration = Duration::from_millis(150);
 
 pub struct WatcherState {
     pub watchers: Mutex<HashMap<String, RecommendedWatcher>>,
@@ -19,10 +27,65 @@ impl Default for WatcherState {
     }
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct FileEvent {
     pub path: String,
     pub kind: String,
+    /// Whether the path existed when the batch was sent. Lets the frontend
+    /// tell a rename over an existing file (a save) from a path appearing or
+    /// vanishing, without a stat of its own.
+    pub exists: bool,
+}
+
+/// One raw watcher event: path and notify's `EventKind` in Debug form.
+pub type RawFileEvent = (String, String);
+
+/// Turns a collected burst into what the webview receives: exact repeats
+/// dropped (first occurrence keeps its place), and each path's existence
+/// asked once. Different kinds for the same path all stay — whether a kind
+/// changes the set of paths is the frontend's rule, not duplicated here.
+pub fn finish_batch(raw: Vec<RawFileEvent>, exists: impl Fn(&str) -> bool) -> Vec<FileEvent> {
+    let mut seen = HashSet::new();
+    let mut known: HashMap<String, bool> = HashMap::new();
+    let mut out = Vec::new();
+    for (path, kind) in raw {
+        if !seen.insert((path.clone(), kind.clone())) {
+            continue;
+        }
+        let present = *known.entry(path.clone()).or_insert_with(|| exists(&path));
+        out.push(FileEvent {
+            path,
+            kind,
+            exists: present,
+        });
+    }
+    out
+}
+
+/// Collects events for `BATCH_WINDOW` after the first one of a burst, then
+/// dates the files and emits the whole burst as one `file-events` message.
+/// Ends when the watcher (the only sender) is dropped.
+fn run_batcher(rx: Receiver<RawFileEvent>, app: tauri::AppHandle, recent: Arc<RecentCreations>) {
+    while let Ok(first) = rx.recv() {
+        let mut raw = vec![first];
+        let deadline = Instant::now() + BATCH_WINDOW;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(left) {
+                Ok(event) => raw.push(event),
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        let batch = finish_batch(raw, |path| Path::new(path).symlink_metadata().is_ok());
+        for event in batch.iter().filter(|e| e.exists) {
+            // Carry the folder dating forward instead of letting the next
+            // directory read rebuild it by walking the subtree.
+            if let Some(created) = birth_time_of_file(Path::new(&event.path)) {
+                recent.note_file(&event.path, created);
+            }
+        }
+        let _ = app.emit("file-events", batch);
+    }
 }
 
 #[tauri::command]
@@ -37,9 +100,10 @@ pub async fn watch_directory(
         return Ok(());
     }
 
-    let app_handle = app.clone();
     let path_clone = path.clone();
+    let (tx, rx) = mpsc::channel::<RawFileEvent>();
     let recent_for_events = recent.inner().clone();
+    std::thread::spawn(move || run_batcher(rx, app, recent_for_events));
 
     // Opened before the watcher is armed, so no event can arrive while the root
     // is unknown and be dropped. It closes when the seeding walk lands below;
@@ -56,18 +120,9 @@ pub async fn watch_directory(
                     if should_filter_watcher_path(&path_str) {
                         continue;
                     }
-                    // Carry the folder dating forward instead of letting the
-                    // next directory read rebuild it by walking the subtree.
-                    if let Some(created) = birth_time_of_file(&p) {
-                        recent_for_events.note_file(&path_str, created);
-                    }
-                    let _ = app_handle.emit(
-                        "file-event",
-                        FileEvent {
-                            path: path_str,
-                            kind: kind.clone(),
-                        },
-                    );
+                    // The batcher only stops once this sender is dropped
+                    // with the watcher, so a failed send means shutdown.
+                    let _ = tx.send((path_str, kind.clone()));
                 }
             }
         },

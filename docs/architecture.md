@@ -33,7 +33,7 @@ flowchart TD
     end
 
     IPCWrappers -- "invoke(cmd, args)\n→ Tauri IPC bridge" --> Commands
-    Commands -- "emit events\n(file-event, terminal-out-{id})" --> IPCWrappers
+    Commands -- "emit events\n(file-events, terminal-out-{id})" --> IPCWrappers
 
     Commands --> GitLayer
     Commands --> AgentMgr

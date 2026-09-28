@@ -44,10 +44,10 @@ describe('watcher IPC', () => {
   });
 
   describe('onFsChange', () => {
-    it('sets up event listener via listen with file-event', async () => {
+    it('listens to the batched file-events', async () => {
       onFsChange(vi.fn());
       await vi.waitFor(() => {
-        expect(mockListen).toHaveBeenCalledWith('file-event', expect.any(Function));
+        expect(mockListen).toHaveBeenCalledWith('file-events', expect.any(Function));
       });
     });
 
@@ -56,13 +56,16 @@ describe('watcher IPC', () => {
       expect(typeof unsubscribe).toBe('function');
     });
 
-    it('calls callback with event payload when event fires', async () => {
+    it('hands every event of a batch to the callback, in order', async () => {
       const callback = vi.fn();
-      const event: FsChangeEvent = { path: '/project/file.md', kind: 'modify' };
+      const batch: FsChangeEvent[] = [
+        { path: '/project/a.md', kind: 'Modify(Data(Content))', exists: true },
+        { path: '/project/b.md', kind: 'Remove(File)', exists: false },
+      ];
 
       mockListen.mockImplementation(
-        (_eventName: string, handler: (event: { payload: FsChangeEvent }) => void) => {
-          handler({ payload: event });
+        (_eventName: string, handler: (event: { payload: FsChangeEvent[] }) => void) => {
+          handler({ payload: batch });
           return Promise.resolve(vi.fn());
         }
       );
@@ -70,8 +73,9 @@ describe('watcher IPC', () => {
       onFsChange(callback);
 
       await vi.waitFor(() => {
-        expect(callback).toHaveBeenCalledWith(event);
+        expect(callback).toHaveBeenCalledTimes(2);
       });
+      expect(callback.mock.calls.map((c) => c[0])).toEqual(batch);
     });
 
     it('invokes unlisten when unsubscribe is called', async () => {

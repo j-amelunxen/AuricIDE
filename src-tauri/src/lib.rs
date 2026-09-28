@@ -47,7 +47,19 @@ compile_error!("the e2e-webdriver feature must never be linked into a release ar
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().build())
+        // The plugin's default level is Trace, which made `notify` log every
+        // single filesystem event — formatted and appended to the log file,
+        // thousands per second during a build in the open project.
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(if cfg!(debug_assertions) {
+                    tauri_plugin_log::log::LevelFilter::Debug
+                } else {
+                    tauri_plugin_log::log::LevelFilter::Info
+                })
+                .level_for("notify", tauri_plugin_log::log::LevelFilter::Warn)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init());
