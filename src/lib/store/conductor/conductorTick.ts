@@ -1,16 +1,24 @@
 import { reopenStationForRetry } from '@/lib/evidence/verdict';
 import { notifyConductor } from '@/lib/ide/conductorNotifications';
+import type { PmGoal } from '@/lib/tauri/goals';
 import type { NotificationInput } from '@/lib/tauri/notifications';
 import { getGoalCompletion, getGoalDescendants } from '../goalsSlice';
+import { describeSubtreeDependencyBlocks } from '../goals/goalDependencyAdapters';
+import { achieveFinishedDescendants, bundleHoldBlockers, closableWith } from './conductorGoalSweep';
 import {
   buildConductorPrompt,
   filterTicketsForGoal,
   getUnblockedOpenTickets,
   modelForPower,
+  ticketsWithUnblockedGoal,
 } from './conductorHelpers';
 import { applyVerdict } from './conductorReview';
-import { getStationGoalWork, ticketsWorkedAsTickets } from './conductorStationGoals';
-import { requestGoalAgents } from './conductorGoalAgents';
+import {
+  getPlanningWork,
+  getStationGoalWork,
+  ticketsWorkedAsTickets,
+} from './conductorStationGoals';
+import { spawnGoalAgents } from './conductorGoalAgents';
 import {
   MAX_TICKET_ATTEMPTS,
   PENDING_REVIEW,
@@ -37,13 +45,59 @@ export interface ConductorTickContext {
   notifyInbox: (input: Omit<NotificationInput, 'source'>) => void;
 }
 
+/**
+ * Goal-level agents in scope: one per stations goal with open agent work, one
+ * planning agent per goal with no work at all. Both need a project folder to
+ * run in, so without one nothing is launchable.
+ */
+function collectGoalAgentWork(
+  ctx: ConductorTickContext,
+  goals: PmGoal[],
+  goalId: string | null
+): {
+  launchableGoals: PmGoal[];
+  launchablePlans: PmGoal[];
+  goalAgentsInFlight: number;
+} {
+  const full = ctx.cross();
+  const state = ctx.get();
+  const input = {
+    goals,
+    tickets: full.pmDraftTickets ?? [],
+    stations: full.goalStationsDraft ?? [],
+    goalId,
+    notifications: full.notifications ?? [],
+    agents: full.agents ?? [],
+    projectPath: full.rootPath ?? null,
+    attempts: state.conductorGoalAttempts,
+    judgeConfigured: full.judgeLlmConfigured === true,
+    goalDependencies: full.goalDependenciesDraft ?? [],
+  };
+  const stationWork = getStationGoalWork(input);
+  const planWork = getPlanningWork({ ...input, planAttempts: state.conductorPlanAttempts });
+  const hasFolder = Boolean(full.rootPath);
+  return {
+    launchableGoals: hasFolder ? stationWork.launchable : [],
+    launchablePlans: hasFolder ? planWork.launchable : [],
+    goalAgentsInFlight: stationWork.inFlight.length + planWork.inFlight.length,
+  };
+}
+
+/** The goal list this tick works with: finished sub-goals of a scoped run closed first. */
+function goalsAfterSweep(ctx: ConductorTickContext, goalId: string | null): PmGoal[] {
+  const goals = ctx.cross().goalsDraft ?? [];
+  return goalId ? achieveFinishedDescendants(ctx, goals, goalId) : goals;
+}
+
 export async function executeConductorTick(ctx: ConductorTickContext): Promise<void> {
   const { get, set, cross, addDecision, persist, halt, finishRun, notifyInbox } = ctx;
   if (!get().conductorRunning) return;
   const full = cross();
   const allTickets = full.pmDraftTickets ?? [];
-  const goals = full.goalsDraft ?? [];
+  const goalDependencies = full.goalDependenciesDraft ?? [];
   const goalId = get().conductorGoalId;
+  // Finished sub-goals close first, so what depends on them is released below.
+  const goals = goalsAfterSweep(ctx, goalId);
 
   // Tickets of a stations goal belong to its goal agent, never to ticket agents.
   const workable = ticketsWorkedAsTickets(allTickets, goals, full.goalStationsDraft ?? []);
@@ -100,20 +154,11 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     }
   }
 
-  // Stations-mode goals in scope: asked for through launch requests, not
-  // spawned here. Without a project there is no folder to put on a request.
-  const stationWork = getStationGoalWork({
+  const { launchableGoals, launchablePlans, goalAgentsInFlight } = collectGoalAgentWork(
+    ctx,
     goals,
-    tickets: allTickets,
-    stations: full.goalStationsDraft ?? [],
-    goalId,
-    notifications: full.notifications ?? [],
-    agents: full.agents ?? [],
-    projectPath: full.rootPath ?? null,
-    attempts: get().conductorGoalAttempts,
-    judgeConfigured: full.judgeLlmConfigured === true,
-  });
-  const launchableGoals = full.rootPath ? stationWork.launchable : [];
+    goalId
+  );
 
   const assignments = get().conductorAssignments;
   // Both maps count: a run with only reviews in flight is still active and
@@ -121,7 +166,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
   const hasActiveAgents =
     Object.keys(assignments).length +
       Object.keys(get().conductorReviewAssignments).length +
-      stationWork.inFlight.length >
+      goalAgentsInFlight >
     0;
 
   // Budget spent and nothing in flight → the run stops because it was
@@ -140,7 +185,9 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     scoped.some((t) => {
       const fails = get().conductorFailedTickets[t.id] ?? 0;
       return t.status === 'open' && fails > 0 && fails < MAX_TICKET_ATTEMPTS;
-    }) || launchableGoals.some((g) => (get().conductorGoalAttempts[g.id] ?? 0) > 0);
+    }) ||
+    launchableGoals.some((g) => (get().conductorGoalAttempts[g.id] ?? 0) > 0) ||
+    launchablePlans.some((g) => (get().conductorPlanAttempts[g.id] ?? 0) > 0);
   if (budgetReached && !hasActiveAgents && !retryPending) {
     const goalName = goalId ? (goals.find((g) => g.id === goalId)?.name ?? null) : null;
     const spawned = get().conductorRunSpawned;
@@ -160,11 +207,17 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     return;
   }
 
+  // A ticket whose goal is held by a dependency edge is not this tick's turn.
+  const launchableTickets = ticketsWithUnblockedGoal(scoped, goals, goalDependencies);
+
   // Scope exhausted: no open/in-progress work left and no agents running →
-  // machine-check the goal and close the loop.
+  // machine-check the goal and close the loop. Held tickets do not count as
+  // work left: with nothing running, what holds them cannot change any more,
+  // and an unattended run must end and say why rather than idle.
   const workLeft =
     launchableGoals.length > 0 ||
-    scoped.some(
+    launchablePlans.length > 0 ||
+    launchableTickets.some(
       (t) =>
         (t.status === 'open' && (get().conductorFailedTickets[t.id] ?? 0) < MAX_TICKET_ATTEMPTS) ||
         t.status === 'in_progress' ||
@@ -174,41 +227,10 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     );
   if (!workLeft && !hasActiveAgents) {
     if (goalId) {
-      let workingGoals = goals;
-      const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
-      const depthOf = (goal: (typeof goals)[number]): number => {
-        let depth = 0;
-        let parentId = goal.parentId;
-        const seen = new Set<string>();
-        while (parentId && !seen.has(parentId)) {
-          seen.add(parentId);
-          depth += 1;
-          parentId = goalsById.get(parentId)?.parentId ?? null;
-        }
-        return depth;
-      };
-      const descendants = getGoalDescendants(goals, goalId).sort((a, b) => depthOf(b) - depthOf(a));
-      for (const descendant of descendants) {
-        if (descendant.status !== 'active' && descendant.status !== 'in_progress') continue;
-        const descendantCompletion = getGoalCompletion(
-          workingGoals,
-          allTickets,
-          full.requirementsDraft ?? [],
-          full.goalRequirementLinksDraft ?? [],
-          full.goalStationsDraft ?? [],
-          descendant.id
-        );
-        if (!descendantCompletion.achievable) continue;
-        full.achieveGoal?.(descendant.id);
-        workingGoals = workingGoals.map((goal) =>
-          goal.id === descendant.id ? { ...goal, status: 'achieved' as const } : goal
-        );
-      }
-
       // The completion transition decides, the same rule the UI and MCP
       // evaluate_goal use, whether the goal is worked by tickets or stations.
       const completion = getGoalCompletion(
-        workingGoals,
+        goals,
         allTickets,
         full.requirementsDraft ?? [],
         full.goalRequirementLinksDraft ?? [],
@@ -216,46 +238,18 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
         goalId
       );
       const goalName = goals.find((g) => g.id === goalId)?.name ?? null;
-      if (completion.achievable) {
-        full.achieveGoal?.(goalId);
-        addDecision({
-          action: 'goal_achieved',
-          detail: `Goal ${goalId} achieved · all checks green`,
-        });
-        halt();
-        finishRun('goal_achieved', goalName, []);
-        void notifyConductor('goal_achieved', goalName ?? goalId);
-        notifyInbox({
-          severity: 'success',
-          title: `Goal achieved: ${goalName ?? goalId}`,
-          body:
-            completion.mode === 'stations'
-              ? 'All stations verified, all requirements verified.'
-              : 'All tickets done, all requirements verified.',
-          refKind: 'goal',
-          refId: goalId,
-          dedupeKey: `goal:${goalId}:achieved`,
-          actions: [
-            {
-              id: 'open',
-              label: 'Open goal',
-              kind: 'open',
-              target: { type: 'goal', goalId },
-            },
-          ],
-        });
-      } else {
+      const emitGoalBlocked = (blockers: string[]) => {
         halt();
         addDecision({
           action: 'stop',
-          detail: `No work left but goal not satisfied: ${completion.blockers.join('; ')}`,
+          detail: `No work left but goal not satisfied: ${blockers.join('; ')}`,
         });
-        finishRun('goal_blocked', goalName, completion.blockers);
-        void notifyConductor('goal_blocked', completion.blockers.join('; '));
+        finishRun('goal_blocked', goalName, blockers);
+        void notifyConductor('goal_blocked', blockers.join('; '));
         notifyInbox({
           severity: 'warn',
           title: `Goal blocked: ${goalName ?? goalId}`,
-          body: completion.blockers.join(' · '),
+          body: blockers.join(' · '),
           refKind: 'goal',
           refId: goalId,
           dedupeKey: `goal:${goalId}:blocked`,
@@ -268,6 +262,49 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
             },
           ],
         });
+      };
+      if (completion.achievable) {
+        // The run's own target may itself be a bundle member of a goal
+        // outside its scope (a sibling) — closed together, never alone, and
+        // only once every open member could itself close (not failed, not in
+        // review, no agent still running on it).
+        const closeable = closableWith(ctx, goals, goalId);
+        if (closeable.length === 0) {
+          emitGoalBlocked([...completion.blockers, ...bundleHoldBlockers(ctx, goals, goalId)]);
+        } else {
+          for (const id of closeable) full.achieveGoal?.(id);
+          addDecision({
+            action: 'goal_achieved',
+            detail: `Goal ${goalId} achieved · all checks green`,
+          });
+          halt();
+          finishRun('goal_achieved', goalName, []);
+          void notifyConductor('goal_achieved', goalName ?? goalId);
+          notifyInbox({
+            severity: 'success',
+            title: `Goal achieved: ${goalName ?? goalId}`,
+            body:
+              completion.mode === 'stations'
+                ? 'All stations verified, all requirements verified.'
+                : 'All tickets done, all requirements verified.',
+            refKind: 'goal',
+            refId: goalId,
+            dedupeKey: `goal:${goalId}:achieved`,
+            actions: [
+              {
+                id: 'open',
+                label: 'Open goal',
+                kind: 'open',
+                target: { type: 'goal', goalId },
+              },
+            ],
+          });
+        }
+      } else {
+        emitGoalBlocked([
+          ...completion.blockers,
+          ...describeSubtreeDependencyBlocks(goals, goalDependencies, goalId),
+        ]);
       }
     } else {
       halt();
@@ -284,7 +321,11 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     return;
   }
 
-  const unblocked = getUnblockedOpenTickets(scoped, full.pmDraftDependencies ?? [], allTickets);
+  const unblocked = getUnblockedOpenTickets(
+    launchableTickets,
+    full.pmDraftDependencies ?? [],
+    allTickets
+  );
   let mutated = false;
 
   for (const ticket of unblocked) {
@@ -296,7 +337,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       state.conductorMaxConcurrent -
       Object.keys(state.conductorAssignments).length -
       Object.keys(state.conductorReviewAssignments).length -
-      stationWork.inFlight.length;
+      goalAgentsInFlight;
     if (capacity <= 0) break;
     if (state.conductorAssignments[ticket.id]) continue;
     if ((state.conductorFailedTickets[ticket.id] ?? 0) >= MAX_TICKET_ATTEMPTS) continue;
@@ -404,7 +445,10 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     mutated = true;
   }
 
-  if (await requestGoalAgents(ctx, launchableGoals, stationWork.inFlight.length)) mutated = true;
+  const workAgents = await spawnGoalAgents(ctx, launchableGoals, 'work', goalAgentsInFlight);
+  const inFlightNow = goalAgentsInFlight + workAgents;
+  const planAgents = await spawnGoalAgents(ctx, launchablePlans, 'plan', inFlightNow);
+  if (workAgents + planAgents > 0) mutated = true;
 
   if (mutated) await persist();
 }

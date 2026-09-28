@@ -8,23 +8,17 @@ import {
   STATUS_ORDER,
 } from './types';
 import { parseHistoryTime, mean, median } from './time';
-
-interface TimedEntry extends HistoryEntry {
-  at: number;
-}
+import { type LifecycleModel, type TimedChange, computeLifecycle, toTimed } from './lifecycle';
 
 /** Ticket id → its entries, oldest first. Equal stamps keep their given order. */
-export function groupByTicket(history: HistoryEntry[]): Map<string, TimedEntry[]> {
-  const byTicket = new Map<string, TimedEntry[]>();
+export function groupByTicket(history: HistoryEntry[]): Map<string, TimedChange[]> {
+  const byTicket = new Map<string, HistoryEntry[]>();
   history.forEach((entry) => {
     const list = byTicket.get(entry.ticketId) ?? [];
-    list.push({ ...entry, at: parseHistoryTime(entry.changedAt) });
+    list.push(entry);
     byTicket.set(entry.ticketId, list);
   });
-  for (const list of byTicket.values()) {
-    list.sort((a, b) => a.at - b.at);
-  }
-  return byTicket;
+  return new Map([...byTicket].map(([id, list]) => [id, toTimed(list)]));
 }
 
 /**
@@ -53,6 +47,13 @@ export function finalCompletions(
   return result;
 }
 
+/** Where a ticket's cycle starts: its last entry into a working status. */
+const TICKET_LIFECYCLE: LifecycleModel = {
+  completed: COMPLETED_STATUSES,
+  cycleStart: (untilCompletion) =>
+    untilCompletion.filter((e) => WORKING_STATUSES.has(e.toStatus)).at(-1),
+};
+
 /**
  * Per-ticket timing. `now` exists so the "still sitting here" figures can be
  * pinned in tests; it defaults to the clock.
@@ -63,60 +64,10 @@ export function computeTicketMetrics(
   now: number = Date.now()
 ): TicketMetrics[] {
   const byTicket = groupByTicket(history);
-
-  return tickets.map((ticket) => {
-    const entries = byTicket.get(ticket.id) ?? [];
-
-    // Time in each status the ticket has already left. The status it is in now
-    // has no closing event, so it is reported on its own rather than guessed at.
-    const timeInStatus: Record<string, number> = {};
-    for (let i = 0; i < entries.length - 1; i++) {
-      const span = entries[i + 1].at - entries[i].at;
-      if (span <= 0) continue;
-      const status = entries[i].toStatus;
-      timeInStatus[status] = (timeInStatus[status] ?? 0) + span;
-    }
-
-    const last = entries.at(-1) ?? null;
-    const currentStatusSince = last?.changedAt ?? null;
-    const timeInCurrentStatus = last ? Math.max(now - last.at, 0) : null;
-
-    // The ticket's last completion — a reopened ticket is measured to the run
-    // that actually finished it, never to an earlier one it was pulled back from.
-    const completion = COMPLETED_STATUSES.has(ticket.status)
-      ? [...entries].reverse().find((e) => COMPLETED_STATUSES.has(e.toStatus))
-      : undefined;
-
-    if (!completion) {
-      return {
-        ticketId: ticket.id,
-        cycleTime: null,
-        leadTime: null,
-        completedAt: null,
-        timeInStatus,
-        currentStatus: ticket.status,
-        timeInCurrentStatus,
-        currentStatusSince,
-      };
-    }
-
-    const creation = entries.find((e) => e.fromStatus === null);
-    // The working spell that led to THIS completion, not the first one ever.
-    const startedWork = entries
-      .filter((e) => WORKING_STATUSES.has(e.toStatus) && e.at <= completion.at)
-      .at(-1);
-
-    return {
-      ticketId: ticket.id,
-      cycleTime: startedWork ? completion.at - startedWork.at : null,
-      leadTime: creation ? completion.at - creation.at : null,
-      completedAt: completion.changedAt,
-      timeInStatus,
-      currentStatus: ticket.status,
-      timeInCurrentStatus,
-      currentStatusSince,
-    };
-  });
+  return tickets.map((ticket) => ({
+    ticketId: ticket.id,
+    ...computeLifecycle(byTicket.get(ticket.id) ?? [], ticket.status, TICKET_LIFECYCLE, now),
+  }));
 }
 
 /**

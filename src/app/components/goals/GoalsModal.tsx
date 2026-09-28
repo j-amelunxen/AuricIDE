@@ -64,6 +64,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
   const goalRunsDraft = useStore((s) => s.goalRunsDraft);
   const goalRequirementLinksDraft = useStore((s) => s.goalRequirementLinksDraft);
   const goalStationsDraft = useStore((s) => s.goalStationsDraft);
+  const goalDependenciesDraft = useStore((s) => s.goalDependenciesDraft);
   const goalsDirty = useStore((s) => s.goalsDirty);
   const selectedGoalId = useStore((s) => s.selectedGoalId);
   const rootPath = useStore((s) => s.rootPath);
@@ -377,6 +378,7 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
               goals={goalsDraft}
               tickets={tickets}
               stations={goalStationsDraft}
+              dependencies={goalDependenciesDraft}
               selectedId={selectedGoalId}
               onSelect={setSelectedGoalId}
               onMoveGoal={handleMoveGoal}

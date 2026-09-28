@@ -10,6 +10,7 @@ const storeState = {
   pmDraftTickets: [],
   agents: [],
   goalRunsDraft: [],
+  goalDependenciesDraft: [],
   conductorRunning: false,
   setSelectedGoalId: vi.fn(),
   setGoalsModalOpen: vi.fn(),

@@ -397,6 +397,77 @@ describe('useScheduledConductorRuns', () => {
     expect(selectAgent).not.toHaveBeenCalled();
   });
 
+  it('refuses a goal launch held by a dependency, and says why, leaving the button for later', async () => {
+    mockIdleForMs.mockReturnValue(0);
+    useStore.setState({
+      goalsDraft: [
+        {
+          id: 'g1',
+          parentId: null,
+          name: 'Ship it',
+          description: '',
+          successCriteria: '',
+          status: 'active',
+          priority: 'normal',
+          goalPrompt: '',
+          createdBy: 'ui',
+          achievedAt: null,
+          sortOrder: 0,
+          createdAt: '2026-01-01 00:00:00',
+          updatedAt: '2026-01-01 00:00:00',
+        },
+        {
+          id: 'g0',
+          parentId: null,
+          name: 'Predecessor',
+          description: '',
+          successCriteria: '',
+          status: 'in_progress',
+          priority: 'normal',
+          goalPrompt: '',
+          createdBy: 'ui',
+          achievedAt: null,
+          sortOrder: 0,
+          createdAt: '2026-01-01 00:00:00',
+          updatedAt: '2026-01-01 00:00:00',
+        },
+      ],
+      goalDependenciesDraft: [
+        { id: 'e1', goalId: 'g1', dependsOnGoalId: 'g0', createdAt: '2026-01-01 00:00:00' },
+      ],
+      notifications: [
+        autoAgentNotification({
+          actions: [
+            {
+              id: 'run',
+              label: 'Start agent',
+              kind: 'spawn-agent',
+              task: 'work the goal',
+              repoPath: REPO,
+              goalId: 'g1',
+              launch: 'auto',
+              headless: true,
+            },
+          ],
+        }),
+      ],
+    });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalled());
+
+    expect(spawnNewAgent).not.toHaveBeenCalled();
+    expect(String(showToast.mock.calls[0][0])).toContain('waits for Predecessor');
+    // A refusal leaves the button: the row itself is not marked read or answered.
+    expect(markNotificationRead).not.toHaveBeenCalled();
+
+    // Not retried on its own once refused — same "one-shot" rule as every
+    // other auto-start refusal (goal 10).
+    act(() => useStore.setState({ agents: [] }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    expect(spawnNewAgent).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
   it('does not auto-start a stale agent occurrence', async () => {
     useStore.setState({
       notifications: [autoAgentNotification({ dedupeKey: 'schedule:s1:2020-01-01 00:00:00' })],
@@ -608,6 +679,33 @@ describe('useScheduledConductorRuns: launch requests under a grant', () => {
     await Promise.resolve();
 
     expect(spawnNewAgent).not.toHaveBeenCalled();
+  });
+
+  it('never starts a granted request whose goal is held by a dependency — a grant is not a way around the wait', async () => {
+    grantMission();
+    useStore.setState({
+      goalsDraft: [
+        { id: ROOT, parentId: null, status: 'in_progress' } as never,
+        { id: SUB, parentId: ROOT, status: 'active' } as never,
+        { id: 'pred', parentId: ROOT, status: 'in_progress', name: 'Predecessor' } as never,
+      ],
+      goalDependenciesDraft: [
+        { id: 'e1', goalId: SUB, dependsOnGoalId: 'pred', createdAt: '2026-01-01 00:00:00' },
+      ],
+      notifications: [launchRequest()],
+    });
+    renderHook(() => useScheduledConductorRuns(openProject));
+    // A real wait, not just a few microtask flushes: the claim-then-spawn
+    // chain this asserts never starts is itself async, so a positive result
+    // would show up given enough ticks — the settle() helper's few
+    // microtasks are not enough to tell "blocked" from "just not done yet".
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+
+    expect(spawnNewAgent).not.toHaveBeenCalled();
+    expect(mockClaim).not.toHaveBeenCalled();
+    // Held back, not refused: no claim was attempted, so the row is untouched
+    // and stays a candidate for the very next check.
+    expect(markNotificationRead).not.toHaveBeenCalled();
   });
 
   it('holds a request back at the limit and starts it once the slot frees up', async () => {

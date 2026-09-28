@@ -4,11 +4,16 @@ import { withPersistFeedback } from './persistFeedback';
 import type {
   GoalsState,
   GoalRunOutcome,
+  GoalsSyncResult,
   PmGoal,
+  PmGoalDependency,
   PmGoalRequirementLink,
   PmGoalRun,
   PmGoalStation,
 } from '../tauri/goals';
+import { normalizeBundle, type GoalDependencyError } from '../goals/goalDependencies';
+import { getIntroducedDependencyErrors, toDependencyEdges } from './goals/goalDependencyAdapters';
+import { dropIntroducedDependencyDrafts } from './goals/goalDependencyRebase';
 import { editedRows, findClashes, rebaseDraft } from '../goals/draftMerge';
 import {
   mergeConflicts,
@@ -71,6 +76,10 @@ export {
   type GoalWorkflowStage,
   type GoalWorkflowStep,
 };
+export { getGoalBlockers, getSiblingWaves } from './goals/goalDependencyAdapters';
+
+/** What `addGoalDependency`/`setGoalBundle` hand back so the UI can toast the reason. */
+export type GoalDependencyResult = { ok: true } | { ok: false; error: GoalDependencyError };
 
 // saveGoals is a read-modify-write with awaits in the middle. Serialize
 // invocations so an overlapping save (heartbeat tick + agent-status tick)
@@ -87,11 +96,13 @@ export interface GoalsSlice {
   goalRuns: PmGoalRun[];
   goalRequirementLinks: PmGoalRequirementLink[];
   goalStations: PmGoalStation[];
+  goalDependencies: PmGoalDependency[];
   // Draft state (local edits before save)
   goalsDraft: PmGoal[];
   goalRunsDraft: PmGoalRun[];
   goalRequirementLinksDraft: PmGoalRequirementLink[];
   goalStationsDraft: PmGoalStation[];
+  goalDependenciesDraft: PmGoalDependency[];
   goalsDirty: boolean;
   /**
    * Rows the person and an agent changed at the same time. The database keeps
@@ -117,6 +128,19 @@ export interface GoalsSlice {
   achieveGoal: (id: string) => void;
   linkRequirementToGoal: (goalId: string, requirementId: string) => void;
   unlinkRequirementFromGoal: (goalId: string, requirementId: string) => void;
+  /**
+   * Adds `goalId -> dependsOnGoalId`, validated against the current draft
+   * goals and edges (`validateGoalDependencies`). Rejects with the error
+   * instead of adding a row the goal tree would then have to reject on save.
+   */
+  addGoalDependency: (goalId: string, dependsOnGoalId: string) => GoalDependencyResult;
+  removeGoalDependency: (goalId: string, dependsOnGoalId: string) => void;
+  /**
+   * Sets or clears the goal's bundle label, validated the same way: a bundle
+   * change can turn an existing edge into a same-bundle or cycle violation,
+   * so the whole edge set is re-checked before the label is applied.
+   */
+  setGoalBundle: (goalId: string, bundle: string | null) => GoalDependencyResult;
   recordGoalRun: (run: PmGoalRun) => void;
   completeGoalRun: (runId: string, outcome: GoalRunOutcome, summary?: string) => void;
   /**
@@ -174,6 +198,56 @@ function pinnedBases(state: GoalsSlice) {
 }
 
 /**
+ * The way out of a stuck dependency draft: after any rebase against a fresh
+ * load, drop the local edge or bundle edit that a concurrent write elsewhere
+ * made invalid (`dropIntroducedDependencyDrafts`), and say so — otherwise a
+ * save that keeps re-sending the same now-bad edit would keep failing
+ * forever. Returns the goals/edges to actually use as the draft.
+ */
+function guardDependencyDraft(
+  state: GoalsSlice,
+  fresh: { goals: PmGoal[]; edges: PmGoalDependency[] },
+  rebasedGoals: PmGoal[],
+  rebasedEdges: PmGoalDependency[]
+): { goals: PmGoal[]; edges: PmGoalDependency[] } {
+  const repair = dropIntroducedDependencyDrafts(fresh, {
+    goals: rebasedGoals,
+    edges: rebasedEdges,
+  });
+  if (repair.droppedEdgeIds.length > 0 || repair.resetBundleGoalIds.length > 0) {
+    (state as Partial<ToastSlice>).showToast?.(
+      'A goal dependency change conflicted with one written elsewhere and was reverted.',
+      'error'
+    );
+  }
+  return { goals: repair.goals, edges: repair.edges };
+}
+
+/**
+ * Runs a goals_save attempt, and on a rejected dependency edge recovers
+ * instead of leaving the draft stuck: the whole write rolled back (contract:
+ * any dependency violation fails the transaction), so a plain retry would
+ * resend the same now-bad edge forever. Reloading runs the dependency-draft
+ * guard (see `loadGoals`'s dirty branch), which drops the offending local
+ * edit or bundle edit before the next attempt is made. The original error
+ * still propagates — this recovers state, it does not swallow the failure.
+ */
+async function saveGoalsRecoveringDependencyDraft(
+  projectPath: string,
+  loadGoals: (projectPath: string) => Promise<void>,
+  attempt: () => Promise<GoalsSyncResult>
+): Promise<GoalsSyncResult> {
+  try {
+    return await attempt();
+  } catch (error) {
+    if (String(error).includes('Goal dependency rejected')) {
+      await loadGoals(projectPath);
+    }
+    throw error;
+  }
+}
+
+/**
  * Folds `found` into the known conflicts against the freshly loaded rows and
  * says so once per newly conflicted row. The toast is the only interruption:
  * a clash means an agent and the person disagree, which the person must see.
@@ -212,10 +286,12 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
   goalRuns: [],
   goalRequirementLinks: [],
   goalStations: [],
+  goalDependencies: [],
   goalsDraft: [],
   goalRunsDraft: [],
   goalRequirementLinksDraft: [],
   goalStationsDraft: [],
+  goalDependenciesDraft: [],
   goalsDirty: false,
   goalConflicts: [],
   currentGoalsProject: null,
@@ -244,6 +320,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
             goalRequirementLinksDraft: state.requirementLinks,
             goalStations: state.stations,
             goalStationsDraft: state.stations,
+            goalDependencies: state.dependencies,
+            goalDependenciesDraft: state.dependencies,
             goalsDirty: false,
             goalConflicts: [],
             currentGoalsProject: projectPath,
@@ -257,6 +335,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
           // alone never counts the agent's value as seen.
           const { goalsDraft, goalRunsDraft, goalRequirementLinks } = get();
           const { goalRequirementLinksDraft, goalStationsDraft } = get();
+          const { goalDependencies, goalDependenciesDraft } = get();
           const bases = pinnedBases(get());
           const found = [
             ...pinClashes(
@@ -275,12 +354,24 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
               bases.goalStations
             ),
           ];
+          const rebasedGoalsDraft = rebaseDraft(goalsDraft, bases.goals, state.goals);
+          const rebasedDependenciesDraft = rebaseDraft(
+            goalDependenciesDraft,
+            goalDependencies,
+            state.dependencies
+          );
+          const guarded = guardDependencyDraft(
+            get(),
+            { goals: state.goals, edges: state.dependencies },
+            rebasedGoalsDraft,
+            rebasedDependenciesDraft
+          );
           set({
             goals: state.goals,
             goalRuns: state.goalRuns,
             goalRequirementLinks: state.requirementLinks,
             goalStations: state.stations,
-            goalsDraft: rebaseDraft(goalsDraft, bases.goals, state.goals),
+            goalsDraft: guarded.goals,
             goalRunsDraft: rebaseDraft(goalRunsDraft, bases.goalRuns, state.goalRuns),
             goalRequirementLinksDraft: rebaseDraft(
               goalRequirementLinksDraft,
@@ -288,6 +379,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
               state.requirementLinks
             ),
             goalStationsDraft: rebaseDraft(goalStationsDraft, bases.goalStations, state.stations),
+            goalDependencies: state.dependencies,
+            goalDependenciesDraft: guarded.edges,
             goalConflicts: noteConflicts(get(), found, state),
             currentGoalsProject: projectPath,
           });
@@ -296,6 +389,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
     ),
 
   saveGoals: (projectPath) => {
+    // code-gate: complexity-function-length - one sequential unit (diff -> send -> reload -> reconcile CAS conflicts -> commit) sharing ~10 local bindings; splitting it would mean threading them all through helper signatures for no clarity gain. The dependency-recovery part is already pulled out into saveGoalsRecoveringDependencyDraft above.
     const doSave = async (): Promise<void> => {
       await initProjectDb(projectPath);
       const {
@@ -303,10 +397,12 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         goalRuns,
         goalRequirementLinks,
         goalStations,
+        goalDependencies,
         goalsDraft,
         goalRunsDraft,
         goalRequirementLinksDraft,
         goalStationsDraft,
+        goalDependenciesDraft,
       } = get();
       const bases = pinnedBases(get());
 
@@ -319,24 +415,33 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       const draftRunIds = new Set(goalRunsDraft.map((r) => r.id));
       const draftLinkIds = new Set(goalRequirementLinksDraft.map((l) => l.id));
       const draftStationIds = new Set(goalStationsDraft.map((s) => s.id));
+      const draftDependencyIds = new Set(goalDependenciesDraft.map((d) => d.id));
       const editedGoals = editedRows(goalsDraft, bases.goals);
       const editedRuns = editedRows(goalRunsDraft, bases.goalRuns);
       const editedStations = editedRows(goalStationsDraft, bases.goalStations);
-      const result = await ipcGoalsSave(projectPath, {
-        goals: editedGoals.rows,
-        goalRuns: editedRuns.rows,
-        requirementLinks: editedRows(goalRequirementLinksDraft, goalRequirementLinks).rows,
-        stations: editedStations.rows,
-        baseGoals: editedGoals.bases,
-        baseGoalRuns: editedRuns.bases,
-        baseStations: editedStations.bases,
-        deletedGoalIds: goals.filter((g) => !draftGoalIds.has(g.id)).map((g) => g.id),
-        deletedRunIds: goalRuns.filter((r) => !draftRunIds.has(r.id)).map((r) => r.id),
-        deletedLinkIds: goalRequirementLinks
-          .filter((l) => !draftLinkIds.has(l.id))
-          .map((l) => l.id),
-        deletedStationIds: goalStations.filter((s) => !draftStationIds.has(s.id)).map((s) => s.id),
-      });
+      const result = await saveGoalsRecoveringDependencyDraft(projectPath, get().loadGoals, () =>
+        ipcGoalsSave(projectPath, {
+          goals: editedGoals.rows,
+          goalRuns: editedRuns.rows,
+          requirementLinks: editedRows(goalRequirementLinksDraft, goalRequirementLinks).rows,
+          stations: editedStations.rows,
+          dependencies: editedRows(goalDependenciesDraft, goalDependencies).rows,
+          baseGoals: editedGoals.bases,
+          baseGoalRuns: editedRuns.bases,
+          baseStations: editedStations.bases,
+          deletedGoalIds: goals.filter((g) => !draftGoalIds.has(g.id)).map((g) => g.id),
+          deletedRunIds: goalRuns.filter((r) => !draftRunIds.has(r.id)).map((r) => r.id),
+          deletedLinkIds: goalRequirementLinks
+            .filter((l) => !draftLinkIds.has(l.id))
+            .map((l) => l.id),
+          deletedStationIds: goalStations
+            .filter((s) => !draftStationIds.has(s.id))
+            .map((s) => s.id),
+          deletedDependencyIds: goalDependencies
+            .filter((d) => !draftDependencyIds.has(d.id))
+            .map((d) => d.id),
+        })
+      );
       const found = result.conflicts.flatMap((c) => {
         const sent: Record<GoalConflictTable, { id: string }[]> = {
           pm_goals: editedGoals.bases,
@@ -382,6 +487,11 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
           savedBases.goalStations,
           loaded.stations
         ),
+        goalDependenciesDraft: rebaseDraft(
+          now.goalDependenciesDraft,
+          goalDependenciesDraft,
+          loaded.dependencies
+        ),
       };
       // The window between the sync and this load: the person may have edited
       // a field that an agent changed in the database meanwhile. Same check as
@@ -407,7 +517,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         now.goalsDraft !== goalsDraft ||
         now.goalRunsDraft !== goalRunsDraft ||
         now.goalRequirementLinksDraft !== goalRequirementLinksDraft ||
-        now.goalStationsDraft !== goalStationsDraft;
+        now.goalStationsDraft !== goalStationsDraft ||
+        now.goalDependenciesDraft !== goalDependenciesDraft;
       // Pins of rows that went through are released: those edits are saved.
       const kept = now.goalConflicts.filter((c) => refused(c.table).has(c.id));
       const goalConflicts = noteConflicts(
@@ -420,6 +531,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         goalRuns: loaded.goalRuns,
         goalRequirementLinks: loaded.requirementLinks,
         goalStations: loaded.stations,
+        goalDependencies: loaded.dependencies,
         ...rebased,
         goalConflicts,
         goalsDirty: editedMeanwhile || goalConflicts.length > 0,
@@ -448,6 +560,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalRequirementLinksDraft: [],
       goalStations: [],
       goalStationsDraft: [],
+      goalDependencies: [],
+      goalDependenciesDraft: [],
       goalsDirty: false,
       goalConflicts: [],
     });
@@ -463,6 +577,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalRequirementLinksDraft: [],
       goalStations: [],
       goalStationsDraft: [],
+      goalDependencies: [],
+      goalDependenciesDraft: [],
       goalsDirty: false,
       goalConflicts: [],
     }),
@@ -485,6 +601,9 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalRunsDraft: s.goalRunsDraft.filter((r) => !doomed.has(r.goalId)),
       goalRequirementLinksDraft: s.goalRequirementLinksDraft.filter((l) => !doomed.has(l.goalId)),
       goalStationsDraft: s.goalStationsDraft.filter((st) => !doomed.has(st.goalId)),
+      goalDependenciesDraft: s.goalDependenciesDraft.filter(
+        (d) => !doomed.has(d.goalId) && !doomed.has(d.dependsOnGoalId)
+      ),
       goalsDirty: true,
     }));
     clearGoalLinkOnTickets(get(), doomed);
@@ -523,6 +642,65 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalsDirty: true,
     })),
 
+  addGoalDependency: (goalId, dependsOnGoalId) => {
+    const { goalsDraft, goalDependenciesDraft } = get();
+    const alreadyThere = goalDependenciesDraft.some(
+      (d) => d.goalId === goalId && d.dependsOnGoalId === dependsOnGoalId
+    );
+    if (alreadyThere) return { ok: true };
+    // Reject only what THIS edge introduces, not the full edge set: a
+    // problem elsewhere in the tree (an older build, a concurrent write not
+    // yet reconciled) must not block an unrelated addition.
+    const beforeEdges = toDependencyEdges(goalDependenciesDraft);
+    const afterEdges = [...beforeEdges, { goalId, dependsOnGoalId }];
+    const error = getIntroducedDependencyErrors(
+      { goals: goalsDraft, edges: beforeEdges },
+      { goals: goalsDraft, edges: afterEdges }
+    ).find((e) => e.goalId === goalId && e.dependsOnGoalId === dependsOnGoalId);
+    if (error) return { ok: false, error };
+    set((s) => ({
+      goalDependenciesDraft: [
+        ...s.goalDependenciesDraft,
+        { id: crypto.randomUUID(), goalId, dependsOnGoalId, createdAt: nowTimestamp() },
+      ],
+      goalsDirty: true,
+    }));
+    return { ok: true };
+  },
+
+  removeGoalDependency: (goalId, dependsOnGoalId) =>
+    set((s) => ({
+      goalDependenciesDraft: s.goalDependenciesDraft.filter(
+        (d) => !(d.goalId === goalId && d.dependsOnGoalId === dependsOnGoalId)
+      ),
+      goalsDirty: true,
+    })),
+
+  setGoalBundle: (goalId, bundle) => {
+    const { goalsDraft, goalDependenciesDraft } = get();
+    const normalized = normalizeBundle(bundle);
+    const candidateGoals = goalsDraft.map((g) =>
+      g.id === goalId ? { ...g, bundle: normalized } : g
+    );
+    // A bundle change can turn an existing edge into a same-bundle or cycle
+    // violation for any pair, not only ones touching this goal, so the whole
+    // edge set is re-checked. Only what this change introduces rejects it — a
+    // problem the tree already had is not this edit's to fix.
+    const edges = toDependencyEdges(goalDependenciesDraft);
+    const [error] = getIntroducedDependencyErrors(
+      { goals: goalsDraft, edges },
+      { goals: candidateGoals, edges }
+    );
+    if (error) return { ok: false, error };
+    set((s) => ({
+      goalsDraft: s.goalsDraft.map((g) =>
+        g.id === goalId ? { ...g, bundle: normalized, updatedAt: nowTimestamp() } : g
+      ),
+      goalsDirty: true,
+    }));
+    return { ok: true };
+  },
+
   recordGoalRun: (run) =>
     set((s) => ({
       goalRunsDraft: [...s.goalRunsDraft, run],
@@ -547,10 +725,12 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       goalRuns: [run],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
       deletedGoalIds: [],
       deletedRunIds: [],
       deletedLinkIds: [],
       deletedStationIds: [],
+      deletedDependencyIds: [],
     });
     // The row is stored now; the baseline learns it so a later discard or
     // save treats it as persisted, not as a local addition.
@@ -568,12 +748,13 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
     })),
 
   discardGoalChanges: () => {
-    const { goals, goalRuns, goalRequirementLinks, goalStations } = get();
+    const { goals, goalRuns, goalRequirementLinks, goalStations, goalDependencies } = get();
     set({
       goalsDraft: goals,
       goalRunsDraft: goalRuns,
       goalRequirementLinksDraft: goalRequirementLinks,
       goalStationsDraft: goalStations,
+      goalDependenciesDraft: goalDependencies,
       goalsDirty: false,
       goalConflicts: [],
     });

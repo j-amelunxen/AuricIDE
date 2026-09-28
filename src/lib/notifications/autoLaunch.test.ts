@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
 import type { Notification, NotificationAction } from './types';
-import { autoAgentLaunches } from './autoLaunch';
+import { autoAgentLaunches, goalLaunchBlockReason } from './autoLaunch';
 
 const REPO = '/tmp/project-a';
 const nowMs = Date.UTC(2026, 7, 17, 9, 35, 0);
@@ -136,5 +137,58 @@ describe('autoAgentLaunches', () => {
       steps: [{ id: 's1', label: 'Draft', prompt: '/draft' }],
     };
     expect(autoAgentLaunches([n], parseOne([combo]), nowMs)).toEqual([]);
+  });
+});
+
+describe('goalLaunchBlockReason', () => {
+  function goal(overrides: Partial<PmGoal> & { id: string }): PmGoal {
+    return {
+      parentId: null,
+      name: overrides.id,
+      description: '',
+      successCriteria: '',
+      status: 'active',
+      priority: 'normal',
+      goalPrompt: '',
+      createdBy: 'ui',
+      achievedAt: null,
+      sortOrder: 0,
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+      ...overrides,
+    };
+  }
+
+  function edge(goalId: string, dependsOnGoalId: string): PmGoalDependency {
+    return {
+      id: `${goalId}->${dependsOnGoalId}`,
+      goalId,
+      dependsOnGoalId,
+      createdAt: '2026-01-01 00:00:00',
+    };
+  }
+
+  function spawnForGoal(goalId?: string): Extract<NotificationAction, { kind: 'spawn-agent' }> {
+    return { ...spawnAuto, goalId };
+  }
+
+  it('names the predecessor holding a goal launch up', () => {
+    const goals = [goal({ id: 'A' }), goal({ id: 'B', name: 'Ship it' })];
+    expect(goalLaunchBlockReason(goals, [edge('A', 'B')], spawnForGoal('A'))).toBe(
+      'waits for Ship it'
+    );
+  });
+
+  it('clears once the predecessor is achieved', () => {
+    const goals = [goal({ id: 'A' }), goal({ id: 'B', status: 'achieved' })];
+    expect(goalLaunchBlockReason(goals, [edge('A', 'B')], spawnForGoal('A'))).toBeNull();
+  });
+
+  it('never blocks a run-skill action — it carries no goalId', () => {
+    expect(goalLaunchBlockReason([], [], skillAuto)).toBeNull();
+  });
+
+  it('never blocks a spawn-agent action with no goalId', () => {
+    expect(goalLaunchBlockReason([], [], spawnForGoal())).toBeNull();
   });
 });

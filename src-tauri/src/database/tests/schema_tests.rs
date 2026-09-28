@@ -40,7 +40,7 @@ fn test_run_migrations_creates_tables() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 22);
+    assert_eq!(count, 24);
 
     // kv_store table should exist
     let table_exists: bool = conn
@@ -62,7 +62,7 @@ fn test_run_migrations_idempotent() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 22);
+    assert_eq!(count, 24);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_init_db_creates_db_file() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 22);
+    assert_eq!(count, 24);
 }
 
 // --- pm_goal_reviews (migration 21) ---
@@ -349,4 +349,96 @@ fn mission_path_migration_recovers_from_a_crash_before_its_marker() {
         })
         .unwrap();
     assert_eq!(markers, 1);
+}
+
+// --- pm_goals.bundle + pm_goal_dependencies (migration 23) ---
+//
+// Keep in sync with src/mcp/db.ts migration 23. The shape (columns, the
+// UNIQUE pair, cascading FKs) is the contract in
+// src/lib/goals/goalDependencies.fixtures.json for `goal_deps::validate_goal_dependencies`.
+
+#[test]
+fn goal_dependencies_migration_adds_the_bundle_column_and_the_table() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+
+    assert_eq!(goal_column(&conn, "bundle"), Some((0, None)));
+
+    let dep_columns: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('pm_goal_dependencies')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(dep_columns, 4);
+
+    let marker: String = conn
+        .query_row("SELECT name FROM _migrations WHERE id = 23", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(marker, "goal_dependencies");
+}
+
+#[test]
+fn goal_dependencies_migration_upgrades_an_existing_database_without_losing_goals() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+    // Roll back to a database from before migration 23 that already holds a goal.
+    conn.execute_batch(
+        "DROP TABLE pm_goal_dependencies;
+         ALTER TABLE pm_goals DROP COLUMN bundle;
+         DELETE FROM _migrations WHERE id = 23;
+         INSERT INTO pm_goals (id, name) VALUES ('old', 'Written before 23');",
+    )
+    .unwrap();
+    assert_eq!(goal_column(&conn, "bundle"), None);
+
+    run_migrations(&conn).unwrap();
+
+    assert_eq!(goal_column(&conn, "bundle"), Some((0, None)));
+    let (name, bundle): (String, Option<String>) = conn
+        .query_row(
+            "SELECT name, bundle FROM pm_goals WHERE id = 'old'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(name, "Written before 23");
+    assert_eq!(bundle, None);
+}
+
+#[test]
+fn goal_dependencies_table_rejects_a_duplicate_edge_and_cascades_on_goal_delete() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+    conn.execute_batch(
+        "INSERT INTO pm_goals (id, name) VALUES ('a', 'A'), ('b', 'B');
+         INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id, created_at)
+             VALUES ('e1', 'b', 'a', datetime('now'));",
+    )
+    .unwrap();
+
+    let duplicate = conn.execute(
+        "INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id, created_at)
+             VALUES ('e2', 'b', 'a', datetime('now'));",
+        [],
+    );
+    assert!(
+        duplicate.is_err(),
+        "the UNIQUE(goal_id, depends_on_goal_id) pair must reject a repeat edge"
+    );
+
+    conn.execute("DELETE FROM pm_goals WHERE id = 'a'", [])
+        .unwrap();
+    let remaining: i64 = conn
+        .query_row("SELECT COUNT(*) FROM pm_goal_dependencies", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        remaining, 0,
+        "deleting a goal must cascade its dependency edges"
+    );
 }

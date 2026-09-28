@@ -73,3 +73,33 @@ export function buildGoalLaunchPrompt(
   // Launching an agent for a goal invokes the /goal command first.
   return `/goal\n\n${parts.join('\n\n')}`;
 }
+
+/**
+ * Builds the prompt for a planning agent: a goal the conductor was told to
+ * carry out has neither stations nor tickets, so there is nothing to work
+ * yet. The agent only lays out the work in the form the goal's work mode
+ * expects and stops; the conductor works what it left on the next tick.
+ * Doing the work in the same run would leave it without evidence per step.
+ */
+export function buildGoalPlanningPrompt(goal: PmGoal): string {
+  const plan =
+    goal.workMode === 'tickets'
+      ? 'This goal is set to ticket mode. Call list_epics and reuse a fitting epic, or ' +
+        `create_epic with the name "${goal.name}". Then create the executable tickets in ` +
+        `order with create_ticket (goalId: "${goal.id}"); a step that needs a person gets ` +
+        'needsHumanSupervision: true.'
+      : `Lay the work out as a line of stations with create_stations (goalId: "${goal.id}"), ` +
+        'in the order it has to happen. Give each station a short imperative name and, ' +
+        'where the result can be checked by machine, a predicate that checks it (for ' +
+        'example {"type":"file_exists","glob":"..."}). A step only a person can do is a ' +
+        'station with kind "human".';
+  return [
+    `# Plan goal: ${goal.name} (goalId: ${goal.id})`,
+    READ_GOAL_FIRST(goal),
+    ...(goal.goalPrompt.trim() ? [`## Goal instructions\n${goal.goalPrompt}`] : []),
+    `## Your task\nThis goal has no work attached yet. Plan it, do not carry it out. ${plan} ` +
+      'Cover the success criteria completely and keep each step small enough for one ' +
+      'agent. Do not create sub-goals, do not mark anything done, do not call ' +
+      'record_goal_run. Stop as soon as the plan is saved.',
+  ].join('\n\n');
+}

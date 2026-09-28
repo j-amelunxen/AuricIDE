@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { defaultCommands } from '@/lib/commands/registry';
-import { autoAgentLaunches, grantedAgentLaunches } from '@/lib/notifications/autoLaunch';
+import {
+  autoAgentLaunches,
+  goalLaunchBlockReason,
+  grantedAgentLaunches,
+} from '@/lib/notifications/autoLaunch';
 import { executeNotificationAction, NotificationActionError } from '@/lib/notifications/execute';
 import {
   LAUNCH_GRANTS_CHANGED_EVENT,
@@ -215,7 +219,20 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
       // An agent start checks provider and model against the provider list;
       // until it is in, wait (see the launch-request pass below).
       if (!providersLoaded) continue;
+      const goalsNow = useStore.getState();
+      const blockReason = goalLaunchBlockReason(
+        goalsNow.goalsDraft,
+        goalsNow.goalDependenciesDraft,
+        action
+      );
       attempted.current.add(notification.uid);
+      if (blockReason) {
+        // A refusal leaves the button behind, same as any other auto-start
+        // that could not proceed: the notification stays for a manual start
+        // once the predecessor clears, instead of being retried unprompted.
+        goalsNow.showToast(`"${action.label}" ${blockReason}, not started`, 'info');
+        continue;
+      }
       void startAgentFromNotification(notification, action, notificationTrust(notification));
     }
 
@@ -236,9 +253,20 @@ export function useScheduledConductorRuns(openProject: (path: string) => Promise
     // counted, so one that is settling cannot take a slot in the count.
     const now = Date.now();
     const granted = grantedAgentLaunches(
-      notifications.filter(
-        (n) => !attempted.current.has(n.uid) && !((heldBack.current.get(n.uid) ?? 0) > now)
-      ),
+      notifications.filter((n) => {
+        if (attempted.current.has(n.uid) || (heldBack.current.get(n.uid) ?? 0) > now) return false;
+        // A goal held by a dependency waits its turn like a click-started
+        // request would; a grant is not a way around that. Never marked
+        // attempted or held back, so it is looked at again on its own once
+        // the predecessor clears — no toast, matching every other reason a
+        // granted start quietly retries (at-capacity, a claim that failed).
+        const action = parseNotificationActions(n.actions, isKnownCommandId).find(
+          (a): a is Extract<NotificationAction, { kind: 'spawn-agent' }> => a.kind === 'spawn-agent'
+        );
+        return (
+          !action || !goalLaunchBlockReason(store.goalsDraft, store.goalDependenciesDraft, action)
+        );
+      }),
       (n) => parseNotificationActions(n.actions, isKnownCommandId),
       {
         grants: grants.current,

@@ -180,6 +180,19 @@ pub fn pm_load_history(
 }
 
 #[tauri::command]
+pub fn goals_load_status_history(
+    project_path: String,
+    goal_id: Option<String>,
+    state: tauri::State<'_, DatabaseState>,
+) -> Result<Vec<database::PmGoalStatusHistoryEntry>, String> {
+    let connections = state.connections.lock().unwrap();
+    let conn = connections
+        .get(&project_path)
+        .ok_or("Database not initialized for this project")?;
+    database::goal_status_history_load_impl(conn, goal_id.as_deref())
+}
+
+#[tauri::command]
 pub fn agent_prompt_history_add(
     project_path: String,
     entry: AgentPromptHistoryEntry,

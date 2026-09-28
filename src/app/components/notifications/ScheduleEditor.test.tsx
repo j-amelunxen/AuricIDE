@@ -35,7 +35,7 @@ function goalFixture(overrides: Partial<PmGoal> = {}): PmGoal {
 }
 
 function goalsStateOf(goals: PmGoal[]): GoalsState {
-  return { goals, goalRuns: [], requirementLinks: [], stations: [] };
+  return { goals, goalRuns: [], requirementLinks: [], stations: [], dependencies: [] };
 }
 
 const PROVIDERS: ProviderInfo[] = [

@@ -13,12 +13,12 @@ import {
 } from './conductorSlice';
 import type { StoreState } from './index';
 import type { PmDependency, PmTicket } from '../tauri/pm';
-import type { PmGoal, PmGoalStation } from '../tauri/goals';
+import type { PmGoal, PmGoalDependency, PmGoalStation } from '../tauri/goals';
 import { spawnAgent } from '../tauri/agents';
 import { createJudgeBackend, type JudgeInput, type JudgeStart } from '../conductor/judgeBackend';
 import type { Notification } from '../notifications/types';
 import type { NotificationInput } from '../tauri/notifications';
-import { isLaunchRequest, LAUNCH_REQUEST_ORIGIN } from '../notifications/launchRequest';
+import { LAUNCH_REQUEST_ORIGIN } from '../notifications/launchRequest';
 
 let agentCounter = 0;
 
@@ -133,6 +133,7 @@ describe('getConductorPreflight', () => {
       goalId?: string | null;
       failed?: Record<string, number>;
       approved?: string[];
+      goalDependencies?: PmGoalDependency[];
     } = {}
   ) {
     return getConductorPreflight({
@@ -142,6 +143,7 @@ describe('getConductorPreflight', () => {
       goalId: options.goalId ?? null,
       failedTickets: options.failed ?? {},
       approvedTickets: options.approved ?? [],
+      goalDependencies: options.goalDependencies ?? [],
     });
   }
 
@@ -158,6 +160,7 @@ describe('getConductorPreflight', () => {
       exhausted: 0,
       stationGoals: 0,
       stationGoalsReady: 0,
+      stationGoalsBlocked: 0,
     });
   });
 
@@ -264,6 +267,41 @@ describe('getConductorPreflight', () => {
       }
     );
     expect(result).toMatchObject({ ready: 0, blocked: 1 });
+  });
+
+  it('counts a ticket whose goal is held by a dependency as blocked, not ready', () => {
+    const goals = [
+      makeGoal({ id: 'base', status: 'active' }),
+      makeGoal({ id: 'g1', status: 'active' }),
+    ];
+    const result = preflight([makeTicket({ id: 'a', goalId: 'g1' })], {
+      goals,
+      goalDependencies: [
+        { id: 'e1', goalId: 'g1', dependsOnGoalId: 'base', createdAt: '2026-01-01 00:00:00' },
+      ],
+    });
+    expect(result).toMatchObject({ ready: 0, blocked: 1 });
+  });
+
+  it('counts a stations goal held by a dependency separately from ready ones', () => {
+    const goals = [
+      makeGoal({ id: 'base', status: 'active' }),
+      makeGoal({ id: 'g1', status: 'active', workMode: 'stations' }),
+    ];
+    const stations = [makeStation({ id: 's1', goalId: 'g1' })];
+    const result = getConductorPreflight({
+      tickets: [],
+      dependencies: [],
+      goals,
+      goalId: 'g1',
+      failedTickets: {},
+      approvedTickets: [],
+      stations,
+      goalDependencies: [
+        { id: 'e1', goalId: 'g1', dependsOnGoalId: 'base', createdAt: '2026-01-01 00:00:00' },
+      ],
+    });
+    expect(result).toMatchObject({ stationGoals: 1, stationGoalsReady: 0, stationGoalsBlocked: 1 });
   });
 });
 
@@ -1893,18 +1931,19 @@ describe('conductor on a stations goal (no tickets)', () => {
     });
   });
 
-  /** The IDE started the requested agent and it has since finished. */
-  function answerRequestAndFinish(agentId: string) {
+  /** Every goal agent the conductor spawned has since stopped. */
+  function finishGoalAgents() {
     store.setState({
-      notifications: store
-        .getState()
-        .notifications.map((n) =>
-          isLaunchRequest(n)
-            ? { ...n, answeredAt: '2026-09-27 10:01:00', answer: `agent:${agentId}` }
-            : n
-        ),
+      agents: store.getState().agents.map((a) => ({ ...a, status: 'idle' as const })),
     });
   }
+
+  /** Goals the conductor spawned a goal agent for (ticket agents carry a ticket id). */
+  const spawnedGoalIds = () =>
+    vi
+      .mocked(spawnAgent)
+      .mock.calls.filter(([config]) => !config.spawnedByTicketId)
+      .map(([config]) => config.spawnedByGoalId);
 
   describe('preflight', () => {
     function stationPreflight(goalId: string | null) {
@@ -1948,52 +1987,53 @@ describe('conductor on a stations goal (no tickets)', () => {
     });
   });
 
-  it('asks for a goal agent through a launch request instead of spawning one', async () => {
+  it('spawns a headless goal agent itself, without a launch request', async () => {
     store.getState().startConductor('g1');
     await store.getState().conductorTick();
 
-    expect(spawnAgent).not.toHaveBeenCalled();
-    expect(store.getState().agents).toHaveLength(0);
-    const requests = launchRequests();
-    expect(requests).toHaveLength(1);
-    const request = requests[0];
-    // The same row MCP request_agent_launch writes: foreign, so only a click
-    // or a launch grant starts it, and its folder is the project root.
-    expect(request).toMatchObject({
-      source: 'agent',
-      refKind: 'goal',
-      refId: 'g1',
+    // Pressing Start is the approval: no inbox row waits for a second click.
+    expect(launchRequests()).toHaveLength(0);
+    expect(spawnAgent).toHaveBeenCalledTimes(1);
+    const config = vi.mocked(spawnAgent).mock.calls[0][0];
+    expect(config).toMatchObject({
+      headless: true,
+      spawnedByGoalId: 'g1',
+      runSource: 'conductor',
       projectPath: '/repo',
+      cwd: '/repo',
     });
-    expect(request.dedupeKey).toBe(`agent-launch:${request.uid}`);
-    expect(isLaunchRequest(store.getState().notifications[0])).toBe(true);
-    const [action] = request.actions ?? [];
-    expect(action).toMatchObject({ kind: 'spawn-agent', repoPath: '/repo', goalId: 'g1' });
-    const task = (action as { task: string }).task;
-    expect(task).toContain('Work mode: stations');
-    expect(task).toContain('mark_station_done');
-    expect(task).not.toContain('create_ticket');
+    expect(config.task).toContain('Work mode: stations');
+    expect(config.task).toContain('mark_station_done');
+    expect(config.task).not.toContain('create_ticket');
     expect(store.getState().conductorRunning).toBe(true);
     expect(store.getState().conductorRunSpawned).toBe(1);
     expect(store.getState().conductorDecisions[0]).toMatchObject({ action: 'spawn' });
   });
 
-  it('passes the conductor provider and model on to the request', async () => {
+  it('passes the conductor provider and model on to the goal agent', async () => {
     store.setState({ conductorProviderId: 'codex', conductorModel: 'gpt-5-codex' });
     store.getState().startConductor('g1');
     await store.getState().conductorTick();
-    expect(launchRequests()[0].actions?.[0]).toMatchObject({
+    expect(vi.mocked(spawnAgent).mock.calls[0][0]).toMatchObject({
       provider: 'codex',
       model: 'gpt-5-codex',
     });
   });
 
-  it('writes one request per goal while it is open', async () => {
+  it('spawns one agent per goal while it runs', async () => {
     store.getState().startConductor('g1');
     await store.getState().conductorTick();
     await store.getState().conductorTick();
-    expect(launchRequests()).toHaveLength(1);
+    expect(spawnAgent).toHaveBeenCalledTimes(1);
     expect(store.getState().conductorRunning).toBe(true);
+  });
+
+  it('counts a failed spawn as a used attempt', async () => {
+    vi.mocked(spawnAgent).mockRejectedValueOnce(new Error('no harness'));
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    expect(store.getState().conductorGoalAttempts.g1).toBe(1);
+    expect(store.getState().conductorDecisions[0]).toMatchObject({ action: 'fail' });
   });
 
   it('reuses an open request an agent already wrote over MCP', async () => {
@@ -2013,6 +2053,7 @@ describe('conductor on a stations goal (no tickets)', () => {
     store.getState().startConductor('g1');
     await store.getState().conductorTick();
     expect(launchRequests()).toHaveLength(0);
+    expect(spawnAgent).not.toHaveBeenCalled();
     expect(store.getState().conductorRunning).toBe(true);
   });
 
@@ -2033,19 +2074,20 @@ describe('conductor on a stations goal (no tickets)', () => {
     store.getState().startConductor('g1');
     await store.getState().conductorTick();
     expect(launchRequests()).toHaveLength(0);
+    expect(spawnAgent).not.toHaveBeenCalled();
     expect(store.getState().conductorRunning).toBe(true);
   });
 
-  it('asks again once the agent ended with stations open, then stops out of attempts', async () => {
+  it('spawns again once the agent ended with stations open, then stops out of attempts', async () => {
     store.getState().startConductor('g1');
     for (let attempt = 1; attempt <= MAX_TICKET_ATTEMPTS; attempt++) {
       await store.getState().conductorTick();
-      expect(launchRequests()).toHaveLength(attempt);
-      answerRequestAndFinish(`agent-${attempt}`);
+      expect(spawnAgent).toHaveBeenCalledTimes(attempt);
+      finishGoalAgents();
     }
     await store.getState().conductorTick();
 
-    expect(launchRequests()).toHaveLength(MAX_TICKET_ATTEMPTS);
+    expect(spawnAgent).toHaveBeenCalledTimes(MAX_TICKET_ATTEMPTS);
     // A retry is not a new goal: the budget counts the goal once.
     expect(store.getState().conductorRunSpawned).toBe(1);
     expect(store.getState().conductorRunning).toBe(false);
@@ -2063,6 +2105,7 @@ describe('conductor on a stations goal (no tickets)', () => {
     store.getState().startConductor('g1');
     await store.getState().conductorTick();
     expect(launchRequests()).toHaveLength(0);
+    expect(spawnAgent).not.toHaveBeenCalled();
     expect(store.getState().conductorRunning).toBe(true);
   });
 
@@ -2108,7 +2151,7 @@ describe('conductor on a stations goal (no tickets)', () => {
     });
     store.getState().startConductor('root', { ticketBudget: 1 });
     await store.getState().conductorTick();
-    expect(launchRequests().map((n) => n.refId)).toEqual(['a']);
+    expect(spawnedGoalIds()).toEqual(['a']);
   });
 
   it('counts goal agents in flight against the concurrency limit', async () => {
@@ -2127,7 +2170,7 @@ describe('conductor on a stations goal (no tickets)', () => {
     store.getState().startConductor('root');
     await store.getState().conductorTick();
     await store.getState().conductorTick();
-    expect(launchRequests().map((n) => n.refId)).toEqual(['a']);
+    expect(spawnedGoalIds()).toEqual(['a']);
   });
 
   it('never gives the tickets of a stations goal to ticket agents (mixed tree)', async () => {
@@ -2145,7 +2188,7 @@ describe('conductor on a stations goal (no tickets)', () => {
     });
     store.getState().startConductor('root');
     await store.getState().conductorTick();
-    expect(launchRequests().map((n) => n.refId)).toEqual(['st']);
+    expect(spawnedGoalIds()).toEqual(['st']);
     expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t-tk']);
   });
 
@@ -2195,5 +2238,477 @@ describe('conductor on a stations goal (no tickets)', () => {
     await store.getState().conductorTick();
     expect(launchRequests()).toHaveLength(0);
     expect(Object.keys(store.getState().conductorAssignments)).toEqual(['t1']);
+  });
+});
+
+// A -> [bundle B + C] -> D: B and C each depend on A directly (a dependency
+// onto a bundle member does not, by itself, spread to that member's bundle
+// mates — only the target side of an edge expands to the whole bundle, see
+// goalDependencies.ts), and D depends on B, which the target-side expansion
+// turns into "D waits for the whole bundle".
+describe('conductor scoped to a goal tree with dependencies and a bundle', () => {
+  let store: StoreApi<StoreState>;
+
+  function dep(goalId: string, dependsOnGoalId: string) {
+    return {
+      id: `${goalId}->${dependsOnGoalId}`,
+      goalId,
+      dependsOnGoalId,
+      createdAt: '2026-01-01 00:00:00',
+    };
+  }
+
+  /** As if the ticket's agent had just finished: done, and its slot freed. */
+  function finishTicket(id: string) {
+    store.getState().updateTicket(id, { status: 'done' });
+    store.setState((s) => {
+      const { [id]: _released, ...rest } = s.conductorAssignments;
+      return { conductorAssignments: rest };
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentCounter = 0;
+    // @ts-expect-error - Partial store for testing
+    store = createStore<StoreState>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createGoalsSlice(...a),
+      ...createPmSlice(...a),
+      ...createConductorSlice(...a),
+    }));
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', status: 'in_progress' }),
+        makeGoal({ id: 'A', parentId: 'P', status: 'active', name: 'A' }),
+        makeGoal({ id: 'B', parentId: 'P', status: 'active', name: 'B', bundle: 'x' }),
+        makeGoal({ id: 'C', parentId: 'P', status: 'active', name: 'C', bundle: 'x' }),
+        makeGoal({ id: 'D', parentId: 'P', status: 'active', name: 'D' }),
+      ],
+      goalDependenciesDraft: [dep('B', 'A'), dep('C', 'A'), dep('D', 'B')],
+      pmDraftTickets: [
+        makeTicket({ id: 'ta', goalId: 'A' }),
+        makeTicket({ id: 'tb', goalId: 'B' }),
+        makeTicket({ id: 'tc', goalId: 'C' }),
+        makeTicket({ id: 'td', goalId: 'D' }),
+      ],
+      conductorMaxConcurrent: 10,
+    });
+  });
+
+  it('spawns only A while B, C and D wait on their dependency', async () => {
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(Object.keys(store.getState().conductorAssignments)).toEqual(['ta']);
+  });
+
+  it('spawns B and C once A is achieved, but not D', async () => {
+    store.getState().startConductor('P');
+    await store.getState().conductorTick(); // spawns A
+    finishTicket('ta');
+    store.getState().achieveGoal('A');
+    await store.getState().conductorTick();
+    expect(Object.keys(store.getState().conductorAssignments).sort()).toEqual(['tb', 'tc']);
+  });
+
+  it('spawns D only once both B and C are achieved, not on B alone', async () => {
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    finishTicket('ta');
+    store.getState().achieveGoal('A');
+    await store.getState().conductorTick(); // spawns B and C
+
+    finishTicket('tb');
+    store.getState().achieveGoal('B');
+    await store.getState().conductorTick();
+    expect(store.getState().conductorAssignments['td']).toBeUndefined();
+
+    finishTicket('tc');
+    store.getState().achieveGoal('C');
+    await store.getState().conductorTick();
+    expect(Object.keys(store.getState().conductorAssignments)).toContain('td');
+  });
+});
+
+describe('conductor auto-achieves a bundle together, never one alone', () => {
+  let store: StoreApi<StoreState>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentCounter = 0;
+    // @ts-expect-error - Partial store for testing
+    store = createStore<StoreState>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createGoalsSlice(...a),
+      ...createPmSlice(...a),
+      ...createConductorSlice(...a),
+    }));
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', status: 'in_progress' }),
+        makeGoal({ id: 'B', parentId: 'P', status: 'active', bundle: 'x' }),
+        makeGoal({ id: 'C', parentId: 'P', status: 'active', bundle: 'x' }),
+      ],
+    });
+  });
+
+  it('does not achieve one member while its mate is still open work', async () => {
+    store.setState({
+      pmDraftTickets: [
+        makeTicket({ id: 'tb', goalId: 'B', status: 'done' }),
+        makeTicket({ id: 'tc', goalId: 'C', status: 'open' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(store.getState().goalsDraft.find((g) => g.id === 'B')?.status).not.toBe('achieved');
+    expect(store.getState().goalsDraft.find((g) => g.id === 'C')?.status).not.toBe('achieved');
+  });
+
+  // QA H2/M1: a mate only gets achieved if it could itself close by the same
+  // rule as the run's own target — not failed, not in review, no agent still
+  // running on it. Otherwise the whole bundle stays open, even though the
+  // other mate's own conditions (its ticket) are done.
+  for (const mateStatus of ['failed', 'in_review'] as const) {
+    it(`does not achieve a bundle while a mate is ${mateStatus}, even with its own ticket done`, async () => {
+      store.setState({
+        goalsDraft: [
+          makeGoal({ id: 'P', status: 'in_progress' }),
+          makeGoal({ id: 'B', parentId: 'P', status: 'active', bundle: 'x' }),
+          makeGoal({ id: 'C', parentId: 'P', status: mateStatus, bundle: 'x' }),
+        ],
+        pmDraftTickets: [
+          makeTicket({ id: 'tb', goalId: 'B', status: 'done' }),
+          makeTicket({ id: 'tc', goalId: 'C', status: 'done' }),
+        ],
+      });
+      // Scoped directly at B: its own conditions (ticket done) are met and
+      // its bundleHold on C is clear (C's ticket is done too — bundleHold
+      // does not look at status), so completion.achievable is true and the
+      // run reaches the bundle-closeability check, not a generic
+      // children-not-achieved block.
+      store.getState().startConductor('B');
+      await store.getState().conductorTick();
+      expect(store.getState().goalsDraft.find((g) => g.id === 'B')?.status).not.toBe('achieved');
+      expect(store.getState().goalsDraft.find((g) => g.id === 'C')?.status).toBe(mateStatus);
+      expect(store.getState().conductorLastRun?.blockers.join(' ')).toContain(
+        mateStatus === 'failed' ? 'failed' : 'in review'
+      );
+    });
+  }
+
+  it('does not achieve a bundle while an agent still runs on an out-of-scope mate', async () => {
+    // C sits outside the run's own scope (a root-level sibling of P), the way
+    // the run's own target can be bundled with a goal it never visits.
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', status: 'in_progress', bundle: 'x' }),
+        makeGoal({ id: 'C', status: 'active', bundle: 'x' }),
+      ],
+      pmDraftTickets: [
+        makeTicket({ id: 'tp', goalId: 'P', status: 'done' }),
+        makeTicket({ id: 'tc', goalId: 'C', status: 'done' }),
+      ],
+      agents: [
+        {
+          id: 'agent-c',
+          name: 'Agent',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          spawnedByGoalId: 'C',
+        },
+      ],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(store.getState().goalsDraft.find((g) => g.id === 'P')?.status).not.toBe('achieved');
+    expect(store.getState().goalsDraft.find((g) => g.id === 'C')?.status).not.toBe('achieved');
+  });
+
+  it('achieves the bundle once every member is itself closeable', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', status: 'in_progress' }),
+        makeGoal({ id: 'B', parentId: 'P', status: 'active', bundle: 'x' }),
+        makeGoal({ id: 'C', parentId: 'P', status: 'active', bundle: 'x' }),
+      ],
+      pmDraftTickets: [
+        makeTicket({ id: 'tb', goalId: 'B', status: 'done' }),
+        makeTicket({ id: 'tc', goalId: 'C', status: 'done' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(store.getState().goalsDraft.find((g) => g.id === 'B')?.status).toBe('achieved');
+    expect(store.getState().goalsDraft.find((g) => g.id === 'C')?.status).toBe('achieved');
+  });
+});
+
+// Started on a mission root, the conductor is meant to need nobody until the
+// tree is done: drafts are the plan it was just told to carry out, a finished
+// child is closed as soon as it is finished so the next one in the chain can
+// start in the same run, and a goal with no line yet gets one planned.
+describe('conductor works a goal tree unattended', () => {
+  let store: StoreApi<StoreState>;
+
+  const dep = (goalId: string, dependsOnGoalId: string): PmGoalDependency => ({
+    id: `${goalId}->${dependsOnGoalId}`,
+    goalId,
+    dependsOnGoalId,
+    createdAt: '2026-01-01 00:00:00',
+  });
+
+  const statusOf = (id: string) => store.getState().goalsDraft.find((g) => g.id === id)?.status;
+
+  /** As if the ticket's agent had just finished: stopped, ticket done, slot freed. */
+  function finishTicket(id: string) {
+    store.getState().updateTicket(id, { status: 'done' });
+    store.setState((s) => {
+      const { [id]: _released, ...rest } = s.conductorAssignments;
+      return {
+        conductorAssignments: rest,
+        agents: s.agents.map((a) =>
+          a.spawnedByTicketId === id ? { ...a, status: 'idle' as const } : a
+        ),
+      };
+    });
+  }
+
+  function finishGoalAgents() {
+    store.setState({
+      agents: store.getState().agents.map((a) => ({ ...a, status: 'idle' as const })),
+    });
+  }
+
+  const spawnConfigs = () => vi.mocked(spawnAgent).mock.calls.map(([config]) => config);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentCounter = 0;
+    // @ts-expect-error - Partial store for testing
+    store = createStore<StoreState>()((...a) => ({
+      ...createAgentSlice(...a),
+      ...createGoalsSlice(...a),
+      ...createPmSlice(...a),
+      ...createConductorSlice(...a),
+      rootPath: '/repo',
+      judgeLlmConfigured: false,
+      notifications: [] as Notification[],
+      dispatchNotification: async () => null,
+    }));
+    store.setState({ conductorMaxConcurrent: 10, pmDraftTickets: [], goalStationsDraft: [] });
+  });
+
+  it('activates the draft goals of the tree it is started on, and nothing else', () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', status: 'draft' }),
+        makeGoal({ id: 'A', parentId: 'P', status: 'draft' }),
+        makeGoal({ id: 'F', parentId: 'P', status: 'failed' }),
+        makeGoal({ id: 'X', parentId: 'P', status: 'archived' }),
+        makeGoal({ id: 'other', status: 'draft' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    expect(statusOf('P')).toBe('active');
+    expect(statusOf('A')).toBe('active');
+    expect(statusOf('F')).toBe('failed');
+    expect(statusOf('X')).toBe('archived');
+    expect(statusOf('other')).toBe('draft');
+    expect(store.getState().conductorDecisions.some((d) => d.detail.includes('draft'))).toBe(true);
+  });
+
+  it('runs a dependency chain of draft goals to the end in one run', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', status: 'draft', name: 'Mission' }),
+        makeGoal({ id: 'A', parentId: 'P', status: 'draft', name: 'A' }),
+        makeGoal({ id: 'B', parentId: 'P', status: 'draft', name: 'B', sortOrder: 1 }),
+      ],
+      goalDependenciesDraft: [dep('B', 'A')],
+      pmDraftTickets: [
+        makeTicket({ id: 'ta', goalId: 'A' }),
+        makeTicket({ id: 'tb', goalId: 'B' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(Object.keys(store.getState().conductorAssignments)).toEqual(['ta']);
+
+    finishTicket('ta');
+    await store.getState().conductorTick();
+    // A is closed the moment it is finished, which releases B in the same tick.
+    expect(statusOf('A')).toBe('achieved');
+    expect(Object.keys(store.getState().conductorAssignments)).toEqual(['tb']);
+
+    finishTicket('tb');
+    await store.getState().conductorTick();
+    expect(statusOf('B')).toBe('achieved');
+    expect(statusOf('P')).toBe('achieved');
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_achieved');
+  });
+
+  it('ends blocked instead of idling when the goal a chain waits on is out of attempts', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', name: 'Mission' }),
+        makeGoal({ id: 'A', parentId: 'P', name: 'A' }),
+        makeGoal({ id: 'B', parentId: 'P', name: 'B', sortOrder: 1 }),
+      ],
+      goalDependenciesDraft: [dep('B', 'A')],
+      pmDraftTickets: [
+        makeTicket({ id: 'ta', goalId: 'A' }),
+        makeTicket({ id: 'tb', goalId: 'B' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    store.setState({ conductorFailedTickets: { ta: MAX_TICKET_ATTEMPTS } });
+    await store.getState().conductorTick();
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(store.getState().conductorRunning).toBe(false);
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+    // "Ticket is open" alone does not say WHY nothing happened — B's own
+    // ticket was never even attempted because B itself waits on A.
+    expect(store.getState().conductorLastRun?.blockers).toContain('Goal "B" waits for A');
+  });
+
+  it('ends blocked and names the wait when the predecessor itself failed', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', name: 'Mission' }),
+        makeGoal({ id: 'A', parentId: 'P', name: 'A', status: 'failed' }),
+        makeGoal({ id: 'B', parentId: 'P', name: 'B', sortOrder: 1 }),
+      ],
+      goalDependenciesDraft: [dep('B', 'A')],
+      pmDraftTickets: [
+        makeTicket({ id: 'ta', goalId: 'A', status: 'done' }),
+        makeTicket({ id: 'tb', goalId: 'B' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+    expect(store.getState().conductorLastRun?.blockers).toContain('Goal "B" waits for A');
+  });
+
+  it('ends blocked and names the wait when the run is started on a goal that itself waits on an outside sibling', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'S', name: 'Sibling', status: 'in_progress' }),
+        makeGoal({ id: 'R', name: 'Root' }),
+      ],
+      goalDependenciesDraft: [dep('R', 'S')],
+      pmDraftTickets: [makeTicket({ id: 'tr', goalId: 'R' })],
+    });
+    store.getState().startConductor('R');
+    await store.getState().conductorTick();
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+    expect(store.getState().conductorLastRun?.blockers).toContain('Goal "Root" waits for Sibling');
+  });
+
+  it('does not close a goal while its own agent is still running', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', name: 'Mission' }),
+        makeGoal({ id: 'A', parentId: 'P', name: 'A' }),
+      ],
+      goalStationsDraft: [
+        makeStation({
+          id: 'sa',
+          goalId: 'A',
+          ticketId: null,
+          status: 'done',
+          evidenceKind: 'judged',
+        }),
+      ],
+      agents: [
+        {
+          id: 'goal-agent',
+          name: 'Goal agent',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          spawnedByGoalId: 'A',
+        },
+      ],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(statusOf('A')).toBe('active');
+    expect(store.getState().conductorRunning).toBe(true);
+
+    finishGoalAgents();
+    await store.getState().conductorTick();
+    expect(statusOf('A')).toBe('achieved');
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_achieved');
+  });
+
+  it('plans a goal that has no line yet, then works the line it got', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', name: 'Mission' }),
+        makeGoal({ id: 'E', parentId: 'P', name: 'Empty' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(spawnConfigs()).toHaveLength(1);
+    expect(spawnConfigs()[0]).toMatchObject({
+      headless: true,
+      spawnedByGoalId: 'E',
+      runSource: 'conductor',
+    });
+    expect(spawnConfigs()[0].task).toContain('get_goal (id: "E")');
+    expect(spawnConfigs()[0].task).toContain('create_stations');
+
+    // The planner left a line behind and stopped.
+    store.setState({
+      goalStationsDraft: [makeStation({ id: 'se', goalId: 'E', ticketId: null })],
+    });
+    finishGoalAgents();
+    await store.getState().conductorTick();
+    expect(spawnConfigs()).toHaveLength(2);
+    expect(spawnConfigs()[1].spawnedByGoalId).toBe('E');
+    expect(spawnConfigs()[1].task).toContain('Work mode: stations');
+  });
+
+  it('stops blocked when planning a goal leaves it empty every time', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', name: 'Mission' }),
+        makeGoal({ id: 'E', parentId: 'P', name: 'Empty' }),
+      ],
+    });
+    store.getState().startConductor('P');
+    for (let attempt = 1; attempt <= MAX_TICKET_ATTEMPTS; attempt++) {
+      await store.getState().conductorTick();
+      expect(spawnAgent).toHaveBeenCalledTimes(attempt);
+      finishGoalAgents();
+    }
+    await store.getState().conductorTick();
+    expect(spawnAgent).toHaveBeenCalledTimes(MAX_TICKET_ATTEMPTS);
+    // A retry plans the same goal: the budget counts it once.
+    expect(store.getState().conductorRunSpawned).toBe(1);
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+  });
+
+  it('does not plan a goal that is held by a dependency', async () => {
+    store.setState({
+      goalsDraft: [
+        makeGoal({ id: 'P', name: 'Mission' }),
+        makeGoal({ id: 'A', parentId: 'P', name: 'A' }),
+        makeGoal({ id: 'E', parentId: 'P', name: 'Empty', sortOrder: 1 }),
+      ],
+      goalDependenciesDraft: [dep('E', 'A')],
+      pmDraftTickets: [makeTicket({ id: 'ta', goalId: 'A' })],
+    });
+    store.getState().startConductor('P');
+    await store.getState().conductorTick();
+    expect(spawnConfigs().map((c) => c.spawnedByGoalId)).toEqual(['A']);
   });
 });

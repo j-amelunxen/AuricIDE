@@ -412,3 +412,75 @@ describe('GOAL_STATUS_STYLES', () => {
     expect(screen.getByTitle('In Review')).toBeTruthy();
   });
 });
+
+describe('GoalTree dependency chips', () => {
+  it('shows the bundle label on every member', () => {
+    const goals = [
+      makeGoal({ id: 'root' }),
+      makeGoal({ id: 'a', parentId: 'root', name: 'Backend', bundle: 'api' }),
+      makeGoal({ id: 'b', parentId: 'root', name: 'Contracts', bundle: 'api' }),
+    ];
+    render(<GoalTree goals={goals} tickets={[]} selectedId={null} onSelect={vi.fn()} />);
+    expect(screen.getByTestId('goal-bundle-chip-a')).toHaveTextContent('Bundle: api');
+    expect(screen.getByTestId('goal-bundle-chip-b')).toHaveTextContent('Bundle: api');
+  });
+
+  it('shows a waits-for chip on a goal blocked by a dependency', () => {
+    const goals = [
+      makeGoal({ id: 'root' }),
+      makeGoal({ id: 'a', parentId: 'root', name: 'Backend' }),
+      makeGoal({ id: 'b', parentId: 'root', name: 'Frontend' }),
+    ];
+    const dependencies = [{ id: 'd1', goalId: 'b', dependsOnGoalId: 'a', createdAt: '' }];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        dependencies={dependencies}
+        selectedId={null}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('goal-blocked-chip-b')).toHaveTextContent('waits for Backend');
+    expect(screen.queryByTestId('goal-blocked-chip-a')).toBeNull();
+  });
+
+  it('clears the waits-for chip once the dependency is achieved', () => {
+    const goals = [
+      makeGoal({ id: 'root' }),
+      makeGoal({ id: 'a', parentId: 'root', name: 'Backend', status: 'achieved' }),
+      makeGoal({ id: 'b', parentId: 'root', name: 'Frontend' }),
+    ];
+    const dependencies = [{ id: 'd1', goalId: 'b', dependsOnGoalId: 'a', createdAt: '' }];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        dependencies={dependencies}
+        selectedId={null}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('goal-blocked-chip-b')).toBeNull();
+  });
+
+  it('names the bundle on the chip once the whole bundle is what is blocking', () => {
+    const goals = [
+      makeGoal({ id: 'root' }),
+      makeGoal({ id: 'a', parentId: 'root', name: 'Backend', bundle: 'api' }),
+      makeGoal({ id: 'b', parentId: 'root', name: 'Contracts', bundle: 'api' }),
+      makeGoal({ id: 'c', parentId: 'root', name: 'Frontend' }),
+    ];
+    const dependencies = [{ id: 'd1', goalId: 'c', dependsOnGoalId: 'a', createdAt: '' }];
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        dependencies={dependencies}
+        selectedId={null}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('goal-blocked-chip-c')).toHaveTextContent('waits for bundle api');
+  });
+});

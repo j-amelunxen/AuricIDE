@@ -1,4 +1,6 @@
 pub mod blueprints;
+pub mod goal_deps;
+pub mod goal_history;
 pub mod goals;
 pub mod kv;
 pub mod migrations;
@@ -12,6 +14,7 @@ pub mod types;
 mod tests;
 
 pub use blueprints::*;
+pub use goal_history::*;
 pub use goals::*;
 pub use kv::*;
 pub use migrations::*;

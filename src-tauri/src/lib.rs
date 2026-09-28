@@ -342,6 +342,7 @@ pub fn run() {
             pm_save,
             pm_load,
             pm_load_history,
+            goals_load_status_history,
             pm_clear,
             pm_latest_ticket_review,
             agent_prompt_history_add,

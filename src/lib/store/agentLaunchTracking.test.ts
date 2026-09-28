@@ -437,6 +437,7 @@ describe('the goal run of a launch request is stored at once', () => {
       goalRuns: [...saved.values()],
       requirementLinks: [],
       stations: [],
+      dependencies: [],
     });
     // @ts-expect-error - Partial store for testing (only agent+goals slices)
     const restarted = createStore<StoreState>()((...a) => ({

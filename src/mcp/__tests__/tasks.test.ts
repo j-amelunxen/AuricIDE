@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import type { StatusHistoryEntry } from '../tools/history';
 import { completeTask, fetchNextUnblockedTask } from '../tools/tasks';
+import { addGoalDependency, createGoal, linkTicketToGoal } from '../tools/goalsDb';
 import { createTestDb } from '../db';
 
 interface SeedTicketOptions {
@@ -247,6 +248,44 @@ describe('task tools', () => {
       const result = fetchNextUnblockedTask(db);
       expect(result).not.toBeNull();
       expect(result!.id).toBe('normal');
+    });
+
+    it('skips a ticket whose goal is blocked by a goal dependency', () => {
+      const blockerGoal = createGoal(db, { name: 'Blocker goal', status: 'active' }, 'mcp');
+      const blockedGoal = createGoal(
+        db,
+        { name: 'Blocked goal', status: 'active', dependsOn: [blockerGoal.id] },
+        'mcp'
+      );
+      seedTicket(db, {
+        id: 'goal-blocked',
+        epicId: 'epic-1',
+        name: 'On a blocked goal',
+        priority: 'critical',
+      });
+      linkTicketToGoal(db, 'goal-blocked', blockedGoal.id);
+      seedTicket(db, { id: 'plain', epicId: 'epic-1', name: 'Not on a goal', priority: 'low' });
+
+      const result = fetchNextUnblockedTask(db);
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('plain');
+    });
+
+    it('returns a goal-linked ticket once its goal dependency releases it', () => {
+      const blockerGoal = createGoal(db, { name: 'Blocker goal', status: 'achieved' }, 'mcp');
+      const blockedGoal = createGoal(db, { name: 'Now free goal', status: 'active' }, 'mcp');
+      addGoalDependency(db, blockedGoal.id, blockerGoal.id);
+      seedTicket(db, {
+        id: 'goal-ticket',
+        epicId: 'epic-1',
+        name: 'On a now-unblocked goal',
+        priority: 'critical',
+      });
+      linkTicketToGoal(db, 'goal-ticket', blockedGoal.id);
+
+      const result = fetchNextUnblockedTask(db);
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('goal-ticket');
     });
 
     it('logs history entry (open -> in_progress) when fetching unblocked', () => {

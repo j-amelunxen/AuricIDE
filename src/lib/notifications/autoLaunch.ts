@@ -1,4 +1,6 @@
 import { isFreshOccurrence } from '@/lib/conductor/scheduledRun';
+import { describeDependencyBlock } from '@/lib/store/goals/goalDependencyAdapters';
+import type { PmGoal, PmGoalDependency } from '@/lib/tauri/goals';
 import { decideLaunch } from './launchGate';
 import { isLaunchRequest } from './launchRequest';
 import type { LaunchGrant } from './launchGrants';
@@ -50,6 +52,22 @@ export function autoAgentLaunches(
   }
 
   return launches;
+}
+
+/**
+ * Why an automatic goal launch must wait, or null when it may proceed. Only
+ * `spawn-agent` actions carry a `goalId`; a `run-skill` action is never a goal
+ * launch and is never held back by this. The reason is the same "waits for
+ * <name>" wording `describeDependencyBlock` gives the run-blocked report, so
+ * a toast and a run summary never disagree about why.
+ */
+export function goalLaunchBlockReason(
+  goals: readonly PmGoal[],
+  goalDependencies: readonly PmGoalDependency[],
+  action: AutoAgentAction
+): string | null {
+  if (action.kind !== 'spawn-agent' || !action.goalId) return null;
+  return describeDependencyBlock(goals, goalDependencies, action.goalId);
 }
 
 type SpawnAgentAction = Extract<NotificationAction, { kind: 'spawn-agent' }>;

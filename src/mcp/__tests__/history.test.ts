@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
-import { insertStatusHistory, listStatusHistory } from '../tools/history';
+import {
+  insertGoalStatusHistory,
+  insertStatusHistory,
+  listGoalStatusHistory,
+  listStatusHistory,
+} from '../tools/history';
 import { createTestDb } from '../db';
 
 function seedEpic(db: Database.Database, id: string, name: string): void {
@@ -117,5 +122,51 @@ describe('history tools', () => {
       expect(result[0]).toHaveProperty('changed_at');
       expect(result[0]).toHaveProperty('source');
     });
+  });
+});
+
+describe('goal status history', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = createTestDb();
+    db.prepare('INSERT INTO pm_goals (id, name) VALUES (?, ?)').run('goal-1', 'Goal One');
+    db.prepare('INSERT INTO pm_goals (id, name) VALUES (?, ?)').run('goal-2', 'Goal Two');
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('writes a transition and lists it for its goal only', () => {
+    insertGoalStatusHistory(db, 'goal-1', null, 'draft', 'mcp');
+    insertGoalStatusHistory(db, 'goal-1', 'draft', 'active', 'mcp');
+    insertGoalStatusHistory(db, 'goal-2', null, 'active', 'mcp');
+
+    const rows = listGoalStatusHistory(db, 'goal-1');
+    expect(rows.map((r) => [r.from_status, r.to_status, r.source])).toEqual([
+      [null, 'draft', 'mcp'],
+      ['draft', 'active', 'mcp'],
+    ]);
+    expect(listGoalStatusHistory(db)).toHaveLength(3);
+  });
+
+  it('keeps insertion order for changes within the same second', () => {
+    insertGoalStatusHistory(db, 'goal-1', 'in_progress', 'in_review', 'mcp');
+    insertGoalStatusHistory(db, 'goal-1', 'in_review', 'in_progress', 'mcp');
+    insertGoalStatusHistory(db, 'goal-1', 'in_progress', 'in_review', 'mcp');
+
+    expect(listGoalStatusHistory(db, 'goal-1').map((r) => r.to_status)).toEqual([
+      'in_review',
+      'in_progress',
+      'in_review',
+    ]);
+  });
+
+  it('drops a goal history with the goal', () => {
+    db.pragma('foreign_keys = ON');
+    insertGoalStatusHistory(db, 'goal-1', null, 'draft', 'mcp');
+    db.prepare('DELETE FROM pm_goals WHERE id = ?').run('goal-1');
+    expect(listGoalStatusHistory(db)).toHaveLength(0);
   });
 });

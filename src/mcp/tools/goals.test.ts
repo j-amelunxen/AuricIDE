@@ -15,6 +15,11 @@ import {
   completeGoalRun,
   listGoalRuns,
   evaluateGoal,
+  addGoalDependency,
+  removeGoalDependency,
+  listGoalDependencies,
+  goalDependsOnIds,
+  goalBlockedByInfo,
 } from './goals';
 import { createTestDb } from '../db';
 
@@ -486,6 +491,393 @@ describe('goal MCP tools', () => {
       const result = evaluateGoal(db, g.id);
       expect(result.satisfied).toBe(false);
       expect(result.blockers.join(' ')).toContain('Add work before running the conductor');
+    });
+
+    it('holds a satisfied bundle member back until every member is satisfied', () => {
+      const parent = createGoal(db, { name: 'Parent' }, 'mcp');
+      const a = createGoal(
+        db,
+        { name: 'A', parentId: parent.id, status: 'active', bundle: 'AB' },
+        'mcp'
+      );
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', bundle: 'AB' },
+        'mcp'
+      );
+      insertEpicAndTicket(db, 'ta', 'done');
+      linkTicketToGoal(db, 'ta', a.id);
+      insertEpicAndTicket(db, 'tb', 'open');
+      linkTicketToGoal(db, 'tb', b.id);
+
+      const resultA = evaluateGoal(db, a.id);
+      expect(resultA.satisfied).toBe(false);
+      expect(resultA.blockers).toEqual(['Bundle "AB": waiting for B']);
+
+      const resultB = evaluateGoal(db, b.id);
+      expect(resultB.satisfied).toBe(false);
+      expect(resultB.blockers.join(' ')).toContain('Ticket tb');
+    });
+
+    it('reports a bundle member satisfied once every member is', () => {
+      const parent = createGoal(db, { name: 'Parent' }, 'mcp');
+      const a = createGoal(
+        db,
+        { name: 'A', parentId: parent.id, status: 'active', bundle: 'AB' },
+        'mcp'
+      );
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', bundle: 'AB' },
+        'mcp'
+      );
+      insertEpicAndTicket(db, 'ta', 'done');
+      linkTicketToGoal(db, 'ta', a.id);
+      insertEpicAndTicket(db, 'tb', 'done');
+      linkTicketToGoal(db, 'tb', b.id);
+
+      expect(evaluateGoal(db, a.id).satisfied).toBe(true);
+      expect(evaluateGoal(db, b.id).satisfied).toBe(true);
+    });
+  });
+
+  describe('bundle and dependsOn on create/update', () => {
+    it('normalizes a blank bundle to null', () => {
+      const g = createGoal(db, { name: 'G', bundle: '  ' }, 'mcp');
+      expect(g.bundle).toBeNull();
+    });
+
+    it('stores a trimmed bundle label', () => {
+      const g = createGoal(db, { name: 'G', bundle: ' team-a ' }, 'mcp');
+      expect(g.bundle).toBe('team-a');
+    });
+
+    it('clears a bundle on update with null', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const g = createGoal(db, { name: 'G', parentId: parent.id, bundle: 'x' }, 'mcp');
+      const updated = updateGoal(db, g.id, { bundle: null });
+      expect(updated.bundle).toBeNull();
+    });
+
+    it('resolves dependsOn by exact sibling name and blocks the goal', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', dependsOn: ['A'] },
+        'mcp'
+      );
+      expect(goalDependsOnIds(db, b.id)).toEqual([a.id]);
+      expect(goalBlockedByInfo(db, b.id)).toEqual([{ goalId: a.id, viaGoalId: b.id }]);
+    });
+
+    it('resolves dependsOn by goal id prefix', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', dependsOn: [a.id.slice(0, 8)] },
+        'mcp'
+      );
+      expect(goalDependsOnIds(db, b.id)).toEqual([a.id]);
+    });
+
+    it('rejects an unknown dependsOn reference and creates nothing', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      expect(() =>
+        createGoal(db, { name: 'B', parentId: parent.id, dependsOn: ['nope'] }, 'mcp')
+      ).toThrow(/Unknown dependsOn reference 'nope'/);
+      expect(listGoals(db, { parentId: parent.id })).toHaveLength(0);
+    });
+
+    it('rejects a dependsOn that would create a cycle and creates nothing', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', dependsOn: ['A'] },
+        'mcp'
+      );
+      expect(() => addGoalDependency(db, a.id, b.id)).toThrow(/Cycle:/);
+      expect(goalDependsOnIds(db, a.id)).toEqual([]);
+    });
+  });
+
+  describe('decomposeGoal with mode/keys/bundle', () => {
+    it('creates children after existing siblings with increasing sortOrder', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      createGoal(db, { name: 'Existing', parentId: parent.id }, 'mcp');
+      const children = decomposeGoal(db, parent.id, [{ name: 'X' }, { name: 'Y' }], 'mcp');
+      expect(children[0].sort_order).toBe(1);
+      expect(children[1].sort_order).toBe(2);
+    });
+
+    it('chains children in listed order under serial mode', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const [a, b, c] = decomposeGoal(
+        db,
+        parent.id,
+        [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+        'mcp',
+        'serial'
+      );
+      expect(goalDependsOnIds(db, a.id)).toEqual([]);
+      expect(goalDependsOnIds(db, b.id)).toEqual([a.id]);
+      expect(goalDependsOnIds(db, c.id)).toEqual([b.id]);
+    });
+
+    it('resolves dependsOn by key within the same call, forward references included', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const [a, b] = decomposeGoal(
+        db,
+        parent.id,
+        [
+          { name: 'First', key: 'A', dependsOn: ['B'] },
+          { name: 'Second', key: 'B' },
+        ],
+        'mcp'
+      );
+      expect(goalDependsOnIds(db, a.id)).toEqual([b.id]);
+    });
+
+    it('decomposes a parent into A -> [bundle B + C] -> D with waves [[A],[B,C],[D]]', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const [a, b, c, d] = decomposeGoal(
+        db,
+        parent.id,
+        [
+          { name: 'A', key: 'A' },
+          { name: 'B', key: 'B', bundle: 'BC', dependsOn: ['A'] },
+          { name: 'C', key: 'C', bundle: 'BC', dependsOn: ['A'] },
+          { name: 'D', key: 'D', dependsOn: ['B', 'C'] },
+        ],
+        'mcp'
+      );
+
+      const result = listGoalDependencies(db, { parentId: parent.id });
+      expect(result.waves).toEqual([[a.id], [b.id, c.id], [d.id]]);
+      expect(result.bundles).toEqual([{ label: 'BC', memberIds: [b.id, c.id] }]);
+      expect(result.blocked.map((x) => x.goalId).sort()).toEqual([b.id, c.id, d.id].sort());
+    });
+  });
+
+  describe('add_goal_dependency / remove_goal_dependency / list_goal_dependencies', () => {
+    it('adding the same edge twice is a no-op', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id }, 'mcp');
+      const b = createGoal(db, { name: 'B', parentId: parent.id }, 'mcp');
+      const first = addGoalDependency(db, b.id, a.id);
+      const second = addGoalDependency(db, b.id, a.id);
+      expect(second.id).toBe(first.id);
+      expect(listGoalDependencies(db, { goalId: b.id }).edges).toHaveLength(1);
+    });
+
+    it('rejects a self-dependency', () => {
+      const g = createGoal(db, { name: 'G' }, 'mcp');
+      expect(() => addGoalDependency(db, g.id, g.id)).toThrow(/cannot depend on itself/);
+    });
+
+    it('removes an edge and it no longer blocks', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(db, { name: 'B', parentId: parent.id, status: 'active' }, 'mcp');
+      addGoalDependency(db, b.id, a.id);
+      expect(goalBlockedByInfo(db, b.id)).toHaveLength(1);
+
+      const removed = removeGoalDependency(db, b.id, a.id);
+      expect(removed.removed).toBe(true);
+      expect(goalBlockedByInfo(db, b.id)).toHaveLength(0);
+    });
+
+    it('removing a non-existent edge reports removed: false', () => {
+      const a = createGoal(db, { name: 'A' }, 'mcp');
+      const b = createGoal(db, { name: 'B' }, 'mcp');
+      expect(removeGoalDependency(db, b.id, a.id)).toEqual({ removed: false });
+    });
+
+    it('cascades edge deletion when a goal is deleted', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(db, { name: 'B', parentId: parent.id, status: 'active' }, 'mcp');
+      addGoalDependency(db, b.id, a.id);
+
+      deleteGoal(db, a.id);
+
+      const row = db.prepare('SELECT COUNT(*) AS cnt FROM pm_goal_dependencies').get() as {
+        cnt: number;
+      };
+      expect(row.cnt).toBe(0);
+    });
+
+    it('list_goal_dependencies with neither scope returns every edge and blocked goal', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(db, { name: 'B', parentId: parent.id, status: 'active' }, 'mcp');
+      addGoalDependency(db, b.id, a.id);
+
+      const result = listGoalDependencies(db, {});
+      expect(result.edges).toHaveLength(1);
+      expect(result.waves).toBeUndefined();
+      expect(result.blocked).toEqual([
+        { goalId: b.id, blockers: [{ goalId: a.id, viaGoalId: b.id }] },
+      ]);
+    });
+  });
+
+  describe('get_goal / get_goal_tree enrichment', () => {
+    it('getGoalTree carries bundle, dependsOn and blockedBy on every node', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(
+        db,
+        { name: 'A', parentId: parent.id, status: 'active', bundle: 'x' },
+        'mcp'
+      );
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', dependsOn: ['A'] },
+        'mcp'
+      );
+
+      const [tree] = getGoalTree(db, parent.id);
+      const nodeA = tree.children.find((c) => c.id === a.id)!;
+      const nodeB = tree.children.find((c) => c.id === b.id)!;
+      expect(nodeA.bundle).toBe('x');
+      expect(nodeB.dependsOn).toEqual([a.id]);
+      expect(nodeB.blockedBy).toEqual([{ goalId: a.id, viaGoalId: b.id }]);
+    });
+  });
+
+  describe('QA fix round: introduced-errors, achieve/bundle guard, name-before-prefix, sortOrder', () => {
+    it('rejects update_goal bundle when it turns an existing edge same-bundle, and rolls back', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', dependsOn: ['A'] },
+        'mcp'
+      );
+      updateGoal(db, a.id, { bundle: 'x' });
+
+      expect(() => updateGoal(db, b.id, { bundle: 'x' })).toThrow(/same-bundle|same bundle/i);
+      expect(getGoal(db, b.id)?.bundle).toBeNull();
+    });
+
+    it('rejects update_goal parentId when it turns an edge into a descendant violation, and rolls back', () => {
+      const a = createGoal(db, { name: 'A' }, 'mcp');
+      const b = createGoal(db, { name: 'B', dependsOn: ['A'] }, 'mcp');
+
+      expect(() => updateGoal(db, a.id, { parentId: b.id })).toThrow(/descendant/);
+      expect(getGoal(db, a.id)?.parent_id).toBeNull();
+    });
+
+    it('does not reject update_goal bundle/parentId for a pre-existing, unrelated violation', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(db, { name: 'B', parentId: parent.id, status: 'active' }, 'mcp');
+      // Poison the table directly, bypassing validation (as an older build or
+      // a hand edit might have).
+      db.prepare(
+        `INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id, created_at)
+         VALUES (?, ?, ?, ?)`
+      ).run('poisoned', a.id, a.id, new Date().toISOString());
+
+      const c = createGoal(db, { name: 'C', parentId: parent.id, status: 'active' }, 'mcp');
+      expect(() => updateGoal(db, c.id, { bundle: 'y' })).not.toThrow();
+      expect(updateGoal(db, b.id, { parentId: parent.id }).parent_id).toBe(parent.id);
+    });
+
+    it('an old bad edge does not block a new, unrelated valid edge', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      db.prepare(
+        `INSERT INTO pm_goal_dependencies (id, goal_id, depends_on_goal_id, created_at)
+         VALUES (?, ?, ?, ?)`
+      ).run('poisoned', a.id, a.id, new Date().toISOString());
+
+      const c = createGoal(db, { name: 'C', parentId: parent.id, status: 'active' }, 'mcp');
+      expect(() =>
+        createGoal(db, { name: 'D', parentId: parent.id, dependsOn: [c.id] }, 'mcp')
+      ).not.toThrow();
+    });
+
+    it('rejects marking a bundle member achieved while a mate has not met its own conditions', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(
+        db,
+        { name: 'A', parentId: parent.id, status: 'active', bundle: 'x' },
+        'mcp'
+      );
+      createGoal(db, { name: 'B', parentId: parent.id, status: 'active', bundle: 'x' }, 'mcp');
+
+      expect(() => updateGoal(db, a.id, { status: 'achieved' })).toThrow(/waiting for B/);
+      expect(getGoal(db, a.id)?.status).toBe('active');
+    });
+
+    it('allows marking a bundle member achieved once every mate is satisfied', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const a = createGoal(
+        db,
+        { name: 'A', parentId: parent.id, status: 'active', bundle: 'x' },
+        'mcp'
+      );
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', bundle: 'x' },
+        'mcp'
+      );
+      insertEpicAndTicket(db, 'tb', 'done');
+      linkTicketToGoal(db, 'tb', b.id);
+
+      const updated = updateGoal(db, a.id, { status: 'achieved' });
+      expect(updated.status).toBe('achieved');
+    });
+
+    it("resolves a dependsOn ref by exact sibling name even when it matches another goal's id prefix", () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      const other = createGoal(db, { name: 'elsewhere' }, 'mcp');
+      const prefix = other.id.slice(0, 4);
+      const sibling = createGoal(
+        db,
+        { name: prefix, parentId: parent.id, status: 'active' },
+        'mcp'
+      );
+
+      const w = createGoal(
+        db,
+        { name: 'W', parentId: parent.id, status: 'active', dependsOn: [prefix] },
+        'mcp'
+      );
+      expect(goalDependsOnIds(db, w.id)).toEqual([sibling.id]);
+    });
+
+    it('rejects an ambiguous sibling name for dependsOn', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      createGoal(db, { name: 'dup', parentId: parent.id, status: 'active' }, 'mcp');
+      createGoal(db, { name: 'dup', parentId: parent.id, status: 'active' }, 'mcp');
+
+      expect(() =>
+        createGoal(db, { name: 'W', parentId: parent.id, dependsOn: ['dup'] }, 'mcp')
+      ).toThrow(/Ambiguous dependsOn reference 'dup'/);
+    });
+
+    it('decompose sortOrder continues after the highest existing sortOrder, not the sibling count', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      createGoal(db, { name: 'old', parentId: parent.id, sortOrder: 5 }, 'mcp');
+
+      const [n1] = decomposeGoal(db, parent.id, [{ name: 'n1' }], 'mcp');
+      expect(n1.sort_order).toBe(6);
+    });
+
+    it('stamps an ISO created_at on inserted dependency edges (no SQL default)', () => {
+      const parent = createGoal(db, { name: 'P' }, 'mcp');
+      createGoal(db, { name: 'A', parentId: parent.id, status: 'active' }, 'mcp');
+      const b = createGoal(
+        db,
+        { name: 'B', parentId: parent.id, status: 'active', dependsOn: ['A'] },
+        'mcp'
+      );
+      const edge = listGoalDependencies(db, { goalId: b.id }).edges[0];
+      expect(edge.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
   });
 });

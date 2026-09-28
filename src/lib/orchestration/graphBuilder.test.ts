@@ -189,3 +189,43 @@ describe('buildOrchestrationGraph', () => {
     expect(nodes.some((n) => n.id === 'ticket-free')).toBe(false);
   });
 });
+
+describe('buildOrchestrationGraph dependencies', () => {
+  function dep(goalId: string, dependsOnGoalId: string) {
+    return { id: `${goalId}->${dependsOnGoalId}`, goalId, dependsOnGoalId, createdAt: '' };
+  }
+
+  it('draws a dashed dependency edge kept apart from the parent-child tree', () => {
+    const goals = [
+      makeGoal({ id: 'p' }),
+      makeGoal({ id: 'a', parentId: 'p' }),
+      makeGoal({ id: 'b', parentId: 'p' }),
+    ];
+    const { edges } = buildOrchestrationGraph(goals, [], [], [], [], [dep('b', 'a')]);
+    const depEdge = edges.find((e) => e.kind === 'dependency');
+    expect(depEdge).toEqual(
+      expect.objectContaining({ source: 'goal-a', target: 'goal-b', animated: false })
+    );
+    expect(edges.filter((e) => e.kind === undefined)).toHaveLength(2); // the two parent edges
+  });
+
+  it('drops a dependency edge whose endpoint is not part of the rendered tree', () => {
+    const goals = [makeGoal({ id: 'a' })];
+    const { edges } = buildOrchestrationGraph(goals, [], [], [], [], [dep('a', 'ghost')]);
+    expect(edges.some((e) => e.kind === 'dependency')).toBe(false);
+  });
+
+  it('orders a serial chain top to bottom by wave, not by array insertion order', () => {
+    const goals = [
+      makeGoal({ id: 'p' }),
+      makeGoal({ id: 'c', parentId: 'p', sortOrder: 2 }),
+      makeGoal({ id: 'a', parentId: 'p', sortOrder: 0 }),
+      makeGoal({ id: 'b', parentId: 'p', sortOrder: 1 }),
+    ];
+    const dependencies = [dep('b', 'a'), dep('c', 'b')];
+    const { nodes } = buildOrchestrationGraph(goals, [], [], [], [], dependencies);
+    const rowOf = (id: string) => nodes.find((n) => n.id === `goal-${id}`)?.position.y;
+    expect(rowOf('a')).toBeLessThan(rowOf('b') as number);
+    expect(rowOf('b')).toBeLessThan(rowOf('c') as number);
+  });
+});

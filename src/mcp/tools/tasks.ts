@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3';
 import type { FastMCP } from 'fastmcp';
 import { z } from 'zod';
+import { isGoalBlocked } from '../../lib/goals/goalDependencies';
+import { loadDependencyGraph } from './goalsDb';
 import { insertStatusHistory } from './history';
 import { resolveTicketId } from './resolve';
 
@@ -17,6 +19,7 @@ interface Ticket {
   priority: string;
   model_power: string | null;
   needs_human_supervision: number;
+  goal_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,8 +40,8 @@ const UPDATE_DESCRIPTION_SQL = `
   WHERE id = ?
 `;
 
-const FETCH_NEXT_UNBLOCKED_TASK_SQL = `
-  SELECT id FROM pm_tickets
+const FETCH_CANDIDATE_TASKS_SQL = `
+  SELECT id, goal_id FROM pm_tickets
   WHERE status = 'open'
     AND needs_human_supervision = 0
     AND id NOT IN (
@@ -56,21 +59,26 @@ const FETCH_NEXT_UNBLOCKED_TASK_SQL = `
       ELSE 4
     END,
     sort_order ASC
-  LIMIT 1
 `;
 
 /**
- * Fetches the highest-priority open ticket that has no unfinished dependencies,
- * atomically sets it to 'in_progress', and returns it. Returns null if none available.
- * Skips tickets flagged as needing human supervision.
+ * Fetches the highest-priority open ticket that has no unfinished dependencies
+ * and whose goal (if any) is not blocked by a goal dependency (inherited from
+ * an ancestor goal), atomically sets it to 'in_progress', and returns it.
+ * Returns null if none available. Skips tickets flagged as needing human
+ * supervision.
  */
 export function fetchNextUnblockedTask(db: Database.Database): Ticket | null {
   const transact = db.transaction(() => {
-    const candidate = db.prepare(FETCH_NEXT_UNBLOCKED_TASK_SQL).get() as { id: string } | undefined;
+    const candidates = db.prepare(FETCH_CANDIDATE_TASKS_SQL).all() as Array<{
+      id: string;
+      goal_id: string | null;
+    }>;
+    if (candidates.length === 0) return null;
 
-    if (!candidate) {
-      return null;
-    }
+    const { goals, edges } = loadDependencyGraph(db);
+    const candidate = candidates.find((c) => !c.goal_id || !isGoalBlocked(goals, edges, c.goal_id));
+    if (!candidate) return null;
 
     db.prepare(UPDATE_STATUS_SQL).run('in_progress', candidate.id);
     insertStatusHistory(db, candidate.id, 'open', 'in_progress', 'mcp');
@@ -120,7 +128,8 @@ export function registerTaskTools(server: FastMCP, db: Database.Database): void 
     name: 'fetch_next_unblocked_task',
     description:
       'Fetches the highest-priority open ticket that has NO unfinished dependencies ' +
-      '(all dependencies must be done or archived). ' +
+      '(all dependencies must be done or archived) and whose goal, if any, is not blocked by a ' +
+      'goal dependency (inherited from an ancestor goal). ' +
       'Atomically sets it to in_progress and returns the full ticket. ' +
       'Returns null if no unblocked open tickets exist. ' +
       'Skips tickets flagged as needing human supervision. ' +

@@ -201,6 +201,19 @@ Goals lead; epics are storage. The primary workflow of the app is one loop:
 1. **Define a goal** — a desired world state with machine-checkable `successCriteria` (`pm_goals`, tree via `parentId`).
 2. **Attach work** — link tickets to the goal (`ticket.goalId`, set atomically via `create_ticket`'s `goalId` param or `link_ticket_to_goal`), link requirements as acceptance gates, or launch a planning agent that calls `decompose_goal` / `create_ticket` itself.
 3. **Run the conductor** (`conductorSlice`) — it spawns agents for unblocked open tickets in the goal's subtree (priority order, dependency-aware, `needsHumanSupervision` approval gate, 2 attempts per ticket).
+   Started on a parent goal it works the whole tree unattended, all agents
+   headless:
+   - **Start is the go-ahead for the tree.** Draft goals in it become `active`
+     (mission-to-goals registers every sub-goal as a draft for review first).
+   - **Order comes from goal dependencies** (`docs/design-goal-dependencies.md`);
+     goals without an edge run side by side.
+   - **A finished sub-goal closes in the same tick** (`conductorGoalSweep.ts`),
+     which releases whatever waits on it. Not while its own agent still runs.
+   - **Stations goals get a goal agent, empty goals a planning agent**, both
+     spawned directly (`conductorGoalAgents.ts`), never via a launch request.
+     The planner only lays out stations (or tickets, in ticket mode) and stops.
+   - **Nothing left that can move ends the run** with the blockers named, rather
+     than idling on work a failed or exhausted goal holds back.
 4. **Verified done** — when no work is left, `getGoalSatisfaction` checks **four**
    conditions: all subtree tickets `done` + all linked requirements `verified` +
    **every station of the goal's line `done`** + all child goals `achieved`. If
@@ -212,6 +225,34 @@ Goals lead; epics are storage. The primary workflow of the app is one loop:
    is a bare claim rather than a verified kind blocks exactly like a pending one
    (`isVerifiedEvidence`, `goalsSlice.ts`). The `stations` parameter is required
    on purpose so a caller cannot omit it and get a falsely green goal.
+
+**Sub-goals can be ordered: serial, parallel, bundle.** An edge in
+`pm_goal_dependencies` (B → A) makes B, its subtree and their tickets wait until
+A is `achieved` or `archived`. A `failed` A keeps blocking. No edge means the
+two run in parallel, which is the default. The same `bundle` label on siblings
+means the members finish together: none is achieved before all of them meet
+their own conditions, and waiting for one member waits for all of them. One
+definition lives in `src/lib/goals/goalDependencies.ts`. The Rust twin
+(`database/goal_deps.rs`) validates at the end of `goals_sync_impl`, and both
+run `goalDependencies.fixtures.json`, so **change the fixtures first**. The
+conductor starts nothing that is still waiting. A goal that is waiting is not a
+satisfaction blocker; a held bundle is. The reasoning, and why this is not
+`pm_dependencies`, is in `docs/design-goal-dependencies.md`.
+
+**How long a goal sat where** is recorded like it is for tickets, in its own
+table `pm_goal_status_history` (migration 24, twinned in `src/mcp/db.ts`).
+Rust writes it inside `goals_sync_impl` by comparing the _stored_ statuses
+before and after the goal writes, so a write rejected as a conflict is not
+logged as a change. The MCP writers in `goalsDb.ts` (`createGoal`,
+`updateGoal`, `recordGoalRun`) log their own changes. Goals that existed
+before the table got one `backfill` snapshot of their status at the time, not
+invented transitions. The UI says "Tracked since …" for these goals, and they
+get no lead time. `computeGoalMetrics` (`src/lib/pm/metrics/goalMetrics.ts`)
+shares its core with the ticket metrics (`lifecycle.ts`). Review counts as
+part of the working spell, so rework does not restart the cycle.
+`reviewRounds` counts how often the goal went into review. `GoalTiming` in the
+goal detail panel shows the result, and `list_goal_status_history` exposes it
+over MCP.
 
 Tickets still belong to an epic (`epicId`, required) — that is the organizational/backlog view. The goal link (`goalId`, optional) is the outcome view and drives satisfaction. `getGoalWorkflowStage` (goalsSlice) derives which loop stage a goal is in and powers the onboarding stepper in `GoalDetailPanel` plus the workflow strip in `GoalsModal`.
 
