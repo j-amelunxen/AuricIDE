@@ -133,7 +133,15 @@ pub async fn list_all_files(root_path: String) -> Result<Vec<String>, String> {
     if !root.is_dir() {
         return Err("Invalid root path".to_string());
     }
+    list_all_files_impl(root)
+}
 
+/// Every file under `root`. Besides Quick Open this list answers goal-station
+/// `fileExists` evidence, broken-link detection and wikilink completion, so
+/// it deliberately keeps build output and reports (`coverage/`, `.next/`, …):
+/// a station waiting for `coverage/lcov.info` must be able to see it. Only
+/// VCS internals, dependency trees and the app's own `.auric` stay out.
+pub fn list_all_files_impl(root: &Path) -> Result<Vec<String>, String> {
     let entries: Vec<String> = WalkDir::new(root)
         .into_iter()
         .filter_entry(|e| {
