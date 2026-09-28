@@ -14,6 +14,8 @@ export interface AgentCardStatusBodyProps {
   taskSummary?: string;
   objectiveRepeatsName: boolean;
   state: AgentState;
+  /** A headless CLI never reads stdin, so it gets no Enter nudge. */
+  headless?: boolean;
   replyError: string | null;
   setReplyError: (err: string | null) => void;
   sendReply: (e: React.KeyboardEvent<HTMLInputElement>) => Promise<void>;
@@ -29,6 +31,7 @@ export function AgentCardStatusBody({
   taskSummary,
   objectiveRepeatsName,
   state,
+  headless,
   replyError,
   setReplyError,
   sendReply,
@@ -81,7 +84,7 @@ export function AgentCardStatusBody({
       {/* A stalled CLI most often just wants an Enter — make that one
           click instead of open-terminal-and-type. Anything more than a
           nudge goes through the terminal as before. */}
-      {state === 'stalled' && (
+      {state === 'stalled' && !headless && (
         <button
           type="button"
           onClick={async (e) => {

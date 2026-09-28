@@ -17,7 +17,9 @@ export type ConsoleAgentState = 'yours' | 'error' | 'stalled' | 'working' | 'don
  * fresh and would otherwise never look stalled.
  */
 export function consoleAgentState(
-  agent: Pick<AgentInfo, 'status' | 'lastActivityAt' | 'awaitingInput'>,
+  agent: Pick<AgentInfo, 'status' | 'lastActivityAt' | 'awaitingInput' | 'headless'> & {
+    startedAt?: number;
+  },
   reviewed: boolean,
   now: number
 ): ConsoleAgentState {
@@ -41,8 +43,14 @@ const BASE_LABEL: Record<ConsoleAgentState, string> = {
  * form — a failure keeps reading "Failed" whether or not it was opened,
  * because reviewing does not undo that the run failed.
  */
-export function consoleStateLabel(state: ConsoleAgentState, reviewed: boolean): string {
+export function consoleStateLabel(
+  state: ConsoleAgentState,
+  reviewed: boolean,
+  headless?: boolean
+): string {
   if (state === 'done' && reviewed) return 'Done';
+  // A headless run escalates on length, not silence — say that.
+  if (state === 'stalled' && headless) return 'Long run?';
   return BASE_LABEL[state];
 }
 

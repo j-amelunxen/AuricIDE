@@ -389,6 +389,7 @@ pub async fn spawn_agent_impl(
         repo_path: config.cwd.clone(),
         spawned_by_ticket_id: config.spawned_by_ticket_id.clone(),
         spawned_by_goal_id: config.spawned_by_goal_id.clone(),
+        headless: config.headless.unwrap_or(false),
     };
 
     // Recorded here, before the output pump exists and before the spawn

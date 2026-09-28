@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { isFinishedAgent } from '@/lib/agents/fleet';
-import { agentState, AGENT_STATE_LABEL, type AgentState } from '@/lib/agents/state';
+import { agentState, agentStateLabel, type AgentState } from '@/lib/agents/state';
 import {
   placeTabPreview,
   TAB_PREVIEW_DELAY_MS,
@@ -133,7 +133,7 @@ function PromptPreview({ agent, state, placement, onHold, onRelease }: PromptPre
           {agent.name}
         </span>
         <span className={`text-[8px] font-black uppercase tracking-widest ${style.label}`}>
-          {AGENT_STATE_LABEL[state]}
+          {agentStateLabel(state, agent.headless)}
         </span>
       </div>
       {prompt ? (
@@ -279,7 +279,7 @@ export function AgentTab({ agent, isActive, now, onSelect, onEnd, onSaveScreen }
         />
         <span className="min-w-0 flex-1 truncate">{agent.name}</span>
         <span className={`flex-shrink-0 text-[8px] font-black tracking-widest ${style.label}`}>
-          {AGENT_STATE_LABEL[state]}
+          {agentStateLabel(state, agent.headless)}
         </span>
       </button>
       <AgentTabActions

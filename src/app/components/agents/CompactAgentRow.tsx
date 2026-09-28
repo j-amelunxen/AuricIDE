@@ -170,7 +170,9 @@ export function CompactAgentRow({
             ? // A redrawing prompt makes both runtime and quiet time lie —
               // the reason is the only true thing to print here.
               'needs input'
-            : agentAttention(agent, now) === 'stalled' && agent.lastActivityAt !== undefined
+            : agentAttention(agent, now) === 'stalled' &&
+                !agent.headless &&
+                agent.lastActivityAt !== undefined
               ? // The cost of ignoring a stalled agent is exactly its silence.
                 `quiet ${formatAgentDuration(now - agent.lastActivityAt)}`
               : formatAgentDuration(now - agent.startedAt)}

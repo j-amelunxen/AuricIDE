@@ -3,7 +3,7 @@
 import React from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import { AGENT_STATE_LABEL, type AgentState } from '@/lib/agents/state';
+import { agentStateLabel, type AgentState } from '@/lib/agents/state';
 import { ComboProgressBadge } from '../ComboProgressBadge';
 import { isAuricWorktreePath } from '@/lib/git/agentWorktree';
 import { STATE_CHIP } from './cardConstants';
@@ -145,7 +145,7 @@ export function AgentCardHeader({
               data-testid="agent-state"
               className={`flex-shrink-0 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${STATE_CHIP[state]}`}
             >
-              {AGENT_STATE_LABEL[state]}
+              {agentStateLabel(state, agent.headless)}
             </span>
           </div>
         </div>

@@ -325,6 +325,11 @@ human" lives in `attention.ts` (`agentAttention`: `error` > `needs-input` >
   silence past `AGENT_STALL_MS` (far wider than the live window) turns the
   chip to "Stalled?" — question mark on purpose — and offers a one-click
   Enter nudge.
+- **Headless runs are silent by nature.** `claude -p` (every conductor
+  agent) prints nothing until it ends, so for `agent.headless` the clock is
+  runtime since launch against `HEADLESS_STALL_MS` (45 min), not silence.
+  Below it the card reads "Working · headless"; past it "Long run?", and
+  never an Enter nudge — the CLI does not read stdin.
 - **All-quiet is explicit.** "✓ all quiet" appears only while agents run and
   none needs a human. Absence of alarms is not permission to look away; a
   monitored silence says so. The window title mirrors the count ("(2)

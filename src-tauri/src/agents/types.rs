@@ -62,6 +62,9 @@ pub struct AgentInfo {
     pub repo_path: Option<String>,
     pub spawned_by_ticket_id: Option<String>,
     pub spawned_by_goal_id: Option<String>,
+    /// Runs unattended (`claude -p`, `codex exec`). Such a CLI may print nothing
+    /// until it ends, so the frontend does not read its silence as a stall.
+    pub headless: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -11,7 +11,7 @@ import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
-import { agentState, AGENT_STATE_LABEL } from '@/lib/agents/state';
+import { agentState, agentStateLabel } from '@/lib/agents/state';
 import { groupAgentTabs } from '@/lib/agents/tabGroups';
 import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
@@ -263,7 +263,7 @@ function AgentTerminalDialog({
                 <span
                   className={`text-[9px] font-black uppercase tracking-widest ${isRunning ? 'text-primary' : 'text-foreground-muted'}`}
                 >
-                  {AGENT_STATE_LABEL[state]}
+                  {agentStateLabel(state, agent.headless)}
                 </span>
                 {isLive && (
                   <span className="animate-pulse rounded-full bg-primary/20 px-1.5 py-0.5 text-[7px] font-black text-primary border border-primary/30 uppercase tracking-tighter">

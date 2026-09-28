@@ -177,7 +177,7 @@ export function buildLanes(input: {
       monogram: agentMonogram(agent.name),
       color: streamColorFor(agent.id, agentColors[agent.id]),
       state,
-      phaseLabel: consoleStateLabel(state, reviewed),
+      phaseLabel: consoleStateLabel(state, reviewed, agent.headless),
       rightNow: describeRightNow({
         state,
         lastEvent,

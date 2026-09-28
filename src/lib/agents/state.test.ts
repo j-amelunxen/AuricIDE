@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo } from '../tauri/agents';
-import { AGENT_STATE_LABEL, agentState } from './state';
+import { AGENT_STATE_LABEL, agentState, agentStateLabel } from './state';
+import { HEADLESS_STALL_MS } from './attention';
 
 const NOW = 1_000_000;
 
@@ -80,5 +81,27 @@ describe('agentState', () => {
   it('never labels two different states the same way', () => {
     const labels = Object.values(AGENT_STATE_LABEL);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe('agentState – headless agents', () => {
+  it('calls a silent headless agent working, not waiting', () => {
+    const quiet = agent({
+      headless: true,
+      startedAt: NOW - 600_000,
+      lastActivityAt: NOW - 600_000,
+    });
+    expect(agentState(quiet, NOW)).toBe('working');
+  });
+
+  it('asks about a headless run past the ceiling with its own label', () => {
+    const long = agent({
+      headless: true,
+      startedAt: NOW - HEADLESS_STALL_MS - 1,
+      lastActivityAt: NOW - HEADLESS_STALL_MS - 1,
+    });
+    expect(agentState(long, NOW)).toBe('stalled');
+    expect(agentStateLabel('stalled', true)).toBe('Long run?');
+    expect(agentStateLabel('stalled', false)).toBe(AGENT_STATE_LABEL.stalled);
   });
 });

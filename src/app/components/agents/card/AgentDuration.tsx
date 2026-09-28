@@ -13,12 +13,22 @@ import { useNow } from '@/lib/hooks/useNow';
 export function AgentDuration({ agent, state }: { agent: AgentInfo; state: AgentState }) {
   const now = useNow();
   const runtime = formatAgentDuration(now - agent.startedAt);
+  // A headless run's silence is its normal state, so its runtime is the
+  // number that matters — and the word says why the card is quiet.
   const showQuiet =
-    (state === 'waiting' || state === 'stalled') && agent.lastActivityAt !== undefined;
+    !agent.headless &&
+    (state === 'waiting' || state === 'stalled') &&
+    agent.lastActivityAt !== undefined;
   const label = showQuiet
     ? `quiet ${formatAgentDuration(now - (agent.lastActivityAt ?? now))}`
-    : runtime;
-  const title = showQuiet ? `No output for a while · running for ${runtime}` : 'Running for';
+    : agent.headless && agent.status === 'running'
+      ? `headless · ${runtime}`
+      : runtime;
+  const title = showQuiet
+    ? `No output for a while · running for ${runtime}`
+    : agent.headless
+      ? 'Running headless for — output arrives when the run ends'
+      : 'Running for';
   return (
     <span
       data-testid="agent-runtime"

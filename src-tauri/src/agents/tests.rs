@@ -603,3 +603,27 @@ fn declared_binding_material_is_used_regardless_of_the_opt_in() {
     let injection = binding_injection_for("claude", declared, false).unwrap();
     assert_eq!(injection.arguments, vec!["--mcp-config".to_string()]);
 }
+
+/// The frontend reads `headless` off the agent itself to decide that a silent
+/// run is not a stalled one; the spawn config it could also read is lost on a
+/// restart, the agent list is not.
+#[test]
+fn agent_info_tells_the_frontend_the_run_is_headless() {
+    let info = AgentInfo {
+        id: "agent-h".to_string(),
+        name: "Conductor".to_string(),
+        model: "auto".to_string(),
+        provider: "claude".to_string(),
+        status: AgentStatus::Running,
+        current_task: None,
+        started_at: 1,
+        last_activity_at: Some(1),
+        project_path: None,
+        repo_path: None,
+        spawned_by_ticket_id: None,
+        spawned_by_goal_id: None,
+        headless: true,
+    };
+    let json = serde_json::to_value(&info).expect("serializes");
+    assert_eq!(json["headless"], serde_json::Value::Bool(true));
+}
