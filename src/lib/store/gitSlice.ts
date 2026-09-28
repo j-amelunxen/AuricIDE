@@ -35,8 +35,8 @@ import {
   setRepoField,
   fetchRepoStatus,
   fetchRepoStatusResilient,
-  sameValue,
 } from './git/gitStateHelpers';
+import { sameValue } from './stableRefs';
 
 export type { ScmView, HunkNavDirection, GitRepoState, GitSlice };
 

@@ -1,4 +1,4 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { FALLBACK_CRUSH_PROVIDER, type ProviderInfo } from '@/lib/tauri/providers';
 import { type ProjectFileInfo } from '@/lib/tauri/fs';
@@ -155,8 +155,6 @@ export function useIDEState() {
   const loadPmData = useStore((s) => s.loadPmData);
   const loadGoals = useStore((s) => s.loadGoals);
   const resetPmInMemory = useStore((s) => s.resetPmInMemory);
-  const pmDraftEpics = useStore((s) => s.pmDraftEpics);
-  const pmDraftTickets = useStore((s) => s.pmDraftTickets);
   const addTicket = useStore((s) => s.addTicket);
   const addDependency = useStore((s) => s.addDependency);
   const savePmData = useStore((s) => s.savePmData);
@@ -223,12 +221,12 @@ export function useIDEState() {
   const fileTicketCreate = useStore((s) => s.fileTicketCreate);
   const setFileTicketCreate = useStore((s) => s.setFileTicketCreate);
 
-  const ticketCwd = useMemo(
-    () =>
-      spawnAgentTicketId
-        ? pmDraftTickets.find((t) => t.id === spawnAgentTicketId)?.workingDirectory
-        : undefined,
-    [spawnAgentTicketId, pmDraftTickets]
+  // The one value the page needs from the tickets, selected on its own: the
+  // ticket list changes with every MCP write an agent makes.
+  const ticketCwd = useStore((s) =>
+    spawnAgentTicketId
+      ? s.pmDraftTickets.find((t) => t.id === spawnAgentTicketId)?.workingDirectory
+      : undefined
   );
 
   return {
@@ -371,7 +369,6 @@ export function useIDEState() {
     loadExcalidrawSpecLinks,
     resetExcalidrawInMemory,
     resetRequirementsInMemory,
-    pmDraftTickets,
     providers,
     setProviders,
     setSpawnAgentTicketId,
@@ -425,7 +422,6 @@ export function useIDEState() {
     setCanvasContextMenu,
     setPmSelectedEpicId,
     setPmSelectedTicketId,
-    pmDraftEpics,
     addTicket,
     addDependency,
     savePmData,

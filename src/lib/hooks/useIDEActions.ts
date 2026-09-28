@@ -9,6 +9,7 @@ import { listProviders } from '@/lib/tauri/providers';
 import { filterProviders } from '@/lib/config/providerPolicy';
 import { loadProviderPolicy } from '@/lib/config/projectConfig';
 import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter';
+import { indexedPathLookup } from '@/lib/ide/indexedPaths';
 import { nextAttentionAgentId, withReviewFlags } from '@/lib/agents/attention';
 import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { type OutputBatch } from '@/lib/agents/outputBatcher';
@@ -21,8 +22,6 @@ import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
-import { useScheduledConductorRuns } from '@/lib/hooks/useScheduledConductorRuns';
-import { useInboxData } from '@/lib/inbox/useInboxData';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import type { IDEState } from './ide/liveIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
@@ -50,13 +49,9 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
   // The inbox spans projects, so it is not keyed on rootPath like the rest here
   useNotificationInbox();
 
-  // A schedule's `launch: 'auto'` action arrives through the same inbox; this
-  // is the zero-click half of it — conductor, custom agent, and skill.
-  useScheduledConductorRuns(handlers.handleOpenRecent);
-
-  // Same reasoning as the notification inbox — the capture badge and the
-  // start-screen summary both need this warm before the panel ever mounts.
-  useInboxData();
+  // The scheduled-run watcher and the inbox data hook live in
+  // `BackgroundWatchers` (ConnectedPanels), not here: they select agents,
+  // notifications and inbox items, and this hook runs in the page root.
 
   // Opens the Agent Console once, in place of the start screen, if the user
   // has asked for that and an agent is already running with no project open.
@@ -176,6 +171,7 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
   // they need through refs and the store rather than this render's scope.
   useEffect(() => {
     fsRouterRef.current = createFsEventRouter({
+      isIndexedPath: (path) => indexedPathLookup(useStore.getState().allFilePaths)(path),
       onTreeChange: (changedDirs, summary) =>
         void handleRefreshDirsRef.current(changedDirs, summary),
       onProjectDataChange: () => {
@@ -192,8 +188,11 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
         const s = useStore.getState();
         if (s.goalStationsDraft.length === 0) return;
         void import('@/lib/evidence/engine').then((m) => {
-          void m.checkFrontStations();
+          // Judged stations wait for an agent to finish (below); asking the
+          // judge again on every burst of saves costs a model call each time.
+          void m.checkFrontStations(undefined, { skipJudged: true });
           // An out-of-band MCP agent may have claimed a station done; judge it.
+          // Each claim is judged once, so repeating this per burst is cheap.
           void m.checkClaimedStations();
         });
       },

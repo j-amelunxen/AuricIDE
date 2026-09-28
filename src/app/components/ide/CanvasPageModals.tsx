@@ -1,3 +1,4 @@
+import { useStore } from '@/lib/store';
 import { ContextMenu, type ContextMenuOption } from './ContextMenu';
 import { TicketCreateModal } from '../pm/TicketCreateModal';
 import { OBSIDIAN_COLORS } from '@/lib/obsidian-canvas/canvasParser';
@@ -56,6 +57,10 @@ interface CanvasPageModalsProps {
 }
 
 export function CanvasPageModals({ state, handlers }: CanvasPageModalsProps) {
+  // Selected here rather than passed down from the page, which does not
+  // re-render for PM data (see HOT_STORE_KEYS in liveIDEState).
+  const epics = useStore((s) => s.pmDraftEpics);
+  const allTickets = useStore((s) => s.pmDraftTickets);
   return (
     <>
       {state.canvasContextMenu && (
@@ -74,8 +79,8 @@ export function CanvasPageModals({ state, handlers }: CanvasPageModalsProps) {
       {state.canvasTicketCreate && (
         <TicketCreateModal
           isOpen
-          epics={state.pmDraftEpics}
-          allTickets={state.pmDraftTickets}
+          epics={epics}
+          allTickets={allTickets}
           availableItems={[]}
           defaultEpicId={null}
           initialValues={state.canvasTicketCreate.initialValues}
@@ -90,8 +95,8 @@ export function CanvasPageModals({ state, handlers }: CanvasPageModalsProps) {
       {state.fileTicketCreate && (
         <TicketCreateModal
           isOpen
-          epics={state.pmDraftEpics}
-          allTickets={state.pmDraftTickets}
+          epics={epics}
+          allTickets={allTickets}
           availableItems={[]}
           defaultEpicId={null}
           initialValues={state.fileTicketCreate.initialValues}

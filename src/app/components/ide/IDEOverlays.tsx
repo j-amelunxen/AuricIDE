@@ -104,6 +104,9 @@ interface IDEOverlaysProps {
   ticketCwd?: string;
 }
 
+/** Stable empty list, so the selector below does not hand back a new array. */
+const NO_AGENTS: AgentInfo[] = [];
+
 export function IDEOverlays({
   spawnDialogOpen,
   setSpawnDialogOpen,
@@ -163,7 +166,9 @@ export function IDEOverlays({
   ticketCwd,
 }: IDEOverlaysProps) {
   const goalsDraft = useStore((s) => s.goalsDraft);
-  const activeAgents = useStore((s) => s.agents);
+  // The terminal modal only uses the list while an agent is open full-screen
+  // (it renders nothing otherwise), so only then does this subscribe to it.
+  const activeAgents = useStore((s) => (fullscreenAgent ? s.agents : NO_AGENTS));
   const recentCommandIds = useStore((s) => s.recentCommandIds);
   const promptHistory = useStore((s) => s.promptHistory);
   const loadPromptHistory = useStore((s) => s.loadPromptHistory);

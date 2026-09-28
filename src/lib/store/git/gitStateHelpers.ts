@@ -2,17 +2,9 @@ import { repoForPath } from '../../git/repos';
 import type { BlameHunk, BranchInfo, GitFileStatus, GitRepoRef } from '../../tauri/git';
 import { getBranchInfo, getGitStatus } from '../../tauri/git';
 import type { GitRepoState, GitSlice } from './gitTypes';
+import { sameValue } from '../stableRefs';
 
 /** Merges a fetched status into `states`, keeping that repo's commit-box UI state untouched. */
-/**
- * Structural equality for the small plain-JSON values IPC returns. A refresh
- * delivers fresh objects every time, so reference checks alone would call
- * every refresh a change.
- */
-export function sameValue(a: unknown, b: unknown): boolean {
-  return a === b || JSON.stringify(a) === JSON.stringify(b);
-}
-
 export function applyRepoStatus(
   states: Record<string, GitRepoState>,
   ref: GitRepoRef,

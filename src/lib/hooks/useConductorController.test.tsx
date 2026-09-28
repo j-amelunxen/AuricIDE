@@ -96,6 +96,26 @@ describe('useConductorController', () => {
     expect(result.current.runningAgentCount).toBe(1);
   });
 
+  // Mission Control and the Goals modal both use this hook. Agents replace
+  // their array every couple of seconds while they stream; the hook only needs
+  // a count from it, so an unchanged count must not re-render its host.
+  it('does not re-render its host when agents change but the stop cost does not', () => {
+    useStore.setState({
+      conductorAssignments: { t1: 'a1' },
+      agents: [makeAgent({ id: 'a1' })],
+    });
+    let renders = 0;
+    renderHook(() => {
+      renders++;
+      return useConductorController();
+    });
+    renders = 0;
+
+    act(() => useStore.setState({ agents: [makeAgent({ id: 'a1' }), makeAgent({ id: 'b' })] }));
+
+    expect(renders).toBe(0);
+  });
+
   it('survives a store where the conductor maps do not exist yet', () => {
     // A freshly opened project (or any surface that renders before the
     // conductor slice is populated) has no assignment maps at all. Reading

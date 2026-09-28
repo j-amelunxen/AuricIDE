@@ -30,6 +30,7 @@ import { leftPanelVisible } from '@/lib/ide/leftPanel';
 import { CanvasPageModals } from './components/ide/CanvasPageModals';
 import {
   AttentionTitle,
+  BackgroundWatchers,
   ConnectedAgentsPanel,
   ConnectedStatusBar,
   ConnectedTerminalPanel,
@@ -127,6 +128,7 @@ export default function Home() {
       <ToastHost />
       <CanvasPageModals state={pageState} handlers={handlers} />
       <AttentionTitle />
+      <BackgroundWatchers openProject={handlers.handleOpenRecent} />
       <ExcalidrawBrowser onImported={refreshAfterImport} onOpenSettings={openSettingsModal} />
       <OrchestrationModal />
       <NewProjectModal

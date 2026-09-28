@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import { IDLE_LOAD_STATE, trackLoad } from './loadState';
+import { writeChanged } from './stableRefs';
 import { withPersistFeedback } from './persistFeedback';
 import type {
   GoalsState,
@@ -303,7 +304,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
 
   loadGoals: (projectPath) =>
     trackLoad(
-      (s) => set({ goalsLoading: s.loading, goalsLoadError: s.error }),
+      (s) => writeChanged(set, get(), { goalsLoading: s.loading, goalsLoadError: s.error }),
       async () => {
         await initProjectDb(projectPath);
         const state: GoalsState = await ipcGoalsLoad(projectPath);
@@ -311,7 +312,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
         const isNewProject = currentGoalsProject !== projectPath;
 
         if (!goalsDirty || isNewProject) {
-          set({
+          writeChanged(set, get(), {
             goals: state.goals,
             goalsDraft: state.goals,
             goalRuns: state.goalRuns,
@@ -366,7 +367,7 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
             rebasedGoalsDraft,
             rebasedDependenciesDraft
           );
-          set({
+          writeChanged(set, get(), {
             goals: state.goals,
             goalRuns: state.goalRuns,
             goalRequirementLinks: state.requirementLinks,
@@ -385,7 +386,8 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
             currentGoalsProject: projectPath,
           });
         }
-      }
+      },
+      { background: get().currentGoalsProject === projectPath }
     ),
 
   saveGoals: (projectPath) => {

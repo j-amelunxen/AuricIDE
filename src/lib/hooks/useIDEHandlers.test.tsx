@@ -156,6 +156,8 @@ vi.mock('@/lib/store', () => {
     scratchDir: mockScratchDir,
     scratches: mockScratches,
     inboxItems: mockInboxItems,
+    pmDraftTickets: [],
+    pmDraftEpics: [],
     diagnostics: new Map(),
     cursorPos: { line: 0, col: 0 },
     initScratches: mockInitScratches,
