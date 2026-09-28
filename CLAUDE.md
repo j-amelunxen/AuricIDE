@@ -234,6 +234,16 @@ Goals lead; epics are storage. The primary workflow of the app is one loop:
      The planner only lays out stations (or tickets, in ticket mode) and stops.
    - **Nothing left that can move ends the run** with the blockers named, rather
      than idling on work a failed or exhausted goal holds back.
+   - **Human stations are handed over, never waited on.** Conductor goal agents
+     get the launch prompt with `unattended: true`: no `/goal` (its stop hook
+     refuses to let an agent end while an open human station keeps the goal
+     unmet, so the run hung), and a rule to call `request_human_check` (MCP)
+     and move on to the next station. The steps land on the station and as one
+     inbox warning; "For you" lists every open human station with no open agent
+     station before it. The goal stays open and its dependents keep waiting
+     until a person ticks it. A run that ends on them says "Goal waits for you".
+     `GOAL_AGENT_TIMEOUT_MS` (2 h) ends any conductor goal agent that still
+     does not exit.
 4. **Verified done** — when no work is left, `getGoalSatisfaction` checks **four**
    conditions: all subtree tickets `done` + all linked requirements `verified` +
    **every station of the goal's line `done`** + all child goals `achieved`. If

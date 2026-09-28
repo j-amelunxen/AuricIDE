@@ -20,6 +20,13 @@ export const CONDUCTOR_HEARTBEAT_MS = 15_000;
 /** A review with no verdict past this is timed out into a rejection (ms). */
 export const REVIEW_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * A goal or planning agent the conductor started is ended past this (ms). It
+ * works a whole line, so the limit is wide; it is the net for an agent that
+ * never exits, which would otherwise hold its slot and the run forever.
+ */
+export const GOAL_AGENT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
 /** Placeholder assignment value while a spawn is in flight. */
 export const PENDING_SPAWN = '__pending__';
 
@@ -173,6 +180,8 @@ export interface ConductorSlice {
   conductorGoalAttempts: Record<string, number>;
   /** goalId -> planning agents this run spawned for a goal with no work yet; reset on start. */
   conductorPlanAttempts: Record<string, number>;
+  /** Whether this run already raised its one inbox entry for a refused spawn. */
+  conductorSpawnFailureNotified: boolean;
   startConductor: (
     goalId: string | null,
     options?: {

@@ -5,6 +5,7 @@ import { assertOneOf, STATION_KINDS } from '../../lib/pm/enums';
 import { moveStation, orderedStations } from '../../lib/goals/stationOrder';
 import { parsePredicate, parseStoredPredicateJson } from '../../lib/goals/planner/plannerSchema';
 import type { PmGoalStation } from '../../lib/tauri/goals';
+import { dispatchNotification } from '../notificationsDb';
 import { resolveGoalId, resolveTicketId } from './resolve';
 
 export interface StationRow {
@@ -262,6 +263,67 @@ export function markStationDone(
   return getStation(db, stationId)!;
 }
 
+/** Where a hand-over notification belongs: the project this server is bound to. */
+export interface HumanCheckScope {
+  projectPath?: string;
+  projectName?: string;
+}
+
+/**
+ * An unattended agent that reaches a human station hands it over instead of
+ * waiting for a person nobody told. The steps are stored on the station, so
+ * they sit where the person ticks it off, and one warning per station lands in
+ * the inbox (a repeat replaces it). The station stays open: only a person
+ * clears it (`markStationDone` refuses human steps for the same reason).
+ * Without an inbox the steps are still stored, and the result says nobody was
+ * told rather than pretending.
+ */
+export function requestHumanCheck(
+  db: Database.Database,
+  inbox: Database.Database | null,
+  stationId: string,
+  instructions: string,
+  scope: HumanCheckScope
+): { station: StationRow; notified: boolean } {
+  const station = getStation(db, stationId);
+  if (!station) throw new Error(`Station '${stationId}' not found`);
+  if (station.kind !== 'human') {
+    throw new Error(
+      `Station '${station.name}' is not a human step — do it yourself and call mark_station_done.`
+    );
+  }
+  if (station.status === 'done') {
+    throw new Error(`Station '${station.name}' is already done — a person ticked it off.`);
+  }
+  db.prepare('UPDATE pm_goal_stations SET evidence_note = ?, updated_at = ? WHERE id = ?').run(
+    instructions,
+    now(),
+    stationId
+  );
+  if (inbox) {
+    dispatchNotification(inbox, {
+      projectPath: scope.projectPath ?? null,
+      projectName: scope.projectName ?? null,
+      source: 'agent',
+      severity: 'warn',
+      title: `Check needed: ${station.name}`,
+      body: instructions,
+      refKind: 'goal',
+      refId: station.goal_id,
+      dedupeKey: `station:${stationId}:human-check`,
+      actions: [
+        {
+          id: 'open',
+          label: 'Open goal',
+          kind: 'open',
+          target: { type: 'goal', goalId: station.goal_id },
+        },
+      ],
+    });
+  }
+  return { station: getStation(db, stationId)!, notified: inbox !== null };
+}
+
 export function reorderStation(
   db: Database.Database,
   stationId: string,
@@ -321,7 +383,14 @@ const stationFields = {
     .describe('Ticket ID or unique prefix of a ticket this station wraps'),
 };
 
-export function registerStationTools(server: FastMCP, db: Database.Database): void {
+export function registerStationTools(
+  server: FastMCP,
+  db: Database.Database,
+  humanChecks: { inbox: Database.Database | null; scope: HumanCheckScope } = {
+    inbox: null,
+    scope: {},
+  }
+): void {
   server.addTool({
     name: 'list_stations',
     description:
@@ -414,6 +483,31 @@ export function registerStationTools(server: FastMCP, db: Database.Database): vo
     }),
     execute: async ({ stationId, evidenceNote }) =>
       JSON.stringify(markStationDone(db, resolveStationId(db, stationId), evidenceNote)),
+  });
+
+  server.addTool({
+    name: 'request_human_check',
+    description:
+      'Hand a human station over to the person when nobody is watching you. Stores the steps ' +
+      'to check on the station and raises one inbox warning for it; the station stays open ' +
+      'until a person ticks it off. Afterwards, continue with the next station — do not wait.',
+    parameters: z.object({
+      stationId: z.string().describe('Station ID (UUID or unique prefix) of a human station'),
+      instructions: z
+        .string()
+        .min(1)
+        .describe('What the person has to check, as concrete numbered steps'),
+    }),
+    execute: async ({ stationId, instructions }) =>
+      JSON.stringify(
+        requestHumanCheck(
+          db,
+          humanChecks.inbox,
+          resolveStationId(db, stationId),
+          instructions,
+          humanChecks.scope
+        )
+      ),
   });
 
   server.addTool({

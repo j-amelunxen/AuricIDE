@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoal } from '../tauri/goals';
+import type { PmGoal, PmGoalStation } from '../tauri/goals';
 import type { PmDependency, PmTicket } from '../tauri/pm';
 import type { AgentInfo } from '../tauri/agents';
 import { buildForYouQueue, type ForYouInput } from './forYou';
@@ -57,6 +57,35 @@ function makeAgent(overrides: Partial<AgentInfo> = {}): AgentInfo {
     ...overrides,
   };
 }
+
+function makeStation(goalId: string, overrides: Partial<PmGoalStation> = {}): PmGoalStation {
+  return {
+    id: uid('station'),
+    goalId,
+    name: 'A station',
+    kind: 'normal',
+    status: 'planned',
+    evidenceKind: 'claim',
+    predicate: { type: 'undefined' },
+    evidenceNote: '',
+    ticketId: null,
+    lane: 0,
+    sortOrder: 0,
+    lastCheckedAt: null,
+    doneAt: null,
+    createdAt: TS,
+    updatedAt: TS,
+    ...overrides,
+  };
+}
+
+const humanStation = (goalId: string, overrides: Partial<PmGoalStation> = {}) =>
+  makeStation(goalId, {
+    kind: 'human',
+    evidenceKind: 'human',
+    predicate: { type: 'human' },
+    ...overrides,
+  });
 
 function makeInput(overrides: Partial<ForYouInput> = {}): ForYouInput {
   return {
@@ -182,5 +211,71 @@ describe('one problem, one row', () => {
     );
     expect(items.filter((i) => i.kind === 'unclaimed')).toHaveLength(0);
     expect(items.filter((i) => i.kind === 'agent')).toHaveLength(1);
+  });
+
+  describe('human stations', () => {
+    const humanItems = (input: ForYouInput) =>
+      buildForYouQueue(input).filter((i) => i.kind === 'human-station');
+
+    it('lists an open human station once the agent work before it is done', () => {
+      const goal = makeGoal({ name: 'Voice' });
+      const test = humanStation(goal.id, { name: 'Test the speakers', sortOrder: 1 });
+      const stations = [
+        makeStation(goal.id, { status: 'done', evidenceKind: 'judged', sortOrder: 0 }),
+        test,
+        makeStation(goal.id, { name: 'Review', status: 'done', sortOrder: 2 }),
+      ];
+      expect(humanItems(makeInput({ goals: [goal], stations }))).toEqual([
+        {
+          kind: 'human-station',
+          stationId: test.id,
+          goalId: goal.id,
+          label: '"Test the speakers" needs you',
+        },
+      ]);
+    });
+
+    it('does not list a human station while agent work before it is open', () => {
+      const goal = makeGoal();
+      const stations = [
+        makeStation(goal.id, { sortOrder: 0 }),
+        humanStation(goal.id, { sortOrder: 1 }),
+      ];
+      expect(humanItems(makeInput({ goals: [goal], stations }))).toEqual([]);
+    });
+
+    it('does not list a human station a person already ticked', () => {
+      const goal = makeGoal();
+      const stations = [humanStation(goal.id, { status: 'done' })];
+      expect(humanItems(makeInput({ goals: [goal], stations }))).toEqual([]);
+    });
+
+    it('does not call a line that only waits for a person unclaimed', () => {
+      const goal = makeGoal();
+      const stations = [
+        makeStation(goal.id, { status: 'done', evidenceKind: 'judged', sortOrder: 0 }),
+        humanStation(goal.id, { sortOrder: 1 }),
+      ];
+      const queue = buildForYouQueue(makeInput({ goals: [goal], stations }));
+      expect(queue.map((i) => i.kind)).toEqual(['human-station']);
+    });
+
+    it('ranks after approvals and before stalls', () => {
+      const goal = makeGoal();
+      const other = makeGoal();
+      const gateTicket = makeTicket({ goalId: other.id, needsHumanSupervision: true });
+      const stalled = makeAgent({ lastActivityAt: NOW - 24 * 60 * 60_000 });
+      const queue = buildForYouQueue(
+        makeInput({
+          goals: [goal, other],
+          tickets: [gateTicket],
+          stations: [humanStation(goal.id)],
+          agents: [stalled],
+        })
+      );
+      const kinds = queue.map((i) => i.kind);
+      expect(kinds.indexOf('human-station')).toBeGreaterThan(kinds.indexOf('approval'));
+      expect(kinds.indexOf('human-station')).toBeLessThan(kinds.lastIndexOf('agent'));
+    });
   });
 });

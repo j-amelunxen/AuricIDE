@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PmGoal } from '@/lib/tauri/goals';
-import { buildGoalPlanningPrompt } from './goalLaunchPrompt';
+import { buildGoalLaunchPrompt, buildGoalPlanningPrompt } from './goalLaunchPrompt';
 
 function goal(overrides: Partial<PmGoal> = {}): PmGoal {
   return {
@@ -40,5 +40,42 @@ describe('buildGoalPlanningPrompt', () => {
   it('carries the goal prompt whole', () => {
     const prompt = buildGoalPlanningPrompt(goal({ goalPrompt: 'Write in German.' }));
     expect(prompt).toContain('## Goal instructions\nWrite in German.');
+  });
+});
+
+describe('buildGoalLaunchPrompt', () => {
+  it('starts a launch someone watches with the /goal command', () => {
+    const prompt = buildGoalLaunchPrompt(goal(), [], 'stations');
+    expect(prompt.startsWith('/goal\n\n')).toBe(true);
+    expect(prompt).toContain('Human stations belong to a person');
+    expect(prompt).not.toContain('request_human_check');
+  });
+
+  // /goal's stop hook refuses to let the agent end while the goal is unmet,
+  // and a human station keeps it unmet: an unattended agent would never exit.
+  it('leaves /goal out when nobody is watching', () => {
+    const prompt = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended: true });
+    expect(prompt).not.toContain('/goal');
+    expect(prompt.startsWith('# Goal: Publish the guide')).toBe(true);
+  });
+
+  it('hands human stations over and keeps working when nobody is watching', () => {
+    const prompt = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended: true });
+    expect(prompt).toContain('request_human_check');
+    expect(prompt).toContain('continue with the next station');
+    expect(prompt).toContain('only human stations are left');
+    expect(prompt).not.toContain('say what to check');
+  });
+
+  it('lets the hand-over rule outrank a goal prompt that says to wait', () => {
+    const prompt = buildGoalLaunchPrompt(
+      goal({ goalPrompt: 'Once the test is confirmed, run the review.' }),
+      [],
+      'stations',
+      { unattended: true }
+    );
+    const agreement = prompt.indexOf('## Working agreement');
+    expect(agreement).toBeGreaterThan(prompt.indexOf('## Goal instructions'));
+    expect(prompt.slice(agreement)).toContain('overrides');
   });
 });

@@ -254,7 +254,9 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
       const detail =
         st.predicate.type === 'undefined'
           ? 'check to be defined'
-          : st.status === 'done' && st.evidenceNote
+          : // Done: what was done. An open human station: the steps an
+            // agent handed over (request_human_check) for the person.
+            (st.status === 'done' || st.kind === 'human') && st.evidenceNote
             ? st.evidenceNote
             : undefined;
       return {

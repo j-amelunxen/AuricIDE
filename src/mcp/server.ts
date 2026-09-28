@@ -34,9 +34,9 @@ function attachNotificationTools(
   server: FastMCP,
   db: Database.Database,
   projectRoot: string
-): void {
+): Database.Database | null {
   const dbPath = process.env.AURIC_NOTIFICATIONS_DB;
-  if (!dbPath) return;
+  if (!dbPath) return null;
 
   try {
     const inbox = openNotificationsDb(dbPath);
@@ -56,10 +56,12 @@ function attachNotificationTools(
       ...defaults,
       installedProviders: process.env.AURIC_AGENT_PROVIDERS,
     });
+    return inbox;
   } catch (error) {
     // The PM tools are the point of this server; an unreachable inbox must not
     // stop it from starting.
     console.error(`[auric-pm] notification inbox unavailable at ${dbPath}: ${String(error)}`);
+    return null;
   }
 }
 
@@ -80,11 +82,15 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   registerCanvasTools(server, projectRoot);
   registerRequirementTools(server, db);
   registerGoalTools(server, db);
-  registerStationTools(server, db);
   registerKnowledgeTools(server, projectRoot);
   registerReviewTools(server, db);
   registerGoalReviewTools(server, db);
-  attachNotificationTools(server, db, projectRoot);
+  const inbox = attachNotificationTools(server, db, projectRoot);
+  // A hand-over still stores its steps on the station without an inbox.
+  registerStationTools(server, db, {
+    inbox,
+    scope: { projectPath: projectRoot, projectName: projectRoot.split('/').filter(Boolean).pop() },
+  });
 
   return server;
 }

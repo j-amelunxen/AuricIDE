@@ -519,6 +519,25 @@ describe('station-backed lines', () => {
     expect(line.stations.find((s) => s.label === 'Now')!.detail).toContain('check to be defined');
   });
 
+  it('shows the steps an agent handed over on the open human station', () => {
+    const goal = makeGoal();
+    const stations = [
+      makeStation(goal.id, {
+        name: 'Test the speakers',
+        kind: 'human',
+        predicate: { type: 'human' },
+        evidenceKind: 'human',
+        evidenceNote: '1. Start the server',
+      }),
+      makeStation(goal.id, { name: 'Untouched', kind: 'human', predicate: { type: 'human' } }),
+    ];
+    const line = buildGoalLine(makeInput({ goals: [goal], stations }), goal.id)!;
+    expect(line.stations.find((s) => s.label === 'Test the speakers')!.detail).toBe(
+      '1. Start the server'
+    );
+    expect(line.stations.find((s) => s.label === 'Untouched')!.detail).toBeUndefined();
+  });
+
   it('perches agents on station-backed lines via the linked ticket', () => {
     const goal = makeGoal();
     const ticket = makeTicket({ goalId: goal.id, status: 'in_progress' });

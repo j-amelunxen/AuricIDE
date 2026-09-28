@@ -9,6 +9,7 @@ import {
   getUnblockedOpenTickets,
   modelForPower,
   buildConductorPrompt,
+  GOAL_AGENT_TIMEOUT_MS,
   MAX_TICKET_ATTEMPTS,
 } from './conductorSlice';
 import type { StoreState } from './index';
@@ -1846,6 +1847,42 @@ describe('conductor milestones in the notification inbox', () => {
     ).toBe(true);
   });
 
+  // A refused spawn used to end up as a bare "Failed to launch agent" in the
+  // decision log, and nothing anywhere else: the run looked like it did nothing.
+  it('names why an agent could not start, in the log and once in the inbox', async () => {
+    const { spawnAgent } = await import('../tauri/agents');
+    const refusal = "Provider 'example' does not support an isolated Auric MCP project binding";
+    // Both tickets, first attempt and retry.
+    for (let i = 0; i < 4; i++) vi.mocked(spawnAgent).mockRejectedValueOnce(new Error(refusal));
+    store.setState({
+      pmDraftTickets: [
+        makeTicket({ id: 't1', name: 'Build' }),
+        makeTicket({ id: 't2', name: 'Test' }),
+      ],
+      conductorMaxConcurrent: 2,
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    await store.getState().conductorTick();
+
+    const fails = store.getState().conductorDecisions.filter((d) => d.action === 'fail');
+    expect(fails.length).toBeGreaterThan(1);
+    for (const fail of fails) expect(fail.detail).toContain(refusal);
+
+    await vi.waitFor(() => {
+      expect(
+        store.getState().notifications.some((n) => n.title === 'Conductor could not start an agent')
+      ).toBe(true);
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const entries = store
+      .getState()
+      .notifications.filter((n) => n.title === 'Conductor could not start an agent');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].severity).toBe('error');
+    expect(entries[0].body).toContain(refusal);
+  });
+
   // The conductor is about to retry by itself; an entry now would be an alarm
   // for something the system is still handling.
   it('records nothing while a ticket is simply being worked', async () => {
@@ -2005,6 +2042,9 @@ describe('conductor on a stations goal (no tickets)', () => {
     expect(config.task).toContain('Work mode: stations');
     expect(config.task).toContain('mark_station_done');
     expect(config.task).not.toContain('create_ticket');
+    // Nobody watches it: no /goal stop hook, human stations are handed over.
+    expect(config.task).not.toContain('/goal');
+    expect(config.task).toContain('request_human_check');
     expect(store.getState().conductorRunning).toBe(true);
     expect(store.getState().conductorRunSpawned).toBe(1);
     expect(store.getState().conductorDecisions[0]).toMatchObject({ action: 'spawn' });
@@ -2034,6 +2074,7 @@ describe('conductor on a stations goal (no tickets)', () => {
     await store.getState().conductorTick();
     expect(store.getState().conductorGoalAttempts.g1).toBe(1);
     expect(store.getState().conductorDecisions[0]).toMatchObject({ action: 'fail' });
+    expect(store.getState().conductorDecisions[0].detail).toContain('no harness');
   });
 
   it('reuses an open request an agent already wrote over MCP', async () => {
@@ -2076,6 +2117,84 @@ describe('conductor on a stations goal (no tickets)', () => {
     expect(launchRequests()).toHaveLength(0);
     expect(spawnAgent).not.toHaveBeenCalled();
     expect(store.getState().conductorRunning).toBe(true);
+  });
+
+  describe('goal agent watchdog', () => {
+    /** Seeds one running goal agent and the spawn config that records who started it. */
+    function seedGoalAgent({
+      runSource = 'conductor',
+      ...overrides
+    }: { runSource?: 'ui' | 'conductor'; startedAt?: number; spawnedByGoalId?: string } = {}) {
+      const agent = {
+        id: 'goal-agent',
+        name: 'Goal agent',
+        model: 'sonnet',
+        provider: 'claude',
+        status: 'running' as const,
+        headless: true,
+        startedAt: Date.now() - GOAL_AGENT_TIMEOUT_MS - 1,
+        spawnedByGoalId: 'g1',
+        ...overrides,
+      };
+      store.setState({
+        agents: [agent],
+        agentSpawnConfigs: {
+          [agent.id]: {
+            name: agent.name,
+            model: agent.model,
+            task: '',
+            headless: true,
+            spawnedByGoalId: agent.spawnedByGoalId,
+            runSource,
+          },
+        },
+      });
+    }
+
+    function withKillSpy() {
+      const kill = vi.fn(async () => {});
+      store.setState({ killRunningAgent: kill } as Partial<StoreState>);
+      return kill;
+    }
+
+    it('ends a conductor goal agent that ran past the timeout', async () => {
+      const kill = withKillSpy();
+      seedGoalAgent();
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+      expect(kill).toHaveBeenCalledWith('goal-agent');
+      expect(
+        store
+          .getState()
+          .conductorDecisions.some(
+            (d) => d.action === 'fail' && d.detail.includes('Write the guide')
+          )
+      ).toBe(true);
+    });
+
+    it('leaves a goal agent inside the timeout alone', async () => {
+      const kill = withKillSpy();
+      seedGoalAgent({ startedAt: Date.now() - 60_000 });
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+      expect(kill).not.toHaveBeenCalled();
+    });
+
+    it('never ends an agent a person started for the goal', async () => {
+      const kill = withKillSpy();
+      seedGoalAgent({ runSource: 'ui' });
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+      expect(kill).not.toHaveBeenCalled();
+    });
+
+    it('never ends an agent working a goal outside the run', async () => {
+      const kill = withKillSpy();
+      seedGoalAgent({ spawnedByGoalId: 'elsewhere' });
+      store.getState().startConductor('g1');
+      await store.getState().conductorTick();
+      expect(kill).not.toHaveBeenCalled();
+    });
   });
 
   it('spawns again once the agent ended with stations open, then stops out of attempts', async () => {
@@ -2134,7 +2253,27 @@ describe('conductor on a stations goal (no tickets)', () => {
     await store.getState().conductorTick();
     expect(launchRequests()).toHaveLength(0);
     expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
-    expect(store.getState().conductorLastRun?.blockers.join(' ')).toContain('Approve');
+    expect(store.getState().conductorLastRun?.blockers).toEqual([
+      'Waiting for you: station "Approve"',
+    ]);
+    const blocked = dispatched.find((n) => n.dedupeKey === 'goal:g1:blocked');
+    expect(blocked?.title).toBe('Goal waits for you: Write the guide');
+  });
+
+  it('names the human stations first when other blockers remain too', async () => {
+    store.setState({
+      goalStationsDraft: [
+        openStation({ id: 's1', name: 'Draft', status: 'done', evidenceKind: 'claim' }),
+        openStation({ id: 's3', name: 'Approve', kind: 'human', evidenceKind: 'human' }),
+      ],
+    });
+    store.getState().startConductor('g1');
+    await store.getState().conductorTick();
+    const blockers = store.getState().conductorLastRun?.blockers ?? [];
+    expect(blockers[0]).toBe('Waiting for you: station "Approve"');
+    expect(blockers.slice(1).join(' ')).toContain('Draft');
+    const blocked = dispatched.find((n) => n.dedupeKey === 'goal:g1:blocked');
+    expect(blocked?.title).toBe('Goal blocked: Write the guide');
   });
 
   it('asks for one agent per sub-goal with its own open line, within the budget', async () => {

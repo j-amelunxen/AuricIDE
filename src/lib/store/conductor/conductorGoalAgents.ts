@@ -1,6 +1,11 @@
 import { buildGoalLaunchPrompt, buildGoalPlanningPrompt } from '@/lib/goals/goalLaunchPrompt';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { modelForPower } from './conductorHelpers';
+import {
+  notifySpawnFailure,
+  spawnFailureReason,
+  withSpawnFailureReason,
+} from './conductorSpawnFailure';
 import type { ConductorTickContext } from './conductorTick';
 import type { ConductorSlice } from './conductorTypes';
 
@@ -43,16 +48,18 @@ function budgetSpent(state: ConductorSlice): boolean {
 function taskFor(ctx: ConductorTickContext, goal: PmGoal, purpose: GoalAgentPurpose): string {
   return purpose === 'plan'
     ? buildGoalPlanningPrompt(goal)
-    : buildGoalLaunchPrompt(goal, ctx.cross().goalStationsDraft ?? [], 'stations');
+    : buildGoalLaunchPrompt(goal, ctx.cross().goalStationsDraft ?? [], 'stations', {
+        unattended: true,
+      });
 }
 
-/** Starts one agent; resolves to its id, or null when the spawn did not happen. */
+/** Starts one agent; resolves to its id, or to why the spawn did not happen. */
 async function spawnOne(
   ctx: ConductorTickContext,
   goal: PmGoal,
   purpose: GoalAgentPurpose,
   projectPath: string
-): Promise<string | null> {
+): Promise<{ id: string } | { id: null; reason: string | null }> {
   const state = ctx.get();
   try {
     const agent = await ctx.cross().spawnNewAgent?.({
@@ -67,9 +74,9 @@ async function spawnOne(
       spawnedByGoalId: goal.id,
       runSource: 'conductor',
     });
-    return agent?.id ?? null;
-  } catch {
-    return null;
+    return agent?.id ? { id: agent.id } : { id: null, reason: null };
+  } catch (err) {
+    return { id: null, reason: spawnFailureReason(err) };
   }
 }
 
@@ -106,14 +113,19 @@ export async function spawnGoalAgents(
       [key]: { ...s[key], [goal.id]: (s[key][goal.id] ?? 0) + 1 },
       conductorRunSpawned: retry ? s.conductorRunSpawned : s.conductorRunSpawned + 1,
     }));
-    const agentId = await spawnOne(ctx, goal, purpose, projectPath);
-    if (!agentId) {
+    const spawned = await spawnOne(ctx, goal, purpose, projectPath);
+    if (spawned.id === null) {
       addDecision({
         action: 'fail',
-        detail: `Could not start a ${LABEL[purpose]} agent for "${goal.name}"`,
+        detail: withSpawnFailureReason(
+          `Could not start a ${LABEL[purpose]} agent for "${goal.name}"`,
+          spawned.reason
+        ),
       });
+      notifySpawnFailure(ctx, spawned.reason);
       continue;
     }
+    const agentId = spawned.id;
     inFlight += 1;
     started += 1;
     addDecision({
