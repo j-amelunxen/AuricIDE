@@ -145,10 +145,15 @@ pub(crate) fn project_is_dirty(root: &Path) -> bool {
 /// not count — a `node_modules` sitting on disk is not "you have a commit
 /// waiting".
 pub(crate) fn repo_is_dirty(repo_path: &Path) -> bool {
-    let repo = match Repository::open(repo_path) {
-        Ok(repo) => repo,
-        Err(_) => return false,
-    };
+    match Repository::open(repo_path) {
+        Ok(repo) => repo_is_dirty_in(&repo, repo_path),
+        Err(_) => false,
+    }
+}
+
+/// `repo_is_dirty` for a repository the caller already holds open at
+/// `repo_path` (whose `.auric` ignore list applies).
+pub(crate) fn repo_is_dirty_in(repo: &Repository, repo_path: &Path) -> bool {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)

@@ -1,6 +1,6 @@
 use super::discovery::primary_project_path;
 use super::staging::{git_commit_impl, git_stage_impl};
-use super::status::{git_status_impl, repo_is_dirty};
+use super::status::{git_status_impl, repo_is_dirty, repo_is_dirty_in};
 use super::types::*;
 use git2::{
     build::CheckoutBuilder, BranchType, Repository, WorktreeAddOptions, WorktreePruneOptions,
@@ -88,16 +88,29 @@ fn open_main_repo(repo_path: &str) -> Result<(Repository, PathBuf), String> {
 }
 
 fn worktree_branch_name(path: &Path) -> Option<String> {
-    let repo = Repository::open(path).ok()?;
+    head_branch_name(&Repository::open(path).ok()?)
+}
+
+fn head_branch_name(repo: &Repository) -> Option<String> {
     let head = repo.head().ok()?;
     head.shorthand().map(|s| s.to_string())
 }
 
-fn describe_worktree(source_repo: &Path, name: &str, path: &Path) -> GitWorktree {
+/// `main` is the already-open repository at `source_repo`. The worktree is
+/// opened once here and that one handle answers branch, dirty and ahead.
+fn describe_worktree(
+    main: &Repository,
+    source_repo: &Path,
+    name: &str,
+    path: &Path,
+) -> GitWorktree {
     let path_str = path.to_string_lossy().into_owned();
-    let branch = worktree_branch_name(path);
-    let dirty = repo_is_dirty(path);
-    let branch_ahead = worktree_branch_is_ahead(source_repo, path);
+    let wt = Repository::open(path).ok();
+    let branch = wt.as_ref().and_then(head_branch_name);
+    let dirty = wt.as_ref().is_some_and(|wt| repo_is_dirty_in(wt, path));
+    let branch_ahead = wt
+        .as_ref()
+        .is_some_and(|wt| worktree_branch_is_ahead(main, wt));
     GitWorktree {
         path: path_str,
         name: name.to_string(),
@@ -109,13 +122,7 @@ fn describe_worktree(source_repo: &Path, name: &str, path: &Path) -> GitWorktree
     }
 }
 
-fn worktree_branch_is_ahead(source_repo: &Path, worktree_path: &Path) -> bool {
-    let Ok(main) = Repository::open(source_repo) else {
-        return false;
-    };
-    let Ok(wt) = Repository::open(worktree_path) else {
-        return false;
-    };
+fn worktree_branch_is_ahead(main: &Repository, wt: &Repository) -> bool {
     let Ok(main_oid) = main.head().and_then(|h| h.peel_to_commit()).map(|c| c.id()) else {
         return false;
     };
@@ -159,7 +166,7 @@ pub fn git_worktree_add_impl(repo_path: &str, name: &str) -> Result<GitWorktree,
     repo.worktree(&id, &dest, Some(&opts))
         .map_err(|e| format!("could not add worktree: {e}"))?;
 
-    Ok(describe_worktree(&source, &id, &dest))
+    Ok(describe_worktree(&repo, &source, &id, &dest))
 }
 
 pub fn git_worktree_list_impl(repo_path: &str) -> Result<Vec<GitWorktree>, String> {
@@ -170,7 +177,7 @@ pub fn git_worktree_list_impl(repo_path: &str) -> Result<Vec<GitWorktree>, Strin
         .flatten()
         .filter_map(|name| {
             let wt = repo.find_worktree(name).ok()?;
-            Some(describe_worktree(&source, name, wt.path()))
+            Some(describe_worktree(&repo, &source, name, wt.path()))
         })
         .filter(|wt| wt.is_auric)
         .collect();
@@ -201,7 +208,7 @@ pub fn git_worktree_remove_impl(
     }
     let (name, wt) = found.ok_or_else(|| "worktree not found".to_string())?;
 
-    let described = describe_worktree(&source, &name, wt.path());
+    let described = describe_worktree(&repo, &source, &name, wt.path());
     if described.dirty && !force {
         return Err("worktree has uncommitted changes".to_string());
     }
