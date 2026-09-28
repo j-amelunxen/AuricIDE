@@ -9,6 +9,7 @@ import {
   buildConductorPrompt,
   filterTicketsForGoal,
   getUnblockedOpenTickets,
+  isConductorGoalAgent,
   modelForPower,
   ticketsWithUnblockedGoal,
 } from './conductorHelpers';
@@ -108,11 +109,9 @@ function endOverdueGoalAgents(
   const spawnConfigs = full.agentSpawnConfigs ?? {};
   for (const agent of full.agents ?? []) {
     if (
-      spawnConfigs[agent.id]?.runSource !== 'conductor' ||
+      !isConductorGoalAgent(agent, spawnConfigs) ||
       agent.status !== 'running' ||
-      agent.spawnedByTicketId ||
-      !agent.spawnedByGoalId ||
-      !inRun.has(agent.spawnedByGoalId) ||
+      !inRun.has(agent.spawnedByGoalId ?? '') ||
       nowMs - agent.startedAt <= GOAL_AGENT_TIMEOUT_MS
     ) {
       continue;
@@ -240,14 +239,14 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     halt();
     addDecision({
       action: 'stop',
-      detail: `Ticket budget reached (${spawned}/${ticketBudget})`,
+      detail: `Budget reached (${spawned}/${ticketBudget})`,
     });
     finishRun('budget_reached', goalName, []);
     void notifyConductor('run_finished', '');
     notifyInbox({
       severity: 'info',
       title: 'Conductor run finished · budget reached',
-      body: `${spawned} of ${ticketBudget} ticket(s) started.`,
+      body: `${spawned} of ${ticketBudget} started.`,
     });
     await persist();
     return;

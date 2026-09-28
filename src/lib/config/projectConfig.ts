@@ -36,6 +36,12 @@ export interface ProjectConfig {
   conductorJudgeProviderId: string;
   /** Which model reviews the work; empty means the conductor's own. */
   conductorJudgeModel: string;
+  /**
+   * How many tickets or goals the next manual conductor run may start.
+   * Empty means no limit. A scheduled run carries its own budget and does
+   * not write this.
+   */
+  conductorWorkCap: string;
 }
 
 export const PROJECT_CONFIG_DEFAULTS: ProjectConfig = {
@@ -48,6 +54,7 @@ export const PROJECT_CONFIG_DEFAULTS: ProjectConfig = {
   conductorJudgeForm: 'llm',
   conductorJudgeProviderId: '',
   conductorJudgeModel: '',
+  conductorWorkCap: '',
 };
 
 /** kv_store holds strings; booleans go in and come back out through here. */

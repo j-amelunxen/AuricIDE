@@ -2,6 +2,10 @@
 
 import { useCallback, useMemo } from 'react';
 import { useStore } from '@/lib/store';
+import {
+  conductorRunScope,
+  countConductorGoalAgents,
+} from '@/lib/store/conductor/conductorHelpers';
 import { getConductorPreflight } from '@/lib/store/conductorSlice';
 
 /**
@@ -14,6 +18,9 @@ export function useConductorController() {
   const running = useStore((s) => s.conductorRunning);
   const conductorGoalId = useStore((s) => s.conductorGoalId);
   const maxConcurrent = useStore((s) => s.conductorMaxConcurrent);
+  const workCap = useStore((s) => s.conductorWorkCap);
+  const runBudget = useStore((s) => s.conductorTicketBudget);
+  const runSpawned = useStore((s) => s.conductorRunSpawned);
   const assignments = useStore((s) => s.conductorAssignments);
   const reviewAssignments = useStore((s) => s.conductorReviewAssignments);
   const requireReview = useStore((s) => s.conductorRequireReview);
@@ -41,6 +48,7 @@ export function useConductorController() {
   const stopConductor = useStore((s) => s.stopConductor);
   const conductorTick = useStore((s) => s.conductorTick);
   const setConductorMaxConcurrent = useStore((s) => s.setConductorMaxConcurrent);
+  const setConductorWorkCap = useStore((s) => s.setConductorWorkCap);
   const setConductorProviderId = useStore((s) => s.setConductorProviderId);
   const setConductorModel = useStore((s) => s.setConductorModel);
   const setConductorRequireReview = useStore((s) => s.setConductorRequireReview);
@@ -55,8 +63,8 @@ export function useConductorController() {
     [tickets, pendingApprovalIds]
   );
 
-  // What stopping would actually cost: the implementer and reviewer agents this
-  // run launched and that are still alive. Assignment slots held by a spawn in
+  // What stopping would actually cost: the implementer, reviewer and goal
+  // agents this run launched and that are still alive. Assignment slots held by a spawn in
   // flight carry a placeholder rather than an agent id and so match nothing —
   // which is right, there is no process behind them to lose.
   // Selected as a number, not derived from the agents array: agents replace
@@ -68,8 +76,15 @@ export function useConductorController() {
       ...Object.values(s.conductorAssignments ?? {}),
       ...Object.values(s.conductorReviewAssignments ?? {}),
     ]);
-    return (s.agents ?? []).filter((a) => a.status === 'running' && assigned.has(a.id)).length;
+    const agents = s.agents ?? [];
+    return (
+      agents.filter((a) => a.status === 'running' && assigned.has(a.id)).length +
+      countConductorGoalAgents(agents, s.agentSpawnConfigs ?? {}, conductorRunScope(s))
+    );
   });
+  const goalAgentCount = useStore((s) =>
+    countConductorGoalAgents(s.agents ?? [], s.agentSpawnConfigs ?? {}, conductorRunScope(s))
+  );
 
   // Scoped to the SELECTED goal, not the running one: this answers "what would
   // happen if I pressed Start now".
@@ -105,9 +120,15 @@ export function useConductorController() {
   }, [conductorGoalId, goals]);
 
   const onStart = useCallback(() => {
-    startConductor(selectedGoalId);
+    // A missing cap (a surface that rendered before the field existed) is the
+    // same as no limit, and must keep the one-argument start the callers know.
+    if (typeof workCap === 'number') {
+      startConductor(selectedGoalId, { ticketBudget: workCap });
+    } else {
+      startConductor(selectedGoalId);
+    }
     void conductorTick();
-  }, [startConductor, selectedGoalId, conductorTick]);
+  }, [startConductor, selectedGoalId, conductorTick, workCap]);
 
   const onStop = useCallback(() => stopConductor(), [stopConductor]);
 
@@ -120,10 +141,15 @@ export function useConductorController() {
     running,
     scopeGoalName,
     maxConcurrent,
+    workCap: typeof workCap === 'number' ? workCap : null,
+    runBudget: typeof runBudget === 'number' ? runBudget : null,
+    runSpawned: typeof runSpawned === 'number' ? runSpawned : 0,
     // Implementers and reviewers share one budget, so both count as active.
     // Same defensive read as runningAgentCount above: the maps may not exist yet.
     activeAgentCount:
-      Object.keys(assignments ?? {}).length + Object.keys(reviewAssignments ?? {}).length,
+      Object.keys(assignments ?? {}).length +
+      Object.keys(reviewAssignments ?? {}).length +
+      goalAgentCount,
     runningAgentCount,
     pendingApprovals,
     decisions,
@@ -149,6 +175,7 @@ export function useConductorController() {
     onStart,
     onStop,
     onSetMaxConcurrent: setConductorMaxConcurrent,
+    onSetWorkCap: setConductorWorkCap,
     onSetProvider: setConductorProviderId,
     onSetModel: setConductorModel,
     onSetRequireReview: setConductorRequireReview,

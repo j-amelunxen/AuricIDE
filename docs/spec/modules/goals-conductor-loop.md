@@ -50,7 +50,7 @@ Parameters:
 
 - `goalId`: Target goal UUID (or `null` to run against all open tickets in the project).
 - `options`:
-  - `ticketBudget`: Limit on distinct tickets spawned in this run (ends with outcome `budget_reached`).
+  - `ticketBudget`: Limit on distinct starts in this run. Each ticket, each stations goal, and each planning goal counts once; a retry does not. The panel's "up to" field sets it for a manual run (empty means no limit). The run ends with outcome `budget_reached`.
   - `maxConcurrent`: Maximum parallel implementer agents (default `1`).
   - `requireReview`: Whether judge evaluation is required before tickets mark `done`.
   - `judgeForm`: `'llm'` (direct API call) or `'agent'` (independent reviewer CLI).

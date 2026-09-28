@@ -170,6 +170,23 @@ describe('useConductorController', () => {
     expect(conductorTick).toHaveBeenCalled();
   });
 
+  it('hands a saved work cap to the run as its budget', () => {
+    const startConductor = vi.fn();
+    const conductorTick = vi.fn(async () => {});
+    useStore.setState({
+      rootPath: '/tmp/project',
+      selectedGoalId: 'g7',
+      conductorWorkCap: 5,
+      goalsDraft: [{ id: 'g7', name: 'Goal' } as PmGoal],
+      pmDraftTickets: [makeTicket({ goalId: 'g7' })],
+      startConductor,
+      conductorTick,
+    });
+    const { result } = renderHook(() => useConductorController());
+    act(() => result.current.onStart());
+    expect(startConductor).toHaveBeenCalledWith('g7', { ticketBudget: 5 });
+  });
+
   it('cannot start an open project until tickets exist, but allows all-done verification', () => {
     useStore.setState({ rootPath: '/tmp/project' });
     const { result, rerender } = renderHook(() => useConductorController());

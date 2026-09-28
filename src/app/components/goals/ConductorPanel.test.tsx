@@ -41,6 +41,9 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     running: false,
     scopeGoalName: null,
     maxConcurrent: 2,
+    workCap: null as number | null,
+    runBudget: null as number | null,
+    runSpawned: 0,
     activeAgentCount: 0,
     runningAgentCount: 0,
     pendingApprovals: [] as PmTicket[],
@@ -59,6 +62,7 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
     onStart: vi.fn(),
     onStop: vi.fn(),
     onSetMaxConcurrent: vi.fn(),
+    onSetWorkCap: vi.fn(),
     onSetProvider: vi.fn(),
     onSetModel: vi.fn(),
     onSetRequireReview: vi.fn(),
@@ -136,6 +140,40 @@ describe('ConductorPanel', () => {
     expect(props.onSetMaxConcurrent).toHaveBeenCalledWith(4);
   });
 
+  it('sets how many tickets or goals a run may start', () => {
+    const props = renderPanel();
+    fireEvent.change(screen.getByTestId('conductor-work-cap'), { target: { value: '5' } });
+    expect(props.onSetWorkCap).toHaveBeenCalledWith(5);
+  });
+
+  it('clears the cap back to no limit', () => {
+    const props = renderPanel({ workCap: 5 });
+    fireEvent.change(screen.getByTestId('conductor-work-cap'), { target: { value: '' } });
+    expect(props.onSetWorkCap).toHaveBeenCalledWith(null);
+  });
+
+  it('tells Start what the cap will do', () => {
+    renderPanel({ workCap: 10 });
+    expect(screen.getByTestId('conductor-start-btn')).toHaveAttribute(
+      'title',
+      'Start up to 10 tickets or goals, then stop'
+    );
+  });
+
+  it('shows how far a capped run has got, and does not let the cap change mid-run', () => {
+    renderPanel({ running: true, workCap: 5, runBudget: 5, runSpawned: 2 });
+    const input = screen.getByTestId('conductor-work-cap') as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+    expect(input.value).toBe('5');
+    expect(screen.getByTestId('conductor-running-status').textContent).toContain('2 of 5');
+  });
+
+  it('keeps the saved cap in the field while a different run budget shows in the status', () => {
+    renderPanel({ running: true, workCap: null, runBudget: 3, runSpawned: 1 });
+    expect((screen.getByTestId('conductor-work-cap') as HTMLInputElement).value).toBe('');
+    expect(screen.getByTestId('conductor-running-status').textContent).toContain('1 of 3');
+  });
+
   describe('last run summary', () => {
     it('shows plain "stopped" when nothing has run yet', () => {
       renderPanel();
@@ -182,7 +220,7 @@ describe('ConductorPanel', () => {
       expect(screen.getByTestId('conductor-last-run').textContent).toContain('stopped by you');
     });
 
-    it('reports a spent budget by how many tickets it started', () => {
+    it('reports a spent budget by how many it started', () => {
       renderPanel({
         lastRun: makeLastRun({
           outcome: 'budget_reached',
@@ -193,12 +231,12 @@ describe('ConductorPanel', () => {
       });
       const summary = screen.getByTestId('conductor-last-run');
       expect(summary.textContent).toContain('budget reached');
-      expect(summary.textContent).toContain('5 of 5 tickets started');
+      expect(summary.textContent).toContain('5 of 5 started');
     });
 
-    it('shows the "N of M tickets started" readout only when a budget was set', () => {
+    it('shows the "N of M started" readout only when a budget was set', () => {
       renderPanel({ lastRun: makeLastRun() });
-      expect(screen.getByTestId('conductor-last-run').textContent).not.toContain('tickets started');
+      expect(screen.getByTestId('conductor-last-run').textContent).not.toContain('started');
     });
 
     it('hides the summary while a new run is working', () => {
@@ -543,6 +581,7 @@ describe('ConductorPanel preflight', () => {
       const settings = screen.getByTestId('conductor-settings');
 
       expect(settings).toContainElement(screen.getByTestId('conductor-max-concurrent'));
+      expect(settings).toContainElement(screen.getByTestId('conductor-work-cap'));
       expect(settings).toContainElement(screen.getByTestId('conductor-provider-select'));
       expect(settings).toContainElement(screen.getByTestId('conductor-model-select'));
       expect(settings).toContainElement(screen.getByTestId('conductor-require-review'));

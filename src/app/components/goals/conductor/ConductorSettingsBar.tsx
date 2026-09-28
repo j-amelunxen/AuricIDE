@@ -1,12 +1,16 @@
 'use client';
 
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import { CONDUCTOR_WORK_CAP_MAX, normalizeConductorWorkCap } from '@/lib/store/conductor/workCap';
 import { selectCls, settingCls } from './conductorHelpers';
 
 export interface ConductorSettingsBarProps {
   running: boolean;
   maxConcurrent: number;
   onSetMaxConcurrent: (n: number) => void;
+  /** Saved cap for the next manual run. Null means no limit. */
+  workCap: number | null;
+  onSetWorkCap: (n: number | null) => void;
   providerList: ProviderInfo[];
   providerId: string | null;
   onSetProvider: (id: string | null) => void;
@@ -31,6 +35,8 @@ export function ConductorSettingsBar({
   running,
   maxConcurrent,
   onSetMaxConcurrent,
+  workCap,
+  onSetWorkCap,
   providerList,
   providerId,
   onSetProvider,
@@ -66,6 +72,28 @@ export function ConductorSettingsBar({
           value={maxConcurrent}
           onChange={(e) => onSetMaxConcurrent(Number(e.target.value) || 1)}
           className="w-12 rounded bg-white/5 px-1.5 py-0.5 text-center text-[11px] text-foreground outline-none focus:ring-1 focus:ring-primary/30"
+        />
+      </label>
+
+      {/* How many tickets or goals this run may start. Empty = no limit. */}
+      <label
+        className={`${settingCls} text-foreground-muted`}
+        title="How many tickets or goals this run may start before it stops. Leave empty for no limit. A second try of the same one does not count again."
+      >
+        up to
+        <input
+          data-testid="conductor-work-cap"
+          type="number"
+          min={1}
+          max={CONDUCTOR_WORK_CAP_MAX}
+          placeholder="∞"
+          disabled={running}
+          value={workCap ?? ''}
+          onChange={(e) => {
+            const raw = e.target.value;
+            onSetWorkCap(raw.trim() === '' ? null : normalizeConductorWorkCap(Number(raw)));
+          }}
+          className="w-14 rounded bg-white/5 px-1.5 py-0.5 text-center text-[11px] text-foreground outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-40"
         />
       </label>
 
