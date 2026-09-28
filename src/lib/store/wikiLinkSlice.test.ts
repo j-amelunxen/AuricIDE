@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { create } from 'zustand';
-import { createWikiLinkSlice, type WikiLinkSlice } from './wikiLinkSlice';
+import { buildLinkIndexEntry, createWikiLinkSlice, type WikiLinkSlice } from './wikiLinkSlice';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -279,6 +279,111 @@ describe('wikiLinkSlice', () => {
       store.getState().updateFileInIndex('/project/a.md', '[[Target]]');
       store.getState().clearLinkIndex();
       expect(store.getState().getBacklinksFor('target.md')).toEqual([]);
+    });
+  });
+  // Autosave calls updateFileInIndex on every save. A save that leaves the links
+  // alone must not hand every subscriber (graph layout, editor facets) new maps.
+  describe('write avoidance', () => {
+    it('skips the store write when a re-saved file has identical links', () => {
+      store.getState().setAllFiles(['/p/a.md', '/p/b.md']);
+      store.getState().updateFileInIndex('/p/a.md', 'See [[b]] and [[missing]].');
+      const before = store.getState();
+      store.getState().updateFileInIndex('/p/a.md', 'See [[b]] and [[missing]].');
+      expect(store.getState().linkIndex).toBe(before.linkIndex);
+      expect(store.getState().brokenLinks).toBe(before.brokenLinks);
+    });
+
+    it('still indexes a new file that has no links', () => {
+      store.getState().updateFileInIndex('/p/empty.md', 'no links here');
+      expect(store.getState().linkIndex.has('/p/empty.md')).toBe(true);
+    });
+
+    it('keeps brokenLinks when only link positions moved', () => {
+      store.getState().setAllFiles(['/p/a.md']);
+      store.getState().updateFileInIndex('/p/a.md', '[[missing]]');
+      const broken = store.getState().brokenLinks;
+      store.getState().updateFileInIndex('/p/a.md', 'intro [[missing]]');
+      expect(store.getState().linkIndex.get('/p/a.md')?.outgoingLinks[0].from).toBe(6);
+      expect(store.getState().brokenLinks).toBe(broken);
+    });
+
+    it('skips setAllFiles when the path list is unchanged', () => {
+      store.getState().setAllFiles(['/p/a.md', '/p/b.md']);
+      const before = store.getState();
+      store.getState().setAllFiles(['/p/a.md', '/p/b.md']);
+      expect(store.getState().allFilePaths).toBe(before.allFilePaths);
+      expect(store.getState().allFileNames).toBe(before.allFileNames);
+      expect(store.getState().brokenLinks).toBe(before.brokenLinks);
+    });
+  });
+
+  // updateFileInIndex no longer recomputes brokenLinks across all files. The
+  // incremental answer has to equal the full recompute — key order included,
+  // because the link graph lays out broken targets in iteration order.
+  describe('incremental broken links equal a full recompute', () => {
+    const names = ['a', 'b', 'c', 'd'];
+    const contents = ['', '[[a]]', '[[x]]', '[[a]] [[y]]', '[[b]] [[c]] [[z]]', 'pad [[x]]'];
+
+    function reference(state: WikiLinkSlice): Array<[string, string[]]> {
+      const out: Array<[string, string[]]> = [];
+      for (const [fp, entry] of state.linkIndex) {
+        const broken = entry.targets.filter((t) => !state.allFileNames.has(t.toLowerCase()));
+        if (broken.length > 0) out.push([fp, broken]);
+      }
+      return out;
+    }
+
+    it('holds over a deterministic pseudo-random sequence of operations', () => {
+      let seed = 7;
+      const rand = (n: number) => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return Math.floor(seed / 65536) % n;
+      };
+      for (let step = 0; step < 400; step++) {
+        const op = rand(10);
+        const file = `/p/${names[rand(names.length)]}`;
+        if (op < 6) {
+          store.getState().updateFileInIndex(file, contents[rand(contents.length)]);
+        } else if (op < 7) {
+          store.getState().removeFileFromIndex(file);
+        } else if (op < 9) {
+          const files = names.filter(() => rand(2) === 0).map((n) => `/p/${n}`);
+          store.getState().setAllFiles(files);
+        } else {
+          store
+            .getState()
+            .bulkUpdateFilesInIndex([{ filePath: file, content: contents[rand(contents.length)] }]);
+        }
+        expect([...store.getState().brokenLinks]).toEqual(reference(store.getState()));
+      }
+    });
+  });
+
+  it('keeps linkIndex order when a file newly gains a broken link', () => {
+    store.getState().setAllFiles(['/p/a.md', '/p/b.md']);
+    store.getState().updateFileInIndex('/p/a.md', '[[b]]');
+    store.getState().updateFileInIndex('/p/b.md', '[[missing]]');
+    store.getState().updateFileInIndex('/p/a.md', '[[gone]]');
+    expect([...store.getState().brokenLinks.keys()]).toEqual(['/p/a.md', '/p/b.md']);
+  });
+
+  describe('bulkSetLinkEntries', () => {
+    it('matches bulkUpdateFilesInIndex for the same contents', () => {
+      const other = createTestStore();
+      store.getState().setAllFiles(['/p/a.md']);
+      other.getState().setAllFiles(['/p/a.md']);
+      const files = [
+        { filePath: '/p/a.md', content: '[[b]]' },
+        { filePath: '/p/b.md', content: '[[a]] [[c#H]]' },
+      ];
+      store.getState().bulkUpdateFilesInIndex(files);
+      other
+        .getState()
+        .bulkSetLinkEntries(
+          files.map((f) => ({ filePath: f.filePath, entry: buildLinkIndexEntry(f.content) }))
+        );
+      expect([...other.getState().linkIndex]).toEqual([...store.getState().linkIndex]);
+      expect([...other.getState().brokenLinks]).toEqual([...store.getState().brokenLinks]);
     });
   });
 });

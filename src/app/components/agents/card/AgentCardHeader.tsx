@@ -7,6 +7,7 @@ import { AGENT_STATE_LABEL, type AgentState } from '@/lib/agents/state';
 import { ComboProgressBadge } from '../ComboProgressBadge';
 import { isAuricWorktreePath } from '@/lib/git/agentWorktree';
 import { STATE_CHIP } from './cardConstants';
+import { AgentDuration } from './AgentDuration';
 
 export interface AgentCardHeaderProps {
   agent: AgentInfo;
@@ -18,8 +19,6 @@ export interface AgentCardHeaderProps {
   isRenaming: boolean;
   nameInputRef: React.RefObject<HTMLInputElement | null>;
   nameTooltip: string;
-  durationTitle: string;
-  durationLabel: string;
   state: AgentState;
   comboRun?: {
     id: string;
@@ -49,8 +48,6 @@ export function AgentCardHeader({
   isRenaming,
   nameInputRef,
   nameTooltip,
-  durationTitle,
-  durationLabel,
   state,
   comboRun,
   endLabel,
@@ -141,13 +138,7 @@ export function AgentCardHeader({
                 <span aria-hidden="true" className="opacity-40">
                   ·
                 </span>
-                <span
-                  data-testid="agent-runtime"
-                  title={durationTitle}
-                  className="flex-shrink-0 font-mono tabular-nums"
-                >
-                  {durationLabel}
-                </span>
+                <AgentDuration agent={agent} state={state} />
               </span>
             )}
             <span

@@ -8,10 +8,13 @@ import { nextScratchName } from '@/lib/scratch/naming';
 import { imageDataUri, localFileSrc, previewKind } from '@/lib/media/preview';
 import { isDiffTabId } from '@/lib/git/diffTabId';
 import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
+import type { StoreDiagnostic } from '@/lib/store/diagnosticsSlice';
+
+const NO_DIAGNOSTICS: StoreDiagnostic[] = [];
 
 export function useEditorAndScratchHandlers(
-  state: ReturnType<typeof useIDEState>,
+  state: IDEState,
   handleFileSelect: (path: string) => Promise<void>
 ) {
   const [autosave] = useState<ReturnType<typeof createAutosave>>(() =>
@@ -209,21 +212,28 @@ export function useEditorAndScratchHandlers(
     () => !!state.activeTabId && /\.(md|markdown)$/i.test(state.activeTabId),
     [state.activeTabId]
   );
+  // The cursor moves on every keystroke. Outside Markdown the breadcrumbs do
+  // not use it, so the page does not subscribe to it there at all — and
+  // inside Markdown only a change of line matters, not of column.
+  const cursorLine = useStore((s) => (isMarkdownFile ? s.cursorPos.line : 0));
   const headingBreadcrumbs = useMemo(() => {
     if (!isMarkdownFile) return [];
     const headings = extractHeadings(state.editorContent);
-    return getHeadingBreadcrumbs(headings, state.cursorPos.line);
-  }, [isMarkdownFile, state.editorContent, state.cursorPos.line]);
+    return getHeadingBreadcrumbs(headings, cursorLine);
+  }, [isMarkdownFile, state.editorContent, cursorLine]);
 
-  const activeDiagCounts = useMemo(() => {
-    if (!state.activeTabId) return { errors: 0, warnings: 0 };
-    return state.getDiagnosticCounts(state.activeTabId);
-  }, [state]);
-
-  const activeDiagnostics = useMemo(() => {
-    if (!state.activeTabId) return [];
-    return state.diagnostics.get(state.activeTabId) ?? [];
-  }, [state.activeTabId, state.diagnostics]);
+  // Only the active file's diagnostics: linting another file must not
+  // re-render the page.
+  const activeTabId = state.activeTabId;
+  const activeDiagnostics = useStore(
+    (s) => (activeTabId ? s.diagnostics.get(activeTabId) : undefined) ?? NO_DIAGNOSTICS
+  );
+  const getDiagnosticCounts = state.getDiagnosticCounts;
+  const activeDiagCounts = useMemo(
+    () => (activeTabId ? getDiagnosticCounts(activeTabId) : { errors: 0, warnings: 0 }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the counts are computed from activeDiagnostics
+    [activeTabId, activeDiagnostics, getDiagnosticCounts]
+  );
 
   const activeLanguage = useMemo(() => {
     if (!state.activeTabId) return 'Markdown';

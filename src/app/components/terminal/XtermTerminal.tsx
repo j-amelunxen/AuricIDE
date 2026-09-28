@@ -99,7 +99,15 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
 
     // Flush xterm's rAF-driven render even when WKWebView parks the compositor
     // between interactions (otherwise new output only paints on the next input).
-    const keepAlive = createRenderKeepAlive();
+    // Not for a terminal nobody can see: a background tab or a hidden window.
+    const container = containerRef.current;
+    const keepAlive = createRenderKeepAlive(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => document.visibilityState !== 'hidden' && isRendered(container)
+    );
     const writeTerm = (data: string) => {
       term.write(data);
       keepAlive.nudge();
@@ -330,4 +338,15 @@ export function XtermTerminal({ id, cwd, initialCommand, agentId, onInput }: Xte
       )}
     </div>
   );
+}
+
+/**
+ * False for an element hidden by `display`/`visibility` somewhere up its tree.
+ * Without `checkVisibility` (older engines) the answer is true, which only
+ * keeps the old always-pump behaviour.
+ */
+function isRendered(el: HTMLElement): boolean {
+  return typeof el.checkVisibility === 'function'
+    ? el.checkVisibility({ visibilityProperty: true, checkVisibilityCSS: true })
+    : true;
 }

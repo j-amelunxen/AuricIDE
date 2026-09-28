@@ -1,17 +1,20 @@
 'use client';
 
+import { perfBreadcrumbs } from '@/lib/perf/freezeProbe';
 import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '@/lib/store';
 import { getProjectFilesInfo } from '@/lib/tauri/fs';
+import { readProjectLinkEntries } from '@/lib/hooks/ide/projectLinkIndex';
 import { listProviders } from '@/lib/tauri/providers';
 import { filterProviders } from '@/lib/config/providerPolicy';
 import { loadProviderPolicy } from '@/lib/config/projectConfig';
 import { createFsEventRouter, type FsEventRouter } from '@/lib/ide/fsEventRouter';
 import { nextAttentionAgentId, withReviewFlags } from '@/lib/agents/attention';
 import { flushAgentLog } from '@/lib/agents/events/persistence';
+import { type OutputBatch } from '@/lib/agents/outputBatcher';
 import { installLaneSummarySubscriber } from '@/lib/agents/laneSummarySubscriber';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
-import { useAgentEvents } from '@/lib/hooks/useAgentEvents';
+import { useBatchedAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useAgentConsoleAutoOpen } from '@/lib/hooks/useAgentConsoleAutoOpen';
 import { useActiveTabContentLoader } from '@/lib/hooks/useActiveTabContentLoader';
 import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
@@ -21,13 +24,13 @@ import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
 import { useScheduledConductorRuns } from '@/lib/hooks/useScheduledConductorRuns';
 import { useInboxData } from '@/lib/inbox/useInboxData';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
-import { type useIDEState } from './useIDEState';
+import type { IDEState } from './ide/liveIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
 
-export function useIDEActions(
-  state: ReturnType<typeof useIDEState>,
-  handlers: ReturnType<typeof useIDEHandlers>
-) {
+const appendAgentOutputBatch = (batch: OutputBatch) =>
+  useStore.getState().appendAgentLogBatch(batch);
+
+export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useIDEHandlers>) {
   const lastShiftTime = useRef<number>(0);
   const fsRouterRef = useRef<FsEventRouter | null>(null);
 
@@ -173,7 +176,8 @@ export function useIDEActions(
   // they need through refs and the store rather than this render's scope.
   useEffect(() => {
     fsRouterRef.current = createFsEventRouter({
-      onTreeChange: (changedDirs) => void handleRefreshDirsRef.current(changedDirs),
+      onTreeChange: (changedDirs, summary) =>
+        void handleRefreshDirsRef.current(changedDirs, summary),
       onProjectDataChange: () => {
         const s = useStore.getState();
         const root = s.rootPath;
@@ -207,14 +211,10 @@ export function useIDEActions(
   );
 
   // Agent event subscriptions
-  const { appendAgentLog, updateAgentStatus } = state;
-  useAgentEvents(
-    useCallback(
-      (event) => {
-        appendAgentLog(event.agentId, event.line);
-      },
-      [appendAgentLog]
-    ),
+  const { updateAgentStatus } = state;
+  // Output reaches the store once per frame, and before any status change.
+  useBatchedAgentEvents(
+    appendAgentOutputBatch,
     useCallback(
       (event) => {
         updateAgentStatus(event.agentId, event.status);
@@ -279,16 +279,15 @@ export function useIDEActions(
         state.setAllFiles(files);
 
         const mdFiles = files.filter((f) => /\.(md|markdown)$/i.test(f));
-        const results = await Promise.allSettled(mdFiles.map((f) => m.readFile(f)));
-        if (canceled) return;
-        const entries = results
-          .map((r, i) => ({ filePath: mdFiles[i], result: r }))
-          .filter(
-            (x): x is { filePath: string; result: PromiseFulfilledResult<string> } =>
-              x.result.status === 'fulfilled'
-          )
-          .map(({ filePath, result }) => ({ filePath, content: result.value }));
-        state.bulkUpdateFilesInIndex(entries);
+        const entries = await perfBreadcrumbs.span(
+          'project-index-read',
+          () => readProjectLinkEntries(mdFiles, m.readFile, () => canceled),
+          () => ({ files: files.length, markdown: mdFiles.length })
+        );
+        if (canceled || !entries) return;
+        void perfBreadcrumbs.span('project-index-parse', async () =>
+          useStore.getState().bulkSetLinkEntries(entries)
+        );
       });
     });
 

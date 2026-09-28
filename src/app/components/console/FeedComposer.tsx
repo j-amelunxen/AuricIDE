@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useRef, useState } from 'react';
+import { memo, useId, useRef, useState } from 'react';
 import type { Lane } from '@/lib/agents/lanes';
 
 export interface FeedComposerProps {
@@ -37,7 +37,7 @@ function autoGrow(el: HTMLTextAreaElement) {
  * can send anything — a composer with no addressee would otherwise have to
  * guess who "you" just typed to.
  */
-export function FeedComposer({ lane, onSend }: FeedComposerProps) {
+export const FeedComposer = memo(function FeedComposer({ lane, onSend }: FeedComposerProps) {
   const [text, setText] = useState('');
   const reason = disabledReason(lane);
   const disabled = reason !== null;
@@ -92,4 +92,4 @@ export function FeedComposer({ lane, onSend }: FeedComposerProps) {
       </button>
     </div>
   );
-}
+});

@@ -5,6 +5,8 @@ import { agentLogAppend, agentLogLoad, agentLogPrune } from '../tauri/agentLog';
 import { APP_CONFIG_KEYS } from '../config/appConfig';
 import { flushAgentLog, resetAgentLogWriter } from '../agents/events/persistence';
 import { HEARTBEAT_BANDS, type HeartbeatBucket } from '../agents/events/heartbeat';
+import { resetAgentExtractors } from '../agents/events/registry';
+import { resetRemovedAgents } from './agent/removedAgents';
 
 /** Every event counted into an agent's heartbeat window, across all bands. */
 function totalHeartbeat(buckets: HeartbeatBucket[]): number {
@@ -101,6 +103,12 @@ vi.mock('../tauri/agents', () => ({
     { id: 'h2', prompt: 'older', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
   ]),
 }));
+
+// The mocked spawn hands out the same id every test; a real backend never
+// reuses one, so the record of removed ids starts empty for each test.
+beforeEach(() => {
+  resetRemovedAgents();
+});
 
 describe('agentSlice', () => {
   let store: StoreApi<AgentSlice>;
@@ -1207,6 +1215,126 @@ describe('agentSlice – byte-bounded agent logs', () => {
 
     expect(store.getState().agentLogMeta['agent-0']).toBeUndefined();
     expect(store.getState().agentLogMeta[`agent-${MAX_FINISHED_AGENTS - 1}`]).toBeDefined();
+    // A batch still in flight for the evicted agent must not bring it back.
+    store.getState().appendAgentLogBatch([['agent-0', ['late']]]);
+    expect(store.getState().agentLogMeta['agent-0']).toBeUndefined();
+  });
+});
+
+describe('agentSlice – output arriving after its agent was removed', () => {
+  let store: StoreApi<AgentSlice>;
+  const running = (id: string, repoPath = '/repo') => ({
+    id,
+    name: id,
+    model: 'm',
+    provider: 'claude',
+    status: 'running' as const,
+    startedAt: 0,
+    repoPath,
+  });
+
+  beforeEach(() => {
+    resetAgentExtractors();
+    store = createStore<AgentSlice>()(createAgentSlice);
+  });
+
+  const late = (id: string) => store.getState().appendAgentLogBatch([[id, ['late chunk\n']]]);
+
+  it('drops a batch for an agent that was killed', async () => {
+    store.setState({ agents: [running('agent-7')] });
+    await store.getState().killRunningAgent('agent-7');
+    late('agent-7');
+    expect(store.getState().agentLogs['agent-7']).toBeUndefined();
+    expect(store.getState().agentLogMeta['agent-7']).toBeUndefined();
+    expect(store.getState().agentStreamLines['agent-7']).toBeUndefined();
+  });
+
+  it('drops a batch for agents stopped with Stop all', async () => {
+    store.setState({ agents: [running('agent-8'), running('agent-9')] });
+    await store.getState().killAgentsForRepoPath('/repo');
+    late('agent-8');
+    late('agent-9');
+    expect(store.getState().agentLogMeta).toEqual({});
+  });
+
+  it('drops a batch for a dismissed agent', () => {
+    store.setState({ agents: [{ ...running('agent-10'), status: 'idle' as const }] });
+    store.getState().dismissFinishedAgent('agent-10');
+    late('agent-10');
+    expect(store.getState().agentLogMeta['agent-10']).toBeUndefined();
+  });
+
+  it('keeps output for an agent the store has not registered yet (spawn race)', () => {
+    late('agent-11');
+    expect(store.getState().agentLogs['agent-11']).toEqual(['late chunk\n']);
+  });
+});
+
+describe('agentSlice – arrival order across agents', () => {
+  beforeEach(() => {
+    resetAgentExtractors();
+  });
+
+  it('stamps each chunk with the time it arrived, not the time its batch landed', () => {
+    const store = createStore<AgentSlice>()(createAgentSlice);
+    store.getState().appendAgentLogBatch([
+      ['agent-1', ['first\n', 'third\n'], [100, 102]],
+      ['agent-2', ['second\n'], [101]],
+    ]);
+    const lines = store.getState().agentStreamLines;
+    expect(lines['agent-1'].map((l) => [l.text, l.at])).toEqual([
+      ['first', 100],
+      ['third', 102],
+    ]);
+    expect(lines['agent-2'].map((l) => [l.text, l.at])).toEqual([['second', 101]]);
+  });
+});
+
+describe('agentSlice – batched output', () => {
+  const chunks: Array<[string, string]> = [
+    ['agent-1', 'Reading src/a.ts\n'],
+    ['agent-2', 'hello '],
+    ['agent-1', 'x'.repeat(MAX_AGENT_LOG_BYTES / 2)],
+    ['agent-2', 'world\n'],
+    ['agent-1', 'y'.repeat(MAX_AGENT_LOG_BYTES / 2)],
+    ['agent-1', 'Done.\n'],
+  ];
+
+  function snapshot(state: AgentSlice) {
+    return {
+      logs: state.agentLogs,
+      meta: state.agentLogMeta,
+      lines: Object.fromEntries(
+        Object.entries(state.agentStreamLines).map(([id, lines]) => [
+          id,
+          lines.map((l) => [l.text, l.seq]),
+        ])
+      ),
+    };
+  }
+
+  beforeEach(() => {
+    resetAgentExtractors();
+  });
+
+  it('ends in exactly the state chunk-by-chunk appends reach, with one store update', () => {
+    const oneByOne = createStore<AgentSlice>()(createAgentSlice);
+    for (const [id, chunk] of chunks) oneByOne.getState().appendAgentLog(id, chunk);
+    const expected = snapshot(oneByOne.getState());
+
+    resetAgentExtractors();
+    const batched = createStore<AgentSlice>()(createAgentSlice);
+    const listener = vi.fn();
+    batched.subscribe(listener);
+    batched.getState().appendAgentLogBatch([
+      ['agent-1', chunks.filter(([id]) => id === 'agent-1').map(([, c]) => c)],
+      ['agent-2', chunks.filter(([id]) => id === 'agent-2').map(([, c]) => c)],
+    ]);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(snapshot(batched.getState())).toEqual(expected);
+    // seq advances once per chunk, so a terminal cursor finds every chunk.
+    expect(batched.getState().agentLogMeta['agent-1'].seq).toBe(4);
   });
 });
 

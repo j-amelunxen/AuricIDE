@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { perfBreadcrumbs } from '@/lib/perf/freezeProbe';
 import { groupAgentsByRepo } from '@/lib/store/agentSlice';
 import { consoleAgentState } from '@/lib/agents/consoleState';
 import { consoleSummaryLine, consoleAttentionBadge } from '@/lib/agents/consoleSummary';
-import { countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
-import { useNow } from '@/lib/hooks/useNow';
+import { agentAttention, countNeedingAttention, withReviewFlags } from '@/lib/agents/attention';
+import { useNowWhen } from '@/lib/hooks/useNow';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { fleetHeartbeatMax, heartbeatSeries } from '@/lib/agents/events/heartbeat';
 import {
@@ -64,7 +65,6 @@ export function AgentConsole({ onOpenTerminal }: AgentConsoleProps) {
 
 function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
-  const now = useNow();
   const [focusedAgentId, setFocusedAgentId] = useState<string | null>(null);
 
   // The divider between the grid and the feed. `heightRef` shadows the state
@@ -151,6 +151,21 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
   const agentEvents = useStore((s) => s.agentEvents);
   const agentHeartbeat = useStore((s) => s.agentHeartbeat);
   const reviewedAgentIds = useStore((s) => s.reviewedAgentIds);
+  useEffect(() => {
+    // Opening the console mounts the whole fleet view and the feed at once —
+    // mark it, so a freeze report can tell a slow open from a slow stream.
+    perfBreadcrumbs.add('agent-console:open', { agents: useStore.getState().agents.length });
+  }, []);
+  // The console reads the clock for three things: the heartbeat's minute
+  // buckets, each agent's console state and the attention count. It re-renders
+  // when one of those moves, not every second; the cards tick on their own.
+  const now = useNowWhen((t) => {
+    const flagged = withReviewFlags(agents, reviewedAgentIds);
+    return [
+      Math.floor(t / 60_000),
+      ...flagged.map((a) => `${consoleAgentState(a, a.reviewed, t)}:${agentAttention(a, t) ?? ''}`),
+    ].join('|');
+  });
   const agentColors = useStore((s) => s.agentColors);
   const starredProjects = useStore((s) => s.starredProjects);
   const killRunningAgent = useStore((s) => s.killRunningAgent);
@@ -264,6 +279,10 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
     (agent) => agent.status === 'idle' && !reviewedAgentIds.includes(agent.id)
   ).length;
 
+  // Stable, so the memoized treemap cells are not re-rendered by a new closure.
+  const onStop = useCallback((id: string) => killRunningAgent(id), [killRunningAgent]);
+  const onRetry = useCallback((id: string) => void retryFailedAgent(id), [retryFailedAgent]);
+
   // Every ProjectSection — active or idle — is wired to the same store
   // actions; only `repoPath` and `agents` vary between the two grids below.
   const sectionProps: Omit<ProjectSectionProps, 'repoPath' | 'agents'> = {
@@ -274,8 +293,8 @@ function AgentConsoleContent({ onOpenTerminal }: AgentConsoleProps) {
     agentColors,
     onFocus: setFocusedAgentId,
     onOpenTerminal,
-    onStop: (id) => killRunningAgent(id),
-    onRetry: (id) => void retryFailedAgent(id),
+    onStop,
+    onRetry,
     onMarkReviewed: markAgentReviewed,
     onDismiss: dismissFinishedAgent,
     onStopAll: (repoPath) => void killAgentsForRepoPath(repoPath),

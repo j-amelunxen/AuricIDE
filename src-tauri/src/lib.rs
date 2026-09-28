@@ -27,6 +27,7 @@ mod recent_creations;
 mod recent_projects;
 mod schedules;
 mod themes;
+mod ui_watchdog;
 mod usage_limits;
 mod utf8_stream;
 mod video_import;
@@ -69,6 +70,7 @@ pub fn run() {
             if let Ok(log_dir) = app.path().app_log_dir() {
                 crashlog::set_crash_log_dir(log_dir);
             }
+            ui_watchdog::start(app.handle());
             app.manage(providers::new_provider_registry(Some(app.handle())));
 
             let recent_projects_path = app
@@ -394,6 +396,8 @@ pub fn run() {
             goals_load,
             goals_clear,
             append_metrics_log,
+            ui_watchdog::ui_pong,
+            ui_watchdog::record_ui_stall,
             report_frontend_crash,
             list_crash_logs,
             read_crash_log,

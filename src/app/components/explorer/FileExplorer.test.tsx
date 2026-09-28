@@ -1,7 +1,21 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FileExplorer, flattenVisibleTree, type FileTreeNode } from './FileExplorer';
+
+// Every file row asks for its icon exactly once per render, so counting the
+// calls by name counts row renders without touching the component.
+const iconLookups = vi.hoisted(() => new Map<string, number>());
+vi.mock('./fileTreeIcons', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./fileTreeIcons')>();
+  return {
+    ...actual,
+    getFileIcon: (name: string) => {
+      iconLookups.set(name, (iconLookups.get(name) ?? 0) + 1);
+      return actual.getFileIcon(name);
+    },
+  };
+});
 
 const mockTree: FileTreeNode[] = [
   {
@@ -934,5 +948,281 @@ describe('FileExplorer — recently created glow', () => {
       />
     );
     expect(screen.getByTestId('tree-item-/stale.ts')).not.toHaveAttribute('data-recently-modified');
+  });
+});
+
+describe('FileExplorer — row re-renders', () => {
+  const noop = () => {};
+
+  it('a tree update re-renders the rows whose node changed, not their unchanged siblings', () => {
+    const untouched: FileTreeNode = {
+      name: 'untouched.ts',
+      path: '/untouched.ts',
+      isDirectory: false,
+    };
+    const before: FileTreeNode = { name: 'changing.ts', path: '/changing.ts', isDirectory: false };
+    const { rerender } = render(
+      <FileExplorer
+        tree={[untouched, before]}
+        selectedPath={null}
+        onSelectFile={noop}
+        onToggleDir={noop}
+      />
+    );
+    iconLookups.clear();
+
+    // What a watcher refresh does: a new node for the changed file, the rest
+    // carried over by reference.
+    rerender(
+      <FileExplorer
+        tree={[untouched, { ...before, gitStatus: 'modified' }]}
+        selectedPath={null}
+        onSelectFile={noop}
+        onToggleDir={noop}
+      />
+    );
+
+    expect(iconLookups.get('changing.ts')).toBe(1);
+    expect(iconLookups.get('untouched.ts')).toBeUndefined();
+  });
+});
+
+describe('FileExplorer — windowed rows', () => {
+  // jsdom lays nothing out, so the explorer falls back to the window height
+  // (768px) for its viewport: with 20px rows that is ~40 rows plus overscan.
+  const FILES = 3000;
+  const bigTree = (): FileTreeNode[] => [
+    {
+      name: 'big',
+      path: '/big',
+      isDirectory: true,
+      expanded: true,
+      children: Array.from({ length: FILES }, (_, i) => ({
+        name: `f${i}.ts`,
+        path: `/big/f${i}.ts`,
+        isDirectory: false,
+      })),
+    },
+  ];
+  const noop = () => {};
+  const mountedRows = () => document.querySelectorAll('[data-testid^="tree-item-"]');
+  const scrollTo = (top: number) => {
+    const pane = screen.getByTestId('file-explorer-root-dropzone');
+    act(() => {
+      pane.scrollTop = top;
+      fireEvent.scroll(pane);
+    });
+  };
+
+  it('mounts a window of rows, not the whole expanded tree', () => {
+    render(
+      <FileExplorer tree={bigTree()} selectedPath={null} onSelectFile={noop} onToggleDir={noop} />
+    );
+
+    expect(mountedRows().length).toBeGreaterThan(30);
+    expect(mountedRows().length).toBeLessThan(100);
+    expect(screen.getByTestId('tree-item-/big/f0.ts')).toBeInTheDocument();
+    expect(screen.queryByTestId('tree-item-/big/f2999.ts')).toBeNull();
+  });
+
+  it('keeps the scroll height of the full list', () => {
+    render(
+      <FileExplorer tree={bigTree()} selectedPath={null} onSelectFile={noop} onToggleDir={noop} />
+    );
+    const pane = screen.getByTestId('file-explorer-root-dropzone');
+
+    const rowPx = 20;
+    const gapPx = [...pane.children].reduce(
+      (sum, el) => sum + (parseFloat((el as HTMLElement).style.height) || 0),
+      0
+    );
+    expect(gapPx + mountedRows().length * rowPx).toBe((FILES + 1) * rowPx);
+  });
+
+  it('re-measures the row height when a row resizes without a tree change (zoom, font)', () => {
+    // A stand-in ResizeObserver that lets the test play the browser's part.
+    const observers: Array<{ cb: ResizeObserverCallback; targets: Set<Element> }> = [];
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      private entry: { cb: ResizeObserverCallback; targets: Set<Element> };
+      constructor(cb: ResizeObserverCallback) {
+        this.entry = { cb, targets: new Set() };
+        observers.push(this.entry);
+      }
+      observe(el: Element) {
+        this.entry.targets.add(el);
+      }
+      unobserve(el: Element) {
+        this.entry.targets.delete(el);
+      }
+      disconnect() {
+        this.entry.targets.clear();
+      }
+    } as unknown as typeof ResizeObserver;
+    try {
+      render(
+        <FileExplorer tree={bigTree()} selectedPath={null} onSelectFile={noop} onToggleDir={noop} />
+      );
+      const observed = observers.find((o) =>
+        [...o.targets].some((t) => t.getAttribute('data-testid')?.startsWith('tree-item-'))
+      );
+      expect(observed, 'no mounted row is observed').toBeDefined();
+      const row = [...observed!.targets][0];
+
+      act(() =>
+        observed!.cb(
+          [{ target: row, borderBoxSize: [{ blockSize: 30, inlineSize: 200 }] } as never],
+          {} as ResizeObserver
+        )
+      );
+
+      const pane = screen.getByTestId('file-explorer-root-dropzone');
+      const gapPx = [...pane.children].reduce(
+        (sum, el) => sum + (parseFloat((el as HTMLElement).style.height) || 0),
+        0
+      );
+      expect(gapPx + mountedRows().length * 30).toBe((FILES + 1) * 30);
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  it('mounts the rows at the scroll position', () => {
+    render(
+      <FileExplorer tree={bigTree()} selectedPath={null} onSelectFile={noop} onToggleDir={noop} />
+    );
+
+    scrollTo(2000 * 20);
+
+    expect(screen.getByTestId('tree-item-/big/f2000.ts')).toBeInTheDocument();
+    expect(screen.queryByTestId('tree-item-/big/f0.ts')).toBeNull();
+  });
+
+  it('ArrowDown past the window edge focuses the next row', async () => {
+    const tree = bigTree();
+    const { rerender } = render(
+      <FileExplorer tree={tree} selectedPath="/big/f0.ts" onSelectFile={noop} onToggleDir={noop} />
+    );
+    const lastMounted = [...mountedRows()].at(-1)!;
+    const lastPath = lastMounted.getAttribute('data-testid')!.slice('tree-item-'.length);
+    const lastIndex = Number(lastPath.match(/f(\d+)/)![1]);
+    rerender(
+      <FileExplorer tree={tree} selectedPath={lastPath} onSelectFile={noop} onToggleDir={noop} />
+    );
+    (lastMounted as HTMLElement).focus();
+
+    await userEvent.setup().keyboard('{ArrowDown}');
+
+    expect(document.activeElement).toBe(screen.getByTestId(`tree-item-/big/f${lastIndex + 1}.ts`));
+  });
+
+  it('ArrowLeft reaches a parent folder scrolled far out of the window', async () => {
+    render(
+      <FileExplorer
+        tree={bigTree()}
+        selectedPath="/big/f2500.ts"
+        onSelectFile={noop}
+        onToggleDir={noop}
+      />
+    );
+    scrollTo(2500 * 20);
+    screen.getByTestId('tree-item-/big/f2500.ts').focus();
+
+    await userEvent.setup().keyboard('{ArrowLeft}');
+
+    expect(document.activeElement).toBe(screen.getByTestId('tree-item-/big'));
+  });
+
+  it('Tab from the last mounted row moves to the next row, as it did with every row mounted', async () => {
+    render(
+      <FileExplorer tree={bigTree()} selectedPath={null} onSelectFile={noop} onToggleDir={noop} />
+    );
+    const lastMounted = [...mountedRows()].at(-1) as HTMLElement;
+    const lastIndex = Number(lastMounted.getAttribute('data-testid')!.match(/f(\d+)/)![1]);
+    lastMounted.focus();
+
+    await userEvent.setup().keyboard('{Tab}');
+
+    expect(document.activeElement).toBe(screen.getByTestId(`tree-item-/big/f${lastIndex + 1}.ts`));
+  });
+
+  it('moves keyboard focus between rows on Windows paths', async () => {
+    const tree: FileTreeNode[] = [
+      { name: 'b.ts', path: 'C:\\big\\b.ts', isDirectory: false },
+      { name: 'f.ts', path: 'C:\\big\\f.ts', isDirectory: false },
+    ];
+    render(
+      <FileExplorer
+        tree={tree}
+        selectedPath={tree[0].path}
+        onSelectFile={noop}
+        onToggleDir={noop}
+      />
+    );
+    screen.getByTestId('tree-item-C:\\big\\b.ts').focus();
+
+    await userEvent.setup().keyboard('{ArrowDown}');
+
+    expect(document.activeElement).toBe(screen.getByTestId('tree-item-C:\\big\\f.ts'));
+  });
+
+  it('Tab and arrows work on file names a CSS selector cannot carry', async () => {
+    const tree: FileTreeNode[] = [
+      { name: 'say "hi".ts', path: '/q/say "hi".ts', isDirectory: false },
+      { name: 'back\\slash.ts', path: '/q/back\\slash.ts', isDirectory: false },
+      { name: 'last.ts', path: '/q/last.ts', isDirectory: false },
+    ];
+    render(
+      <FileExplorer
+        tree={tree}
+        selectedPath={tree[0].path}
+        onSelectFile={noop}
+        onToggleDir={noop}
+      />
+    );
+    screen.getByTestId('tree-item-/q/say "hi".ts').focus();
+    const user = userEvent.setup();
+
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(screen.getByTestId('tree-item-/q/back\\slash.ts'));
+
+    await user.keyboard('{Tab}');
+    expect(document.activeElement).toBe(screen.getByTestId('tree-item-/q/last.ts'));
+  });
+
+  it('keeps the focused row mounted when it is scrolled out of view', () => {
+    render(
+      <FileExplorer tree={bigTree()} selectedPath={null} onSelectFile={noop} onToggleDir={noop} />
+    );
+    const row = screen.getByTestId('tree-item-/big/f3.ts');
+    row.focus();
+
+    scrollTo(2000 * 20);
+
+    expect(row.isConnected).toBe(true);
+    expect(document.activeElement).toBe(row);
+  });
+
+  it('keeps the dragged row mounted so its drag can end', () => {
+    render(
+      <FileExplorer
+        tree={bigTree()}
+        selectedPath={null}
+        onSelectFile={noop}
+        onToggleDir={noop}
+        onMoveNode={noop}
+      />
+    );
+    const row = screen.getByTestId('tree-item-/big/f3.ts');
+    fireEvent.dragStart(row, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+
+    scrollTo(2000 * 20);
+    expect(row.isConnected).toBe(true);
+
+    fireEvent.dragEnd(row);
+    // The drag is over, so the row is no longer pinned and leaves with the
+    // window; scrolled back, it is no longer dimmed.
+    scrollTo(0);
+    expect(screen.getByTestId('tree-item-/big/f3.ts')).not.toHaveClass('opacity-40');
   });
 });

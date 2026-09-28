@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { useNow } from '@/lib/hooks/useNow';
+import type { StreamLine } from '@/lib/agents/events/streamCapture';
+import { useNowWhen } from '@/lib/hooks/useNow';
+import { agentAttention } from '@/lib/agents/attention';
+import { consoleAgentState } from '@/lib/agents/consoleState';
+import { formatAgentDuration } from '@/lib/agents/duration';
 import { useFeedFollow } from '@/lib/hooks/useFeedFollow';
 import {
   mergeFeedRows,
@@ -38,6 +42,10 @@ import { AttentionDock } from './AttentionDock';
 type FeedMode = 'activity' | 'output';
 
 type FeedFilter = 'all' | 'ask' | 'edit' | 'done';
+
+/** The hidden mode's rows: stable, so switching back never sees a stale list. */
+const NO_ROWS: FeedRow[] = [];
+const NO_STREAM_LINES: Record<string, StreamLine[]> = {};
 
 const MODES: { key: FeedMode; label: string }[] = [
   { key: 'activity', label: 'Activity' },
@@ -84,9 +92,15 @@ export interface ActivityFeedProps {
  * stream on the right, oldest first — see `docs/design-console-lanes.md`.
  */
 export function ActivityFeed({ hint, onFocus }: ActivityFeedProps = {}) {
+  const [mode, setMode] = useState<FeedMode>('activity');
   const agents = useStore((s) => s.agents);
+  // Stream lines change with nearly every output batch. Only the output mode
+  // shows them, so only the output mode subscribes — otherwise the whole feed
+  // re-rendered per batch to display nothing new.
+  const agentStreamLines = useStore((s) =>
+    mode === 'output' ? s.agentStreamLines : NO_STREAM_LINES
+  );
   const agentEvents = useStore((s) => s.agentEvents);
-  const agentStreamLines = useStore((s) => s.agentStreamLines);
   const agentColors = useStore((s) => s.agentColors);
   const agentLogHistory = useStore((s) => s.agentLogHistory);
   const agentSentMessages = useStore((s) => s.agentSentMessages);
@@ -98,11 +112,24 @@ export function ActivityFeed({ hint, onFocus }: ActivityFeedProps = {}) {
   const toggleAgentMuted = useStore((s) => s.toggleAgentMuted);
   const sendAgentInput = useStore((s) => s.sendAgentInput);
 
-  const [mode, setMode] = useState<FeedMode>('activity');
   const [filter, setFilter] = useState<FeedFilter>('all');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
-  const now = useNow();
+  // The rail's state and "no output for …" line and the attention pops are all
+  // the clock decides here; re-render when one of those changes, not per tick.
+  const now = useNowWhen((t) =>
+    agents
+      .map((a) => {
+        const reviewed = reviewedAgentIds.includes(a.id);
+        const state = consoleAgentState(a, reviewed, t);
+        const quiet =
+          state === 'stalled' && a.lastActivityAt !== undefined
+            ? formatAgentDuration(t - a.lastActivityAt)
+            : '';
+        return `${state}:${quiet}:${agentAttention({ ...a, reviewed }, t) ?? ''}`;
+      })
+      .join('|')
+  );
 
   const lanes = useMemo(
     () =>
@@ -131,19 +158,28 @@ export function ActivityFeed({ hint, onFocus }: ActivityFeedProps = {}) {
   // Two sources, one list: the live events resolved against the running
   // fleet plus the human's own sent messages, plus whatever was read back
   // from disk. Oldest first — the feed's reading direction.
+  //
+  // Only the mode on screen is built. Stream lines change with nearly every
+  // frame of output, and building the hidden mode's list alongside cost as
+  // much as the visible one for nothing.
   const activityRows = useMemo<FeedRow[]>(
     () =>
-      oldestFirst(
-        mergeFeedRows(
-          [...toFeedRows(agentEvents, agents), ...toSentFeedRows(agentSentMessages, agents)],
-          agentLogHistory
-        )
-      ),
-    [agentEvents, agents, agentSentMessages, agentLogHistory]
+      mode !== 'activity'
+        ? NO_ROWS
+        : oldestFirst(
+            mergeFeedRows(
+              [...toFeedRows(agentEvents, agents), ...toSentFeedRows(agentSentMessages, agents)],
+              agentLogHistory
+            )
+          ),
+    [mode, agentEvents, agents, agentSentMessages, agentLogHistory]
   );
   const outputRows = useMemo<FeedRow[]>(
-    () => oldestFirst(toStreamFeedRows(mergeStreamFeed(agentStreamLines, agents), agents)),
-    [agentStreamLines, agents]
+    () =>
+      mode !== 'output'
+        ? NO_ROWS
+        : oldestFirst(toStreamFeedRows(mergeStreamFeed(agentStreamLines, agents), agents)),
+    [mode, agentStreamLines, agents]
   );
   const rows = mode === 'activity' ? activityRows : outputRows;
 
@@ -200,10 +236,14 @@ export function ActivityFeed({ hint, onFocus }: ActivityFeedProps = {}) {
     markSeenIfWatchingActivity();
   };
 
-  const handleComposerSend = (text: string) => {
-    if (!selectedLane) return;
-    void sendAgentInput(selectedLane.agentId, `${text}\n`);
-  };
+  const selectedLaneId = selectedLane?.agentId;
+  const handleComposerSend = useCallback(
+    (text: string) => {
+      if (!selectedLaneId) return;
+      void sendAgentInput(selectedLaneId, `${text}\n`);
+    },
+    [selectedLaneId, sendAgentInput]
+  );
 
   const attentionPops = useMemo(
     () =>

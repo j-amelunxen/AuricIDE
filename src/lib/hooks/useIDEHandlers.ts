@@ -14,7 +14,7 @@ import {
 } from './ide/useAgentAndCommandHandlers';
 import { useContextMenuOptions } from './ide/useContextMenuOptions';
 import { useStore } from '@/lib/store';
-import type { useIDEState } from './useIDEState';
+import type { IDEState } from './ide/liveIDEState';
 
 export { CONTEXT_BOUND_COMMANDS };
 
@@ -22,7 +22,7 @@ export { CONTEXT_BOUND_COMMANDS };
  * Facade hook coordinating domain-specific IDE handler hooks.
  * Delegates file, editor, git, canvas, and agent operations to focused sub-hooks.
  */
-export function useIDEHandlers(state: ReturnType<typeof useIDEState>) {
+export function useIDEHandlers(state: IDEState) {
   const [clipboard, setClipboard] = useState<{ path: string; isDirectory: boolean } | null>(null);
   const { confirm, confirmDialog } = useConfirm();
 

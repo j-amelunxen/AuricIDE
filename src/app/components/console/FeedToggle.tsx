@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 export interface FeedToggleOption<T extends string> {
   key: T;
   label: string;
@@ -17,7 +19,7 @@ export interface FeedToggleProps<T extends string> {
  * (Activity / All output) and its kind filter (All / Questions / Changes /
  * Completions) are the same shape, so they share this one rendering.
  */
-export function FeedToggle<T extends string>({
+function FeedToggleView<T extends string>({
   options,
   value,
   onChange,
@@ -43,3 +45,6 @@ export function FeedToggle<T extends string>({
     </div>
   );
 }
+
+/** Memoized: the feed re-renders with every output batch; its toggles do not change. */
+export const FeedToggle = memo(FeedToggleView) as typeof FeedToggleView;

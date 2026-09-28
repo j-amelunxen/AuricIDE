@@ -14,7 +14,8 @@ import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { groovy } from '@codemirror/legacy-modes/mode/groovy';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, historyKeymap } from '@codemirror/commands';
+import { editorHistory } from './externalContentSync';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
 import { lintKeymap } from '@codemirror/lint';
@@ -171,16 +172,24 @@ function buildLintExtension(
   }
 }
 
+let headingTitleCache: {
+  source: ReturnType<typeof useStore.getState>['headingIndex'];
+  titles: Map<string, string[]>;
+} | null = null;
+
+/** Heading titles per file for the lint facet, rebuilt only when the index is replaced. */
 export function buildHeadingTitleIndex(): Map<string, string[]> {
-  const state = useStore.getState();
-  const result = new Map<string, string[]>();
-  for (const [fp, headings] of state.headingIndex) {
-    result.set(
+  const { headingIndex } = useStore.getState();
+  if (headingTitleCache?.source === headingIndex) return headingTitleCache.titles;
+  const titles = new Map<string, string[]>();
+  for (const [fp, headings] of headingIndex) {
+    titles.set(
       fp,
       headings.map((h) => h.title)
     );
   }
-  return result;
+  headingTitleCache = { source: headingIndex, titles };
+  return titles;
 }
 
 export interface CreateEditorStateOptions {
@@ -205,7 +214,7 @@ export function createEditorState({
     auricTheme,
     auricHighlightStyle,
     lineNumbers(),
-    history(),
+    editorHistory(),
     compartments.language.of(getLanguageExtension(filePath)),
     compartments.nlp.of(isMarkdown ? nlpHighlightExtension : []),
     compartments.deepNlp.of(isMarkdown && store.enableDeepNlp ? deepHighlightExtension : []),

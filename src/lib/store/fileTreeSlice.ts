@@ -53,28 +53,46 @@ export function collectLoadedDirs(nodes: FileNode[], out = new Set<string>()): S
   return out;
 }
 
-function updateNodeInTree(nodes: FileNode[], path: string, update: Partial<FileNode>): FileNode[] {
-  return nodes.map((node) => {
-    if (node.path === path) {
-      return { ...node, ...update };
-    }
-    if (node.children) {
-      return { ...node, children: updateNodeInTree(node.children, path, update) };
-    }
-    return node;
-  });
+/**
+ * True when `path` lies below the folder `dir`. Either separator counts —
+ * the explorer shows Windows paths as they come from the OS — and a folder
+ * that already ends in one (`/`, `C:\\`) is not given a second.
+ */
+function isInside(path: string, dir: string): boolean {
+  if (!path.startsWith(dir) || path.length === dir.length) return false;
+  const last = dir[dir.length - 1];
+  if (last === '/' || last === '\\') return true;
+  const next = path[dir.length];
+  return next === '/' || next === '\\';
 }
 
-function toggleExpandInTree(nodes: FileNode[], path: string): FileNode[] {
-  return nodes.map((node) => {
+/**
+ * Rebuilds only the nodes on the way down to `path`; every other node is
+ * handed back as the same object. The explorer's rows are memoized by node
+ * identity, so cloning off-path folders would re-render the whole tree for a
+ * change to one of them.
+ */
+function mapNodeAtPath(
+  nodes: FileNode[],
+  path: string,
+  update: (node: FileNode) => FileNode
+): FileNode[] {
+  let changed = false;
+  const next = nodes.map((node) => {
     if (node.path === path) {
-      return { ...node, expanded: !node.expanded };
+      changed = true;
+      return update(node);
     }
-    if (node.children) {
-      return { ...node, children: toggleExpandInTree(node.children, path) };
+    if (node.children && isInside(path, node.path)) {
+      const children = mapNodeAtPath(node.children, path, update);
+      if (children !== node.children) {
+        changed = true;
+        return { ...node, children };
+      }
     }
     return node;
   });
+  return changed ? next : nodes;
 }
 
 export const createFileTreeSlice: StateCreator<FileTreeSlice> = (set) => ({
@@ -83,9 +101,17 @@ export const createFileTreeSlice: StateCreator<FileTreeSlice> = (set) => ({
   rootPath: null,
   setFileTree: (tree) => set({ fileTree: tree }),
   setDirectoryChildren: (path, children) =>
-    set((state) => ({ fileTree: updateNodeInTree(state.fileTree, path, { children }) })),
+    set((state) => ({
+      fileTree: mapNodeAtPath(state.fileTree, path, (node) => ({ ...node, children })),
+    })),
   selectFile: (path) => set({ selectedPath: path }),
-  toggleExpand: (path) => set((state) => ({ fileTree: toggleExpandInTree(state.fileTree, path) })),
+  toggleExpand: (path) =>
+    set((state) => ({
+      fileTree: mapNodeAtPath(state.fileTree, path, (node) => ({
+        ...node,
+        expanded: !node.expanded,
+      })),
+    })),
   setRootPath: (path) => set({ rootPath: path }),
   closeProject: () => set({ rootPath: null, fileTree: [], selectedPath: null }),
 });

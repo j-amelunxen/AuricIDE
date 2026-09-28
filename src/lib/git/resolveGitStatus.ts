@@ -26,16 +26,43 @@ export function resolveGitStatus(
   relativePath: string,
   statuses: GitFileStatus[]
 ): FileNode['gitStatus'] {
+  const { exact, ignoredDirs } = indexFor(statuses);
   const target = stripSlash(relativePath);
-  const exact = statuses.find((s) => stripSlash(s.path) === target);
-  if (exact) return toBadge(exact.status);
+  const hit = exact.get(target);
+  if (hit) return toBadge(hit);
 
-  const underIgnored = statuses.some((s) => {
-    if (s.status !== 'ignored') return false;
-    const dir = stripSlash(s.path);
-    return target.startsWith(`${dir}/`);
-  });
-  return underIgnored ? 'ignored' : undefined;
+  if (ignoredDirs.size === 0) return undefined;
+  for (let i = target.indexOf('/'); i !== -1; i = target.indexOf('/', i + 1)) {
+    if (ignoredDirs.has(target.slice(0, i))) return 'ignored';
+  }
+  return undefined;
+}
+
+interface StatusIndex {
+  exact: Map<string, GitFileStatus['status']>;
+  ignoredDirs: Set<string>;
+}
+
+/**
+ * One lookup table per status array. The explorer resolves every visible node
+ * against the same array; scanning it linearly per node made a large status
+ * list (an un-ignored build folder) cost nodes × statuses on every refresh.
+ */
+const indexCache = new WeakMap<GitFileStatus[], StatusIndex>();
+
+function indexFor(statuses: GitFileStatus[]): StatusIndex {
+  const cached = indexCache.get(statuses);
+  if (cached) return cached;
+  const exact = new Map<string, GitFileStatus['status']>();
+  const ignoredDirs = new Set<string>();
+  for (const s of statuses) {
+    const path = stripSlash(s.path);
+    if (!exact.has(path)) exact.set(path, s.status);
+    if (s.status === 'ignored') ignoredDirs.add(path);
+  }
+  const index = { exact, ignoredDirs };
+  indexCache.set(statuses, index);
+  return index;
 }
 
 /**

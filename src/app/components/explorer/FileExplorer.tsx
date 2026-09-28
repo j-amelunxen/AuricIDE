@@ -1,24 +1,26 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import {
   collectCreatedAt,
   collectModifiedAt,
+  dirsWithRecentlyCreatedFile,
   nextRecentlyCreatedExpiry,
 } from '@/lib/explorer/recentlyCreated';
 import {
   MOVE_MIME,
   isInvalidMove,
   flattenVisibleTree,
+  flattenVisibleNodes,
   findNode,
   computeRange,
-  focusRow,
   parentDir,
   type FileTreeNode,
   type FlatTreeEntry,
 } from './fileTreeTypes';
 import { TreeNode } from './TreeNode';
+import { planRows } from './virtualRows';
 
 export { MOVE_MIME, isInvalidMove, flattenVisibleTree };
 export type { FileTreeNode, FlatTreeEntry };
@@ -99,6 +101,15 @@ export function FileExplorer({
     [recentTimes, tick]
   );
 
+  // One walk per tree (or clock) change instead of one subtree walk per
+  // folder row. The set is only swapped when its members differ, so a refresh
+  // that lights up nothing new leaves every memoized row alone.
+  const computedRecentDirs = useMemo(() => dirsWithRecentlyCreatedFile(tree, now), [tree, now]);
+  const [recentDirs, setRecentDirs] = useState<ReadonlySet<string>>(computedRecentDirs);
+  if (recentDirs !== computedRecentDirs && !sameMembers(recentDirs, computedRecentDirs)) {
+    setRecentDirs(computedRecentDirs);
+  }
+
   useEffect(() => {
     const expiry = nextRecentlyCreatedExpiry(recentTimes, now);
     if (expiry === null) return;
@@ -118,11 +129,103 @@ export function FileExplorer({
     [selectedPathsProp, selectedPath]
   );
 
+  // Windowed rendering. An expanded tree can hold thousands of rows; mounting
+  // only the ones in (or near) view keeps the DOM and the heap flat. Rows keep
+  // their place in normal flow between spacer gaps (`planRows`), and three
+  // rows stay mounted wherever they are: the focused one (so focus, and the
+  // keyboard handling on this pane, survives scrolling it away), the dragged
+  // one (so its dragend still arrives) and one keyboard focus is heading to.
+  const rows = useMemo(() => flattenVisibleNodes(tree), [tree]);
+  const rowIndex = useMemo(() => new Map(rows.map((row, i) => [row.node.path, i])), [rows]);
+  const paneRef = useRef<HTMLDivElement>(null);
+  const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
+  const [scrollRow, setScrollRow] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    // No layout (jsdom, a pane not yet sized): assume the window's height.
+    const measure = () => setViewportHeight(pane.clientHeight || window.innerHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, []);
+
+  // The row height comes from CSS (`py-0.5` around a 16px line), so it is
+  // read off a mounted row rather than assumed — and re-read whenever that row
+  // resizes: a font, theme or zoom change alters it without touching the tree.
+  // A ResizeObserver reports it without any layout read on our side; the
+  // observed row is swapped only when the one watched has left the window.
+  const rowObserverRef = useRef<ResizeObserver | null>(null);
+  const observedRowRef = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      const height =
+        entry?.borderBoxSize?.[0]?.blockSize ?? (entry?.target as HTMLElement).offsetHeight;
+      if (height > 0) setRowHeight(height);
+    });
+    rowObserverRef.current = observer;
+    return () => {
+      observer.disconnect();
+      rowObserverRef.current = null;
+      observedRowRef.current = null;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const observer = rowObserverRef.current;
+    const observed = observedRowRef.current;
+    if (!observer || (observed && observed.isConnected)) return;
+    if (observed) observer.unobserve(observed);
+    const row = paneRef.current?.querySelector(ROW_SELECTOR) ?? null;
+    if (row) observer.observe(row);
+    observedRowRef.current = row;
+  });
+
+  const pinnedPaths = [focusedPath, draggingPath, pendingFocus];
+  const plan = planRows({
+    count: rows.length,
+    rowHeight,
+    scrollTop: scrollRow * rowHeight,
+    viewportHeight,
+    overscan: OVERSCAN_ROWS,
+    pinned: pinnedPaths.flatMap((path) => (path === null ? [] : (rowIndex.get(path) ?? []))),
+  });
+
+  /** Focus a row, mounting it first when it is outside the window. */
+  const focusPath = useCallback((path: string) => {
+    const row = findRow(paneRef.current, path);
+    if (row) row.focus();
+    else setPendingFocus(path);
+  }, []);
+
+  // Focusing the now-mounted row lets the browser scroll it into view exactly
+  // as it did when every row was mounted.
+  useLayoutEffect(() => {
+    if (pendingFocus === null) return;
+    findRow(paneRef.current, pendingFocus)?.focus();
+    // Not cleared: while it names the focused row it pins nothing extra, and
+    // the next out-of-window focus replaces it.
+  }, [pendingFocus]);
+
+  // Read at click time rather than listed as a dependency: a click handler
+  // that changed with every tree would re-render every row on each refresh.
+  const treeRef = useRef(tree);
+  useEffect(() => {
+    treeRef.current = tree;
+  });
+
   const handleNodeClick = useCallback(
     (node: FileTreeNode, e: React.MouseEvent) => {
       if (e.shiftKey && onRangeSelect) {
         e.preventDefault();
-        const flat = flattenVisibleTree(tree);
+        const flat = flattenVisibleTree(treeRef.current);
         const range = computeRange(flat, selectionAnchor ?? selectedPath, node.path);
         onRangeSelect(range, node.path);
         return;
@@ -138,11 +241,23 @@ export function FileExplorer({
         onSelectFile(node.path);
       }
     },
-    [tree, selectionAnchor, selectedPath, onRangeSelect, onToggleSelect, onToggleDir, onSelectFile]
+    [selectionAnchor, selectedPath, onRangeSelect, onToggleSelect, onToggleDir, onSelectFile]
   );
 
   const handleTreeKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        // Every row is a tab stop. With the whole list mounted Tab walked from
+        // row to row; at the window's edge the next row is not in the DOM, so
+        // step to it here. Inside the window the browser does it natively.
+        const from = focusedPath === null ? undefined : rowIndex.get(focusedPath);
+        if (from === undefined || e.target !== findRow(paneRef.current, focusedPath!)) return;
+        const next = rows[from + (e.shiftKey ? -1 : 1)];
+        if (!next || findRow(paneRef.current, next.node.path)) return;
+        e.preventDefault();
+        focusPath(next.node.path);
+        return;
+      }
       const flat = flattenVisibleTree(tree);
       if (flat.length === 0) return;
       const paths = flat.map((f) => f.path);
@@ -152,12 +267,12 @@ export function FileExplorer({
         e.preventDefault();
         const next = flat[Math.min(currentIndex + 1, flat.length - 1)] ?? flat[0];
         onFocusNode?.(next.path);
-        focusRow(next.path);
+        focusPath(next.path);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         const prev = flat[Math.max(currentIndex - 1, 0)];
         onFocusNode?.(prev.path);
-        focusRow(prev.path);
+        focusPath(prev.path);
       } else if (e.key === 'ArrowRight') {
         if (currentIndex < 0) return;
         const entry = flat[currentIndex];
@@ -170,7 +285,7 @@ export function FileExplorer({
           const child = flat[currentIndex + 1];
           if (child && child.path.startsWith(entry.path + '/')) {
             onFocusNode?.(child.path);
-            focusRow(child.path);
+            focusPath(child.path);
           }
         }
       } else if (e.key === 'ArrowLeft') {
@@ -184,7 +299,7 @@ export function FileExplorer({
           const parent = flat.find((f) => f.path === parentDir(entry.path));
           if (parent) {
             onFocusNode?.(parent.path);
-            focusRow(parent.path);
+            focusPath(parent.path);
           }
         }
       } else if (e.key === 'Enter') {
@@ -213,6 +328,10 @@ export function FileExplorer({
     },
     [
       tree,
+      rows,
+      rowIndex,
+      focusedPath,
+      focusPath,
       selectedPath,
       selectedPaths,
       onFocusNode,
@@ -253,7 +372,9 @@ export function FileExplorer({
         </button>
       </div>
       <div
+        ref={paneRef}
         data-testid="file-explorer-root-dropzone"
+        onScroll={(e) => setScrollRow(Math.floor(e.currentTarget.scrollTop / rowHeight))}
         className={`py-1 flex-1 overflow-y-auto ${
           isRootDropTarget
             ? isRootDropValid
@@ -295,22 +416,57 @@ export function FileExplorer({
             : undefined
         }
       >
-        {tree.map((node) => (
-          <TreeNode
-            key={node.path}
-            node={node}
-            depth={0}
-            selectedPath={selectedPath}
-            selectedPaths={selectedPaths}
-            onNodeClick={handleNodeClick}
-            onContextMenu={onContextMenu}
-            onMoveNode={onMoveNode}
-            draggingPath={draggingPath}
-            onDragStateChange={setDraggingPath}
-            now={now}
-          />
-        ))}
+        {plan.map((entry) => {
+          if (entry.kind === 'gap') {
+            return (
+              <div key={`gap-${entry.start}`} aria-hidden="true" style={{ height: entry.height }} />
+            );
+          }
+          const { node, depth } = rows[entry.index];
+          return (
+            <TreeNode
+              key={node.path}
+              node={node}
+              depth={depth}
+              selectedPath={selectedPath}
+              selectedPaths={selectedPaths}
+              onNodeClick={handleNodeClick}
+              onContextMenu={onContextMenu}
+              onMoveNode={onMoveNode}
+              draggingPath={draggingPath}
+              onDragStateChange={setDraggingPath}
+              now={now}
+              recentDirs={recentDirs}
+              onRowFocus={setFocusedPath}
+            />
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function sameMembers(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const item of a) if (!b.has(item)) return false;
+  return true;
+}
+
+/** Fallback until a row has been measured; matches `py-0.5` around a 16px line. */
+const DEFAULT_ROW_HEIGHT = 20;
+/** Rows mounted beyond each edge of the pane, so a fast scroll does not show blank space. */
+const OVERSCAN_ROWS = 10;
+const ROW_SELECTOR = '[data-testid^="tree-item-"]';
+
+/**
+ * The mounted row for `path`. Compared as an attribute value rather than built
+ * into a selector: inside a CSS string a backslash is an escape, so a Windows
+ * path would match no row.
+ */
+function findRow(pane: HTMLElement | null, path: string): HTMLElement | null {
+  const testId = `tree-item-${path}`;
+  for (const row of pane?.querySelectorAll<HTMLElement>(ROW_SELECTOR) ?? []) {
+    if (row.getAttribute('data-testid') === testId) return row;
+  }
+  return null;
 }

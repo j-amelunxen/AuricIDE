@@ -3,9 +3,8 @@
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
-import { useNow } from '@/lib/hooks/useNow';
+import { useNowWhen } from '@/lib/hooks/useNow';
 import { isAgentIdling, isAgentLive } from '@/lib/agents/liveness';
-import { formatAgentDuration } from '@/lib/agents/duration';
 import { agentState } from '@/lib/agents/state';
 import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/colors';
 import { stripAnsi } from '@/lib/terminal/ansi';
@@ -52,7 +51,8 @@ export function AgentCard({
   const replyRef = useRef<HTMLInputElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  const now = useNow();
+  // Re-render when liveness or state flips; the ticking duration is its own leaf.
+  const now = useNowWhen((t) => `${isAgentLive(agent, t)}|${agentState(agent, t)}`);
   const isRunning = agent.status === 'running';
   const isLive = isAgentLive(agent, now);
   const isIdling = isAgentIdling(agent, now);
@@ -77,16 +77,6 @@ export function AgentCard({
     : comboNextName
       ? `Finish this step — starts “${comboNextName}” (${comboRun.currentIndex + 2} / ${comboRun.steps.length})`
       : `Finish the last step of “${comboRun.label}”`;
-
-  const runtime = formatAgentDuration(now - agent.startedAt);
-  const showQuiet =
-    (state === 'waiting' || state === 'stalled') && agent.lastActivityAt !== undefined;
-  const durationLabel = showQuiet
-    ? `quiet ${formatAgentDuration(now - (agent.lastActivityAt ?? now))}`
-    : runtime;
-  const durationTitle = showQuiet
-    ? `No output for a while · running for ${runtime}`
-    : 'Running for';
 
   const nameStem = displayName.replace(/…$/, '');
   const objectiveRepeatsName = !!agent.currentTask && agent.currentTask.startsWith(nameStem);
@@ -212,8 +202,6 @@ export function AgentCard({
         isRenaming={isRenaming}
         nameInputRef={nameInputRef}
         nameTooltip={nameTooltip}
-        durationTitle={durationTitle}
-        durationLabel={durationLabel}
         state={state}
         comboRun={comboRun}
         endLabel={endLabel}

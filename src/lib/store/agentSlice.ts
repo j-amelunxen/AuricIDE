@@ -17,7 +17,11 @@ import {
   handleSpawnNewAgent,
   handleUpdateAgentStatus,
 } from './agent/agentLifecycle';
-import { handleAppendAgentLog, handleLoadAgentLogHistory } from './agent/agentLogOperations';
+import {
+  handleAppendAgentLog,
+  handleAppendAgentLogBatch,
+  handleLoadAgentLogHistory,
+} from './agent/agentLogOperations';
 import { reconcileAgentRuntimeState } from './agent/agentStateHelpers';
 import { MAX_RECALLED_PROMPTS, MAX_SENT_MESSAGES, type AgentSlice } from './agent/agentTypes';
 
@@ -153,6 +157,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   updateAgentStatus: (agentId, status) => handleUpdateAgentStatus(agentId, status, get, set),
 
   appendAgentLog: (agentId, log) => handleAppendAgentLog(agentId, log, get, set),
+  appendAgentLogBatch: (batch) => handleAppendAgentLogBatch(batch, get, set),
 
   loadAgentLogHistory: () => handleLoadAgentLogHistory(set),
 

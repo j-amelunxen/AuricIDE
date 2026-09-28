@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { EditorView } from '@codemirror/view';
 import { Compartment } from '@codemirror/state';
-import { externalContentSync, isExternalContentSync } from '@/lib/editor/externalContentSync';
+import { detachString } from '@/lib/detachString';
+import {
+  externalContentReplacement,
+  isExternalContentSync,
+} from '@/lib/editor/externalContentSync';
 import { brokenLinksSetFacet } from '@/lib/editor/wikiLinkBrokenExtension';
 import { fileListFacet, headingProviderFacet } from '@/lib/editor/wikiLinkCompletionExtension';
 import { useStore } from '@/lib/store';
@@ -238,10 +242,8 @@ export function MarkdownEditor({
 
   useEffect(() => {
     if (viewRef.current && content !== viewRef.current.state.doc.toString()) {
-      viewRef.current.dispatch({
-        changes: { from: 0, to: viewRef.current.state.doc.length, insert: content },
-        annotations: externalContentSync.of(true),
-      });
+      const view = viewRef.current;
+      for (const spec of externalContentReplacement(view.state, content)) view.dispatch(spec);
     }
   }, [content]);
 
@@ -299,7 +301,10 @@ export function MarkdownEditor({
         );
         if (fullPath) {
           import('@/lib/tauri/fs').then((m) =>
-            m.readFile(fullPath).then((c) => previewCache.set(target, c.slice(0, 200)))
+            m.readFile(fullPath).then((c) =>
+              // Detached: a bare slice would keep the whole linked file alive in the cache.
+              previewCache.set(target, detachString(c.slice(0, 200)))
+            )
           );
         }
       }

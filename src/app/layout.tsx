@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { CrashBoundary, GlobalErrorHandlers } from './components/CrashBoundary';
+import { FreezeProbe } from './components/FreezeProbe';
 import { SharedPrefsGate } from './components/SharedPrefsGate';
 import { WdioTauriBridge } from './components/WdioTauriBridge';
 import { TITLEBAR_BOOT_SCRIPT } from '@/lib/platform/titlebar';
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} subpixel-antialiased`}>
         <WdioTauriBridge />
         <GlobalErrorHandlers />
+        <FreezeProbe />
         <CrashBoundary>
           <SharedPrefsGate>{children}</SharedPrefsGate>
         </CrashBoundary>

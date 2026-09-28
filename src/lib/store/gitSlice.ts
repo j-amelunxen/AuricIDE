@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand';
 import { reviewCommentId, type ReviewComment } from '../git/reviewComments';
 import { isStaged, isUnstagedTracked, isUntracked } from '../git/statusSplit';
-import type { GitFileStatus, GitRepoRef, GitWorktree } from '../tauri/git';
+import type { BranchInfo, GitFileStatus, GitRepoRef, GitWorktree } from '../tauri/git';
 import {
   discoverGitRepos,
   commitChanges,
@@ -35,9 +35,16 @@ import {
   setRepoField,
   fetchRepoStatus,
   fetchRepoStatusResilient,
+  sameValue,
 } from './git/gitStateHelpers';
 
 export type { ScmView, HunkNavDirection, GitRepoState, GitSlice };
+
+interface RepoStatusResult {
+  ref: GitRepoRef;
+  fileStatuses: GitFileStatus[];
+  branchInfo: BranchInfo | null;
+}
 export {
   selectBlameHunks,
   selectRepoState,
@@ -48,21 +55,31 @@ export {
 
 export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
   /**
-   * Writes a fetched status back only if `ref` is still a discovered repo.
+   * Writes fetched statuses back, all repos in one store update, and only for
+   * repos that are still discovered.
    *
-   * A repo's status fetch is in flight for the whole `await` — long enough for
-   * a second, faster `discoverAndRefreshGit` call to prune that repo out from
-   * under it. Without this check the first call's late-arriving write would
-   * resurrect a repoStates entry for a repo that no longer exists.
+   * A status fetch is in flight for the whole `await` — long enough for a
+   * second, faster `discoverAndRefreshGit` call to prune that repo out from
+   * under it. Without the check the first call's late-arriving write would
+   * resurrect a repoStates entry for a repo that no longer exists. One update
+   * instead of one per repo matters because every update re-renders what
+   * subscribes to `repoStates`.
    */
-  const writeRepoStatus = (
-    ref: GitRepoRef,
-    fileStatuses: GitFileStatus[],
-    branchInfo: import('../tauri/git').BranchInfo | null
-  ) => {
-    if (!get().repos.some((r) => r.path === ref.path)) return;
-    set((s) => ({ repoStates: applyRepoStatus(s.repoStates, ref, fileStatuses, branchInfo) }));
+  const writeRepoStatuses = (results: RepoStatusResult[]) => {
+    const live = new Set(get().repos.map((r) => r.path));
+    const current = results.filter((r) => live.has(r.ref.path));
+    if (current.length === 0) return;
+    set((s) => {
+      let repoStates = s.repoStates;
+      for (const r of current) {
+        repoStates = applyRepoStatus(repoStates, r.ref, r.fileStatuses, r.branchInfo);
+      }
+      return repoStates === s.repoStates ? {} : { repoStates };
+    });
   };
+
+  const fetchAll = (repos: readonly GitRepoRef[]): Promise<RepoStatusResult[]> =>
+    Promise.all(repos.map(async (ref) => ({ ref, ...(await fetchRepoStatusResilient(ref.path)) })));
 
   return {
     repos: [],
@@ -94,30 +111,24 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
           ? currentActive
           : (repos[0]?.path ?? null);
 
-      set((s) => ({
-        repos,
-        repoStates: seedRepoStates(pruneRepoStates(s.repoStates, repos), repos),
-        blameByPath: pruneBlameByPath(s.blameByPath, s.repos, repos),
-        ...activeRepoChangeFields(currentActive, activeRepoPath),
-      }));
+      set((s) => {
+        // An unchanged discovery keeps the old array, so `repos` subscribers
+        // do not re-render on every root refresh.
+        const nextRepos = sameValue(s.repos, repos) ? s.repos : repos;
+        return {
+          repos: nextRepos,
+          repoStates: seedRepoStates(pruneRepoStates(s.repoStates, nextRepos), nextRepos),
+          blameByPath: pruneBlameByPath(s.blameByPath, s.repos, nextRepos),
+          ...activeRepoChangeFields(currentActive, activeRepoPath),
+        };
+      });
 
-      await Promise.all(
-        repos.map(async (ref) => {
-          const { fileStatuses, branchInfo } = await fetchRepoStatusResilient(ref.path);
-          writeRepoStatus(ref, fileStatuses, branchInfo);
-        })
-      );
+      writeRepoStatuses(await fetchAll(get().repos));
       await get().refreshAgentWorktrees();
     },
 
     refreshGitStatus: async () => {
-      const { repos } = get();
-      await Promise.all(
-        repos.map(async (ref) => {
-          const { fileStatuses, branchInfo } = await fetchRepoStatusResilient(ref.path);
-          writeRepoStatus(ref, fileStatuses, branchInfo);
-        })
-      );
+      writeRepoStatuses(await fetchAll(get().repos));
       await get().refreshAgentWorktrees();
     },
 
@@ -125,7 +136,7 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
       const ref = get().repos.find((r) => r.path === repoPath);
       if (!ref) return;
       const { fileStatuses, branchInfo } = await fetchRepoStatus(repoPath);
-      writeRepoStatus(ref, fileStatuses, branchInfo);
+      writeRepoStatuses([{ ref, fileStatuses, branchInfo }]);
     },
 
     setScmView: (view) => set({ scmView: view }),
@@ -245,7 +256,7 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
         agentWorktrees.push(tree);
       }
       agentWorktrees.sort((a, b) => a.name.localeCompare(b.name));
-      set({ agentWorktrees });
+      if (!sameValue(get().agentWorktrees, agentWorktrees)) set({ agentWorktrees });
     },
 
     removeAgentWorktree: async (worktreePath, force) => {

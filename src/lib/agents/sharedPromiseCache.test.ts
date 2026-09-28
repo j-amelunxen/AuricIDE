@@ -77,4 +77,33 @@ describe('createSharedPromiseCache', () => {
 
     expect(factory).toHaveBeenCalledTimes(2);
   });
+  // Every agent finish asks under a key that holds its own output extract and
+  // task, so no key comes back. Expired entries used to stay for the session.
+  it('drops expired entries instead of keeping every key for the session', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = createSharedPromiseCache<string>({ ttlMs: 1_000 });
+      await cache.get('finish-1', async () => 'a');
+      await cache.get('finish-2', async () => 'b');
+      vi.advanceTimersByTime(1_001);
+      await cache.get('finish-3', async () => 'c');
+      expect(cache.size()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never drops an entry that is still in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = createSharedPromiseCache<string>({ ttlMs: 1_000 });
+      const pending = new Promise<string>(() => {});
+      void cache.get('slow', () => pending);
+      vi.advanceTimersByTime(5_000);
+      await cache.get('other', async () => 'x');
+      expect(cache.get('slow', async () => 'fresh')).toBe(pending);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

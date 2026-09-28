@@ -52,6 +52,38 @@ export function hasRecentlyCreatedFile(
   return node.children?.some((child) => hasRecentlyCreatedFile(child, nowMs, windowMs)) ?? false;
 }
 
+interface PathCreatedAtNode extends CreatedAtNode {
+  path: string;
+  children?: PathCreatedAtNode[];
+}
+
+/**
+ * The paths of every folder `hasRecentlyCreatedFile` would light up, found in
+ * one walk of the tree. Asking `hasRecentlyCreatedFile` row by row walks each
+ * folder's subtree once per ancestor that renders — for a whole tree that is
+ * O(nodes × depth) on every render.
+ */
+export function dirsWithRecentlyCreatedFile(
+  nodes: PathCreatedAtNode[],
+  nowMs: number,
+  windowMs = RECENTLY_CREATED_WINDOW_MS
+): Set<string> {
+  const dirs = new Set<string>();
+  const visit = (node: PathCreatedAtNode): boolean => {
+    if (!node.isDirectory) return isRecentlyCreated(node.createdAt, nowMs, windowMs);
+    // Every child is visited, even after one is found: its own folders need
+    // their answer too.
+    let recent = isRecentlyCreated(node.newestFileCreatedAt, nowMs, windowMs);
+    for (const child of node.children ?? []) {
+      if (visit(child)) recent = true;
+    }
+    if (recent) dirs.add(node.path);
+    return recent;
+  };
+  nodes.forEach(visit);
+  return dirs;
+}
+
 /** Every birth time that can keep a glow alive, collapsed folders included. */
 export function collectCreatedAt(nodes: CreatedAtNode[]): Array<number | undefined> {
   const out: Array<number | undefined> = [];

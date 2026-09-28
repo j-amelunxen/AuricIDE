@@ -41,7 +41,6 @@ export function TerminalPanel({
   onCloseTerminal,
 }: TerminalPanelProps) {
   const [activeTab, setActiveTab] = useState<TerminalTabId>('terminal');
-  const now = useNow();
 
   // Synchronize activeTab with selectedAgentId
   const [prevAgentId, setPrevAgentId] = useState(selectedAgentId);
@@ -81,7 +80,6 @@ export function TerminalPanel({
             const isExtra = extraIds.includes(tabId);
             const isAgent = !staticTabs.includes(tabId) && !isExtra;
             const agent = agents.find((a) => a.id === tabId);
-            const isLive = agent !== undefined && isAgentLive(agent, now);
 
             return (
               <button
@@ -97,23 +95,19 @@ export function TerminalPanel({
                     : 'bg-black/40 text-foreground-muted border-white/5 hover:bg-white/5 hover:text-foreground'
                 }`}
               >
-                {isAgent && (
-                  <AuricIcon
-                    name={isLive ? 'sensors' : 'smart_toy'}
-                    aria-hidden="true"
-                    className={`text-[14px] ${isLive ? 'text-primary animate-pulse' : 'text-primary/50'}`}
-                  />
-                )}
-                {isExtra && (
-                  <AuricIcon
-                    name="terminal"
-                    aria-hidden="true"
-                    className="text-[14px] text-green-400/70"
-                  />
-                )}
-                <span>{getTabLabel(tabId)}</span>
-                {isLive && (
-                  <span className="flex h-1.5 w-1.5 rounded-full bg-primary animate-ping ml-1" />
+                {isAgent ? (
+                  <AgentTabLabel agent={agent} label={getTabLabel(tabId)} />
+                ) : (
+                  <>
+                    {isExtra && (
+                      <AuricIcon
+                        name="terminal"
+                        aria-hidden="true"
+                        className="text-[14px] text-green-400/70"
+                      />
+                    )}
+                    <span>{getTabLabel(tabId)}</span>
+                  </>
                 )}
                 {isExtra && (
                   <span
@@ -163,5 +157,25 @@ export function TerminalPanel({
         })}
       </div>
     </div>
+  );
+}
+
+/**
+ * An agent tab's icon, name and live dot. Owns the 1-second clock, so only
+ * this label re-renders on the tick — not the panel and its terminals.
+ */
+function AgentTabLabel({ agent, label }: { agent: AgentInfo | undefined; label: string }) {
+  const now = useNow();
+  const isLive = agent !== undefined && isAgentLive(agent, now);
+  return (
+    <>
+      <AuricIcon
+        name={isLive ? 'sensors' : 'smart_toy'}
+        aria-hidden="true"
+        className={`text-[14px] ${isLive ? 'text-primary animate-pulse' : 'text-primary/50'}`}
+      />
+      <span>{label}</span>
+      {isLive && <span className="flex h-1.5 w-1.5 rounded-full bg-primary animate-ping ml-1" />}
+    </>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { memo, useRef } from 'react';
 import type { Lane } from '@/lib/agents/lanes';
 import type { LaneSummary } from '@/lib/store/laneSummariesSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -38,7 +38,7 @@ function unreadLabel(unread: number): string {
  * (`buildLanes`) so the rail and the feed it filters never compute the fleet
  * twice.
  */
-export function LaneRail({
+export const LaneRail = memo(function LaneRail({
   lanes,
   selectedAgentId,
   onSelect,
@@ -178,4 +178,4 @@ export function LaneRail({
       })}
     </div>
   );
-}
+});

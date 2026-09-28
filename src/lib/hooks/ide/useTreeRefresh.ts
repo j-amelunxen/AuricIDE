@@ -1,14 +1,18 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from '@/lib/store';
-import { collectLoadedDirs, findNodeByPath, type FileNode } from '@/lib/store/fileTreeSlice';
+import { collectLoadedDirs, findNodeByPath } from '@/lib/store/fileTreeSlice';
 import { readDirectory, listAllFiles, type FileEntry } from '@/lib/tauri/fs';
 import { resolveGitStatusForPath } from '@/lib/git/resolveGitStatus';
+import { buildNodes, restampGitStatus, sameEntryPaths } from '@/lib/explorer/treeRefresh';
+import { createCoalescingRunner } from '@/lib/ide/coalescingRunner';
+import type { TreeChangeSummary } from '@/lib/ide/fsEventRouter';
+import { perfBreadcrumbs } from '@/lib/perf/freezeProbe';
 import { DISCARD_UNSAVED_PM } from '@/lib/pm/unsavedLeave';
 import type { GitFileStatus } from '@/lib/tauri/git';
 import type { GitRepoState } from '@/lib/store/gitSlice';
-import type { useIDEState } from '../useIDEState';
+import type { IDEState } from './liveIDEState';
 
 /** repoPath -> that repo's fileStatuses, built once per refresh rather than once per tree node. */
 export function statusesByRepo(
@@ -19,8 +23,38 @@ export function statusesByRepo(
   return result;
 }
 
+interface IndexScope {
+  discoverRepos: boolean;
+  listFiles: boolean;
+}
+
+const FULL: IndexScope = { discoverRepos: true, listFiles: true };
+/** Callers that cannot say what changed get the expensive, always-correct answer. */
+const STRUCTURAL: TreeChangeSummary = { structural: true, ignoreRulesChanged: false };
+
+interface TreeChange {
+  dirs: string[];
+  summary: TreeChangeSummary;
+}
+
+export function mergeTreeChanges(a: TreeChange, b: TreeChange): TreeChange {
+  return {
+    dirs: [...new Set([...a.dirs, ...b.dirs])],
+    summary: {
+      structural: a.summary.structural || b.summary.structural,
+      ignoreRulesChanged: a.summary.ignoreRulesChanged || b.summary.ignoreRulesChanged,
+    },
+  };
+}
+
+function gitStatusCounts(repoStates: Record<string, GitRepoState>): Record<string, number> {
+  let statuses = 0;
+  for (const path in repoStates) statuses += repoStates[path].fileStatuses.length;
+  return { repos: Object.keys(repoStates).length, statuses };
+}
+
 export function useTreeRefresh(
-  state: ReturnType<typeof useIDEState>,
+  state: IDEState,
   confirm: (options: { title: string; message: string; confirmLabel?: string }) => Promise<boolean>
 ) {
   const confirmLeaveUnsavedPm = useCallback(async (): Promise<boolean> => {
@@ -38,19 +72,44 @@ export function useTreeRefresh(
   }, [confirmLeaveUnsavedPm]);
 
   const refreshProjectIndexes = useCallback(
-    async (rootPath: string, isRootRefresh: boolean): Promise<void> => {
+    async (rootPath: string, scope: IndexScope): Promise<void> => {
       const store = useStore.getState();
-      const gitRefresh = isRootRefresh
-        ? store.discoverAndRefreshGit(rootPath)
-        : store.refreshGitStatus();
-      const [, allFiles] = await Promise.all([
-        gitRefresh.catch(() => undefined),
-        listAllFiles(rootPath).catch(() => null),
-      ]);
-      if (allFiles) state.setAllFiles(allFiles);
+      const gitRefresh = perfBreadcrumbs.span(
+        scope.discoverRepos ? 'git-discover-refresh' : 'git-status-refresh',
+        () =>
+          scope.discoverRepos ? store.discoverAndRefreshGit(rootPath) : store.refreshGitStatus(),
+        () => gitStatusCounts(useStore.getState().repoStates)
+      );
+      // The project-wide file list only changes when paths appear or vanish;
+      // walking it again for a content write is the most expensive no-op here.
+      const fileList = scope.listFiles
+        ? perfBreadcrumbs
+            .span(
+              'list-all-files',
+              () => listAllFiles(rootPath),
+              (files) => ({ paths: files.length })
+            )
+            .catch(() => null)
+        : Promise.resolve(null);
+      const [, allFiles] = await Promise.all([gitRefresh.catch(() => undefined), fileList]);
+      if (allFiles) {
+        await perfBreadcrumbs.span('set-all-files', async () => state.setAllFiles(allFiles));
+      }
     },
     [state]
   );
+
+  const badgeResolver = () => {
+    const { repos, repoStates } = useStore.getState();
+    const statuses = statusesByRepo(repoStates);
+    return (path: string) => resolveGitStatusForPath(path, repos, statuses);
+  };
+
+  const applyRootEntries = (entries: FileEntry[]) => {
+    const current = useStore.getState().fileTree ?? [];
+    const { nodes, changed } = buildNodes(entries, current, badgeResolver());
+    if (changed) state.setFileTree(nodes);
+  };
 
   const handleRefresh = useCallback(
     async (dir?: string, isRoot?: boolean): Promise<FileEntry[] | undefined> => {
@@ -60,73 +119,77 @@ export function useTreeRefresh(
       if (!dir || isRoot || dir === state.rootPath) {
         const [entries] = await Promise.all([
           readDirectory(path),
-          refreshProjectIndexes(path, true),
+          refreshProjectIndexes(path, FULL),
         ]);
-        const { repos, repoStates } = useStore.getState();
-        const statuses = statusesByRepo(repoStates);
-        const currentTree = useStore.getState().fileTree ?? [];
-        const existingByPath = new Map<string, FileNode>(currentTree.map((n) => [n.path, n]));
-        const tree: FileNode[] = entries.map((e) => {
-          const existing = existingByPath.get(e.path);
-          return {
-            name: e.name,
-            path: e.path,
-            isDirectory: e.isDirectory,
-            expanded: existing?.expanded ?? false,
-            children: existing?.children ?? (e.isDirectory ? [] : undefined),
-            gitStatus: resolveGitStatusForPath(e.path, repos, statuses),
-            createdAt: e.createdAt,
-            newestFileCreatedAt: e.newestFileCreatedAt,
-            modifiedAt: e.modifiedAt,
-          };
-        });
-        state.setFileTree(tree);
+        applyRootEntries(entries);
         return entries;
       } else {
         const entries = await readDirectory(path);
-        const { repos, repoStates } = useStore.getState();
-        const statuses = statusesByRepo(repoStates);
         const existing = findNodeByPath(useStore.getState().fileTree ?? [], path)?.children ?? [];
-        const existingByPath = new Map<string, FileNode>(existing.map((n) => [n.path, n]));
-        const children: FileNode[] = entries.map((e) => {
-          const prev = existingByPath.get(e.path);
-          return {
-            name: e.name,
-            path: e.path,
-            isDirectory: e.isDirectory,
-            expanded: prev?.expanded ?? false,
-            children: prev?.children ?? (e.isDirectory ? [] : undefined),
-            gitStatus: resolveGitStatusForPath(e.path, repos, statuses),
-            createdAt: e.createdAt,
-            newestFileCreatedAt: e.newestFileCreatedAt,
-            modifiedAt: e.modifiedAt,
-          };
-        });
-        state.setDirectoryChildren(path, children);
+        const { nodes, changed } = buildNodes(entries, existing, badgeResolver());
+        if (changed) state.setDirectoryChildren(path, nodes);
         return entries;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the helpers read the store, not render scope
     [state, refreshProjectIndexes]
   );
 
+  const refreshChangedDirs = async ({ dirs, summary }: TreeChange): Promise<void> => {
+    const rootPath = state.rootPath;
+    if (!rootPath) return;
+
+    const touchesRoot = dirs.includes(rootPath);
+    perfBreadcrumbs.add('fs-flush', { dirs: dirs.length, root: touchesRoot, ...summary });
+
+    if (touchesRoot) {
+      await perfBreadcrumbs.span('root-refresh', async () => {
+        const entries = await readDirectory(rootPath);
+        // Repos are rediscovered only when the root's own entries changed —
+        // saving `.gitignore` in place does not add or remove a repository.
+        const rootChanged = !sameEntryPaths(entries, useStore.getState().fileTree ?? []);
+        await refreshProjectIndexes(rootPath, {
+          discoverRepos: summary.structural && rootChanged,
+          listFiles: summary.structural,
+        });
+        applyRootEntries(entries);
+      });
+    } else {
+      await refreshProjectIndexes(rootPath, {
+        discoverRepos: false,
+        listFiles: summary.structural,
+      });
+    }
+
+    const loaded = collectLoadedDirs(useStore.getState().fileTree ?? []);
+    const targets = dirs.filter((dir) => dir !== rootPath && loaded.has(dir));
+    await Promise.all(targets.map((dir) => handleRefresh(dir).catch(() => undefined)));
+
+    if (summary.ignoreRulesChanged) {
+      const tree = useStore.getState().fileTree ?? [];
+      const restamped = restampGitStatus(tree, badgeResolver());
+      if (restamped !== tree) state.setFileTree(restamped);
+    }
+  };
+
+  // One refresh at a time; events arriving meanwhile become one follow-up.
+  const refreshChangedDirsRef = useRef(refreshChangedDirs);
+  useEffect(() => {
+    refreshChangedDirsRef.current = refreshChangedDirs;
+  });
+  const refreshRunnerRef = useRef<ReturnType<typeof createCoalescingRunner<TreeChange>> | null>(
+    null
+  );
+
   const handleRefreshDirs = useCallback(
-    async (changedDirs: string[]): Promise<void> => {
-      const rootPath = state.rootPath;
-      if (!rootPath) return;
-
-      if (changedDirs.includes(rootPath)) {
-        await handleRefresh();
-        return;
-      }
-
-      await refreshProjectIndexes(rootPath, false);
-
-      const loaded = collectLoadedDirs(useStore.getState().fileTree ?? []);
-      const targets = changedDirs.filter((dir) => loaded.has(dir));
-      if (targets.length === 0) return;
-      await Promise.all(targets.map((dir) => handleRefresh(dir).catch(() => undefined)));
+    (changedDirs: string[], summary: TreeChangeSummary = STRUCTURAL): Promise<void> => {
+      refreshRunnerRef.current ??= createCoalescingRunner<TreeChange>(
+        (change) => refreshChangedDirsRef.current(change),
+        mergeTreeChanges
+      );
+      return refreshRunnerRef.current.submit({ dirs: changedDirs, summary });
     },
-    [state, handleRefresh, refreshProjectIndexes]
+    []
   );
 
   const handleCloseProject = useCallback(() => {

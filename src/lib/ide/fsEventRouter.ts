@@ -15,13 +15,40 @@ export function parentDirOf(path: string): string {
   return idx <= 0 ? '/' : path.slice(0, idx);
 }
 
+/**
+ * True for watcher event kinds that change a file's bytes or metadata but not
+ * which paths exist. `kind` is notify's `EventKind` in Debug form
+ * (`Modify(Data(Content))`, `Create(File)`, …). Anything unrecognised counts
+ * as structural: the cost of guessing wrong that way is a slower refresh,
+ * the other way a file list that misses a new file.
+ */
+export function isContentOnlyKind(kind: string): boolean {
+  return (
+    kind.startsWith('Modify(Data') ||
+    kind.startsWith('Modify(Metadata') ||
+    kind.startsWith('Access')
+  );
+}
+
+function isIgnoreFile(path: string): boolean {
+  return /(^|[\\/])\.gitignore$/.test(path);
+}
+
+/** What a flushed burst of events amounted to, beyond which folders it touched. */
+export interface TreeChangeSummary {
+  /** A path may have appeared, vanished or been renamed. */
+  structural: boolean;
+  /** A `.gitignore` changed: git badges anywhere in the tree may be stale. */
+  ignoreRulesChanged: boolean;
+}
+
 export interface FsEventRouterOptions {
   /**
    * Debounced callback for regular file changes. Receives the deduplicated
    * parent directories of everything that changed since the last flush, so the
    * refresh can re-read those instead of walking the whole project.
    */
-  onTreeChange: (changedDirs: string[]) => void;
+  onTreeChange: (changedDirs: string[], summary: TreeChangeSummary) => void;
   /** Debounced callback for project DB changes (PM/requirements/goals reload). */
   onProjectDataChange: () => void;
   /**
@@ -69,6 +96,7 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
   let dataTimer: ReturnType<typeof setTimeout> | undefined;
   let evidenceTimer: ReturnType<typeof setTimeout> | undefined;
   let dirtyDirs = new Set<string>();
+  let summary: TreeChangeSummary = { structural: false, ignoreRulesChanged: false };
 
   function flushTree(): void {
     clearTimeout(treeTimer);
@@ -76,8 +104,10 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
     treeTimer = undefined;
     treeMaxWaitTimer = undefined;
     const dirs = [...dirtyDirs];
+    const flushed = summary;
     dirtyDirs = new Set();
-    onTreeChange(dirs);
+    summary = { structural: false, ignoreRulesChanged: false };
+    onTreeChange(dirs, flushed);
   }
 
   return {
@@ -87,6 +117,8 @@ export function createFsEventRouter(options: FsEventRouterOptions): FsEventRoute
         dataTimer = setTimeout(onProjectDataChange, dataDebounceMs);
       } else {
         dirtyDirs.add(parentDirOf(event.path));
+        if (!isContentOnlyKind(event.kind)) summary.structural = true;
+        if (isIgnoreFile(event.path)) summary.ignoreRulesChanged = true;
         clearTimeout(treeTimer);
         treeTimer = setTimeout(flushTree, treeDebounceMs);
         // Only armed by the first event of a burst, so it caps the total delay

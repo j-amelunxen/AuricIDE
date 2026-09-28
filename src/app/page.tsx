@@ -1,13 +1,10 @@
 'use client';
 
-import { useMemo, useState, memo } from 'react';
+import { useCallback, useMemo, useState, memo } from 'react';
 import { ActivityBar } from './components/ide/ActivityBar';
 import { Header } from './components/ide/Header';
 import { IDEShell } from './components/ide/IDEShell';
-import { StatusBar } from './components/ide/StatusBar';
 import { TabBar } from './components/editor/TabBar';
-import { TerminalPanel } from './components/terminal/TerminalPanel';
-import { AgentsPanel } from './components/agents/AgentsPanel';
 import { IDEOverlays } from './components/ide/IDEOverlays';
 import { ToastHost } from './components/ide/ToastHost';
 import { BottomPanelTabs } from './components/ide/BottomPanelTabs';
@@ -18,85 +15,50 @@ import { ExcalidrawBrowser } from './components/excalidraw/ExcalidrawBrowser';
 import { OrchestrationModal } from './components/goals/OrchestrationModal';
 import { WorkView } from './components/work/WorkView';
 import { NewProjectModal, type NewProjectOptions } from './components/ide/NewProjectModal';
-import { extractTicket } from '@/lib/git/branchTicket';
-import { repoLabel } from '@/lib/git/repos';
 import { selectBranchNameForPath } from '@/lib/store/gitSlice';
-import type { RepoView } from './components/git/SourceControlPanel';
 import { useIDEState } from '@/lib/hooks/useIDEState';
+import { useLiveIDEState } from '@/lib/hooks/ide/liveIDEState';
 import { type SettingsCategory } from './components/ide/SettingsModal';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
 import { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
-import { useAttentionTitle } from '@/lib/hooks/useAttentionTitle';
 import { CloseWindowGuard } from '@/lib/hooks/useCloseWindowGuard';
 import { useStore } from '@/lib/store';
-import type { AgentInfo } from '@/lib/tauri/agents';
 import { StartSplashScreen } from './components/ide/StartSplashScreen';
 import { EditorContentRouter } from './components/ide/EditorContentRouter';
 import { LeftSidebarPanel } from './components/ide/LeftSidebarPanel';
 import { leftPanelVisible } from '@/lib/ide/leftPanel';
 import { CanvasPageModals } from './components/ide/CanvasPageModals';
+import {
+  AttentionTitle,
+  ConnectedAgentsPanel,
+  ConnectedStatusBar,
+  ConnectedTerminalPanel,
+} from './components/ide/ConnectedPanels';
 
 // Memoized sub-components
 const MemoizedHeader = memo(Header);
 const MemoizedActivityBar = memo(ActivityBar);
-const MemoizedStatusBar = memo(StatusBar);
 const MemoizedTabBar = memo(TabBar);
-const MemoizedTerminalPanel = memo(TerminalPanel);
-const MemoizedAgentsPanel = memo(AgentsPanel);
+const MemoizedMissionControl = memo(MissionControl);
 
-/**
- * A null leaf that owns the window-title/dock-badge mirroring. The hook ticks
- * on useNow — mounting it here instead of in Home keeps the 1 Hz timer off
- * the page root, which would otherwise re-render the whole IDE every second.
+/*
+ * Render discipline for this page: every store write to a field `Home`
+ * selects re-renders the page, so hot fields are selected by the panels that
+ * show them (`ConnectedPanels`, `LeftSidebarPanel`) and the page passes only
+ * stable callbacks and slow-changing values to its memoized children. The
+ * callbacks close over `state`, the live view from `useLiveIDEState`: its
+ * identity never changes and its reads are always current, so a callback
+ * built with `[state]` stays the same function for the page's lifetime.
+ * `page.test.tsx` counts panel renders to keep this honest.
  */
-function AttentionTitle({
-  agents,
-  reviewedAgentIds,
-}: {
-  agents: AgentInfo[];
-  reviewedAgentIds: string[];
-}): null {
-  useAttentionTitle(agents, reviewedAgentIds);
-  return null;
-}
-
+// code-gate: complexity-function-length - composition root: the length is the panel layout JSX
 export default function Home() {
-  const state = useIDEState();
+  const pageState = useIDEState();
+  const state = useLiveIDEState(pageState);
   const handlers = useIDEHandlers(state);
   useIDEActions(state, handlers);
-  const openAgentConsole = useStore((s) => s.openAgentConsole);
   const diffTab = useStore((s) => (s.activeTabId ? s.diffByTabId[s.activeTabId] : undefined));
-  const scmView = useStore((s) => s.scmView);
-  const historyPath = useStore((s) => s.historyPath);
-  const historyCommits = useStore((s) => s.historyCommits);
-  const historySelectedOid = useStore((s) => s.historySelectedOid);
-  const historyLoading = useStore((s) => s.historyLoading);
-  const branches = useStore((s) => s.branches);
-  const compareRef = useStore((s) => s.compareRef);
-  const compareFiles = useStore((s) => s.compareFiles);
-  const compareLoading = useStore((s) => s.compareLoading);
   const branchName = useStore((s) => selectBranchNameForPath(s, state.activeTabId));
-
-  const repoViews = useMemo<RepoView[]>(
-    () =>
-      state.repos.map((repo) => {
-        const repoState = state.repoStates[repo.path];
-        const branchName = repoState?.branchInfo?.name ?? null;
-        return {
-          repoPath: repo.path,
-          label: repoLabel(repo),
-          kind: repo.kind,
-          branchName,
-          ticketPrefix:
-            extractTicket(branchName ?? '', state.agentSettings.branchTicketPattern) ?? undefined,
-          fileStatuses: (repoState?.fileStatuses ?? []).filter((s) => s.status !== 'ignored'),
-          commitMessage: repoState?.commitMessage ?? '',
-          isCommitting: repoState?.isCommitting ?? false,
-          isPushing: repoState?.isPushing ?? false,
-        };
-      }),
-    [state.repos, state.repoStates, state.agentSettings.branchTicketPattern]
-  );
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const handleCreateProject = async (options: NewProjectOptions) => {
@@ -110,38 +72,43 @@ export default function Home() {
     collapsed: state.leftCollapsed,
   });
 
-  const leftPanelContent = useMemo(
-    () => (
-      <LeftSidebarPanel
-        state={state}
-        handlers={handlers}
-        repoViews={repoViews}
-        scmView={scmView}
-        historyPath={historyPath}
-        historyCommits={historyCommits}
-        historySelectedOid={historySelectedOid}
-        historyLoading={historyLoading}
-        branches={branches}
-        compareRef={compareRef}
-        compareFiles={compareFiles}
-        compareLoading={compareLoading}
-      />
-    ),
-    [
-      state,
-      handlers,
-      repoViews,
-      scmView,
-      historyPath,
-      historyCommits,
-      historySelectedOid,
-      historyLoading,
-      branches,
-      compareRef,
-      compareFiles,
-      compareLoading,
-    ]
+  const { leaveWorkPlace, handleRefresh, handleNewSpec, handleOpenRecent } = handlers;
+  const openCommandPalette = useCallback(() => state.setCommandPaletteOpen(true), [state]);
+  const showAgents = useCallback(() => state.setRightCollapsed(false), [state]);
+  const hideAgents = useCallback(() => state.setRightCollapsed(true), [state]);
+  const toggleAgents = useCallback(() => state.setRightCollapsed(!state.rightCollapsed), [state]);
+  const toggleTerminal = useCallback(
+    () => state.setBottomCollapsed(!state.bottomCollapsed),
+    [state]
   );
+  const openSpawnDialog = useCallback(() => state.setSpawnDialogOpen(true), [state]);
+  const openSettings = useCallback(
+    (category?: string) => {
+      if (category) {
+        state.setSettingsInitialCategory(category as SettingsCategory);
+      }
+      state.setSettingsModalOpen(true);
+    },
+    [state]
+  );
+  const selectTab = useCallback(
+    (id: string) => {
+      if (useStore.getState().pmDirty) {
+        void (async () => {
+          if (!(await leaveWorkPlace())) return;
+          state.setActiveTab(id);
+        })();
+        return;
+      }
+      useStore.getState().closeWorkPlace();
+      state.setActiveTab(id);
+    },
+    [state, leaveWorkPlace]
+  );
+  const createSpec = useCallback(() => void handleNewSpec(), [handleNewSpec]);
+  const switchProject = useCallback((path: string) => handleOpenRecent(path), [handleOpenRecent]);
+  const refreshAfterImport = useCallback(() => void handleRefresh(), [handleRefresh]);
+  const openSettingsModal = useCallback(() => state.setSettingsModalOpen(true), [state]);
 
   // Scratch tabs carry a marker icon; "is scratch" is derived from the path
   // prefix, so the Tab model itself stays untouched.
@@ -156,14 +123,11 @@ export default function Home() {
   return (
     <>
       <CloseWindowGuard />
-      <IDEOverlays {...state} {...handlers} />
+      <IDEOverlays {...pageState} {...handlers} />
       <ToastHost />
-      <CanvasPageModals state={state} handlers={handlers} />
-      <AttentionTitle agents={state.agents} reviewedAgentIds={state.reviewedAgentIds} />
-      <ExcalidrawBrowser
-        onImported={() => void handlers.handleRefresh()}
-        onOpenSettings={() => state.setSettingsModalOpen(true)}
-      />
+      <CanvasPageModals state={pageState} handlers={handlers} />
+      <AttentionTitle />
+      <ExcalidrawBrowser onImported={refreshAfterImport} onOpenSettings={openSettingsModal} />
       <OrchestrationModal />
       <NewProjectModal
         isOpen={newProjectOpen}
@@ -184,14 +148,9 @@ export default function Home() {
             onHeadingBreadcrumbClick={state.setScrollToLine}
             isConnected={state.cliConnected}
             llmConfigured={state.llmConfigured}
-            onCommandPalette={() => state.setCommandPaletteOpen(true)}
-            onShowAgents={() => state.setRightCollapsed(false)}
-            onOpenSettings={(category) => {
-              if (category) {
-                state.setSettingsInitialCategory(category as SettingsCategory);
-              }
-              state.setSettingsModalOpen(true);
-            }}
+            onCommandPalette={openCommandPalette}
+            onShowAgents={showAgents}
+            onOpenSettings={openSettings}
           />
         }
         activityBar={
@@ -199,29 +158,17 @@ export default function Home() {
             items={handlers.itemsWithBadge}
             activeId={state.workPlaceOpen ? 'work' : state.activeActivity}
             onSelect={handlers.handleActivitySelect}
-            onTerminalToggle={
-              state.rootPath ? () => state.setBottomCollapsed(!state.bottomCollapsed) : undefined
-            }
-            onAgentsToggle={() => state.setRightCollapsed(!state.rightCollapsed)}
+            onTerminalToggle={state.rootPath ? toggleTerminal : undefined}
+            onAgentsToggle={toggleAgents}
           />
         }
-        leftPanel={leftPanelContent}
+        leftPanel={<LeftSidebarPanel state={pageState} handlers={handlers} />}
         centerContent={
           <div className="flex h-full min-w-0 flex-col">
             <MemoizedTabBar
               tabs={tabsWithIcons}
               activeTabId={state.workPlaceOpen ? null : state.activeTabId}
-              onSelect={(id) => {
-                if (useStore.getState().pmDirty) {
-                  void (async () => {
-                    if (!(await handlers.leaveWorkPlace())) return;
-                    state.setActiveTab(id);
-                  })();
-                  return;
-                }
-                useStore.getState().closeWorkPlace();
-                state.setActiveTab(id);
-              }}
+              onSelect={selectTab}
               onClose={state.closeTab}
               onCloseOthers={state.closeOtherTabs}
               onCloseAll={state.closeAllTabs}
@@ -233,14 +180,14 @@ export default function Home() {
               </div>
             ) : state.activeTabId ? (
               <div className="min-w-0 flex-1 overflow-hidden">
-                <EditorContentRouter state={state} handlers={handlers} diffTab={diffTab} />
+                <EditorContentRouter state={pageState} handlers={handlers} diffTab={diffTab} />
               </div>
             ) : state.rootPath ? (
               <div className="min-w-0 flex-1 overflow-hidden">
-                <MissionControl
-                  onCreateSpec={() => void handlers.handleNewSpec()}
-                  onOpenAgents={() => state.setRightCollapsed(false)}
-                  onSwitchProject={(path) => handlers.handleOpenRecent(path)}
+                <MemoizedMissionControl
+                  onCreateSpec={createSpec}
+                  onOpenAgents={showAgents}
+                  onSwitchProject={switchProject}
                   onCloseProject={handlers.handleCloseProject}
                 />
               </div>
@@ -255,28 +202,13 @@ export default function Home() {
           </div>
         }
         rightPanel={
-          <MemoizedAgentsPanel
-            agents={state.agents}
-            interruptedAgents={state.interruptedAgents}
-            onSpawn={() => state.setSpawnDialogOpen(true)}
+          <ConnectedAgentsPanel
+            onSpawn={openSpawnDialog}
             onKill={handlers.handleKillAgent}
-            onKillRepo={state.killAgentsForRepoPath}
             onSelectAgent={handlers.handleSelectAgent}
             onImageDrop={handlers.handleImageDrop}
-            onCollapse={() => state.setRightCollapsed(true)}
-            onOpenConsole={openAgentConsole}
+            onCollapse={hideAgents}
             onResumeInterrupted={handlers.handleResumeInterrupted}
-            onDiscardInterrupted={state.discardInterruptedAgent}
-            minimizedAgentIds={state.minimizedAgentIds}
-            onToggleMinimize={state.setAgentMinimized}
-            onRename={state.renameRunningAgent}
-            onDismissFinished={state.dismissFinishedAgent}
-            collapsedRepos={state.collapsedAgentRepos}
-            onToggleRepoCollapsed={state.toggleAgentRepoCollapsed}
-            agentColors={state.agentColors}
-            onSetColor={state.setAgentColor}
-            reviewedAgentIds={state.reviewedAgentIds}
-            onRetryFailed={state.retryFailedAgent}
           />
         }
         bottomPanel={
@@ -286,9 +218,7 @@ export default function Home() {
               onTabChange={state.setBottomTab}
               problemCount={handlers.activeDiagCounts.errors + handlers.activeDiagCounts.warnings}
               terminalContent={
-                <MemoizedTerminalPanel
-                  agents={state.agents}
-                  selectedAgentId={state.selectedAgentId}
+                <ConnectedTerminalPanel
                   onSelectAgent={handlers.handleSelectAgent}
                   rootPath={state.rootPath}
                   extraTerminals={state.extraTerminals}
@@ -313,11 +243,10 @@ export default function Home() {
           ) : undefined
         }
         statusBar={
-          <MemoizedStatusBar
+          <ConnectedStatusBar
             branch={branchName ?? 'main'}
             encoding="UTF-8"
             language={handlers.activeLanguage}
-            cursorPos={state.cursorPos}
             errorCount={handlers.activeDiagCounts.errors}
             warningCount={handlers.activeDiagCounts.warnings}
             onProblemsClick={handlers.handleProblemsClick}

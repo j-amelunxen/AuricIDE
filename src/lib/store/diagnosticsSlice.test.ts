@@ -147,4 +147,47 @@ describe('diagnosticsSlice', () => {
       expect(store.getState().problemsPanelOpen).toBe(false);
     });
   });
+  // The linter re-runs 500 ms after every keystroke and hands over a fresh
+  // array each time. Identical findings must not wake every store subscriber.
+  describe('write avoidance', () => {
+    const diag = {
+      line: 1,
+      column: 2,
+      message: 'm',
+      ruleId: 'remark-lint:x',
+      severity: 'warning' as const,
+    };
+
+    it('skips the write when a file gets the same diagnostics again', () => {
+      store.getState().setDiagnostics('/a.md', [diag]);
+      const before = store.getState().diagnostics;
+      store.getState().setDiagnostics('/a.md', [{ ...diag }]);
+      expect(store.getState().diagnostics).toBe(before);
+    });
+
+    it('skips the write when a file without findings stays clean', () => {
+      store.getState().setDiagnostics('/a.md', []);
+      const before = store.getState().diagnostics;
+      store.getState().setDiagnostics('/a.md', []);
+      expect(store.getState().diagnostics).toBe(before);
+    });
+
+    it('still records the first empty result for a file', () => {
+      store.getState().setDiagnostics('/a.md', []);
+      expect(store.getState().diagnostics.get('/a.md')).toEqual([]);
+    });
+
+    it('skips the write when clearing a file that has no diagnostics', () => {
+      store.getState().setDiagnostics('/a.md', []);
+      const before = store.getState().diagnostics;
+      store.getState().clearDiagnostics('/never-linted.png');
+      expect(store.getState().diagnostics).toBe(before);
+    });
+
+    it('writes when any field differs', () => {
+      store.getState().setDiagnostics('/a.md', [diag]);
+      store.getState().setDiagnostics('/a.md', [{ ...diag, endLine: 3 }]);
+      expect(store.getState().diagnostics.get('/a.md')?.[0].endLine).toBe(3);
+    });
+  });
 });

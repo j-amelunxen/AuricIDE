@@ -26,18 +26,35 @@ export interface DiagnosticsSlice {
   setProblemsPanelOpen: (open: boolean) => void;
 }
 
+function sameDiagnostic(a: StoreDiagnostic, b: StoreDiagnostic): boolean {
+  return (
+    a.line === b.line &&
+    a.column === b.column &&
+    a.endLine === b.endLine &&
+    a.endColumn === b.endColumn &&
+    a.message === b.message &&
+    a.ruleId === b.ruleId &&
+    a.severity === b.severity
+  );
+}
+
 export const createDiagnosticsSlice: StateCreator<DiagnosticsSlice> = (set, get) => ({
   diagnostics: new Map(),
   lintConfig: { enabled: true, disabledRules: new Set() },
   problemsPanelOpen: false,
 
   setDiagnostics: (filePath: string, diags: StoreDiagnostic[]) => {
+    const prev = get().diagnostics.get(filePath);
+    if (prev && prev.length === diags.length && prev.every((d, i) => sameDiagnostic(d, diags[i]))) {
+      return;
+    }
     const newMap = new Map(get().diagnostics);
     newMap.set(filePath, diags);
     set({ diagnostics: newMap });
   },
 
   clearDiagnostics: (filePath: string) => {
+    if (!get().diagnostics.has(filePath)) return;
     const newMap = new Map(get().diagnostics);
     newMap.delete(filePath);
     set({ diagnostics: newMap });

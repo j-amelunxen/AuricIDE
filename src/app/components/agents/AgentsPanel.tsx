@@ -6,9 +6,10 @@ import { groupAgentsByRepo, UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { useConfirm } from '@/lib/hooks/useConfirm';
 import { useWorktreeMergeOffer } from '@/lib/hooks/useWorktreeMergeOffer';
 import { useState } from 'react';
-import { useNow } from '@/lib/hooks/useNow';
+import { useNowWhen } from '@/lib/hooks/useNow';
 import { splitFleet } from '@/lib/agents/fleet';
 import {
+  agentAttention,
   countNeedingAttention,
   needsAttention,
   sortByUrgency,
@@ -139,8 +140,10 @@ export function AgentsPanel({
   const repoKeys = Object.keys(grouped);
   const runningCount = agents.filter((a) => a.status === 'running').length;
 
-  const now = useNow();
   const flagged = withReviewFlags(agents, reviewedAgentIds);
+  // Everything below reads the clock only through the attention model, so the
+  // panel re-renders when an agent's reason changes, not on every tick.
+  const now = useNowWhen((t) => flagged.map((a) => agentAttention(a, t) ?? '').join('|'));
   const attentionCount = countNeedingAttention(flagged, now);
   const attentionAgents = sortByUrgency(flagged, now);
   const reviewList = finished.filter(
