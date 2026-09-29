@@ -1,3 +1,4 @@
+pub mod claude_mcp_guard;
 pub mod launch_dir;
 pub mod launch_runs;
 pub mod manager;
