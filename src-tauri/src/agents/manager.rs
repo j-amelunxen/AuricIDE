@@ -99,15 +99,18 @@ pub fn resolve_permitted_provider(
     Ok((resolved_id, provider))
 }
 
+/// The spawn runs the Claude Code CLI, whichever provider config named it.
+fn runs_claude_code(spawn_cmd: &crate::providers::SpawnCommand) -> bool {
+    std::path::Path::new(spawn_cmd.executable.split_whitespace().last().unwrap_or(""))
+        .file_name()
+        .is_some_and(|name| name == "claude")
+}
+
 pub fn attach_usage_sidecar(
     spawn_cmd: crate::providers::SpawnCommand,
     app: &AppHandle,
 ) -> crate::providers::SpawnCommand {
-    let is_claude =
-        std::path::Path::new(spawn_cmd.executable.split_whitespace().last().unwrap_or(""))
-            .file_name()
-            .is_some_and(|name| name == "claude");
-    if !is_claude {
+    if !runs_claude_code(&spawn_cmd) {
         return spawn_cmd;
     }
 
@@ -338,6 +341,12 @@ pub async fn spawn_agent_impl(
             (provider_id, provider.as_ref()),
             config.cwd.as_deref(),
         )?;
+        if runs_claude_code(&spawn_cmd) {
+            super::claude_mcp_guard::check_auric_pm_enabled(
+                binding.project_root(),
+                config.cwd.as_deref().map(std::path::Path::new),
+            )?;
+        }
     }
     let spawn_cmd = attach_usage_sidecar(spawn_cmd, app);
     let spawn_cmd = confine_writes_if_declared(
