@@ -246,8 +246,25 @@ export const createPmSlice: StateCreator<PmSlice> = (set, get) => ({
           pmDraftTestCases: state.testCases,
           pmDraftDependencies: state.dependencies,
           pmStatusHistory: history,
-          pmDirty: hasArchived,
+          pmDirty: false,
         });
+
+        // Archiving is the app's doing, not an edit. Left as a draft it made the
+        // panel ask "Discard changes?" on every exit, and discarding only
+        // brought the same archive back with the next load.
+        if (hasArchived) {
+          try {
+            await ipcPmSave(projectPath, {
+              epics: state.epics,
+              tickets: processedTickets,
+              testCases: state.testCases,
+              dependencies: state.dependencies,
+            });
+            set({ pmStatusHistory: await ipcPmLoadHistory(projectPath).catch(() => history) });
+          } catch {
+            set({ pmDirty: true });
+          }
+        }
       }
     ),
 
