@@ -20,6 +20,17 @@ describe('deriveErrorDigest', () => {
     expect(deriveErrorDigest(['FATAL: database connection lost\n'])).toContain('FATAL');
   });
 
+  it('names a tool call headless Codex refused rather than the chatter after it', () => {
+    const chunks = [
+      'mcp: auric-pm/complete_task (failed)\n',
+      'MCP tool call requires approval, but approval policy is never\n',
+      'I could not mark the ticket done.\n',
+    ];
+    expect(deriveErrorDigest(chunks)).toBe(
+      'MCP tool call requires approval, but approval policy is never'
+    );
+  });
+
   it('falls back to the last meaningful line when nothing looks like an error', () => {
     // A process can die without printing the word "error" — the last thing it
     // said is still the best available clue.

@@ -15,6 +15,7 @@ const ERROR_PATTERNS: RegExp[] = [
   /\bpanic(?:ked)?\b/i,
   /\bexception\b/i,
   /\bexit code [1-9]/i,
+  /\brequires approval\b/i, // headless Codex refusing a call under `approval: never`
   /\bE[A-Z]{2,}\b/, // ENOENT, EACCES, ECONNREFUSED …
 ];
 

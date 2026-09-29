@@ -207,3 +207,39 @@ permission level whenever no explicit mode is chosen:
 Pick a value that can run unattended (e.g. Claude Code's classifier-guarded
 `auto`); a prompting mode like `default` will stall agents that nobody is
 watching.
+
+### Unattended runs: what a headless flag has to carry
+
+A headless agent cannot answer anything, so a check that would ask has to be
+settled in the launch itself. Codex is the worked example — `codex exec` has no
+approval prompt at all (`approval: never`), it refuses instead:
+
+```json
+{
+  "type": "headless",
+  "flag": "-c sandbox_workspace_write.network_access=true exec --skip-git-repo-check"
+}
+```
+
+- `--skip-git-repo-check`: without it `codex exec` exits at once in a folder
+  that is neither a git repository nor listed as trusted in `~/.codex/config.toml`.
+- `sandbox_workspace_write.network_access=true`: `workspace-write` (the
+  conductor's default via `acceptEdits`) otherwise has no network, so installs
+  and fetches fail. Writes stay confined to the workspace either way.
+
+Both sit on the headless flag, so an interactive Codex session keeps its own
+trust check and network default.
+
+**Never put a `-c` after `exec`.** Codex discards every `-c` given before the
+subcommand as soon as one follows it, and the auric-pm binding is exactly such
+a set of root-level overrides: the server is gone for that run ("unknown MCP
+server 'auric-pm'"), without the launch failing. Overrides go in front of
+`exec`, as above; after it, only real flags. For the `auto` mode that means
+`"auto": "--approve-for-me"` (workspace-write, approvals routed through auto
+review), not `-c approval_policy=… -c approvals_reviewer=…`.
+`test_local_codex_config_keeps_every_override_in_front_of_exec` checks the
+local `codex.json` for it. The auric-pm tools need no entry here: the
+Codex project binding (`codex_project_binding_injection`) pre-approves the
+bound server with `default_tools_approval_mode="approve"`, because conductor
+agents report back through its write tools and a refused call would end the
+run without a word.
