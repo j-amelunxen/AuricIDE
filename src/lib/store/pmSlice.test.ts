@@ -415,9 +415,32 @@ describe('pmSlice', () => {
     expect(tickets.find((t) => t.id === 't-old')?.status).toBe('archived');
     expect(tickets.find((t) => t.id === 't-recent')?.status).toBe('done');
     expect(tickets.find((t) => t.id === 't-open')?.status).toBe('open');
-    // If we auto-archive on load, it should probably be marked as dirty or automatically saved?
-    // The user said "when we recognize it, they should be moved to an archive".
-    // If we do it on load, it makes sense that the state is dirty until saved.
+    // The archive is written straight away, so opening the panel is not an edit
+    // and leaving it must not ask "Discard changes?".
+    expect(mockPmSave).toHaveBeenCalledWith(
+      '/project',
+      expect.objectContaining({
+        tickets: expect.arrayContaining([
+          expect.objectContaining({ id: 't-old', status: 'archived' }),
+        ]),
+      })
+    );
+    expect(store.getState().pmDirty).toBe(false);
+  });
+
+  it('loadPmData keeps the archive as an unsaved change when writing it fails', async () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    mockPmLoad.mockResolvedValueOnce({
+      epics: [],
+      tickets: [makeTicket({ id: 't-old', status: 'done', statusUpdatedAt: twoDaysAgo })],
+      testCases: [],
+      dependencies: [],
+    });
+    mockPmSave.mockRejectedValueOnce(new Error('disk full'));
+
+    const store = createTestStore();
+    await store.getState().loadPmData('/project');
+
     expect(store.getState().pmDirty).toBe(true);
   });
 
