@@ -1,6 +1,6 @@
 import { buildGoalLaunchPrompt, buildGoalPlanningPrompt } from '@/lib/goals/goalLaunchPrompt';
 import type { PmGoal } from '@/lib/tauri/goals';
-import { modelForPower } from './conductorHelpers';
+import { conductorModelFor, conductorProviderInfo } from './conductorHelpers';
 import {
   notifySpawnFailure,
   spawnFailureReason,
@@ -61,11 +61,16 @@ async function spawnOne(
   projectPath: string
 ): Promise<{ id: string } | { id: null; reason: string | null }> {
   const state = ctx.get();
+  const full = ctx.cross();
   try {
-    const agent = await ctx.cross().spawnNewAgent?.({
+    const agent = await full.spawnNewAgent?.({
       name: `conductor:${purpose === 'plan' ? 'plan' : 'goal'}:${goal.name.slice(0, 40)}`,
       // A goal has no model power of its own; same default as a ticket without one.
-      model: state.conductorModel || modelForPower(undefined),
+      model: conductorModelFor(
+        [state.conductorModel],
+        undefined,
+        conductorProviderInfo(full.providers, state.conductorProviderId)
+      ),
       provider: state.conductorProviderId ?? undefined,
       task: taskFor(ctx, goal, purpose),
       projectPath,

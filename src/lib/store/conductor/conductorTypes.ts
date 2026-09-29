@@ -125,6 +125,8 @@ export type FullConductorStore = ConductorSlice &
     notifications?: import('@/lib/notifications/types').Notification[];
     /** A judge is configured, so a fresh station claim still gets its verdict. */
     judgeLlmConfigured?: boolean;
+    /** Providers the open project permits, default first (`uiSlice`). */
+    providers?: import('@/lib/tauri/providers').ProviderInfo[];
   };
 
 export interface ConductorSlice {

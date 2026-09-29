@@ -10,10 +10,12 @@ import {
   filterTicketsForGoal,
   getUnblockedOpenTickets,
   isConductorGoalAgent,
-  modelForPower,
+  conductorModelFor,
+  conductorProviderInfo,
   ticketsWithUnblockedGoal,
 } from './conductorHelpers';
 import { withHumanWaitsFirst } from './conductorHumanStations';
+import { type ExhaustedGoal, summarizeRunBlockers } from './conductorRunBlockers';
 import { applyVerdict } from './conductorReview';
 import {
   getPlanningWork,
@@ -66,6 +68,7 @@ function collectGoalAgentWork(
   launchableGoals: PmGoal[];
   launchablePlans: PmGoal[];
   goalAgentsInFlight: number;
+  exhausted: ExhaustedGoal[];
 } {
   const full = ctx.cross();
   const state = ctx.get();
@@ -88,6 +91,18 @@ function collectGoalAgentWork(
     launchableGoals: hasFolder ? stationWork.launchable : [],
     launchablePlans: hasFolder ? planWork.launchable : [],
     goalAgentsInFlight: stationWork.inFlight.length + planWork.inFlight.length,
+    exhausted: [
+      ...stationWork.exhausted.map((id) => ({
+        goalId: id,
+        purpose: 'work' as const,
+        attempts: state.conductorGoalAttempts[id] ?? 0,
+      })),
+      ...planWork.exhausted.map((id) => ({
+        goalId: id,
+        purpose: 'plan' as const,
+        attempts: state.conductorPlanAttempts[id] ?? 0,
+      })),
+    ],
   };
 }
 
@@ -199,7 +214,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     }
   }
 
-  const { launchableGoals, launchablePlans, goalAgentsInFlight } = collectGoalAgentWork(
+  const { launchableGoals, launchablePlans, goalAgentsInFlight, exhausted } = collectGoalAgentWork(
     ctx,
     goals,
     goalId
@@ -284,8 +299,16 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       );
       const goalName = goals.find((g) => g.id === goalId)?.name ?? null;
       const emitGoalBlocked = (found: string[]) => {
+        const summarized = summarizeRunBlockers({
+          blockers: found,
+          goals,
+          stations: full.goalStationsDraft ?? [],
+          goalDependencies,
+          rootId: goalId,
+          exhausted,
+        });
         const { blockers, onlyHuman } = withHumanWaitsFirst(
-          found,
+          summarized,
           goals,
           full.goalStationsDraft ?? [],
           goalId
@@ -435,8 +458,12 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     const goal = goals.find((g) => g.id === effectiveGoalId);
     const testCases = (full.pmDraftTestCases ?? []).filter((tc) => tc.ticketId === ticket.id);
     const prompt = buildConductorPrompt(ticket, goal, testCases);
-    const model = get().conductorModel || modelForPower(ticket.modelPower);
     const providerOverride = get().conductorProviderId ?? undefined;
+    const model = conductorModelFor(
+      [get().conductorModel],
+      ticket.modelPower,
+      conductorProviderInfo(full.providers, providerOverride)
+    );
 
     // Reserve the ticket synchronously BEFORE the async spawn so a
     // concurrent tick can never double-spawn for the same ticket.

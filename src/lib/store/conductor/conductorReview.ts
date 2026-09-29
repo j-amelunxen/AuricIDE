@@ -6,7 +6,7 @@ import {
 } from '@/lib/conductor/judgeBackend';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { pmLatestTicketReview } from '@/lib/tauri/reviews';
-import { modelForPower } from './conductorHelpers';
+import { conductorModelFor, conductorProviderInfo } from './conductorHelpers';
 import {
   MAX_TICKET_ATTEMPTS,
   PENDING_REVIEW,
@@ -51,10 +51,15 @@ export function createAgentJudgeDeps(ctx: ConductorReviewContext): AgentJudgeDep
       // Each half falls back on its own: a judge given a provider but no
       // model must not silently lose the conductor's model as well.
       const state = get();
+      const provider = state.conductorJudgeProviderId ?? state.conductorProviderId ?? undefined;
       const agent = await full.spawnNewAgent?.({
         name: `review:${input.ticket.name.slice(0, 40)}`,
-        model: state.conductorJudgeModel || state.conductorModel || modelForPower(undefined),
-        provider: state.conductorJudgeProviderId ?? state.conductorProviderId ?? undefined,
+        model: conductorModelFor(
+          [state.conductorJudgeModel, state.conductorModel],
+          undefined,
+          conductorProviderInfo(full.providers, provider)
+        ),
+        provider,
         task: buildReviewAgentPrompt(input),
         projectPath: full.rootPath ?? null,
         cwd: full.rootPath ?? undefined,
