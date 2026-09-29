@@ -2,6 +2,7 @@ import { goalBriefSections } from '@/lib/goals/goalBrief';
 import { isClosedTicketStatus, type ModelPower } from '@/lib/pm/enums';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
+import type { ProviderInfo } from '@/lib/tauri/providers';
 import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmDependency, PmTestCase, PmTicket } from '@/lib/tauri/pm';
 import { getGoalDescendants } from '../goalsSlice';
@@ -252,6 +253,39 @@ export function modelForPower(power: ModelPower | undefined): string {
     default:
       return 'sonnet';
   }
+}
+
+/**
+ * The provider a conductor agent will run on, as the store knows it. No id
+ * means the registry default, which `list_providers` sorts first. Undefined
+ * when the list has not been loaded (browser mode, tests).
+ */
+export function conductorProviderInfo(
+  providers: ProviderInfo[] | undefined,
+  providerId: string | null | undefined
+): ProviderInfo | undefined {
+  if (!providers?.length) return undefined;
+  return providerId ? providers.find((p) => p.id === providerId) : providers[0];
+}
+
+/**
+ * The model a conductor agent is launched with: the first explicit choice the
+ * provider offers, else the ticket's capability tier where the provider knows
+ * it, else the provider's own default. `modelForPower` speaks Claude, so
+ * without this a Codex agent would be started with `--model sonnet`. A
+ * provider that is unknown or lists no models leaves the names unchecked.
+ */
+export function conductorModelFor(
+  chosen: ReadonlyArray<string | null | undefined>,
+  power: ModelPower | undefined,
+  provider: ProviderInfo | undefined
+): string {
+  const offered = (model: string) =>
+    !provider?.models.length || provider.models.some((m) => m.value === model);
+  const pick = chosen.find((model): model is string => !!model && offered(model));
+  if (pick) return pick;
+  const byPower = modelForPower(power);
+  return offered(byPower) || !provider ? byPower : provider.defaultModel;
 }
 
 /** Deterministic goal-aware prompt for a ticket agent. */

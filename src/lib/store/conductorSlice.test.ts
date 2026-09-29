@@ -8,6 +8,7 @@ import {
   getConductorPreflight,
   getUnblockedOpenTickets,
   modelForPower,
+  conductorModelFor,
   buildConductorPrompt,
   GOAL_AGENT_TIMEOUT_MS,
   MAX_TICKET_ATTEMPTS,
@@ -20,6 +21,7 @@ import { createJudgeBackend, type JudgeInput, type JudgeStart } from '../conduct
 import type { Notification } from '../notifications/types';
 import type { NotificationInput } from '../tauri/notifications';
 import { LAUNCH_REQUEST_ORIGIN } from '../notifications/launchRequest';
+import type { ProviderInfo } from '../tauri/providers';
 
 let agentCounter = 0;
 
@@ -397,6 +399,41 @@ describe('conductor pure helpers', () => {
     expect(modelForPower(undefined)).toBe('sonnet');
   });
 
+  describe('conductorModelFor', () => {
+    const provider = (id: string, models: string[], defaultModel: string): ProviderInfo => ({
+      id,
+      name: id,
+      models: models.map((value) => ({ value, label: value })),
+      permissionModes: [],
+      defaultModel,
+      defaultPermissionMode: 'acceptEdits',
+    });
+    const claude = provider('claude', ['sonnet', 'opus', 'haiku'], 'sonnet');
+    const codex = provider('codex', ['auto', 'gpt-5.5'], 'auto');
+
+    it('keeps the capability tiers for a provider that offers them', () => {
+      expect(conductorModelFor([], 'high', claude)).toBe('opus');
+      expect(conductorModelFor([], 'low', claude)).toBe('haiku');
+    });
+
+    it("falls back to the provider's default instead of handing Codex a Claude model", () => {
+      expect(conductorModelFor([], 'high', codex)).toBe('auto');
+      expect(conductorModelFor([null, undefined], undefined, codex)).toBe('auto');
+    });
+
+    it('takes the first chosen model the provider offers', () => {
+      expect(conductorModelFor(['gpt-5.5'], 'high', codex)).toBe('gpt-5.5');
+      // A judge model left over from another provider gives way to the next choice.
+      expect(conductorModelFor(['opus', 'gpt-5.5'], undefined, codex)).toBe('gpt-5.5');
+    });
+
+    it('leaves the choice unchecked when the provider or its model list is unknown', () => {
+      expect(conductorModelFor(['whatever'], 'high', undefined)).toBe('whatever');
+      expect(conductorModelFor([], 'high', undefined)).toBe('opus');
+      expect(conductorModelFor([], 'high', provider('x', [], 'm'))).toBe('opus');
+    });
+  });
+
   it('buildConductorPrompt includes ticket, goal context, and acceptance tests', () => {
     const ticket = makeTicket({
       name: 'Implement login',
@@ -537,6 +574,38 @@ describe('conductorSlice', () => {
     const agent = store.getState().agents[0];
     expect(agent.model).toBe('opus');
     expect(agent.provider).toBe('gemini');
+  });
+
+  it('switching the conductor provider drops a model picked for the previous one', () => {
+    store.getState().setConductorProviderId('claude');
+    store.getState().setConductorModel('opus');
+    store.getState().setConductorProviderId('claude');
+    expect(store.getState().conductorModel).toBe('opus');
+
+    store.getState().setConductorProviderId('codex');
+    expect(store.getState().conductorModel).toBeNull();
+  });
+
+  it('never hands a Codex conductor agent a Claude model name', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1', modelPower: 'high' })],
+      conductorMaxConcurrent: 1,
+      conductorProviderId: 'codex',
+      providers: [
+        {
+          id: 'codex',
+          name: 'Codex',
+          models: [{ value: 'auto', label: 'Auto' }],
+          permissionModes: [],
+          defaultModel: 'auto',
+          defaultPermissionMode: 'acceptEdits',
+        },
+      ],
+    } as Partial<StoreState>);
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+
+    expect(store.getState().agents[0].model).toBe('auto');
   });
 
   it('omits permissionMode so the provider-configured default decides', async () => {
@@ -2752,6 +2821,40 @@ describe('conductor works a goal tree unattended', () => {
     // "Ticket is open" alone does not say WHY nothing happened — B's own
     // ticket was never even attempted because B itself waits on A.
     expect(store.getState().conductorLastRun?.blockers).toContain('Goal "B" waits for A');
+  });
+
+  it('names the stations goal that ran out of attempts first and folds the goals waiting on it', async () => {
+    const station = (id: string, goalId: string, name: string) =>
+      makeStation({ id, goalId, name, ticketId: null });
+    store.setState({
+      rootPath: '/repo',
+      goalsDraft: [
+        makeGoal({ id: 'P', name: 'Mission' }),
+        makeGoal({ id: 'A', parentId: 'P', name: 'A', workMode: 'stations' }),
+        makeGoal({ id: 'B', parentId: 'P', name: 'B', workMode: 'stations', sortOrder: 1 }),
+        makeGoal({ id: 'C', parentId: 'P', name: 'C', workMode: 'stations', sortOrder: 2 }),
+      ],
+      goalDependenciesDraft: [dep('B', 'A'), dep('C', 'A')],
+      goalStationsDraft: [
+        station('sa', 'A', 'Review passed'),
+        station('sb1', 'B', 'Recon'),
+        station('sb2', 'B', 'Review passed'),
+        station('sc1', 'C', 'Recon'),
+        station('sc2', 'C', 'Review passed'),
+      ],
+    });
+    store.getState().startConductor('P');
+    store.setState({ conductorGoalAttempts: { A: MAX_TICKET_ATTEMPTS } });
+    await store.getState().conductorTick();
+
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(store.getState().conductorLastRun?.outcome).toBe('goal_blocked');
+    const blockers = store.getState().conductorLastRun?.blockers ?? [];
+    expect(blockers[0]).toMatch(/^Goal "A" is out of attempts: its agent ran 2 times/);
+    expect(blockers).toContain('2 goals wait for A');
+    // B's and C's own stations are consequences of the wait, not open work.
+    expect(blockers).not.toContain('Station "Recon" is planned');
+    expect(blockers.filter((b) => b === 'Station "Review passed" is planned')).toHaveLength(1);
   });
 
   it('ends blocked and names the wait when the predecessor itself failed', async () => {

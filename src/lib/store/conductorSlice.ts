@@ -46,6 +46,7 @@ export {
   getConductorPreflight,
   getUnblockedOpenTickets,
   modelForPower,
+  conductorModelFor,
 } from './conductor/conductorHelpers';
 
 export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => {
@@ -313,7 +314,13 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     },
 
     setConductorProviderId: (id) => {
-      set({ conductorProviderId: id || null });
+      // A model belongs to its provider's list; carried across a switch it
+      // would name a model the new provider does not have.
+      set((s) =>
+        (id || null) === s.conductorProviderId
+          ? {}
+          : { conductorProviderId: id || null, conductorModel: null }
+      );
       persistProjectValue('conductorProviderId', id || '');
     },
 
