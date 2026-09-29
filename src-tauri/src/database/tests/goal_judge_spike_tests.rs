@@ -124,35 +124,10 @@ fn seed_project(root: &Path) {
     // The test's writer must not hold the WAL while the MCP server reads.
     drop(conn);
 
-    // `codex exec` refuses to start outside a git repository (see the spike
-    // write-up); a project the IDE opens normally is one.
-    let status = std::process::Command::new("git")
-        .args(["init", "-q"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success());
-}
-
-/// The one thing the spike adds to the production launch. `codex exec` runs
-/// with `approval: never`, and every MCP tool call needs an approval unless
-/// the config pre-approves it, so without this the judge cannot read the goal
-/// at all (first spike run: both calls "failed", verdict pass=false). Only
-/// the two read tools are approved, per tool, not the whole server.
-fn judge_tool_approvals() -> SpawnInjection {
-    let arguments = ["get_goal", "list_stations"]
-        .iter()
-        .flat_map(|tool| {
-            [
-                "-c".to_string(),
-                format!("'mcp_servers.auric-pm.tools.{tool}.approval_mode=\"approve\"'"),
-            ]
-        })
-        .collect();
-    SpawnInjection {
-        arguments,
-        env_vars: Vec::new(),
-    }
+    // Deliberately no `git init`: `codex exec` refuses to start outside a git
+    // repository or trusted directory unless the provider's headless flag
+    // carries `--skip-git-repo-check`, and a conductor may well run in a
+    // folder that is neither.
 }
 
 /// The command `spawn_agent_impl` would run for a headless, read-only Codex
@@ -187,8 +162,9 @@ fn judge_command(root: &Path, goal_id: &str) -> (String, Vec<(String, String)>) 
     )
     .unwrap();
     let spawn = spawn
+        // Nothing on top of the production binding: it alone has to let the
+        // judge call auric-pm under `approval: never`.
         .with_injection(injection)
-        .with_injection(judge_tool_approvals())
         .with_injection(SpawnInjection {
             arguments: Vec::new(),
             env_vars: binding.environment(),
@@ -266,7 +242,13 @@ fn judge(root: &Path, goal_id: &str) -> GoalVerdict {
         "goal {goal_id}: pass={} reason={}",
         verdict.pass, verdict.reason
     );
-    let used_mcp = strip_ansi(&output).contains("auric-pm");
+    let cleaned = strip_ansi(&output);
+    assert!(
+        !cleaned.contains("approval policy is never"),
+        "an auric-pm call for {goal_id} was refused; see {}",
+        log.display()
+    );
+    let used_mcp = cleaned.contains("auric-pm");
     assert!(
         used_mcp,
         "judge for {goal_id} never called the auric-pm server"

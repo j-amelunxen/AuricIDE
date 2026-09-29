@@ -16,6 +16,15 @@ const BULLET_RAN_LINE = new RegExp(`^${BULLET}\\s+Ran\\s+(.+)$`);
 const EXEC_LINE = /^exec\s+bash\s+-lc\s+"(.+)"\s*$/;
 const SHELL_LINE = /^\$\s+(.+)$/;
 const APPROVAL_PATTERNS = [/\ballow command\?/i, /\bapprove\b.*\?/i, /\by\/n\b/i];
+/**
+ * `codex exec` never asks: under `approval: never` a call needing approval is
+ * refused, and a lost MCP binding leaves the server unknown. Both are failures
+ * the run keeps going past, so they must read as errors, not as questions.
+ */
+const REFUSAL_PATTERNS = [
+  /\brequires approval\b.*\bapproval policy is never\b/i,
+  /\bunknown MCP server\b/i,
+];
 const FINISHED_LINE = new RegExp(`^(${BULLET}\\s+Finished\\b|Done)\\s*$`, 'i');
 
 function pathEvent(kind: 'read' | 'edit', verb: string, arg: string) {
@@ -57,6 +66,10 @@ export const matchCodexLine: LineMatcher = (line) => {
 
   const shell = SHELL_LINE.exec(line);
   if (shell) return { kind: 'run', label: `Ran ${shell[1].trim()}` };
+
+  if (REFUSAL_PATTERNS.some((pattern) => pattern.test(line))) {
+    return { kind: 'error', label: line.trim() };
+  }
 
   if (APPROVAL_PATTERNS.some((pattern) => pattern.test(line))) {
     return { kind: 'ask', label: `Permission requested: ${line.trim()}` };

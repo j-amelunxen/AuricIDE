@@ -58,3 +58,22 @@ describe('resolveMatcher', () => {
     });
   });
 });
+
+describe('Codex refusals under `codex exec`', () => {
+  // Verbatim from a real `codex exec` run (codex-cli 0.159.0): headless Codex
+  // never asks, it refuses — the line must read as a failure, not as a prompt.
+  it('reads a refused MCP approval as an error', () => {
+    expect(
+      resolveMatcher('codex')('MCP tool call requires approval, but approval policy is never')
+    ).toEqual({
+      kind: 'error',
+      label: 'MCP tool call requires approval, but approval policy is never',
+    });
+  });
+
+  it('reads a vanished MCP server as an error', () => {
+    expect(resolveMatcher('codex')("resources/list failed: unknown MCP server 'auric-pm'")).toEqual(
+      { kind: 'error', label: "resources/list failed: unknown MCP server 'auric-pm'" }
+    );
+  });
+});

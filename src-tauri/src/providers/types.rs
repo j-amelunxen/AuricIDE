@@ -208,6 +208,12 @@ pub fn codex_project_binding_injection(
         shell_quote_argument(&args),
         "-c".to_string(),
         shell_quote_argument("mcp_servers.auric-pm.required=true"),
+        // `codex exec` runs with `approval: never`, so a tool call that needs
+        // approval is refused rather than asked — and conductor agents report
+        // back through exactly the write tools. The server is ours and bound to
+        // this one project, so it is approved as a whole.
+        "-c".to_string(),
+        shell_quote_argument("mcp_servers.auric-pm.default_tools_approval_mode=\"approve\""),
     ];
     if !binding.mcp_env.is_empty() {
         arguments.push("-c".to_string());

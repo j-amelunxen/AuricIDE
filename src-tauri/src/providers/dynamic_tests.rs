@@ -504,7 +504,7 @@ fn get_codex_config() -> ProviderConfig {
             "acceptEdits": "--sandbox workspace-write",
             "bypassPermissions": "--dangerously-bypass-approvals-and-sandbox",
             "plan": "--sandbox read-only",
-            "auto": "--sandbox workspace-write -c approval_policy=on-request -c approvals_reviewer=auto_review",
+            "auto": "--approve-for-me",
             "default": ""
           },
           "fallback": ""
@@ -571,13 +571,14 @@ fn test_dynamic_codex_bypass_is_the_only_mode_without_a_sandbox() {
     assert!(!cmd.command.contains("--sandbox"));
 }
 
-// `codex exec` has no `--ask-for-approval`, so the approval policy goes in as a
-// config override, which both the interactive and the headless CLI accept.
+// `codex exec` has no `--ask-for-approval`. The approval policy used to go in as
+// `-c` overrides, but a `-c` after `exec` discards every `-c` before it — the
+// whole auric-pm binding. `--approve-for-me` is the native flag for the same
+// thing (workspace-write, on-request, auto review) and both CLIs accept it.
 #[test]
 fn test_dynamic_codex_auto_routes_approvals_through_auto_review() {
     let provider = DynamicProvider::new(get_codex_config());
-    let expected = "--sandbox workspace-write -c approval_policy=on-request \
-                    -c approvals_reviewer=auto_review";
+    let expected = "--approve-for-me";
     let headless = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
     assert_eq!(headless.command, format!("codex exec \"task\" {expected}"));
     let interactive =
@@ -743,11 +744,45 @@ fn test_local_codex_config_offers_auto_review() {
         "the auto-review mode must be offered in the pickers"
     );
     let cmd = provider.build_spawn_command("auto", "task", Some("auto"), false, false, true);
-    assert_eq!(
-        cmd.command,
-        "codex exec \"task\" --sandbox workspace-write -c approval_policy=on-request \
-         -c approvals_reviewer=auto_review"
-    );
+    assert!(cmd.command.contains("--approve-for-me"), "{}", cmd.command);
+}
+
+/// Codex drops every root-level `-c` (where the auric-pm binding goes) as soon
+/// as one `-c` follows the `exec` subcommand; the MCP server then simply does
+/// not exist for the run. Checked with codex-cli 0.159.0. Whatever the local
+/// config maps a mode to, a headless launch must keep its overrides in front.
+#[test]
+fn test_local_codex_config_keeps_every_override_in_front_of_exec() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dynamic-providers/codex.json");
+    let Ok(content) = fs::read_to_string(&path) else {
+        eprintln!("skipping: no local {}", path.display());
+        return;
+    };
+    let provider = DynamicProvider::new(serde_json::from_str(&content).unwrap());
+    let modes = [
+        "acceptEdits",
+        "auto",
+        "bypassPermissions",
+        "plan",
+        "default",
+        "yolo",
+    ];
+    for mode in modes {
+        let cmd = provider.build_spawn_command("auto", "task", Some(mode), false, false, true);
+        let after_exec = cmd
+            .command
+            .split_once(" exec ")
+            .map(|(_, rest)| rest.to_string())
+            .unwrap_or_else(|| panic!("{mode}: no exec in {}", cmd.command));
+        let without_task = after_exec.replacen("\"task\"", "", 1);
+        assert!(
+            !without_task
+                .split_whitespace()
+                .any(|word| word == "-c" || word == "--config"),
+            "{mode}: `-c` after exec would drop the MCP binding: {}",
+            cmd.command
+        );
+    }
 }
 
 // ── Untrusted request values never reach the shell as code ────────
@@ -973,4 +1008,51 @@ fn an_environment_only_binding_is_a_binding() {
             "/app data/project-a.mcp.json".to_string()
         )]
     );
+}
+
+/// `codex exec` runs with `approval: never`: a tool call that needs approval is
+/// refused, not asked. Conductor agents report back through auric-pm's write
+/// tools, so the bound server has to be pre-approved as a whole.
+#[test]
+fn codex_binding_pre_approves_every_auric_pm_tool_for_headless_runs() {
+    let binding = ProviderProjectBinding::new("/repo/p", "/repo/p/.auric/project.db")
+        .with_runtime_entrypoint("/rt/server.mjs");
+    let injection = codex_project_binding_injection(&binding).unwrap();
+    let overrides: Vec<String> = injection
+        .arguments
+        .chunks(2)
+        .filter(|pair| pair[0] == "-c")
+        .map(|pair| as_shell_sees_it(&pair[1]))
+        .collect();
+
+    assert!(
+        overrides
+            .contains(&r#"mcp_servers.auric-pm.default_tools_approval_mode="approve""#.to_string()),
+        "{overrides:#?}"
+    );
+}
+
+/// The headless flag recommended for Codex in `dynamic-providers/README.md`
+/// carries the unattended-run options with it: they reach `codex exec` and
+/// only it, so an interactive session keeps Codex's own trust check and
+/// network default. The `-c` sits in front of `exec`, beside the binding's.
+#[test]
+fn codex_headless_flag_carries_the_unattended_options_only_into_exec() {
+    let mut config = get_codex_config();
+    config.arguments[0] = ArgumentConfig::Headless {
+        flag: "-c sandbox_workspace_write.network_access=true exec --skip-git-repo-check"
+            .to_string(),
+        interactive_flag: None,
+    };
+    let provider = DynamicProvider::new(config);
+
+    let headless = provider.build_spawn_command("auto", "task", None, false, false, true);
+    assert_eq!(
+        headless.command,
+        "codex -c sandbox_workspace_write.network_access=true exec --skip-git-repo-check \
+         \"task\" --sandbox workspace-write"
+    );
+    let interactive = provider.build_spawn_command("auto", "task", None, false, false, false);
+    assert!(!interactive.command.contains("skip-git-repo-check"));
+    assert!(!interactive.command.contains("network_access"));
 }
