@@ -204,7 +204,7 @@ describe('request_human_check', () => {
     const written = rows();
     expect(written).toHaveLength(1);
     expect(written[0]).toMatchObject({
-      title: 'Check needed: Test the speakers',
+      title: 'Test the speakers',
       body: 'second',
       severity: 'warn',
       source: 'agent',

@@ -306,7 +306,7 @@ export function requestHumanCheck(
       projectName: scope.projectName ?? null,
       source: 'agent',
       severity: 'warn',
-      title: `Check needed: ${station.name}`,
+      title: station.name,
       body: instructions,
       refKind: 'goal',
       refId: station.goal_id,
@@ -488,15 +488,21 @@ export function registerStationTools(
   server.addTool({
     name: 'request_human_check',
     description:
-      'Hand a human station over to the person when nobody is watching you. Stores the steps ' +
-      'to check on the station and raises one inbox warning for it; the station stays open ' +
+      'Hand a human station over to the person when nobody is watching you. Stores your note on ' +
+      'the station and raises one inbox warning for it, titled with the station name (so name ' +
+      'the station as the action, e.g. "Pick the free mailing plan"). The station stays open ' +
       'until a person ticks it off. Afterwards, continue with the next station — do not wait.',
     parameters: z.object({
       stationId: z.string().describe('Station ID (UUID or unique prefix) of a human station'),
       instructions: z
         .string()
         .min(1)
-        .describe('What the person has to check, as concrete numbered steps'),
+        .describe(
+          'A short, self-contained note the person can act on from a phone: 3 to 6 plain ' +
+            'sentences, at most 600 characters. Start with the action or result; for a decision ' +
+            'give the options, what each means, your recommendation and how to answer. Put every ' +
+            'fact in the note; never ask the person to open a file, note or video, and no paths or IDs.'
+        ),
     }),
     execute: async ({ stationId, instructions }) =>
       JSON.stringify(
