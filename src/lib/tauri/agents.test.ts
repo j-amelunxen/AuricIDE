@@ -10,6 +10,31 @@ describe('agent IPC wrappers', () => {
     vi.clearAllMocks();
   });
 
+  describe('spawnAgent', () => {
+    it('sends the attribution fields to the backend untouched', async () => {
+      mockInvoke.mockResolvedValueOnce({ id: 'a1' });
+      const { spawnAgent } = await import('./agents');
+      await spawnAgent({
+        name: 'n',
+        model: 'm',
+        task: 't',
+        runSource: 'schedule',
+        runKind: 'review',
+        reviewOfTicketId: 't1',
+      });
+      expect(mockInvoke).toHaveBeenCalledWith('spawn_agent', {
+        config: {
+          name: 'n',
+          model: 'm',
+          task: 't',
+          runSource: 'schedule',
+          runKind: 'review',
+          reviewOfTicketId: 't1',
+        },
+      });
+    });
+  });
+
   describe('checkCliStatus', () => {
     it('calls invoke with null providerId by default', async () => {
       mockInvoke.mockResolvedValueOnce(true);

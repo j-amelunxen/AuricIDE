@@ -38,6 +38,11 @@ pub(super) fn apply_agent_env(
 }
 use super::types::*;
 use crate::agent_persistence::AgentPersistenceState;
+use crate::agent_usage::capture::{
+    EvidenceWait, UsageCapture, UsageRecordedEvent, EXIT_EVIDENCE_WAIT, USAGE_RECORDED_EVENT,
+};
+use crate::agent_usage::holdback::ResultHoldback;
+use crate::agent_usage::record::Outcome;
 use crate::providers::ProviderRegistryState;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::Read;
@@ -325,13 +330,17 @@ pub async fn spawn_agent_impl(
         resolve_permitted_provider(config.provider.as_deref(), providers, &policy)?;
     let provider_id = provider_id.as_str();
 
-    let mut spawn_cmd = provider.build_spawn_command(
-        &config.model,
-        &config.task,
-        config.permission_mode.as_deref(),
-        config.dangerously_ignore_permissions.unwrap_or(false),
-        config.auto_accept_edits.unwrap_or(false),
-        config.headless.unwrap_or(false),
+    let usage_config = provider.usage_config();
+    let (mut spawn_cmd, usage_session_id) = crate::agent_usage::launch::with_session_id(
+        provider.build_spawn_command(
+            &config.model,
+            &config.task,
+            config.permission_mode.as_deref(),
+            config.dangerously_ignore_permissions.unwrap_or(false),
+            config.auto_accept_edits.unwrap_or(false),
+            config.headless.unwrap_or(false),
+        ),
+        usage_config.as_ref(),
     );
     if let Some(binding) = project_binding.as_ref() {
         spawn_cmd = bind_to_project_mcp(
@@ -389,8 +398,22 @@ pub async fn spawn_agent_impl(
         .unwrap_or_default()
         .as_millis() as u64;
 
+    // Opens the project database, so not while the manager is locked and not
+    // on the async runtime.
+    let usage = prepare_usage_capture(
+        &config,
+        project_binding.as_ref(),
+        provider_id,
+        usage_config,
+        usage_session_id,
+        now,
+    )
+    .await;
+
     let mut manager = state.lock().await;
     let id = manager.next_id();
+
+    let usage = usage.map(|capture| capture.with_agent_id(&id));
 
     let mut persisted_config = config.clone();
     persisted_config.project_path = project_binding
@@ -436,6 +459,7 @@ pub async fn spawn_agent_impl(
         info: info.clone(),
         child,
         launch_request_uid: launch_request_uid.clone(),
+        usage: usage.clone(),
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
@@ -461,15 +485,25 @@ pub async fn spawn_agent_impl(
     let output_buffers = app
         .try_state::<super::output_buffer::OutputBuffersState>()
         .map(|buffers| buffers.inner().clone());
+    let mut holdback = usage
+        .as_ref()
+        .filter(|capture| capture.holds_back_result())
+        .map(|_| ResultHoldback::default());
+    let sniffing_usage = usage.clone().filter(UsageCapture::sniffs_output);
 
     tauri::async_runtime::spawn(async move {
-        let has_produced_output = pump_agent_output(&mut rx, OUTPUT_BATCH_INTERVAL, |data| {
-            if let Some(buffers) = &output_buffers {
-                buffers.append(&id_clone, &data);
-            }
-            emit_agent_output(&app_clone, &id_clone, &rp_clone, data)
-        })
-        .await;
+        let has_produced_output =
+            pump_agent_output(&mut rx, OUTPUT_BATCH_INTERVAL, holdback.as_mut(), |data| {
+                if let Some(capture) = &sniffing_usage {
+                    capture.sniff(&data);
+                }
+                if let Some(buffers) = &output_buffers {
+                    buffers.append(&id_clone, &data);
+                }
+                emit_agent_output(&app_clone, &id_clone, &rp_clone, data)
+            })
+            .await;
+        let cli_result = holdback.as_mut().and_then(ResultHoldback::take_result);
 
         if !has_produced_output {
             let error_msg = format!("\r\n\x1b[31mError: Agent process terminated without output. Check if '{}' CLI is installed.\x1b[0m\r\n", cli_name);
@@ -533,6 +567,27 @@ pub async fn spawn_agent_impl(
 
         // A kill got there first when the agent is gone from the manager: it
         // reported the verdict and let go of the anchor itself.
+        if let (true, Some(capture)) = (report_exit, usage) {
+            let outcome = if exit_code == 0 {
+                Outcome::Success
+            } else {
+                Outcome::Error
+            };
+            // Not awaited: the transcript may still be landing, and the run's
+            // exit must not wait for it.
+            let app = app_clone.clone();
+            tauri::async_runtime::spawn(async move {
+                book_usage(
+                    &app,
+                    capture,
+                    outcome,
+                    cli_result,
+                    EvidenceWait::Poll(EXIT_EVIDENCE_WAIT),
+                )
+                .await
+            });
+        }
+
         if report_exit {
             let verdict = launch_request_uid
                 .as_deref()
@@ -547,6 +602,83 @@ pub async fn spawn_agent_impl(
     Ok((info, writer, pair.master))
 }
 
+/// The usage capture for a spawn, or `None` (with a log line when something
+/// was wrong) if the run cannot be booked.
+async fn prepare_usage_capture(
+    config: &AgentConfig,
+    binding: Option<&super::project_binding::ResolvedProjectBinding>,
+    provider_id: &str,
+    usage_config: Option<crate::providers::UsageConfig>,
+    session_id: Option<String>,
+    started_at_ms: u64,
+) -> Option<UsageCapture> {
+    let project_root = binding?.project_root().to_path_buf();
+    let config = config.clone();
+    let provider_id = provider_id.to_string();
+    let prepared = tokio::task::spawn_blocking(move || {
+        UsageCapture::for_spawn(
+            &config,
+            &project_root,
+            &provider_id,
+            usage_config,
+            session_id,
+            started_at_ms,
+        )
+    })
+    .await;
+    match prepared {
+        Ok(Ok(capture)) => capture,
+        Ok(Err(error)) => {
+            eprintln!("Agent usage: this run will not be recorded: {error}");
+            None
+        }
+        Err(error) => {
+            eprintln!("Agent usage: preparing the capture aborted: {error}");
+            None
+        }
+    }
+}
+
+/// Reads a finished run's evidence, appends its usage row and tells the
+/// frontend. A failure is logged, never raised: the run itself already ended.
+async fn book_usage(
+    app: &AppHandle,
+    capture: UsageCapture,
+    outcome: Outcome,
+    cli_result: Option<crate::agent_usage::claude::CliResult>,
+    wait: EvidenceWait,
+) {
+    let Ok(home) = app.path().home_dir() else {
+        return;
+    };
+    let claude_prices = app
+        .try_state::<crate::cc_usage::CcUsageService>()
+        .and_then(|service| service.plugin_by_id("claude-code"));
+    let project_path = capture.event_project_path().to_string();
+    let booked = tokio::task::spawn_blocking(move || {
+        capture.book(
+            &home,
+            claude_prices.as_ref(),
+            outcome,
+            cli_result,
+            chrono::Utc::now(),
+            wait,
+        )
+    })
+    .await;
+    match booked {
+        Ok(Ok(Some(row))) => {
+            let _ = app.emit(
+                USAGE_RECORDED_EVENT,
+                UsageRecordedEvent { project_path, row },
+            );
+        }
+        Ok(Ok(None)) => {}
+        Ok(Err(error)) => eprintln!("Agent usage: could not record a run: {error}"),
+        Err(error) => eprintln!("Agent usage: recording a run aborted: {error}"),
+    }
+}
+
 /// Longest a decoded chunk waits in the batch before it is emitted.
 const OUTPUT_BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(32);
 
@@ -556,6 +688,11 @@ const OUTPUT_FLUSH_BYTES: usize = 16384;
 /// Drains the PTY reader's channel into batched `emit` calls until it closes.
 /// Returns whether any bytes arrived at all.
 ///
+/// With a `holdback` the run's final JSON result line never reaches `emit`:
+/// prose goes through as it arrives, the result is replaced by its answer text
+/// when the stream ends (`agent_usage::holdback`). The caller keeps the
+/// holdback and takes the parsed result from it afterwards.
+///
 /// Batching bounds: a chunk is emitted with the batch at once when the batch
 /// passes `OUTPUT_FLUSH_BYTES` or `interval` has passed since the last emit;
 /// otherwise it waits at most until `last_emit + interval`. Closing the
@@ -564,6 +701,7 @@ const OUTPUT_FLUSH_BYTES: usize = 16384;
 async fn pump_agent_output<F, Fut>(
     rx: &mut tokio::sync::mpsc::Receiver<Vec<u8>>,
     interval: std::time::Duration,
+    mut holdback: Option<&mut ResultHoldback>,
     mut emit: F,
 ) -> bool
 where
@@ -590,18 +728,29 @@ where
         };
         let Some(bytes) = data else { break };
         has_produced_output = true;
-        accum.push_str(&decoder.push(&bytes));
+        accum.push_str(&shown(&mut holdback, &decoder.push(&bytes)));
         if accum.len() > OUTPUT_FLUSH_BYTES || last_emit.elapsed() >= interval {
             emit(std::mem::take(&mut accum)).await;
             last_emit = tokio::time::Instant::now();
         }
     }
 
-    accum.push_str(&decoder.finish());
+    accum.push_str(&shown(&mut holdback, &decoder.finish()));
+    if let Some(holdback) = holdback {
+        accum.push_str(&holdback.finish());
+    }
     if !accum.is_empty() {
         emit(accum).await;
     }
     has_produced_output
+}
+
+/// What of `text` the console gets to see now.
+fn shown(holdback: &mut Option<&mut ResultHoldback>, text: &str) -> String {
+    match holdback {
+        Some(holdback) => holdback.push(text),
+        None => text.to_string(),
+    }
 }
 
 pub async fn emit_agent_output(
@@ -644,6 +793,21 @@ pub async fn kill_agent_impl(
     // PTY can keep it open long after the agent itself is gone.
     if let Some(buffers) = app.try_state::<super::output_buffer::OutputBuffersState>() {
         buffers.finish(agent_id, AgentStatus::Idle);
+    }
+    // Tokens spent before a kill were spent, so the run is booked from its
+    // transcript. Off this call: the kill answers now, the row follows.
+    if let Some(capture) = process.usage.take() {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            book_usage(
+                &app,
+                capture,
+                Outcome::Killed,
+                None,
+                EvidenceWait::Poll(EXIT_EVIDENCE_WAIT),
+            )
+            .await
+        });
     }
     let verdict = process
         .launch_request_uid
@@ -715,15 +879,45 @@ pub async fn kill_agents_for_repo_impl(
     Ok(count)
 }
 
+/// Longest the app's shutdown waits for the runs still alive to be booked.
+const SHUTDOWN_BOOKING_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+
 pub async fn cleanup_all_agents(app: AppHandle) {
     let state = app.state::<AgentManagerState>();
-    let mut manager = state.lock().await;
-    manager.agents.clear();
+    let captures: Vec<UsageCapture> = {
+        let mut manager = state.lock().await;
+        manager
+            .agents
+            .drain()
+            .filter_map(|(_, process)| process.usage)
+            .collect()
+    };
+    book_at_shutdown(&app, captures).await;
+}
+
+/// The runs that were alive when the app quit are booked as killed: tokens
+/// spent before the quit were spent. Their transcripts are read within the
+/// budget; a run that does not make it is booked without tokens rather than
+/// not at all.
+async fn book_at_shutdown(app: &AppHandle, captures: Vec<UsageCapture>) {
+    let deadline = tokio::time::Instant::now() + SHUTDOWN_BOOKING_BUDGET;
+    for capture in captures {
+        let read = book_usage(
+            app,
+            capture.clone(),
+            Outcome::Killed,
+            None,
+            EvidenceWait::Now,
+        );
+        if tokio::time::timeout_at(deadline, read).await.is_err() {
+            book_usage(app, capture, Outcome::Killed, None, EvidenceWait::Skip).await;
+        }
+    }
 }
 
 #[cfg(test)]
 mod output_pump_tests {
-    use super::{pump_agent_output, OUTPUT_FLUSH_BYTES};
+    use super::{pump_agent_output, ResultHoldback, OUTPUT_FLUSH_BYTES};
     use std::time::{Duration, Instant};
     use tokio::sync::mpsc;
 
@@ -740,7 +934,7 @@ mod output_pump_tests {
         let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
         let (out_tx, out_rx) = mpsc::unbounded_channel();
         let pump = tokio::spawn(async move {
-            pump_agent_output(&mut rx, interval, move |data| {
+            pump_agent_output(&mut rx, interval, None, move |data| {
                 let out = out_tx.clone();
                 async move {
                     let _ = out.send((Instant::now(), data));
@@ -827,5 +1021,87 @@ mod output_pump_tests {
         );
         drop(tx);
         assert!(pump.await.unwrap());
+    }
+
+    /// The pump with a holdback, which also hands back what the holdback read.
+    fn start_holding_back() -> (
+        mpsc::Sender<Vec<u8>>,
+        Emitted,
+        tokio::task::JoinHandle<Option<crate::agent_usage::claude::CliResult>>,
+    ) {
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
+        let (out_tx, out_rx) = mpsc::unbounded_channel();
+        let pump = tokio::spawn(async move {
+            let mut holdback = ResultHoldback::default();
+            pump_agent_output(
+                &mut rx,
+                Duration::from_millis(5),
+                Some(&mut holdback),
+                move |data| {
+                    let out = out_tx.clone();
+                    async move {
+                        let _ = out.send((Instant::now(), data));
+                    }
+                },
+            )
+            .await;
+            holdback.take_result()
+        });
+        (tx, out_rx, pump)
+    }
+
+    async fn everything_emitted(mut out: Emitted) -> String {
+        let mut all = String::new();
+        while let Some((_, text)) = out.recv().await {
+            all.push_str(&text);
+        }
+        all
+    }
+
+    const RESULT_LINE: &str = include_str!("../agent_usage/fixtures/claude-result.json");
+
+    #[tokio::test]
+    async fn prose_flows_while_the_result_line_is_held_and_then_replaced_by_prose() {
+        let (tx, mut out, pump) = start_holding_back();
+        tx.send(b"thinking...\r\n".to_vec()).await.unwrap();
+        let (_, first) = next(&mut out).await;
+        assert_eq!(first, "thinking...\r\n", "prose is not held back");
+
+        tx.send(RESULT_LINE.trim_end().as_bytes().to_vec())
+            .await
+            .unwrap();
+        tx.send(b"\r\n".to_vec()).await.unwrap();
+        drop(tx);
+
+        let result = pump
+            .await
+            .unwrap()
+            .expect("the result object was recognised");
+        assert_eq!(result.cost_usd(), Some(0.12199465));
+        assert_eq!(
+            everything_emitted(out).await,
+            "hello\r\n\u{2014} 187.6k tokens \u{b7} $0.12 \u{b7} 1 turn\r\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_line_that_only_looks_like_json_is_emitted_raw_when_the_run_ends() {
+        let (tx, out, pump) = start_holding_back();
+        tx.send(b"{ not json at all\r\n".to_vec()).await.unwrap();
+        drop(tx);
+
+        assert!(pump.await.unwrap().is_none());
+        assert_eq!(everything_emitted(out).await, "{ not json at all\r\n");
+    }
+
+    #[tokio::test]
+    async fn a_multibyte_character_cut_in_two_chunks_still_reaches_the_holdback_whole() {
+        let (tx, out, pump) = start_holding_back();
+        tx.send(vec![b'w', 0xC3]).await.unwrap();
+        tx.send(vec![0xA4, b'r', b'\n']).await.unwrap();
+        drop(tx);
+
+        pump.await.unwrap();
+        assert_eq!(everything_emitted(out).await, "w\u{e4}r\n");
     }
 }

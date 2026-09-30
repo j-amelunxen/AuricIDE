@@ -10,10 +10,11 @@ import { EpicEditDialog } from './EpicEditDialog';
 import { TicketCreateModal } from './TicketCreateModal';
 import { DependencyTreeView } from './DependencyTreeView';
 import { MetricsView } from './MetricsView';
+import { CostsView } from './costsView/CostsView';
 import type { PmEpic, PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
 import { isHiddenTicketStatus } from '@/lib/pm/enums';
 import { generateTicketPrompt } from '@/lib/pm/prompt';
-import { ProjectManagerHeader } from './modal/ProjectManagerHeader';
+import { ProjectManagerHeader, type PmViewMode } from './modal/ProjectManagerHeader';
 import { ProjectManagerColumns } from './modal/ProjectManagerColumns';
 import { formatEpicDeleteMessage, formatTicketDeleteMessage } from './modal/pmModalHelpers';
 
@@ -72,7 +73,7 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const [editingEpic, setEditingEpic] = useState<PmEpic | null>(null);
   const [ticketCreateOpen, setTicketCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'tree' | 'metrics'>('list');
+  const [viewMode, setViewMode] = useState<PmViewMode>('list');
   const [showArchived, setShowArchived] = useState(false);
 
   const active = embedded || pmModalOpen;
@@ -355,7 +356,11 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
           onSaveAndClose={() => void handleSaveAndClose()}
         />
 
-        {viewMode === 'metrics' ? (
+        {viewMode === 'costs' ? (
+          <div className="flex-1 min-h-0">
+            <CostsView />
+          </div>
+        ) : viewMode === 'metrics' ? (
           <div className="flex-1 min-h-0">
             <MetricsView />
           </div>

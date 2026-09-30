@@ -19,6 +19,7 @@ import { registerGoalReviewTools } from './tools/goalReviews';
 import { registerNotificationTools } from './tools/notifications';
 import { registerAgentLaunchTools } from './tools/agentLaunch';
 import { registerAgentControlTools } from './tools/agentControl';
+import { registerAgentUsageTools } from './tools/agentUsage';
 import { openNotificationsDb } from './notificationsDb';
 
 /**
@@ -86,6 +87,7 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   registerKnowledgeTools(server, projectRoot);
   registerReviewTools(server, db);
   registerGoalReviewTools(server, db);
+  registerAgentUsageTools(server, db);
   const inbox = attachNotificationTools(server, db, projectRoot);
   // A hand-over still stores its steps on the station without an inbox.
   registerStationTools(server, db, projectRoot, {

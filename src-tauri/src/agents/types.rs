@@ -36,6 +36,17 @@ pub struct AgentConfig {
     /// The action on `agent_notification_uid` that was clicked.
     #[serde(default)]
     pub agent_notification_action_id: Option<String>,
+    /// Who started this run (`ui`, `conductor`, `schedule`, `mcp`); usage
+    /// attribution only.
+    #[serde(default)]
+    pub run_source: Option<String>,
+    /// What the run is for (`ticket`, `goal`, `review`, `other`); derived from
+    /// the ids below when absent.
+    #[serde(default)]
+    pub run_kind: Option<String>,
+    /// The ticket a review run judges; its cost is booked on that ticket.
+    #[serde(default)]
+    pub review_of_ticket_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -91,6 +102,8 @@ pub struct AgentProcess {
     pub child: Box<dyn PtyChild + Send + Sync>,
     /// The launch request this agent serves; a kill reports to it.
     pub launch_request_uid: Option<String>,
+    /// Books the run's usage when it ends; `None` outside an initialised project.
+    pub usage: Option<crate::agent_usage::capture::UsageCapture>,
 }
 
 pub struct AgentManager {

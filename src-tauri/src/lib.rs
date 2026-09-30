@@ -1,5 +1,6 @@
 mod agent_log;
 mod agent_persistence;
+mod agent_usage;
 mod agents;
 mod ansi;
 mod app_config;
@@ -454,6 +455,7 @@ pub fn run() {
             usage_limits::usage_limits_refresh,
             cc_usage::cc_usage_plugins,
             cc_usage::cc_usage_report,
+            agent_usage::agent_usage_load,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,

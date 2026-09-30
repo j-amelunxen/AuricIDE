@@ -3,11 +3,13 @@
 import { PersistChip } from '@/app/components/ui/PersistChip';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
+export type PmViewMode = 'list' | 'tree' | 'metrics' | 'costs';
+
 export interface ProjectManagerHeaderProps {
   embedded: boolean;
   pmDirty: boolean;
-  viewMode: 'list' | 'tree' | 'metrics';
-  onViewModeChange: (mode: 'list' | 'tree' | 'metrics') => void;
+  viewMode: PmViewMode;
+  onViewModeChange: (mode: PmViewMode) => void;
   showArchived: boolean;
   onToggleArchived: () => void;
   onImportSpec: () => void;
@@ -73,6 +75,16 @@ export function ProjectManagerHeader({
             }`}
           >
             Metrics
+          </button>
+          <button
+            onClick={() => onViewModeChange('costs')}
+            className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+              viewMode === 'costs'
+                ? 'bg-white/15 text-white shadow-sm'
+                : 'text-foreground-muted hover:text-foreground'
+            }`}
+          >
+            Costs
           </button>
         </div>
 

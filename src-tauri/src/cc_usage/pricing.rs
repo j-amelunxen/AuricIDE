@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::manifest::{CacheMultipliers, Rate, ServerToolRates};
+use super::manifest::{rate_on, CacheMultipliers, Rate, ServerToolRates, UsagePlugin};
 
 /// Everything one assistant turn consumed.
 ///
@@ -79,6 +79,24 @@ pub fn cost_of(
         + (counts.web_fetch_requests as f64) * server_tools.web_fetch_per_thousand;
 
     tokens / PER_M_TOK + tools / PER_THOUSAND
+}
+
+/// What one run's tokens cost under `plugin`'s price list, on `day`
+/// (`YYYY-MM-DD`).
+///
+/// `None` means the price list has never heard of the model. The caller keeps
+/// the tokens anyway and names the model as unpriced: a total missing money
+/// has to say so instead of looking complete at zero.
+pub fn price_bundle(
+    plugin: &UsagePlugin,
+    model: &str,
+    day: &str,
+    counts: &TokenCounts,
+) -> Option<f64> {
+    let spec = plugin.model_for(model)?;
+    let rate = rate_on(&spec.rates, day)?;
+    let cache = spec.cache_multipliers(&plugin.pricing.cache);
+    Some(cost_of(counts, rate, cache, &plugin.pricing.server_tools))
 }
 
 /// What the prompt cache saved on this turn.
@@ -285,5 +303,68 @@ mod tests {
         assert_eq!(total.web_search_requests, 77);
         assert_eq!(total.web_fetch_requests, 88);
         assert_eq!(total.billable(), 11 + 22 + 33 + 44 + 55);
+    }
+
+    fn built_in_plugin() -> UsagePlugin {
+        serde_json::from_str(super::super::manifest::BUILT_IN_CLAUDE_CODE).unwrap()
+    }
+
+    /// The real Haiku session captured from the CLI: 0.12199465 USD by its own
+    /// account, so this is priced against a number we did not compute.
+    fn captured_haiku_session() -> TokenCounts {
+        TokenCounts {
+            input: 46,
+            output: 1007,
+            cache_write5m: 34_067,
+            cache_write1h: 31_098,
+            cache_read: 121_339,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_bundle_is_priced_to_the_cents_the_cli_reported() {
+        let cost = price_bundle(
+            &built_in_plugin(),
+            "claude-haiku-4-5-20251001",
+            "2026-09-30",
+            &captured_haiku_session(),
+        )
+        .expect("haiku is on the price list");
+        assert_close_to(cost, 0.12199465, 1e-6);
+    }
+
+    #[test]
+    fn a_model_with_its_own_cache_multipliers_is_priced_with_them() {
+        let counts = TokenCounts {
+            cache_read: 1_000_000,
+            ..Default::default()
+        };
+        let cost = price_bundle(
+            &built_in_plugin(),
+            "claude-fable-5-1",
+            "2026-09-30",
+            &counts,
+        )
+        .expect("fable 5.1 is on the price list");
+        assert_close_to(cost, 10.0 * 0.025, 1e-9);
+    }
+
+    #[test]
+    fn a_model_the_price_list_does_not_know_has_no_price() {
+        let cost = price_bundle(
+            &built_in_plugin(),
+            "claude-unheard-of-9",
+            "2026-09-30",
+            &captured_haiku_session(),
+        );
+        assert_eq!(cost, None);
+    }
+
+    fn assert_close_to(actual: f64, expected: f64, tolerance: f64) {
+        assert!(
+            (actual - expected).abs() < tolerance,
+            "expected {expected}, got {actual}"
+        );
     }
 }

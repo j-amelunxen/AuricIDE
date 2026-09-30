@@ -90,7 +90,7 @@ export function ProjectManagerColumns({
 
       <div
         data-testid="tickets-list-col"
-        className="w-52 min-w-0 shrink-0 border-l border-r border-white/[0.08] @4xl:w-[280px]"
+        className="w-52 min-w-0 shrink-0 border-l border-r border-white/[0.08] has-[[data-usage-columns]]:w-80 @4xl:w-[280px] @4xl:has-[[data-usage-columns]]:w-[380px]"
       >
         <TicketTable
           loading={pmLoading}

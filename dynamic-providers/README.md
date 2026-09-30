@@ -165,6 +165,47 @@ An agent launched without a project receives neither the descriptor nor the
 fixed variables. This makes provider configs reusable for general agents while
 keeping an MCP-capable launch immutably tied to the project selected at spawn.
 
+### Usage capture (`usage`)
+
+`usage` (optional) tells AuricIDE how to read what a run of this provider
+consumed, so tokens and USD can be booked on the ticket or goal it ran for
+(`docs/design-agent-usage.md`). Without it the run still gets a row, with its
+duration and outcome, but no tokens and no cost. The readers are compiled in;
+the config only picks one. The block is parsed strictly: an unknown key or
+format fails the file instead of quietly turning capture off.
+
+```json
+"usage": {
+  "result": { "format": "claude-json", "headlessArgs": ["--output-format", "json"] },
+  "transcript": { "format": "claude-jsonl", "sessionIdFlag": "--session-id" }
+}
+```
+
+```json
+"usage": {
+  "transcript": { "format": "codex-rollout", "sessionIdFrom": "output" }
+}
+```
+
+- `result.format` (`"claude-json"`): the CLI prints its own accounting when a
+  headless run ends. Those figures are booked as the cost (`costSource: cli`).
+  `headlessArgs` are appended to headless launches only. The console stays
+  prose: the final JSON line is held back and shown as the answer plus one
+  summary line.
+- `transcript.format` (`"claude-jsonl"` or `"codex-rollout"`): the session file
+  the CLI writes. It is the only source for an interactive run and the
+  benchmark for a headless one; its tokens are the API's own, only the USD is
+  ours (`costSource: estimated`).
+- `transcript.sessionIdFlag`: AuricIDE passes `<flag> <fresh UUID v4>` on every
+  spawn, so the transcript is found by an id it chose.
+- `transcript.sessionIdFrom: "output"`: read the id from the CLI's output
+  (`session id: <uuid>`). Without one (an interactive Codex session) the
+  rollout is matched by working directory and start time and recorded as a
+  guess (`match: heuristic`).
+
+Codex is priced from `src-tauri/src/agent_usage/codex-pricing.json`, compiled
+in, in the same schema as `usage-plugins/*.json`.
+
 ### Argument Types
 
 `arguments` is an ordered list; each entry is tagged by `type` and becomes part of

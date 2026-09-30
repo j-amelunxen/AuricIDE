@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createAgentSlice, type AgentSlice } from './agentSlice';
+import { createAgentUsageSlice, type AgentUsageSlice } from './agentUsageSlice';
 import { createCanvasSlice, type CanvasSlice } from './canvasSlice';
 import { createFileTreeSlice, type FileTreeSlice } from './fileTreeSlice';
 import { createGitSlice, type GitSlice } from './gitSlice';
@@ -65,7 +66,8 @@ export type StoreState = FileTreeSlice &
   SkillComboSlice &
   UsageLimitsSlice &
   OverlaySlice &
-  LaneSummariesSlice;
+  LaneSummariesSlice &
+  AgentUsageSlice;
 
 export const useStore = create<StoreState>()((...a) => ({
   ...createFileTreeSlice(...a),
@@ -101,6 +103,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createUsageLimitsSlice(...a),
   ...createOverlaySlice(...a),
   ...createLaneSummariesSlice(...a),
+  ...createAgentUsageSlice(...a),
 }));
 
 // Dev-only: expose the store for debugging and browser-mode testing.

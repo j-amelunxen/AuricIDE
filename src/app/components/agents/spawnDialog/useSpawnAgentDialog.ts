@@ -19,6 +19,7 @@ import {
   initialQuickAccessSelection,
   sortQuickAccessProjects,
   spawnCwdTargets,
+  runKindFor,
   ticketAndGoalForCwd,
 } from '@/lib/agents/spawnTargets';
 import { YOLO_ELEVATE_ACK_KEY, type SpawnAgentDialogProps } from './types';
@@ -264,6 +265,8 @@ export function useSpawnAgentDialog({
         provider: selectedProviderId,
         headless: headless || undefined,
         ...binding,
+        runKind: runKindFor(binding),
+        runSource: 'ui',
         useWorktree: worktree.useWorktree || undefined,
         worktreeRepoPath:
           worktree.useWorktree && resolvedWorktreeRepo && resolvedWorktreeRepo !== cwd

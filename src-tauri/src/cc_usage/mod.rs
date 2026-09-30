@@ -93,6 +93,11 @@ impl CcUsageService {
         }
     }
 
+    /// A copy of one plugin, for callers that price a single run with it.
+    pub fn plugin_by_id(&self, id: &str) -> Option<UsagePlugin> {
+        self.plugin(Some(id)).cloned()
+    }
+
     fn cached(&self, id: &str, now: i64) -> Option<UsageReport> {
         let cache = self.cache.lock().ok()?;
         let (generated_at, report) = cache.get(id)?;

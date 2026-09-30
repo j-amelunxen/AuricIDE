@@ -226,30 +226,13 @@ pub async fn resume_interrupted_agent(
             .ok_or_else(|| format!("Interrupted agent not found: {}", agent_id))?
     };
 
-    // Never infer project authority from cwd. `None` is an explicit general
-    // session and must stay projectless across application restarts.
-    let project_path = persisted.project_path.clone();
-    let config = AgentConfig {
-        name: persisted.name,
-        model: persisted.model,
-        task: agents::resume_task_prompt(&persisted.task),
-        cwd: persisted.cwd,
-        project_path,
-        permission_mode: persisted.permission_mode,
-        dangerously_ignore_permissions: Some(persisted.dangerously_ignore_permissions),
-        auto_accept_edits: Some(persisted.auto_accept_edits),
-        provider: Some(persisted.provider),
-        headless: Some(persisted.headless),
-        spawned_by_ticket_id: persisted.spawned_by_ticket_id,
-        spawned_by_goal_id: persisted.spawned_by_goal_id,
-        // Keeps reporting to the request, as long as the request still exists:
-        // a cleared one would refuse the spawn outright.
-        launch_request_uid: persisted
-            .launch_request_uid
-            .filter(|uid| launch_request_exists(&app, uid)),
-        agent_notification_uid: None,
-        agent_notification_action_id: None,
-    };
+    // Keeps reporting to the request, as long as the request still exists:
+    // a cleared one would refuse the spawn outright.
+    let launch_request_uid = persisted
+        .launch_request_uid
+        .clone()
+        .filter(|uid| launch_request_exists(&app, uid));
+    let config = agents::resumed_config(persisted, launch_request_uid);
 
     spawn_agent_with_session(config, &state, &terminal_state, &provider_state, app).await
 }

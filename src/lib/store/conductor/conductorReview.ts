@@ -69,6 +69,8 @@ export function createAgentJudgeDeps(ctx: ConductorReviewContext): AgentJudgeDep
         // rejection earned by the reviewer, not by the work.
         headless: true,
         spawnedForReviewOfTicketId: input.ticket.id,
+        reviewOfTicketId: input.ticket.id,
+        runKind: 'review',
         runSource: 'conductor',
       });
       if (!agent) throw new Error('Failed to spawn review agent');

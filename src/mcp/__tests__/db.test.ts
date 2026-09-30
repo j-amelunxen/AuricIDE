@@ -85,11 +85,11 @@ describe('openDatabase', () => {
     db.close();
   });
 
-  it('records all 23 migrations (ids 1-13, 15-24; 14 is Rust-only)', () => {
+  it('records all 24 migrations (ids 1-13, 15-25; 14 is Rust-only)', () => {
     const dbPath = join(tempDir, 'test.db');
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(23);
+    expect(row.cnt).toBe(24);
     const stationRow = db
       .prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 15')
       .get() as { cnt: number };
@@ -118,6 +118,56 @@ describe('openDatabase', () => {
       .prepare('SELECT COUNT(*) AS cnt FROM _migrations WHERE id = 22')
       .get() as { cnt: number };
     expect(missionPathRow.cnt).toBe(1);
+    db.close();
+  });
+
+  it('creates pm_agent_usage with the contract columns and indexes (migration 25)', () => {
+    const db = openDatabase(join(tempDir, 'test.db'));
+    const columns = (
+      db.prepare('PRAGMA table_info(pm_agent_usage)').all() as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        'id',
+        'agent_id',
+        'ticket_id',
+        'goal_id',
+        'run_kind',
+        'cost_usd',
+        'cost_source',
+        'estimate_cost_usd',
+        'unpriced_models',
+        'model_usage_json',
+        'num_turns',
+      ])
+    );
+    expect(columns).toHaveLength(31);
+    const indexes = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as { name: string }[]
+    ).map((i) => i.name);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        'idx_pm_agent_usage_ticket',
+        'idx_pm_agent_usage_goal',
+        'idx_pm_agent_usage_started',
+      ])
+    );
+    expect(db.prepare('SELECT name FROM _migrations WHERE id = 25').get()).toEqual({
+      name: 'create_pm_agent_usage',
+    });
+    db.close();
+  });
+
+  it('keeps a usage row after its ticket is deleted (no foreign key)', () => {
+    const db = openDatabase(join(tempDir, 'test.db'));
+    db.prepare(
+      `INSERT INTO pm_agent_usage (id, agent_id, ticket_id, run_kind, run_source, provider,
+        started_at, finished_at, duration_ms, outcome, cost_source)
+       VALUES ('u1', 'a1', 'gone-ticket', 'ticket', 'ui', 'claude',
+        '2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', 60000, 'success', 'none')`
+    ).run();
+    const row = db.prepare('SELECT cost_usd, headless, match_kind FROM pm_agent_usage').get();
+    expect(row).toEqual({ cost_usd: null, headless: 0, match_kind: 'exact' });
     db.close();
   });
 
@@ -231,7 +281,7 @@ describe('openDatabase', () => {
     db1.close();
     const db2 = openDatabase(dbPath);
     const row = db2.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(23);
+    expect(row.cnt).toBe(24);
     db2.close();
   });
 
@@ -278,7 +328,7 @@ describe('openDatabase', () => {
 
     const db = new Database(dbPath, { readonly: true });
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(23);
+    expect(row.cnt).toBe(24);
     db.close();
   }, 20_000);
 
@@ -354,10 +404,10 @@ describe('openDatabase', () => {
     setup.close();
 
     // Now open with our migrations — the JS side applies the missing
-    // #13 and #15-#24 on top
+    // #13 and #15-#25 on top
     const db = openDatabase(dbPath);
     const row = db.prepare('SELECT COUNT(*) AS cnt FROM _migrations').get() as { cnt: number };
-    expect(row.cnt).toBe(23);
+    expect(row.cnt).toBe(24);
     db.close();
   });
 });

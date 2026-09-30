@@ -123,7 +123,9 @@ export async function handleSpawnNewAgent(
         prompt: config.task,
         model: config.model,
         provider: agent.provider,
-        source: config.runSource ?? 'ui',
+        // A goal run knows no `schedule` source: a reminder-started run reads as
+        // it did before that value existed, a person's start.
+        source: config.runSource === 'schedule' ? 'ui' : (config.runSource ?? 'ui'),
         outcome: 'running',
         summary: '',
         startedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),

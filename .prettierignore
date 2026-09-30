@@ -15,3 +15,7 @@ verification/lean/lake-manifest.json
 # Letting Prettier reformat it makes the generator's --check fail, and letting
 # the generator rewrite it makes Prettier's --check fail — the two never settle.
 docs/automation-surface.md
+
+# Captured CLI output (anonymised). Kept byte-for-byte as the CLI wrote it, because the
+# parsers are tested against the real shape, not against a reformatted one.
+src-tauri/src/agent_usage/fixtures/

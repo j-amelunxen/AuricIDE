@@ -256,6 +256,15 @@ Goals lead; epics are storage. The primary workflow of the app is one loop:
    (`isVerifiedEvidence`, `goalsSlice.ts`). The `stations` parameter is required
    on purpose so a caller cannot omit it and get a falsely green goal.
 
+   A station with a machine predicate is never settled by a claim. MCP
+   `mark_station_done` runs `file_exists`, `ticket_done` and
+   `requirement_verified` on the spot (`src/mcp/stationEvidence.ts`, walking the
+   folder the way `list_all_files_impl` does): proof if it holds, an error and an
+   open station if not. A claim that still lands on a machine station (older
+   rows, `git_touches`) is decided by its predicate in `checkClaimedStations`,
+   rejected claims included; the judge only sees `judged` stations and those
+   without a predicate.
+
 **Sub-goals can be ordered: serial, parallel, bundle.** An edge in
 `pm_goal_dependencies` (B → A) makes B, its subtree and their tickets wait until
 A is `achieved` or `archived`. A `failed` A keeps blocking. No edge means the
@@ -790,6 +799,29 @@ transcript whose mtime was rewritten backwards is invisible past a day of
 slack. `cargo test cc_usage -- --ignored --nocapture` runs the scanner against
 the real machine, which is the only place the transcript format is checked
 against what it actually is rather than against our idea of it.
+
+### A third one: what a ticket or goal cost (`agent_usage`)
+
+Every agent run in a project is booked when it ends — exit, kill or app quit — as one
+row in `pm_agent_usage` (migration 25, twinned in `src/mcp/db.ts` and guarded by a
+test that compares the SQL). The row carries the ticket and goal the run was for, so
+the PM views can sum per ticket, per goal subtree and per status. Contract and
+captured CLI facts: `docs/design-agent-usage.md`. The rules worth knowing:
+
+- **Exact where the CLI says it, estimated only where it cannot.** Headless Claude
+  (`--output-format json`) books the CLI's own figure (`costSource: cli`);
+  interactive runs and Codex are read from the transcript/rollout and priced by us
+  (`estimated`). Every headless Claude run is read both ways, so the deviation is a
+  live figure in the Costs tab.
+- **Read `modelUsage`, never `usage`.** The result's `usage` is the last API call
+  only; subagents write `<session>/subagents/agent-*.jsonl`; and one message spans
+  several transcript lines whose `output_tokens` grows — the **largest** wins. With
+  that, `cargo test agent_usage_bench -- --ignored` measured 0.000 % deviation.
+  The same first-line-wins bug undercounted output in `cc_usage` until it was fixed.
+- **Capture is declared per provider** (`usage` block in `dynamic-providers/*.json`);
+  a provider without one books duration and outcome with `costSource: none`.
+- **An unknown price is never $0.** Unpriced runs keep their tokens, get
+  `cost_usd = NULL`, and every total says how many runs it is missing.
 
 ## Depending on tools that come from the machine
 

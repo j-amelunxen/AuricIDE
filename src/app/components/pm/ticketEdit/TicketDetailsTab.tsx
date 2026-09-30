@@ -4,6 +4,7 @@ import { InfoTooltip } from '../../ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
 import { TicketSkillsField } from '../TicketSkillsField';
 import { TicketTiming } from '../TicketTiming';
+import { TicketCost } from '../TicketCost';
 import { formatDate, modelPowerOptions, priorityOptions } from './types';
 
 interface TicketDetailsTabProps {
@@ -112,6 +113,7 @@ export function TicketDetailsTab({ ticket, discovered, onUpdateTicket }: TicketD
       </div>
 
       <TicketTiming ticketId={ticket.id} status={ticket.status} />
+      <TicketCost ticketId={ticket.id} />
     </div>
   );
 }

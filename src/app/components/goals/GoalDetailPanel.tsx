@@ -23,6 +23,8 @@ import { GoalTicketsSection } from './detail/GoalTicketsSection';
 import { GoalRequirementsSection } from './detail/GoalRequirementsSection';
 import { GoalRunsSection } from './detail/GoalRunsSection';
 import { GoalTiming } from './detail/GoalTiming';
+import { GoalCost } from './detail/GoalCost';
+import { useProjectUsageRows } from '@/app/components/pm/cost/useProjectUsageRows';
 import { MissionLaunchGrantSection } from './detail/MissionLaunchGrantSection';
 import { GoalConflictNotice } from './detail/GoalConflictNotice';
 import { MissionOverviewSection } from './detail/MissionOverviewSection';
@@ -129,6 +131,7 @@ export function GoalDetailPanel({
     [goal, goals, tickets, stations]
   );
 
+  const usageRows = useProjectUsageRows();
   const goalRuns = useMemo(() => (goal ? getRunsForGoal(runs, goal.id) : []), [goal, runs]);
 
   const validParents = useMemo(() => {
@@ -437,7 +440,9 @@ export function GoalDetailPanel({
       />
 
       {/* Runs */}
-      <GoalRunsSection goalRuns={goalRuns} labelCls={labelCls} />
+      <GoalRunsSection goalRuns={goalRuns} labelCls={labelCls} usageRows={usageRows} />
+
+      <GoalCost goalId={goal.id} goals={goals} tickets={tickets} rows={usageRows} />
 
       <GoalTiming goalId={goal.id} status={goal.status} />
 

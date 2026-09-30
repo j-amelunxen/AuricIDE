@@ -23,6 +23,7 @@ import { useActiveDiffLoader } from '@/lib/hooks/useActiveDiffLoader';
 import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
+import { useAgentUsageSync } from '@/lib/hooks/useAgentUsageSync';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import type { IDEState } from './ide/liveIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
@@ -49,6 +50,9 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
 
   // The inbox spans projects, so it is not keyed on rootPath like the rest here
   useNotificationInbox();
+
+  // Agent usage is per project: loaded when its database is ready, appended live
+  useAgentUsageSync();
 
   // The scheduled-run watcher and the inbox data hook live in
   // `BackgroundWatchers` (ConnectedPanels), not here: they select agents,
@@ -282,6 +286,12 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
         if (canceled) return;
         state.setProjectFiles(files);
         state.setAllFiles(files);
+        // Claims on machine-checked stations (older ones included, even those a
+        // judge rejected) are settled by their predicate once the file list is
+        // in. If the goals are not loaded yet, the next evidence sweep does it.
+        if (useStore.getState().goalStationsDraft.length > 0) {
+          void import('@/lib/evidence/engine').then((e) => e.checkClaimedStations());
+        }
 
         const mdFiles = files.filter((f) => /\.(md|markdown)$/i.test(f));
         const entries = await perfBreadcrumbs.span(

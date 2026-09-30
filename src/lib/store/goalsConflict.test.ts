@@ -136,7 +136,7 @@ describe('goal conflicts between UI saves and MCP writes (MET-01)', () => {
       const s1 = createStation(db, { goalId: g1, name: 'Write tests' }).id;
       await watcherReload(store);
       store.getState().updateGoal(g2, { description: 'edited in the UI' });
-      markStationDone(db, s1, 'tests at src/foo.test.ts');
+      await markStationDone(db, s1, 'tests at src/foo.test.ts', '/project');
       await watcherReload(store);
       await save(store);
 
@@ -150,7 +150,7 @@ describe('goal conflicts between UI saves and MCP writes (MET-01)', () => {
       const s1 = createStation(db, { goalId: g1, name: 'Write tests' }).id;
       const s2 = createStation(db, { goalId: g1, name: 'Run build' }).id;
       await watcherReload(store);
-      markStationDone(db, s1, 'tests at src/foo.test.ts');
+      await markStationDone(db, s1, 'tests at src/foo.test.ts', '/project');
       // checkStation: a predicate result lands on s2, then saveGoals, no reload between.
       store.getState().updateStation(s2, { evidenceNote: 'build not found' });
       await save(store);
@@ -214,7 +214,7 @@ describe('goal conflicts between UI saves and MCP writes (MET-01)', () => {
       const s = createStation(db, { goalId: g1, name: 'Write tests' }).id;
       await watcherReload(store);
       store.getState().tickHumanStation(h, 'called on Monday');
-      markStationDone(db, s, 'tests at src/foo.test.ts');
+      await markStationDone(db, s, 'tests at src/foo.test.ts', '/project');
       await watcherReload(store);
       await save(store);
 
@@ -236,7 +236,7 @@ describe('goal conflicts between UI saves and MCP writes (MET-01)', () => {
     it('K15 keeps a done-claim on a station the evidence engine saves before its reload', async () => {
       const s = createStation(db, { goalId: g1, name: 'Write tests' }).id;
       await watcherReload(store);
-      markStationDone(db, s, 'tests at src/foo.test.ts');
+      await markStationDone(db, s, 'tests at src/foo.test.ts', '/project');
       // checkStation on the same station, from a draft that has not seen the claim
       store.getState().updateStation(s, { lastCheckedAt: '2026-09-27 00:00:00' });
       await save(store);
@@ -297,7 +297,7 @@ describe('goal conflicts between UI saves and MCP writes (MET-01)', () => {
       const s = createStation(db, { goalId: g1, name: 'Write tests' }).id;
       await watcherReload(store);
       store.getState().updateStation(s, { status: 'fog' });
-      markStationDone(db, s, 'tests at src/foo.test.ts');
+      await markStationDone(db, s, 'tests at src/foo.test.ts', '/project');
       await save(store);
 
       expect(getStation(db, s)).toMatchObject({
@@ -348,7 +348,7 @@ describe('goal conflicts between UI saves and MCP writes (MET-01)', () => {
       const s = createStation(db, { goalId: g1, name: 'Write tests' }).id;
       await watcherReload(store);
       store.getState().updateStation(s, { status: 'fog', name: 'Write the tests' });
-      markStationDone(db, s, 'tests at src/foo.test.ts');
+      await markStationDone(db, s, 'tests at src/foo.test.ts', '/project');
       await save(store);
 
       store.getState().resolveGoalConflict('pm_goal_stations', s, 'theirs');

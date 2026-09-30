@@ -47,6 +47,7 @@ serde_path_to_error = "0.1"
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 cron = "0.17.0"
 chrono-tz = "0.10.4"
+uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

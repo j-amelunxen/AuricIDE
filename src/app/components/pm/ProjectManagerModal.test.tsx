@@ -10,6 +10,10 @@ vi.mock('./MetricsView', () => ({
   MetricsView: () => <div data-testid="metrics-view">Metrics panel</div>,
 }));
 
+vi.mock('./costsView/CostsView', () => ({
+  CostsView: () => <div data-testid="costs-view">Costs panel</div>,
+}));
+
 // Stands in for the real panel, but keeps the one wire this file tests: the
 // delete button the panel renders and the handler the modal hands it.
 vi.mock('./TicketEditPanel', () => ({
@@ -53,6 +57,9 @@ const mockStore: Record<string, unknown> = {
   pmSelectedEpicId: null,
   pmSelectedTicketId: null,
   rootPath: '/test/project',
+  agentUsageRows: {},
+  agentUsageStatus: { '/test/project': 'ready' },
+  loadAgentUsage: vi.fn(),
   setPmModalOpen: vi.fn(),
   loadPmData: vi.fn(),
   savePmData: vi.fn(),
@@ -170,6 +177,17 @@ describe('ProjectManagerModal', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Metrics' }));
 
     expect(screen.getByTestId('metrics-view')).toBeDefined();
+    expect(screen.queryByTestId('tickets-columns')).toBeNull();
+  });
+
+  it('switches to the Costs tab and hides the ticket columns', async () => {
+    mockStore.pmModalOpen = true;
+    render(<ProjectManagerModal />);
+    expect(screen.queryByTestId('costs-view')).toBeNull();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Costs' }));
+
+    expect(screen.getByTestId('costs-view')).toBeDefined();
     expect(screen.queryByTestId('tickets-columns')).toBeNull();
   });
 

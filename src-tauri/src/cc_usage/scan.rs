@@ -19,7 +19,7 @@
 //! time. `SKEW_ALLOWANCE_SECS` buys a day of slack; beyond that the file is
 //! genuinely assumed to be old.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -338,19 +338,43 @@ pub fn collect_turns(roots: &[PathBuf], since: i64) -> (Vec<Turn>, ScanStats) {
     // second sort. Stable, so two turns sharing a timestamp keep file order.
     collected.sort_by_key(|turn| turn.at);
 
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut deduplicated = Vec::with_capacity(collected.len());
-    for turn in collected {
-        if let Some(key) = &turn.dedup_key {
-            if !seen.insert(key.clone()) {
-                stats.duplicates_dropped += 1;
-                continue;
-            }
-        }
-        deduplicated.push(turn);
-    }
+    let (deduplicated, duplicates) = deduplicate(collected);
+    stats.duplicates_dropped = duplicates;
 
     (deduplicated, stats)
+}
+
+/// Collapses the lines of one API message into one turn; returns how many
+/// lines were dropped.
+///
+/// A message is written as several lines while it streams, and
+/// `output_tokens` grows from line to line (3, then 345, in a real capture).
+/// The last figure is the message's real output, so of a group the line with
+/// the most output wins; the message keeps its earliest position. Turns
+/// without a key cannot be recognized as duplicates and all stay.
+pub fn deduplicate(turns: Vec<Turn>) -> (Vec<Turn>, usize) {
+    let mut position_of: HashMap<String, usize> = HashMap::new();
+    let mut kept: Vec<Turn> = Vec::with_capacity(turns.len());
+    let mut dropped = 0;
+    for turn in turns {
+        let Some(key) = &turn.dedup_key else {
+            kept.push(turn);
+            continue;
+        };
+        match position_of.get(key) {
+            Some(&position) => {
+                dropped += 1;
+                if turn.counts.output > kept[position].counts.output {
+                    kept[position].counts = turn.counts;
+                }
+            }
+            None => {
+                position_of.insert(key.clone(), kept.len());
+                kept.push(turn);
+            }
+        }
+    }
+    (kept, dropped)
 }
 
 #[cfg(test)]

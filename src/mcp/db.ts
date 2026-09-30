@@ -396,7 +396,55 @@ function applyMigrations(db: Database.Database): void {
     db.exec(GOAL_STATUS_HISTORY_MIGRATION);
     record(24, 'create_pm_goal_status_history');
   }
+
+  // Migration #25: one row per finished agent run, with tokens and cost.
+  // Keep in sync with src-tauri/src/database/migrations.rs migration 25.
+  // Append-only and written by Rust; no foreign keys, so a deleted ticket
+  // keeps its cost history. Contract: docs/design-agent-usage.md.
+  if (!applied(25)) {
+    db.exec(AGENT_USAGE_MIGRATION);
+    record(25, 'create_pm_agent_usage');
+  }
 }
+
+const AGENT_USAGE_MIGRATION = `
+  CREATE TABLE IF NOT EXISTS pm_agent_usage (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    ticket_id TEXT,
+    goal_id TEXT,
+    run_kind TEXT NOT NULL,
+    run_source TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT,
+    headless INTEGER NOT NULL DEFAULT 0,
+    session_id TEXT,
+    ticket_status_at_start TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL,
+    cost_source TEXT NOT NULL,
+    match_kind TEXT NOT NULL DEFAULT 'exact',
+    estimate_cost_usd REAL,
+    estimate_input_tokens INTEGER,
+    estimate_output_tokens INTEGER,
+    estimate_cache_read_tokens INTEGER,
+    estimate_cache_write_tokens INTEGER,
+    unpriced_models TEXT,
+    model_usage_json TEXT,
+    num_turns INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_pm_agent_usage_ticket ON pm_agent_usage(ticket_id);
+  CREATE INDEX IF NOT EXISTS idx_pm_agent_usage_goal ON pm_agent_usage(goal_id);
+  CREATE INDEX IF NOT EXISTS idx_pm_agent_usage_started ON pm_agent_usage(started_at);
+`;
 
 const GOAL_STATUS_HISTORY_MIGRATION = `
   CREATE TABLE IF NOT EXISTS pm_goal_status_history (

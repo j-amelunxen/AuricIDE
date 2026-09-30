@@ -25,6 +25,39 @@ pub fn persisted_from_config(
         spawned_by_ticket_id: config.spawned_by_ticket_id.clone(),
         spawned_by_goal_id: config.spawned_by_goal_id.clone(),
         launch_request_uid: config.launch_request_uid.clone(),
+        run_source: config.run_source.clone(),
+        run_kind: config.run_kind.clone(),
+        review_of_ticket_id: config.review_of_ticket_id.clone(),
+    }
+}
+
+/// The spawn config that resumes an interrupted agent. `launch_request_uid` is
+/// passed in because it is only kept while its request still exists.
+pub fn resumed_config(
+    persisted: PersistedAgent,
+    launch_request_uid: Option<String>,
+) -> AgentConfig {
+    AgentConfig {
+        task: resume_task_prompt(&persisted.task),
+        name: persisted.name,
+        model: persisted.model,
+        cwd: persisted.cwd,
+        // Never infer project authority from cwd. `None` is an explicit
+        // general session and must stay projectless across restarts.
+        project_path: persisted.project_path,
+        permission_mode: persisted.permission_mode,
+        dangerously_ignore_permissions: Some(persisted.dangerously_ignore_permissions),
+        auto_accept_edits: Some(persisted.auto_accept_edits),
+        provider: Some(persisted.provider),
+        headless: Some(persisted.headless),
+        spawned_by_ticket_id: persisted.spawned_by_ticket_id,
+        spawned_by_goal_id: persisted.spawned_by_goal_id,
+        launch_request_uid,
+        agent_notification_uid: None,
+        agent_notification_action_id: None,
+        run_source: persisted.run_source,
+        run_kind: persisted.run_kind,
+        review_of_ticket_id: persisted.review_of_ticket_id,
     }
 }
 

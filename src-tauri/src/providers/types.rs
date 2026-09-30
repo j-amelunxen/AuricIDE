@@ -306,6 +306,11 @@ pub trait AgentProvider: Send + Sync {
         false
     }
 
+    /// How this provider's runs are measured, `None` when they are not.
+    fn usage_config(&self) -> Option<UsageConfig> {
+        None
+    }
+
     /// Extra writable paths when this provider's agents must run under
     /// AuricIDE's write sandbox for the resolved permission mode, `None` when
     /// they run unconfined. See `agents::write_sandbox`.
@@ -381,6 +386,59 @@ pub struct WriteSandboxConfig {
     pub exempt_permission_modes: Vec<String>,
 }
 
+/// How a provider's runs are measured (`usage` in the provider config).
+/// Absent means no capture: the run still gets a row, without tokens or cost.
+/// Parsed strictly: a misspelt key fails the file rather than turning capture
+/// off unnoticed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UsageConfig {
+    pub result: Option<ResultUsageConfig>,
+    pub transcript: Option<TranscriptUsageConfig>,
+}
+
+/// The CLI prints its own accounting when a headless run ends.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResultUsageConfig {
+    pub format: ResultFormat,
+    /// Appended to the command of headless launches only.
+    #[serde(default)]
+    pub headless_args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum ResultFormat {
+    #[serde(rename = "claude-json")]
+    ClaudeJson,
+}
+
+/// The session file the CLI writes, read after the run.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TranscriptUsageConfig {
+    pub format: TranscriptFormat,
+    /// Flag that takes a session id; each spawn passes a fresh UUID v4.
+    #[serde(default)]
+    pub session_id_flag: Option<String>,
+    #[serde(default)]
+    pub session_id_from: Option<SessionIdFrom>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum TranscriptFormat {
+    #[serde(rename = "claude-jsonl")]
+    ClaudeJsonl,
+    #[serde(rename = "codex-rollout")]
+    CodexRollout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum SessionIdFrom {
+    #[serde(rename = "output")]
+    Output,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
@@ -400,6 +458,9 @@ pub struct ProviderConfig {
     /// is missing or too coarse to leave the workspace writable.
     #[serde(default)]
     pub write_sandbox: Option<WriteSandboxConfig>,
+    /// How this provider's runs are measured; see [`UsageConfig`].
+    #[serde(default)]
+    pub usage: Option<UsageConfig>,
     pub info: ProviderConfigInfo,
     pub version_check: VersionCheck,
     pub prompt_template: String,

@@ -1,10 +1,11 @@
 import type { ComponentProps } from 'react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import { useStore } from '@/lib/store';
+import { usageRow } from '@/lib/pm/usage/testRow';
 import type { PmTicket } from '@/lib/tauri/pm';
 import { MISSION_FIXTURES } from '@/lib/missions/missionFs.testing';
 
@@ -568,5 +569,53 @@ describe('GoalDetailPanel manual launch respects dependencies', () => {
     renderPanel(b, [], { goals: [a, b], onLaunchAgent });
     await user.click(screen.getByTestId('goal-launch-agent-btn'));
     expect(onLaunchAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('GoalDetailPanel cost', () => {
+  const PATH = '/proj';
+  afterEach(() => useStore.setState({ rootPath: null, agentUsageRows: {}, agentUsageStatus: {} }));
+
+  it('shows the subtree cost and the cost of a run once usage arrives', () => {
+    const goal = makeGoal();
+    useStore.setState({
+      rootPath: PATH,
+      agentUsageRows: {},
+      agentUsageStatus: { [PATH]: 'ready' },
+    });
+    renderPanel(goal, [makeTicket({ goalId: goal.id })], {
+      runs: [
+        {
+          id: 'r1',
+          goalId: goal.id,
+          agentId: 'a1',
+          ticketId: null,
+          prompt: 'p',
+          model: 'm',
+          provider: 'claude',
+          source: 'ui',
+          outcome: 'completed',
+          summary: '',
+          startedAt: '2026-09-29',
+          finishedAt: null,
+        },
+      ],
+    });
+    expect(screen.getByText('No agent runs recorded yet.')).toBeDefined();
+
+    act(() =>
+      useStore.setState({
+        agentUsageRows: {
+          [PATH]: [
+            usageRow({ agentId: 'a1', goalId: goal.id, costUsd: 2.5 }),
+            usageRow({ ticketId: 't1', costUsd: 1 }),
+          ],
+        },
+      })
+    );
+
+    expect(screen.getByText('$3.50')).toBeDefined();
+    // 'a1' has a goal run, so its own $2.50 shows beside it; the ticket run does not.
+    expect(screen.getAllByText('$2.50').length).toBeGreaterThanOrEqual(2);
   });
 });

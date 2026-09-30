@@ -88,6 +88,19 @@ describe('Agent and Goal Interaction', () => {
     expect(store.getState().goalsDraft[0].status).toBe('in_progress');
   });
 
+  it('files a scheduled start under ui: goal runs know no schedule source', async () => {
+    store.setState({ goalsDraft: [makeGoal()] });
+    await store.getState().spawnNewAgent({
+      name: 'Agent',
+      model: 'sonnet',
+      task: 'Achieve goal g1',
+      spawnedByGoalId: 'g1',
+      runSource: 'schedule',
+    });
+
+    expect(store.getState().goalRunsDraft[0].source).toBe('ui');
+  });
+
   it('does not record a run for agents without a goal', async () => {
     await store.getState().spawnNewAgent({ name: 'A', model: 'm', task: 't' });
     expect(store.getState().goalRunsDraft).toHaveLength(0);

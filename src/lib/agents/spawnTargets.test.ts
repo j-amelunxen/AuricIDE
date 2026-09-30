@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   initialQuickAccessSelection,
   sortQuickAccessProjects,
+  runKindFor,
   spawnCwdTargets,
   ticketAndGoalForCwd,
 } from './spawnTargets';
@@ -81,5 +82,20 @@ describe('ticketAndGoalForCwd', () => {
 
   it('drops the binding when a fan-out has no home path', () => {
     expect(ticketAndGoalForCwd('/a/website', '', 't1', 'g1', true)).toEqual({});
+  });
+});
+
+describe('runKindFor', () => {
+  it('is a ticket run when a ticket is bound, even if its goal is too', () => {
+    expect(runKindFor({ spawnedByTicketId: 't1', spawnedByGoalId: 'g1' })).toBe('ticket');
+  });
+
+  it('is a goal run when only a goal is bound', () => {
+    expect(runKindFor({ spawnedByGoalId: 'g1' })).toBe('goal');
+  });
+
+  it('is other when nothing is bound', () => {
+    expect(runKindFor({})).toBe('other');
+    expect(runKindFor({ spawnedByTicketId: undefined, spawnedByGoalId: undefined })).toBe('other');
   });
 });
