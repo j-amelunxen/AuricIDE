@@ -53,6 +53,8 @@ pub struct PluginSummary {
 
 pub struct CcUsageService {
     plugins: Vec<UsagePlugin>,
+    /// Where `plugins` came from, so a caller can read the lists again.
+    dirs: Vec<PathBuf>,
     home: PathBuf,
     cache: Mutex<HashMap<String, (i64, UsageReport)>>,
     /// Single-flight. Two panels opening at once must not both walk the corpus.
@@ -68,6 +70,7 @@ impl CcUsageService {
         let dirs = manifest::search_paths(app_data_dir.as_deref(), resource_dir.as_deref());
         Self {
             plugins: manifest::load_plugins(&dirs),
+            dirs,
             home,
             cache: Mutex::new(HashMap::new()),
             scan_lock: tokio::sync::Mutex::new(()),
@@ -96,6 +99,14 @@ impl CcUsageService {
     /// A copy of one plugin, for callers that price a single run with it.
     pub fn plugin_by_id(&self, id: &str) -> Option<UsagePlugin> {
         self.plugin(Some(id)).cloned()
+    }
+
+    /// One plugin as it is on disk now, not as it was at launch. For the
+    /// callers that exist because a price list was edited.
+    pub fn plugin_from_disk(&self, id: &str) -> Option<UsagePlugin> {
+        manifest::load_plugins(&self.dirs)
+            .into_iter()
+            .find(|plugin| plugin.id == id)
     }
 
     fn cached(&self, id: &str, now: i64) -> Option<UsageReport> {

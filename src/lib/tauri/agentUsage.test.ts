@@ -7,7 +7,7 @@ const mockListen = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => mockInvoke(...args) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: (...args: unknown[]) => mockListen(...args) }));
 
-import { agentUsageLoad, onAgentUsageRecorded } from './agentUsage';
+import { agentUsageLoad, agentUsageReprice, onAgentUsageRecorded } from './agentUsage';
 
 describe('agentUsage IPC', () => {
   beforeEach(() => {
@@ -22,6 +22,22 @@ describe('agentUsage IPC', () => {
     await expect(agentUsageLoad('/p')).resolves.toEqual(rows);
 
     expect(mockInvoke).toHaveBeenCalledWith('agent_usage_load', { projectPath: '/p' });
+  });
+
+  it('asks agent_usage_reprice for the project and returns its report', async () => {
+    const report = {
+      unpriced: 2,
+      repriced: 1,
+      stillUnpriced: 1,
+      missingEvidence: 0,
+      changedEvidence: 0,
+      unpricedModels: ['some-model'],
+    };
+    mockInvoke.mockResolvedValue(report);
+
+    await expect(agentUsageReprice('/p')).resolves.toEqual(report);
+
+    expect(mockInvoke).toHaveBeenCalledWith('agent_usage_reprice', { projectPath: '/p' });
   });
 
   it('listens to agent-usage-recorded and hands over the event payload', async () => {

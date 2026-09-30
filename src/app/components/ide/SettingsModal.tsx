@@ -15,6 +15,7 @@ import { CommandsContent } from './settings/CommandsContent';
 import { EditorContent } from './settings/EditorContent';
 import { AppearanceContent } from './settings/AppearanceContent';
 import { SystemContent } from './settings/SystemContent';
+import { MaintenanceContent } from './settings/MaintenanceContent';
 import { McpSettingsContent } from './McpSettingsContent';
 import { BlueprintSyncContent } from './settings/BlueprintSyncContent';
 import { ExcalidrawContent } from './settings/ExcalidrawContent';
@@ -44,7 +45,8 @@ export type SettingsCategory =
   | 'pushover'
   | 'providers'
   | 'project-agent'
-  | 'git';
+  | 'git'
+  | 'maintenance';
 
 /**
  * Which layer a setting belongs to. The split is the whole point of this
@@ -146,6 +148,7 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     items: [
       { id: 'git', icon: 'visibility_off', label: 'Git' },
       { id: 'system', icon: 'info', label: 'System' },
+      { id: 'maintenance', icon: 'auto_fix_high', label: 'Maintenance' },
     ],
   },
 ];
@@ -201,6 +204,8 @@ function SettingsDialog({
         return <GitContent />;
       case 'system':
         return <SystemContent />;
+      case 'maintenance':
+        return <MaintenanceContent />;
       case 'mcp':
         return <McpSettingsContent />;
       case 'blueprints':

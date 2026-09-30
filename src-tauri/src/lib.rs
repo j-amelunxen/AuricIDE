@@ -456,6 +456,7 @@ pub fn run() {
             cc_usage::cc_usage_plugins,
             cc_usage::cc_usage_report,
             agent_usage::agent_usage_load,
+            agent_usage::agent_usage_reprice,
             project_skills::project_skills_list,
             project_icons::project_icon_candidates,
             video_import::video_import_analyze_media,

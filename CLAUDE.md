@@ -822,6 +822,9 @@ captured CLI facts: `docs/design-agent-usage.md`. The rules worth knowing:
   a provider without one books duration and outcome with `costSource: none`.
 - **An unknown price is never $0.** Unpriced runs keep their tokens, get
   `cost_usd = NULL`, and every total says how many runs it is missing.
+- **A price added later is caught up on request, not by itself.** Settings → Maintenance →
+  "Recalculate pricing" reads unpriced estimates again (transcript bounded by the run's own
+  start and end) and writes the price only if the evidence still adds up to the booked tokens.
 
 ## Depending on tools that come from the machine
 

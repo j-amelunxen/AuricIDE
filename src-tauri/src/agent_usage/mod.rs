@@ -10,6 +10,7 @@ pub mod codex;
 pub mod holdback;
 pub mod launch;
 pub mod record;
+pub mod reprice;
 pub mod store;
 
 #[cfg(test)]
@@ -34,6 +35,44 @@ fn load_for_project(project_path: &str) -> Result<Vec<UsageRecord>, String> {
 #[tauri::command(async)]
 pub fn agent_usage_load(project_path: String) -> Result<Vec<UsageRecord>, String> {
     load_for_project(&project_path)
+}
+
+/// Prices the project's runs that were booked without a price, with the price
+/// lists as they are on disk now — an entry added since launch counts.
+#[tauri::command(async)]
+pub fn agent_usage_reprice(
+    app: tauri::AppHandle,
+    providers: tauri::State<'_, crate::providers::ProviderRegistryState>,
+    project_path: String,
+) -> Result<reprice::RepriceReport, String> {
+    use tauri::Manager;
+
+    let Some(mut conn) = store::open_existing(std::path::Path::new(&project_path))? else {
+        return Ok(reprice::RepriceReport::default());
+    };
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("No home directory: {e}"))?;
+    let claude = app
+        .try_state::<crate::cc_usage::CcUsageService>()
+        .and_then(|service| service.plugin_from_disk("claude-code"));
+    let registry = providers.inner().clone();
+    reprice::reprice_unpriced(
+        &mut conn,
+        &home,
+        |provider| {
+            registry
+                .get(provider)
+                .and_then(|p| p.usage_config())
+                .and_then(|usage| usage.transcript)
+                .map(|transcript| transcript.format)
+        },
+        &record::PriceLists {
+            claude: claude.as_ref(),
+            codex: capture::codex_price_list(),
+        },
+    )
 }
 
 #[cfg(test)]

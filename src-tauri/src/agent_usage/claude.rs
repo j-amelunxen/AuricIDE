@@ -196,9 +196,21 @@ pub(super) fn is_uuid(candidate: &str) -> bool {
 /// on, one API message counted once. A run owns only the turns after its own
 /// start, so a session that was ever continued is not counted twice.
 pub fn session_tokens(files: &[PathBuf], since: i64) -> BTreeMap<String, TokenCounts> {
+    session_tokens_between(files, since, i64::MAX)
+}
+
+/// Like [`session_tokens`], but only turns up to `until` (Unix seconds,
+/// inclusive). Reading a finished run again later needs the upper bound: a
+/// session resumed after the run appends turns that were never part of it.
+pub fn session_tokens_between(
+    files: &[PathBuf],
+    since: i64,
+    until: i64,
+) -> BTreeMap<String, TokenCounts> {
     let turns: Vec<_> = files
         .iter()
         .flat_map(|path| turns_in_file(path, since))
+        .filter(|turn| turn.at <= until)
         .collect();
     let (turns, _) = deduplicate(turns);
     let mut by_model: BTreeMap<String, TokenCounts> = BTreeMap::new();
