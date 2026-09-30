@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { createGoal } from '../tools/goals';
 import {
@@ -13,6 +16,9 @@ import {
 } from '../tools/stations';
 import { createTestDb } from '../db';
 import { createTestNotificationsDb } from '../notificationsDb';
+
+/** A project root no machine-checkable test station ever looks at. */
+const NO_ROOT = '/nonexistent-project-root';
 
 describe('station tools', () => {
   let db: Database.Database;
@@ -58,28 +64,30 @@ describe('station tools', () => {
     );
   });
 
-  it('mark_station_done always records a claim — never proof', () => {
+  it('mark_station_done records a claim when no machine check decides the station', async () => {
     const s = createStation(db, { goalId, name: 'Build it' });
-    const done = markStationDone(db, s.id, 'implemented in src/feature.ts');
+    const done = await markStationDone(db, s.id, 'implemented in src/feature.ts', NO_ROOT);
     expect(done.status).toBe('done');
     expect(done.evidence_kind).toBe('claim');
     expect(done.done_at).not.toBeNull();
   });
 
-  it('mark_station_done resets last_checked_at so a re-claim is judged anew', () => {
+  it('mark_station_done resets last_checked_at so a re-claim is judged anew', async () => {
     const s = createStation(db, { goalId, name: 'Build it' });
     // A prior judge ruling stamped last_checked_at; a re-claim must clear it.
     db.prepare('UPDATE pm_goal_stations SET last_checked_at = ? WHERE id = ?').run(
       '2026-01-01 00:00:00',
       s.id
     );
-    const done = markStationDone(db, s.id, 'reimplemented it');
+    const done = await markStationDone(db, s.id, 'reimplemented it', NO_ROOT);
     expect(done.last_checked_at).toBeNull();
   });
 
-  it('refuses to mark a human station done — only a person can tick it', () => {
+  it('refuses to mark a human station done — only a person can tick it', async () => {
     const s = createStation(db, { goalId, name: 'Call the customer', kind: 'human' });
-    expect(() => markStationDone(db, s.id, 'agent asserts it called')).toThrow(/human step/i);
+    await expect(markStationDone(db, s.id, 'agent asserts it called', NO_ROOT)).rejects.toThrow(
+      /human step/i
+    );
     // and it stays exactly where it was
     expect(listStations(db, goalId)[0].status).toBe('planned');
   });
@@ -122,11 +130,11 @@ describe('station tools', () => {
     expect(stationRowToDomain(row).predicate).toEqual({ type: 'undefined' });
   });
 
-  it('reorder clamps so pending work never precedes done work', () => {
+  it('reorder clamps so pending work never precedes done work', async () => {
     const a = createStation(db, { goalId, name: 'A' });
     createStation(db, { goalId, name: 'B' });
     const c = createStation(db, { goalId, name: 'C' });
-    markStationDone(db, a.id, 'done first');
+    await markStationDone(db, a.id, 'done first', NO_ROOT);
 
     const rows = reorderStation(db, c.id, 0);
     expect(rows.map((r) => r.name)).toEqual(['A', 'C', 'B']);
@@ -155,6 +163,111 @@ describe('station tools', () => {
     createStation(db, { goalId, name: 'Doomed' });
     db.prepare('DELETE FROM pm_goals WHERE id = ?').run(goalId);
     expect(listStations(db, goalId)).toHaveLength(0);
+  });
+});
+
+describe('mark_station_done on a station with a machine predicate', () => {
+  let db: Database.Database;
+  let goalId: string;
+  let root: string;
+
+  const touch = (rel: string) => {
+    const file = join(root, rel);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, 'x');
+  };
+  const fileStation = (glob: string) =>
+    createStation(db, {
+      goalId,
+      name: 'Write the plan',
+      predicate: JSON.stringify({ type: 'file_exists', glob }),
+    });
+
+  beforeEach(() => {
+    db = createTestDb();
+    goalId = createGoal(db, { name: 'Ship the feature' }, 'mcp').id;
+    root = mkdtempSync(join(tmpdir(), 'auric-stations-'));
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('records proof when the file exists, keeping the check result and the agent note', async () => {
+    touch('docs/plan.md');
+    const s = fileStation('docs/*.md');
+
+    const done = await markStationDone(db, s.id, 'wrote the plan', root);
+
+    expect(done.status).toBe('done');
+    expect(done.evidence_kind).toBe('proof');
+    expect(done.evidence_note).toBe('docs/*.md exists — wrote the plan');
+    expect(done.last_checked_at).not.toBeNull();
+    expect(done.done_at).not.toBeNull();
+  });
+
+  it('refuses when the file is missing and leaves the station open', async () => {
+    const s = fileStation('docs/plan.md');
+
+    await expect(markStationDone(db, s.id, 'wrote the plan', root)).rejects.toThrow(
+      /docs\/plan\.md does not exist/
+    );
+
+    const row = listStations(db, goalId)[0];
+    expect(row.status).toBe('planned');
+    expect(row.evidence_note).toBe('');
+  });
+
+  it("does not count files the IDE's own file list leaves out", async () => {
+    touch('node_modules/pkg/plan.md');
+    touch('.auric/plan.md');
+    const s = fileStation('plan.md');
+
+    await expect(markStationDone(db, s.id, 'wrote it', root)).rejects.toThrow(/does not exist/);
+  });
+
+  it('checks ticket_done and requirement_verified against the database', async () => {
+    db.prepare("INSERT INTO pm_epics (id, name) VALUES ('e1', 'Epic')").run();
+    db.prepare(
+      "INSERT INTO pm_tickets (id, epic_id, name, status) VALUES ('t1', 'e1', 'Build it', 'open')"
+    ).run();
+    db.prepare(
+      "INSERT INTO pm_requirements (id, req_id, title, status) VALUES ('r1', 'REQ-X-01', 'X', 'verified')"
+    ).run();
+    const ticket = createStation(db, {
+      goalId,
+      name: 'Ticket',
+      predicate: '{"type":"ticket_done","ticketId":"t1"}',
+    });
+    const req = createStation(db, {
+      goalId,
+      name: 'Requirement',
+      predicate: '{"type":"requirement_verified","requirementId":"r1"}',
+    });
+
+    await expect(markStationDone(db, ticket.id, 'did it', root)).rejects.toThrow(/is open/);
+    db.prepare("UPDATE pm_tickets SET status = 'done' WHERE id = 't1'").run();
+    expect((await markStationDone(db, ticket.id, 'did it', root)).evidence_kind).toBe('proof');
+    expect((await markStationDone(db, req.id, 'verified', root)).evidence_kind).toBe('proof');
+  });
+
+  it('leaves judged and git stations a claim for the engine to settle', async () => {
+    const judged = createStation(db, {
+      goalId,
+      name: 'Copy reads well',
+      predicate: '{"type":"judged","prompt":"Is it clear?"}',
+    });
+    const git = createStation(db, {
+      goalId,
+      name: 'Commit it',
+      predicate: '{"type":"git_touches","pathPrefix":"src/"}',
+    });
+    for (const s of [judged, git]) {
+      const done = await markStationDone(db, s.id, 'done', root);
+      expect(done.evidence_kind).toBe('claim');
+      expect(done.last_checked_at).toBeNull();
+    }
   });
 });
 

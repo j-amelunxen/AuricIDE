@@ -63,20 +63,7 @@ describe('evaluatePredicate', () => {
 
   it('checks ticket_done against live ticket status', async () => {
     const ctx = makeCtx({
-      tickets: [
-        {
-          id: 't1',
-          epicId: 'e1',
-          name: 'Build it',
-          description: '',
-          status: 'done',
-          statusUpdatedAt: TS,
-          sortOrder: 0,
-          priority: 'normal',
-          createdAt: TS,
-          updatedAt: TS,
-        },
-      ],
+      tickets: [{ id: 't1', name: 'Build it', status: 'done' }],
     });
     const pass = await evaluatePredicate({ type: 'ticket_done', ticketId: 't1' }, ctx);
     expect(pass?.pass).toBe(true);

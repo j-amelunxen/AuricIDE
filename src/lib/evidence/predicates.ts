@@ -17,8 +17,9 @@ export interface EvidenceResult {
  */
 export interface EvidenceContext {
   projectPath: string;
-  tickets: PmTicket[];
-  requirements: PmRequirement[];
+  /** Only what the predicates read, so the MCP server can supply it from SQL. */
+  tickets: Pick<PmTicket, 'id' | 'name' | 'status'>[];
+  requirements: Pick<PmRequirement, 'id' | 'reqId' | 'status'>[];
   /** Acceptance criteria, used to build the judge prompt for a claimed step. */
   testCases: PmTestCase[];
   fileExists(glob: string): Promise<boolean>;
@@ -128,6 +129,17 @@ async function evaluateCheckable(
         checkedAt,
       };
   }
+}
+
+/** True for predicates a machine decides without a model: these are settled by
+ * their check, never by the judge, even after an agent claimed the station. */
+export function isMachinePredicate(predicate: StationPredicate): boolean {
+  return (
+    predicate.type === 'ticket_done' ||
+    predicate.type === 'requirement_verified' ||
+    predicate.type === 'file_exists' ||
+    predicate.type === 'git_touches'
+  );
 }
 
 /** The evidence class a passing check of this predicate earns. */

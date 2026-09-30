@@ -2,10 +2,12 @@ import { useStore } from '@/lib/store';
 import { gitLogSince } from '@/lib/tauri/git';
 import { llmCall } from '@/lib/tauri/llm';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
+import type { PmTicket } from '@/lib/tauri/pm';
 import { orderedStations } from '@/lib/goals/stationOrder';
 import {
   evaluatePredicate,
   evidenceClassFor,
+  isMachinePredicate,
   type EvidenceContext,
   type EvidenceResult,
 } from './predicates';
@@ -15,80 +17,15 @@ import {
   parseVerdictJson,
   reopenStationForRetry,
 } from './verdict';
+import { globMatch } from './globMatch';
 
 // The pure verdict helpers live in verdict.ts (store-free, to avoid a cycle);
 // re-exported here so existing importers keep working.
 export { applyJudgeVerdict, buildClaimJudgePrompt, parseVerdictJson, reopenStationForRetry };
+export { globMatch };
 
 function nowTimestamp(): string {
   return new Date().toISOString().replace('T', ' ').slice(0, 19);
-}
-
-/** Longest glob we will even look at. A predicate glob is a path pattern, not
- * a program; anything past this is either a mistake or an attack. */
-const GLOB_MAX_LEN = 512;
-
-/**
- * Segment-aware glob match with no regex, so a hostile pattern cannot trigger
- * catastrophic backtracking. `**a**a…b` compiled to `.*a.*a…` once froze the
- * renderer for tens of seconds against a long non-matching path; this runs in
- * O(|glob|·|path|) via a memo table instead. Semantics match the old regex:
- * `*` within a segment, `**` across segments, `?` one non-slash char, anchored
- * to the end and allowed to begin at any segment boundary. A non-string or
- * over-long glob is a non-match, never a throw.
- */
-export function globMatch(glob: string, path: string): boolean {
-  if (typeof glob !== 'string' || typeof path !== 'string') return false;
-  if (glob.length > GLOB_MAX_LEN) return false;
-  // The match is anchored to the end, so whatever literal text follows the
-  // glob's last wildcard has to be how the path ends. Checking that first
-  // turns the common miss — one station glob against every project file —
-  // into a string comparison instead of a table walk per segment.
-  if (!path.endsWith(literalTail(glob))) return false;
-  // Candidate starts: index 0 and every index just past a '/', mirroring the
-  // old `(^|/)` anchor.
-  if (anchoredGlobMatch(glob, path)) return true;
-  for (let i = 0; i < path.length; i++) {
-    if (path[i] === '/' && anchoredGlobMatch(glob, path.slice(i + 1))) return true;
-  }
-  return false;
-}
-
-/** The glob's text after its last wildcard (`*` or `?`); all of it if none. */
-function literalTail(glob: string): string {
-  const last = Math.max(glob.lastIndexOf('*'), glob.lastIndexOf('?'));
-  return glob.slice(last + 1);
-}
-
-/** True if `glob` matches the whole of `text` (end-anchored), computed with a
- * memo table so no (glob, text) position pair is explored more than once. The
- * table is one flat typed array: 0 unknown, 1 no, 2 yes. */
-function anchoredGlobMatch(glob: string, text: string): boolean {
-  const g = glob.length;
-  const t = text.length;
-  const width = t + 1;
-  const memo = new Uint8Array((g + 1) * width);
-  const solve = (gi: number, ti: number): boolean => {
-    const cached = memo[gi * width + ti];
-    if (cached !== 0) return cached === 2;
-    let res: boolean;
-    if (gi === g) {
-      res = ti === t;
-    } else if (glob[gi] === '*' && glob[gi + 1] === '*') {
-      // ** : consume any char including '/', or nothing.
-      res = solve(gi + 2, ti) || (ti < t && solve(gi, ti + 1));
-    } else if (glob[gi] === '*') {
-      // * : consume any non-'/' char, or nothing.
-      res = solve(gi + 1, ti) || (ti < t && text[ti] !== '/' && solve(gi, ti + 1));
-    } else if (glob[gi] === '?') {
-      res = ti < t && text[ti] !== '/' && solve(gi + 1, ti + 1);
-    } else {
-      res = ti < t && glob[gi] === text[ti] && solve(gi + 1, ti + 1);
-    }
-    memo[gi * width + ti] = res ? 2 : 1;
-    return res;
-  };
-  return solve(0, 0);
 }
 
 /**
@@ -249,27 +186,67 @@ export async function checkFrontStations(
 }
 
 /**
- * Judges the agent-CLAIMED stations that no machine predicate can settle. Runs
- * each fresh claim (done + claim + never judged) exactly once through the judge
- * model, promoting it to 'judged' or leaving it a blocking claim with the
- * reason. The lastCheckedAt==null filter is the anti-thrash guard: a claim is
- * judged once per assertion, not on every event. No judge model → left as a
- * retryable blocking claim, never passed.
+ * Settles agent-claimed stations that carry a machine predicate by running the
+ * predicate, whatever the judge said before: a claim on "docs/x.md exists" is
+ * proof the moment the file is there, and a judge's rejection must not outlive
+ * that. A failing check leaves the claim blocking with the check's reason and
+ * is written only when the reason changes — never demoted, because a sweep
+ * that runs before the file list has loaded would otherwise undo real work.
+ * Returns whether anything was written.
+ */
+async function checkMachineClaims(goalId: string | undefined): Promise<boolean> {
+  const claims = useStore
+    .getState()
+    .goalStationsDraft.filter(
+      (s: PmGoalStation) =>
+        s.status === 'done' &&
+        s.evidenceKind === 'claim' &&
+        isMachinePredicate(s.predicate) &&
+        (!goalId || s.goalId === goalId)
+    );
+  let touched = false;
+  for (const st of claims) {
+    const result = await evaluatePredicate(st.predicate, buildEvidenceContext());
+    if (result === null) continue;
+    const updates = result.pass
+      ? applyCheckResult(st, result)!
+      : { evidenceNote: result.detail, lastCheckedAt: result.checkedAt };
+    if (!changesStation(st, updates)) continue;
+    useStore.getState().updateStation(st.id, updates);
+    touched = true;
+  }
+  return touched;
+}
+
+/**
+ * Settles the agent-CLAIMED stations. Machine-predicate claims go through
+ * their predicate first (`checkMachineClaims`); the rest — judged stations and
+ * those with no predicate — run each fresh claim (done + claim + never judged)
+ * exactly once through the judge model, promoting it to 'judged' or leaving it
+ * a blocking claim with the reason. The lastCheckedAt==null filter is the
+ * anti-thrash guard: a claim is judged once per assertion, not on every event.
+ * No judge model → left as a retryable blocking claim, never passed.
  */
 export async function checkClaimedStations(goalId?: string): Promise<void> {
+  let touched = await checkMachineClaims(goalId);
   const state = useStore.getState();
   const ctx = buildEvidenceContext();
-  if (!ctx.llmJudge) return; // no judge model: claims stay blocking, retryable once configured
+  const save = () => {
+    if (touched && state.rootPath) void useStore.getState().saveGoals(state.rootPath);
+  };
+  if (!ctx.llmJudge) return save(); // no judge model: claims stay blocking, retryable once configured
   const claims = state.goalStationsDraft.filter(
     (s: PmGoalStation) =>
       s.status === 'done' &&
       s.evidenceKind === 'claim' &&
       s.lastCheckedAt === null &&
+      !isMachinePredicate(s.predicate) &&
       (!goalId || s.goalId === goalId)
   );
-  let touched = false;
   for (const st of claims) {
-    const ticket = st.ticketId ? ctx.tickets.find((t) => t.id === st.ticketId) : undefined;
+    const ticket = st.ticketId
+      ? state.pmDraftTickets.find((t: PmTicket) => t.id === st.ticketId)
+      : undefined;
     const goal = state.goalsDraft.find((g: PmGoal) => g.id === st.goalId);
     const tcs = ticket ? ctx.testCases.filter((tc) => tc.ticketId === ticket.id) : [];
     let verdict: { pass: boolean; reason: string };
@@ -283,5 +260,5 @@ export async function checkClaimedStations(goalId?: string): Promise<void> {
     useStore.getState().updateStation(st.id, applyJudgeVerdict(st, verdict, ctx.now()));
     touched = true;
   }
-  if (touched && state.rootPath) void useStore.getState().saveGoals(state.rootPath);
+  save();
 }

@@ -120,3 +120,64 @@ describe('checkClaimedStations', () => {
     expect(stations[0].lastCheckedAt).not.toBeNull(); // a judge ruled, stamped with the real now
   });
 });
+
+describe('checkClaimedStations on stations with a machine predicate', () => {
+  const fileStation = (overrides: Partial<PmGoalStation> = {}) =>
+    claim({ predicate: { type: 'file_exists', glob: 'docs/plan.md' }, ...overrides });
+
+  beforeEach(() => {
+    h.llmCall.mockReset();
+  });
+
+  it('turns a rejected claim into proof once the file exists, without asking the judge', async () => {
+    const stations = [fileStation({ evidenceNote: 'rejected: note is vague', lastCheckedAt: TS })];
+    seedStore(stations);
+    h.state.allFilePaths = ['/p/docs/plan.md'];
+
+    await checkClaimedStations('g1');
+
+    expect(stations[0].status).toBe('done');
+    expect(stations[0].evidenceKind).toBe('proof');
+    expect(stations[0].evidenceNote).toBe('docs/plan.md exists');
+    expect(h.llmCall).not.toHaveBeenCalled();
+  });
+
+  it('decides a fresh claim by its predicate even with no judge model configured', async () => {
+    const stations = [fileStation()];
+    seedStore(stations, false);
+    h.state.allFilePaths = ['/p/docs/plan.md'];
+
+    await checkClaimedStations('g1');
+
+    expect(stations[0].evidenceKind).toBe('proof');
+  });
+
+  it('keeps a claim whose file is missing, says why, and never sends it to the judge', async () => {
+    const stations = [fileStation()];
+    const updateStation = seedStore(stations);
+
+    await checkClaimedStations('g1');
+
+    expect(stations[0].status).toBe('done');
+    expect(stations[0].evidenceKind).toBe('claim');
+    expect(stations[0].evidenceNote).toBe('docs/plan.md does not exist');
+    expect(stations[0].lastCheckedAt).not.toBeNull();
+    expect(h.llmCall).not.toHaveBeenCalled();
+
+    // Nothing new to say: a second sweep writes nothing, so no save-reload loop.
+    updateStation.mockClear();
+    await checkClaimedStations('g1');
+    expect(updateStation).not.toHaveBeenCalled();
+  });
+
+  it('still sends a judged station to the judge', async () => {
+    const stations = [claim({ predicate: { type: 'judged', prompt: 'Is the copy clear?' } })];
+    seedStore(stations);
+    h.llmCall.mockResolvedValue({ content: '{"pass":true,"reason":"clear"}' });
+
+    await checkClaimedStations('g1');
+
+    expect(h.llmCall).toHaveBeenCalledTimes(1);
+    expect(stations[0].evidenceKind).toBe('judged');
+  });
+});
