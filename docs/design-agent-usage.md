@@ -201,7 +201,8 @@ spawn.
 ## IPC
 
 ```
-agent_usage_load { projectPath: string } -> AgentUsageRow[]   // newest first
+agent_usage_load    { projectPath: string } -> AgentUsageRow[]   // newest first
+agent_usage_reprice { projectPath: string } -> RepriceReport     // see "Pricing a run later"
 ```
 
 TS (`src/lib/tauri/agentUsage.ts`):
@@ -257,6 +258,40 @@ Codex models are priced from a second compiled-in manifest,
 `src-tauri/src/agent_usage/codex-pricing.json` (same schema as `usage-plugins`, dated rates,
 source URL in each rate's `note`). OpenAI cached input is expressed as the `read` cache
 multiplier (cached price / input price).
+
+### Pricing a run later (`agent_usage/reprice.rs`)
+
+A run is priced once, when it is booked. A model added to the price list afterwards does not
+reach the runs already stored without a price. Settings → Project → Maintenance → "Recalculate
+pricing" (`agent_usage_reprice`) catches them up, one project at a time:
+
+- **Only `cost_source = 'estimated'` rows with `cost_usd IS NULL`.** A `cli` row carries the
+  CLI's own figure and a `none` row has nothing to price from; a priced row is never rewritten.
+- **Evidence is read again, the way the booking read it.** Claude rows go back to the
+  transcript (`find_session_files` + `session_tokens_between`), bounded by `started_at` and
+  `finished_at` + 5 s, because a session resumed later appends turns that were never part of
+  the run. The row alone is not enough: it holds neither the per-model split nor the 5-minute
+  vs. 1-hour cache writes. Codex rows are priced from the row itself — one model, every cache
+  write at the 5-minute rate, exactly what the booking priced. The format comes from the
+  provider's `usage.transcript`, the same lookup a spawn uses.
+- **Only the price is written.** When the evidence no longer adds up to the booked tokens the
+  row is left alone (`changedEvidence`); a price for different tokens than the row shows would
+  make the row contradict itself. Missing transcripts count as `missingEvidence`, models the
+  list still does not know as `stillUnpriced` and are named in `unpricedModels`.
+- **The price list is read from disk** (`CcUsageService::plugin_from_disk`), not the copy
+  loaded at launch, so an entry just added to `usage-plugins/*.json` counts without a restart.
+  Priced by `started_at`'s day, like the booking. One transaction per pass.
+
+```ts
+export interface RepriceReport {
+  unpriced: number; // estimated rows without a price, looked at
+  repriced: number;
+  stillUnpriced: number;
+  missingEvidence: number;
+  changedEvidence: number;
+  unpricedModels: string[];
+}
+```
 
 ## Aggregation (frontend, `src/lib/pm/usage/`)
 

@@ -152,13 +152,13 @@ pub struct PriceLists<'a> {
 }
 
 /// Tokens and money for a set of models, priced by day.
-struct Priced {
-    counts: TokenCounts,
-    cost_usd: Option<f64>,
-    unpriced: Vec<String>,
+pub(crate) struct Priced {
+    pub(crate) counts: TokenCounts,
+    pub(crate) cost_usd: Option<f64>,
+    pub(crate) unpriced: Vec<String>,
 }
 
-fn price_models(
+pub(crate) fn price_models(
     plugin: Option<&UsagePlugin>,
     by_model: &BTreeMap<String, TokenCounts>,
     day: &str,
