@@ -33,7 +33,8 @@
       {
         "id": "claude-mythos-5-1",
         "label": "Mythos 5.1",
-        "rates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }]
+        "rates": [{ "inputPerMTok": 10.0, "outputPerMTok": 50.0 }],
+        "cache": { "write5m": 1.25, "write1h": 2.0, "read": 0.025 }
       },
       {
         "id": "claude-mythos-5",
@@ -77,18 +78,15 @@
         "rates": [{ "inputPerMTok": 5.0, "outputPerMTok": 25.0 }]
       },
       {
+        "id": "claude-sonnet-5-5",
+        "label": "Sonnet 5.5",
+        "rates": [{ "inputPerMTok": 2.0, "outputPerMTok": 10.0 }]
+      },
+      {
         "id": "claude-sonnet-5",
         "label": "Sonnet 5",
         "aliases": ["sonnet"],
-        "rates": [
-          {
-            "until": "2026-09-01",
-            "inputPerMTok": 2.0,
-            "outputPerMTok": 10.0,
-            "note": "Einführungspreis bis 31.08.2026"
-          },
-          { "inputPerMTok": 3.0, "outputPerMTok": 15.0 }
-        ]
+        "rates": [{ "inputPerMTok": 2.0, "outputPerMTok": 10.0 }]
       },
       {
         "id": "claude-sonnet-4-6",

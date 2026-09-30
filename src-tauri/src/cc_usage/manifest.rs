@@ -44,8 +44,8 @@ pub enum SourceSpec {
 
 /// One price, optionally only valid before a date.
 ///
-/// `until` exists because introductory pricing is real: Sonnet 5 bills at
-/// $2/$10 through 2026-08-31 and $3/$15 after. A report that spans the boundary
+/// `until` exists because prices change: a model can launch at an introductory
+/// rate and move to another one on a set day. A report that spans the boundary
 /// has to price each record by the day it happened, not by today's rate.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -318,6 +318,7 @@ mod tests {
             "claude-mythos-5",
             "claude-opus-5-5",
             "claude-opus-5",
+            "claude-sonnet-5-5",
             "claude-sonnet-5",
             "claude-haiku-4-5",
         ] {
@@ -360,6 +361,21 @@ mod tests {
     }
 
     #[test]
+    fn sonnet_5_5_bills_at_the_sonnet_5_5_list_price() {
+        // The conductor picks Sonnet 5.5 from the provider's own model list;
+        // without an entry every run it books reads "without price".
+        // $2 / $10, cache read $0.20 = the shared 0.1×, so no own multipliers.
+        let plugin = built_in();
+        let sonnet = plugin.model_for("claude-sonnet-5-5").expect("sonnet 5.5");
+        assert_eq!(sonnet.label, "Sonnet 5.5");
+        let rate = rate_on(&sonnet.rates, "2026-09-30").expect("rate");
+        assert_eq!(rate.input_per_m_tok, 2.0);
+        assert_eq!(rate.output_per_m_tok, 10.0);
+        assert!(sonnet.cache.is_none());
+        assert!(sonnet.fast_rates.is_none());
+    }
+
+    #[test]
     fn a_model_may_carry_its_own_cache_multipliers() {
         // Fable 5.1 reads a cached token at 0.025× its input rate ($0.25/MTok)
         // where every other model reads at 0.1×. Pricing it off the list-wide
@@ -393,23 +409,46 @@ mod tests {
 
     #[test]
     fn a_record_is_priced_by_the_day_it_happened() {
+        // No shipped model has a dated rate right now, so the list is its own.
+        let rates: Vec<Rate> = serde_json::from_str(
+            r#"[
+                { "until": "2026-09-01", "inputPerMTok": 2.0, "outputPerMTok": 10.0 },
+                { "inputPerMTok": 3.0, "outputPerMTok": 15.0 }
+            ]"#,
+        )
+        .unwrap();
+
+        assert_eq!(rate_on(&rates, "2026-08-16").unwrap().input_per_m_tok, 2.0);
+        assert_eq!(rate_on(&rates, "2026-09-01").unwrap().input_per_m_tok, 3.0);
+        // The boundary is exclusive: the last day before it still bills at
+        // the earlier price.
+        assert_eq!(rate_on(&rates, "2026-08-31").unwrap().input_per_m_tok, 2.0);
+    }
+
+    #[test]
+    fn sonnet_5_stays_at_its_launch_price_after_august() {
+        // Anthropic announced $2/$10 as introductory through 2026-08-31, then
+        // cancelled the step to $3/$15: $2/$10 is the standard price. Keeping
+        // the step here overstated every Sonnet 5 turn since September by 50 %.
         let plugin = built_in();
         let sonnet = plugin.model_for("claude-sonnet-5").expect("sonnet 5");
+        for day in ["2026-08-16", "2026-09-01", "2026-09-30"] {
+            let rate = rate_on(&sonnet.rates, day).expect("rate");
+            assert_eq!(rate.input_per_m_tok, 2.0, "{day}");
+            assert_eq!(rate.output_per_m_tok, 10.0, "{day}");
+        }
+    }
 
-        let intro = rate_on(&sonnet.rates, "2026-08-16").expect("intro rate");
-        assert_eq!(intro.input_per_m_tok, 2.0);
-
-        let standard = rate_on(&sonnet.rates, "2026-09-01").expect("standard rate");
-        assert_eq!(standard.input_per_m_tok, 3.0);
-
-        // The boundary is exclusive: the last day of the introductory period
-        // still bills at the introductory price.
-        assert_eq!(
-            rate_on(&sonnet.rates, "2026-08-31")
-                .unwrap()
-                .input_per_m_tok,
-            2.0
-        );
+    #[test]
+    fn mythos_5_1_reads_cache_like_fable_5_1() {
+        // Anthropic prices cache hits at 0.025× input for both Fable 5.1 and
+        // Mythos 5.1; the shared 0.1× would overstate Mythos 5.1 fourfold.
+        let plugin = built_in();
+        let mythos = plugin.model_for("claude-mythos-5-1").expect("mythos 5.1");
+        let cache = mythos.cache.as_ref().expect("its own multipliers");
+        assert_eq!(cache.read, 0.025);
+        assert_eq!(cache.write5m, plugin.pricing.cache.write5m);
+        assert_eq!(cache.write1h, plugin.pricing.cache.write1h);
     }
 
     #[test]
