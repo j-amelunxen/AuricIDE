@@ -45,6 +45,7 @@ export interface AgentInfo {
 export type PermissionMode =
   'bypassPermissions' | 'acceptEdits' | 'plan' | 'auto' | 'default' | 'yolo';
 
+import type { UsageRunKind } from './agentUsage';
 import { invoke } from './invoke';
 
 export interface AgentConfig {
@@ -66,8 +67,15 @@ export interface AgentConfig {
   headless?: boolean;
   spawnedByTicketId?: string;
   spawnedByGoalId?: string;
-  /** Frontend-only provenance hint for goal runs; ignored by the Rust backend. */
-  runSource?: 'ui' | 'conductor';
+  /**
+   * Who started the run. Kept with the run's usage row (`pm_agent_usage`), and
+   * read by the frontend to tell conductor runs from ones a person started.
+   */
+  runSource?: 'ui' | 'conductor' | 'schedule' | 'mcp';
+  /** What the run was for; the backend derives it from the ticket and goal ids when absent. */
+  runKind?: UsageRunKind;
+  /** The ticket a review run judges — its cost is attributed there, not to the implementer. */
+  reviewOfTicketId?: string;
   /**
    * The MCP launch request this agent answers. Its start and finish are
    * recorded against it for `get_agent_run`, and the Rust spawn checks the

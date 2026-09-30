@@ -6,14 +6,17 @@ export function getRootGoals(goals: PmGoal[]): PmGoal[] {
     .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
 }
 
-export function getGoalChildren(goals: PmGoal[], parentId: string): PmGoal[] {
+/** The fields the tree walk reads, so callers holding a thinner goal shape can use it too. */
+export type GoalTreeNode = Pick<PmGoal, 'id' | 'parentId' | 'sortOrder' | 'createdAt'>;
+
+export function getGoalChildren<G extends GoalTreeNode>(goals: G[], parentId: string): G[] {
   return goals
     .filter((g) => g.parentId === parentId)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
 }
 
-export function getGoalDescendants(goals: PmGoal[], goalId: string): PmGoal[] {
-  const result: PmGoal[] = [];
+export function getGoalDescendants<G extends GoalTreeNode>(goals: G[], goalId: string): G[] {
+  const result: G[] = [];
   const visited = new Set<string>([goalId]);
   let frontier = [goalId];
   while (frontier.length > 0) {

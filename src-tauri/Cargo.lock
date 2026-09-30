@@ -281,6 +281,7 @@ dependencies = [
  "tauri-plugin-wdio-webdriver",
  "tempfile",
  "tokio",
+ "uuid",
  "walkdir",
 ]
 

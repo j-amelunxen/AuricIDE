@@ -1545,6 +1545,38 @@ describe('SpawnAgentDialog – Quick Access multi-select', () => {
     expect(onSpawn.mock.calls.map((call) => call[0].cwd)).toEqual(['/b/shop', '/a/website']);
   });
 
+  it('tells the backend who the run is for: kind from the binding, source ui', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={onSpawn}
+        initialRepoPath="/a/website"
+        spawnedByTicketId="t1"
+      />
+    );
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn.mock.calls[0][0]).toMatchObject({
+      spawnedByTicketId: 't1',
+      runKind: 'ticket',
+      runSource: 'ui',
+    });
+  });
+
+  it('marks a run with no ticket or goal as other', async () => {
+    const user = userEvent.setup();
+    const onSpawn = vi.fn();
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+    await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
+    await user.click(screen.getByRole('button', { name: /start agent/i }));
+
+    expect(onSpawn.mock.calls[0][0]).toMatchObject({ runKind: 'other', runSource: 'ui' });
+  });
+
   it('keeps a ticket and goal on the home project only', async () => {
     const user = userEvent.setup();
     const onSpawn = vi.fn();

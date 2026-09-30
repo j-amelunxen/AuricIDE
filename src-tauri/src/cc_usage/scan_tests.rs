@@ -1,4 +1,5 @@
 use super::*;
+use std::fs;
 use std::io::Write;
 
 /// A realistic assistant record. Values are deliberately distinct so a
@@ -229,4 +230,68 @@ fn files_are_read_in_parallel_without_losing_turns() {
     let (turns, stats) = collect_turns(&[dir.path().to_path_buf()], 0);
     assert_eq!(stats.files_scanned, 25);
     assert_eq!(turns.len(), 25);
+}
+
+// ---------------------------------------------------------------------------
+// One API message, several transcript lines
+// ---------------------------------------------------------------------------
+
+const SESSION_TRANSCRIPT: &str = include_str!("../agent_usage/fixtures/claude-transcript.jsonl");
+const SUBAGENT_TRANSCRIPT: &str = include_str!("../agent_usage/fixtures/claude-subagent.jsonl");
+
+fn usage_line(message_id: &str, output_tokens: u64) -> String {
+    format!(
+        r#"{{"type":"assistant","timestamp":"2026-08-16T10:00:00.000Z","requestId":"req_1","message":{{"id":"{message_id}","model":"claude-opus-5","usage":{{"input_tokens":5,"output_tokens":{output_tokens}}}}}}}"#
+    )
+}
+
+#[test]
+fn of_one_message_the_line_with_the_most_output_wins() {
+    let dir = tempfile::tempdir().unwrap();
+    write_transcript(
+        dir.path(),
+        "a.jsonl",
+        &[usage_line("msg_1", 3), usage_line("msg_1", 345)],
+    );
+
+    let (turns, stats) = collect_turns(&[dir.path().to_path_buf()], 0);
+
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].counts.output, 345);
+    assert_eq!(stats.duplicates_dropped, 1);
+}
+
+#[test]
+fn the_larger_line_wins_whichever_comes_first() {
+    let dir = tempfile::tempdir().unwrap();
+    write_transcript(
+        dir.path(),
+        "a.jsonl",
+        &[usage_line("msg_1", 345), usage_line("msg_1", 3)],
+    );
+
+    let (turns, _) = collect_turns(&[dir.path().to_path_buf()], 0);
+
+    assert_eq!(turns[0].counts.output, 345);
+}
+
+#[test]
+fn a_real_session_with_a_subagent_adds_up_to_what_the_cli_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = dir.path().join("project-slug");
+    let subagents = session.join("session-1/subagents");
+    fs::create_dir_all(&subagents).unwrap();
+    fs::write(session.join("session-1.jsonl"), SESSION_TRANSCRIPT).unwrap();
+    fs::write(subagents.join("agent-a.jsonl"), SUBAGENT_TRANSCRIPT).unwrap();
+
+    let (turns, _) = collect_turns(&[dir.path().to_path_buf()], 0);
+
+    let mut total = TokenCounts::default();
+    for turn in &turns {
+        total += turn.counts;
+    }
+    assert_eq!(total.input, 46);
+    assert_eq!(total.output, 1007);
+    assert_eq!(total.cache_read, 121_339);
+    assert_eq!(total.cache_write5m + total.cache_write1h, 65_165);
 }

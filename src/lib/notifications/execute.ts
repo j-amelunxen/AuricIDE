@@ -2,6 +2,7 @@ import type { AgentConfig } from '@/lib/tauri/agents';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { deriveAgentName } from '@/lib/agents/naming';
 import { resolveSkillLaunch } from '@/lib/agents/skillLaunch';
+import { runKindFor } from '@/lib/agents/spawnTargets';
 import { loadSpawnDefaults, type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import type { QuickAccessCombo } from '@/lib/store/starredProjectsSlice';
 import type { NotificationTrust } from './trust';
@@ -207,6 +208,19 @@ function checkedPlacement(
 }
 
 /**
+ * Who the run is recorded as started by. Only a person's own reminder is a
+ * schedule run; anything a model wrote, or a launch request it filed, is an
+ * mcp run — the usage row should say which of the two spent the money.
+ */
+function runSourceFor(
+  context: NotificationActionContext,
+  placement: { notificationUid: string | null } | null
+): NonNullable<AgentConfig['runSource']> {
+  if (context.launchRequestUid || placement?.notificationUid) return 'mcp';
+  return context.trust === 'user' ? 'schedule' : 'mcp';
+}
+
+/**
  * Builds the launch config for a `spawn-agent` action.
  *
  * Provider and model may always come from the payload — they decide *what*
@@ -251,7 +265,8 @@ export function buildSpawnConfig(
     headless: (trusted ? action.headless : undefined) ?? defaults?.headless,
     spawnedByTicketId: action.ticketId,
     spawnedByGoalId: action.goalId,
-    runSource: 'ui',
+    runKind: runKindFor({ spawnedByTicketId: action.ticketId, spawnedByGoalId: action.goalId }),
+    runSource: runSourceFor(context, placement),
     ...(worktree ? { useWorktree: true, worktreeRepoPath: cwd } : {}),
     ...(context.launchRequestUid ? { launchRequestUid: context.launchRequestUid } : {}),
     ...(placement?.notificationUid
@@ -285,7 +300,8 @@ export function buildSkillSpawnConfig(
     provider: launch.provider,
     permissionMode: launch.permissionMode,
     headless: action.headless,
-    runSource: 'ui',
+    runKind: 'other',
+    runSource: 'schedule',
   };
 }
 

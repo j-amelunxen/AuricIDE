@@ -35,6 +35,45 @@ pub(crate) fn apply_migration(
 }
 
 // code-gate: complexity-cyclomatic, complexity-function-length - one flat, ordered list of migrations; each `?` is one step, and splitting it would scatter the order that matters
+/// Migration 25. Public to the crate so a test can hold it against the twin
+/// in `src/mcp/db.ts`.
+pub(crate) const AGENT_USAGE_MIGRATION_SQL: &str = "CREATE TABLE IF NOT EXISTS pm_agent_usage (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            ticket_id TEXT,
+            goal_id TEXT,
+            run_kind TEXT NOT NULL,
+            run_source TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT,
+            headless INTEGER NOT NULL DEFAULT 0,
+            session_id TEXT,
+            ticket_status_at_start TEXT,
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            outcome TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+            reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+            cost_usd REAL,
+            cost_source TEXT NOT NULL,
+            match_kind TEXT NOT NULL DEFAULT 'exact',
+            estimate_cost_usd REAL,
+            estimate_input_tokens INTEGER,
+            estimate_output_tokens INTEGER,
+            estimate_cache_read_tokens INTEGER,
+            estimate_cache_write_tokens INTEGER,
+            unpriced_models TEXT,
+            model_usage_json TEXT,
+            num_turns INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_pm_agent_usage_ticket ON pm_agent_usage(ticket_id);
+        CREATE INDEX IF NOT EXISTS idx_pm_agent_usage_goal ON pm_agent_usage(goal_id);
+        CREATE INDEX IF NOT EXISTS idx_pm_agent_usage_started ON pm_agent_usage(started_at);";
+
 pub fn run_migrations(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (
@@ -475,6 +514,13 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         FROM pm_goals g
         WHERE NOT EXISTS (SELECT 1 FROM pm_goal_status_history h WHERE h.goal_id = g.id);",
     )?;
+
+    // What each agent run cost, appended by Rust when the run ends. No foreign
+    // keys: a deleted ticket or goal keeps its cost history.
+    // Keep in sync with src/mcp/db.ts migration 25 and
+    // docs/design-agent-usage.md. `IF NOT EXISTS` throughout, so a crash
+    // between the DDL and the marker just runs it again.
+    apply_migration(conn, 25, "create_pm_agent_usage", AGENT_USAGE_MIGRATION_SQL)?;
 
     Ok(())
 }

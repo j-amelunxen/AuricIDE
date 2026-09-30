@@ -252,6 +252,23 @@ fn test_agent_config_deserializes_camel_case() {
 }
 
 #[test]
+fn an_agent_config_carries_the_attribution_the_usage_row_needs() {
+    let json = r#"{
+        "name": "Reviewer", "model": "auto", "task": "review",
+        "runSource": "conductor", "runKind": "review", "reviewOfTicketId": "ticket-9"
+    }"#;
+    let config: AgentConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.run_source.as_deref(), Some("conductor"));
+    assert_eq!(config.run_kind.as_deref(), Some("review"));
+    assert_eq!(config.review_of_ticket_id.as_deref(), Some("ticket-9"));
+
+    let bare: AgentConfig =
+        serde_json::from_str(r#"{ "name": "n", "model": "auto", "task": "t" }"#).unwrap();
+    assert!(bare.run_source.is_none() && bare.run_kind.is_none());
+    assert!(bare.review_of_ticket_id.is_none());
+}
+
+#[test]
 fn test_agent_config_optional_fields_default_to_none() {
     let json = r#"{
         "name": "Minimal",
@@ -289,6 +306,9 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
         launch_request_uid: None,
         agent_notification_uid: None,
         agent_notification_action_id: None,
+        run_source: None,
+        run_kind: None,
+        review_of_ticket_id: None,
     };
     let persisted = persisted_from_config(&config, "agent-4", "claude", 123);
     assert_eq!(persisted.id, "agent-4");
@@ -678,4 +698,32 @@ fn spawn_refusals_carry_the_sentences_the_control_bridge_maps() {
     .err()
     .unwrap();
     assert!(missing.contains(&pattern("invalid_params")), "{missing}");
+}
+
+#[test]
+fn a_resumed_agent_keeps_the_attribution_its_cost_is_booked_under() {
+    let config: AgentConfig = serde_json::from_str(
+        r#"{ "name": "n", "model": "auto", "task": "t", "spawnedByTicketId": "t1",
+             "runSource": "conductor", "runKind": "review", "reviewOfTicketId": "t9" }"#,
+    )
+    .unwrap();
+    let persisted = persisted_from_config(&config, "agent-1", "claude", 1);
+
+    let resumed = resumed_config(persisted, None);
+
+    assert_eq!(resumed.run_source.as_deref(), Some("conductor"));
+    assert_eq!(resumed.run_kind.as_deref(), Some("review"));
+    assert_eq!(resumed.review_of_ticket_id.as_deref(), Some("t9"));
+    assert_eq!(resumed.spawned_by_ticket_id.as_deref(), Some("t1"));
+}
+
+#[test]
+fn a_persistence_file_from_before_attribution_still_loads() {
+    let old = r#"{ "id": "agent-1", "name": "n", "model": "m", "provider": "claude",
+                   "task": "t", "cwd": null, "permissionMode": null, "startedAt": 1 }"#;
+
+    let agent: crate::agent_persistence::PersistedAgent = serde_json::from_str(old).unwrap();
+
+    assert!(agent.run_source.is_none() && agent.run_kind.is_none());
+    assert!(agent.review_of_ticket_id.is_none());
 }

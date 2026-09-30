@@ -37,6 +37,9 @@ pub enum SourceSpec {
         /// Directories to walk. `~` is expanded against the user's home.
         roots: Vec<String>,
     },
+    /// Codex rollout files. Read by `agent_usage` only; `cc_usage`'s report
+    /// has no reader for this shape.
+    CodexRollout { roots: Vec<String> },
 }
 
 /// One price, optionally only valid before a date.
@@ -147,7 +150,7 @@ impl UsagePlugin {
 
     /// Where this plugin's records live, with `~` already expanded.
     pub fn roots(&self, home: &Path) -> Vec<PathBuf> {
-        let SourceSpec::ClaudeJsonl { roots } = &self.source;
+        let (SourceSpec::ClaudeJsonl { roots } | SourceSpec::CodexRollout { roots }) = &self.source;
         roots.iter().map(|root| expand_home(root, home)).collect()
     }
 }

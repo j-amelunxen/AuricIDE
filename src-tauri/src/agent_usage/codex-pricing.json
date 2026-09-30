@@ -1,0 +1,89 @@
+{
+  "id": "codex",
+  "name": "Codex",
+  "manifestVersion": 1,
+  "source": {
+    "type": "codex-rollout",
+    "roots": ["~/.codex/sessions"]
+  },
+  "pricing": {
+    "currency": "USD",
+    "cache": {
+      "write5m": 1.25,
+      "write1h": 1.25,
+      "read": 0.1
+    },
+    "serverTools": {
+      "webSearchPerThousand": 0.0,
+      "webFetchPerThousand": 0.0
+    },
+    "models": [
+      {
+        "id": "gpt-5.6-sol",
+        "label": "GPT-5.6 Sol",
+        "rates": [
+          {
+            "inputPerMTok": 4.0,
+            "outputPerMTok": 20.0,
+            "note": "OpenAI list price, USD per 1M tokens, read 2026-09-30 from https://developers.openai.com/api/docs/pricing.md. Promotional price, published as valid at least through 2026-11-21; the price after that date is not published. Cached input 0.40, so the read multiplier is 0.1; gpt-5.6 cache writes bill at 1.25x input."
+          }
+        ]
+      },
+      {
+        "id": "gpt-5.6-terra",
+        "label": "GPT-5.6 Terra",
+        "rates": [
+          {
+            "inputPerMTok": 2.0,
+            "outputPerMTok": 12.0,
+            "note": "OpenAI list price, USD per 1M tokens, read 2026-09-30 from https://developers.openai.com/api/docs/pricing.md. Cached input 0.20 (read multiplier 0.1); gpt-5.6 cache writes bill at 1.25x input."
+          }
+        ]
+      },
+      {
+        "id": "gpt-5.6-luna",
+        "label": "GPT-5.6 Luna",
+        "rates": [
+          {
+            "inputPerMTok": 0.2,
+            "outputPerMTok": 1.2,
+            "note": "OpenAI list price, USD per 1M tokens, read 2026-09-30 from https://developers.openai.com/api/docs/pricing.md. Cached input 0.02 (read multiplier 0.1); gpt-5.6 cache writes bill at 1.25x input."
+          }
+        ]
+      },
+      {
+        "id": "gpt-5.5",
+        "label": "GPT-5.5",
+        "rates": [
+          {
+            "inputPerMTok": 5.0,
+            "outputPerMTok": 30.0,
+            "note": "OpenAI list price, USD per 1M tokens, read 2026-09-30 from https://developers.openai.com/api/docs/pricing.md. Cached input 0.50 (read multiplier 0.1)."
+          }
+        ]
+      },
+      {
+        "id": "gpt-5.4",
+        "label": "GPT-5.4",
+        "rates": [
+          {
+            "inputPerMTok": 2.5,
+            "outputPerMTok": 15.0,
+            "note": "OpenAI list price, USD per 1M tokens, read 2026-09-30 from https://developers.openai.com/api/docs/pricing.md. Cached input 0.25 (read multiplier 0.1)."
+          }
+        ]
+      },
+      {
+        "id": "gpt-5.4-mini",
+        "label": "GPT-5.4 mini",
+        "rates": [
+          {
+            "inputPerMTok": 0.75,
+            "outputPerMTok": 4.5,
+            "note": "OpenAI list price, USD per 1M tokens, read 2026-09-30 from https://developers.openai.com/api/docs/pricing.md. Cached input 0.075 (read multiplier 0.1)."
+          }
+        ]
+      }
+    ]
+  }
+}

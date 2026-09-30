@@ -38,6 +38,7 @@ vi.mock('@/lib/hooks/useActiveDiffLoader', () => ({ useActiveDiffLoader: () => u
 vi.mock('@/lib/hooks/useCloseTabShortcut', () => ({ useCloseTabShortcut: () => undefined }));
 vi.mock('@/lib/hooks/useMenuCommands', () => ({ useMenuCommands: () => undefined }));
 vi.mock('@/lib/hooks/useNotificationInbox', () => ({ useNotificationInbox: () => undefined }));
+vi.mock('@/lib/hooks/useAgentUsageSync', () => ({ useAgentUsageSync: () => undefined }));
 vi.mock('@/lib/hooks/useTitleBarGutter', () => ({ useTitleBarGutter: () => undefined }));
 
 vi.mock('@/lib/tauri/providers', () => ({ listProviders: vi.fn(async () => []) }));

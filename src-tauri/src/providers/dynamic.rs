@@ -144,6 +144,17 @@ impl AgentProvider for DynamicProvider {
             }
         }
 
+        if headless {
+            let headless_args = self
+                .config
+                .usage
+                .as_ref()
+                .and_then(|usage| usage.result.as_ref())
+                .map(|result| result.headless_args.as_slice())
+                .unwrap_or_default();
+            cmd_parts.extend(headless_args.iter().map(|arg| shell_word(arg)));
+        }
+
         SpawnCommand {
             command: cmd_parts.join(" "),
             env_vars: vec![],
@@ -163,6 +174,10 @@ impl AgentProvider for DynamicProvider {
 
     fn allows_unbound_mcp(&self) -> bool {
         self.config.allow_unbound_mcp
+    }
+
+    fn usage_config(&self) -> Option<UsageConfig> {
+        self.config.usage.clone()
     }
 
     fn write_sandbox(

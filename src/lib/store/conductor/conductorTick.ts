@@ -484,6 +484,7 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
         headless: true,
         spawnedByTicketId: ticket.id,
         spawnedByGoalId: effectiveGoalId,
+        runKind: 'ticket',
         runSource: 'conductor',
       });
     } catch (err) {

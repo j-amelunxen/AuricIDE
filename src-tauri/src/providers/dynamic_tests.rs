@@ -1056,3 +1056,127 @@ fn codex_headless_flag_carries_the_unattended_options_only_into_exec() {
     assert!(!interactive.command.contains("skip-git-repo-check"));
     assert!(!interactive.command.contains("network_access"));
 }
+
+// ── The `usage` block ─────────────────────────────────────────────
+
+fn claude_config_with_usage(usage: &str) -> ProviderConfig {
+    let mut value: serde_json::Value = serde_json::from_str(
+        r#"{
+          "id": "claude", "name": "Claude Code", "executable": "claude",
+          "arguments": [
+            { "type": "headless", "flag": "-p" },
+            { "type": "task", "quote": true }
+          ],
+          "info": { "models": [], "permissionModes": [],
+                    "defaultModel": "auto", "defaultPermissionMode": "default" },
+          "versionCheck": { "command": "claude", "args": ["--version"] },
+          "promptTemplate": ""
+        }"#,
+    )
+    .unwrap();
+    value["usage"] = serde_json::from_str(usage).unwrap();
+    serde_json::from_value(value).unwrap()
+}
+
+const CLAUDE_USAGE: &str = r#"{
+  "result": { "format": "claude-json", "headlessArgs": ["--output-format", "json"] },
+  "transcript": { "format": "claude-jsonl", "sessionIdFlag": "--session-id" }
+}"#;
+
+#[test]
+fn headless_usage_args_follow_the_providers_own_arguments() {
+    let provider = DynamicProvider::new(claude_config_with_usage(CLAUDE_USAGE));
+
+    let headless = provider.build_spawn_command("auto", "task", None, false, false, true);
+
+    assert_eq!(headless.command, "claude -p \"task\" --output-format json");
+}
+
+#[test]
+fn an_interactive_launch_gets_no_usage_args() {
+    let provider = DynamicProvider::new(claude_config_with_usage(CLAUDE_USAGE));
+
+    let interactive = provider.build_spawn_command("auto", "task", None, false, false, false);
+
+    assert_eq!(interactive.command, "claude \"task\"");
+}
+
+#[test]
+fn a_provider_without_a_usage_block_builds_the_same_command_and_has_no_capture() {
+    let provider = DynamicProvider::new(get_claude_config());
+
+    assert_eq!(provider.usage_config(), None);
+    assert_eq!(
+        provider
+            .build_spawn_command("sonnet", "task", Some("auto"), false, false, true)
+            .command,
+        "claude --model sonnet -p \"task\" --permission-mode auto"
+    );
+}
+
+#[test]
+fn the_usage_block_is_read_as_declared() {
+    let usage = DynamicProvider::new(claude_config_with_usage(CLAUDE_USAGE))
+        .usage_config()
+        .expect("a usage block");
+
+    let result = usage.result.expect("result");
+    assert_eq!(result.format, ResultFormat::ClaudeJson);
+    assert_eq!(result.headless_args, ["--output-format", "json"]);
+    let transcript = usage.transcript.expect("transcript");
+    assert_eq!(transcript.format, TranscriptFormat::ClaudeJsonl);
+    assert_eq!(transcript.session_id_flag.as_deref(), Some("--session-id"));
+    assert_eq!(transcript.session_id_from, None);
+}
+
+#[test]
+fn codex_reads_its_session_id_from_the_output() {
+    let usage: UsageConfig = serde_json::from_str(
+        r#"{ "transcript": { "format": "codex-rollout", "sessionIdFrom": "output" } }"#,
+    )
+    .unwrap();
+
+    let transcript = usage.transcript.expect("transcript");
+    assert_eq!(transcript.format, TranscriptFormat::CodexRollout);
+    assert_eq!(transcript.session_id_from, Some(SessionIdFrom::Output));
+    assert_eq!(usage.result, None);
+}
+
+#[test]
+fn a_misspelt_usage_key_or_format_is_refused_rather_than_ignored() {
+    assert!(serde_json::from_str::<UsageConfig>(r#"{ "transcrip": {} }"#).is_err());
+    assert!(serde_json::from_str::<UsageConfig>(
+        r#"{ "transcript": { "format": "claude-jsonl", "sessionIdFlags": "--x" } }"#
+    )
+    .is_err());
+    assert!(
+        serde_json::from_str::<UsageConfig>(r#"{ "result": { "format": "claude-xml" } }"#).is_err()
+    );
+}
+
+/// The local, git-ignored configs are what the app actually runs. They carry
+/// the blocks the usage contract prescribes; without them capture is silently off.
+#[test]
+fn the_local_claude_and_codex_configs_declare_their_usage_capture() {
+    for (file, format) in [
+        ("claude.json", TranscriptFormat::ClaudeJsonl),
+        ("codex.json", TranscriptFormat::CodexRollout),
+    ] {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../dynamic-providers")
+            .join(file);
+        let Ok(content) = fs::read_to_string(&path) else {
+            eprintln!("skipping: no local {}", path.display());
+            continue;
+        };
+        let provider = DynamicProvider::new(serde_json::from_str(&content).unwrap());
+        let usage = provider
+            .usage_config()
+            .unwrap_or_else(|| panic!("{file} has no usage block"));
+        assert_eq!(
+            usage.transcript.expect("transcript").format,
+            format,
+            "{file}"
+        );
+    }
+}

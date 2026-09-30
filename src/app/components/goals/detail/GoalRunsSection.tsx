@@ -1,6 +1,8 @@
 'use client';
 
 import type { PmGoalRun } from '@/lib/tauri/goals';
+import type { AgentUsageRow } from '@/lib/tauri/agentUsage';
+import { formatRunCost } from '@/app/components/pm/cost/usageFormat';
 
 export const RUN_OUTCOME_STYLES: Record<string, string> = {
   running: 'bg-amber-500/20 text-amber-300',
@@ -12,9 +14,18 @@ export const RUN_OUTCOME_STYLES: Record<string, string> = {
 export interface GoalRunsSectionProps {
   goalRuns: PmGoalRun[];
   labelCls: string;
+  /** Recorded usage; a run whose agent has a row here shows what it cost. */
+  usageRows?: readonly AgentUsageRow[];
 }
 
-export function GoalRunsSection({ goalRuns, labelCls }: GoalRunsSectionProps) {
+const NO_USAGE: readonly AgentUsageRow[] = [];
+
+export function GoalRunsSection({
+  goalRuns,
+  labelCls,
+  usageRows = NO_USAGE,
+}: GoalRunsSectionProps) {
+  const usageByAgent = new Map(usageRows.map((row) => [row.agentId, row]));
   return (
     <div>
       <label className={labelCls}>Agent runs ({goalRuns.length})</label>
@@ -24,32 +35,45 @@ export function GoalRunsSection({ goalRuns, labelCls }: GoalRunsSectionProps) {
         </p>
       ) : (
         <ul className="space-y-1.5">
-          {goalRuns.map((run) => (
-            <li key={run.id} className="rounded-lg bg-white/5 px-2.5 py-2">
-              <div className="flex items-center gap-2 text-[10px]">
-                <span
-                  className={`rounded-full px-1.5 py-0.5 font-bold ${RUN_OUTCOME_STYLES[run.outcome] ?? RUN_OUTCOME_STYLES.running}`}
-                >
-                  {run.outcome}
-                </span>
-                <span className="text-foreground-muted">
-                  {run.model || 'model?'} · {run.source}
-                </span>
-                <span className="ml-auto tabular-nums text-foreground-muted/70">
-                  {run.startedAt}
-                </span>
-              </div>
-              {run.summary && <p className="mt-1 text-[10px] text-foreground/80">{run.summary}</p>}
-              <details className="mt-1">
-                <summary className="cursor-pointer text-[9px] text-foreground-muted hover:text-foreground">
-                  Show prompt
-                </summary>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-2 text-[9px] leading-relaxed text-foreground/70">
-                  {run.prompt}
-                </pre>
-              </details>
-            </li>
-          ))}
+          {goalRuns.map((run) => {
+            const usage = usageByAgent.get(run.agentId);
+            return (
+              <li key={run.id} className="rounded-lg bg-white/5 px-2.5 py-2">
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 font-bold ${RUN_OUTCOME_STYLES[run.outcome] ?? RUN_OUTCOME_STYLES.running}`}
+                  >
+                    {run.outcome}
+                  </span>
+                  <span className="text-foreground-muted">
+                    {run.model || 'model?'} · {run.source}
+                  </span>
+                  {usage && (
+                    <span
+                      className="tabular-nums text-foreground"
+                      title={usage.costSource === 'cli' ? 'Exact cost' : 'Estimated cost'}
+                    >
+                      {formatRunCost(usage)}
+                    </span>
+                  )}
+                  <span className="ml-auto tabular-nums text-foreground-muted/70">
+                    {run.startedAt}
+                  </span>
+                </div>
+                {run.summary && (
+                  <p className="mt-1 text-[10px] text-foreground/80">{run.summary}</p>
+                )}
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-[9px] text-foreground-muted hover:text-foreground">
+                    Show prompt
+                  </summary>
+                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-2 text-[9px] leading-relaxed text-foreground/70">
+                    {run.prompt}
+                  </pre>
+                </details>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

@@ -639,6 +639,18 @@ describe('conductorSlice', () => {
     expect(mockSpawn.mock.calls[0][0].headless).toBe(true);
   });
 
+  it('records the implementer run against its ticket', async () => {
+    store.setState({ pmDraftTickets: [makeTicket({ id: 't1' })], conductorMaxConcurrent: 1 });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+
+    expect(vi.mocked(spawnAgent).mock.calls[0][0]).toMatchObject({
+      spawnedByTicketId: 't1',
+      runKind: 'ticket',
+      runSource: 'conductor',
+    });
+  });
+
   it('does not spawn when conductor is stopped', async () => {
     store.setState({ pmDraftTickets: [makeTicket()] });
     await store.getState().conductorTick();
@@ -1553,6 +1565,30 @@ describe('conductor judge review gate', () => {
     expect(reviewCall![0].headless).toBe(true);
   });
 
+  it('records the reviewer run as a review of the ticket, not as its implementation', async () => {
+    store.setState({
+      pmDraftTickets: [makeTicket({ id: 't1' })],
+      conductorMaxConcurrent: 1,
+      conductorRequireReview: true,
+      conductorJudgeForm: 'agent',
+    });
+    store.getState().startConductor(null);
+    await store.getState().conductorTick();
+    const implId = store.getState().conductorAssignments['t1'];
+    store.getState().conductorHandleAgentStatus(implId, 'idle');
+    await flush();
+
+    const reviewConfig = vi
+      .mocked(spawnAgent)
+      .mock.calls.find((c) => c[0].name.startsWith('review:'))![0];
+    expect(reviewConfig).toMatchObject({
+      runKind: 'review',
+      reviewOfTicketId: 't1',
+      runSource: 'conductor',
+    });
+    expect(reviewConfig.spawnedByTicketId).toBeUndefined();
+  });
+
   describe('which harness the reviewer runs on', () => {
     // A judge that is the same provider and the same model as the implementer
     // is not an independent one, so both are their own setting. They are only
@@ -2105,6 +2141,7 @@ describe('conductor on a stations goal (no tickets)', () => {
       headless: true,
       spawnedByGoalId: 'g1',
       runSource: 'conductor',
+      runKind: 'goal',
       projectPath: '/repo',
       cwd: '/repo',
     });

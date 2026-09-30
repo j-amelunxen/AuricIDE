@@ -1,0 +1,27 @@
+Reading additional input from stdin...
+OpenAI Codex v0.159.0
+--------
+workdir: /Users/dev/project
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a0f1ef-8a2f-7a73-9006-386b97777a5a
+--------
+user
+Read note.txt with a shell command and answer with its content in one word.
+codex
+I’ll read the file directly and return only its one-word content.
+exec
+/bin/zsh -lc "sed -n '1p' note.txt" in /Users/dev/project
+ succeeded in 0ms:
+hello
+
+codex
+hello
+hook: Stop
+hook: Stop Completed
+tokens used
+27.538

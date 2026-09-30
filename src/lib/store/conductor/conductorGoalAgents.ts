@@ -77,6 +77,7 @@ async function spawnOne(
       cwd: projectPath,
       headless: true,
       spawnedByGoalId: goal.id,
+      runKind: 'goal',
       runSource: 'conductor',
     });
     return agent?.id ? { id: agent.id } : { id: null, reason: null };

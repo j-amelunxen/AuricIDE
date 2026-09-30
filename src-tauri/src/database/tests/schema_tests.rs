@@ -40,7 +40,7 @@ fn test_run_migrations_creates_tables() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 24);
+    assert_eq!(count, 25);
 
     // kv_store table should exist
     let table_exists: bool = conn
@@ -62,7 +62,7 @@ fn test_run_migrations_idempotent() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 24);
+    assert_eq!(count, 25);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_init_db_creates_db_file() {
     let count: i32 = conn
         .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(count, 24);
+    assert_eq!(count, 25);
 }
 
 // --- pm_goal_reviews (migration 21) ---
@@ -440,5 +440,169 @@ fn goal_dependencies_table_rejects_a_duplicate_edge_and_cascades_on_goal_delete(
     assert_eq!(
         remaining, 0,
         "deleting a goal must cascade its dependency edges"
+    );
+}
+
+// --- pm_agent_usage (migration 25) ---
+// Keep in sync with src/mcp/db.ts migration 25 and docs/design-agent-usage.md.
+
+/// (name, type, not null, default) per column, in table order.
+fn usage_columns(conn: &Connection) -> Vec<(String, String, bool, Option<String>)> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT name, type, \"notnull\", dflt_value FROM pragma_table_info('pm_agent_usage')",
+        )
+        .unwrap();
+    stmt.query_map([], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1, r.get(3)?))
+    })
+    .unwrap()
+    .map(Result::unwrap)
+    .collect()
+}
+
+#[test]
+fn migration_25_creates_the_usage_table_the_contract_describes() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+
+    let columns = usage_columns(&conn);
+    let names: Vec<&str> = columns.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "id",
+            "agent_id",
+            "ticket_id",
+            "goal_id",
+            "run_kind",
+            "run_source",
+            "provider",
+            "model",
+            "headless",
+            "session_id",
+            "ticket_status_at_start",
+            "started_at",
+            "finished_at",
+            "duration_ms",
+            "outcome",
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "reasoning_tokens",
+            "cost_usd",
+            "cost_source",
+            "match_kind",
+            "estimate_cost_usd",
+            "estimate_input_tokens",
+            "estimate_output_tokens",
+            "estimate_cache_read_tokens",
+            "estimate_cache_write_tokens",
+            "unpriced_models",
+            "model_usage_json",
+            "num_turns",
+        ]
+    );
+    let column = |name: &str| columns.iter().find(|c| c.0 == name).unwrap().clone();
+    // Unknown is NULL, never 0: the columns that can be unknown must allow it.
+    for nullable in [
+        "cost_usd",
+        "ticket_id",
+        "goal_id",
+        "estimate_cost_usd",
+        "unpriced_models",
+    ] {
+        assert!(!column(nullable).2, "{nullable} must be nullable");
+    }
+    for required in [
+        "agent_id",
+        "run_kind",
+        "run_source",
+        "provider",
+        "started_at",
+        "finished_at",
+        "outcome",
+        "cost_source",
+    ] {
+        assert!(column(required).2, "{required} must be NOT NULL");
+    }
+    assert_eq!(column("cost_usd").1, "REAL");
+    assert_eq!(column("input_tokens").3.as_deref(), Some("0"));
+    assert_eq!(column("match_kind").3.as_deref(), Some("'exact'"));
+    assert_eq!(column("headless").3.as_deref(), Some("0"));
+}
+
+#[test]
+fn migration_25_indexes_the_lookups_the_views_use() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+
+    let mut indexes: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pm_agent_usage' AND name LIKE 'idx_%'")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    indexes.sort();
+    assert_eq!(
+        indexes,
+        [
+            "idx_pm_agent_usage_goal",
+            "idx_pm_agent_usage_started",
+            "idx_pm_agent_usage_ticket"
+        ]
+    );
+}
+
+#[test]
+fn a_usage_row_outlives_the_ticket_it_was_booked_on() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+    run_migrations(&conn).unwrap();
+
+    conn.execute(
+        "INSERT INTO pm_agent_usage (id, agent_id, ticket_id, run_kind, run_source, provider,
+                                     started_at, finished_at, duration_ms, outcome, cost_source)
+         VALUES ('u1', 'agent-1', 'deleted-ticket', 'ticket', 'ui', 'claude',
+                 '2026-09-30T10:00:00.000Z', '2026-09-30T10:00:01.000Z', 1000, 'success', 'none')",
+        [],
+    )
+    .expect("no foreign key: a deleted ticket keeps its cost history");
+}
+
+#[test]
+fn migration_25_is_safe_to_run_over_an_existing_table() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+    conn.execute_batch("DELETE FROM _migrations WHERE id = 25;")
+        .unwrap();
+
+    run_migrations(&conn).unwrap();
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM _migrations WHERE id = 25", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+/// The TypeScript twin creates the same table from its own copy of the SQL.
+/// Whitespace and comments are not part of the contract; everything else is.
+#[test]
+fn migration_25_sql_is_identical_in_the_typescript_twin() {
+    const DB_TS: &str = include_str!("../../../../src/mcp/db.ts");
+    let start = DB_TS
+        .find("const AGENT_USAGE_MIGRATION = `")
+        .expect("the twin declares AGENT_USAGE_MIGRATION")
+        + "const AGENT_USAGE_MIGRATION = `".len();
+    let twin = &DB_TS[start..start + DB_TS[start..].find('`').expect("a closing backtick")];
+    let normalise = |sql: &str| sql.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    assert_eq!(
+        normalise(twin),
+        normalise(crate::database::migrations::AGENT_USAGE_MIGRATION_SQL)
     );
 }

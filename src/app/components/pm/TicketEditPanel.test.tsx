@@ -35,6 +35,9 @@ vi.mock('@/lib/store', () => ({
       setSpawnDialogOpen,
       setSpawnAgentTicketId,
       rootPath: '/mock/root',
+      agentUsageRows: {},
+      agentUsageStatus: { '/mock/root': 'ready' },
+      loadAgentUsage: vi.fn(),
       pmDirty: true,
       overlayStack: { layers: [] },
       pushOverlay: () => undefined,
@@ -122,6 +125,12 @@ describe('TicketEditPanel', () => {
     expect(screen.getByLabelText('Ticket name')).toHaveClass('min-w-0', 'basis-full');
     expect(screen.getByTestId('ticket-status-pills')).toHaveClass('flex-wrap');
     expect(screen.getByTestId('ticket-edit-actions')).toHaveClass('shrink-0');
+  });
+
+  it('shows the ticket cost card in the details tab', () => {
+    render(<TicketEditPanel {...defaultProps} ticket={makeTicket()} />);
+    expect(screen.getByText('Cost')).toBeDefined();
+    expect(screen.getByText('No agent runs recorded yet.')).toBeDefined();
   });
 
   it('renders description in details tab', () => {

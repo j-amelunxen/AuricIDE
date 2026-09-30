@@ -37,6 +37,16 @@ export function spawnCwdTargets(
     .filter((path) => selected.has(path));
 }
 
+/** What a run is for, from what it is bound to; a ticket outranks its goal. */
+export function runKindFor(binding: {
+  spawnedByTicketId?: string;
+  spawnedByGoalId?: string;
+}): 'ticket' | 'goal' | 'other' {
+  if (binding.spawnedByTicketId) return 'ticket';
+  if (binding.spawnedByGoalId) return 'goal';
+  return 'other';
+}
+
 /**
  * A ticket or goal belongs to one project. A single launch keeps the binding
  * even if the working directory was edited; fan-out copies the instruction,

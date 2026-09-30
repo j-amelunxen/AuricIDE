@@ -279,6 +279,35 @@ describe('buildSpawnConfig', () => {
   // may be a worktree without its own `.auric/project.db`. The MCP project
   // (the notification's project) stays the binding; the folder never falls
   // back to whatever project the IDE has open.
+  describe('who the run is recorded for', () => {
+    it('is a schedule run when the user authored the payload', () => {
+      expect(build(action, { trust: 'user' })).toMatchObject({ runSource: 'schedule' });
+    });
+
+    it('is an mcp run when a model wrote the payload', () => {
+      expect(build(action, { trust: 'foreign' })).toMatchObject({ runSource: 'mcp' });
+    });
+
+    it('is an mcp run when it answers a launch request, whoever wrote the payload', () => {
+      const config = buildSpawnConfig(
+        { ...action, repoPath: '/repo/main' },
+        {
+          trust: 'user',
+          launchRequestUid: 'req-1',
+          launchProjectPath: '/repo/main',
+        }
+      );
+      expect(config.runSource).toBe('mcp');
+    });
+
+    it('takes its kind from the ticket or goal the button names', () => {
+      const ticketRun = build({ ...action, ticketId: 't1', goalId: 'g1' }, { trust: 'user' });
+      expect(ticketRun.runKind).toBe('ticket');
+      expect(build({ ...action, goalId: 'g1' }, { trust: 'user' }).runKind).toBe('goal');
+      expect(build(action, { trust: 'user' }).runKind).toBe('other');
+    });
+  });
+
   describe('an MCP launch request', () => {
     const launch = { launchRequestUid: 'req-1', launchProjectPath: '/repo/main' };
 
@@ -606,6 +635,18 @@ describe('executeNotificationAction', () => {
       })
     );
     expect(deps.openSpawnDialog).not.toHaveBeenCalled();
+  });
+
+  it('records a directly started skill as a schedule run of no ticket or goal', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction({ ...runSkill, launch: 'direct' }, deps, {
+      trust: 'user',
+      providers: PROVIDERS,
+    });
+
+    expect(deps.spawnAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ runSource: 'schedule', runKind: 'other' })
+    );
   });
 
   it('carries an explicit not-headless through a direct skill start', async () => {

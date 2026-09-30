@@ -38,6 +38,14 @@ pub struct PersistedAgent {
     /// run `interrupted` and a resume can carry on reporting to it.
     #[serde(default)]
     pub launch_request_uid: Option<String>,
+    /// Usage attribution (`AgentConfig`), kept so a resumed run is booked
+    /// under the same source, kind and reviewed ticket. Missing on old files.
+    #[serde(default)]
+    pub run_source: Option<String>,
+    #[serde(default)]
+    pub run_kind: Option<String>,
+    #[serde(default)]
+    pub review_of_ticket_id: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -233,6 +241,9 @@ mod tests {
             spawned_by_ticket_id: None,
             spawned_by_goal_id: Some("goal-1".to_string()),
             launch_request_uid: None,
+            run_source: None,
+            run_kind: None,
+            review_of_ticket_id: None,
         }
     }
 

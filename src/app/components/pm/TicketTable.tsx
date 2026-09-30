@@ -26,7 +26,17 @@ import {
 } from '@/lib/pm/sortTickets';
 import { useListDragReorder } from '@/lib/pm/useListDragReorder';
 import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
+import { groupUsage } from '@/lib/pm/usage/aggregate';
 import { AuricIcon } from '../ui/AuricIcon';
+import { TicketColumnMenu } from './cost/TicketColumnMenu';
+import { useProjectUsageRows } from './cost/useProjectUsageRows';
+import {
+  parseTicketUsageColumns,
+  serializeTicketUsageColumns,
+  toggleTicketUsageColumn,
+  type TicketUsageColumn,
+} from './cost/ticketUsageColumns';
+import { NO_PRICE, formatTokens, formatTotalCost, unpricedNote } from './cost/usageFormat';
 
 interface TicketTableProps {
   tickets: PmTicket[];
@@ -70,6 +80,32 @@ export function TicketTable({
     parseTicketSort(readAppPref(APP_CONFIG_KEYS.pmTicketSort))
   );
   const [sortAsc, setSortAsc] = useState(true);
+  const [usageColumns, setUsageColumns] = useState<TicketUsageColumn[]>(() =>
+    parseTicketUsageColumns(readAppPref(APP_CONFIG_KEYS.pmTicketUsageColumns))
+  );
+  const usageRows = useProjectUsageRows();
+  const usageCellsByTicket = useMemo(
+    () =>
+      new Map(
+        groupUsage(usageRows, 'ticket', { tickets: allTickets, goals: [], epics: [] }).map(
+          (group) => [
+            group.key,
+            {
+              tokens: formatTokens(group.totals.totalTokens),
+              cost: formatTotalCost(group.totals),
+              unpriced: unpricedNote(group.totals),
+            },
+          ]
+        )
+      ),
+    [usageRows, allTickets]
+  );
+  // A cost that misses runs must not read as complete: "$1.20+", with the reason on hover.
+  const costCellMarker = (ticketId: string) => {
+    const cell = usageCellsByTicket.get(ticketId);
+    if (!cell?.unpriced || cell.cost === NO_PRICE) return {};
+    return { title: cell.unpriced, 'aria-label': `${cell.cost}, ${cell.unpriced}` };
+  };
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: PmTicket } | null>(
     null
   );
@@ -155,6 +191,12 @@ export function TicketTable({
   const { draggedId, dropTarget, canReorder, onDragStart, onDragOver, onDrop, onDragEnd } =
     useListDragReorder(sortedIds, onReorderTickets, sortKey === 'custom' && sortAsc);
 
+  const handleToggleUsageColumn = (column: TicketUsageColumn) => {
+    const next = toggleTicketUsageColumn(usageColumns, column);
+    setUsageColumns(next);
+    writeAppPref(APP_CONFIG_KEYS.pmTicketUsageColumns, serializeTicketUsageColumns(next));
+  };
+
   const handleSortChange = (key: TicketSort) => {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
@@ -166,24 +208,30 @@ export function TicketTable({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      data-usage-columns={usageColumns.length > 0 ? '' : undefined}
+      className="flex h-full flex-col"
+    >
       {/* Header */}
-      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.08]">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-3.5 py-2.5 border-b border-white/[0.08]">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-muted/50">
           Tickets
         </span>
-        <select
-          value={sortKey}
-          onChange={(e) => handleSortChange(parseTicketSort(e.target.value))}
-          aria-label="Sort tickets"
-          className="bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] text-foreground-muted focus:outline-none cursor-pointer"
-        >
-          {TICKET_SORTS.map((key) => (
-            <option key={key} value={key}>
-              {TICKET_SORT_LABEL[key]} {sortKey === key ? (sortAsc ? '\u2191' : '\u2193') : ''}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1.5">
+          <TicketColumnMenu columns={usageColumns} onToggle={handleToggleUsageColumn} />
+          <select
+            value={sortKey}
+            onChange={(e) => handleSortChange(parseTicketSort(e.target.value))}
+            aria-label="Sort tickets"
+            className="bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] text-foreground-muted focus:outline-none cursor-pointer"
+          >
+            {TICKET_SORTS.map((key) => (
+              <option key={key} value={key}>
+                {TICKET_SORT_LABEL[key]} {sortKey === key ? (sortAsc ? '\u2191' : '\u2193') : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Ticket list */}
@@ -268,6 +316,26 @@ export function TicketTable({
               {ticket.name}
             </span>
 
+            {/* Optional usage columns: unknown cost is a dash, never $0.00 */}
+            {usageColumns.includes('tokens') && (
+              <span
+                data-testid={`ticket-tokens-${ticket.id}`}
+                className="w-9 shrink-0 text-right text-[10px] tabular-nums text-foreground-muted"
+              >
+                {usageCellsByTicket.get(ticket.id)?.tokens ?? NO_PRICE}
+              </span>
+            )}
+            {usageColumns.includes('cost') && (
+              <span
+                data-testid={`ticket-cost-${ticket.id}`}
+                {...costCellMarker(ticket.id)}
+                className="w-12 shrink-0 text-right text-[10px] tabular-nums text-foreground-muted"
+              >
+                {usageCellsByTicket.get(ticket.id)?.cost ?? NO_PRICE}
+                {costCellMarker(ticket.id).title && '+'}
+              </span>
+            )}
+
             {/* Human Supervision Indicator */}
             {ticket.needsHumanSupervision && (
               <AuricIcon
@@ -317,7 +385,7 @@ export function TicketTable({
                 <AuricIcon name="smart_toy" className="text-[14px]" />
               </button>
               <span
-                className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-medium ${TICKET_STATUS_BADGE_CLASS[ticket.status]}`}
+                className={`inline-block min-w-[2.75rem] rounded-md px-1.5 py-0.5 text-center text-[10px] font-medium ${TICKET_STATUS_BADGE_CLASS[ticket.status]}`}
               >
                 {TICKET_STATUS_LABEL[ticket.status]}
               </span>

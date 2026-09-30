@@ -1,5 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useStore } from '@/lib/store';
+import { usageRow } from '@/lib/pm/usage/testRow';
 import { TicketTable } from './TicketTable';
 import type { PmTicket, PmDependency, PmTestCase } from '@/lib/tauri/pm';
 import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
@@ -355,5 +357,104 @@ describe('TicketTable load status', () => {
   it('shows the empty state once a load finished with no tickets', () => {
     render(<TicketTable {...props} />);
     expect(screen.getByText('No tickets')).toBeInTheDocument();
+  });
+});
+
+describe('TicketTable usage columns', () => {
+  const PATH = '/proj';
+  const props = {
+    tickets: [makeTicket({ id: 'tk-1' }), makeTicket({ id: 'tk-2', name: 'Other' })],
+    allTickets: [makeTicket({ id: 'tk-1' }), makeTicket({ id: 'tk-2', name: 'Other' })],
+    testCases: [] as PmTestCase[],
+    selectedTicketId: null as string | null,
+    dependencies: [] as PmDependency[],
+    onSelectTicket: vi.fn(),
+    onUpdateTicket: vi.fn(),
+    onAddTicket: vi.fn(),
+  };
+  const seed = (rows: ReturnType<typeof usageRow>[]) =>
+    useStore.setState({
+      rootPath: PATH,
+      agentUsageRows: { [PATH]: rows },
+      agentUsageStatus: { [PATH]: 'ready' },
+    });
+
+  beforeEach(() => {
+    localStorage.clear();
+    seed([]);
+  });
+  afterEach(() => useStore.setState({ rootPath: null, agentUsageRows: {}, agentUsageStatus: {} }));
+
+  it('shows no usage columns by default', () => {
+    render(<TicketTable {...props} />);
+    expect(screen.queryByTestId('ticket-cost-tk-1')).toBeNull();
+    expect(screen.queryByTestId('ticket-tokens-tk-1')).toBeNull();
+  });
+
+  it('turns columns on from the menu, persists the choice, and restores it', () => {
+    const { unmount } = render(<TicketTable {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Columns' }));
+    const cost = screen.getByRole('menuitemcheckbox', { name: /Cost/ });
+    expect(cost.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(cost);
+
+    expect(screen.getByTestId('ticket-cost-tk-1')).toBeDefined();
+    expect(screen.queryByTestId('ticket-tokens-tk-1')).toBeNull();
+    expect(localStorage.getItem(APP_CONFIG_KEYS.pmTicketUsageColumns)).toBe('["cost"]');
+
+    unmount();
+    render(<TicketTable {...props} />);
+    expect(screen.getByTestId('ticket-cost-tk-1')).toBeDefined();
+  });
+
+  it('marks a cost that is missing runs, with a tooltip and an accessible label', () => {
+    localStorage.setItem(APP_CONFIG_KEYS.pmTicketUsageColumns, '["cost"]');
+    seed([
+      usageRow({ ticketId: 'tk-1', costUsd: 1.2 }),
+      usageRow({ ticketId: 'tk-1', costUsd: null, costSource: 'none' }),
+      usageRow({ ticketId: 'tk-2', costUsd: 3 }),
+    ]);
+    render(<TicketTable {...props} />);
+    const partial = screen.getByTestId('ticket-cost-tk-1');
+    expect(partial.textContent).toBe('$1.20+');
+    expect(partial.getAttribute('title')).toBe('+ 1 run without price');
+    expect(partial.getAttribute('aria-label')).toBe('$1.20, + 1 run without price');
+    const complete = screen.getByTestId('ticket-cost-tk-2');
+    expect(complete.textContent).toBe('$3.00');
+    expect(complete.getAttribute('title')).toBeNull();
+  });
+
+  it('marks the table so the list column can widen while usage columns are on', () => {
+    const { container, unmount } = render(<TicketTable {...props} />);
+    expect(container.querySelector('[data-usage-columns]')).toBeNull();
+    unmount();
+    localStorage.setItem(APP_CONFIG_KEYS.pmTicketUsageColumns, '["cost"]');
+    const second = render(<TicketTable {...props} />);
+    expect(second.container.querySelector('[data-usage-columns]')).not.toBeNull();
+  });
+
+  it('closes the menu on Escape', () => {
+    render(<TicketTable {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Columns' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('fills the cells with per-ticket totals when usage arrives after mount', () => {
+    localStorage.setItem(APP_CONFIG_KEYS.pmTicketUsageColumns, '["tokens","cost"]');
+    render(<TicketTable {...props} />);
+    expect(screen.getByTestId('ticket-cost-tk-1').textContent).toBe('—');
+
+    act(() =>
+      seed([
+        usageRow({ ticketId: 'tk-1', costUsd: 1.5, inputTokens: 1000, outputTokens: 500 }),
+        usageRow({ ticketId: 'tk-1', costUsd: 0.5, inputTokens: 500 }),
+        usageRow({ ticketId: 'tk-2', costUsd: null, costSource: 'none' }),
+      ])
+    );
+
+    expect(screen.getByTestId('ticket-cost-tk-1').textContent).toBe('$2.00');
+    expect(screen.getByTestId('ticket-tokens-tk-1').textContent).toBe('2k');
+    expect(screen.getByTestId('ticket-cost-tk-2').textContent).toBe('—');
   });
 });
