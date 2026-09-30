@@ -88,7 +88,7 @@ export function createMcpServer(db: Database.Database, projectRoot: string): Fas
   registerGoalReviewTools(server, db);
   const inbox = attachNotificationTools(server, db, projectRoot);
   // A hand-over still stores its steps on the station without an inbox.
-  registerStationTools(server, db, {
+  registerStationTools(server, db, projectRoot, {
     inbox,
     scope: { projectPath: projectRoot, projectName: projectRoot.split('/').filter(Boolean).pop() },
   });

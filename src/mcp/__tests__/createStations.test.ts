@@ -21,7 +21,7 @@ interface CapturedTool {
 /** The create_stations tool exactly as an MCP client reaches it: zod schema, then execute. */
 function captureTool(db: Database.Database, name: string): CapturedTool {
   const addTool = vi.spyOn(FastMCP.prototype, 'addTool').mockImplementation(() => undefined);
-  registerStationTools(new FastMCP({ name: 'test', version: '0.0.0' }), db);
+  registerStationTools(new FastMCP({ name: 'test', version: '0.0.0' }), db, '/project');
   const tool = addTool.mock.calls
     .map(([t]) => t as unknown as CapturedTool)
     .find((t) => t.name === name);

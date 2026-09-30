@@ -6,6 +6,8 @@ import { moveStation, orderedStations } from '../../lib/goals/stationOrder';
 import { parsePredicate, parseStoredPredicateJson } from '../../lib/goals/planner/plannerSchema';
 import type { PmGoalStation } from '../../lib/tauri/goals';
 import { dispatchNotification } from '../notificationsDb';
+import { evaluatePredicate } from '../../lib/evidence/predicates';
+import { buildServerEvidenceContext, isServerCheckable } from '../stationEvidence';
 import { resolveGoalId, resolveTicketId } from './resolve';
 
 export interface StationRow {
@@ -232,16 +234,20 @@ export function createStations(
 }
 
 /**
- * Marks a station done ON BEHALF OF AN AGENT. The evidence class is forced
- * to 'claim' — the proof class belongs to the evidence engine, and a human's
- * tick comes through the UI. "Claims drawn as claims" is enforced here at
- * the boundary, not by convention.
+ * Marks a station done ON BEHALF OF AN AGENT. Where the station's predicate can
+ * be decided here (a file, a ticket, a requirement), it is decided now: a pass
+ * is recorded as proof, a fail is refused and the station stays open. An
+ * agent's word alone is never proof, and a machine check is never left to a
+ * model. Everything else (judged, git, no predicate) is recorded as a 'claim'
+ * for the evidence engine or the judge — "claims drawn as claims" is enforced
+ * here at the boundary, not by convention.
  */
-export function markStationDone(
+export async function markStationDone(
   db: Database.Database,
   stationId: string,
-  evidenceNote: string
-): StationRow {
+  evidenceNote: string,
+  projectRoot: string
+): Promise<StationRow> {
   const station = getStation(db, stationId);
   if (!station) throw new Error(`Station '${stationId}' not found`);
   // A human step is cleared by a person in the UI, never by an agent claim.
@@ -250,6 +256,26 @@ export function markStationDone(
   // goal past a step nobody performed.
   if (station.kind === 'human' || predicateTypeOf(station.predicate) === 'human') {
     throw new Error(`Station '${station.name}' is a human step — only a person can mark it done.`);
+  }
+  const predicate = stationRowToDomain(station).predicate;
+  if (isServerCheckable(predicate)) {
+    const result = await evaluatePredicate(predicate, buildServerEvidenceContext(db, projectRoot));
+    if (result && !result.pass) {
+      throw new Error(
+        `Station '${station.name}' is not done yet: ${result.detail}. ` +
+          'Fix that, then call mark_station_done again.'
+      );
+    }
+    if (result) {
+      const ts = now();
+      db.prepare(
+        `UPDATE pm_goal_stations
+         SET status = 'done', evidence_kind = 'proof', evidence_note = ?,
+             last_checked_at = ?, done_at = COALESCE(done_at, ?), updated_at = ?
+         WHERE id = ?`
+      ).run(`${result.detail} — ${evidenceNote}`, result.checkedAt, ts, ts, stationId);
+      return getStation(db, stationId)!;
+    }
   }
   const ts = now();
   // last_checked_at = NULL marks this a FRESH claim the judge has not ruled on
@@ -386,6 +412,7 @@ const stationFields = {
 export function registerStationTools(
   server: FastMCP,
   db: Database.Database,
+  projectRoot: string,
   humanChecks: { inbox: Database.Database | null; scope: HumanCheckScope } = {
     inbox: null,
     scope: {},
@@ -476,13 +503,15 @@ export function registerStationTools(
   server.addTool({
     name: 'mark_station_done',
     description:
-      'Mark a station done with an evidence note. The result is recorded as a CLAIM (drawn hollow on the board) — proof comes from the evidence engine or a human tick, never from an agent assertion.',
+      'Mark a station done with an evidence note. A station with a file, ticket or requirement check is checked right now: if it holds, the station is recorded as PROOF; if not, the call fails with the reason and the station stays open. Any other station is recorded as a CLAIM (drawn hollow on the board) for the evidence engine or the judge — never as proof on your word alone.',
     parameters: z.object({
       stationId: z.string().describe('Station ID (UUID or unique prefix)'),
       evidenceNote: z.string().min(1).describe('What you did and where the evidence lives'),
     }),
     execute: async ({ stationId, evidenceNote }) =>
-      JSON.stringify(markStationDone(db, resolveStationId(db, stationId), evidenceNote)),
+      JSON.stringify(
+        await markStationDone(db, resolveStationId(db, stationId), evidenceNote, projectRoot)
+      ),
   });
 
   server.addTool({
