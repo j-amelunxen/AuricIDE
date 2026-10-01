@@ -72,6 +72,10 @@ export function reopenStationForRetry(): Partial<PmGoalStation> {
  * so the question is synthesised from the step, the agent's stated evidence,
  * the goal's success criteria and the linked ticket's acceptance criteria. The
  * caller passes only the test cases relevant to the ticket.
+ *
+ * A step with its own judged predicate is held to that predicate alone. The
+ * goal's criteria cover every step of the line, so a single step judged
+ * against them is rejected for work that belongs to other steps.
  */
 export function buildClaimJudgePrompt(
   station: PmGoalStation,
@@ -84,7 +88,10 @@ export function buildClaimJudgePrompt(
     `Step: ${station.name}`,
   ];
   if (station.evidenceNote) parts.push(`Claimed evidence: ${station.evidenceNote}`);
-  if (goal?.successCriteria?.trim()) {
+  const stepCriterion = station.predicate.type === 'judged' ? station.predicate.prompt.trim() : '';
+  if (stepCriterion) {
+    parts.push(`Step criterion (judge against this only):\n${stepCriterion}`);
+  } else if (goal?.successCriteria?.trim()) {
     parts.push(`Goal success criteria:\n${goal.successCriteria.trim()}`);
   }
   if (ticket) {

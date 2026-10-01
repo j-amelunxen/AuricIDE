@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PmGoalStation, StationPredicate } from '@/lib/tauri/goals';
+import type { PmGoal, PmGoalStation, StationPredicate } from '@/lib/tauri/goals';
 import type { CommitInfo } from '@/lib/tauri/git';
 import { evaluatePredicate, evidenceClassFor, type EvidenceContext } from './predicates';
 import {
@@ -251,6 +251,33 @@ describe('buildClaimJudgePrompt', () => {
     expect(prompt).toContain('Date handling');
     expect(prompt).toContain('handles ISO 8601');
     expect(prompt).toContain('pass');
+  });
+
+  it("judges a step with its own judged predicate against that predicate, not the goal's criteria", () => {
+    const st = makeStation({
+      name: 'Built + tests green, or ledger',
+      evidenceNote: 'config on main in 94501acf, 31 tests passed',
+      status: 'done',
+      evidenceKind: 'claim',
+      predicate: { type: 'judged', prompt: 'A scraper config with green tests is on main.' },
+    });
+    const goal = {
+      id: 'g1',
+      name: 'Rank 70',
+      successCriteria: '- [ ] identity.md exists\n- [ ] XLSX row filled',
+    } as PmGoal;
+
+    const prompt = buildClaimJudgePrompt(st, undefined, goal, []);
+
+    expect(prompt).toContain('A scraper config with green tests is on main.');
+    expect(prompt).not.toContain('identity.md exists');
+  });
+
+  it('still uses the goal criteria for a claim without a judged predicate', () => {
+    const st = makeStation({ status: 'done', evidenceKind: 'claim' });
+    const goal = { id: 'g1', name: 'G', successCriteria: '- [ ] docs written' } as PmGoal;
+
+    expect(buildClaimJudgePrompt(st, undefined, goal, [])).toContain('docs written');
   });
 });
 
