@@ -27,6 +27,14 @@ const TICKET_AGREEMENT = (goal: LaunchGoal): string =>
   'call record_goal_run: this run is already recorded. Exit when the success ' +
   'criteria are met or you are blocked.';
 
+/**
+ * A gate is not a person's approval: the conductor sends an agent to it once
+ * the normal steps are done (`hasAgentWork`), so the agent must clear it.
+ */
+const GATE_STATIONS =
+  'Gates are yours too: clear a gate like any other station (for example run the review ' +
+  'the goal instructions name) and mark it done with its evidence. ';
+
 const ATTENDED_HUMAN_STATIONS =
   'Human stations belong to a person: never mark them, say what to check. ';
 
@@ -48,6 +56,7 @@ const STATION_AGREEMENT = (goal: LaunchGoal, hasOwnLine: boolean, unattended: bo
     : 'Its stations live on its sub-goals: get_goal_tree, then list_stations per sub-goal. ') +
   'Work them in order; after each one, call mark_station_done with its stationId and an ' +
   'evidenceNote saying what you did and where the evidence is. ' +
+  GATE_STATIONS +
   (unattended ? UNATTENDED_HUMAN_STATIONS : ATTENDED_HUMAN_STATIONS) +
   `evaluate_goal (id: "${goal.id}") shows progress; record findings via write_finding. ` +
   'Do not call record_goal_run. ' +
