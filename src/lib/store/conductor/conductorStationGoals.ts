@@ -58,14 +58,25 @@ export interface StationGoalInput {
 }
 
 /**
- * An open station an agent may work: not human, not a gate, and either not
- * done or a claim the judge rejected. A rejection keeps the step `done` +
- * `claim` with `lastCheckedAt` set (`applyJudgeVerdict`); without counting it
- * here a run would see nothing left to do and leave the goal stuck.
+ * An open step: not done, or a claim the judge rejected. A rejection keeps
+ * the step `done` + `claim` with `lastCheckedAt` set (`applyJudgeVerdict`);
+ * without counting it a run would see nothing left to do and leave the goal
+ * stuck.
  */
-function isAgentWork(station: PmGoalStation): boolean {
-  if (station.kind !== 'normal') return false;
+function isOpen(station: PmGoalStation): boolean {
   return station.status !== 'done' || isRejectedClaim(station);
+}
+
+/**
+ * Whether the goal (its own stations `own`) has a station an agent may work.
+ * Normal steps first; a gate becomes agent work once every normal step is
+ * done, so a run clears it (e.g. runs the review skill) instead of leaving it
+ * for a person. Human stations are never agent work.
+ */
+function hasAgentWork(own: PmGoalStation[]): boolean {
+  const normal = own.filter((s) => s.kind === 'normal');
+  if (normal.some(isOpen)) return true;
+  return own.some((s) => s.kind === 'gate' && isOpen(s));
 }
 
 function isRejectedClaim(station: PmGoalStation): boolean {
@@ -140,7 +151,7 @@ export function getStationGoalWork(input: StationGoalInput): StationGoalWork {
       work.inFlight.push(goal.id);
       continue;
     }
-    if (!own.some(isAgentWork)) continue;
+    if (!hasAgentWork(own)) continue;
     if ((input.attempts[goal.id] ?? 0) >= MAX_TICKET_ATTEMPTS) {
       work.exhausted.push(goal.id);
     } else {

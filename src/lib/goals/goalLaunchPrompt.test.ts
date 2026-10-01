@@ -82,6 +82,13 @@ describe('buildGoalLaunchPrompt', () => {
     expect(agreement).toBeGreaterThan(prompt.indexOf('## Goal instructions'));
     expect(prompt.slice(agreement)).toContain('overrides');
   });
+
+  it('makes gates the agent’s own work, attended or not', () => {
+    for (const unattended of [false, true]) {
+      const prompt = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended });
+      expect(prompt).toContain('Gates are yours');
+    }
+  });
 });
 
 describe('buildMetaGoalSplitPrompt', () => {

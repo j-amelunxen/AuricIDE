@@ -121,3 +121,53 @@ describe('getStationGoalWork: rejected claims', () => {
     expect(work.launchable).toEqual([]);
   });
 });
+
+describe('getStationGoalWork: gates', () => {
+  function withStations(stations: Array<Partial<PmGoalStation>>): StationGoalInput {
+    const input = inputFor('in_progress');
+    const base = input.stations[0];
+    return {
+      ...input,
+      stations: stations.map((s, i) => ({ ...base, id: `s${i + 1}`, ...s }) as PmGoalStation),
+    };
+  }
+  const doneProof = { status: 'done', evidenceKind: 'proof', lastCheckedAt: '2026-10-01 10:00:00' };
+  const reviewGate = {
+    kind: 'gate',
+    status: 'planned',
+    predicate: { type: 'file_exists', glob: 'reviews/g1-approved.md' },
+  } as Partial<PmGoalStation>;
+
+  // Gates are agent work: once every normal step is done, the run sends an
+  // agent to clear the gate (e.g. run the review skill) instead of leaving it.
+  it('launches an agent for an open gate once the normal steps are done', () => {
+    const work = getStationGoalWork(
+      withStations([{ ...doneProof } as Partial<PmGoalStation>, reviewGate])
+    );
+    expect(work.launchable.map((g) => g.id)).toEqual(['g1']);
+  });
+
+  it('leaves a goal whose gate is done alone', () => {
+    const work = getStationGoalWork(
+      withStations([
+        { ...doneProof } as Partial<PmGoalStation>,
+        { ...reviewGate, ...doneProof } as Partial<PmGoalStation>,
+      ])
+    );
+    expect(work.launchable).toEqual([]);
+  });
+
+  it('still never launches for a human station', () => {
+    const work = getStationGoalWork(
+      withStations([
+        { ...doneProof } as Partial<PmGoalStation>,
+        {
+          kind: 'human',
+          status: 'planned',
+          predicate: { type: 'human' },
+        } as Partial<PmGoalStation>,
+      ])
+    );
+    expect(work.launchable).toEqual([]);
+  });
+});
