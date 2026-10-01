@@ -48,6 +48,19 @@ const UNATTENDED_HUMAN_STATIONS =
   'stationId and the concrete steps a person has to check, then continue with the next ' +
   'station. This overrides any instruction above to wait for a person. ';
 
+/**
+ * A headless run ends with the agent's turn. A command started with
+ * `run_in_background` (a review, a test suite) is never waited for: the agent
+ * said "I'll wait for the notification" and exited in half a minute, with
+ * every station behind that command still open.
+ */
+const UNATTENDED_NO_BACKGROUND =
+  'Your process ends when you end your turn and nothing wakes you later. Never use ' +
+  'run_in_background and never end a turn with "I am waiting for the result". Run long ' +
+  'commands in the foreground with a bash timeout of up to 600000 ms; if one needs longer, ' +
+  'block inside a single command until it has finished. This overrides any rule elsewhere ' +
+  'to run long jobs in the background. ';
+
 const STATION_AGREEMENT = (goal: LaunchGoal, hasOwnLine: boolean, unattended: boolean): string =>
   `Work mode: stations. Use goalId "${goal.id}" exactly with the auric-pm tools. ` +
   'No epic, no tickets: the stations are the plan. ' +
@@ -57,7 +70,7 @@ const STATION_AGREEMENT = (goal: LaunchGoal, hasOwnLine: boolean, unattended: bo
   'Work them in order; after each one, call mark_station_done with its stationId and an ' +
   'evidenceNote saying what you did and where the evidence is. ' +
   GATE_STATIONS +
-  (unattended ? UNATTENDED_HUMAN_STATIONS : ATTENDED_HUMAN_STATIONS) +
+  (unattended ? UNATTENDED_HUMAN_STATIONS + UNATTENDED_NO_BACKGROUND : ATTENDED_HUMAN_STATIONS) +
   `evaluate_goal (id: "${goal.id}") shows progress; record findings via write_finding. ` +
   'Do not call record_goal_run. ' +
   (unattended

@@ -83,6 +83,16 @@ describe('buildGoalLaunchPrompt', () => {
     expect(prompt.slice(agreement)).toContain('overrides');
   });
 
+  // A headless run ends with the agent's turn; a backgrounded review or test run
+  // is never waited for, and the stations behind it stay open.
+  it('forbids backgrounding and waiting when nobody is watching', () => {
+    const unattended = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended: true });
+    expect(unattended).toContain('run_in_background');
+    expect(unattended).toContain('nothing wakes you later');
+    const attended = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended: false });
+    expect(attended).not.toContain('run_in_background');
+  });
+
   it('makes gates the agent’s own work, attended or not', () => {
     for (const unattended of [false, true]) {
       const prompt = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended });
