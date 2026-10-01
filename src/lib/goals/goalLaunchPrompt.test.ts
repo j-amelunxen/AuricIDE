@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { PmGoal } from '@/lib/tauri/goals';
-import { buildGoalLaunchPrompt, buildGoalPlanningPrompt } from './goalLaunchPrompt';
+import {
+  buildGoalLaunchPrompt,
+  buildGoalPlanningPrompt,
+  buildMetaGoalSplitPrompt,
+} from './goalLaunchPrompt';
 
 function goal(overrides: Partial<PmGoal> = {}): PmGoal {
   return {
@@ -77,5 +81,26 @@ describe('buildGoalLaunchPrompt', () => {
     const agreement = prompt.indexOf('## Working agreement');
     expect(agreement).toBeGreaterThan(prompt.indexOf('## Goal instructions'));
     expect(prompt.slice(agreement)).toContain('overrides');
+  });
+});
+
+describe('buildMetaGoalSplitPrompt', () => {
+  it('requires a rerun-safe atomic child-goal and ticket plan for the exact meta-goal id', () => {
+    const prompt = buildMetaGoalSplitPrompt(goal({ id: 'meta-99' }));
+
+    expect(prompt.startsWith('/goal\n\n')).toBe(true);
+    expect(prompt).toContain('metaGoalId: "meta-99"');
+    expect(prompt).toContain('get_goal_tree');
+    expect(prompt).toMatch(/list_epics[\s\S]*create_epic[\s\S]*epicId/i);
+    expect(prompt).toContain('materialize_goal_plan');
+    expect(prompt).toMatch(/atomic/i);
+    expect(prompt).toMatch(/rerun/i);
+    expect(prompt).toMatch(/reuse/i);
+    expect(prompt).toMatch(/genuinely missing/i);
+    expect(prompt).toMatch(/do not delete or overwrite/i);
+    expect(prompt).toMatch(/exact child goal name.*ticket name/i);
+    expect(prompt).toMatch(/returns the existing pair/i);
+    expect(prompt).toMatch(/child goal[\s\S]{0,80}ticket goalId/i);
+    expect(prompt).toMatch(/never[\s\S]{0,40}metaGoalId/i);
   });
 });

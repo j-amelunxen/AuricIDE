@@ -14,6 +14,11 @@ import {
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { GoalDependencyChips } from './GoalDependencyChips';
+import {
+  buildBulkGoalMenuOptions,
+  type BulkMenuStage,
+  type GoalBulkUpdate,
+} from '@/lib/goals/bulkGoalMenu';
 
 export const GOAL_STATUS_STYLES: Record<
   GoalStatusValue,
@@ -35,8 +40,16 @@ interface GoalTreeProps {
   stations?: PmGoalStation[];
   /** "Waits for" edges and bundle scoping; a goal shows its own chips from these. */
   dependencies?: PmGoalDependency[];
+  /** The focused goal: the one the detail panel shows. */
   selectedId: string | null;
+  /** Everything selected, focused goal included. Absent means just `selectedId`. */
+  selectedIds?: ReadonlySet<string>;
+  /** Plain click: replaces the selection. */
   onSelect: (id: string) => void;
+  /** Shift-click: toggles one goal in the selection. Without it Shift-click selects. */
+  onToggleSelect?: (id: string) => void;
+  /** Applies bulk changes from the multi-selection menu; without it that menu is not offered. */
+  onBulkUpdate?: (updates: GoalBulkUpdate[]) => void;
   onMoveGoal?: (draggedId: string, targetId: string, position: GoalDropPosition) => void;
   /** Deletes a goal and its subtree; adds the entry to the right-click menu. */
   onDelete?: (id: string) => void;
@@ -83,7 +96,9 @@ function GoalNode({
   stations = [],
   dependencies = [],
   selectedId,
+  selectedIds,
   onSelect,
+  onToggleSelect,
   onMoveGoal,
   activeAgentsByGoal,
   collapsed,
@@ -99,7 +114,13 @@ function GoalNode({
   const children = getGoalChildren(goals, goal.id);
   const progress = getGoalWorkProgress(goals, tickets, stations, goal.id);
   const isCollapsed = collapsed.has(goal.id);
-  const isSelected = goal.id === selectedId;
+  const isFocused = goal.id === selectedId;
+  const inSelection = selectedIds ? selectedIds.has(goal.id) : isFocused;
+  const isMulti = (selectedIds?.size ?? 0) > 1;
+  const isSelected = isFocused || inSelection;
+  // Shift-click edits the selection; without a handler it behaves as a plain click.
+  const choose = (shift: boolean) =>
+    shift && onToggleSelect ? onToggleSelect(goal.id) : onSelect(goal.id);
   const style = GOAL_STATUS_STYLES[goal.status] ?? GOAL_STATUS_STYLES.draft;
   const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
   const agentCount = activeAgentsByGoal?.[goal.id] ?? 0;
@@ -116,6 +137,7 @@ function GoalNode({
       <div
         data-testid={`goal-node-${goal.id}`}
         role="button"
+        aria-pressed={inSelection}
         tabIndex={0}
         draggable
         onDragStart={(event) => onDragStart(goal.id, event)}
@@ -123,22 +145,24 @@ function GoalNode({
         onDrop={(event) => onDropGoal(goal.id, event)}
         onDragEnd={onDragEnd}
         onContextMenu={(event) => onContextMenuGoal(goal.id, event)}
-        onClick={() => onSelect(goal.id)}
+        onClick={(e) => choose(e.shiftKey)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            onSelect(goal.id);
+            choose(e.shiftKey);
           }
         }}
         style={{ paddingLeft: `${12 + depth * 20}px` }}
-        className={`group flex w-full cursor-grab items-center gap-2 rounded-lg py-2 pr-3 text-left transition-[background-color,box-shadow,opacity] active:cursor-grabbing ${
+        className={`group flex w-full cursor-grab select-none items-center gap-2 rounded-lg py-2 pr-3 text-left transition-[background-color,box-shadow,opacity] active:cursor-grabbing ${
           draggedId === goal.id ? 'opacity-35' : ''
         } ${
           dropPosition === 'inside'
             ? 'bg-primary/20 ring-1 ring-inset ring-primary/60'
-            : isSelected
+            : isFocused
               ? 'bg-primary/15 ring-1 ring-primary/30'
-              : 'hover:bg-white/5'
+              : isSelected
+                ? 'bg-primary/10 ring-1 ring-inset ring-primary/20'
+                : 'hover:bg-white/5'
         }`}
       >
         {children.length > 0 ? (
@@ -162,7 +186,7 @@ function GoalNode({
         <span className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} title={style.label} />
 
         <span
-          className={`flex-1 truncate text-xs ${isSelected ? 'font-semibold text-foreground' : 'text-foreground/90'}`}
+          className={`flex-1 truncate text-xs ${isFocused || (isSelected && !isMulti) ? 'font-semibold text-foreground' : 'text-foreground/90'}`}
         >
           {goal.name}
         </span>
@@ -226,7 +250,9 @@ function GoalNode({
             stations={stations}
             dependencies={dependencies}
             selectedId={selectedId}
+            selectedIds={selectedIds}
             onSelect={onSelect}
+            onToggleSelect={onToggleSelect}
             onMoveGoal={onMoveGoal}
             activeAgentsByGoal={activeAgentsByGoal}
             collapsed={collapsed}
@@ -250,7 +276,10 @@ export function GoalTree({
   stations,
   dependencies,
   selectedId,
+  selectedIds,
   onSelect,
+  onToggleSelect,
+  onBulkUpdate,
   onMoveGoal,
   onDelete,
   onAddSubGoal,
@@ -260,7 +289,14 @@ export function GoalTree({
   loadError = null,
 }: GoalTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<{ goalId: string; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{
+    goalId: string;
+    x: number;
+    y: number;
+    /** Set when the menu acts on the whole multi-selection, not on the clicked row. */
+    bulkIds?: string[];
+    stage?: BulkMenuStage;
+  } | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     id: string;
@@ -325,6 +361,19 @@ export function GoalTree({
   // Without either handler the menu would open with nothing in it — leave the
   // browser's own menu alone in that case.
   const handleContextMenuGoal = (id: string, event: MouseEvent<HTMLDivElement>) => {
+    // A right-click inside a multi-selection acts on all of it; outside, on that row alone.
+    if (onBulkUpdate && selectedIds && selectedIds.size > 1 && selectedIds.has(id)) {
+      event.preventDefault();
+      event.stopPropagation();
+      setMenu({
+        goalId: id,
+        x: event.clientX,
+        y: event.clientY,
+        bulkIds: [...selectedIds],
+        stage: 'root',
+      });
+      return;
+    }
     if (!onDelete && !onAddSubGoal) return;
     event.preventDefault();
     event.stopPropagation();
@@ -338,6 +387,16 @@ export function GoalTree({
   const menuGoal = menu ? (goals.find((goal) => goal.id === menu.goalId) ?? null) : null;
   const menuOptions: ContextMenuOption[] = useMemo(() => {
     if (!menuGoal) return [];
+    if (menu?.bulkIds && onBulkUpdate) {
+      const ids = menu.bulkIds;
+      const showStage = (stage: BulkMenuStage) =>
+        setMenu((prev) => (prev ? { ...prev, stage } : prev));
+      return buildBulkGoalMenuOptions(goals, ids, menu.stage ?? 'root', {
+        onApply: onBulkUpdate,
+        onOpenParentStage: () => showStage('parent'),
+        onBack: () => showStage('root'),
+      });
+    }
     const options: ContextMenuOption[] = [{ type: 'header', label: menuGoal.name }];
     if (onAddSubGoal) {
       options.push({
@@ -365,7 +424,7 @@ export function GoalTree({
       }
     }
     return options;
-  }, [goals, menuGoal, onAddSubGoal, onDelete]);
+  }, [goals, menu, menuGoal, onAddSubGoal, onBulkUpdate, onDelete]);
 
   // An empty tree means three different things. Saying "no goals yet" while
   // the read is still running — or failed — is the one that makes a user
@@ -437,7 +496,9 @@ export function GoalTree({
           stations={stations}
           dependencies={dependencies}
           selectedId={selectedId}
+          selectedIds={selectedIds}
           onSelect={onSelect}
+          onToggleSelect={onToggleSelect}
           onMoveGoal={onMoveGoal}
           activeAgentsByGoal={activeAgentsByGoal}
           collapsed={collapsed}

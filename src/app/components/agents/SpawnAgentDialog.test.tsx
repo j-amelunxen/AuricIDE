@@ -1477,7 +1477,7 @@ describe('SpawnAgentDialog – Quick Access multi-select', () => {
     expect(screen.getByRole('button', { name: 'shop' })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('toggles a pin into the selection without dropping the others', async () => {
+  it('a plain click switches to that pin instead of adding it', async () => {
     const user = userEvent.setup();
     starProjects(website, shop);
     render(
@@ -1489,6 +1489,41 @@ describe('SpawnAgentDialog – Quick Access multi-select', () => {
       />
     );
     await user.click(screen.getByRole('button', { name: 'shop' }));
+    expect(screen.getByRole('button', { name: 'website' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(screen.getByRole('button', { name: 'shop' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('agent-project-scope')).toHaveTextContent('/b/shop');
+  });
+
+  it('a plain click on one of several selected pins narrows the selection to it', async () => {
+    const user = userEvent.setup();
+    starProjects(website, shop);
+    render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={vi.fn()} />);
+    await user.click(screen.getByTestId('spawn-select-all'));
+    await user.click(screen.getByRole('button', { name: 'shop' }));
+    expect(screen.getByRole('button', { name: 'website' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(screen.getByRole('button', { name: 'shop' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('shift-click toggles a pin into the selection without dropping the others', async () => {
+    const user = userEvent.setup();
+    starProjects(website, shop);
+    render(
+      <SpawnAgentDialog
+        isOpen={true}
+        onClose={vi.fn()}
+        onSpawn={vi.fn()}
+        initialRepoPath="/a/website"
+      />
+    );
+    await user.keyboard('{Shift>}');
+    await user.click(screen.getByRole('button', { name: 'shop' }));
+    await user.keyboard('{/Shift}');
     expect(screen.getByRole('button', { name: 'website' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'shop' })).toHaveAttribute('aria-pressed', 'true');
   });
@@ -1521,8 +1556,10 @@ describe('SpawnAgentDialog – Quick Access multi-select', () => {
     const onSpawn = vi.fn();
     starProjects(website, shop, api);
     render(<SpawnAgentDialog isOpen={true} onClose={vi.fn()} onSpawn={onSpawn} />);
+    await user.keyboard('{Shift>}');
     await user.click(screen.getByRole('button', { name: 'shop' }));
     await user.click(screen.getByRole('button', { name: 'api' }));
+    await user.keyboard('{/Shift}');
     await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start 2 agents/i }));
 
@@ -1609,7 +1646,9 @@ describe('SpawnAgentDialog – Quick Access multi-select', () => {
         goals={goals}
       />
     );
+    await user.keyboard('{Shift>}');
     await user.click(screen.getByRole('button', { name: 'shop' }));
+    await user.keyboard('{/Shift}');
     await user.type(screen.getByLabelText(/what should it do/i), 'Fix bugs');
     await user.click(screen.getByRole('button', { name: /start 2 agents/i }));
 

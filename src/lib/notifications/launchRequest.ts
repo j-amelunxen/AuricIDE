@@ -21,6 +21,8 @@ export interface LaunchRequestSpec {
   uid: string;
   goalId: string;
   goalName: string;
+  /** The ticket the run is booked against (`pm_agent_usage.ticket_id`), if any. */
+  ticketId?: string;
   /** What the started agent is told to do. */
   prompt: string;
   /** The folder the agent runs in: the requester's own, never one it names. */
@@ -67,6 +69,7 @@ export function buildLaunchRequest(spec: LaunchRequestSpec) {
         task: spec.prompt,
         repoPath: spec.folder,
         goalId: spec.goalId,
+        ...(spec.ticketId ? { ticketId: spec.ticketId } : {}),
         ...(spec.provider ? { provider: spec.provider } : {}),
         ...(spec.model ? { model: spec.model } : {}),
         ...(spec.worktree ? { useWorktree: true } : {}),

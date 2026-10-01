@@ -153,7 +153,14 @@ export function useSpawnAgentDialog({
     }
   };
 
-  const toggleQuickAccess = (path: string) => {
+  // A plain click switches to that project; Shift adds or removes it. Fan-out to several
+  // projects is a deliberate act, not what a stray click on a second chip does.
+  const toggleQuickAccess = (path: string, additive = false) => {
+    if (!additive) {
+      setSelectedPaths([path]);
+      setRepoPath(path);
+      return;
+    }
     setSelectedPaths((current) => {
       const has = current.includes(path);
       const next = has ? current.filter((entry) => entry !== path) : [...current, path];

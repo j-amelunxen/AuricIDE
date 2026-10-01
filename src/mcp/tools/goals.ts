@@ -25,6 +25,13 @@ import {
   goalDependsOnIds,
   goalBlockedByInfo,
 } from './goalsDb';
+import {
+  blockingStations,
+  compactGoalRun,
+  findGoals,
+  FIND_GOALS_DEFAULT_LIMIT,
+  goalSummary,
+} from './goalViews';
 
 export * from './goalsDb';
 
@@ -47,36 +54,65 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
   server.addTool({
     name: 'list_goals',
     description:
-      'List goals (the declarative layer above tickets: desired world states with machine-checkable success criteria). Optionally filter by status or parent.',
+      'List goals (the declarative layer above tickets: desired world states with machine-checkable success criteria). Optionally filter by status or parent. Returns summary rows (id, parent_id, name, status, priority, work_mode, bundle, updated_at); read one goal in full with get_goal, or pass verbose: true for every column of every goal (large). To find a goal by name use find_goals.',
     parameters: z.object({
       status: z.enum(GOAL_STATUSES).optional().describe('Filter by goal status'),
       parentId: z.string().optional().describe('Only children of this goal (UUID or prefix)'),
+      verbose: z
+        .boolean()
+        .optional()
+        .describe('true = include description, success criteria and goal prompt of every goal'),
     }),
-    execute: async ({ status, parentId }) => {
+    execute: async ({ status, parentId, verbose }) => {
       const filters: { status?: string; parentId?: string } = {};
       if (status) filters.status = status;
       if (parentId) filters.parentId = resolveGoalId(db, parentId);
-      return JSON.stringify(listGoals(db, filters));
+      const goals = listGoals(db, filters);
+      return JSON.stringify(verbose ? goals : goals.map(goalSummary));
     },
+  });
+
+  server.addTool({
+    name: 'find_goals',
+    description:
+      'Find goals by part of their name (case-insensitive), e.g. "Puplinge" or "R070". Returns summary rows with the id the other goal tools take. Use this instead of list_goals when you know roughly what the goal is called.',
+    parameters: z.object({
+      query: z.string().min(1).describe('Text the goal name contains'),
+      status: z.enum(GOAL_STATUSES).optional().describe('Only goals with this status'),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .max(200)
+        .optional()
+        .describe(`Maximum rows (default ${FIND_GOALS_DEFAULT_LIMIT})`),
+    }),
+    execute: async ({ query, status, limit }) =>
+      JSON.stringify(findGoals(db, query, { status, limit })),
   });
 
   server.addTool({
     name: 'get_goal',
     description:
-      'Get a single goal by UUID or unique prefix, including its runs, bundle, the goals it depends on, and what is currently blocking it',
+      'Get a single goal by UUID or unique prefix, including its runs, bundle, and the goals it depends on. blockedBy lists only unfinished goal dependencies; for what else keeps the goal open (stations, tickets, sub-goals) call evaluate_goal. Each run shows prompt_chars instead of its launch prompt unless includeRunPrompts is true.',
     parameters: z.object({
       id: z.string().describe('Goal ID (UUID or unique prefix)'),
+      includeRunPrompts: z
+        .boolean()
+        .optional()
+        .describe('true = include the full launch prompt of every run'),
     }),
-    execute: async ({ id }) => {
+    execute: async ({ id, includeRunPrompts }) => {
       const resolved = resolveGoalId(db, id);
       const goal = getGoal(db, resolved);
       if (!goal) return JSON.stringify({ error: 'Goal not found' });
+      const runs = listGoalRuns(db, resolved);
       return JSON.stringify(
         {
           ...goal,
           dependsOn: goalDependsOnIds(db, resolved),
           blockedBy: goalBlockedByInfo(db, resolved),
-          runs: listGoalRuns(db, resolved),
+          runs: includeRunPrompts ? runs : runs.map(compactGoalRun),
         },
         null,
         2
@@ -348,13 +384,17 @@ export function registerGoalTools(server: FastMCP, db: Database.Database): void 
   server.addTool({
     name: 'evaluate_goal',
     description:
-      'Machine-check a goal: reports satisfied/blockers from ticket statuses (whole subtree), linked requirement verification, station evidence and child goal achievement, plus workMode (stations or tickets, and why) and completion (achievable + blockers: the same rule the IDE uses to achieve a goal, with or without tickets). Use before marking a goal achieved.',
+      "Machine-check a goal: reports satisfied/blockers from ticket statuses (whole subtree), linked requirement verification, station evidence and child goal achievement, plus workMode (stations or tickets, and why) and completion (achievable + blockers: the same rule the IDE uses to achieve a goal, with or without tickets). blockingStations names each station still in the way with its stationId, goalId and state: planned/fog (not done yet), awaiting_judge (claimed, the judge has not ruled) or rejected_by_judge (with the judge's reason: fix the work or the evidence, then mark_station_done again). Use before marking a goal achieved.",
     parameters: z.object({
       id: z.string().describe('Goal ID (UUID or prefix)'),
     }),
     execute: async ({ id }) => {
       const resolved = resolveGoalId(db, id);
-      return JSON.stringify(evaluateGoal(db, resolved), null, 2);
+      return JSON.stringify(
+        { ...evaluateGoal(db, resolved), blockingStations: blockingStations(db, resolved) },
+        null,
+        2
+      );
     },
   });
 

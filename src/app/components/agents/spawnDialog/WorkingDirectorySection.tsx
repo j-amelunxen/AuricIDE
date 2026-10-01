@@ -13,7 +13,7 @@ interface WorkingDirectorySectionProps {
   selectedPaths: string[];
   allPinnedSelected: boolean;
   onToggleSelectAll: () => void;
-  onToggleQuickAccess: (path: string) => void;
+  onToggleQuickAccess: (path: string, additive: boolean) => void;
 }
 
 export function WorkingDirectorySection({
@@ -129,7 +129,8 @@ export function WorkingDirectorySection({
                   type="button"
                   aria-pressed={selected}
                   aria-label={project.name}
-                  onClick={() => onToggleQuickAccess(project.path)}
+                  onClick={(e) => onToggleQuickAccess(project.path, e.shiftKey)}
+                  title="Click to switch · Shift-click to add"
                   className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11px] transition-[color,background-color,box-shadow,transform] active:scale-[0.96] ${
                     selected
                       ? 'bg-primary/15 text-foreground ring-1 ring-primary/50'

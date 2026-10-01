@@ -9,6 +9,7 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { PersistChip } from '@/app/components/ui/PersistChip';
 import { useConductorController } from '@/lib/hooks/useConductorController';
 import { GoalTree } from './GoalTree';
+import { toggleGoalSelection, type GoalBulkUpdate } from '@/lib/goals/bulkGoalMenu';
 import { GoalDetailPanel } from './GoalDetailPanel';
 import { GoalCreateDialog } from './GoalCreateDialog';
 import { ConductorPanel } from './ConductorPanel';
@@ -16,40 +17,8 @@ import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflo
 import type { PmGoal } from '@/lib/tauri/goals';
 import { persistInBackground, persistQuietly } from '@/lib/store/persistFeedback';
 import { getGoalWorkMode, planGoalMove, type GoalDropPosition } from '@/lib/store/goalsSlice';
-import { buildGoalLaunchPrompt } from '@/lib/goals/goalLaunchPrompt';
+import { buildGoalLaunchPrompt, buildMetaGoalSplitPrompt } from '@/lib/goals/goalLaunchPrompt';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-
-/** Builds the dedicated planning prompt that atomically splits a meta-goal into executable work. */
-export function buildMetaGoalSplitPrompt(metaGoal: PmGoal): string {
-  const context = [`# Meta-goal: ${metaGoal.name}`, `metaGoalId: "${metaGoal.id}"`];
-  if (metaGoal.description) context.push(`## Description\n${metaGoal.description}`);
-  if (metaGoal.successCriteria) {
-    context.push(`## Success criteria\n${metaGoal.successCriteria}`);
-  }
-  if (metaGoal.goalPrompt.trim()) {
-    context.push(`## Planning instructions\n${metaGoal.goalPrompt}`);
-  }
-  context.push(
-    '## Planning contract\n' +
-      `Use the exact metaGoalId "${metaGoal.id}"; do not look it up by name. First call ` +
-      `get_goal_tree with rootId "${metaGoal.id}" and inspect the existing child goals and ` +
-      'tickets. On every rerun, reuse the existing plan: do not delete or overwrite existing ' +
-      'children or tickets, and only create genuinely missing work packages. Package identity is ' +
-      'the exact child goal name plus ticket name; materialize_goal_plan returns the existing pair ' +
-      'when both already exist.\n\n' +
-      'Call list_epics and reuse an appropriate existing epic; if none exists, call create_epic ' +
-      'and use its returned epicId. Design at least one work package ' +
-      'whose child goal is a checkable outcome and whose ticket is executable. Then call ' +
-      'materialize_goal_plan once for atomic materialization, passing parentId equal to the exact ' +
-      'metaGoalId, the selected epicId, and all genuinely missing workPackages. Each returned child ' +
-      'goal id must be that package ticket goalId; the ticket goalId must never be the metaGoalId. ' +
-      'Do not call create_goal, decompose_goal, or create_ticket separately for these packages. ' +
-      'Do NOT call record_goal_run: this run is already recorded. Exit after reporting the created ' +
-      'goal and ticket pairs, or explain why no genuinely missing packages remain.'
-  );
-
-  return `/goal\n\n${context.join('\n\n')}`;
-}
 
 export function GoalsModal() {
   const goalsModalOpen = useStore((s) => s.goalsModalOpen);
@@ -100,6 +69,9 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
 
   const { confirm, confirmDialog } = useConfirm();
 
+  // Shift-click selection. The focused goal (selectedGoalId) drives the detail panel;
+  // a plain click replaces this set, so it only ever outlives a Shift-click run.
+  const [pickedIds, setPickedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [workflowStripVisible, setWorkflowStripVisible] = useState(
@@ -218,6 +190,42 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
     [rootPath]
   );
 
+  // Goals that were deleted meanwhile drop out; the focused goal is always in the set,
+  // also when it was changed from elsewhere (store) and never went through a click here.
+  const selectedIds = useMemo(() => {
+    const existing = new Set(goalsDraft.map((goal) => goal.id));
+    const ids = new Set([...pickedIds].filter((id) => existing.has(id)));
+    if (!selectedGoalId || !existing.has(selectedGoalId)) return new Set<string>();
+    return ids.has(selectedGoalId) ? ids : new Set([selectedGoalId]);
+  }, [goalsDraft, pickedIds, selectedGoalId]);
+
+  const handleSelectGoal = useCallback(
+    (id: string) => {
+      setPickedIds(new Set([id]));
+      setSelectedGoalId(id);
+    },
+    [setSelectedGoalId]
+  );
+
+  const handleToggleSelect = useCallback(
+    (id: string) => {
+      const next = toggleGoalSelection(selectedIds, selectedGoalId, id);
+      setPickedIds(next.ids);
+      setSelectedGoalId(next.focusId);
+    },
+    [selectedIds, selectedGoalId, setSelectedGoalId]
+  );
+
+  // One edit per goal on the draft, then a single save for the whole batch.
+  const handleBulkUpdate = useCallback(
+    (updates: GoalBulkUpdate[]) => {
+      if (updates.length === 0) return;
+      for (const update of updates) updateGoal(update.id, update.updates);
+      void handleSave();
+    },
+    [updateGoal, handleSave]
+  );
+
   const handleMoveGoal = useCallback(
     (draggedId: string, targetId: string, position: GoalDropPosition) => {
       for (const update of planGoalMove(goalsDraft, draggedId, targetId, position)) {
@@ -292,7 +300,10 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
             <h1 id="goals-modal-title" className="text-sm font-bold text-foreground">
               Goals
             </h1>
-            <span className="text-[10px] text-foreground-muted">{goalsDraft.length} total</span>
+            <span className="text-[10px] text-foreground-muted">
+              {selectedIds.size > 1 ? `${selectedIds.size} goals selected · ` : ''}
+              {goalsDraft.length} total
+            </span>
             <PersistChip dirty={goalsDirty} />
           </div>
 
@@ -380,7 +391,10 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
               stations={goalStationsDraft}
               dependencies={goalDependenciesDraft}
               selectedId={selectedGoalId}
-              onSelect={setSelectedGoalId}
+              selectedIds={selectedIds}
+              onSelect={handleSelectGoal}
+              onToggleSelect={handleToggleSelect}
+              onBulkUpdate={handleBulkUpdate}
               onMoveGoal={handleMoveGoal}
               onDelete={(id) => void handleDelete(id)}
               onAddSubGoal={rootPath ? handleAddSubGoal : undefined}

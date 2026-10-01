@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { GoalsModal, buildMetaGoalSplitPrompt } from './GoalsModal';
+import { GoalsModal } from './GoalsModal';
 import { buildGoalLaunchPrompt } from '@/lib/goals/goalLaunchPrompt';
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
@@ -327,27 +327,6 @@ describe('buildGoalLaunchPrompt in stations mode', () => {
   it('keeps the ticket contract as the default mode', () => {
     expect(buildGoalLaunchPrompt(makeGoal(), stations)).toContain('create_ticket');
     expect(buildGoalLaunchPrompt(makeGoal(), stations, 'tickets')).toContain('Work mode: tickets');
-  });
-});
-
-describe('buildMetaGoalSplitPrompt', () => {
-  it('requires a rerun-safe atomic child-goal and ticket plan for the exact meta-goal id', () => {
-    const prompt = buildMetaGoalSplitPrompt(makeGoal({ id: 'meta-99' }));
-
-    expect(prompt.startsWith('/goal\n\n')).toBe(true);
-    expect(prompt).toContain('metaGoalId: "meta-99"');
-    expect(prompt).toContain('get_goal_tree');
-    expect(prompt).toMatch(/list_epics[\s\S]*create_epic[\s\S]*epicId/i);
-    expect(prompt).toContain('materialize_goal_plan');
-    expect(prompt).toMatch(/atomic/i);
-    expect(prompt).toMatch(/rerun/i);
-    expect(prompt).toMatch(/reuse/i);
-    expect(prompt).toMatch(/genuinely missing/i);
-    expect(prompt).toMatch(/do not delete or overwrite/i);
-    expect(prompt).toMatch(/exact child goal name.*ticket name/i);
-    expect(prompt).toMatch(/returns the existing pair/i);
-    expect(prompt).toMatch(/child goal[\s\S]{0,80}ticket goalId/i);
-    expect(prompt).toMatch(/never[\s\S]{0,40}metaGoalId/i);
   });
 });
 
@@ -680,6 +659,53 @@ describe('GoalsModal', () => {
       fireEvent.contextMenu(screen.getByTestId('goal-node-g1'));
 
       expect(screen.queryByText('Add sub-goal')).toBeNull();
+    });
+  });
+  describe('multi-selection', () => {
+    beforeEach(() => {
+      storeState.goalsDraft = [
+        makeGoal({ id: 'g1', name: 'One', sortOrder: 0 }),
+        makeGoal({ id: 'g2', name: 'Two', sortOrder: 1 }),
+        makeGoal({ id: 'g3', name: 'Three', sortOrder: 2, status: 'failed' }),
+      ];
+      storeState.selectedGoalId = 'g1';
+    });
+
+    it('a plain click focuses that goal alone', () => {
+      render(<GoalsModal />);
+      fireEvent.click(screen.getByTestId('goal-node-g2'));
+      expect(mocks.setSelectedGoalId).toHaveBeenCalledWith('g2');
+      expect(screen.queryByText(/goals selected/)).toBeNull();
+    });
+
+    it('Shift-click extends the selection and the header counts it', () => {
+      render(<GoalsModal />);
+      fireEvent.click(screen.getByTestId('goal-node-g2'), { shiftKey: true });
+      expect(screen.getByText(/2 goals selected/)).toBeTruthy();
+      expect(screen.getByTestId('goal-node-g1')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('goal-node-g2')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('goal-node-g3')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('applies a bulk priority to every selected goal and saves once', () => {
+      render(<GoalsModal />);
+      fireEvent.click(screen.getByTestId('goal-node-g2'), { shiftKey: true });
+      fireEvent.contextMenu(screen.getByTestId('goal-node-g2'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Critical/ }));
+
+      expect(mocks.updateGoal).toHaveBeenCalledTimes(2);
+      expect(mocks.updateGoal).toHaveBeenCalledWith('g1', { priority: 'critical' });
+      expect(mocks.updateGoal).toHaveBeenCalledWith('g2', { priority: 'critical' });
+      expect(mocks.saveGoals).toHaveBeenCalledTimes(1);
+      expect(mocks.saveGoals).toHaveBeenCalledWith('/project');
+    });
+
+    it('offers no status change when the selected goals differ in status', () => {
+      render(<GoalsModal />);
+      fireEvent.click(screen.getByTestId('goal-node-g3'), { shiftKey: true });
+      fireEvent.contextMenu(screen.getByTestId('goal-node-g3'));
+      expect(screen.queryByRole('menuitem', { name: /Achieved/ })).toBeNull();
+      expect(screen.getByText(/Statuses differ/)).toBeTruthy();
     });
   });
 });

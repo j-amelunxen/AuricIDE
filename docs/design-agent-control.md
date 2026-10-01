@@ -167,6 +167,31 @@ No answer in time → `frontend_unavailable`.
   ADR 0002), else `invalid_params` naming which of the two is missing.
 - `kill` uses the same store action as the UI kill button.
 
+## Goal start over MCP (not the control socket)
+
+`spawn` above carries no goal or ticket, and agents running inside the IDE are
+refused at the socket. Starting an agent _for a goal_ from an agent therefore
+goes through the project MCP server (`auric-pm`), the path that books cost on
+the goal (`spawnedByGoalId`, `runSource: mcp`) and keeps the trust boundary:
+
+1. `list_goals { parentId }` lists the sub-goals.
+2. `get_goal_launch_prompt { goalId, purpose?, unattended? }` returns the exact
+   text the Goals panel would put in the spawn dialog (`work`, `plan` or
+   `split`) plus the work mode and why. It calls the same builders as the UI
+   (`src/lib/goals/goalLaunchPrompt.ts`), and a test compares both outputs for
+   one fixture, so the two cannot drift apart.
+3. `request_agent_launch { goalId, prompt, ticketId?, purpose?, replace?, ... }`
+   writes the inbox request. `ticketId` must be a ticket of the goal's subtree
+   and books the run on it as well. An open request is returned untouched;
+   `replace: true` swaps its prompt (same uid) as long as no run or claim exists
+   for it, otherwise it is refused.
+
+Whether the request starts by itself is still only decided in the IDE by a
+launch grant on the mission root. The schema stays strict: an agent cannot send
+`permissionMode`, `headless`, `launch`, `note` or a folder, with or without
+`replace`. Nothing on the Rust side changes: it reads only the stored folder and
+worktree flag of the request.
+
 ## Error codes
 
 `invalid_request`, `unknown_method`, `invalid_params`, `unknown_agent`,
