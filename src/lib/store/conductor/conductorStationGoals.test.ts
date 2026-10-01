@@ -89,3 +89,35 @@ describe('getStationGoalWork: dependency gate', () => {
     expect(getStationGoalWork(input2).launchable.map((g) => g.id)).toEqual(['g1']);
   });
 });
+
+describe('getStationGoalWork: rejected claims', () => {
+  function withStation(station: Partial<PmGoalStation>): StationGoalInput {
+    const input = inputFor('in_progress');
+    return { ...input, stations: [{ ...input.stations[0], ...station }] };
+  }
+
+  // A judge's rejection leaves the step done + claim with lastCheckedAt set.
+  // That is open work: an agent has to fix the work or the evidence.
+  it('treats a claim the judge rejected as open agent work', () => {
+    const work = getStationGoalWork(
+      withStation({
+        status: 'done',
+        evidenceKind: 'claim',
+        evidenceNote: 'rejected: evidence does not cover the step',
+        lastCheckedAt: '2026-09-30 21:36:12',
+      })
+    );
+    expect(work.launchable.map((g) => g.id)).toEqual(['g1']);
+  });
+
+  it('leaves a step the judge passed alone', () => {
+    const work = getStationGoalWork(
+      withStation({
+        status: 'done',
+        evidenceKind: 'judged',
+        lastCheckedAt: '2026-09-30 21:36:12',
+      })
+    );
+    expect(work.launchable).toEqual([]);
+  });
+});

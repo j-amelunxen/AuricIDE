@@ -57,9 +57,19 @@ export interface StationGoalInput {
   goalDependencies?: PmGoalDependency[];
 }
 
-/** An open station an agent may work: not human, not a gate, not done. */
+/**
+ * An open station an agent may work: not human, not a gate, and either not
+ * done or a claim the judge rejected. A rejection keeps the step `done` +
+ * `claim` with `lastCheckedAt` set (`applyJudgeVerdict`); without counting it
+ * here a run would see nothing left to do and leave the goal stuck.
+ */
 function isAgentWork(station: PmGoalStation): boolean {
-  return station.kind === 'normal' && station.status !== 'done';
+  if (station.kind !== 'normal') return false;
+  return station.status !== 'done' || isRejectedClaim(station);
+}
+
+function isRejectedClaim(station: PmGoalStation): boolean {
+  return station.evidenceKind === 'claim' && station.lastCheckedAt !== null;
 }
 
 /** A claim no judge has looked at yet (the judge stamps `lastCheckedAt`). */
