@@ -26,6 +26,7 @@ function truncate(label: string, max: number): string {
 
 const EDGE_STYLE: Record<LineStation['state'], { opacity: number; dash?: string }> = {
   done: { opacity: 0.9 },
+  skipped: { opacity: 0.5, dash: '4 4' },
   front: { opacity: 0.9 },
   planned: { opacity: 0.35, dash: '1 6' },
   fog: { opacity: 0.12, dash: '2 7' },
@@ -96,7 +97,7 @@ export function GoalLineMap({ line, agentsById, big = false, onStationDrop }: Go
   for (let i = 1; i < line.stations.length; i++) {
     const a = line.stations[i - 1];
     const b = line.stations[i];
-    const style = EDGE_STYLE[b.state === 'done' ? a.state : b.state];
+    const style = EDGE_STYLE[b.state === 'done' || b.state === 'skipped' ? a.state : b.state];
     const flowing = b.state === 'front' && b.agentIds.length > 0;
     segments.push(
       <line

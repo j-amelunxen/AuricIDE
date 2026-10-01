@@ -1,4 +1,4 @@
-import { isClosedTicketStatus, isHiddenTicketStatus } from '../pm/enums';
+import { isClosedTicketStatus, isHiddenTicketStatus, isValidSkip } from '../pm/enums';
 import type {
   PmGoal,
   PmGoalRequirementLink,
@@ -22,7 +22,7 @@ import { orderedStations } from './stationOrder';
 import { staleStations } from '../evidence/staleness';
 import { lineHue } from './lineColors';
 
-export type StationState = 'done' | 'front' | 'planned' | 'fog';
+export type StationState = 'done' | 'skipped' | 'front' | 'planned' | 'fog';
 export type EvidenceKind = 'proof' | 'judged' | 'claim' | 'human';
 export type StationNodeKind = 'normal' | 'gate' | 'human' | 'terminus';
 
@@ -77,7 +77,7 @@ export interface GoalLine {
    * Verified stations (stations mode) or done tickets (ticket mode) across the
    * subtree — the number the card shows instead of a bare "no work attached".
    */
-  progress: { done: number; total: number; unit: 'stations' | 'tickets' };
+  progress: { done: number; total: number; skipped?: number; unit: 'stations' | 'tickets' };
 }
 
 export interface GoalLinesInput {
@@ -246,19 +246,23 @@ export function buildGoalLine(input: GoalLinesInput, goalId: string): GoalLine |
       const state: StationState =
         st.status === 'done'
           ? 'done'
-          : st.status === 'fog'
-            ? 'fog'
-            : linked?.status === 'in_progress' || st.id === firstPendingId
-              ? 'front'
-              : 'planned';
+          : isValidSkip(st)
+            ? 'skipped'
+            : st.status === 'fog'
+              ? 'fog'
+              : linked?.status === 'in_progress' || st.id === firstPendingId
+                ? 'front'
+                : 'planned';
       const detail =
-        st.predicate.type === 'undefined'
-          ? 'check to be defined'
-          : // Done: what was done. An open human station: the steps an
-            // agent handed over (request_human_check) for the person.
-            (st.status === 'done' || st.kind === 'human') && st.evidenceNote
-            ? st.evidenceNote
-            : undefined;
+        state === 'skipped'
+          ? st.evidenceNote
+          : st.predicate.type === 'undefined'
+            ? 'check to be defined'
+            : // Done: what was done. An open human station: the steps an
+              // agent handed over (request_human_check) for the person.
+              (st.status === 'done' || st.kind === 'human') && st.evidenceNote
+              ? st.evidenceNote
+              : undefined;
       return {
         id: st.id, // raw id so reorder targets resolve
         label: st.name,

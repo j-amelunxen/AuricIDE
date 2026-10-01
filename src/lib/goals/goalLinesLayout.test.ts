@@ -593,7 +593,24 @@ describe('lines without tickets', () => {
     const line = buildGoalLine(makeInput({ goals: [goal], stations }), goal.id)!;
 
     expect(line.workMode).toBe('stations');
-    expect(line.progress).toEqual({ done: 1, total: 3, unit: 'stations' });
+    expect(line.progress).toEqual({ done: 1, total: 3, skipped: 0, unit: 'stations' });
+  });
+
+  it('draws a skipped station as skipped and keeps it out of the done count', () => {
+    const goal = makeGoal();
+    const stations = [
+      station(goal.id, { status: 'done', evidenceKind: 'proof', sortOrder: 0 }),
+      station(goal.id, {
+        status: 'skipped',
+        evidenceNote: 'No public API, ledger row added',
+        sortOrder: 1,
+      }),
+    ];
+    const line = buildGoalLine(makeInput({ goals: [goal], stations }), goal.id)!;
+
+    expect(line.progress).toEqual({ done: 1, total: 2, skipped: 1, unit: 'stations' });
+    const skipped = line.stations.find((s) => s.state === 'skipped');
+    expect(skipped?.detail).toBe('No public API, ledger row added');
   });
 
   it('reaches the terminus of a station-only goal once every station is verified', () => {
@@ -624,7 +641,7 @@ describe('lines without tickets', () => {
     const line = lines[0];
     expect(line.goalId).toBe(root.id);
     expect(line.workMode).toBe('stations');
-    expect(line.progress).toEqual({ done: 2, total: 3, unit: 'stations' });
+    expect(line.progress).toEqual({ done: 2, total: 3, skipped: 0, unit: 'stations' });
     const stops = line.stations.filter((s) => s.kind !== 'terminus');
     expect(stops.map((s) => [s.label, s.state])).toEqual([
       ['Risks cleared', 'done'],

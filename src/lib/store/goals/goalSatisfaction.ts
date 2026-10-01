@@ -1,7 +1,7 @@
 import type { PmGoal, PmGoalRequirementLink, PmGoalRun, PmGoalStation } from '../../tauri/goals';
 import type { PmTicket } from '../../tauri/pm';
 import type { PmRequirement } from '../../tauri/requirements';
-import { isVerifiedEvidence } from '../../pm/enums';
+import { isValidSkip, isVerifiedEvidence } from '../../pm/enums';
 import { getGoalChildren, getGoalDescendants } from './goalTreeHelpers';
 import { resolveGoalWorkMode, type ResolvedGoalWorkMode } from '../../goals/workMode';
 import { decideGoalCompletion, type GoalCompletion } from '../../goals/goalCompletion';
@@ -95,7 +95,9 @@ export function ownGoalBlockers(
 
   const scopedStations = stations.filter((s) => subtreeIds.has(s.goalId));
   for (const station of scopedStations) {
-    if (station.status !== 'done') {
+    if (isValidSkip(station)) {
+      continue;
+    } else if (station.status !== 'done') {
       blockers.push(`Station "${station.name}" is ${station.status}`);
     } else if (!isVerifiedEvidence(station.evidenceKind)) {
       // Done, but only claimed — the judge (or a person) has to verify it
@@ -191,6 +193,8 @@ export interface GoalStationProgress {
   /** Stations done with verified evidence (a bare claim does not count). */
   done: number;
   total: number;
+  /** Stations settled by a written decision not to do them; they never count as done. */
+  skipped: number;
   /** True when the stations sit on sub-goals rather than on the goal itself. */
   onSubGoals: boolean;
 }
@@ -206,6 +210,7 @@ export function getGoalStationProgress(
   return {
     done: scoped.filter((s) => s.status === 'done' && isVerifiedEvidence(s.evidenceKind)).length,
     total: scoped.length,
+    skipped: scoped.filter(isValidSkip).length,
     onSubGoals: scoped.length > 0 && !scoped.some((s) => s.goalId === goalId),
   };
 }
@@ -213,6 +218,8 @@ export function getGoalStationProgress(
 export interface GoalWorkProgress {
   done: number;
   total: number;
+  /** Stations skipped by decision (stations goals only): the bar stays short of full. */
+  skipped?: number;
   unit: 'stations' | 'tickets';
 }
 
@@ -228,8 +235,8 @@ export function getGoalWorkProgress(
   goalId: string
 ): GoalWorkProgress {
   if (getGoalWorkMode(goals, tickets, stations, goalId).mode === 'stations') {
-    const { done, total } = getGoalStationProgress(goals, stations, goalId);
-    return { done, total, unit: 'stations' };
+    const { done, total, skipped } = getGoalStationProgress(goals, stations, goalId);
+    return { done, total, skipped, unit: 'stations' };
   }
   const { doneTickets, totalTickets } = getGoalProgress(goals, tickets, goalId);
   return { done: doneTickets, total: totalTickets, unit: 'tickets' };

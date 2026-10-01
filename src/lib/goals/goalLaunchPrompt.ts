@@ -35,6 +35,17 @@ const GATE_STATIONS =
   'Gates are yours too: clear a gate like any other station (for example run the review ' +
   'the goal instructions name) and mark it done with its evidence. ';
 
+/**
+ * A station the work decides against (blocked, ruled out earlier) is settled by
+ * skip_station with the reason, so the goal can close and the board says what
+ * happened. Without it the goal would sit open forever behind a step nobody
+ * will ever do.
+ */
+const SKIP_RULE =
+  'A station that cannot or should not be done (blocked, ruled out) gets skip_station ' +
+  'with its stationId and the reason: a decision, not a way around work. ' +
+  'Never skip a gate or a human station. ';
+
 const ATTENDED_HUMAN_STATIONS =
   'Human stations belong to a person: never mark them, say what to check. ';
 
@@ -70,6 +81,7 @@ const STATION_AGREEMENT = (goal: LaunchGoal, hasOwnLine: boolean, unattended: bo
   'Work them in order; after each one, call mark_station_done with its stationId and an ' +
   'evidenceNote saying what you did and where the evidence is. ' +
   GATE_STATIONS +
+  SKIP_RULE +
   (unattended ? UNATTENDED_HUMAN_STATIONS + UNATTENDED_NO_BACKGROUND : ATTENDED_HUMAN_STATIONS) +
   `evaluate_goal (id: "${goal.id}") shows progress; record findings via write_finding. ` +
   'Do not call record_goal_run. ' +

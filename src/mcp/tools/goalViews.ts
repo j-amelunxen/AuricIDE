@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { isVerifiedEvidence } from '../../lib/pm/enums';
+import { isValidSkip, isVerifiedEvidence } from '../../lib/pm/enums';
 import { descendantIds, type GoalRow, type GoalRunRow } from './goalsDb';
 
 /**
@@ -81,7 +81,7 @@ export function blockingStations(db: Database.Database, goalId: string): Blockin
   const placeholders = subtree.map(() => '?').join(',');
   const rows = db
     .prepare(
-      `SELECT s.id, s.goal_id, s.name, s.status, s.evidence_kind, s.evidence_note, s.last_checked_at
+      `SELECT s.id, s.goal_id, s.name, s.kind, s.status, s.evidence_kind, s.evidence_note, s.last_checked_at
        FROM pm_goal_stations s JOIN pm_goals g ON g.id = s.goal_id
        WHERE s.goal_id IN (${placeholders})
        ORDER BY g.sort_order, g.created_at, s.sort_order, s.created_at`
@@ -90,6 +90,7 @@ export function blockingStations(db: Database.Database, goalId: string): Blockin
     id: string;
     goal_id: string;
     name: string;
+    kind: string;
     status: string;
     evidence_kind: string;
     evidence_note: string;
@@ -98,6 +99,11 @@ export function blockingStations(db: Database.Database, goalId: string): Blockin
 
   return rows.flatMap((row): BlockingStation[] => {
     const base = { stationId: row.id, goalId: row.goal_id, name: row.name };
+    if (
+      isValidSkip({ status: row.status, kind: row.kind, evidenceNote: row.evidence_note ?? '' })
+    ) {
+      return [];
+    }
     if (row.status !== 'done') return [{ ...base, state: row.status, reason: null }];
     if (isVerifiedEvidence(row.evidence_kind)) return [];
     if (row.last_checked_at === null) return [{ ...base, state: 'awaiting_judge', reason: null }];

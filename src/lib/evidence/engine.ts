@@ -162,6 +162,7 @@ export async function checkFrontStations(
     const pending = orderedStations(goalStationsDraft, gid).filter(
       (s) =>
         s.status !== 'done' &&
+        s.status !== 'skipped' &&
         s.kind !== 'human' &&
         s.predicate.type !== 'human' &&
         s.predicate.type !== 'undefined' &&

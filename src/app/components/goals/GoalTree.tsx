@@ -227,6 +227,7 @@ function GoalNode({
               className="text-[9px] tabular-nums text-foreground-muted"
             >
               {progress.done}/{progress.total}
+              {progress.skipped ? ` · ${progress.skipped} skipped` : ''}
             </span>
           </span>
         )}

@@ -59,6 +59,7 @@ function lineFlag(line: GoalLine, agentsById: Map<string, AgentInfo>, now: numbe
 
 const STATE_GLYPH: Record<LineStation['state'], string> = {
   done: '●',
+  skipped: '⊘',
   front: '◉',
   planned: '○',
   fog: '·',
@@ -157,7 +158,9 @@ export function GoalLineCard({
               }
               className="font-mono text-[10px] tabular-nums text-foreground-muted"
             >
-              {`${line.progress.done}/${line.progress.total} ${line.progress.unit}`}
+              {`${line.progress.done}/${line.progress.total} ${line.progress.unit}${
+                line.progress.skipped ? ` · ${line.progress.skipped} skipped` : ''
+              }`}
             </span>
           )}
           <span
