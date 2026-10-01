@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
-import { isVerifiedEvidence } from '../../lib/pm/enums';
+import { isValidSkip, isVerifiedEvidence } from '../../lib/pm/enums';
 import { GOAL_WORK_MODE_SETTINGS, resolveGoalWorkMode } from '../../lib/goals/workMode';
 import { normalizeMissionPath } from '../../lib/missions/missionPath';
 import { decideGoalCompletion, type GoalCompletion } from '../../lib/goals/goalCompletion';
@@ -987,11 +987,19 @@ function subtreeSnapshot(db: Database.Database, goalId: string): SubtreeSnapshot
   // an open human station must block auto-achievement here exactly as in TS.
   const stations = db
     .prepare(
-      `SELECT name, status, evidence_kind FROM pm_goal_stations WHERE goal_id IN (${placeholders})`
+      `SELECT name, status, kind, evidence_kind, evidence_note FROM pm_goal_stations WHERE goal_id IN (${placeholders})`
     )
-    .all(...subtree) as { name: string; status: string; evidence_kind: string }[];
+    .all(...subtree) as {
+    name: string;
+    status: string;
+    kind: string;
+    evidence_kind: string;
+    evidence_note: string;
+  }[];
   for (const s of stations) {
-    if (s.status !== 'done') {
+    if (isValidSkip({ status: s.status, kind: s.kind, evidenceNote: s.evidence_note })) {
+      continue;
+    } else if (s.status !== 'done') {
       blockers.push(`Station "${s.name}" is ${s.status}`);
     } else if (!isVerifiedEvidence(s.evidence_kind)) {
       // Lockstep twin of getGoalSatisfaction: a claimed-but-unverified station

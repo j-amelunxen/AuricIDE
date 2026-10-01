@@ -122,6 +122,25 @@ describe('getStationGoalWork: rejected claims', () => {
   });
 });
 
+describe('getStationGoalWork: skipped steps', () => {
+  function withStation(station: Partial<PmGoalStation>): StationGoalInput {
+    const input = inputFor('in_progress');
+    return { ...input, stations: [{ ...input.stations[0], ...station }] };
+  }
+
+  it('leaves a step skipped with a reason alone: nothing left for an agent to do', () => {
+    const work = getStationGoalWork(
+      withStation({ status: 'skipped', evidenceNote: 'No public API, ledger row added' })
+    );
+    expect(work.launchable).toEqual([]);
+  });
+
+  it('keeps a skip without a reason as open work', () => {
+    const work = getStationGoalWork(withStation({ status: 'skipped', evidenceNote: '' }));
+    expect(work.launchable.map((g) => g.id)).toEqual(['g1']);
+  });
+});
+
 describe('getStationGoalWork: gates', () => {
   function withStations(stations: Array<Partial<PmGoalStation>>): StationGoalInput {
     const input = inputFor('in_progress');

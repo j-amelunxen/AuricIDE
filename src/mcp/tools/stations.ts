@@ -289,6 +289,38 @@ export async function markStationDone(
   return getStation(db, stationId)!;
 }
 
+/**
+ * Records that an agent decided not to do a station, with the reason. The goal
+ * can still be achieved: a skip is a decision, and the board shows it as one
+ * ("2 skipped") rather than as done. Gates and human steps cannot be skipped,
+ * since the review and a person are the ones who clear those.
+ */
+export function skipStation(db: Database.Database, stationId: string, reason: string): StationRow {
+  const station = getStation(db, stationId);
+  if (!station) throw new Error(`Station '${stationId}' not found`);
+  if (reason.trim() === '') {
+    throw new Error(`Station '${station.name}': a skip needs a reason that says why.`);
+  }
+  if (station.kind === 'gate') {
+    throw new Error(
+      `Station '${station.name}' is a gate — the review decides it. Run it and call mark_station_done.`
+    );
+  }
+  if (station.kind === 'human') {
+    throw new Error(`Station '${station.name}' is a human step — only a person can settle it.`);
+  }
+  if (station.status === 'done') {
+    throw new Error(`Station '${station.name}' is already done — it cannot be skipped.`);
+  }
+  db.prepare(
+    `UPDATE pm_goal_stations
+     SET status = 'skipped', evidence_kind = 'claim', evidence_note = ?,
+         last_checked_at = NULL, done_at = NULL, updated_at = ?
+     WHERE id = ?`
+  ).run(reason.trim(), now(), stationId);
+  return getStation(db, stationId)!;
+}
+
 /** Where a hand-over notification belongs: the project this server is bound to. */
 export interface HumanCheckScope {
   projectPath?: string;
@@ -512,6 +544,21 @@ export function registerStationTools(
       JSON.stringify(
         await markStationDone(db, resolveStationId(db, stationId), evidenceNote, projectRoot)
       ),
+  });
+
+  server.addTool({
+    name: 'skip_station',
+    description:
+      'Skip a station by decision, with the reason (blocked, not needed, ruled out earlier). The goal can still be achieved and the board shows the station as skipped, not done, so say plainly why. Not for gates or human steps, and not a way to avoid work you can do.',
+    parameters: z.object({
+      stationId: z.string().describe('Station ID (UUID or unique prefix)'),
+      reason: z
+        .string()
+        .min(1)
+        .describe('Why this station is not being done, and where it is written down'),
+    }),
+    execute: async ({ stationId, reason }) =>
+      JSON.stringify(skipStation(db, resolveStationId(db, stationId), reason)),
   });
 
   server.addTool({

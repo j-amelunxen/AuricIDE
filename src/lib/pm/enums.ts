@@ -92,8 +92,27 @@ export function assertOneOf<T extends string>(
 export const STATION_KINDS = ['normal', 'gate', 'human'] as const;
 export type StationKind = (typeof STATION_KINDS)[number];
 
-export const STATION_STATUSES = ['done', 'planned', 'fog'] as const;
+export const STATION_STATUSES = ['done', 'planned', 'fog', 'skipped'] as const;
 export type StationStoredStatus = (typeof STATION_STATUSES)[number];
+
+/**
+ * A `skipped` station is a decision, not a gap: the work was deliberately not
+ * done (blocked, not needed) and the reason is written down. It settles the
+ * station without proof, because nothing was done to prove. Only a normal
+ * station can be skipped: a gate is the review's verdict and a human station
+ * is a person's, and an agent skipping either would clear its own check.
+ * Without a reason it is just a gap, and it blocks like an open station.
+ * Imported by both satisfaction twins so the rule cannot drift.
+ */
+export function isValidSkip(station: {
+  status: string;
+  kind: string;
+  evidenceNote: string;
+}): boolean {
+  return (
+    station.status === 'skipped' && station.kind === 'normal' && station.evidenceNote.trim() !== ''
+  );
+}
 
 // How sure we are a station's "done" is real. `claim` is the only class an
 // agent can ever write (enforced at the MCP boundary); `proof` and `judged`

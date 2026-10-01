@@ -93,6 +93,14 @@ describe('buildGoalLaunchPrompt', () => {
     expect(attended).not.toContain('run_in_background');
   });
 
+  it('lets the agent skip a step by decision, with the reason, attended or not', () => {
+    for (const unattended of [false, true]) {
+      const prompt = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended });
+      expect(prompt).toContain('skip_station');
+      expect(prompt).toContain('Never skip a gate');
+    }
+  });
+
   it('makes gates the agent’s own work, attended or not', () => {
     for (const unattended of [false, true]) {
       const prompt = buildGoalLaunchPrompt(goal(), [], 'stations', { unattended });

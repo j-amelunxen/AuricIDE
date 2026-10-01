@@ -142,6 +142,76 @@
       }
     },
     {
+      "id": "station-skipped-with-reason",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "status": "skipped",
+            "evidenceKind": "claim",
+            "evidenceNote": "Blocked by the club's closed API; recorded in the ledger"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": true,
+        "blockerCategories": []
+      }
+    },
+    {
+      "id": "station-skipped-without-reason",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "status": "skipped",
+            "evidenceKind": "claim",
+            "evidenceNote": ""
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["station-not-done"]
+      }
+    },
+    {
+      "id": "station-skipped-gate",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "kind": "gate",
+            "status": "skipped",
+            "evidenceKind": "claim",
+            "evidenceNote": "Not needed"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["station-not-done"]
+      }
+    },
+    {
+      "id": "station-skipped-human",
+      "fixture": {
+        "stations": [
+          {
+            "goal": "root",
+            "kind": "human",
+            "status": "skipped",
+            "evidenceKind": "claim",
+            "evidenceNote": "Not needed"
+          }
+        ]
+      },
+      "expect": {
+        "satisfied": false,
+        "blockerCategories": ["station-not-done"]
+      }
+    },
+    {
       "id": "child-achieved",
       "fixture": {
         "child": {

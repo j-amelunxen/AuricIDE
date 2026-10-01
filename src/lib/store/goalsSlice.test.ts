@@ -848,6 +848,7 @@ describe('getGoalWorkProgress', () => {
     expect(getGoalWorkProgress([goal], [], stations, goal.id)).toEqual({
       done: 1,
       total: 2,
+      skipped: 0,
       unit: 'stations',
     });
   });

@@ -1,4 +1,4 @@
-import { isVerifiedEvidence } from '@/lib/pm/enums';
+import { isValidSkip, isVerifiedEvidence } from '@/lib/pm/enums';
 import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
 import { describeDependencyBlock } from '../goals/goalDependencyAdapters';
 import { getGoalDescendants } from '../goals/goalTreeHelpers';
@@ -23,6 +23,7 @@ export interface RunBlockerInput {
 
 /** The line `ownGoalBlockers` writes for a station that still blocks, or null. */
 function stationBlockerLine(station: PmGoalStation): string | null {
+  if (isValidSkip(station)) return null;
   if (station.status !== 'done') return `Station "${station.name}" is ${station.status}`;
   if (!isVerifiedEvidence(station.evidenceKind))
     return `Station "${station.name}": unverified claim`;

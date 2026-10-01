@@ -1,6 +1,6 @@
 import { isLaunchRequest } from '@/lib/notifications/launchRequest';
 import type { Notification } from '@/lib/notifications/types';
-import { isClosedGoalStatus } from '@/lib/pm/enums';
+import { isClosedGoalStatus, isValidSkip } from '@/lib/pm/enums';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import type { PmGoal, PmGoalDependency, PmGoalStation } from '@/lib/tauri/goals';
 import type { PmTicket } from '@/lib/tauri/pm';
@@ -64,6 +64,7 @@ export interface StationGoalInput {
  * stuck.
  */
 function isOpen(station: PmGoalStation): boolean {
+  if (isValidSkip(station)) return false;
   return station.status !== 'done' || isRejectedClaim(station);
 }
 

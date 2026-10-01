@@ -11,6 +11,7 @@ import {
   reorderStation,
   requestHumanCheck,
   resolveStationId,
+  skipStation,
   stationRowToDomain,
   updateStation,
 } from '../tools/stations';
@@ -268,6 +269,47 @@ describe('mark_station_done on a station with a machine predicate', () => {
       expect(done.evidence_kind).toBe('claim');
       expect(done.last_checked_at).toBeNull();
     }
+  });
+});
+
+describe('skip_station', () => {
+  let db: Database.Database;
+  let goalId: string;
+
+  beforeEach(() => {
+    db = createTestDb();
+    goalId = createGoal(db, { name: 'Ship the feature' }, 'mcp').id;
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('records a decision with its reason, never as done or proof', () => {
+    const s = createStation(db, { goalId, name: 'Build the scraper' });
+    const skipped = skipStation(db, s.id, 'Club site has no public API; ledger row added');
+    expect(skipped.status).toBe('skipped');
+    expect(skipped.evidence_note).toBe('Club site has no public API; ledger row added');
+    expect(skipped.done_at).toBeNull();
+  });
+
+  it('refuses a skip without a reason', () => {
+    const s = createStation(db, { goalId, name: 'Build the scraper' });
+    expect(() => skipStation(db, s.id, '   ')).toThrow(/reason/);
+    expect(listStations(db, goalId)[0].status).toBe('planned');
+  });
+
+  it('refuses gates and human steps: the review and a person decide those', () => {
+    const gate = createStation(db, { goalId, name: 'Review', kind: 'gate' });
+    const human = createStation(db, { goalId, name: 'Call', kind: 'human' });
+    expect(() => skipStation(db, gate.id, 'not needed')).toThrow(/gate/);
+    expect(() => skipStation(db, human.id, 'not needed')).toThrow(/human/);
+  });
+
+  it('refuses a station that is already done', async () => {
+    const s = createStation(db, { goalId, name: 'Build' });
+    await markStationDone(db, s.id, 'built it', NO_ROOT);
+    expect(() => skipStation(db, s.id, 'changed my mind')).toThrow(/already done/);
   });
 });
 

@@ -28,7 +28,13 @@ interface ContractFixture {
   child?: { status: string };
   tickets?: Array<{ goal: 'root' | 'child'; status: string }>;
   requirements?: Array<{ status: string }>;
-  stations?: Array<{ goal: 'root' | 'child'; status: string; evidenceKind: string }>;
+  stations?: Array<{
+    goal: 'root' | 'child';
+    status: string;
+    evidenceKind: string;
+    kind?: string;
+    evidenceNote?: string;
+  }>;
 }
 
 interface ContractCase {
@@ -142,11 +148,11 @@ function frontendFixture(fixture: ContractFixture): {
     id: `station-${index}`,
     goalId: station.goal === 'child' ? CHILD_ID : ROOT_ID,
     name: `Station ${index}`,
-    kind: 'normal',
+    kind: (station.kind ?? 'normal') as PmGoalStation['kind'],
     status: station.status as PmGoalStation['status'],
     evidenceKind: station.evidenceKind as PmGoalStation['evidenceKind'],
     predicate: { type: 'undefined' },
-    evidenceNote: '',
+    evidenceNote: station.evidenceNote ?? '',
     ticketId: null,
     lane: 0,
     sortOrder: index,
@@ -200,14 +206,17 @@ function evaluateInSqlite(fixture: ContractFixture): ReturnType<typeof evaluateG
     }
     for (const [index, station] of (fixture.stations ?? []).entries()) {
       db.prepare(
-        `INSERT INTO pm_goal_stations (id, goal_id, name, kind, status, evidence_kind, predicate)
-         VALUES (?, ?, ?, 'normal', ?, ?, '{"type":"undefined"}')`
+        `INSERT INTO pm_goal_stations
+           (id, goal_id, name, kind, status, evidence_kind, predicate, evidence_note)
+         VALUES (?, ?, ?, ?, ?, ?, '{"type":"undefined"}', ?)`
       ).run(
         `station-${index}`,
         goalIds.get(station.goal)!,
         `Station ${index}`,
+        station.kind ?? 'normal',
         station.status,
-        station.evidenceKind
+        station.evidenceKind,
+        station.evidenceNote ?? ''
       );
     }
 

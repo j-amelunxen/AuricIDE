@@ -121,7 +121,7 @@ export function buildForYouQueue(input: ForYouInput): ForYouItem[] {
 function humanStationsDue(stations: readonly LineStation[]): LineStation[] {
   const due: LineStation[] = [];
   for (const station of stations) {
-    if (station.state === 'done') continue;
+    if (station.state === 'done' || station.state === 'skipped') continue;
     if (station.kind === 'human') due.push(station);
     else if (station.kind === 'normal') break;
   }

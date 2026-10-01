@@ -187,8 +187,8 @@ describe('buildGoalLaunchPrompt', () => {
       description: long,
       successCriteria: long,
     });
-    // /goal accepts at most 4000 characters; without a goal prompt the frame stays far below.
-    expect(buildGoalLaunchPrompt(goal, stations, 'stations').length).toBeLessThan(1200);
+    // /goal accepts at most 4000 characters; without a goal prompt the frame stays far below (the skip rule added ~200).
+    expect(buildGoalLaunchPrompt(goal, stations, 'stations').length).toBeLessThan(1400);
     expect(buildGoalLaunchPrompt(goal, stations, 'tickets').length).toBeLessThan(2400);
   });
 
