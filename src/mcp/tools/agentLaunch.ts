@@ -3,7 +3,9 @@ import type { FastMCP } from 'fastmcp';
 import type Database from 'better-sqlite3';
 import { dispatchNotification } from '../notificationsDb';
 import { requestingAgentFolder } from '../requesterFolder';
-import { getGoal } from './goalsDb';
+import { descendantIds, getGoal } from './goalsDb';
+import { resolveTicketId } from './resolve';
+import { GOAL_LAUNCH_PURPOSES } from './goalLaunch';
 import {
   buildLaunchRequest,
   LAUNCH_REQUEST_KEY_PREFIX,
@@ -37,9 +39,11 @@ export { LAUNCH_REQUEST_KEY_PREFIX };
  * `claude-opus-4-1[1m]`). The model lands on a shell command line; the spawn
  * path quotes it (`shell_word` in `providers/types.rs`), and this boundary
  * refuses separators, quotes, whitespace and substitutions before anything is
- * written.
+ * written. The `[` stays escaped: the pattern ships in the tool schema, and
+ * stricter regex dialects (the model API's among them) read a bare `[` inside a
+ * class as a nested class and reject the whole schema.
  */
-const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+[\]-]{0,127}$/;
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+\[\]-]{0,127}$/;
 /** Provider ids as the registry and the policy write them. */
 const PROVIDER_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -71,6 +75,24 @@ const requestSchema = z
       .describe(
         'true = run in a fresh IDE worktree of your own repository instead of your own ' +
           'working directory. You cannot name a folder.'
+      ),
+    ticketId: z
+      .string()
+      .optional()
+      .describe(
+        'A ticket of this goal (or its sub-goals) the run is for; its cost is booked on it too'
+      ),
+    purpose: z
+      .enum(GOAL_LAUNCH_PURPOSES)
+      .optional()
+      .describe('What the agent is for (work, plan, split); only labels the inbox row'),
+    replace: z
+      .boolean()
+      .optional()
+      .describe(
+        "true = swap the prompt (and provider, model, worktree, ticket) of this goal's open " +
+          'request, as long as nobody has started it. Same uid back. Without it an open ' +
+          'request is returned untouched.'
       ),
     title: z.string().optional().describe('Inbox title; defaults to the goal name'),
   })
@@ -162,12 +184,45 @@ function openRequestFor(
   return row?.uid ?? null;
 }
 
+/** A request someone already started or claimed keeps its prompt: the agent has read it. */
+function isStarted(inboxDb: Database.Database, uid: string): boolean {
+  return (
+    inboxDb.prepare('SELECT 1 FROM agent_launch_runs WHERE request_uid = ?').get(uid) !==
+      undefined ||
+    inboxDb.prepare('SELECT 1 FROM agent_launch_claims WHERE request_uid = ?').get(uid) !==
+      undefined
+  );
+}
+
+const PURPOSE_TITLE = {
+  work: 'Agent requested for goal',
+  plan: 'Planning agent requested for goal',
+  split: 'Split agent requested for goal',
+} as const;
+
+/** The ticket must exist and belong to the goal's subtree, or the cost lands on the wrong goal. */
+function checkedTicket(
+  projectDb: Database.Database,
+  goalId: string,
+  requested: string | undefined
+): string | undefined {
+  const given = requested?.trim();
+  if (!given) return undefined;
+  const ticketId = resolveTicketId(projectDb, given);
+  const row = projectDb.prepare('SELECT goal_id FROM pm_tickets WHERE id = ?').get(ticketId) as
+    { goal_id: string | null } | undefined;
+  if (!row?.goal_id || !descendantIds(projectDb, goalId).includes(row.goal_id)) {
+    throw new Error(`Ticket '${ticketId}' does not belong to goal '${goalId}' or its sub-goals`);
+  }
+  return ticketId;
+}
+
 export function requestAgentLaunch(
   projectDb: Database.Database,
   inboxDb: Database.Database,
   raw: unknown,
   defaults: Defaults
-): { uid: string; status: 'pending'; reused?: true } {
+): { uid: string; status: 'pending'; reused?: true; replaced?: true } {
   const args = requestSchema.parse(raw);
   const projectPath = defaults.projectPath;
   if (!projectPath) {
@@ -182,35 +237,54 @@ export function requestAgentLaunch(
   if (!goal) throw new Error(`Goal '${goalId}' not found in this project`);
 
   const provider = checkedProvider(args.provider, projectDb, defaults);
+  const ticketId = checkedTicket(projectDb, goalId, args.ticketId);
+  const title =
+    args.title ?? (args.purpose ? `${PURPOSE_TITLE[args.purpose]} "${goal.name}"` : undefined);
 
   // Look and write under one write lock (BEGIN IMMEDIATE): two agents with
   // their own MCP server processes asking for the same goal at once must not
   // both see "no open request" and stack two Start buttons.
-  const openOrInsert = inboxDb.transaction((): { uid: string; reused: boolean } => {
-    const open = openRequestFor(inboxDb, projectPath, goalId);
-    if (open) return { uid: open, reused: true };
+  const openOrInsert = inboxDb.transaction(
+    (): {
+      uid: string;
+      reused: boolean;
+      replaced: boolean;
+    } => {
+      const open = openRequestFor(inboxDb, projectPath, goalId);
+      if (open && !args.replace) return { uid: open, reused: true, replaced: false };
+      if (open && isStarted(inboxDb, open)) {
+        throw new Error(
+          `The open request '${open}' for this goal was already started; it cannot be replaced`
+        );
+      }
 
-    const uid = crypto.randomUUID();
-    dispatchNotification(
-      inboxDb,
-      buildLaunchRequest({
-        uid,
-        goalId,
-        goalName: goal.name,
-        prompt,
-        folder,
-        projectPath,
-        projectName: defaults.projectName ?? null,
-        provider,
-        model: args.model,
-        worktree: args.worktree,
-        title: args.title,
-      })
-    );
-    return { uid, reused: false };
-  });
-  const { uid, reused } = openOrInsert.immediate();
-  return reused ? { uid, status: 'pending', reused: true } : { uid, status: 'pending' };
+      // Replacing re-dispatches under the same uid: `dispatchNotification` swaps
+      // the row for the one with the same dedupe key, so a caller polling the uid
+      // keeps it, and clients that already drained see the new row again.
+      const uid = open ?? crypto.randomUUID();
+      dispatchNotification(
+        inboxDb,
+        buildLaunchRequest({
+          uid,
+          goalId,
+          goalName: goal.name,
+          prompt,
+          folder,
+          projectPath,
+          projectName: defaults.projectName ?? null,
+          provider,
+          model: args.model,
+          worktree: args.worktree,
+          ticketId,
+          title,
+        })
+      );
+      return { uid, reused: false, replaced: open !== null };
+    }
+  );
+  const { uid, reused, replaced } = openOrInsert.immediate();
+  if (reused) return { uid, status: 'pending', reused: true };
+  return replaced ? { uid, status: 'pending', replaced: true } : { uid, status: 'pending' };
 }
 
 interface RequestRow {
@@ -294,7 +368,9 @@ export function registerAgentLaunchTools(
       '"pending". The request lands in the inbox with a Start button; it starts on its own only ' +
       "if the human granted automatic starts for the goal's mission root. Poll get_agent_run " +
       'with the uid to see whether and how it ran. Asking again for a goal with an open ' +
-      'request returns that request instead of stacking a second one.',
+      'request returns that request instead of stacking a second one; pass replace: true to swap ' +
+      "its prompt while it has not started (same uid). ticketId books the run on one of the goal's " +
+      'tickets as well. get_goal_launch_prompt gives the prompt the IDE button would use.',
     parameters: requestSchema,
     execute: async (args) => JSON.stringify(requestAgentLaunch(projectDb, inboxDb, args, defaults)),
   });

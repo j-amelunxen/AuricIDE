@@ -62,7 +62,16 @@ export function resolveBlueprintId(db: Database.Database, prefix: string): strin
 }
 
 export function resolveGoalId(db: Database.Database, prefix: string): string {
-  return resolveId(db, 'pm_goals', prefix);
+  try {
+    return resolveId(db, 'pm_goals', prefix);
+  } catch (error) {
+    // Agents often hold a goal's name, not its id (the user said it): say where
+    // the id comes from instead of leaving them to dump every goal.
+    if (error instanceof Error && error.message.startsWith('No goals found')) {
+      throw new Error(`${error.message}. To look a goal up by name, call find_goals.`);
+    }
+    throw error;
+  }
 }
 
 export function resolveRequirementId(db: Database.Database, idOrReqId: string): string {

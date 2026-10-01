@@ -7,6 +7,8 @@ import type { FastMCP } from 'fastmcp';
 import { createTestDb } from '../db';
 import { createTestNotificationsDb } from '../notificationsDb';
 import { createGoal } from './goalsDb';
+import { createEpic } from './epics';
+import { createTicket } from './tickets';
 import { LAUNCH_REQUEST_KEY_PREFIX, registerAgentLaunchTools } from './agentLaunch';
 
 /**
@@ -604,5 +606,120 @@ describe('get_agent_run', () => {
       )
       .run();
     await expect(call('get_agent_run', { uid: 'plain' })).rejects.toThrow(/not an agent launch/);
+  });
+});
+
+describe('request_agent_launch: ticket, purpose and replace', () => {
+  let projectDb: Database.Database;
+  let inboxDb: Database.Database;
+  let tools: Map<string, CapturedTool>;
+  let goalId: string;
+  let subGoalId: string;
+
+  beforeEach(() => {
+    projectDb = createTestDb();
+    inboxDb = createTestNotificationsDb();
+    goalId = createGoal(projectDb, { name: 'Ship it' }, 'test').id;
+    subGoalId = createGoal(projectDb, { name: 'Sub', parentId: goalId }, 'test').id;
+    tools = captureTools(projectDb, inboxDb, { projectPath: '/repo/auric', projectName: 'auric' });
+  });
+
+  const request = async (args: Record<string, unknown>) =>
+    JSON.parse(await tools.get('request_agent_launch')!.execute(args)) as Record<string, unknown>;
+  const rows = () =>
+    inboxDb.prepare('SELECT * FROM notifications ORDER BY id').all() as Array<
+      Record<string, unknown>
+    >;
+  const actionOf = (row: Record<string, unknown>) =>
+    (JSON.parse(row.actions as string) as Array<Record<string, unknown>>)[0];
+  const ticketFor = (forGoal: string | null) => {
+    const epic = createEpic(projectDb, { name: 'E' });
+    return createTicket(projectDb, { epicId: epic.id, name: 'T', goalId: forGoal ?? undefined });
+  };
+
+  it('carries a ticket of the goal subtree on the spawn action', async () => {
+    const ticket = ticketFor(subGoalId);
+    await request({ prompt: 'x', goalId, ticketId: ticket.id });
+    expect(actionOf(rows()[0]).ticketId).toBe(ticket.id);
+    expect(actionOf(rows()[0]).goalId).toBe(goalId);
+  });
+
+  it('refuses a ticket that belongs to another goal or to none, and writes nothing', async () => {
+    const other = createGoal(projectDb, { name: 'Other' }, 'test').id;
+    await expect(request({ prompt: 'x', goalId, ticketId: ticketFor(other).id })).rejects.toThrow(
+      /does not belong/
+    );
+    await expect(request({ prompt: 'x', goalId, ticketId: ticketFor(null).id })).rejects.toThrow(
+      /does not belong/
+    );
+    await expect(request({ prompt: 'x', goalId, ticketId: 'missing' })).rejects.toThrow();
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('labels the inbox row by purpose', async () => {
+    await request({ prompt: 'x', goalId, purpose: 'plan' });
+    expect(rows()[0].title).toBe('Planning agent requested for goal "Ship it"');
+  });
+
+  it('refuses an unknown purpose', async () => {
+    await expect(request({ prompt: 'x', goalId, purpose: 'nuke' })).rejects.toThrow();
+  });
+
+  it('swaps the prompt of the open request and keeps its uid', async () => {
+    const first = await request({ prompt: 'old prompt', goalId });
+    const second = await request({ prompt: 'new prompt', goalId, replace: true, model: 'opus' });
+
+    expect(second.uid).toBe(first.uid);
+    expect(second.replaced).toBe(true);
+    expect(second.reused).toBeUndefined();
+    expect(rows()).toHaveLength(1);
+    expect(actionOf(rows()[0]).task).toBe('new prompt');
+    expect(actionOf(rows()[0]).model).toBe('opus');
+  });
+
+  it('treats replace with nothing open as a plain request', async () => {
+    const result = await request({ prompt: 'x', goalId, replace: true });
+    expect(result.replaced).toBeUndefined();
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('refuses to replace a request that already started', async () => {
+    const { uid } = (await request({ prompt: 'old', goalId })) as { uid: string };
+    inboxDb
+      .prepare(
+        "INSERT INTO agent_launch_runs (request_uid, agent_id, status) VALUES (?, 'a1', 'running')"
+      )
+      .run(uid);
+
+    await expect(request({ prompt: 'new', goalId, replace: true })).rejects.toThrow(
+      /already started/
+    );
+    expect(actionOf(rows()[0]).task).toBe('old');
+  });
+
+  it('refuses to replace a request that was claimed for an automatic start', async () => {
+    const { uid } = (await request({ prompt: 'old', goalId })) as { uid: string };
+    inboxDb
+      .prepare(
+        "INSERT INTO agent_launch_claims (request_uid, grant_id, root_goal_id) VALUES (?, 'g', ?)"
+      )
+      .run(uid, goalId);
+
+    await expect(request({ prompt: 'new', goalId, replace: true })).rejects.toThrow(
+      /already started/
+    );
+  });
+
+  // The trust boundary stays where it was: replacing is no way in for authority fields.
+  it.each([
+    ['permissionMode', 'bypassPermissions'],
+    ['headless', true],
+    ['launch', 'direct'],
+  ])('still refuses %s, also together with replace', async (field, value) => {
+    await request({ prompt: 'x', goalId });
+    await expect(request({ prompt: 'y', goalId, replace: true, [field]: value })).rejects.toThrow(
+      new RegExp(field)
+    );
+    expect(actionOf(rows()[0]).task).toBe('x');
   });
 });

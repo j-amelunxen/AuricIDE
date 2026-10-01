@@ -929,7 +929,7 @@ export function listGoalDependencies(
   };
 }
 
-function descendantIds(db: Database.Database, goalId: string): string[] {
+export function descendantIds(db: Database.Database, goalId: string): string[] {
   // Recursive CTE walks the subtree in one query; cycle-safe via UNION dedup.
   const rows = db
     .prepare(
@@ -1018,6 +1018,21 @@ function subtreeSnapshot(db: Database.Database, goalId: string): SubtreeSnapshot
   }
 
   return { blockers, tickets, stations };
+}
+
+/**
+ * The mode a goal is worked in, resolved from its setting and what its subtree
+ * has attached. Same inputs as `evaluateGoal`'s `workMode`, so a launch prompt
+ * and an evaluation never disagree.
+ */
+export function goalWorkMode(db: Database.Database, goalId: string) {
+  const goal = getGoal(db, goalId);
+  if (!goal) throw new Error(`Goal '${goalId}' not found`);
+  const { tickets, stations } = subtreeSnapshot(db, goalId);
+  return resolveGoalWorkMode(goal.work_mode, {
+    hasTickets: tickets.some((t) => t.status !== 'discarded'),
+    hasStations: stations.length > 0,
+  });
 }
 
 export function evaluateGoal(

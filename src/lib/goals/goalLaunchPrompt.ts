@@ -1,7 +1,18 @@
 import type { PmGoal, PmGoalStation } from '@/lib/tauri/goals';
 import type { GoalWorkMode } from './workMode';
 
-const TICKET_AGREEMENT = (goal: PmGoal): string =>
+/**
+ * The slice of a goal and of a station these builders read. Narrow on purpose:
+ * the UI hands in store rows, the MCP server rows rebuilt from SQLite, and
+ * neither should have to fake the fields nobody here looks at.
+ */
+export type LaunchGoal = Pick<
+  PmGoal,
+  'id' | 'name' | 'description' | 'successCriteria' | 'goalPrompt' | 'workMode'
+>;
+export type LaunchStation = Pick<PmGoalStation, 'id' | 'goalId' | 'name' | 'kind' | 'sortOrder'>;
+
+const TICKET_AGREEMENT = (goal: LaunchGoal): string =>
   'Work mode: tickets. ' +
   `Work autonomously toward this goal. Its goalId is "${goal.id}". Use this exact ` +
   'value with the auric-pm MCP tools, do not look it up by name. If those tools are ' +
@@ -29,7 +40,7 @@ const UNATTENDED_HUMAN_STATIONS =
   'stationId and the concrete steps a person has to check, then continue with the next ' +
   'station. This overrides any instruction above to wait for a person. ';
 
-const STATION_AGREEMENT = (goal: PmGoal, hasOwnLine: boolean, unattended: boolean): string =>
+const STATION_AGREEMENT = (goal: LaunchGoal, hasOwnLine: boolean, unattended: boolean): string =>
   `Work mode: stations. Use goalId "${goal.id}" exactly with the auric-pm tools. ` +
   'No epic, no tickets: the stations are the plan. ' +
   (hasOwnLine
@@ -55,7 +66,7 @@ export interface GoalLaunchOptions {
 }
 
 /** The goal lives in the IDE; the prompt points at it rather than copying it. */
-const READ_GOAL_FIRST = (goal: PmGoal): string =>
+const READ_GOAL_FIRST = (goal: LaunchGoal): string =>
   `## Read the goal first\nCall get_goal (id: "${goal.id}") before anything else and read ` +
   'its description, success criteria and goal prompt. This prompt only points at them.';
 
@@ -71,8 +82,8 @@ const READ_GOAL_FIRST = (goal: PmGoal): string =>
  * stations itself and marks each one done with evidence.
  */
 export function buildGoalLaunchPrompt(
-  goal: PmGoal,
-  stations: PmGoalStation[] = [],
+  goal: LaunchGoal,
+  stations: LaunchStation[] = [],
   mode: GoalWorkMode = 'tickets',
   { unattended = false }: GoalLaunchOptions = {}
 ): string {
@@ -111,7 +122,7 @@ export function buildGoalLaunchPrompt(
  * expects and stops; the conductor works what it left on the next tick.
  * Doing the work in the same run would leave it without evidence per step.
  */
-export function buildGoalPlanningPrompt(goal: PmGoal): string {
+export function buildGoalPlanningPrompt(goal: LaunchGoal): string {
   const plan =
     goal.workMode === 'tickets'
       ? 'This goal is set to ticket mode. Call list_epics and reuse a fitting epic, or ' +
@@ -132,4 +143,36 @@ export function buildGoalPlanningPrompt(goal: PmGoal): string {
       'agent. Do not create sub-goals, do not mark anything done, do not call ' +
       'record_goal_run. Stop as soon as the plan is saved.',
   ].join('\n\n');
+}
+
+/** Builds the dedicated planning prompt that atomically splits a meta-goal into executable work. */
+export function buildMetaGoalSplitPrompt(metaGoal: LaunchGoal): string {
+  const context = [`# Meta-goal: ${metaGoal.name}`, `metaGoalId: "${metaGoal.id}"`];
+  if (metaGoal.description) context.push(`## Description\n${metaGoal.description}`);
+  if (metaGoal.successCriteria) {
+    context.push(`## Success criteria\n${metaGoal.successCriteria}`);
+  }
+  if (metaGoal.goalPrompt.trim()) {
+    context.push(`## Planning instructions\n${metaGoal.goalPrompt}`);
+  }
+  context.push(
+    '## Planning contract\n' +
+      `Use the exact metaGoalId "${metaGoal.id}"; do not look it up by name. First call ` +
+      `get_goal_tree with rootId "${metaGoal.id}" and inspect the existing child goals and ` +
+      'tickets. On every rerun, reuse the existing plan: do not delete or overwrite existing ' +
+      'children or tickets, and only create genuinely missing work packages. Package identity is ' +
+      'the exact child goal name plus ticket name; materialize_goal_plan returns the existing pair ' +
+      'when both already exist.\n\n' +
+      'Call list_epics and reuse an appropriate existing epic; if none exists, call create_epic ' +
+      'and use its returned epicId. Design at least one work package ' +
+      'whose child goal is a checkable outcome and whose ticket is executable. Then call ' +
+      'materialize_goal_plan once for atomic materialization, passing parentId equal to the exact ' +
+      'metaGoalId, the selected epicId, and all genuinely missing workPackages. Each returned child ' +
+      'goal id must be that package ticket goalId; the ticket goalId must never be the metaGoalId. ' +
+      'Do not call create_goal, decompose_goal, or create_ticket separately for these packages. ' +
+      'Do NOT call record_goal_run: this run is already recorded. Exit after reporting the created ' +
+      'goal and ticket pairs, or explain why no genuinely missing packages remain.'
+  );
+
+  return `/goal\n\n${context.join('\n\n')}`;
 }

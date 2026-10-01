@@ -484,3 +484,160 @@ describe('GoalTree dependency chips', () => {
     expect(screen.getByTestId('goal-blocked-chip-c')).toHaveTextContent('waits for bundle api');
   });
 });
+
+describe('GoalTree multi-selection', () => {
+  const goals = [
+    makeGoal({ id: 'root', name: 'Root' }),
+    makeGoal({ id: 'a', parentId: 'root', name: 'Alpha', sortOrder: 0 }),
+    makeGoal({ id: 'b', parentId: 'root', name: 'Beta', sortOrder: 1 }),
+    makeGoal({ id: 'c', parentId: 'root', name: 'Gamma', sortOrder: 2, status: 'failed' }),
+  ];
+
+  it('a plain click selects only that goal, even with a selection around', () => {
+    const onSelect = vi.fn();
+    const onToggleSelect = vi.fn();
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="a"
+        selectedIds={new Set(['a', 'b'])}
+        onSelect={onSelect}
+        onToggleSelect={onToggleSelect}
+      />
+    );
+    fireEvent.click(screen.getByTestId('goal-node-c'));
+    expect(onSelect).toHaveBeenCalledWith('c');
+    expect(onToggleSelect).not.toHaveBeenCalled();
+  });
+
+  it('Shift-click toggles instead of replacing', () => {
+    const onSelect = vi.fn();
+    const onToggleSelect = vi.fn();
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="a"
+        onSelect={onSelect}
+        onToggleSelect={onToggleSelect}
+      />
+    );
+    fireEvent.click(screen.getByTestId('goal-node-b'), { shiftKey: true });
+    expect(onToggleSelect).toHaveBeenCalledWith('b');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('marks every selected goal as pressed', () => {
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="a"
+        selectedIds={new Set(['a', 'b'])}
+        onSelect={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('goal-node-a')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('goal-node-b')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('goal-node-c')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('right-click on a selected goal opens the bulk menu titled with the count', () => {
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="a"
+        selectedIds={new Set(['a', 'b'])}
+        onSelect={vi.fn()}
+        onBulkUpdate={vi.fn()}
+      />
+    );
+    fireEvent.contextMenu(screen.getByTestId('goal-node-b'));
+    expect(screen.getByText('2 goals')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Achieved/ })).toBeInTheDocument();
+  });
+
+  it('right-click on a goal outside the selection keeps the single-goal menu', () => {
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="a"
+        selectedIds={new Set(['a', 'b'])}
+        onSelect={vi.fn()}
+        onBulkUpdate={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+    fireEvent.contextMenu(screen.getByTestId('goal-node-c'));
+    expect(screen.queryByText('2 goals')).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /Delete goal/ })).toBeInTheDocument();
+  });
+
+  it('offers a status change only when all selected goals share the status', () => {
+    const { unmount } = render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="a"
+        selectedIds={new Set(['a', 'c'])}
+        onSelect={vi.fn()}
+        onBulkUpdate={vi.fn()}
+      />
+    );
+    fireEvent.contextMenu(screen.getByTestId('goal-node-a'));
+    expect(screen.queryByRole('menuitem', { name: /Achieved/ })).toBeNull();
+    expect(screen.getByText(/Statuses differ/)).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Critical/ })).toBeInTheDocument();
+    unmount();
+  });
+
+  it('applies the chosen priority to all selected goals in one call', () => {
+    const onBulkUpdate = vi.fn();
+    render(
+      <GoalTree
+        goals={goals}
+        tickets={[]}
+        selectedId="a"
+        selectedIds={new Set(['a', 'b'])}
+        onSelect={vi.fn()}
+        onBulkUpdate={onBulkUpdate}
+      />
+    );
+    fireEvent.contextMenu(screen.getByTestId('goal-node-a'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /High/ }));
+    expect(onBulkUpdate).toHaveBeenCalledTimes(1);
+    expect(onBulkUpdate).toHaveBeenCalledWith([
+      { id: 'a', updates: { priority: 'high' } },
+      { id: 'b', updates: { priority: 'high' } },
+    ]);
+    expect(screen.queryByText('2 goals')).toBeNull();
+  });
+
+  it('changes the parent through a second menu stage', () => {
+    const onBulkUpdate = vi.fn();
+    const withOther = [...goals, makeGoal({ id: 'other', name: 'Elsewhere', sortOrder: 5 })];
+    render(
+      <GoalTree
+        goals={withOther}
+        tickets={[]}
+        selectedId="a"
+        selectedIds={new Set(['a', 'b'])}
+        onSelect={vi.fn()}
+        onBulkUpdate={onBulkUpdate}
+      />
+    );
+    fireEvent.contextMenu(screen.getByTestId('goal-node-a'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Change parent/ }));
+    expect(screen.queryByRole('menuitem', { name: /Achieved/ })).toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Elsewhere/ }));
+    expect(onBulkUpdate).toHaveBeenCalledTimes(1);
+    const updates: { id: string; updates: { parentId: string | null } }[] =
+      onBulkUpdate.mock.calls[0][0];
+    // Remaining siblings may be renumbered too; what matters is who ended up under 'other'.
+    const moved = updates.filter((u) => u.updates.parentId === 'other').map((u) => u.id);
+    expect(moved.sort()).toEqual(['a', 'b']);
+  });
+});
