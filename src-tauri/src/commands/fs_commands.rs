@@ -1,6 +1,7 @@
 use super::fs_utils::{
     copy_dir_recursive, ensure_scratch_dir, read_directory_dated_by, read_file_impl,
-    search_in_files_impl, write_file_impl, FileEntry, SearchMatch, SEARCH_MAX_RESULTS,
+    search_in_files_impl, write_file_base64_impl, write_file_impl, FileEntry, SearchMatch,
+    SEARCH_MAX_RESULTS,
 };
 use crate::recent_creations::RecentCreations;
 use serde::Serialize;
@@ -55,6 +56,11 @@ pub fn read_file_base64(path: &str) -> Result<String, String> {
 #[tauri::command]
 pub fn write_file(path: &str, content: &str) -> Result<(), String> {
     write_file_impl(path, content)
+}
+
+#[tauri::command]
+pub fn write_file_base64(path: &str, content_base64: &str) -> Result<(), String> {
+    write_file_base64_impl(path, content_base64)
 }
 
 #[tauri::command]

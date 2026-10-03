@@ -11,6 +11,8 @@ import { useConductorController } from '@/lib/hooks/useConductorController';
 import { GoalTree } from './GoalTree';
 import { toggleGoalSelection, type GoalBulkUpdate } from '@/lib/goals/bulkGoalMenu';
 import { GoalDetailPanel } from './GoalDetailPanel';
+import { GoalTable } from './GoalTable';
+import { APP_CONFIG_KEYS, readAppPref, writeAppPref } from '@/lib/config/appConfig';
 import { GoalCreateDialog } from './GoalCreateDialog';
 import { ConductorPanel } from './ConductorPanel';
 import { GoalsWorkflowStrip, WORKFLOW_STRIP_DISMISSED_KEY } from './GoalsWorkflowStrip';
@@ -78,6 +80,14 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
     () =>
       typeof window === 'undefined' || localStorage.getItem(WORKFLOW_STRIP_DISMISSED_KEY) !== '1'
   );
+
+  const [detailView, setDetailView] = useState<'details' | 'table'>(() =>
+    readAppPref(APP_CONFIG_KEYS.goalsDetailView) === 'table' ? 'table' : 'details'
+  );
+  const chooseDetailView = (view: 'details' | 'table') => {
+    setDetailView(view);
+    writeAppPref(APP_CONFIG_KEYS.goalsDetailView, view);
+  };
 
   const dismissWorkflowStrip = useCallback(() => {
     localStorage.setItem(WORKFLOW_STRIP_DISMISSED_KEY, '1');
@@ -147,6 +157,11 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
     () => goalsDraft.find((g) => g.id === selectedGoalId) ?? null,
     [goalsDraft, selectedGoalId]
   );
+  const hasSubGoals = useMemo(
+    () => selectedGoal !== null && goalsDraft.some((g) => g.parentId === selectedGoal.id),
+    [goalsDraft, selectedGoal]
+  );
+  const showTable = hasSubGoals && detailView === 'table';
 
   const activeAgentsByGoal = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -413,24 +428,58 @@ export function GoalsPanel({ embedded = false }: { embedded?: boolean }) {
           </div>
 
           <div className="flex flex-1 flex-col overflow-hidden">
-            <GoalDetailPanel
-              goal={selectedGoal}
-              goals={goalsDraft}
-              tickets={tickets}
-              requirements={requirements}
-              requirementLinks={goalRequirementLinksDraft}
-              runs={goalRunsDraft}
-              onUpdate={updateGoal}
-              onDelete={(id) => void handleDelete(id)}
-              onAchieve={achieveGoal}
-              onAddSubGoal={handleAddSubGoal}
-              onLaunchAgent={handleLaunchAgent}
-              onSplitGoal={handleSplitGoal}
-              onLinkRequirement={linkRequirementToGoal}
-              onUnlinkRequirement={unlinkRequirementFromGoal}
-              onLinkTicket={handleLinkTicket}
-              onUnlinkTicket={handleUnlinkTicket}
-            />
+            {hasSubGoals && selectedGoal && (
+              <div
+                role="group"
+                aria-label="Goal view"
+                className="flex gap-1 border-b border-white/5 px-4 py-1.5"
+              >
+                {(['details', 'table'] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    data-testid={`goal-view-${view}`}
+                    aria-pressed={detailView === view}
+                    onClick={() => chooseDetailView(view)}
+                    className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                      detailView === view
+                        ? 'bg-white/10 text-foreground'
+                        : 'text-foreground-muted hover:bg-white/5'
+                    }`}
+                  >
+                    {view === 'details' ? 'Details' : 'Sub-goal table'}
+                  </button>
+                ))}
+              </div>
+            )}
+            {showTable && selectedGoal ? (
+              <GoalTable
+                goal={selectedGoal}
+                goals={goalsDraft}
+                tickets={tickets}
+                stations={goalStationsDraft}
+                onSelect={handleSelectGoal}
+              />
+            ) : (
+              <GoalDetailPanel
+                goal={selectedGoal}
+                goals={goalsDraft}
+                tickets={tickets}
+                requirements={requirements}
+                requirementLinks={goalRequirementLinksDraft}
+                runs={goalRunsDraft}
+                onUpdate={updateGoal}
+                onDelete={(id) => void handleDelete(id)}
+                onAchieve={achieveGoal}
+                onAddSubGoal={handleAddSubGoal}
+                onLaunchAgent={handleLaunchAgent}
+                onSplitGoal={handleSplitGoal}
+                onLinkRequirement={linkRequirementToGoal}
+                onUnlinkRequirement={unlinkRequirementFromGoal}
+                onLinkTicket={handleLinkTicket}
+                onUnlinkTicket={handleUnlinkTicket}
+              />
+            )}
           </div>
         </div>
 
