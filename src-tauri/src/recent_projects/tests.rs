@@ -51,6 +51,7 @@ fn starred(path: &str, starred_at: u64) -> StarredProject {
         wheel_slots: Vec::new(),
         badge: None,
         description: None,
+        dock_index: None,
     }
 }
 
@@ -194,6 +195,7 @@ fn apply_settings_updates_only_the_named_project() {
             wheel_slots: None,
             badge: None,
             description: None,
+            dock_index: None,
         },
     );
 
@@ -686,4 +688,116 @@ fn the_settings_command_path_accepts_and_returns_the_description_in_camel_case()
         wire[0].get("description").is_none(),
         "an absent description is left out, like the badge"
     );
+}
+
+fn dock(projects: &mut [StarredProject], path: &str, update: Option<u32>) {
+    apply_starred_settings(
+        projects,
+        path,
+        StarredProjectSettings {
+            dock_index: Some(update),
+            ..StarredProjectSettings::default()
+        },
+    );
+}
+
+fn dock_order(projects: &[StarredProject]) -> Vec<(String, u32)> {
+    let mut docked: Vec<_> = projects
+        .iter()
+        .filter_map(|p| p.dock_index.map(|i| (p.path.clone(), i)))
+        .collect();
+    docked.sort_by_key(|(_, i)| *i);
+    docked
+}
+
+#[test]
+fn docking_inserts_at_the_given_place_and_renumbers() {
+    let mut projects = vec![starred("/a", 1), starred("/b", 2), starred("/c", 3)];
+    dock(&mut projects, "/a", Some(0));
+    dock(&mut projects, "/b", Some(1));
+    dock(&mut projects, "/c", Some(0));
+
+    assert_eq!(
+        dock_order(&projects),
+        vec![("/c".into(), 0), ("/a".into(), 1), ("/b".into(), 2)]
+    );
+}
+
+#[test]
+fn moving_inside_the_dock_reorders_without_growing_it() {
+    let mut projects = vec![starred("/a", 1), starred("/b", 2), starred("/c", 3)];
+    dock(&mut projects, "/a", Some(0));
+    dock(&mut projects, "/b", Some(1));
+    dock(&mut projects, "/c", Some(2));
+    dock(&mut projects, "/c", Some(0));
+
+    assert_eq!(
+        dock_order(&projects),
+        vec![("/c".into(), 0), ("/a".into(), 1), ("/b".into(), 2)]
+    );
+}
+
+#[test]
+fn undocking_closes_the_gap() {
+    let mut projects = vec![starred("/a", 1), starred("/b", 2), starred("/c", 3)];
+    for (i, p) in ["/a", "/b", "/c"].iter().enumerate() {
+        dock(&mut projects, p, Some(i as u32));
+    }
+    dock(&mut projects, "/a", None);
+
+    assert_eq!(
+        dock_order(&projects),
+        vec![("/b".into(), 0), ("/c".into(), 1)]
+    );
+    assert!(projects[0].dock_index.is_none());
+}
+
+#[test]
+fn a_full_dock_refuses_a_ninth_project_but_still_reorders() {
+    let mut projects: Vec<_> = (0..9).map(|i| starred(&format!("/p{i}"), i)).collect();
+    for i in 0..8 {
+        dock(&mut projects, &format!("/p{i}"), Some(i as u32));
+    }
+    dock(&mut projects, "/p8", Some(0));
+    assert!(projects[8].dock_index.is_none());
+    assert_eq!(dock_order(&projects).len(), DOCK_MAX);
+
+    dock(&mut projects, "/p7", Some(0));
+    assert_eq!(dock_order(&projects)[0].0, "/p7");
+}
+
+#[test]
+fn a_settings_save_that_does_not_mention_the_dock_leaves_it_alone() {
+    let mut projects = vec![starred("/a", 1)];
+    dock(&mut projects, "/a", Some(0));
+
+    apply_starred_settings(&mut projects, "/a", StarredProjectSettings::default());
+
+    assert_eq!(projects[0].dock_index, Some(0));
+}
+
+#[test]
+fn settings_json_distinguishes_a_missing_dock_index_from_null() {
+    let missing: StarredProjectSettings = serde_json::from_str("{}").unwrap();
+    assert!(missing.dock_index.is_none());
+    let clear: StarredProjectSettings = serde_json::from_str(r#"{"dockIndex":null}"#).unwrap();
+    assert_eq!(clear.dock_index, Some(None));
+    let set: StarredProjectSettings = serde_json::from_str(r#"{"dockIndex":2}"#).unwrap();
+    assert_eq!(set.dock_index, Some(Some(2)));
+}
+
+#[test]
+fn absorb_keeps_an_own_dock_place_and_fills_a_missing_one() {
+    let mut kept = starred("/a", 1);
+    kept.dock_index = Some(1);
+    let mut other = starred("/a", 2);
+    other.dock_index = Some(3);
+    kept.absorb(other);
+    assert_eq!(kept.dock_index, Some(1));
+
+    let mut empty = starred("/a", 1);
+    let mut donor = starred("/a", 2);
+    donor.dock_index = Some(3);
+    empty.absorb(donor);
+    assert_eq!(empty.dock_index, Some(3));
 }

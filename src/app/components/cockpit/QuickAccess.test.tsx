@@ -1,4 +1,12 @@
-import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  createEvent,
+  act,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_CONFIG_KEYS } from '@/lib/config/appConfig';
 import { QUICK_ACCESS_HINT, QuickAccess } from './QuickAccess';
@@ -1333,6 +1341,147 @@ describe('QuickAccess', () => {
         'quick-access-tile-/wt/zeta',
       ]);
       expect(localStorage.getItem(APP_CONFIG_KEYS.quickAccessSort)).toBe('name');
+    });
+  });
+
+  describe('dock', () => {
+    const dataTransfer = () => {
+      const data = new Map<string, string>();
+      return {
+        setData: (type: string, value: string) => data.set(type, value),
+        getData: (type: string) => data.get(type) ?? '',
+        effectAllowed: 'all',
+        dropEffect: 'none',
+      };
+    };
+    const ids = (root: HTMLElement) =>
+      within(root)
+        .getAllByTestId(/^quick-access-tile-/)
+        .map((tile) => tile.getAttribute('data-testid'));
+
+    beforeEach(() => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1 },
+          { path: '/a/blog', name: 'blog', starredAt: 2 },
+          { path: '/a/crm', name: 'crm', starredAt: 3 },
+        ],
+      });
+    });
+
+    it('shows no dock until something is in it', () => {
+      render(<QuickAccess currentPath={null} />);
+      expect(screen.queryByTestId('quick-access-dock')).toBeNull();
+    });
+
+    it('moves a project to the dock from the menu and out of the grid', () => {
+      render(<QuickAccess currentPath={null} />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/blog'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /move to dock/i }));
+
+      expect(ids(screen.getByTestId('quick-access-dock'))).toEqual(['quick-access-tile-/a/blog']);
+      expect(ids(screen.getByTestId('quick-access-row'))).toEqual([
+        'quick-access-tile-/a/apps',
+        'quick-access-tile-/a/crm',
+      ]);
+    });
+
+    it('keeps docked tiles in their own order whatever the grid sort is', () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1, dockIndex: 1 },
+          { path: '/a/blog', name: 'blog', starredAt: 2 },
+          { path: '/a/crm', name: 'crm', starredAt: 3, dockIndex: 0 },
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const dock = screen.getByTestId('quick-access-dock');
+      expect(ids(dock)).toEqual(['quick-access-tile-/a/crm', 'quick-access-tile-/a/apps']);
+
+      fireEvent.click(screen.getByTestId('quick-access-sort-badge'));
+      expect(ids(screen.getByTestId('quick-access-dock'))).toEqual([
+        'quick-access-tile-/a/crm',
+        'quick-access-tile-/a/apps',
+      ]);
+    });
+
+    it('takes a project out of the dock from the menu', () => {
+      useStore.setState({
+        starredProjects: [{ path: '/a/apps', name: 'apps', starredAt: 1, dockIndex: 0 }],
+      });
+      render(<QuickAccess currentPath={null} />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/apps'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /remove from dock/i }));
+
+      expect(screen.queryByTestId('quick-access-dock')).toBeNull();
+      expect(useStore.getState().starredProjects[0].dockIndex).toBeUndefined();
+    });
+
+    it('docks a dragged grid tile when it is dropped on the dock, and shows the drop place while dragging', () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1, dockIndex: 0 },
+          { path: '/a/blog', name: 'blog', starredAt: 2 },
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const transfer = dataTransfer();
+      fireEvent.dragStart(screen.getByTestId('quick-access-item-/a/blog'), {
+        dataTransfer: transfer,
+      });
+      expect(screen.getByTestId('quick-access-dock')).toHaveAttribute('data-drop-active', 'true');
+
+      fireEvent.drop(screen.getByTestId('quick-access-dock'), { dataTransfer: transfer });
+      expect(ids(screen.getByTestId('quick-access-dock'))).toEqual([
+        'quick-access-tile-/a/apps',
+        'quick-access-tile-/a/blog',
+      ]);
+    });
+
+    it('reorders inside the dock by dropping on the left half of a tile', () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1, dockIndex: 0 },
+          { path: '/a/blog', name: 'blog', starredAt: 2, dockIndex: 1 },
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const transfer = dataTransfer();
+      fireEvent.dragStart(screen.getByTestId('quick-access-item-/a/blog'), {
+        dataTransfer: transfer,
+      });
+      // jsdom has no layout and its drag events carry no coordinates, so give
+      // the target a box and the event a point inside its left half.
+      const target = screen.getByTestId('quick-access-item-/a/apps');
+      target.getBoundingClientRect = () => ({ left: 100, width: 80 }) as DOMRect;
+      const drop = createEvent.drop(target, { dataTransfer: transfer });
+      Object.defineProperty(drop, 'clientX', { value: 110 });
+      fireEvent(target, drop);
+      expect(ids(screen.getByTestId('quick-access-dock'))).toEqual([
+        'quick-access-tile-/a/blog',
+        'quick-access-tile-/a/apps',
+      ]);
+    });
+
+    it('takes a docked tile back to the grid when it is dropped there', () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1, dockIndex: 0 },
+          { path: '/a/blog', name: 'blog', starredAt: 2 },
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const transfer = dataTransfer();
+      fireEvent.dragStart(screen.getByTestId('quick-access-item-/a/apps'), {
+        dataTransfer: transfer,
+      });
+      fireEvent.drop(screen.getByTestId('quick-access-row'), { dataTransfer: transfer });
+
+      expect(screen.queryByTestId('quick-access-dock')).toBeNull();
+      expect(ids(screen.getByTestId('quick-access-row'))).toEqual([
+        'quick-access-tile-/a/apps',
+        'quick-access-tile-/a/blog',
+      ]);
     });
   });
 });

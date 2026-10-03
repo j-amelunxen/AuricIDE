@@ -15,6 +15,8 @@ import {
   type QuickAccessSkill,
 } from '@/lib/store/starredProjectsSlice';
 import { comboMenuLabel } from '@/lib/quickAccess/combo';
+import { DOCK_DRAG_MIME, dockPlaceNextTo, splitDock } from '@/lib/quickAccess/dock';
+import type { StarredProject } from '@/lib/tauri/starredProjects';
 import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useSpawnLauncher } from '@/lib/quickAccess/useSpawnLauncher';
@@ -22,7 +24,7 @@ import { PROJECT_TILE_COLUMNS, PROJECT_TILE_GRID } from './projectGrid';
 import { ProjectBadgeField } from './ProjectBadgeField';
 import { ProjectDescriptionDialog } from './ProjectDescriptionDialog';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
-import { ProjectTile } from './ProjectTile';
+import { ProjectTile, type ProjectTileProps } from './ProjectTile';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useProjectDirty } from '@/lib/hooks/useProjectDirty';
@@ -62,6 +64,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const starredProjects = useStore((s) => s.starredProjects);
   const removeStarredProject = useStore((s) => s.removeStarredProject);
   const addStarredProject = useStore((s) => s.addStarredProject);
+  const setStarredProjectDock = useStore((s) => s.setStarredProjectDock);
   const launchSpawnDialog = useSpawnLauncher();
   const startSkillCombo = useStore((s) => s.startSkillCombo);
   const showToast = useStore((s) => s.showToast);
@@ -75,6 +78,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
   const [settingsPath, setSettingsPath] = useState<string | null>(null);
   const [wheelPath, setWheelPath] = useState<string | null>(null);
   const [descriptionPath, setDescriptionPath] = useState<string | null>(null);
+  const [dragPath, setDragPath] = useState<string | null>(null);
   const [sort, setSort] = useState<QuickAccessSort>(() =>
     parseQuickAccessSort(readAppPref(APP_CONFIG_KEYS.quickAccessSort))
   );
@@ -120,6 +124,26 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
     icon: 'toc',
     action: () => setSettingsPath(contextMenu!.path),
   });
+
+  const contextMenuDockOption = (): ContextMenuOption => {
+    const docked =
+      starredProjects.find((p) => p.path === contextMenu?.path)?.dockIndex !== undefined;
+    return docked
+      ? {
+          label: 'Remove from Dock',
+          icon: 'close',
+          action: () => setStarredProjectDock(contextMenu!.path, null),
+        }
+      : {
+          label: 'Move to Dock',
+          icon: 'push_pin',
+          action: () =>
+            setStarredProjectDock(
+              contextMenu!.path,
+              dockPlaceNextTo(dockPaths, contextMenu!.path, null, 'after')
+            ),
+        };
+  };
 
   const menuOptions: ContextMenuOption[] = contextMenu
     ? [
@@ -176,6 +200,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           icon: 'edit_note',
           action: () => setDescriptionPath(contextMenu.path),
         },
+        contextMenuDockOption(),
         {
           label: sort === 'badge' ? 'Sort projects by name' : 'Sort projects by badge',
           icon: 'filter_list',
@@ -190,8 +215,104 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
       ]
     : [];
 
-  const sortedProjects = sortQuickAccessProjects(starredProjects, sort);
-  const dirtyByProject = useProjectDirty(sortedProjects.map((project) => project.path));
+  const { dock, rest } = splitDock(starredProjects);
+  const sortedProjects = sortQuickAccessProjects(rest, sort);
+  const dirtyByProject = useProjectDirty(
+    [...sortedProjects, ...dock].map((project) => project.path)
+  );
+  const dockPaths = dock.map((project) => project.path);
+
+  const dragPathOf = (event: React.DragEvent): string | null => {
+    const path = event.dataTransfer.getData(DOCK_DRAG_MIME);
+    return path || dragPath;
+  };
+
+  const tileProps = (project: StarredProject, inDock: boolean): ProjectTileProps['drag'] => ({
+    onDragStart: (event) => {
+      event.dataTransfer.setData(DOCK_DRAG_MIME, project.path);
+      event.dataTransfer.effectAllowed = 'move';
+      setDragPath(project.path);
+    },
+    onDragEnd: () => setDragPath(null),
+    ...(inDock
+      ? {
+          onDragOver: (event: React.DragEvent) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+          },
+          onDrop: (event: React.DragEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const dragged = dragPathOf(event);
+            setDragPath(null);
+            if (!dragged || dragged === project.path) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+            setStarredProjectDock(dragged, dockPlaceNextTo(dockPaths, dragged, project.path, side));
+          },
+        }
+      : {}),
+  });
+
+  const renderTile = (project: StarredProject, inDock: boolean) => (
+    <ProjectTile
+      key={project.path}
+      project={project}
+      active={project.path === currentPath}
+      dirty={dirtyByProject[project.path] === true}
+      wheelSuppressed={wheelPath !== null && wheelPath !== project.path}
+      onSwitch={() => {
+        if (project.path !== currentPath) onSwitchProject?.(project.path);
+      }}
+      onUnstar={() => removeStarredProject(project.path)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY, path: project.path });
+      }}
+      onLaunchSkill={(skill) => launchSkill(project.path, skill)}
+      onLaunchCombo={(combo) => launchCombo(project.path, combo)}
+      onOpenSettings={() => setSettingsPath(project.path)}
+      onWheelActivity={(active) => {
+        setWheelPath((current) => {
+          if (active) return project.path;
+          return current === project.path ? null : current;
+        });
+      }}
+      drag={tileProps(project, inDock)}
+    />
+  );
+
+  // Grid and dock accept a drop on their empty parts too: the dock appends,
+  // the grid takes a docked tile back out.
+  const dragging = dragPath !== null;
+  const draggingDocked = dragging && dockPaths.includes(dragPath);
+  const dockDropZone = {
+    onDragOver: (event: React.DragEvent) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    },
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      const dragged = dragPathOf(event);
+      setDragPath(null);
+      if (dragged)
+        setStarredProjectDock(dragged, dockPlaceNextTo(dockPaths, dragged, null, 'after'));
+    },
+  };
+  const gridDropZone = {
+    onDragOver: (event: React.DragEvent) => {
+      if (!draggingDocked) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    },
+    onDrop: (event: React.DragEvent) => {
+      const dragged = dragPathOf(event);
+      if (!dragged || !dockPaths.includes(dragged)) return;
+      event.preventDefault();
+      setDragPath(null);
+      setStarredProjectDock(dragged, null);
+    },
+  };
 
   const currentStarred =
     currentPath !== null && starredProjects.some((p) => p.path === currentPath);
@@ -207,6 +328,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
         data-columns={PROJECT_TILE_COLUMNS}
         data-sort={sort}
         className={`${PROJECT_TILE_GRID} items-start overflow-visible`}
+        {...gridDropZone}
       >
         {starredProjects.length > 1 && (
           <div
@@ -244,32 +366,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
             })}
           </div>
         )}
-        {sortedProjects.map((project) => (
-          <ProjectTile
-            key={project.path}
-            project={project}
-            active={project.path === currentPath}
-            dirty={dirtyByProject[project.path] === true}
-            wheelSuppressed={wheelPath !== null && wheelPath !== project.path}
-            onSwitch={() => {
-              if (project.path !== currentPath) onSwitchProject?.(project.path);
-            }}
-            onUnstar={() => removeStarredProject(project.path)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setContextMenu({ x: e.clientX, y: e.clientY, path: project.path });
-            }}
-            onLaunchSkill={(skill) => launchSkill(project.path, skill)}
-            onLaunchCombo={(combo) => launchCombo(project.path, combo)}
-            onOpenSettings={() => setSettingsPath(project.path)}
-            onWheelActivity={(active) => {
-              setWheelPath((current) => {
-                if (active) return project.path;
-                return current === project.path ? null : current;
-              });
-            }}
-          />
-        ))}
+        {sortedProjects.map((project) => renderTile(project, false))}
         {canStarCurrent && (
           <div className="flex w-20 flex-col items-center gap-1.5 quick-access-tile-enter">
             <button
@@ -291,6 +388,26 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           </div>
         )}
       </div>
+      {(dock.length > 0 || dragging) && (
+        <div
+          role="group"
+          aria-label="Dock"
+          data-testid="quick-access-dock"
+          data-drop-active={dragging}
+          className={`flex min-h-[4.5rem] w-full max-w-fit flex-wrap items-start justify-center gap-x-1 gap-y-2 rounded-2xl border px-3 py-2.5 transition-[border-color,background-color] duration-150 ${
+            dragging ? 'border-primary/40 bg-primary/5' : 'border-white/10 bg-white/[0.03]'
+          }`}
+          {...dockDropZone}
+        >
+          {dock.length === 0 ? (
+            <p className="self-center px-4 text-[11px] text-foreground-muted/70">
+              Drop projects here to keep them in place.
+            </p>
+          ) : (
+            dock.map((project) => renderTile(project, true))
+          )}
+        </div>
+      )}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

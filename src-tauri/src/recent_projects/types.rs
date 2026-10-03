@@ -14,6 +14,8 @@ pub const MAX_SKILLS_PER_PROJECT: usize = 20;
 pub const MAX_COMBOS_PER_PROJECT: usize = 20;
 pub const MAX_STEPS_PER_COMBO: usize = 8;
 pub const WHEEL_SLOT_COUNT: usize = 6;
+/// Twin of `DOCK_MAX` in `src/lib/quickAccess/dock.ts`.
+pub const DOCK_MAX: usize = 8;
 /// Twin of `BADGE_MAX_CHARS` in `src/lib/quickAccess/badge.ts`.
 pub const BADGE_MAX_CHARS: usize = 6;
 /// A user's own description of a starred project, cut to this when saved
@@ -108,6 +110,14 @@ where
     Ok(Some(Option::<String>::deserialize(deserializer)?))
 }
 
+/// Present-versus-absent for the dock place, the same way as for the badge.
+fn dock_update<'de, D>(deserializer: D) -> Result<Option<Option<u32>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<u32>::deserialize(deserializer)?))
+}
+
 /// The per-project Quick Access settings, as one blob. They live INSIDE the
 /// starred record on purpose: unstarring a project drops its settings with it,
 /// which is the behaviour without any cleanup logic to get wrong.
@@ -138,6 +148,14 @@ pub struct StarredProjectSettings {
         skip_serializing_if = "Option::is_none"
     )]
     pub description: Option<Option<String>>,
+    /// Same three states as `badge`. `Some(Some(i))` docks the project at
+    /// place `i` (or moves it there); `Some(None)` takes it out of the dock.
+    #[serde(
+        default,
+        deserialize_with = "dock_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub dock_index: Option<Option<u32>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -160,6 +178,10 @@ pub struct StarredProject {
     /// derived from the folder in the control socket's `list_projects`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Place in the Quick Access dock; absent means not docked. Its own field
+    /// because the list is re-sorted by `starred_at` on every write.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dock_index: Option<u32>,
 }
 
 impl StarredProject {
@@ -189,6 +211,9 @@ impl StarredProject {
         }
         if self.description.is_none() {
             self.description = other.description;
+        }
+        if self.dock_index.is_none() {
+            self.dock_index = other.dock_index;
         }
         if self.name.trim().is_empty() {
             self.name = other.name;

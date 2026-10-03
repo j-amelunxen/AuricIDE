@@ -241,7 +241,36 @@ pub fn apply_starred_settings(
     if let Some(update) = settings.description {
         target.description = update.as_deref().and_then(normalize_user_description);
     }
+    if let Some(update) = settings.dock_index {
+        apply_dock_place(projects, path, update);
+    }
     true
+}
+
+/// Docks `path` at `place` (clamped), moves it there, or takes it out on
+/// `None`. The dock is renumbered 0..n-1 after every change. A project that is
+/// not docked yet is refused once [`DOCK_MAX`] places are taken; a docked one
+/// can always be moved.
+fn apply_dock_place(projects: &mut [StarredProject], path: &str, place: Option<u32>) {
+    let mut order: Vec<usize> = (0..projects.len())
+        .filter(|&i| projects[i].dock_index.is_some())
+        .collect();
+    order.sort_by_key(|&i| (projects[i].dock_index, projects[i].starred_at));
+    let Some(target) = projects.iter().position(|project| project.path == path) else {
+        return;
+    };
+    let was_docked = order.contains(&target);
+    if place.is_some() && !was_docked && order.len() >= DOCK_MAX {
+        return;
+    }
+    order.retain(|&i| i != target);
+    if let Some(place) = place {
+        order.insert((place as usize).min(order.len()), target);
+    }
+    projects[target].dock_index = None;
+    for (index, i) in order.into_iter().enumerate() {
+        projects[i].dock_index = Some(index as u32);
+    }
 }
 
 /// Trimmed and capped at [`USER_DESCRIPTION_MAX_CHARS`]; blank clears it.
@@ -293,6 +322,7 @@ pub fn push_starred_project(projects: &mut Vec<StarredProject>, path: String, st
         wheel_slots: Vec::new(),
         badge: None,
         description: None,
+        dock_index: None,
     });
 }
 
