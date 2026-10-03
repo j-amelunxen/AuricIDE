@@ -45,7 +45,7 @@ pub fn deterministic_schedule_id(project_path: &str, slug: &str) -> String {
     for byte in normalized
         .as_bytes()
         .iter()
-        .chain([b'/'].iter())
+        .chain(b"/".iter())
         .chain(slug.as_bytes())
     {
         hash ^= u64::from(*byte);
