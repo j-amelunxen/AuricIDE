@@ -147,7 +147,7 @@ pub fn list_crash_logs(crash_dir: &std::path::Path) -> Result<Vec<CrashLogEntry>
         })
         .collect();
 
-    entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.timestamp));
     Ok(entries)
 }
 
