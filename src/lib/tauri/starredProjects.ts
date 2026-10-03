@@ -47,6 +47,11 @@ export interface StarredProjectSettings {
    * Rust trims it and caps it at 300 characters.
    */
   description?: string | null;
+  /**
+   * Same tri-state again. A number docks the project at that place among the
+   * docked ones (or moves it there); `null` takes it out of the dock.
+   */
+  dockIndex?: number | null;
 }
 
 export interface StarredProject {
@@ -60,6 +65,8 @@ export interface StarredProject {
   badge?: ProjectBadge;
   /** What the owner says the project is for; see `src/lib/quickAccess/description.ts`. */
   description?: string;
+  /** Place in the Quick Access dock; absent means not docked. See `quickAccess/dock.ts`. */
+  dockIndex?: number;
 }
 
 /**

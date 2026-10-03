@@ -51,6 +51,18 @@ export interface ProjectTileProps {
   onLaunchCombo: (combo: QuickAccessCombo) => void;
   onOpenSettings: () => void;
   onWheelActivity: (active: boolean) => void;
+  /**
+   * Makes the tile draggable (grid to dock, inside the dock, dock to grid). The
+   * drag is on the outer item, not the button: the button owns pointer capture
+   * for the hold wheel. Absent means the tile is not draggable.
+   */
+  drag?: {
+    onDragStart: (event: React.DragEvent) => void;
+    /** Left out where the tile is no drop target itself (the grid takes it over). */
+    onDragOver?: (event: React.DragEvent) => void;
+    onDrop?: (event: React.DragEvent) => void;
+    onDragEnd: () => void;
+  };
 }
 
 export function ProjectTile({
@@ -65,6 +77,7 @@ export function ProjectTile({
   onLaunchCombo,
   onOpenSettings,
   onWheelActivity,
+  drag,
 }: ProjectTileProps) {
   const badge = normalizeProjectBadge(project.badge);
   const label = [
@@ -255,6 +268,15 @@ export function ProjectTile({
   return (
     <div
       data-testid={`quick-access-item-${project.path}`}
+      draggable={drag !== undefined}
+      onDragStart={(event) => {
+        cancelHold();
+        dispatch({ type: 'cancel' });
+        drag?.onDragStart(event);
+      }}
+      onDragOver={drag?.onDragOver}
+      onDrop={drag?.onDrop}
+      onDragEnd={drag?.onDragEnd}
       onPointerEnter={(event) => dispatch({ type: 'enter', now: event.timeStamp })}
       onPointerMove={(event) => {
         if (machine.mode === 'hold' && machine.phase === 'open') {

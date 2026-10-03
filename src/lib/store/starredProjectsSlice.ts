@@ -3,6 +3,7 @@ import * as nativeStarredProjects from '../tauri/starredProjects';
 import { normalizeProjectDescription } from '../quickAccess/description';
 import { normalizeProjectBadge } from '../quickAccess/badge';
 import { normalizeWheelSlots } from '../quickAccess/wheel';
+import { DOCK_MAX, applyDockPlace, splitDock } from '../quickAccess/dock';
 import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
 
 const STORAGE_KEY = 'auric-starred-projects';
@@ -104,6 +105,11 @@ export interface StarredProjectsSlice {
   setStarredProjectBadge: (path: string, badge: ProjectBadge | null) => void;
   /** `null` (or blank) clears it, and the README-derived description applies again. */
   setStarredProjectDescription: (path: string, description: string | null) => void;
+  /**
+   * A number docks the project at that place among the docked ones (or moves it
+   * there); `null` takes it out. A full dock refuses a newcomer with a toast.
+   */
+  setStarredProjectDock: (path: string, place: number | null) => void;
 }
 
 function loadLegacyProjects(): StarredProject[] {
@@ -232,7 +238,11 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
       }
       return next;
     });
-    set({ starredProjects: updated });
+    const withDock =
+      settings.dockIndex === undefined
+        ? updated
+        : applyDockPlace(updated, path, settings.dockIndex);
+    set({ starredProjects: withDock });
     persist(updated);
     const revision = ++syncRevision;
     void nativeStarredProjects
@@ -310,6 +320,27 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
       combos: quickAccessCombos(target),
       wheelSlots: quickAccessWheelSlots(target),
       description: normalizeProjectDescription(description),
+    });
+  },
+
+  setStarredProjectDock: (path, place) => {
+    const target = get().starredProjects.find((p) => p.path === path);
+    if (!target) return;
+    if (place !== null && target.dockIndex === undefined) {
+      if (splitDock(get().starredProjects).full) {
+        const toaster = get() as StarredProjectsSlice & {
+          showToast?: (message: string, variant?: 'error' | 'success' | 'info') => number;
+        };
+        toaster.showToast?.(`Dock is full (${DOCK_MAX}) — take a project out first`, 'error');
+        return;
+      }
+    }
+    get().updateStarredProjectSettings(path, {
+      icon: target.icon,
+      skills: quickAccessSkills(target),
+      combos: quickAccessCombos(target),
+      wheelSlots: quickAccessWheelSlots(target),
+      dockIndex: place,
     });
   },
 

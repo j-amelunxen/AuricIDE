@@ -196,6 +196,39 @@ describe('starredProjectsSlice', () => {
       });
     });
 
+    it('docks a project, keeps the dock through other saves, and undocks', () => {
+      useStore.getState().setStarredProjectDock('/a', 0);
+      useStore.getState().setStarredProjectDock('/b', 0);
+      let [a, b] = useStore.getState().starredProjects;
+      expect([a.dockIndex, b.dockIndex]).toEqual([1, 0]);
+
+      useStore.getState().setStarredProjectBadge('/a', { text: 'fe', color: 'blue' });
+      useStore.getState().setStarredProjectIcon('/a', glyph);
+      useStore.getState().setStarredProjectDescription('/a', 'x');
+      [a, b] = useStore.getState().starredProjects;
+      expect(a.dockIndex).toBe(1);
+
+      useStore.getState().setStarredProjectDock('/b', null);
+      [a, b] = useStore.getState().starredProjects;
+      expect([a.dockIndex, b.dockIndex]).toEqual([0, undefined]);
+    });
+
+    it('says so when the dock is full instead of docking a ninth project', () => {
+      const showToast = vi.fn();
+      useStore.setState({
+        showToast,
+        starredProjects: Array.from({ length: 9 }, (_, i) => ({
+          path: `/p${i}`,
+          name: `p${i}`,
+          starredAt: i,
+          ...(i < 8 ? { dockIndex: i } : {}),
+        })),
+      });
+      useStore.getState().setStarredProjectDock('/p8', 0);
+      expect(useStore.getState().starredProjects[8].dockIndex).toBeUndefined();
+      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Dock is full'), 'error');
+    });
+
     it('clears a badge without touching the other project', () => {
       useStore.getState().setStarredProjectBadge('/a', { text: 'fe', color: 'blue' });
       useStore.getState().setStarredProjectBadge('/b', { text: 'qa', color: 'red' });
