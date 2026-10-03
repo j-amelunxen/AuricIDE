@@ -51,6 +51,11 @@ export async function writeFile(path: string, content: string): Promise<void> {
   await invoke('write_file', { path, content });
 }
 
+/** Binary write (a workbook): the bytes travel as base64 and land atomically, like `writeFile`. */
+export async function writeFileBase64(path: string, contentBase64: string): Promise<void> {
+  await invoke('write_file_base64', { path, contentBase64 });
+}
+
 export async function copyFile(source: string, destination: string): Promise<void> {
   await invoke('copy_file', { source, destination });
 }

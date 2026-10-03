@@ -307,6 +307,7 @@ pub fn run() {
             read_file,
             read_file_base64,
             write_file,
+            write_file_base64,
             copy_file,
             delete_file,
             create_directory,

@@ -1,8 +1,8 @@
 use crate::commands::fs_commands::{list_all_files_impl, move_path};
 use crate::commands::fs_utils::{
     birth_time_of_file, ensure_scratch_dir, is_atomic_write_temp, read_directory_dated_by,
-    read_directory_impl, should_filter_watcher_path, walk_files_with_birth_time, write_file_impl,
-    FileEntry,
+    read_directory_impl, should_filter_watcher_path, walk_files_with_birth_time,
+    write_file_base64_impl, write_file_impl, FileEntry,
 };
 use crate::recent_creations;
 use std::collections::HashMap;
@@ -555,4 +555,23 @@ async fn project_files_info_counts_lines_of_text_files_only() {
             .await
             .is_err()
     );
+}
+
+#[test]
+fn write_file_base64_impl_writes_the_decoded_bytes() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("sheet.xlsx");
+    // PK\x03\x04 plus a byte that is not valid UTF-8: text writing would mangle it.
+    write_file_base64_impl(path.to_str().unwrap(), "UEsDBP8=").unwrap();
+    assert_eq!(fs::read(&path).unwrap(), vec![0x50, 0x4b, 0x03, 0x04, 0xff]);
+}
+
+#[test]
+fn write_file_base64_impl_rejects_invalid_base64_and_leaves_the_old_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("sheet.xlsx");
+    fs::write(&path, "old").unwrap();
+    let err = write_file_base64_impl(path.to_str().unwrap(), "not base64 !!").unwrap_err();
+    assert!(err.contains("base64"), "{err}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "old");
 }

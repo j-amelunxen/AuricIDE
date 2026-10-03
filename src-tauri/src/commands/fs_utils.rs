@@ -249,6 +249,20 @@ pub fn read_file_impl(path: &str) -> Result<String, String> {
 }
 
 pub fn write_file_impl(path: &str, content: &str) -> Result<(), String> {
+    write_bytes_atomically(path, content.as_bytes())
+}
+
+/// Binary twin of `write_file_impl` for payloads that arrive as base64 (workbooks).
+/// The text is decoded before the target is touched, so a bad payload keeps the old file.
+pub fn write_file_base64_impl(path: &str, content_base64: &str) -> Result<(), String> {
+    use base64::{engine::general_purpose, Engine as _};
+    let bytes = general_purpose::STANDARD
+        .decode(content_base64)
+        .map_err(|e| format!("Failed to decode base64 content: {}", e))?;
+    write_bytes_atomically(path, &bytes)
+}
+
+fn write_bytes_atomically(path: &str, content: &[u8]) -> Result<(), String> {
     let requested = Path::new(path);
     let target = fs::canonicalize(requested).unwrap_or_else(|_| requested.to_path_buf());
 
@@ -272,7 +286,7 @@ pub fn write_file_impl(path: &str, content: &str) -> Result<(), String> {
 
     let write_result = (|| -> std::io::Result<()> {
         let mut file = fs::File::create(&temp_path)?;
-        file.write_all(content.as_bytes())?;
+        file.write_all(content)?;
         file.sync_all()?;
         drop(file);
 

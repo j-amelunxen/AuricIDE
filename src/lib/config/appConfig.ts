@@ -51,6 +51,8 @@ export const APP_CONFIG_KEYS = {
   quickAccessSort: 'auric.quick-access.sort',
   pmTicketSort: 'auric.pm.ticket-sort',
   pmTicketUsageColumns: 'auric.pm.ticket-usage-columns',
+  goalTableColumns: 'auric.goals.table-columns',
+  goalsDetailView: 'auric.goals.detail-view',
   notificationSoundEnabled: 'auric.notifications.sound',
   notificationSound: 'auric.notifications.sound-id',
 } as const;
