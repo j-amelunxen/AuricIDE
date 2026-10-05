@@ -1,6 +1,6 @@
 'use client';
 
-import { GoalLineMap } from './GoalLineMap';
+import { GoalLineProgress } from './GoalLineProgress';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { usePlannerState } from './planner/usePlannerState';
 import { PlannerCheckpointsEditor } from './planner/PlannerCheckpointsEditor';
@@ -124,9 +124,12 @@ export function PlannerPanel() {
                   {graph.stations.length} checkpoints · not saved yet
                 </span>
               </div>
-              <div data-testid="planner-preview" className="rounded-xl bg-black/20 px-2 py-1">
-                <GoalLineMap line={previewLine} agentsById={new Map()} />
-                <p className="px-2 pb-2 text-[10px] text-foreground-muted">
+              <div
+                data-testid="planner-preview"
+                className="flex flex-col gap-2 rounded-xl bg-black/20 px-4 pb-2 pt-3"
+              >
+                <GoalLineProgress line={previewLine} />
+                <p className="text-[10px] text-foreground-muted">
                   Saving this plan adds its steps. You can create tickets next.
                 </p>
               </div>

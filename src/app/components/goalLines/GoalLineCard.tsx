@@ -1,27 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
-import type { GoalLine, LineStation } from '@/lib/goals/goalLinesLayout';
+import type { GoalLine } from '@/lib/goals/goalLinesLayout';
+import { humanStationsDue } from '@/lib/goals/forYou';
 import { formatAgentDuration } from '@/lib/agents/duration';
-import { GoalLineMap } from './GoalLineMap';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import Image from 'next/image';
+import { GoalLineProgress } from './GoalLineProgress';
 
 export interface GoalLineCardProps {
   line: GoalLine;
   agentsById: Map<string, AgentInfo>;
   now: number;
   onOpen: (goalId: string) => void;
-  /** Adds a human step to this line — one line of typing, nothing more. */
-  onQuickAdd: (goalId: string, name: string) => void;
-  /** Ticks a human step off. Only rendered on committed plans. */
+  /** Ticks the human step that is due right now off, without opening the line. */
   onTick: (stationId: string) => void;
-  /** Moves a station to an index; the done-work clamp lives in stationOrder. */
-  onMove: (goalId: string, stationId: string, toIndex: number) => void;
-  /** Runs the machine check for a station with a checkable predicate. */
-  onVerify: (stationId: string) => void;
-  onReset: (goalId: string) => void;
 }
 
 interface LineFlag {
@@ -57,89 +48,26 @@ function lineFlag(line: GoalLine, agentsById: Map<string, AgentInfo>, now: numbe
   return { text: `○ idle${age}`, className: 'text-foreground-muted' };
 }
 
-const STATE_GLYPH: Record<LineStation['state'], string> = {
-  done: '●',
-  skipped: '⊘',
-  front: '◉',
-  planned: '○',
-  fog: '·',
-};
-
-function sourceImageUrl(path: string): string {
-  try {
-    return convertFileSrc(path);
-  } catch {
-    // Browser/test mode has no Tauri protocol bridge.
-    return path;
-  }
-}
-
-/** One goal on the board: name, its line, last / now / next, and — for
- * committed plans — the station rows with reorder and tick controls. */
-export function GoalLineCard({
-  line,
-  agentsById,
-  now,
-  onOpen,
-  onQuickAdd,
-  onTick,
-  onMove,
-  onVerify,
-  onReset,
-}: GoalLineCardProps) {
-  const [quickAdd, setQuickAdd] = useState('');
-  const [stationsOpen, setStationsOpen] = useState(false);
-  const [sourceOpen, setSourceOpen] = useState<string | null>(null);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const resetRef = useRef<HTMLButtonElement>(null);
-  const cancelResetRef = useRef<HTMLButtonElement>(null);
-  const wasConfirmingReset = useRef(false);
+/**
+ * One goal on the board, read like a parcel tracker: how far along it is,
+ * what runs now, what comes next, and — only when it is true — the step that
+ * waits for you. Everything else (every station, reordering, skipping,
+ * adding steps, resetting) lives one click deeper, in the line's timeline.
+ */
+export function GoalLineCard({ line, agentsById, now, onOpen, onTick }: GoalLineCardProps) {
   const flag = lineFlag(line, agentsById, now);
   const runningHere = line.stations.reduce((n, s) => n + s.agentIds.length, 0);
-  const resetBlocked = line.stations
-    .flatMap((station) => station.agentIds)
-    .some((id) => {
-      const status = agentsById.get(id)?.status;
-      return status === 'running' || status === 'queued';
-    });
-  useEffect(() => {
-    if (confirmReset) {
-      cancelResetRef.current?.focus();
-      wasConfirmingReset.current = true;
-    } else if (wasConfirmingReset.current) {
-      resetRef.current?.focus();
-      wasConfirmingReset.current = false;
-    }
-  }, [confirmReset]);
-  const cancelReset = () => {
-    setConfirmReset(false);
-  };
-
-  const nowText = line.now
-    ? runningHere > 0
-      ? `${runningHere} agent${runningHere === 1 ? '' : 's'} at "${line.now.label}"`
-      : `"${line.now.label}" is in progress, no agent on it`
-    : 'nothing in progress';
-  const nextText = line.next?.label ?? (line.satisfied ? 'goal reached' : 'nothing planned');
-
-  const rows = line.stations.filter((s) => s.kind !== 'terminus');
-
-  const commitQuickAdd = () => {
-    const name = quickAdd.trim();
-    if (!name) return;
-    onQuickAdd(line.goalId, name);
-    setQuickAdd('');
-  };
+  const due = humanStationsDue(line.stations);
 
   return (
     <div
       data-testid={`goal-line-card-${line.goalId}`}
-      className="flex w-full flex-col gap-2 rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-[border-color] duration-150 hover:border-white/10"
+      className="flex w-full flex-col rounded-2xl border border-white/5 bg-white/[0.02] transition-[border-color] duration-150 hover:border-white/10"
     >
       <button
         data-testid={`goal-line-open-${line.goalId}`}
         onClick={() => onOpen(line.goalId)}
-        className="flex w-full flex-col gap-2 text-left transition-opacity active:opacity-80"
+        className="flex w-full flex-col gap-3 rounded-2xl p-4 text-left transition-opacity focus-visible:ring-2 focus-visible:ring-primary/70 active:opacity-80"
       >
         <div className="flex items-baseline gap-2">
           <span
@@ -147,7 +75,16 @@ export function GoalLineCard({
             className="h-2.5 w-2.5 flex-none translate-y-px rounded-[3px]"
             style={{ backgroundColor: line.hue }}
           />
-          <span className="text-sm font-bold text-foreground">{line.name}</span>
+          <span className="truncate text-sm font-bold text-foreground">{line.name}</span>
+          <span
+            className={`ml-auto flex-none font-mono text-[10px] uppercase tracking-[0.12em] tabular-nums ${flag.className}`}
+          >
+            {flag.text}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <GoalLineProgress line={line} />
           {line.progress.total > 0 && (
             <span
               data-testid={`goal-line-progress-${line.goalId}`}
@@ -156,259 +93,72 @@ export function GoalLineCard({
                   ? 'Stations with verified evidence, across the goal and its sub-goals'
                   : 'Done tickets, across the goal and its sub-goals'
               }
-              className="font-mono text-[10px] tabular-nums text-foreground-muted"
+              className="text-[11px] text-foreground-muted tabular-nums"
             >
-              {`${line.progress.done}/${line.progress.total} ${line.progress.unit}${
+              {`${line.progress.done} of ${line.progress.total} ${line.progress.unit}${
                 line.progress.skipped ? ` · ${line.progress.skipped} skipped` : ''
               }`}
             </span>
           )}
-          <span
-            className={`ml-auto font-mono text-[10px] uppercase tracking-[0.12em] tabular-nums ${flag.className}`}
-          >
-            {flag.text}
-          </span>
         </div>
 
-        <GoalLineMap
-          line={line}
-          agentsById={agentsById}
-          onStationDrop={
-            line.planCommitted
-              ? (stationId, toIndex) => onMove(line.goalId, stationId, toIndex)
-              : undefined
-          }
-        />
-
-        <dl className="grid grid-cols-[44px_1fr] gap-x-3 gap-y-1 border-t border-white/5 pt-2 text-[11px]">
-          <dt className="pt-px font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-muted/60">
-            last
-          </dt>
-          <dd className="text-foreground-muted">{line.lastDone?.label ?? 'nothing yet'}</dd>
-          <dt className="pt-px font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-muted/60">
+        <dl className="grid grid-cols-[48px_1fr] items-baseline gap-x-3 gap-y-1.5">
+          <dt className="font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-muted/60">
             now
           </dt>
-          <dd className="text-foreground">{nowText}</dd>
-          <dt className="pt-px font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-muted/60">
-            next
-          </dt>
-          <dd className="text-foreground-muted">{nextText}</dd>
+          <dd
+            data-testid={`goal-line-now-${line.goalId}`}
+            className="flex min-w-0 items-baseline gap-2"
+          >
+            <span className="truncate text-[13px] font-semibold text-foreground">
+              {line.now?.label ?? (line.satisfied ? 'Goal reached' : 'Nothing in progress')}
+            </span>
+            {line.now && runningHere > 0 && (
+              <span className="flex flex-none items-center gap-1 text-[10px] font-semibold text-[#2effa5]">
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#2effa5]" />
+                {runningHere} agent{runningHere === 1 ? '' : 's'}
+              </span>
+            )}
+            {line.now && runningHere === 0 && line.now.kind !== 'human' && (
+              <span className="flex-none text-[10px] text-foreground-muted">no agent on it</span>
+            )}
+          </dd>
+          {line.next && (
+            <>
+              <dt className="font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-muted/60">
+                next
+              </dt>
+              <dd className="truncate text-[11px] text-foreground-muted">{line.next.label}</dd>
+            </>
+          )}
         </dl>
       </button>
 
-      {line.planCommitted && (
-        <div className="border-t border-white/5 pt-1.5">
+      {due.length > 0 && (
+        <div
+          data-testid={`goal-line-needs-you-${line.goalId}`}
+          className="mx-4 mb-4 flex items-center gap-2 rounded-xl bg-[#ffce2e]/[0.07] px-3 py-2"
+        >
+          <span
+            aria-hidden="true"
+            className="h-2 w-2 flex-none rotate-45 rounded-[1px] bg-[#ffce2e]"
+          />
+          <span className="min-w-0 flex-1 text-[11px] text-foreground">
+            <span className="font-semibold text-[#ffce2e]">Needs you: </span>
+            {due[0].label}
+            {due.length > 1 && (
+              <span className="text-foreground-muted"> · {due.length - 1} more</span>
+            )}
+          </span>
           <button
-            data-testid={`goal-line-stations-toggle-${line.goalId}`}
-            onClick={() => setStationsOpen((v) => !v)}
-            className="font-mono text-[9px] uppercase tracking-[0.16em] text-foreground-muted/60 transition-colors hover:text-foreground-muted"
+            data-testid={`goal-line-tick-due-${due[0].id}`}
+            onClick={() => onTick(due[0].id)}
+            className="flex-none rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-primary/70 active:scale-[0.97]"
           >
-            {stationsOpen ? '▾' : '▸'} checkpoints ({rows.length})
+            Done
           </button>
-          {stationsOpen && (
-            <div className="mt-1 flex flex-col">
-              {rows.map((s, i) => (
-                <div key={s.id} className={s.state === 'fog' ? 'opacity-40' : ''}>
-                  <div
-                    data-testid={`station-row-${s.id}`}
-                    className="flex items-center gap-2 py-1 text-[11px]"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="w-3 text-center font-mono"
-                      style={{ color: s.state === 'done' ? line.hue : '#8a8a9c' }}
-                    >
-                      {STATE_GLYPH[s.state]}
-                    </span>
-                    <span
-                      className={s.state === 'done' ? 'text-foreground-muted' : 'text-foreground'}
-                    >
-                      {s.label}
-                    </span>
-                    {s.detail && (
-                      <span className="font-mono text-[9px] text-foreground-muted/60">
-                        {s.detail}
-                      </span>
-                    )}
-                    <span className="ml-auto flex items-center gap-1">
-                      {s.sourceContext && (
-                        <button
-                          data-testid={`station-source-${s.id}`}
-                          aria-expanded={sourceOpen === s.id}
-                          onClick={() =>
-                            setSourceOpen((current) => (current === s.id ? null : s.id))
-                          }
-                          title="Source notes / transcript / frames"
-                          className="rounded-md px-2 py-0.5 text-[10px] font-semibold text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
-                        >
-                          source {sourceOpen === s.id ? '▾' : '▸'}
-                        </button>
-                      )}
-                      {s.state !== 'done' && (
-                        <>
-                          <button
-                            data-testid={`station-up-${s.id}`}
-                            aria-label={`Move "${s.label}" earlier`}
-                            onClick={() => onMove(line.goalId, s.id, i - 1)}
-                            className="rounded px-2 py-1 text-foreground-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            data-testid={`station-down-${s.id}`}
-                            aria-label={`Move "${s.label}" later`}
-                            onClick={() => onMove(line.goalId, s.id, i + 1)}
-                            className="rounded px-2 py-1 text-foreground-muted/60 transition-colors hover:bg-white/10 hover:text-foreground"
-                          >
-                            ↓
-                          </button>
-                        </>
-                      )}
-                      {s.checkable && (
-                        <button
-                          data-testid={`station-verify-${s.id}`}
-                          onClick={() => onVerify(s.id)}
-                          title="Run check"
-                          className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground"
-                        >
-                          Verify
-                        </button>
-                      )}
-                      {s.kind === 'human' && s.state !== 'done' && (
-                        <button
-                          data-testid={`station-tick-${s.id}`}
-                          onClick={() => onTick(s.id)}
-                          className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-foreground transition-colors hover:bg-white/10"
-                        >
-                          ✓ Done
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                  {s.sourceContext && sourceOpen === s.id && (
-                    <div
-                      data-testid={`station-source-detail-${s.id}`}
-                      className="mb-2 ml-5 border-t border-white/5 py-2 text-[10px] leading-relaxed text-foreground-muted"
-                    >
-                      {s.sourceContext.notes.map((note) => (
-                        <p key={note} className="text-foreground-muted">
-                          {note}
-                        </p>
-                      ))}
-                      {s.sourceContext.transcriptSegments.map((segment) => (
-                        <blockquote
-                          key={`${segment.startMs}-${segment.endMs}`}
-                          className="mt-1.5 border-l border-white/10 pl-2 text-foreground-muted"
-                        >
-                          <span className="mr-2 font-mono text-[9px] text-foreground-muted/50">
-                            {Math.floor(segment.startMs / 1000)}s
-                          </span>
-                          {segment.text}
-                        </blockquote>
-                      ))}
-                      {s.sourceContext.frames.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {s.sourceContext.frames.map((frame) => (
-                            <figure
-                              key={frame.path}
-                              className="w-32 overflow-hidden rounded-lg border border-white/10 bg-black/30"
-                            >
-                              <Image
-                                src={sourceImageUrl(frame.path)}
-                                alt={`Video source at ${Math.round(frame.timestampMs / 1000)} seconds`}
-                                width={256}
-                                height={144}
-                                unoptimized
-                                className="aspect-video w-full object-cover"
-                              />
-                              <figcaption className="px-2 py-1 font-mono text-[9px] text-foreground-muted">
-                                @{Math.round(frame.timestampMs / 1000)}s
-                              </figcaption>
-                            </figure>
-                          ))}
-                        </div>
-                      )}
-                      <p className="mt-2 break-all font-mono text-[9px] text-foreground-muted/40">
-                        import {s.sourceContext.importId}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
-
-      <div className="flex flex-wrap gap-2 border-t border-white/5 pt-2">
-        <input
-          data-testid={`goal-line-quick-add-${line.goalId}`}
-          type="text"
-          value={quickAdd}
-          onChange={(e) => setQuickAdd(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') commitQuickAdd();
-          }}
-          placeholder="Add a manual step, then press Enter"
-          className="flex-1 rounded-lg bg-black/30 px-2.5 py-1.5 text-[11px] text-foreground outline-none transition-colors placeholder:text-foreground-muted/40 focus:bg-black/50 focus-visible:ring-2 focus-visible:ring-primary/70"
-        />
-        {line.planCommitted && !confirmReset && (
-          <button
-            ref={resetRef}
-            data-testid={`goal-line-reset-${line.goalId}`}
-            aria-disabled={resetBlocked}
-            aria-describedby={resetBlocked ? `goal-line-reset-blocked-${line.goalId}` : undefined}
-            title={
-              resetBlocked
-                ? 'Wait until the assigned agent is no longer running.'
-                : 'Reset this plan'
-            }
-            onClick={() => {
-              if (!resetBlocked) setConfirmReset(true);
-            }}
-            className="min-h-6 rounded-lg px-2 text-[10px] text-[#ff8a8a] hover:bg-[#ff4a4a]/10 focus-visible:ring-2 focus-visible:ring-primary/70 aria-disabled:cursor-not-allowed aria-disabled:opacity-40"
-          >
-            Reset plan
-          </button>
-        )}
-        {line.planCommitted && resetBlocked && !confirmReset && (
-          <span
-            id={`goal-line-reset-blocked-${line.goalId}`}
-            data-testid={`goal-line-reset-blocked-${line.goalId}`}
-            className="basis-full text-[10px] text-foreground-muted"
-          >
-            An assigned agent is still running. Reset is available once it stops.
-          </span>
-        )}
-        {line.planCommitted && confirmReset && (
-          <span
-            className="flex flex-wrap items-center gap-1 text-[10px] text-foreground-muted"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.stopPropagation();
-                cancelReset();
-              }
-            }}
-          >
-            Remove all steps? The goal remains a draft.
-            <button
-              data-testid={`goal-line-reset-confirm-${line.goalId}`}
-              onClick={() => onReset(line.goalId)}
-              className="min-h-6 min-w-6 rounded-md bg-[#ff4a4a]/15 px-2 py-1 font-semibold text-[#ff8a8a] focus-visible:ring-2 focus-visible:ring-primary/70"
-            >
-              Reset plan
-            </button>
-            <button
-              ref={cancelResetRef}
-              data-testid={`goal-line-reset-cancel-${line.goalId}`}
-              onClick={cancelReset}
-              className="min-h-6 rounded-md px-2 py-1 hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-primary/70"
-            >
-              Cancel
-            </button>
-          </span>
-        )}
-      </div>
     </div>
   );
 }

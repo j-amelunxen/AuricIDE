@@ -3,12 +3,7 @@ import type { PmGoal, PmGoalRequirementLink, PmGoalRun } from '../tauri/goals';
 import type { PmDependency, PmTicket } from '../tauri/pm';
 import type { PmRequirement } from '../tauri/requirements';
 import type { AgentInfo } from '../tauri/agents';
-import {
-  buildGoalLine,
-  buildGoalLines,
-  stationIndexForX,
-  type GoalLinesInput,
-} from './goalLinesLayout';
+import { buildGoalLine, buildGoalLines, type GoalLinesInput } from './goalLinesLayout';
 
 // --- Fixture factories (generic names only) ---
 
@@ -663,40 +658,4 @@ describe('lines without tickets', () => {
     expect(line.workMode).toBe('tickets');
     expect(line.progress).toEqual({ done: 1, total: 2, unit: 'tickets' });
   });
-});
-
-describe('stationIndexForX', () => {
-  it('counts stations left of the drop point, excluding self and terminus', () => {
-    const goal = makeGoal();
-    const stations = [
-      { ...baseStation(goal.id), id: 'a', sortOrder: 0 },
-      { ...baseStation(goal.id), id: 'b', sortOrder: 1 },
-      { ...baseStation(goal.id), id: 'c', sortOrder: 2 },
-    ];
-    const line = buildGoalLine(makeInput({ goals: [goal], stations }), goal.id)!;
-    // Drop far right: c (excluded) sees a and b to its left → index 2
-    expect(stationIndexForX(line, 0.99, 'c')).toBe(2);
-    // Drop far left → index 0
-    expect(stationIndexForX(line, 0.0, 'c')).toBe(0);
-  });
-
-  function baseStation(goalId: string): import('../tauri/goals').PmGoalStation {
-    return {
-      id: uid('st'),
-      goalId,
-      name: 'Step',
-      kind: 'human',
-      status: 'planned',
-      evidenceKind: 'human',
-      predicate: { type: 'human' },
-      evidenceNote: '',
-      ticketId: null,
-      lane: 0,
-      sortOrder: 0,
-      lastCheckedAt: null,
-      doneAt: null,
-      createdAt: TS,
-      updatedAt: TS,
-    };
-  }
 });

@@ -407,15 +407,6 @@ function subGoalStops(
   return stops;
 }
 
-/**
- * Insertion index for a horizontal drop at x (0..1) among the line's
- * non-terminus stations: how many others sit left of the drop point.
- * Pure — the clamp against done work happens in stationOrder.moveStation.
- */
-export function stationIndexForX(line: GoalLine, x: number, excludeId: string): number {
-  return line.stations.filter((s) => s.kind !== 'terminus' && s.id !== excludeId && s.x < x).length;
-}
-
 /** All root goals with attached work, each as one line. */
 export function buildGoalLines(input: GoalLinesInput): GoalLine[] {
   return getRootGoals(input.goals)

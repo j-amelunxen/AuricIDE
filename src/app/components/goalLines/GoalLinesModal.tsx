@@ -11,23 +11,15 @@ import { getRootGoals } from '@/lib/store/goalsSlice';
 import { buildGoalLines } from '@/lib/goals/goalLinesLayout';
 import { buildForYouQueue, type ForYouItem } from '@/lib/goals/forYou';
 import { GoalLineBoard } from './GoalLineBoard';
-import { GoalLineLegend } from './GoalLineLegend';
 import { ForYouQueue } from './ForYouQueue';
 import { PlannerPanel } from './PlannerPanel';
 import { ForkProposals } from './ForkProposals';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
-import type { GoalLine } from '@/lib/goals/goalLinesLayout';
-import { GoalLineMap } from './GoalLineMap';
+import { GoalLineTimeline, type GoalLineTimelineProps } from './GoalLineTimeline';
+import { GoalLineProgress } from './GoalLineProgress';
 
-function GoalLineDetail({
-  line,
-  agentsById,
-  onClose,
-}: {
-  line: GoalLine;
-  agentsById: Map<string, import('@/lib/tauri/agents').AgentInfo>;
-  onClose: () => void;
-}) {
+function GoalLineDetail({ onClose, ...timeline }: GoalLineTimelineProps & { onClose: () => void }) {
+  const { line } = timeline;
   const dialogRef = useDialogA11y<HTMLDivElement>();
   useOverlayLayer({
     id: 'goal-line-detail',
@@ -48,37 +40,36 @@ function GoalLineDetail({
         aria-modal="true"
         aria-labelledby="goal-line-detail-title"
         data-testid="goal-line-detail"
-        className="flex max-h-[92vh] w-full max-w-[1500px] flex-col gap-6 overflow-y-auto rounded-2xl border border-white/10 bg-background-dark p-6 shadow-2xl"
+        className="flex max-h-[92vh] w-full max-w-[720px] flex-col gap-5 overflow-y-auto rounded-2xl border border-white/10 bg-background-dark p-6 shadow-2xl"
       >
-        <header className="flex items-center gap-3">
-          <h2 id="goal-line-detail-title" className="text-xl font-bold text-foreground">
-            {line.name}
-          </h2>
-          <button
-            aria-label="Close goal line detail"
-            onClick={onClose}
-            className="ml-auto rounded-lg p-2 text-foreground-muted hover:bg-white/10 hover:text-foreground"
-          >
-            <AuricIcon name="close" aria-hidden="true" />
-          </button>
+        <header className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="h-3 w-3 flex-none rounded-[3px]"
+              style={{ backgroundColor: line.hue }}
+            />
+            <h2 id="goal-line-detail-title" className="text-xl font-bold text-foreground">
+              {line.name}
+            </h2>
+            <button
+              aria-label="Close goal line detail"
+              onClick={onClose}
+              className="ml-auto rounded-lg p-2 text-foreground-muted hover:bg-white/10 hover:text-foreground"
+            >
+              <AuricIcon name="close" aria-hidden="true" />
+            </button>
+          </div>
+          <GoalLineProgress line={line} />
+          {line.progress.total > 0 && (
+            <span className="text-[11px] text-foreground-muted tabular-nums">
+              {`${line.progress.done} of ${line.progress.total} ${line.progress.unit}${
+                line.progress.skipped ? ` · ${line.progress.skipped} skipped` : ''
+              }`}
+            </span>
+          )}
         </header>
-        <div className="min-h-52 rounded-xl bg-black/20 p-4">
-          <GoalLineMap line={line} agentsById={agentsById} big />
-        </div>
-        <ol className="grid gap-2 md:grid-cols-2">
-          {line.stations
-            .filter((s) => s.kind !== 'terminus')
-            .map((station) => (
-              <li key={station.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3">
-                <span className="font-semibold text-foreground">{station.label}</span>
-                {station.detail && (
-                  <p className="mt-1 font-mono text-[10px] text-foreground-muted">
-                    {station.detail}
-                  </p>
-                )}
-              </li>
-            ))}
-        </ol>
+        <GoalLineTimeline {...timeline} />
       </div>
     </div>
   );
@@ -147,6 +138,7 @@ export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
   const tickHumanStation = useStore((s) => s.tickHumanStation);
   const moveStationTo = useStore((s) => s.moveStationTo);
   const resetGoalLine = useStore((s) => s.resetGoalLine);
+  const skipStation = useStore((s) => s.skipStation);
   const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
   const [restoreGoalId, setRestoreGoalId] = useState<string | null>(null);
 
@@ -273,6 +265,14 @@ export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
     [moveStationTo, persist]
   );
 
+  const handleSkip = useCallback(
+    (stationId: string, reason: string) => {
+      skipStation(stationId, reason);
+      persist();
+    },
+    [skipStation, persist]
+  );
+
   const handleVerify = useCallback((stationId: string) => {
     // The engine writes the outcome to the store and persists it itself.
     void import('@/lib/evidence/engine').then((m) => m.checkStation(stationId));
@@ -304,7 +304,17 @@ export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
     const detailLine = lines.find((line) => line.goalId === detailGoalId);
     if (detailLine)
       return createPortal(
-        <GoalLineDetail line={detailLine} agentsById={agentsById} onClose={closeDetail} />,
+        <GoalLineDetail
+          line={detailLine}
+          agentsById={agentsById}
+          onClose={closeDetail}
+          onTick={handleTick}
+          onMove={handleMove}
+          onVerify={handleVerify}
+          onSkip={handleSkip}
+          onQuickAdd={handleQuickAdd}
+          onReset={handleReset}
+        />,
         document.body
       );
   }
@@ -390,14 +400,10 @@ export function GoalLinesPanel({ embedded = false }: { embedded?: boolean }) {
               notStarted={notStarted}
               agentsById={agentsById}
               now={now}
-              onOpenGoal={openLine}
-              onQuickAdd={handleQuickAdd}
+              onOpenLine={openLine}
+              onOpenGoal={openGoalEditor}
               onTick={handleTick}
-              onMove={handleMove}
-              onVerify={handleVerify}
-              onReset={handleReset}
             />
-            <GoalLineLegend />
           </div>
         )}
       </div>
