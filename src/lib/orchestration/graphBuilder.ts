@@ -1,3 +1,4 @@
+import dagre from '@dagrejs/dagre';
 import type { PmGoal, PmGoalDependency, PmGoalRun, PmGoalStation } from '../tauri/goals';
 import type { PmTicket } from '../tauri/pm';
 import type { AgentInfo } from '../tauri/agents';
@@ -36,13 +37,16 @@ export interface OrchestrationEdge {
   kind?: 'dependency';
 }
 
-const COL_WIDTH = 320;
-const ROW_HEIGHT = 96;
+/** Matches `w-[260px]` in OrchestrationNode. */
+const NODE_WIDTH = 260;
+/** Tallest node shape: label row plus the progress/detail row. */
+const NODE_HEIGHT = 64;
+const ORIGIN = { x: 0, y: 0 };
 
 /**
- * Row order within a column follows the sibling wave: a serial chain reads
- * top to bottom in the order it actually runs, and parallel or bundled
- * siblings land next to each other instead of scattering by insertion order.
+ * Insertion order for the layout: dagre seeds each column's order from it, so
+ * siblings of one wave start out next to each other instead of scattering by
+ * array order.
  */
 function orderGoalsForRows(goals: PmGoal[], dependencies: PmGoalDependency[]): PmGoal[] {
   const waveOf = new Map<string, number>();
@@ -82,8 +86,8 @@ function buildDependencyEdges(
   return edges;
 }
 
-/** BFS depth of every goal from its root, and the deepest column reached. */
-function computeGoalDepths(goals: PmGoal[]): { depthOf: Map<string, number>; maxDepth: number } {
+/** BFS depth of every goal from its root; doubles as the set of rendered goals. */
+function computeGoalDepths(goals: PmGoal[]): Map<string, number> {
   const depthOf = new Map<string, number>();
   let frontier = getRootGoals(goals);
   let depth = 0;
@@ -97,27 +101,45 @@ function computeGoalDepths(goals: PmGoal[]): { depthOf: Map<string, number>; max
     frontier = next;
     depth += 1;
   }
-  return { depthOf, maxDepth: Math.max(0, ...Array.from(depthOf.values())) };
+  return depthOf;
 }
 
-/** One node per goal (columns by depth, rows by `orderGoalsForRows`), plus its parent edge. */
+/** Goals that wait on one of their own siblings. */
+function goalsWaitingOnSibling(goals: PmGoal[], dependencies: PmGoalDependency[]): Set<string> {
+  const parentOf = new Map(goals.map((g) => [g.id, g.parentId]));
+  const waiting = new Set<string>();
+  for (const dep of dependencies) {
+    const parent = parentOf.get(dep.goalId);
+    if (parent !== undefined && parentOf.get(dep.dependsOnGoalId) === parent) {
+      waiting.add(dep.goalId);
+    }
+  }
+  return waiting;
+}
+
+/**
+ * One node per goal, plus its parent edge — except for a goal that waits on a
+ * sibling: it already hangs off the parent through that sibling's chain, and a
+ * second line from the parent to every later wave is what turned a wide plan
+ * into a fan of crossing edges.
+ */
 function buildGoalNodesAndEdges(
   goalsByRow: PmGoal[],
   goals: PmGoal[],
   tickets: PmTicket[],
   stations: PmGoalStation[],
   depthOf: Map<string, number>,
-  nextRow: (col: number) => number
+  dependencies: PmGoalDependency[]
 ): { nodes: OrchestrationNode[]; edges: OrchestrationEdge[] } {
   const nodes: OrchestrationNode[] = [];
   const edges: OrchestrationEdge[] = [];
+  const waitingOnSibling = goalsWaitingOnSibling(goals, dependencies);
   for (const goal of goalsByRow) {
-    const goalDepth = depthOf.get(goal.id) ?? 0;
     const progress = getGoalWorkProgress(goals, tickets, stations, goal.id);
     nodes.push({
       id: `goal-${goal.id}`,
       type: 'orchestration',
-      position: { x: goalDepth * COL_WIDTH, y: nextRow(goalDepth) * ROW_HEIGHT },
+      position: ORIGIN,
       data: {
         label: goal.name,
         kind: 'goal',
@@ -127,7 +149,7 @@ function buildGoalNodesAndEdges(
         entityId: goal.id,
       },
     });
-    if (goal.parentId && depthOf.has(goal.parentId)) {
+    if (goal.parentId && depthOf.has(goal.parentId) && !waitingOnSibling.has(goal.id)) {
       edges.push({
         id: `e-goal-${goal.parentId}-${goal.id}`,
         source: `goal-${goal.parentId}`,
@@ -142,9 +164,7 @@ function buildGoalNodesAndEdges(
 /** One node per ticket attached to a rendered goal, plus its containment edge. */
 function buildTicketNodesAndEdges(
   tickets: PmTicket[],
-  goalIds: Set<string>,
-  ticketCol: number,
-  nextRow: (col: number) => number
+  goalIds: Set<string>
 ): { nodes: OrchestrationNode[]; edges: OrchestrationEdge[]; shownTickets: PmTicket[] } {
   const nodes: OrchestrationNode[] = [];
   const edges: OrchestrationEdge[] = [];
@@ -153,7 +173,7 @@ function buildTicketNodesAndEdges(
     nodes.push({
       id: `ticket-${ticket.id}`,
       type: 'orchestration',
-      position: { x: ticketCol * COL_WIDTH, y: nextRow(ticketCol) * ROW_HEIGHT },
+      position: ORIGIN,
       data: {
         label: ticket.name,
         kind: 'ticket',
@@ -194,9 +214,7 @@ function buildAgentNodesAndEdges(
   agents: AgentInfo[],
   runs: PmGoalRun[],
   shownTicketIds: Set<string>,
-  goalIds: Set<string>,
-  agentCol: number,
-  nextRow: (col: number) => number
+  goalIds: Set<string>
 ): { nodes: OrchestrationNode[]; edges: OrchestrationEdge[] } {
   const nodes: OrchestrationNode[] = [];
   const edges: OrchestrationEdge[] = [];
@@ -212,7 +230,7 @@ function buildAgentNodesAndEdges(
     nodes.push({
       id: `agent-${agent.id}`,
       type: 'orchestration',
-      position: { x: agentCol * COL_WIDTH, y: nextRow(agentCol) * ROW_HEIGHT },
+      position: ORIGIN,
       data: {
         label: agent.name,
         kind: 'agent',
@@ -232,11 +250,33 @@ function buildAgentNodesAndEdges(
 }
 
 /**
- * Builds the live orchestration graph: the goal tree (left to right by depth),
- * tickets attached to goals, and running agents attached to their ticket or
- * goal. Pure function — feed it store state, render the result. Each phase
- * (goals, dependency edges, tickets, agents) is its own step below; they share
- * only the column layout (`depthOf`) and the row counter (`nextRow`).
+ * Places every node with dagre, left to right — the same layout the sub-goal
+ * plan graph uses. Tree edges and "waits for" edges both rank, so a serial
+ * chain of siblings runs rightward and parallel siblings stack in one column,
+ * instead of every child of a goal piling into a single column. Shifted so the
+ * leftmost and topmost node sit at 0.
+ */
+function layoutGraph(nodes: OrchestrationNode[], edges: OrchestrationEdge[]): OrchestrationNode[] {
+  const graph = new dagre.graphlib.Graph({ multigraph: true });
+  graph.setDefaultEdgeLabel(() => ({}));
+  graph.setGraph({ rankdir: 'LR', nodesep: 16, ranksep: 72 });
+  for (const node of nodes) graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  for (const edge of edges) graph.setEdge(edge.source, edge.target, {}, edge.id);
+  dagre.layout(graph);
+
+  const centers = nodes.map((node) => graph.node(node.id));
+  const minX = Math.min(...centers.map((c) => c.x));
+  const minY = Math.min(...centers.map((c) => c.y));
+  return nodes.map((node, i) => ({
+    ...node,
+    position: { x: centers[i].x - minX, y: centers[i].y - minY },
+  }));
+}
+
+/**
+ * Builds the live orchestration graph: the goal tree, tickets attached to
+ * goals, and running agents attached to their ticket or goal, laid out by
+ * `layoutGraph`. Pure function — feed it store state, render the result.
  */
 export function buildOrchestrationGraph(
   goals: PmGoal[],
@@ -245,39 +285,29 @@ export function buildOrchestrationGraph(
   runs: PmGoalRun[],
   /** Goal stations: a goal worked without tickets shows its station progress. */
   stations: PmGoalStation[] = [],
-  /** "Waits for" edges: drawn as dashed edges and used to order a column's rows. */
+  /** "Waits for" edges: drawn dashed, and they order siblings left to right. */
   dependencies: PmGoalDependency[] = []
 ): { nodes: OrchestrationNode[]; edges: OrchestrationEdge[] } {
-  const { depthOf, maxDepth: maxGoalDepth } = computeGoalDepths(goals);
-
-  const rowCounters = new Map<number, number>();
-  const nextRow = (col: number): number => {
-    const row = rowCounters.get(col) ?? 0;
-    rowCounters.set(col, row + 1);
-    return row;
-  };
+  const depthOf = computeGoalDepths(goals);
 
   const goalsByRow = orderGoalsForRows(goals, dependencies);
-  const goalPhase = buildGoalNodesAndEdges(goalsByRow, goals, tickets, stations, depthOf, nextRow);
+  const goalPhase = buildGoalNodesAndEdges(
+    goalsByRow,
+    goals,
+    tickets,
+    stations,
+    depthOf,
+    dependencies
+  );
   const dependencyEdges = buildDependencyEdges(dependencies, depthOf);
 
-  const ticketCol = maxGoalDepth + 1;
   const goalIds = new Set(goals.map((g) => g.id));
-  const ticketPhase = buildTicketNodesAndEdges(tickets, goalIds, ticketCol, nextRow);
+  const ticketPhase = buildTicketNodesAndEdges(tickets, goalIds);
 
-  const agentCol = ticketCol + 1;
   const shownTicketIds = new Set(ticketPhase.shownTickets.map((t) => t.id));
-  const agentPhase = buildAgentNodesAndEdges(
-    agents,
-    runs,
-    shownTicketIds,
-    goalIds,
-    agentCol,
-    nextRow
-  );
+  const agentPhase = buildAgentNodesAndEdges(agents, runs, shownTicketIds, goalIds);
 
-  return {
-    nodes: [...goalPhase.nodes, ...ticketPhase.nodes, ...agentPhase.nodes],
-    edges: [...goalPhase.edges, ...dependencyEdges, ...ticketPhase.edges, ...agentPhase.edges],
-  };
+  const nodes = [...goalPhase.nodes, ...ticketPhase.nodes, ...agentPhase.nodes];
+  const edges = [...goalPhase.edges, ...dependencyEdges, ...ticketPhase.edges, ...agentPhase.edges];
+  return { nodes: nodes.length === 0 ? nodes : layoutGraph(nodes, edges), edges };
 }
