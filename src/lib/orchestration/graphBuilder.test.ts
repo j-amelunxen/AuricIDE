@@ -206,7 +206,20 @@ describe('buildOrchestrationGraph dependencies', () => {
     expect(depEdge).toEqual(
       expect.objectContaining({ source: 'goal-a', target: 'goal-b', animated: false })
     );
-    expect(edges.filter((e) => e.kind === undefined)).toHaveLength(2); // the two parent edges
+    // b already hangs off its parent through a, so only a keeps its parent edge.
+    expect(edges.filter((e) => e.kind === undefined)).toEqual([
+      expect.objectContaining({ source: 'goal-p', target: 'goal-a' }),
+    ]);
+  });
+
+  it('keeps the parent edge of a goal whose prerequisite is not a sibling', () => {
+    const goals = [
+      makeGoal({ id: 'p' }),
+      makeGoal({ id: 'q' }),
+      makeGoal({ id: 'a', parentId: 'p' }),
+    ];
+    const { edges } = buildOrchestrationGraph(goals, [], [], [], [], [dep('a', 'q')]);
+    expect(edges).toContainEqual(expect.objectContaining({ source: 'goal-p', target: 'goal-a' }));
   });
 
   it('drops a dependency edge whose endpoint is not part of the rendered tree', () => {
@@ -215,7 +228,7 @@ describe('buildOrchestrationGraph dependencies', () => {
     expect(edges.some((e) => e.kind === 'dependency')).toBe(false);
   });
 
-  it('orders a serial chain top to bottom by wave, not by array insertion order', () => {
+  it('runs a serial chain left to right, the way the sub-goal plan graph does', () => {
     const goals = [
       makeGoal({ id: 'p' }),
       makeGoal({ id: 'c', parentId: 'p', sortOrder: 2 }),
@@ -224,8 +237,43 @@ describe('buildOrchestrationGraph dependencies', () => {
     ];
     const dependencies = [dep('b', 'a'), dep('c', 'b')];
     const { nodes } = buildOrchestrationGraph(goals, [], [], [], [], dependencies);
-    const rowOf = (id: string) => nodes.find((n) => n.id === `goal-${id}`)?.position.y;
-    expect(rowOf('a')).toBeLessThan(rowOf('b') as number);
-    expect(rowOf('b')).toBeLessThan(rowOf('c') as number);
+    const colOf = (id: string) => nodes.find((n) => n.id === `goal-${id}`)?.position.x;
+    expect(colOf('a')).toBeLessThan(colOf('b') as number);
+    expect(colOf('b')).toBeLessThan(colOf('c') as number);
+  });
+
+  it('stacks parallel siblings in one column', () => {
+    const goals = [
+      makeGoal({ id: 'p' }),
+      makeGoal({ id: 'a', parentId: 'p' }),
+      makeGoal({ id: 'b', parentId: 'p' }),
+    ];
+    const { nodes } = buildOrchestrationGraph(goals, [], [], []);
+    const a = nodes.find((n) => n.id === 'goal-a')!;
+    const b = nodes.find((n) => n.id === 'goal-b')!;
+    expect(a.position.x).toBe(b.position.x);
+    expect(a.position.y).not.toBe(b.position.y);
+  });
+
+  it('keeps every node clear of the others on a wide plan with a dependency web', () => {
+    const children = Array.from({ length: 18 }, (_, i) =>
+      makeGoal({ id: `s${i}`, parentId: 'p', sortOrder: i })
+    );
+    const goals = [makeGoal({ id: 'p' }), makeGoal({ id: 'q' }), ...children];
+    // Every third sibling waits on the one before it; the rest run in parallel.
+    const dependencies = children
+      .filter((_, i) => i > 0 && i % 3 === 0)
+      .map((c, i) => dep(c.id, `s${i * 3 + 2}`));
+    const tickets = [makeTicket({ id: 't1', goalId: 's0' }), makeTicket({ id: 't2', goalId: 'q' })];
+    const { nodes } = buildOrchestrationGraph(goals, tickets, [], [], [], dependencies);
+
+    // OrchestrationNode is 260 px wide; the layout reserves 64 px of height per node.
+    const overlaps = (a: (typeof nodes)[number], b: (typeof nodes)[number]) =>
+      Math.abs(a.position.x - b.position.x) < 260 && Math.abs(a.position.y - b.position.y) < 64;
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        expect(overlaps(nodes[i], nodes[j]), `${nodes[i].id} overlaps ${nodes[j].id}`).toBe(false);
+      }
+    }
   });
 });
