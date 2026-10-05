@@ -157,6 +157,12 @@ export interface GoalsSlice {
   resetGoalLine: (goalId: string) => void;
   /** A person ticks a human step off — the one evidence only they can give. */
   tickHumanStation: (id: string, note?: string) => void;
+  /**
+   * A person decides a station is not needed, and says why. Same rules as MCP
+   * skip_station: a reason is required, and gates, human steps and done work
+   * cannot be skipped. Refused calls change nothing.
+   */
+  skipStation: (id: string, reason: string) => void;
   moveStationTo: (goalId: string, stationId: string, toIndex: number) => void;
   quickAddHumanStation: (goalId: string, name: string) => void;
   discardGoalChanges: () => void;
@@ -843,6 +849,32 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
       ),
       goalsDirty: true,
     }));
+  },
+
+  skipStation: (id, reason) => {
+    const note = reason.trim();
+    if (note === '') return;
+    const ts = nowTimestamp();
+    set((s) => {
+      const target = s.goalStationsDraft.find((st) => st.id === id);
+      if (!target || target.kind !== 'normal' || target.status === 'done') return {};
+      return {
+        goalStationsDraft: s.goalStationsDraft.map((st) =>
+          st.id === id
+            ? {
+                ...st,
+                status: 'skipped',
+                evidenceKind: 'claim',
+                evidenceNote: note,
+                lastCheckedAt: null,
+                doneAt: null,
+                updatedAt: ts,
+              }
+            : st
+        ),
+        goalsDirty: true,
+      };
+    });
   },
 
   moveStationTo: (goalId, stationId, toIndex) =>

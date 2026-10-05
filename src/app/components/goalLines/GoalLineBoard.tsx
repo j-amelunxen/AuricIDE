@@ -11,12 +11,11 @@ export interface GoalLineBoardProps {
   notStarted: PmGoal[];
   agentsById: Map<string, AgentInfo>;
   now: number;
+  /** Opens a line's timeline. */
+  onOpenLine: (goalId: string) => void;
+  /** Opens a goal without a line in the goal editor. */
   onOpenGoal: (goalId: string) => void;
-  onQuickAdd: (goalId: string, name: string) => void;
   onTick: (stationId: string) => void;
-  onMove: (goalId: string, stationId: string, toIndex: number) => void;
-  onVerify: (stationId: string) => void;
-  onReset: (goalId: string) => void;
 }
 
 /** The board: one card per goal that has work, plus a quiet not-started strip. */
@@ -25,12 +24,9 @@ export function GoalLineBoard({
   notStarted,
   agentsById,
   now,
+  onOpenLine,
   onOpenGoal,
-  onQuickAdd,
   onTick,
-  onMove,
-  onVerify,
-  onReset,
 }: GoalLineBoardProps) {
   return (
     <div className="flex flex-col gap-4" data-testid="goal-line-board">
@@ -41,12 +37,8 @@ export function GoalLineBoard({
             line={line}
             agentsById={agentsById}
             now={now}
-            onOpen={onOpenGoal}
-            onQuickAdd={onQuickAdd}
+            onOpen={onOpenLine}
             onTick={onTick}
-            onMove={onMove}
-            onVerify={onVerify}
-            onReset={onReset}
           />
         ))}
       </div>

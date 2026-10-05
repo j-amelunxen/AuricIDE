@@ -1106,6 +1106,37 @@ describe('goal stations in the draft double-buffer', () => {
     expect(station.doneAt).not.toBeNull();
   });
 
+  it('skipStation records the decision with its reason, the way skip_station does', () => {
+    const store = createTestStore();
+    store.getState().addStation(stationFixture({ evidenceKind: 'proof', lastCheckedAt: 'x' }));
+    store.getState().skipStation('s1', '  covered by the import  ');
+    const station = store.getState().goalStationsDraft[0];
+    expect(station.status).toBe('skipped');
+    expect(station.evidenceKind).toBe('claim');
+    expect(station.evidenceNote).toBe('covered by the import');
+    expect(station.lastCheckedAt).toBeNull();
+    expect(station.doneAt).toBeNull();
+    expect(store.getState().goalsDirty).toBe(true);
+  });
+
+  it('skipStation refuses a blank reason, a human step, a gate and done work', () => {
+    const store = createTestStore();
+    store.getState().addStation(stationFixture({ id: 'n1' }));
+    store.getState().addStation(stationFixture({ id: 'h1', kind: 'human' }));
+    store.getState().addStation(stationFixture({ id: 'g1', kind: 'gate' }));
+    store.getState().addStation(stationFixture({ id: 'd1', status: 'done' }));
+    store.getState().skipStation('n1', '   ');
+    store.getState().skipStation('h1', 'no');
+    store.getState().skipStation('g1', 'no');
+    store.getState().skipStation('d1', 'no');
+    expect(store.getState().goalStationsDraft.map((s) => s.status)).toEqual([
+      'planned',
+      'planned',
+      'planned',
+      'done',
+    ]);
+  });
+
   it('moveStationTo clamps so pending work never precedes done work', () => {
     const store = createTestStore();
     store.getState().addStation(stationFixture({ id: 'd1', status: 'done', sortOrder: 0 }));

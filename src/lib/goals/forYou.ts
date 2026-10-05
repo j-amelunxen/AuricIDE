@@ -118,7 +118,7 @@ export function buildForYouQueue(input: ForYouInput): ForYouItem[] {
 }
 
 /** Open human stations with no open agent station before them on the line. */
-function humanStationsDue(stations: readonly LineStation[]): LineStation[] {
+export function humanStationsDue(stations: readonly LineStation[]): LineStation[] {
   const due: LineStation[] = [];
   for (const station of stations) {
     if (station.state === 'done' || station.state === 'skipped') continue;
