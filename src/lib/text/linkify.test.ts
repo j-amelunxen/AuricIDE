@@ -39,10 +39,10 @@ describe('splitLinks', () => {
     ]);
   });
 
-  it('handles http and keeps newlines in the text parts', () => {
-    expect(splitLinks('a\nhttp://example.com/p\nb')).toEqual([
+  it('keeps newlines in the text parts', () => {
+    expect(splitLinks('a\nhttps://example.com/p\nb')).toEqual([
       { type: 'text', value: 'a\n' },
-      { type: 'link', value: 'http://example.com/p' },
+      { type: 'link', value: 'https://example.com/p' },
       { type: 'text', value: '\nb' },
     ]);
   });
@@ -54,6 +54,7 @@ describe('splitLinks', () => {
   });
 
   it('never turns other schemes into links', () => {
+    expect(links('http://example.com')).toEqual([]);
     expect(links('javascript:alert(1) file:///etc/passwd data:text/html,x')).toEqual([]);
   });
 });
