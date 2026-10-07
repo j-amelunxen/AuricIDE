@@ -32,6 +32,16 @@ describe('LinkifiedTextarea', () => {
     expect(openExternalUrl).toHaveBeenCalledWith(URL_IN_TEXT);
   });
 
+  it('keeps a middle-click from navigating the app webview', () => {
+    setup(`See ${URL_IN_TEXT}`);
+    const notPrevented = fireEvent(
+      screen.getByRole('link'),
+      new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })
+    );
+    expect(notPrevented).toBe(false);
+    expect(openExternalUrl).not.toHaveBeenCalled();
+  });
+
   it('does not switch to editing when a link is clicked', () => {
     setup(`See ${URL_IN_TEXT}`);
     fireEvent.click(screen.getByRole('link'));

@@ -26,6 +26,9 @@ export function LinkifiedText({ text }: { text: string }) {
               e.stopPropagation();
               open(part.value);
             }}
+            // Middle-click fires auxclick, not click; left alone it would navigate the app's own webview.
+            onAuxClick={(e) => e.preventDefault()}
+            rel="noopener noreferrer"
             className="text-primary underline underline-offset-2 hover:opacity-80"
           >
             {part.value}
