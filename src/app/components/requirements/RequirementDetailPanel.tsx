@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import type { PmRequirement } from '@/lib/tauri/requirements';
+import { LinkifiedText } from '@/app/components/common/LinkifiedText';
 
 interface RequirementDetailPanelProps {
   requirement: PmRequirement | null;
@@ -325,7 +326,7 @@ function TextArea({
         />
       ) : (
         <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-foreground">
-          {value || '-'}
+          {value ? <LinkifiedText text={value} /> : '-'}
         </p>
       )}
     </div>
