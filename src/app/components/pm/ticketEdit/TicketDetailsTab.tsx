@@ -6,6 +6,7 @@ import { TicketSkillsField } from '../TicketSkillsField';
 import { TicketTiming } from '../TicketTiming';
 import { TicketCost } from '../TicketCost';
 import { formatDate, modelPowerOptions, priorityOptions } from './types';
+import { LinkifiedTextarea } from '@/app/components/common/LinkifiedTextarea';
 
 interface TicketDetailsTabProps {
   ticket: PmTicket;
@@ -93,9 +94,9 @@ export function TicketDetailsTab({ ticket, discovered, onUpdateTicket }: TicketD
 
       <div>
         <label className="mb-1 block text-xs text-foreground-muted">Description</label>
-        <textarea
+        <LinkifiedTextarea
           value={ticket.description}
-          onChange={(e) => onUpdateTicket(ticket.id, { description: e.target.value })}
+          onChange={(value) => onUpdateTicket(ticket.id, { description: value })}
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none resize-none"
           rows={8}
         />

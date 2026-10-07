@@ -31,6 +31,7 @@ import { MissionOverviewSection } from './detail/MissionOverviewSection';
 import { GoalDependenciesSection } from './detail/GoalDependenciesSection';
 import { SubGoalPlanGraph } from './SubGoalPlanGraph';
 import { resolveMissionDir } from '@/lib/missions/missionPath';
+import { LinkifiedTextarea } from '@/app/components/common/LinkifiedTextarea';
 
 export { GoalWorkflowStepper } from './detail/GoalWorkflowStepper';
 export { GoalSatisfactionCard } from './detail/GoalSatisfactionCard';
@@ -381,10 +382,10 @@ export function GoalDetailPanel({
       {/* Description */}
       <div>
         <label className={labelCls}>Description</label>
-        <textarea
+        <LinkifiedTextarea
           data-testid="goal-detail-description"
           value={goal.description}
-          onChange={(e) => onUpdate(goal.id, { description: e.target.value })}
+          onChange={(value) => onUpdate(goal.id, { description: value })}
           rows={3}
           placeholder="What should be true when this is done?"
           className={inputCls}

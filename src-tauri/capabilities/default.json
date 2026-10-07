@@ -12,13 +12,10 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         {
-          "url": "https://app.excalidraw.com/*"
+          "url": "https://*"
         },
         {
-          "url": "https://excalidraw.com/*"
-        },
-        {
-          "url": "https://plus.excalidraw.com/*"
+          "url": "http://*"
         }
       ]
     }
