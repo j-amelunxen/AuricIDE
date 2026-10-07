@@ -31,7 +31,7 @@ export function lastRunLabel(run: ConductorRunSummary): string {
     case 'goal_blocked':
       return `blocked: ${run.blockers.length} blocker${run.blockers.length === 1 ? '' : 's'}`;
     case 'finished':
-      return 'finished';
+      return run.epicName ? `finished epic "${run.epicName}"` : 'finished';
     case 'user_stopped':
       return 'stopped by you';
     case 'budget_reached':

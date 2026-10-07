@@ -38,6 +38,36 @@ describe('EpicSidebar', () => {
     onDeleteEpic: vi.fn(),
   };
 
+  it('hands an epic to the conductor without selecting it', () => {
+    const onRunConductor = vi.fn();
+    const onSelectEpic = vi.fn();
+    render(
+      <EpicSidebar
+        {...defaultProps}
+        epics={[makeEpic({ id: 'e-1', name: 'Auth' })]}
+        onSelectEpic={onSelectEpic}
+        onRunConductor={onRunConductor}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Run conductor on epic Auth' }));
+    expect(onRunConductor).toHaveBeenCalledWith('e-1');
+    expect(onSelectEpic).not.toHaveBeenCalled();
+  });
+
+  it('offers no second run while the conductor is already working', () => {
+    render(
+      <EpicSidebar
+        {...defaultProps}
+        epics={[makeEpic({ id: 'e-1', name: 'Auth' })]}
+        onRunConductor={vi.fn()}
+        conductorRunning
+      />
+    );
+    const button = screen.getByRole('button', { name: 'Run conductor on epic Auth' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'The conductor is already running');
+  });
+
   it('renders "All" filter', () => {
     render(<EpicSidebar {...defaultProps} />);
     expect(screen.getByText('All')).toBeDefined();

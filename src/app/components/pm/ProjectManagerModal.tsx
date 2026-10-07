@@ -44,6 +44,10 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
   const setImportSpecDialogOpen = useStore((s) => s.setImportSpecDialogOpen);
 
   const setPmModalOpen = useStore((s) => s.setPmModalOpen);
+  const conductorRunning = useStore((s) => s.conductorRunning);
+  const setConductorScopeEpicId = useStore((s) => s.setConductorScopeEpicId);
+  const setSelectedGoalId = useStore((s) => s.setSelectedGoalId);
+  const openWorkPlace = useStore((s) => s.openWorkPlace);
   const loadPmData = useStore((s) => s.loadPmData);
   const refreshPmData = useStore((s) => s.refreshPmData);
   const savePmData = useStore((s) => s.savePmData);
@@ -205,6 +209,19 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
       setSpawnAgentTicketId,
       setSpawnDialogOpen,
     ]
+  );
+
+  // Preloads the conductor with one epic and shows its panel; the run starts
+  // with the panel's Start, so its settings are seen before agents go out.
+  // The goal selection is cleared first, because picking a goal drops the epic.
+  const handleRunConductorOnEpic = useCallback(
+    (epicId: string) => {
+      setSelectedGoalId(null);
+      setConductorScopeEpicId(epicId);
+      if (!embedded) setPmModalOpen(false);
+      openWorkPlace('goals');
+    },
+    [embedded, setSelectedGoalId, setConductorScopeEpicId, setPmModalOpen, openWorkPlace]
   );
 
   const handleOpenCreateTicket = useCallback(() => {
@@ -395,6 +412,8 @@ function ProjectManagerDialog({ embedded = false }: { embedded?: boolean }) {
             onEditEpic={handleEditEpic}
             onDeleteEpic={(id) => void handleDeleteEpic(id)}
             onReorderEpics={reorderEpics}
+            onRunConductorOnEpic={handleRunConductorOnEpic}
+            conductorRunning={conductorRunning}
             onSelectTicket={setPmSelectedTicketId}
             onUpdateTicket={updateTicket}
             onSave={async () => {

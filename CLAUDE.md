@@ -244,6 +244,12 @@ Goals lead; epics are storage. The primary workflow of the app is one loop:
      until a person ticks it. A run that ends on them says "Goal waits for you".
      `GOAL_AGENT_TIMEOUT_MS` (2 h) ends any conductor goal agent that still
      does not exit.
+   - **A run can be scoped to one epic instead of a goal.** The play button on
+     an epic row (ticket list) preloads the conductor panel with it
+     (`conductorScopeEpicId`, a chip there); Start runs it as a goal-less run
+     over that epic's tickets only (`conductorEpicId`). Picking a goal drops
+     the epic. A ticket waiting on one outside the run does not keep the run
+     alive: it ends and names the ticket.
 4. **Verified done** — when no work is left, `getGoalSatisfaction` checks **four**
    conditions: all subtree tickets `done` + all linked requirements `verified` +
    **every station of the goal's line `done`** + all child goals `achieved`. If

@@ -896,7 +896,13 @@ export const createGoalsSlice: StateCreator<GoalsSlice> = (set, get) => ({
     })),
 
   setGoalsModalOpen: (open) => set({ goalsModalOpen: open }),
-  setSelectedGoalId: (id) => set({ selectedGoalId: id }),
+  // Picking a goal replaces an epic the conductor panel was preloaded with:
+  // the panel must never offer two scopes at once.
+  setSelectedGoalId: (id) =>
+    set({
+      selectedGoalId: id,
+      ...(id !== null && { conductorScopeEpicId: null }),
+    } as Partial<GoalsSlice>),
   setOrchestrationOpen: (open) => set({ orchestrationOpen: open }),
   setGoalLinesOpen: (open, opts) =>
     set({

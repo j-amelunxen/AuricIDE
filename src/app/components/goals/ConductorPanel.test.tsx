@@ -77,6 +77,23 @@ function renderPanel(overrides: Partial<Parameters<typeof ConductorPanel>[0]> = 
   return props;
 }
 
+describe('ConductorPanel scoped to an epic', () => {
+  it('shows the preloaded epic as a chip that can be removed', () => {
+    const onClearEpicScope = vi.fn();
+    renderPanel({ selectedEpicName: 'Checkout', onClearEpicScope });
+    expect(screen.getByTestId('conductor-epic-scope')).toHaveTextContent('Epic: Checkout');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove epic scope' }));
+    expect(onClearEpicScope).toHaveBeenCalled();
+  });
+
+  it('names the epic while its run is going', () => {
+    renderPanel({ running: true, runEpicName: 'Checkout' });
+    expect(screen.getByTestId('conductor-running-status')).toHaveTextContent(
+      'working on epic "Checkout"'
+    );
+  });
+});
+
 describe('ConductorPanel', () => {
   const providers = [
     {

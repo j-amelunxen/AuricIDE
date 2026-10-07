@@ -120,10 +120,15 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       (n) => n >= MAX_TICKET_ATTEMPTS
     ).length;
     const now = new Date().toISOString();
+    const epicName = s.conductorEpicId
+      ? ((cross().pmDraftEpics ?? []).find((e) => e.id === s.conductorEpicId)?.name ??
+        s.conductorEpicId)
+      : null;
     set({
       conductorLastRun: {
         outcome,
         goalName,
+        epicName,
         completed: s.conductorRunCompleted,
         failed,
         blockers,
@@ -189,6 +194,9 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
   return {
     conductorRunning: false,
     conductorGoalId: null,
+    conductorEpicId: null,
+    conductorScopeEpicId: null,
+    setConductorScopeEpicId: (epicId) => set({ conductorScopeEpicId: epicId }),
     conductorMaxConcurrent: 2,
     conductorProviderId: null,
     conductorModel: null,
@@ -213,7 +221,9 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
     conductorPlanAttempts: {},
     conductorSpawnFailureNotified: false,
 
-    startConductor: (goalId, options) => {
+    startConductor: (requestedGoalId, options) => {
+      const epicId = options?.epicId ?? null;
+      const goalId = epicId ? null : requestedGoalId;
       const rememberToRestore = <K extends keyof RunOverridable>(key: K): void => {
         if (key in restoreAfterRun) return;
         restoreAfterRun[key] = get()[key];
@@ -227,6 +237,7 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
       set({
         conductorRunning: true,
         conductorGoalId: goalId,
+        conductorEpicId: epicId,
         conductorFailedTickets: {},
         conductorPendingApprovals: [],
         conductorApprovedTickets: [],
@@ -258,7 +269,11 @@ export const createConductorSlice: StateCreator<ConductorSlice> = (set, get) => 
         : 'Conductor started';
       addDecision({
         action: 'start',
-        detail: goalId ? `${startedBy} for goal ${goalId}` : `${startedBy} (all tickets)`,
+        detail: goalId
+          ? `${startedBy} for goal ${goalId}`
+          : epicId
+            ? `${startedBy} for epic ${epicId}`
+            : `${startedBy} (all tickets)`,
       });
       if (goalId) activateDraftGoals(goalId);
       stopHeartbeat();

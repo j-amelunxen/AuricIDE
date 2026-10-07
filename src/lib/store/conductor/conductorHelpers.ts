@@ -139,6 +139,11 @@ export function filterTicketsForGoal(
   return tickets.filter((t) => !!t.goalId && ids.has(t.goalId));
 }
 
+/** Tickets of one epic; a null epic leaves the set as it is. */
+export function filterTicketsForEpic(tickets: PmTicket[], epicId: string | null): PmTicket[] {
+  return epicId ? tickets.filter((t) => t.epicId === epicId) : tickets;
+}
+
 /**
  * Tickets whose goal (or an inherited edge from an ancestor) is not held by a
  * dependency: the ones the conductor may actually consider for a launch this
@@ -162,6 +167,8 @@ export function getConductorPreflight(input: {
   dependencies: PmDependency[];
   goals: PmGoal[];
   goalId: string | null;
+  /** Narrows the scope to one epic's tickets, as an epic run does. */
+  epicId?: string | null;
   failedTickets: Record<string, number>;
   approvedTickets: string[];
   /** Absent reads as "no stations": ticket-only callers need not pass it. */
@@ -174,7 +181,10 @@ export function getConductorPreflight(input: {
   const goalDependencies = input.goalDependencies ?? [];
   // Tickets of a stations goal are the goal agent's, exactly as in the tick.
   const workable = ticketsWorkedAsTickets(tickets, goals, stations);
-  const scoped = goalId ? filterTicketsForGoal(workable, goals, goalId) : workable;
+  const scoped = filterTicketsForEpic(
+    goalId ? filterTicketsForGoal(workable, goals, goalId) : workable,
+    input.epicId ?? null
+  );
   // Same predicate the tick uses to ask for goal agents, before anything is
   // in flight.
   const stationWork = getStationGoalWork({

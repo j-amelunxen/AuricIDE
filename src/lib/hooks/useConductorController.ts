@@ -12,11 +12,17 @@ import { getConductorPreflight } from '@/lib/store/conductorSlice';
  * Shared wiring for the ConductorPanel: derives every prop the panel needs
  * from the store so any surface (GoalsModal, Mission Control) can embed the
  * same panel without duplicating the glue. Starting scopes the run to the
- * currently selected goal (null = all tickets), exactly like the Goals modal.
+ * currently selected goal (null = all tickets), exactly like the Goals modal —
+ * unless the panel was preloaded with an epic ("run conductor on this epic"),
+ * which then takes the goal's place.
  */
 export function useConductorController() {
   const running = useStore((s) => s.conductorRunning);
   const conductorGoalId = useStore((s) => s.conductorGoalId);
+  const conductorEpicId = useStore((s) => s.conductorEpicId);
+  const scopeEpicId = useStore((s) => s.conductorScopeEpicId) ?? null;
+  const setConductorScopeEpicId = useStore((s) => s.setConductorScopeEpicId);
+  const epics = useStore((s) => s.pmDraftEpics);
   const maxConcurrent = useStore((s) => s.conductorMaxConcurrent);
   const workCap = useStore((s) => s.conductorWorkCap);
   const runBudget = useStore((s) => s.conductorTicketBudget);
@@ -96,12 +102,22 @@ export function useConductorController() {
         // populated yet on a freshly opened project.
         dependencies: dependencies ?? [],
         goals: goals ?? [],
-        goalId: selectedGoalId,
+        goalId: scopeEpicId ? null : selectedGoalId,
+        epicId: scopeEpicId,
         failedTickets: failedTickets ?? {},
         approvedTickets: approvedTickets ?? [],
         stations: stations ?? [],
       }),
-    [tickets, dependencies, goals, selectedGoalId, failedTickets, approvedTickets, stations]
+    [
+      tickets,
+      dependencies,
+      goals,
+      selectedGoalId,
+      scopeEpicId,
+      failedTickets,
+      approvedTickets,
+      stations,
+    ]
   );
 
   // A stations goal is work too: the run asks for goal agents for it, or, with
@@ -114,6 +130,13 @@ export function useConductorController() {
     [selectedGoalId, goals]
   );
 
+  const epicName = useCallback(
+    (id: string | null) => (id ? ((epics ?? []).find((e) => e.id === id)?.name ?? null) : null),
+    [epics]
+  );
+  const selectedEpicName = epicName(scopeEpicId);
+  const runEpicName = epicName(conductorEpicId ?? null);
+
   const scopeGoalName = useMemo(() => {
     if (!conductorGoalId) return null;
     return (goals ?? []).find((g) => g.id === conductorGoalId)?.name ?? null;
@@ -122,13 +145,21 @@ export function useConductorController() {
   const onStart = useCallback(() => {
     // A missing cap (a surface that rendered before the field existed) is the
     // same as no limit, and must keep the one-argument start the callers know.
-    if (typeof workCap === 'number') {
-      startConductor(selectedGoalId, { ticketBudget: workCap });
+    const budget = typeof workCap === 'number' ? { ticketBudget: workCap } : {};
+    if (scopeEpicId) {
+      startConductor(null, { ...budget, epicId: scopeEpicId });
+    } else if (typeof workCap === 'number') {
+      startConductor(selectedGoalId, budget);
     } else {
       startConductor(selectedGoalId);
     }
     void conductorTick();
-  }, [startConductor, selectedGoalId, conductorTick, workCap]);
+  }, [startConductor, selectedGoalId, scopeEpicId, conductorTick, workCap]);
+
+  const onClearEpicScope = useCallback(
+    () => setConductorScopeEpicId(null),
+    [setConductorScopeEpicId]
+  );
 
   const onStop = useCallback(() => stopConductor(), [stopConductor]);
 
@@ -140,6 +171,9 @@ export function useConductorController() {
   return {
     running,
     scopeGoalName,
+    runEpicName,
+    selectedEpicName,
+    onClearEpicScope,
     maxConcurrent,
     workCap: typeof workCap === 'number' ? workCap : null,
     runBudget: typeof runBudget === 'number' ? runBudget : null,
@@ -161,7 +195,9 @@ export function useConductorController() {
       rootPath === null
         ? 'Open a project first'
         : !hasWork
-          ? 'No tickets yet - create work first'
+          ? scopeEpicId
+            ? 'This epic has no tickets yet'
+            : 'No tickets yet - create work first'
           : undefined,
     providers,
     providerId,

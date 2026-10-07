@@ -308,6 +308,27 @@ describe('getConductorPreflight', () => {
   });
 });
 
+describe('getConductorPreflight scoped to an epic', () => {
+  it('counts only the tickets of that epic', () => {
+    const result = getConductorPreflight({
+      tickets: [
+        makeTicket({ id: 't1', epicId: 'e1' }),
+        makeTicket({ id: 't2', epicId: 'e2' }),
+        makeTicket({ id: 't3', epicId: 'e1', status: 'done' }),
+      ],
+      dependencies: [],
+      goals: [],
+      goalId: null,
+      epicId: 'e1',
+      failedTickets: {},
+      approvedTickets: [],
+    });
+    expect(result.total).toBe(2);
+    expect(result.ready).toBe(1);
+    expect(result.done).toBe(1);
+  });
+});
+
 describe('conductor pure helpers', () => {
   it('getUnblockedOpenTickets returns open tickets sorted by priority then sortOrder', () => {
     const tickets = [
@@ -1163,6 +1184,99 @@ describe('conductorSlice', () => {
       store.getState().startConductor(null);
       await store.getState().conductorTick();
       expect(store.getState().conductorLastRun?.completed).toBe(0);
+    });
+  });
+
+  describe('a run scoped to one epic', () => {
+    it('spawns only tickets of that epic', async () => {
+      store.setState({
+        pmDraftTickets: [
+          makeTicket({ id: 't1', epicId: 'e1' }),
+          makeTicket({ id: 't2', epicId: 'e2' }),
+          makeTicket({ id: 't3', epicId: 'e1' }),
+        ],
+        conductorMaxConcurrent: 5,
+      });
+
+      store.getState().startConductor(null, { epicId: 'e1' });
+      await store.getState().conductorTick();
+
+      expect(Object.keys(store.getState().conductorAssignments).sort()).toEqual(['t1', 't3']);
+      expect(store.getState().conductorEpicId).toBe('e1');
+    });
+
+    it('keeps a ticket blocked by an unfinished ticket outside the epic', async () => {
+      store.setState({
+        pmDraftTickets: [
+          makeTicket({ id: 't1', epicId: 'e1' }),
+          makeTicket({ id: 'other', epicId: 'e2' }),
+        ],
+        pmDraftDependencies: [
+          {
+            id: 'd1',
+            sourceType: 'ticket',
+            sourceId: 't1',
+            targetType: 'ticket',
+            targetId: 'other',
+          },
+        ],
+      });
+
+      store.getState().startConductor(null, { epicId: 'e1' });
+      await store.getState().conductorTick();
+
+      expect(store.getState().conductorAssignments).toEqual({});
+      // The blocker lives in another epic, so nothing in this run can free it:
+      // the run ends and says why instead of idling.
+      expect(store.getState().conductorRunning).toBe(false);
+      expect(store.getState().conductorLastRun?.blockers.join(' ')).toContain('waits on');
+    });
+
+    it('wins over a goal: an epic run is not a goal run', () => {
+      store.getState().startConductor('g1', { epicId: 'e1' });
+      expect(store.getState().conductorGoalId).toBeNull();
+      expect(store.getState().conductorEpicId).toBe('e1');
+    });
+
+    it('finishes naming the epic once its tickets are done', async () => {
+      store.setState({
+        pmDraftEpics: [
+          {
+            id: 'e1',
+            name: 'Checkout',
+            description: '',
+            sortOrder: 0,
+            createdAt: '',
+            updatedAt: '',
+          },
+        ],
+        pmDraftTickets: [
+          makeTicket({ id: 't1', epicId: 'e1', status: 'done' }),
+          makeTicket({ id: 't2', epicId: 'e2' }),
+        ],
+      });
+
+      store.getState().startConductor(null, { epicId: 'e1' });
+      await store.getState().conductorTick();
+
+      const lastRun = store.getState().conductorLastRun;
+      expect(lastRun?.outcome).toBe('finished');
+      expect(lastRun?.epicName).toBe('Checkout');
+      expect(store.getState().agents ?? []).toHaveLength(0);
+    });
+
+    it('a later run without an epic covers all tickets again', async () => {
+      store.setState({
+        pmDraftTickets: [
+          makeTicket({ id: 't1', epicId: 'e1' }),
+          makeTicket({ id: 't2', epicId: 'e2' }),
+        ],
+        conductorMaxConcurrent: 5,
+      });
+      store.getState().startConductor(null, { epicId: 'e1' });
+      store.getState().stopConductor();
+      store.getState().startConductor(null);
+      expect(store.getState().conductorEpicId).toBeNull();
     });
   });
 
