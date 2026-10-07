@@ -14,6 +14,10 @@ interface EpicSidebarProps {
   onEditEpic: (epic: PmEpic) => void;
   onDeleteEpic: (id: string) => void;
   onReorderEpics?: (orderedIds: string[]) => void;
+  /** Preloads the conductor panel with this epic. Absent hides the button. */
+  onRunConductor?: (epicId: string) => void;
+  /** A run is going: a second one cannot start, so the button says why. */
+  conductorRunning?: boolean;
 }
 
 export function EpicSidebar({
@@ -25,6 +29,8 @@ export function EpicSidebar({
   onEditEpic,
   onDeleteEpic,
   onReorderEpics,
+  onRunConductor,
+  conductorRunning = false,
 }: EpicSidebarProps) {
   const ticketCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -123,6 +129,26 @@ export function EpicSidebar({
               <span className="rounded-full bg-white/[0.07] px-1.5 py-0.5 text-[10px] tabular-nums text-foreground-muted">
                 {ticketCounts.get(epic.id) ?? 0}
               </span>
+
+              {onRunConductor && (
+                <button
+                  type="button"
+                  aria-label={`Run conductor on epic ${epic.name}`}
+                  title={
+                    conductorRunning
+                      ? 'The conductor is already running'
+                      : 'Run the conductor on this epic'
+                  }
+                  disabled={conductorRunning}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRunConductor(epic.id);
+                  }}
+                  className="flex h-5 w-5 items-center justify-center rounded text-foreground-muted opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-green-500/10 hover:text-green-300 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-foreground-muted transition"
+                >
+                  <AuricIcon name="play_arrow" className="text-[14px]" />
+                </button>
+              )}
 
               <button
                 type="button"

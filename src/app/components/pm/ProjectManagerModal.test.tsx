@@ -86,6 +86,10 @@ const mockStore: Record<string, unknown> = {
   refreshPmData: vi.fn(),
   archiveDoneTickets: vi.fn(),
   setImportSpecDialogOpen: vi.fn(),
+  conductorRunning: false,
+  setConductorScopeEpicId: vi.fn(),
+  setSelectedGoalId: vi.fn(),
+  openWorkPlace: vi.fn(),
   overlayStack: { layers: [] as { id: string; kind: string }[] },
   pushOverlay: (entry: { id: string; kind: string }) => {
     const stack = mockStore.overlayStack as { layers: { id: string; kind: string }[] };
@@ -142,6 +146,19 @@ describe('ProjectManagerModal', () => {
     expect(screen.getByTestId('tickets-epics-col')).toHaveClass('w-40', '@4xl:w-[220px]');
     expect(screen.getByTestId('tickets-list-col')).toHaveClass('w-52', '@4xl:w-[280px]');
     expect(screen.getByTestId('tickets-detail-col')).toHaveClass('min-w-0', 'flex-1');
+  });
+
+  it('opens the conductor panel preloaded with the epic whose run button was pressed', async () => {
+    mockStore.pmModalOpen = true;
+    mockStore.pmDraftEpics = [
+      { id: 'e-1', name: 'Checkout', description: '', sortOrder: 0, createdAt: '', updatedAt: '' },
+    ];
+    render(<ProjectManagerModal />);
+    await userEvent.click(screen.getByRole('button', { name: 'Run conductor on epic Checkout' }));
+    expect(mockStore.setSelectedGoalId).toHaveBeenCalledWith(null);
+    expect(mockStore.setConductorScopeEpicId).toHaveBeenCalledWith('e-1');
+    expect(mockStore.setPmModalOpen).toHaveBeenCalledWith(false);
+    expect(mockStore.openWorkPlace).toHaveBeenCalledWith('goals');
   });
 
   it('exposes an accessible dialog when open', () => {

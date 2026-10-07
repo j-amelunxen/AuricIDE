@@ -7,6 +7,7 @@ import { describeSubtreeDependencyBlocks } from '../goals/goalDependencyAdapters
 import { achieveFinishedDescendants, bundleHoldBlockers, closableWith } from './conductorGoalSweep';
 import {
   buildConductorPrompt,
+  filterTicketsForEpic,
   filterTicketsForGoal,
   getUnblockedOpenTickets,
   isConductorGoalAgent,
@@ -159,7 +160,10 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
 
   // Tickets of a stations goal belong to its goal agent, never to ticket agents.
   const workable = ticketsWorkedAsTickets(allTickets, goals, full.goalStationsDraft ?? []);
-  const scoped = goalId ? filterTicketsForGoal(workable, goals, goalId) : workable;
+  const scoped = filterTicketsForEpic(
+    goalId ? filterTicketsForGoal(workable, goals, goalId) : workable,
+    get().conductorEpicId
+  );
 
   // Watchdog: a review with no verdict past REVIEW_TIMEOUT_MS (a hung
   // reviewer, a lost spawn) must not park a ticket in_review forever. Time
@@ -269,6 +273,12 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
 
   // A ticket whose goal is held by a dependency edge is not this tick's turn.
   const launchableTickets = ticketsWithUnblockedGoal(scoped, goals, goalDependencies);
+  const unblocked = getUnblockedOpenTickets(
+    launchableTickets,
+    full.pmDraftDependencies ?? [],
+    allTickets
+  );
+  const unblockedIds = new Set(unblocked.map((t) => t.id));
 
   // Scope exhausted: no open/in-progress work left and no agents running →
   // machine-check the goal and close the loop. Held tickets do not count as
@@ -279,7 +289,12 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
     launchablePlans.length > 0 ||
     launchableTickets.some(
       (t) =>
-        (t.status === 'open' && (get().conductorFailedTickets[t.id] ?? 0) < MAX_TICKET_ATTEMPTS) ||
+        // An open ticket still waiting on a dependency is not work left:
+        // with nothing running, a blocker outside the run's scope (another
+        // epic, another goal) never moves, and the run would idle forever.
+        (t.status === 'open' &&
+          unblockedIds.has(t.id) &&
+          (get().conductorFailedTickets[t.id] ?? 0) < MAX_TICKET_ATTEMPTS) ||
         t.status === 'in_progress' ||
         // A ticket awaiting the judge is work in flight: it must not let the
         // loop auto-achieve the goal before the verdict lands.
@@ -382,24 +397,34 @@ export async function executeConductorTick(ctx: ConductorTickContext): Promise<v
       }
     } else {
       halt();
-      addDecision({ action: 'stop', detail: 'All unblocked tickets processed' });
-      finishRun('finished', null, []);
+      const epicId = get().conductorEpicId;
+      const epicName = epicId
+        ? ((full.pmDraftEpics ?? []).find((e) => e.id === epicId)?.name ?? epicId)
+        : null;
+      addDecision({
+        action: 'stop',
+        detail: epicName
+          ? `All unblocked tickets in epic "${epicName}" processed`
+          : 'All unblocked tickets processed',
+      });
+      const waiting = launchableTickets
+        .filter((t) => t.status === 'open' && !unblockedIds.has(t.id))
+        .map((t) => `Ticket "${t.name}" waits on a dependency outside this run`);
+      finishRun('finished', null, waiting);
       void notifyConductor('run_finished', '');
+      const done = epicName
+        ? `All unblocked tickets in epic "${epicName}" are done.`
+        : 'All unblocked tickets are done.';
       notifyInbox({
         severity: 'info',
         title: 'Conductor run finished',
-        body: 'All unblocked tickets are done.',
+        body: waiting.length > 0 ? `${done} ${waiting.length} still wait on a dependency.` : done,
       });
     }
     await persist();
     return;
   }
 
-  const unblocked = getUnblockedOpenTickets(
-    launchableTickets,
-    full.pmDraftDependencies ?? [],
-    allTickets
-  );
   let mutated = false;
 
   for (const ticket of unblocked) {

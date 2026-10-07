@@ -1,5 +1,5 @@
 import type { AgentInfo } from '@/lib/tauri/agents';
-import type { PmDependency, PmTestCase, PmTicket } from '@/lib/tauri/pm';
+import type { PmDependency, PmEpic, PmTestCase, PmTicket } from '@/lib/tauri/pm';
 import type { PmRequirement } from '@/lib/tauri/requirements';
 import type { AgentSlice } from '../agent/agentTypes';
 import type { GoalsSlice } from '../goalsSlice';
@@ -60,6 +60,8 @@ export interface ConductorDecision {
 export interface ConductorRunSummary {
   outcome: 'goal_achieved' | 'goal_blocked' | 'finished' | 'user_stopped' | 'budget_reached';
   goalName: string | null;
+  /** Set when the run was scoped to one epic instead of a goal. */
+  epicName?: string | null;
   completed: number;
   failed: number;
   blockers: string[];
@@ -104,6 +106,7 @@ export interface ConductorPreflight {
 }
 
 export interface CrossSlices {
+  pmDraftEpics: PmEpic[];
   pmDraftTickets: PmTicket[];
   pmDraftDependencies: PmDependency[];
   pmDraftTestCases: PmTestCase[];
@@ -132,6 +135,14 @@ export type FullConductorStore = ConductorSlice &
 export interface ConductorSlice {
   conductorRunning: boolean;
   conductorGoalId: string | null;
+  /** The epic the current (or last) run is scoped to; never set together with a goal. */
+  conductorEpicId: string | null;
+  /**
+   * The epic the conductor panel is preloaded with ("run conductor on this
+   * epic"). View state: it decides what the next Start covers, not what runs.
+   */
+  conductorScopeEpicId: string | null;
+  setConductorScopeEpicId: (epicId: string | null) => void;
   conductorMaxConcurrent: number;
   /** Provider (agent CLI) override for conductor-spawned agents; null = default. */
   conductorProviderId: string | null;
@@ -208,6 +219,11 @@ export interface ConductorSlice {
       judgeModel?: string | null;
       /** Who started this run (e.g. a schedule name), for the decision log. */
       origin?: string;
+      /**
+       * Work only this epic's tickets. Takes the place of the goal: an epic
+       * run is a run without a goal over a narrower ticket set.
+       */
+      epicId?: string | null;
     }
   ) => void;
   stopConductor: (reason?: string) => void;

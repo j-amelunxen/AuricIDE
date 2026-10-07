@@ -38,6 +38,8 @@ describe('useConductorController', () => {
     useStore.setState({
       conductorRunning: false,
       conductorGoalId: null,
+      conductorEpicId: null,
+      conductorScopeEpicId: null,
       conductorMaxConcurrent: 2,
       conductorAssignments: {},
       conductorPendingApprovals: [],
@@ -145,6 +147,59 @@ describe('useConductorController', () => {
     });
     const { result } = renderHook(() => useConductorController());
     expect(result.current.scopeGoalName).toBe('Ship v1');
+  });
+
+  describe('preloaded with an epic', () => {
+    beforeEach(() => {
+      useStore.setState({
+        rootPath: '/tmp/project',
+        conductorScopeEpicId: 'e2',
+        conductorWorkCap: null,
+        pmDraftEpics: [
+          {
+            id: 'e2',
+            name: 'Checkout',
+            description: '',
+            sortOrder: 0,
+            createdAt: '',
+            updatedAt: '',
+          },
+        ],
+        pmDraftTickets: [makeTicket({ epicId: 'e1' }), makeTicket({ epicId: 'e2' })],
+      });
+    });
+
+    it('starts the run on that epic, not on a goal', () => {
+      const startConductor = vi.fn();
+      useStore.setState({ startConductor, conductorTick: vi.fn(async () => {}) });
+      const { result } = renderHook(() => useConductorController());
+      act(() => result.current.onStart());
+      expect(startConductor).toHaveBeenCalledWith(null, { epicId: 'e2' });
+    });
+
+    it('counts only the epic in the preflight and names it', () => {
+      const { result } = renderHook(() => useConductorController());
+      expect(result.current.preflight.total).toBe(1);
+      expect(result.current.selectedEpicName).toBe('Checkout');
+    });
+
+    it('clearing the epic falls back to the usual scope', () => {
+      const { result } = renderHook(() => useConductorController());
+      act(() => result.current.onClearEpicScope());
+      expect(useStore.getState().conductorScopeEpicId).toBeNull();
+      expect(result.current.preflight.total).toBe(2);
+    });
+
+    it('picking a goal drops the epic preselection', () => {
+      act(() => useStore.getState().setSelectedGoalId('g1'));
+      expect(useStore.getState().conductorScopeEpicId).toBeNull();
+    });
+
+    it('names the epic of the running run', () => {
+      useStore.setState({ conductorRunning: true, conductorEpicId: 'e2' });
+      const { result } = renderHook(() => useConductorController());
+      expect(result.current.runEpicName).toBe('Checkout');
+    });
   });
 
   it('cannot start without an open project', () => {

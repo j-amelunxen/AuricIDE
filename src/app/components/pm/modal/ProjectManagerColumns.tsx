@@ -24,6 +24,8 @@ export interface ProjectManagerColumnsProps {
   onEditEpic: (epic: PmEpic) => void;
   onDeleteEpic: (id: string) => void;
   onReorderEpics: (orderedIds: string[]) => void;
+  onRunConductorOnEpic?: (epicId: string) => void;
+  conductorRunning?: boolean;
   onSelectTicket: (id: string | null) => void;
   onUpdateTicket: (id: string, patch: Partial<PmTicket>) => void;
   onSave: () => Promise<void>;
@@ -57,6 +59,8 @@ export function ProjectManagerColumns({
   onEditEpic,
   onDeleteEpic,
   onReorderEpics,
+  onRunConductorOnEpic,
+  conductorRunning,
   onSelectTicket,
   onUpdateTicket,
   onSave,
@@ -85,6 +89,8 @@ export function ProjectManagerColumns({
           onEditEpic={onEditEpic}
           onDeleteEpic={onDeleteEpic}
           onReorderEpics={onReorderEpics}
+          onRunConductor={onRunConductorOnEpic}
+          conductorRunning={conductorRunning}
         />
       </div>
 

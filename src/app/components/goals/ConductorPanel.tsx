@@ -24,6 +24,11 @@ export { formatRunDuration };
 export interface ConductorPanelProps {
   running: boolean;
   scopeGoalName: string | null;
+  /** Epic the running run is scoped to, by name. */
+  runEpicName?: string | null;
+  /** Epic the panel is preloaded with; a Start covers only its tickets. */
+  selectedEpicName?: string | null;
+  onClearEpicScope?: () => void;
   maxConcurrent: number;
   /** Saved cap for the next manual run. Null means no limit. */
   workCap: number | null;
@@ -79,6 +84,9 @@ export interface ConductorPanelProps {
 export function ConductorPanel({
   running,
   scopeGoalName,
+  runEpicName = null,
+  selectedEpicName = null,
+  onClearEpicScope,
   maxConcurrent,
   workCap,
   runBudget,
@@ -169,7 +177,13 @@ export function ConductorPanel({
               data-testid="conductor-running-status"
               className="truncate text-[11px] text-foreground-muted"
             >
-              {`working${scopeGoalName ? ` on "${scopeGoalName}"` : ' (all tickets)'} · ${activeAgentCount} agent(s)`}
+              {`working${
+                scopeGoalName
+                  ? ` on "${scopeGoalName}"`
+                  : runEpicName
+                    ? ` on epic "${runEpicName}"`
+                    : ' (all tickets)'
+              } · ${activeAgentCount} agent(s)`}
               {runBudget !== null ? ` · ${runSpawned} of ${runBudget}` : ''}
             </span>
           ) : lastRun ? (
@@ -191,16 +205,36 @@ export function ConductorPanel({
           )}
         </div>
 
+        {!running && selectedEpicName && (
+          <span
+            data-testid="conductor-epic-scope"
+            className="flex min-w-0 flex-shrink items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2 pr-1 text-[10px] text-primary-light"
+          >
+            <span className="truncate">Epic: {selectedEpicName}</span>
+            {onClearEpicScope && (
+              <button
+                type="button"
+                onClick={onClearEpicScope}
+                aria-label="Remove epic scope"
+                title="Remove epic scope"
+                className="flex items-center rounded-full p-0.5 hover:bg-white/10"
+              >
+                <AuricIcon name="close" className="text-[11px]" />
+              </button>
+            )}
+          </span>
+        )}
+
         {/* What pressing Start would actually do */}
         {!running && preflight && (canStart || startDisabledReason?.includes('tickets')) && (
           <span
             data-testid="conductor-preflight"
             role="status"
             aria-live="polite"
-            title={preflightLabel(preflight, selectedGoalName)}
+            title={preflightLabel(preflight, selectedGoalName ?? selectedEpicName)}
             className="min-w-0 truncate text-[10px] text-foreground-muted tabular-nums"
           >
-            {preflightLabel(preflight, selectedGoalName)}
+            {preflightLabel(preflight, selectedGoalName ?? selectedEpicName)}
           </span>
         )}
 
