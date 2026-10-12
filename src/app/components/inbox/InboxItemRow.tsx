@@ -181,11 +181,11 @@ export function InboxItemRow({
       }}
       onDragEnd={() => setIsDragging(false)}
       title={!editing ? 'Drag into daily goals' : undefined}
-      className={`relative flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 transition-colors ${
+      className={`relative flex flex-col gap-1.5 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 transition-colors ${
         !editing ? 'cursor-grab active:cursor-grabbing' : ''
       } ${isDragging ? 'opacity-40' : ''}`}
     >
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0">
         {editing ? (
           <input
             autoFocus
@@ -216,14 +216,11 @@ export function InboxItemRow({
           </button>
         )}
 
-        <div className="mt-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/50">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[9px] uppercase tracking-wider text-foreground-muted/50">
           {Boolean(item.dailyGoal) && (
-            <>
-              <span className="rounded bg-amber-500/15 px-1 py-0.5 font-semibold normal-case tracking-normal text-amber-300">
-                Daily goal
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span className="rounded bg-amber-500/15 px-1 py-0.5 font-semibold normal-case tracking-normal text-amber-300">
+              Daily goal
+            </span>
           )}
           <button
             type="button"
@@ -234,20 +231,16 @@ export function InboxItemRow({
           >
             {PRIORITY_LABEL[item.priority]}
           </button>
-          <span aria-hidden="true">·</span>
           {item.dueDate !== null && (
-            <>
-              <span
-                className={
-                  isDueDateOverdue(item.dueDate, now)
-                    ? 'normal-case tracking-normal text-[#ff4a4a]/80'
-                    : 'normal-case tracking-normal'
-                }
-              >
-                {isDueDateOverdue(item.dueDate, now) ? 'Overdue' : formatInboxDueDate(item.dueDate)}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
+            <span
+              className={
+                isDueDateOverdue(item.dueDate, now)
+                  ? 'normal-case tracking-normal text-[#ff4a4a]/80'
+                  : 'normal-case tracking-normal'
+              }
+            >
+              {isDueDateOverdue(item.dueDate, now) ? 'Overdue' : formatInboxDueDate(item.dueDate)}
+            </span>
           )}
           <label className="sr-only" htmlFor={`inbox-due-${item.id}`}>
             Due date
@@ -263,9 +256,8 @@ export function InboxItemRow({
             }}
             className="w-[7.5rem] rounded bg-transparent text-[9px] uppercase tracking-wider text-foreground-muted/70 outline-none focus-visible:outline-2 focus-visible:outline-primary"
           />
-          <span aria-hidden="true">·</span>
           {assigned && (
-            <>
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
               <ProjectTileFace
                 path={item.projectPath as string}
                 icon={projectIconFor(starredProjects, item.projectPath)}
@@ -274,10 +266,8 @@ export function InboxItemRow({
               <span className="truncate normal-case tracking-normal">
                 {item.projectName ?? item.projectPath}
               </span>
-              <span aria-hidden="true">·</span>
               <TicketStatusChip status={ticketStatus} onSetStatus={onSetStatus} />
-              <span aria-hidden="true">·</span>
-            </>
+            </span>
           )}
           <span>{formatNotificationAge(item.createdAt, now)}</span>
         </div>
@@ -299,7 +289,7 @@ export function InboxItemRow({
         )}
       </div>
 
-      <div className="flex flex-shrink-0 items-center gap-1">
+      <div className="flex flex-wrap items-center justify-end gap-1">
         <button
           type="button"
           title="Attach text"
