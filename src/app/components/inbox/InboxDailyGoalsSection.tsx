@@ -166,14 +166,23 @@ export function InboxDailyGoalsSection({
               <div
                 key={item.id}
                 data-testid={`daily-goal-${item.id}`}
-                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 transition-colors ${
+                className={`flex flex-col gap-1 rounded-lg border px-2.5 py-1.5 transition-colors ${
                   isDone
                     ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
                     : 'border-white/10 bg-white/[0.03]'
                 }`}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
+                <span
+                  title={item.title}
+                  className={`line-clamp-2 text-[12px] font-medium leading-snug ${
+                    isDone ? 'text-foreground-muted line-through' : 'text-foreground'
+                  }`}
+                >
+                  {item.title}
+                </span>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
                     {assigned ? (
                       <span className="flex items-center gap-1 text-[10px] font-semibold text-foreground-muted">
                         <ProjectTileFace
@@ -181,72 +190,60 @@ export function InboxDailyGoalsSection({
                           icon={projectIconFor(starredProjects, item.projectPath)}
                           size="xs"
                         />
-                        <span className="max-w-[120px] truncate">
-                          {item.projectName ?? item.projectPath}
-                        </span>
+                        <span className="truncate">{item.projectName ?? item.projectPath}</span>
                       </span>
                     ) : (
                       <span className="rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold text-foreground-muted">
                         Unsorted
                       </span>
                     )}
-                    <span aria-hidden="true" className="text-foreground-muted/40">
-                      ·
-                    </span>
-                    <span
-                      className={`truncate text-[12px] font-medium ${
-                        isDone ? 'text-foreground-muted line-through' : 'text-foreground'
-                      }`}
-                    >
-                      {item.title}
-                    </span>
                   </div>
-                </div>
 
-                <div className="flex flex-shrink-0 items-center gap-1">
-                  {assigned && (
-                    <TicketStatusChip
-                      status={ticketStatus}
-                      onSetStatus={(next) => {
-                        if (item.projectPath && item.ticketId) {
-                          onSetStatus(item.projectPath, item.ticketId, next);
-                        }
-                      }}
-                    />
-                  )}
+                  <div className="flex flex-shrink-0 items-center gap-1">
+                    {assigned && (
+                      <TicketStatusChip
+                        status={ticketStatus}
+                        onSetStatus={(next) => {
+                          if (item.projectPath && item.ticketId) {
+                            onSetStatus(item.projectPath, item.ticketId, next);
+                          }
+                        }}
+                      />
+                    )}
 
-                  {assigned && (
-                    <>
-                      <button
-                        type="button"
-                        title="Open project"
-                        aria-label="Open project"
-                        onClick={() => onOpenProject(item.projectPath as string)}
-                        className={ACTION_BTN_CLASS}
-                      >
-                        <AuricIcon name="folder_open" className="text-[13px]" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Hand to agent"
-                        aria-label="Hand to agent"
-                        onClick={() => onHandToAgent(item)}
-                        className={ACTION_BTN_CLASS}
-                      >
-                        <AuricIcon name="smart_toy" className="text-[13px]" />
-                      </button>
-                    </>
-                  )}
+                    {assigned && (
+                      <>
+                        <button
+                          type="button"
+                          title="Open project"
+                          aria-label="Open project"
+                          onClick={() => onOpenProject(item.projectPath as string)}
+                          className={ACTION_BTN_CLASS}
+                        >
+                          <AuricIcon name="folder_open" className="text-[13px]" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Hand to agent"
+                          aria-label="Hand to agent"
+                          onClick={() => onHandToAgent(item)}
+                          className={ACTION_BTN_CLASS}
+                        >
+                          <AuricIcon name="smart_toy" className="text-[13px]" />
+                        </button>
+                      </>
+                    )}
 
-                  <button
-                    type="button"
-                    title="Remove daily goal"
-                    aria-label="Remove daily goal"
-                    onClick={() => onToggleDailyGoal(item.id)}
-                    className="rounded-lg p-1 text-amber-400 transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-primary"
-                  >
-                    <AuricIcon name="flag" className="text-[13px]" />
-                  </button>
+                    <button
+                      type="button"
+                      title="Remove daily goal"
+                      aria-label="Remove daily goal"
+                      onClick={() => onToggleDailyGoal(item.id)}
+                      className="rounded-lg p-1 text-amber-400 transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-primary"
+                    >
+                      <AuricIcon name="flag" className="text-[13px]" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
