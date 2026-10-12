@@ -19,6 +19,13 @@ const mockMovePath = vi.fn();
 const mockExists = vi.fn();
 const mockDeleteFile = vi.fn();
 
+// The agent window's host listens for another window; none exists here.
+vi.mock('@/lib/agents/agentWindowHost', () => ({
+  installAgentWindowHost: () => () => {},
+  setAgentWindowHandover: vi.fn(),
+  showAgentInWindow: vi.fn(),
+}));
+
 vi.mock('@/lib/tauri/fs', () => ({
   readDirectory: (...args: unknown[]) => mockReadDirectory(...args),
   openFolderDialog: () => mockOpenFolderDialog(),

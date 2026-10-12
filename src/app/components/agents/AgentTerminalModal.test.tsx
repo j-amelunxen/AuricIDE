@@ -16,6 +16,8 @@ const mockSelectAll = vi.fn();
 const mockPaste = vi.fn();
 const mockWrite = vi.fn();
 const mockFit = vi.fn();
+// What a fit would give this view. Undefined, as for a container that cannot be measured.
+let mockFittedSize: { rows: number; cols: number } | undefined;
 const mockResize = vi.fn();
 const mockReset = vi.fn();
 const mockFocus = vi.fn();
@@ -112,6 +114,9 @@ vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
     fit() {
       mockFit();
+    }
+    proposeDimensions() {
+      return mockFittedSize;
     }
   },
 }));
@@ -441,6 +446,101 @@ describe('AgentTerminalModal', () => {
       expect(written).toContain('after-resize');
 
       disposeAllAgentMirrors();
+    });
+
+    // In the agent window a view can attach before its agent's snapshot is
+    // in. The seed changes no size, so the size check alone would skip it and
+    // the pane would stay empty.
+    it('redraws when the mirror is seeded at the geometry it already has', async () => {
+      const { seedAgentMirror, resizeAgentMirror, disposeAllAgentMirrors } =
+        await import('@/lib/terminal/agentMirror');
+      disposeAllAgentMirrors();
+
+      render(<AgentTerminalModal agent={streamAgent('stream-seed')} onClose={vi.fn()} />);
+      await flushSetup();
+      mockReset.mockClear();
+
+      // The same size again, without a seed, is nothing to act on.
+      act(() => {
+        resizeAgentMirror('stream-seed', 24, 80);
+      });
+      expect(mockReset).not.toHaveBeenCalled();
+
+      act(() => {
+        seedAgentMirror('stream-seed', { data: 'earlier screen', rows: 24, cols: 80 });
+      });
+      expect(mockReset).toHaveBeenCalled();
+
+      disposeAllAgentMirrors();
+    });
+
+    // Another view took the PTY size while this one was not looked at. Its
+    // container did not change, so only coming back to it can take the size back.
+    describe('reclaims its size when the user comes back', () => {
+      afterEach(() => {
+        mockFittedSize = undefined;
+      });
+
+      async function openTerminal(id: string) {
+        const { resizeShell } = await import('@/lib/tauri/terminal');
+        const view = render(<AgentTerminalModal agent={streamAgent(id)} onClose={vi.fn()} />);
+        await flushSetup();
+        mockFit.mockClear();
+        vi.mocked(resizeShell).mockClear();
+        return { resizeShell: vi.mocked(resizeShell), ...view };
+      }
+
+      it('re-fits when the window gains focus and the size is not its own', async () => {
+        await openTerminal('stream-reclaim-window');
+        // The mock terminal is 24×80; this view would fit 40×160.
+        mockFittedSize = { rows: 40, cols: 160 };
+
+        act(() => {
+          window.dispatchEvent(new Event('focus'));
+        });
+
+        expect(mockFit).toHaveBeenCalledOnce();
+      });
+
+      it('re-fits when the terminal itself is focused', async () => {
+        const { container } = await openTerminal('stream-reclaim-focus');
+        mockFittedSize = { rows: 40, cols: 160 };
+
+        act(() => {
+          container
+            .querySelector('.xterm-helper-textarea')!
+            .dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        });
+
+        expect(mockFit).toHaveBeenCalledOnce();
+      });
+
+      it('fits nothing and sends no size when the size is already its own', async () => {
+        const { container, resizeShell } = await openTerminal('stream-reclaim-same');
+        mockFittedSize = { rows: 24, cols: 80 };
+
+        act(() => {
+          window.dispatchEvent(new Event('focus'));
+          container
+            .querySelector('.xterm-helper-textarea')!
+            .dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        });
+
+        expect(mockFit).not.toHaveBeenCalled();
+        expect(resizeShell).not.toHaveBeenCalled();
+      });
+
+      it('stops listening once the terminal is closed', async () => {
+        const { unmount } = await openTerminal('stream-reclaim-unmount');
+        mockFittedSize = { rows: 40, cols: 160 };
+        unmount();
+
+        act(() => {
+          window.dispatchEvent(new Event('focus'));
+        });
+
+        expect(mockFit).not.toHaveBeenCalled();
+      });
     });
 
     it('stops writing after unmount', async () => {

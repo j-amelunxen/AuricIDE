@@ -86,6 +86,23 @@ pub struct AgentOutputEvent {
     pub line: String,
     pub timestamp: u64,
     pub repo_path: Option<String>,
+    /// Raw UTF-8 bytes this agent has emitted up to and including this batch.
+    /// A window that opens late uses it to join a snapshot and the live
+    /// stream without showing a batch twice or dropping one.
+    pub end_offset: u64,
+}
+
+/// Counts what one agent has emitted via `agent-output`. Every emit for the
+/// agent has to go through the same counter, or the offsets get a gap.
+#[derive(Debug, Default)]
+pub struct OutputOffset(u64);
+
+impl OutputOffset {
+    /// Books `line` and returns the offset its batch ends at.
+    pub fn advance(&mut self, line: &str) -> u64 {
+        self.0 += line.len() as u64;
+        self.0
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -135,4 +152,63 @@ pub type AgentManagerState = Arc<Mutex<AgentManager>>;
 
 pub fn new_agent_manager_state() -> AgentManagerState {
     Arc::new(Mutex::new(AgentManager::new()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_window::tests::fixtures;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn an_output_event_has_exactly_the_fixture_fields() {
+        let fixtures = fixtures();
+        let cases = fixtures["messages"]["agentOutput"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let raw = &case["raw"];
+            let event = AgentOutputEvent {
+                agent_id: raw["agentId"].as_str().unwrap().to_string(),
+                stream: raw["stream"].as_str().unwrap().to_string(),
+                line: raw["line"].as_str().unwrap().to_string(),
+                timestamp: raw["timestamp"].as_u64().unwrap(),
+                repo_path: raw["repoPath"].as_str().map(str::to_string),
+                end_offset: raw["endOffset"].as_u64().unwrap(),
+            };
+            let sent = serde_json::to_value(&event).unwrap();
+            let keys = |value: &serde_json::Value| -> BTreeSet<String> {
+                value.as_object().unwrap().keys().cloned().collect()
+            };
+            assert_eq!(keys(&sent), keys(raw), "{}", case["name"]);
+            assert_eq!(&sent, raw, "{}", case["name"]);
+        }
+    }
+
+    #[test]
+    fn offsets_run_on_across_batches_as_the_fixtures_count_them() {
+        // The fixture cases are consecutive batches of one agent.
+        let fixtures = fixtures();
+        let cases = fixtures["messages"]["agentOutput"].as_array().unwrap();
+        let mut offset = OutputOffset::default();
+        for case in cases {
+            let raw = &case["raw"];
+            assert_eq!(
+                offset.advance(raw["line"].as_str().unwrap()),
+                raw["endOffset"].as_u64().unwrap(),
+                "{}",
+                case["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn offsets_count_bytes_without_a_gap_and_never_go_back() {
+        let mut offset = OutputOffset::default();
+        let mut expected = 0u64;
+        for line in ["a", "", "\u{2713} ok", "\r\n", "\u{1f600}"] {
+            expected += line.len() as u64;
+            assert_eq!(offset.advance(line), expected);
+        }
+        assert_eq!(expected, 1 + 6 + 2 + 4);
+    }
 }

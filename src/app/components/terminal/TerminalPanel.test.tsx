@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { TerminalPanel } from './TerminalPanel';
+import { useStore } from '@/lib/store';
 
 const xtermRenders = vi.hoisted(() => ({ count: 0 }));
 
@@ -162,5 +163,41 @@ describe('TerminalPanel – the 1-second tick', () => {
     });
 
     expect(container.querySelector('.animate-ping')).toBeNull();
+  });
+});
+
+describe('TerminalPanel – while the terminals are detached', () => {
+  afterEach(() => {
+    useStore.setState({ agentWindowOpen: false });
+  });
+
+  // Following the selection would mount and fit that agent's terminal here,
+  // and the fit takes the PTY size away from the agent window.
+  it('does not switch to the selected agent', () => {
+    useStore.setState({ agentWindowOpen: true });
+    const { rerender } = render(<TerminalPanel agents={testAgents} />);
+
+    rerender(<TerminalPanel agents={testAgents} selectedAgentId="agent-1" />);
+
+    expect(screen.getByTestId('xterm-main-terminal')).toBeInTheDocument();
+    expect(screen.queryByTestId('xterm-agent-agent-1')).not.toBeInTheDocument();
+  });
+
+  it('follows the selection again once the window is closed', () => {
+    const { rerender } = render(<TerminalPanel agents={testAgents} />);
+
+    rerender(<TerminalPanel agents={testAgents} selectedAgentId="agent-1" />);
+
+    expect(screen.getByTestId('xterm-agent-agent-1')).toBeInTheDocument();
+  });
+
+  it('still opens an agent tab the user clicks here', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ agentWindowOpen: true });
+    render(<TerminalPanel agents={testAgents} />);
+
+    await user.click(screen.getByText('Writer'));
+
+    expect(screen.getByTestId('xterm-agent-agent-1')).toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 mod agent_log;
 mod agent_persistence;
 mod agent_usage;
+mod agent_window;
 mod agents;
 mod ansi;
 mod app_config;
@@ -298,6 +299,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             control_socket::control_respond,
             control_socket::control_ready,
+            agent_window::open_agent_window,
+            agent_window::focus_agent_window,
+            agent_window::focus_main_window,
             read_directory,
             exists,
             is_dir,
@@ -480,8 +484,20 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
+                use agent_window::DestroyedAction;
                 let app = window.app_handle().clone();
-                tauri::async_runtime::spawn(agents::cleanup_all_agents(app));
+                // Only the main window going away ends work. The agent window
+                // is a view: closing it must not book a single agent as killed.
+                match agent_window::destroyed_action(window.label()) {
+                    DestroyedAction::EndAgents => {
+                        agent_window::destroy_agent_window(&app);
+                        tauri::async_runtime::spawn(agents::cleanup_all_agents(app));
+                    }
+                    DestroyedAction::AnnounceAgentWindowClosed => {
+                        agent_window::announce_state(&app, false);
+                    }
+                    DestroyedAction::Nothing => {}
+                }
             }
         });
 
@@ -542,7 +558,21 @@ pub fn run() {
             let id = event.id().as_ref().to_string();
             match id.as_str() {
                 "close_tab" => {
-                    let _ = app.emit("menu:close-tab", ());
+                    // Cmd+W closes what is focused: the agent window has no
+                    // editor tab to close, so there it closes the window.
+                    let focused = app
+                        .webview_windows()
+                        .into_values()
+                        .find(|w| w.is_focused().unwrap_or(false));
+                    let label = focused.as_ref().map(|w| w.label());
+                    match (agent_window::close_tab_target(label), focused.as_ref()) {
+                        (agent_window::CloseTabTarget::AgentWindow, Some(window)) => {
+                            let _ = window.close();
+                        }
+                        _ => {
+                            let _ = app.emit("menu:close-tab", ());
+                        }
+                    }
                 }
                 "close_window" => {
                     let focused = app

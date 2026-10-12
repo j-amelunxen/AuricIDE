@@ -23,6 +23,13 @@ const renders = vi.hoisted(() => {
 
 // Counts renders of the page component itself: `useIDEState` runs once per
 // Home render and nowhere else.
+// The agent window's host listens for another window; none exists here.
+vi.mock('@/lib/agents/agentWindowHost', () => ({
+  installAgentWindowHost: () => () => {},
+  setAgentWindowHandover: vi.fn(),
+  showAgentInWindow: vi.fn(),
+}));
+
 vi.mock('@/lib/hooks/useIDEState', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/hooks/useIDEState')>();
   return {

@@ -47,6 +47,12 @@ export type AgentLogBatch = ReadonlyArray<
   readonly [agentId: string, chunks: readonly string[], arrivedAt?: readonly number[]]
 >;
 
+/** The main window's agents plus the error digest of each failed one. */
+export interface AgentRoster {
+  agents: AgentInfo[];
+  errorDigests: Record<string, string>;
+}
+
 export type LogRecords = Pick<AgentSlice, 'agentLogs' | 'agentLogMeta'>;
 
 export type AgentRuntimeRecords = Pick<
@@ -151,6 +157,23 @@ export interface AgentSlice {
    * interleaved into that agent's feed at display time. Session-scoped.
    */
   agentSentMessages: Record<string, SentMessage[]>;
+  /**
+   * Main window: the agent terminals are detached into their own OS window
+   * (`docs/design-agent-window.md`). Told by Rust, never assumed — while it is
+   * true the terminal modal stays shut and selecting an agent goes there.
+   */
+  agentWindowOpen: boolean;
+  /**
+   * Agent window: the agent its terminal shows. Its own field rather than
+   * `selectedAgentId`, whose setter also books a finished agent as reviewed —
+   * bookkeeping that belongs to the main window.
+   */
+  agentWindowActiveAgentId: string | null;
+  /**
+   * Agent window: the last error line of each failed agent, as the main
+   * window derived it. The full log it is read from exists only over there.
+   */
+  agentWindowErrorDigests: Record<string, string>;
 
   setAgentColor: (agentId: string, color: AgentColor | null) => void;
   toggleAgentMuted: (agentId: string) => void;
@@ -181,6 +204,18 @@ export interface AgentSlice {
   appendAgentLog: (agentId: string, log: string) => void;
   /** Several agents' chunks in one store update; see `handleAppendAgentLogBatch`. */
   appendAgentLogBatch: (batch: AgentLogBatch) => void;
+  /**
+   * The agent window's write path: raw chunks into `agentLogs` and
+   * `agentLogMeta`, and nothing else. See `handleAppendAgentTerminalChunks`.
+   */
+  appendAgentTerminalChunks: (agentId: string, chunks: readonly string[]) => void;
+  setAgentWindowOpen: (open: boolean) => void;
+  setAgentWindowActiveAgentId: (agentId: string | null) => void;
+  /**
+   * The agent window's only writer of `agents`: takes the main window's list
+   * as it is, and drops the logs of agents that are no longer on it.
+   */
+  applyAgentRoster: (roster: AgentRoster) => void;
   /**
    * Trims the stored history to its configured bounds, then reads it back.
    * A no-op while persistence is off — nothing was written, so there is

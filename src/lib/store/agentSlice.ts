@@ -20,6 +20,8 @@ import {
 import {
   handleAppendAgentLog,
   handleAppendAgentLogBatch,
+  handleAppendAgentTerminalChunks,
+  handleApplyAgentRoster,
   handleLoadAgentLogHistory,
 } from './agent/agentLogOperations';
 import { reconcileAgentRuntimeState } from './agent/agentStateHelpers';
@@ -35,6 +37,7 @@ export {
   MAX_SENT_MESSAGES,
   UNGROUPED_REPO_KEY,
   type AgentLogMeta,
+  type AgentRoster,
   type AgentSlice,
   type SentMessage,
 } from './agent/agentTypes';
@@ -61,6 +64,9 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   mutedAgentIds: [],
   laneSeenAt: {},
   agentSentMessages: {},
+  agentWindowOpen: false,
+  agentWindowActiveAgentId: null,
+  agentWindowErrorDigests: {},
 
   setAgentColor: (agentId, color) => {
     const { [agentId]: _cleared, ...rest } = get().agentColors;
@@ -164,6 +170,14 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
 
   appendAgentLog: (agentId, log) => handleAppendAgentLog(agentId, log, get, set),
   appendAgentLogBatch: (batch) => handleAppendAgentLogBatch(batch, get, set),
+  appendAgentTerminalChunks: (agentId, chunks) =>
+    handleAppendAgentTerminalChunks(agentId, chunks, get, set),
+
+  setAgentWindowOpen: (open) => {
+    if (open !== get().agentWindowOpen) set({ agentWindowOpen: open });
+  },
+  setAgentWindowActiveAgentId: (agentId) => set({ agentWindowActiveAgentId: agentId }),
+  applyAgentRoster: (roster) => handleApplyAgentRoster(roster, get, set),
 
   loadAgentLogHistory: () => handleLoadAgentLogHistory(set),
 

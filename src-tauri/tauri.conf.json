@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "capabilities": ["default"],
+      "capabilities": ["default", "agent-window"],
       "csp": null,
       "assetProtocol": {
         "enable": true,

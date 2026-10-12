@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDEOverlays } from './IDEOverlays';
 import { useStore } from '@/lib/store';
@@ -22,7 +22,13 @@ vi.mock('@/app/components/agents/GenerateDiagramDialog', () => ({
   GenerateDiagramDialog: () => null,
 }));
 vi.mock('@/app/components/agents/AgentTerminalModal', () => ({
-  AgentTerminalModal: () => <div data-testid="mock-terminal-modal" />,
+  AgentTerminalModal: ({ agent }: { agent: { id: string } | null }) => (
+    <div data-testid="mock-terminal-modal" data-agent={agent?.id ?? ''} />
+  ),
+}));
+// The bridge is real; only the listeners it would install are not.
+vi.mock('@/lib/agents/agentWindowHost', () => ({
+  installAgentWindowHost: () => () => {},
 }));
 vi.mock('@/app/components/graph/LinkGraphModal', () => ({ LinkGraphModal: () => null }));
 vi.mock('@/app/components/blueprints/BlueprintsGallery', () => ({
@@ -132,5 +138,50 @@ describe('IDEOverlays — stacking order', () => {
     expect(
       center.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
+  });
+});
+
+describe('IDEOverlays — the terminals are in one place', () => {
+  const agent = { id: 'agent-1', name: 'Writer' };
+
+  beforeEach(() => {
+    useStore.setState({
+      loadPromptHistory: vi.fn(async () => {}),
+      promptHistory: [],
+      goalsDraft: [],
+      agents: [],
+      agentWindowOpen: false,
+    });
+  });
+
+  it('shows the terminal modal on the opened agent', () => {
+    renderOverlays({ spawnDialogOpen: false, fullscreenAgent: agent as never });
+    expect(screen.getByTestId('mock-terminal-modal')).toHaveAttribute('data-agent', 'agent-1');
+  });
+
+  it('keeps the modal away while the agent window is open', () => {
+    useStore.setState({ agentWindowOpen: true });
+    renderOverlays({
+      spawnDialogOpen: false,
+      fullscreenAgent: agent as never,
+      setFullscreenAgent: vi.fn(),
+    });
+    expect(screen.getByTestId('mock-terminal-modal')).toHaveAttribute('data-agent', '');
+  });
+
+  // Otherwise the modal would pop up by itself the moment the agent window
+  // closes — and closing that window is meant to change nothing here.
+  it('forgets the agent the modal was on when the terminals are detached', () => {
+    const setFullscreenAgent = vi.fn();
+    renderOverlays({
+      spawnDialogOpen: false,
+      fullscreenAgent: agent as never,
+      setFullscreenAgent,
+    });
+    expect(setFullscreenAgent).not.toHaveBeenCalled();
+
+    act(() => useStore.setState({ agentWindowOpen: true }));
+
+    expect(setFullscreenAgent).toHaveBeenCalledWith(null);
   });
 });

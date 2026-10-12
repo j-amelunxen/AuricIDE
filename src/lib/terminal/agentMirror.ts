@@ -36,6 +36,12 @@ import { useStore } from '../store';
  * The serialized string is what a snapshot would have returned anyway, so a
  * frozen mirror answers snapshots with it unchanged; should the agent print
  * or be resized again, the mirror thaws by writing it into a new terminal.
+ *
+ * In the detached agent window a mirror does not start from the agent's first
+ * chunk: that window opens mid-run and the raw history exists only in the main
+ * window. There the mirror is seeded with the main window's serialized screen
+ * (`seedAgentMirror`) and fed live chunks from then on
+ * (`docs/design-agent-window.md`, rule 2).
  */
 interface AgentMirror {
   /** Null while frozen. */
@@ -57,6 +63,17 @@ interface AgentMirror {
    * reproduces the current screen faithfully.
    */
   resized: boolean;
+  /**
+   * Seeded for an agent the store holds no log for — a finished agent in the
+   * agent window never gets one. Such a mirror is not "left behind by a
+   * removed agent" and must outlive the sweep that drops those.
+   */
+  awaitingLog: boolean;
+  /**
+   * A seed's snapshot is queued but not parsed yet. It was laid out for the
+   * geometry the terminal has now, so a resize waits until it is in.
+   */
+  settling: boolean;
 }
 
 interface LiveMirror extends AgentMirror {
@@ -69,6 +86,13 @@ export interface AgentScreenSnapshot {
   data: string;
   /** Seq of the last chunk included in the snapshot. */
   seq: number;
+}
+
+/** A screen from another window, with the geometry it was laid out for. */
+export interface AgentMirrorSeed {
+  data: string;
+  rows: number;
+  cols: number;
 }
 
 const DEFAULT_COLS = 80;
@@ -92,7 +116,12 @@ const mirrors = new Map<string, AgentMirror>();
 /** PTY sizes reported before the first chunk arrived for an agent. */
 const pendingSizes = new Map<string, { rows: number; cols: number }>();
 
-type PtySizeListener = (size: { rows: number; cols: number }) => void;
+/**
+ * `seeded` marks a call that is not about size at all: the mirror got a new
+ * screen from a snapshot, and a view drawn from the old one has to redraw
+ * even though the geometry may be the same.
+ */
+type PtySizeListener = (size: { rows: number; cols: number; seeded?: boolean }) => void;
 /** Attached views listening for PTY geometry changes (tmux reattach model). */
 const resizeListeners = new Map<string, Set<PtySizeListener>>();
 
@@ -122,6 +151,8 @@ function createMirror(agentId: string): LiveMirror {
     pending: [],
     pendingBytes: 0,
     resized: false,
+    awaitingLog: false,
+    settling: false,
   };
   mirrors.set(agentId, mirror);
   return openTerminal(mirror);
@@ -207,6 +238,7 @@ function onStoreChange(state: MirrorStoreState, prev: MirrorStoreState): void {
         mirror.seq = meta.seq;
         continue;
       }
+      mirror.awaitingLog = false;
       if (meta.seq > mirror.seq) {
         const logs = state.agentLogs[agentId] ?? [];
         enqueue(mirror, logs, Math.max(0, logs.length - (meta.seq - mirror.seq)));
@@ -214,8 +246,8 @@ function onStoreChange(state: MirrorStoreState, prev: MirrorStoreState): void {
       }
     }
 
-    for (const agentId of Array.from(mirrors.keys())) {
-      if (!(agentId in state.agentLogMeta)) {
+    for (const [agentId, mirror] of Array.from(mirrors)) {
+      if (!(agentId in state.agentLogMeta) && !mirror.awaitingLog) {
         disposeAgentMirror(agentId);
       }
     }
@@ -264,7 +296,8 @@ export function resizeAgentMirror(agentId: string, rows: number, cols: number): 
     // Output produced at the old geometry goes in ahead of the resize, the
     // order it would have had if it had been written as it arrived.
     drain(live);
-    live.term.resize(cols, rows);
+    // A seed still being parsed applies the size itself once it is in.
+    if (!live.settling) live.term.resize(cols, rows);
     live.cols = cols;
     live.rows = rows;
     live.resized = true;
@@ -273,6 +306,75 @@ export function resizeAgentMirror(agentId: string, rows: number, cols: number): 
     for (const listener of Array.from(resizeListeners.get(agentId) ?? [])) {
       listener({ rows, cols });
     }
+  }
+}
+
+/**
+ * The geometry the agent's mirror has — the PTY's, as far as this window
+ * knows. Before the agent printed anything that is the last size reported
+ * for it, and failing that the size every PTY opens at.
+ */
+export function agentMirrorSize(agentId: string): { rows: number; cols: number } {
+  const mirror = mirrors.get(agentId);
+  if (mirror) return { rows: mirror.rows, cols: mirror.cols };
+  return pendingSizes.get(agentId) ?? { rows: DEFAULT_ROWS, cols: DEFAULT_COLS };
+}
+
+/**
+ * Give the agent's mirror a screen that was serialized somewhere else, in
+ * place of whatever it held.
+ *
+ * The snapshot stands for everything the agent printed up to it, so every
+ * chunk the store holds at this moment counts as covered and only later ones
+ * are written on top. The mirror is marked the way a resized one is: raw
+ * history cannot reproduce this screen, so `attachAgentStream` writes a
+ * snapshot of the mirror instead of replaying the log.
+ *
+ * The data is parsed at the geometry it was laid out for. If this window
+ * already knows the PTY to have another size — a view here fitted it while
+ * the snapshot was on its way — the mirror goes back to that size once the
+ * snapshot is in, the order the two would have had in the main window.
+ *
+ * Views already attached are told to redraw whether or not the size changed:
+ * what they show came from the mirror as it was before.
+ */
+export function seedAgentMirror(agentId: string, seed: AgentMirrorSeed): void {
+  const known = pendingSizes.get(agentId);
+  const size = known ?? { rows: seed.rows, cols: seed.cols };
+  const loggedSeq = useStore.getState().agentLogMeta[agentId]?.seq;
+
+  const previous = mirrors.get(agentId);
+  previous?.term?.dispose();
+  const mirror: AgentMirror = {
+    term: null,
+    serialize: null,
+    frozen: null,
+    cols: seed.cols,
+    rows: seed.rows,
+    seq: loggedSeq ?? 0,
+    pending: [],
+    pendingBytes: 0,
+    resized: true,
+    awaitingLog: loggedSeq === undefined,
+    settling: true,
+  };
+  mirrors.set(agentId, mirror);
+  const { term } = openTerminal(mirror);
+  mirror.cols = size.cols;
+  mirror.rows = size.rows;
+  pendingSizes.set(agentId, size);
+
+  term.write(seed.data, () => {
+    // A second seed or a dismissal replaced this terminal in the meantime.
+    if (mirror.term !== term) return;
+    mirror.settling = false;
+    if (term.cols !== mirror.cols || term.rows !== mirror.rows) {
+      term.resize(mirror.cols, mirror.rows);
+    }
+  });
+
+  for (const listener of Array.from(resizeListeners.get(agentId) ?? [])) {
+    listener({ rows: mirror.rows, cols: mirror.cols, seeded: true });
   }
 }
 
