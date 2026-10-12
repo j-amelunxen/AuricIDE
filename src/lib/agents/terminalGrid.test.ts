@@ -54,6 +54,26 @@ describe('terminalGrid – placing a terminal', () => {
     expect(placeAgent(['b', 'a', 'c', 'd'], 'd', 'left')).toEqual(['d', 'a', 'd', 'a']);
   });
 
+  it('the terminal showing alone can take a half when a spare terminal fills the rest', () => {
+    // Without a spare, `a` has no neighbour to hand the freed quadrants to and the
+    // grid collapses back to one terminal: the drop looks like it did nothing.
+    expect(placeAgent(singleGrid('a'), 'a', 'left')).toEqual(singleGrid('a'));
+    expect(placeAgent(singleGrid('a'), 'a', 'left', ['b'])).toEqual(['a', 'b', 'a', 'b']);
+    expect(placeAgent(singleGrid('a'), 'a', 'right', ['b'])).toEqual(['b', 'a', 'b', 'a']);
+    expect(placeAgent(singleGrid('a'), 'a', 'top', ['b'])).toEqual(['a', 'a', 'b', 'b']);
+    expect(placeAgent(singleGrid('a'), 'a', 'bottom', ['b'])).toEqual(['b', 'b', 'a', 'a']);
+  });
+
+  it('a corner drop of the lone terminal becomes a half, never an L', () => {
+    expect(placeAgent(singleGrid('a'), 'a', 'tl', ['b'])).toEqual(['a', 'b', 'a', 'b']);
+  });
+
+  it('a spare is only used when nobody else is on screen', () => {
+    expect(placeAgent(['a', 'b', 'a', 'b'], 'a', 'top', ['c'])).toEqual(['a', 'a', 'b', 'b']);
+    expect(placeAgent(singleGrid('a'), 'a', 'center', ['b'])).toEqual(singleGrid('a'));
+    expect(placeAgent(singleGrid('a'), 'a', 'left', ['a'])).toEqual(singleGrid('a'));
+  });
+
   it('a drop on the middle goes back to one terminal', () => {
     expect(placeAgent(['b', 'a', 'c', 'd'], 'c', 'center')).toEqual(singleGrid('c'));
   });

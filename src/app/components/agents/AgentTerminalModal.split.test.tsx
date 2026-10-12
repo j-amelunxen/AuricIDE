@@ -117,6 +117,23 @@ describe('AgentTerminalModal – terminals side by side', () => {
     expect(screen.getByTestId('agent-tab-b')).toHaveAttribute('aria-selected', 'true');
   });
 
+  it('the terminal that is showing can be dragged to a half; the next tab fills the rest', () => {
+    renderModal();
+    dragTab('a', 0.1, 0.5);
+
+    expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'a', 'b']);
+    expect(paneIds()).toEqual(['terminal-pane-a', 'terminal-pane-b']);
+    expect(screen.getByTestId('terminal-pane-a')).toHaveAttribute('data-active', 'true');
+  });
+
+  it('with one agent only there is nothing to arrange, so a drag starts nothing', () => {
+    renderModal([AGENTS[0]]);
+    dragTab('a', 0.1, 0.5, false);
+    expect(screen.queryByTestId('terminal-grid-drop-preview')).not.toBeInTheDocument();
+    fireEvent.mouseUp(window);
+    expect(useStore.getState().terminalGridCells).toBeNull();
+  });
+
   it('corner drops fill a grid of four', () => {
     renderModal();
     dragTab('b', 0.1, 0.1);

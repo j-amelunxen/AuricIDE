@@ -96,11 +96,28 @@ function fill(draft: Draft): GridCells | null {
   return next as unknown as GridCells;
 }
 
-/** Puts an agent on a zone. An agent already shown moves there. */
-export function placeAgent(cells: GridCells, agentId: string, zone: DropZone): GridCells {
-  const draft: Draft = cells.map((id) => (id === agentId ? null : id));
+/**
+ * Puts an agent on a zone. An agent already shown moves there.
+ *
+ * When the agent was alone on screen, the quadrants it leaves have no
+ * neighbour to grow into — the grid would collapse back to one terminal and
+ * the drop would look like it did nothing. The first of `spareIds` takes them
+ * instead, so a lone terminal can be sent to a half or a corner.
+ */
+export function placeAgent(
+  cells: GridCells,
+  agentId: string,
+  zone: DropZone,
+  spareIds: readonly string[] = []
+): GridCells {
+  let draft: Draft = cells.map((id) => (id === agentId ? null : id));
   for (const index of ZONE_CELLS[zone]) draft[index] = agentId;
-  return fill(shrinkToRectangles(draft)) ?? singleGrid(agentId);
+  draft = shrinkToRectangles(draft);
+  const spare = spareIds.find((id) => id !== agentId);
+  if (spare && !draft.some((id) => id !== null && id !== agentId)) {
+    draft = shrinkToRectangles(draft.map((id) => id ?? spare));
+  }
+  return fill(draft) ?? singleGrid(agentId);
 }
 
 /** Takes an agent out; its neighbours grow into the space. Null when it was the last one. */
