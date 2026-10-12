@@ -6,7 +6,7 @@ export interface FileNode {
   isDirectory: boolean;
   expanded?: boolean;
   children?: FileNode[];
-  gitStatus?: 'added' | 'modified' | 'deleted' | 'ignored';
+  gitStatus?: 'added' | 'modified' | 'deleted' | 'ignored' | 'conflicted';
   /** Filesystem birth time in unix milliseconds, when the OS reports one. */
   createdAt?: number;
   /** Newest descendant file birth time — lets a collapsed folder glow. */

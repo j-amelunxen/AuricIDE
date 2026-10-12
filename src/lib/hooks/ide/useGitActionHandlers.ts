@@ -2,7 +2,9 @@
 
 import { useCallback } from 'react';
 import { useStore } from '@/lib/store';
-import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
+import { diffTabId } from '@/lib/git/diffTabId';
+import { commitRouteFor } from '@/lib/git/merge/commitRoute';
+import { isVirtualTabId } from '@/lib/git/virtualTabId';
 import { relativeToRepo } from '@/lib/git/repos';
 import { selectRepoForPath } from '@/lib/store/gitSlice';
 import { buildAgenticCommitTask } from '@/lib/git/agenticCommit';
@@ -14,7 +16,7 @@ export function repoForGlobalGitAction(store: {
   repos: GitRepoRef[];
   activeRepoPath: string | null;
 }): string | null {
-  if (store.activeTabId && !isDiffTabId(store.activeTabId)) {
+  if (store.activeTabId && !isVirtualTabId(store.activeTabId)) {
     const repo = selectRepoForPath(store, store.activeTabId);
     if (repo) return repo.path;
   }
@@ -26,6 +28,13 @@ export function useGitActionHandlers(state: IDEState, handleRefresh: () => Promi
   const handleCommit = useCallback(
     async (repoPath: string, options?: { push?: boolean }) => {
       if (state.agentSettings.agenticCommit) {
+        // A commit agent runs `git commit` itself, which no in-progress operation survives.
+        const store = useStore.getState();
+        const route = commitRouteFor(store.mergeStates[repoPath], { agentic: true });
+        if (route.kind === 'refuse') {
+          store.showToast(route.message, 'error');
+          return;
+        }
         const providerId = state.agentSettings.commitProviderId || state.defaultProvider.id;
         const provider =
           state.providers.find((p) => p.id === providerId) ??
@@ -100,7 +109,7 @@ export function useGitActionHandlers(state: IDEState, handleRefresh: () => Promi
   const editorHistoryPath = useCallback((): string | null => {
     const store = useStore.getState();
     const tabId = store.activeTabId;
-    if (tabId && !isDiffTabId(tabId)) {
+    if (tabId && !isVirtualTabId(tabId)) {
       const repo = selectRepoForPath(store, tabId);
       if (repo) {
         if (store.activeRepoPath !== repo.path) store.setActiveRepoPath(repo.path);
@@ -142,7 +151,7 @@ export function useGitActionHandlers(state: IDEState, handleRefresh: () => Promi
     }
     if (store.scmView === 'history') {
       const tabId = store.activeTabId;
-      if (tabId && !isDiffTabId(tabId)) {
+      if (tabId && !isVirtualTabId(tabId)) {
         const repo = selectRepoForPath(store, tabId);
         if (repo && repo.path === repoPath) {
           void store.loadFileHistory(repoPath, relativeToRepo(tabId, repoPath));

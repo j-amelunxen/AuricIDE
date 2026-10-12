@@ -42,6 +42,18 @@ describe('useActiveTabContentLoader', () => {
     expect(load).toHaveBeenCalledExactlyOnceWith('/project/a.md');
   });
 
+  it('skips merge tabs — their document lives in mergeDocs', () => {
+    const { load, hook } = setup('/project/a.md');
+    hook.rerender({ tabId: 'merge:/project:src/a.ts', loader: load });
+    expect(load).toHaveBeenCalledExactlyOnceWith('/project/a.md');
+  });
+
+  it('skips review tabs — the session lives in reviewSessions', () => {
+    const { load, hook } = setup('/project/a.md');
+    hook.rerender({ tabId: 'review:/project:worktree', loader: load });
+    expect(load).toHaveBeenCalledExactlyOnceWith('/project/a.md');
+  });
+
   it('skips revision diff tabs', () => {
     const { load, hook } = setup('/project/a.md');
     hook.rerender({ tabId: 'diff:rev:abcdef1:src/a.ts', loader: load });

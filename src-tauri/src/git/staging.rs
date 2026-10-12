@@ -43,8 +43,22 @@ pub fn git_unstage_impl(repo_path: &str, paths: &[String]) -> Result<(), String>
     Ok(())
 }
 
+/// A plain commit in the middle of a merge has one parent and leaves
+/// MERGE_HEAD behind; in a cherry-pick, revert or rebase it skips the
+/// operation's own bookkeeping. Each has its own way to finish.
+fn refuse_during_operation(repo: &Repository) -> Result<(), String> {
+    match super::merge::operation_name(repo.state()) {
+        "merge" => Err("A merge is in progress. Commit it with Commit merge.".to_string()),
+        op @ ("rebase" | "cherry-pick" | "revert") => Err(format!(
+            "A {op} is in progress. Finish it in a terminal before committing."
+        )),
+        _ => Ok(()),
+    }
+}
+
 pub fn git_commit_impl(repo_path: &str, message: &str) -> Result<String, String> {
     let repo = Repository::open(repo_path).map_err(|e| format!("Failed to open repo: {}", e))?;
+    refuse_during_operation(&repo)?;
 
     let mut index = repo
         .index()

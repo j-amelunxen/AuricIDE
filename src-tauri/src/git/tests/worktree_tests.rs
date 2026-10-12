@@ -148,17 +148,64 @@ fn worktree_merge_commits_dirty_files_first() {
 }
 
 #[test]
-fn worktree_merge_refuses_a_conflict_and_keeps_the_worktree() {
+fn worktree_merge_conflict_on_main_starts_the_merge_in_place() {
+    let dir = TempDir::new().unwrap();
+    let path = committed_repo(&dir);
+    force_default_branch(&path, "main");
+    let wt = git_worktree_add_impl(&path, "clash").unwrap();
+    commit_in(&path, "a.txt", "on main\n", "main edit");
+    commit_in(&wt.path, "a.txt", "on worktree\n", "wt edit");
+    let main_before = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap();
+
+    let result = git_worktree_merge_into_default_impl(&path, &wt.path, None).unwrap();
+    assert!(!result.merged);
+    assert!(!result.cleaned_up);
+    assert!(!result.fast_forward);
+    assert_eq!(result.oid, None);
+    assert_eq!(result.conflicts, vec!["a.txt".to_string()]);
+    assert!(
+        Path::new(&wt.path).exists(),
+        "the worktree stays until concluded"
+    );
+
+    let repo = Repository::open(&path).unwrap();
+    assert_eq!(repo.head().unwrap().target().unwrap(), main_before);
+    assert_eq!(repo.state(), git2::RepositoryState::Merge);
+    let state = crate::git::merge::git_merge_state_impl(&path).unwrap();
+    assert_eq!(state.ours_label.as_deref(), Some("main"));
+    assert_eq!(state.theirs_label, wt.branch);
+    let on_disk = fs::read_to_string(Path::new(&path).join("a.txt")).unwrap();
+    assert!(on_disk.contains("<<<<<<< main\n"), "{on_disk}");
+}
+
+#[test]
+fn worktree_merge_conflict_elsewhere_says_how_to_resolve_it() {
     let dir = TempDir::new().unwrap();
     let path = committed_repo(&dir);
     force_default_branch(&path, "main");
     let wt = git_worktree_add_impl(&path, "clash").unwrap();
     commit_in(&path, "a.txt", "on main", "main edit");
     commit_in(&wt.path, "a.txt", "on worktree", "wt edit");
+    let repo = Repository::open(&path).unwrap();
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    repo.branch("side", &head, false).unwrap();
+    repo.set_head("refs/heads/side").unwrap();
 
     let err = git_worktree_merge_into_default_impl(&path, &wt.path, None).unwrap_err();
-    assert!(err.contains("conflict"), "{err}");
+    let branch = wt.branch.clone().unwrap();
+    assert_eq!(
+        err,
+        format!(
+            "merge conflict — check out main and merge {branch} to resolve it in the merge panel"
+        )
+    );
     assert!(Path::new(&wt.path).exists());
+    assert_eq!(repo.state(), git2::RepositoryState::Clean);
 }
 
 #[test]

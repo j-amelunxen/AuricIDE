@@ -5,6 +5,12 @@ use super::diff::{
 use super::discard::git_discard_impl;
 use super::discovery::git_discover_repos_impl;
 use super::log::{git_list_branches_impl, git_log_since_impl};
+use super::merge::{
+    git_apply_patch_impl, git_conflict_file_impl, git_conflict_origins_impl, git_merge_abort_impl,
+    git_merge_base_impl, git_merge_branch_impl, git_merge_conclude_impl, git_merge_preview_impl,
+    git_merge_state_impl, git_resolve_conflict_impl, git_resolve_conflict_side_impl,
+};
+use super::operation_step::{git_operation_step_impl, OPERATION_STEP_TIMEOUT};
 use super::staging::{git_commit_impl, git_push_impl, git_stage_impl, git_unstage_impl};
 use super::status::{git_branch_info_impl, git_projects_dirty_impl, git_status_impl};
 use super::types::*;
@@ -150,4 +156,89 @@ pub fn git_worktree_merge_into_default(
     commit_message: Option<String>,
 ) -> Result<WorktreeMergeResult, String> {
     git_worktree_merge_into_default_impl(&repo_path, &worktree_path, commit_message.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn git_merge_state(repo_path: String) -> Result<GitMergeState, String> {
+    git_merge_state_impl(&repo_path)
+}
+
+#[tauri::command(async)]
+pub fn git_conflict_file(repo_path: String, file_path: String) -> Result<GitConflictFile, String> {
+    git_conflict_file_impl(&repo_path, &file_path)
+}
+
+#[tauri::command(async)]
+pub fn git_conflict_origins(
+    repo_path: String,
+    file_path: String,
+) -> Result<GitConflictOrigins, String> {
+    git_conflict_origins_impl(&repo_path, &file_path)
+}
+
+#[tauri::command(async)]
+pub fn git_resolve_conflict(
+    repo_path: String,
+    file_path: String,
+    content: Option<String>,
+) -> Result<(), String> {
+    git_resolve_conflict_impl(&repo_path, &file_path, content.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn git_resolve_conflict_side(
+    repo_path: String,
+    file_path: String,
+    side: String,
+) -> Result<(), String> {
+    git_resolve_conflict_side_impl(&repo_path, &file_path, &side)
+}
+
+#[tauri::command(async)]
+pub fn git_merge_abort(repo_path: String) -> Result<(), String> {
+    git_merge_abort_impl(&repo_path)
+}
+
+#[tauri::command(async)]
+pub fn git_merge_conclude(repo_path: String, message: String) -> Result<String, String> {
+    git_merge_conclude_impl(&repo_path, &message)
+}
+
+#[tauri::command(async)]
+pub fn git_merge_branch(repo_path: String, branch: String) -> Result<GitMergeStartResult, String> {
+    git_merge_branch_impl(&repo_path, &branch)
+}
+
+#[tauri::command(async)]
+pub fn git_merge_preview(repo_path: String, branch: String) -> Result<GitMergePreview, String> {
+    git_merge_preview_impl(&repo_path, &branch)
+}
+
+/// Runs the real git, resolved through the login shell's PATH: an app
+/// launched from `/Applications` has no Homebrew git on its own PATH.
+#[tauri::command]
+pub async fn git_operation_step(
+    repo_path: String,
+    action: String,
+) -> Result<GitOperationStepResult, String> {
+    let git = crate::video_import::preflight::resolve_executable("git")
+        .await
+        .ok_or_else(|| "git was not found on this machine; install it to continue".to_string())?;
+    let env = crate::agents::cached_login_shell_env().await;
+    git_operation_step_impl(&repo_path, &action, &git, env, OPERATION_STEP_TIMEOUT).await
+}
+
+#[tauri::command(async)]
+pub fn git_apply_patch(
+    repo_path: String,
+    patch: String,
+    target: String,
+    guard: Option<ApplyPatchGuard>,
+) -> Result<(), String> {
+    git_apply_patch_impl(&repo_path, &patch, &target, guard.as_ref())
+}
+
+#[tauri::command(async)]
+pub fn git_merge_base(repo_path: String, a: String, b: String) -> Result<String, String> {
+    git_merge_base_impl(&repo_path, &a, &b)
 }

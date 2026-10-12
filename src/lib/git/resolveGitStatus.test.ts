@@ -103,3 +103,11 @@ describe('resolveGitStatusForPath', () => {
     expect(resolveGitStatusForPath('/w/README.md', repos, {})).toBeUndefined();
   });
 });
+
+describe('resolveGitStatus with conflicts', () => {
+  it('badges a conflicted file as conflicted, not as an ordinary change', () => {
+    expect(
+      resolveGitStatus('a.ts', statuses([row('a.ts', 'conflicted', null, 'conflicted')]))
+    ).toBe('conflicted');
+  });
+});

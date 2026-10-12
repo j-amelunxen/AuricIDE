@@ -1,5 +1,8 @@
 import type { StateCreator } from 'zustand';
-import { reviewCommentId, type ReviewComment } from '../git/reviewComments';
+import { patchForHunkAction } from '../git/hunkPatch';
+import { commitRouteFor } from '../git/merge/commitRoute';
+import type { GitMergeState } from '../tauri/gitMerge';
+import { markCommentsSent, newReviewCommentId, type ReviewComment } from '../git/reviewComments';
 import { isStaged, isUnstagedTracked, isUntracked } from '../git/statusSplit';
 import type { BranchInfo, GitFileStatus, GitRepoRef, GitWorktree } from '../tauri/git';
 import {
@@ -16,6 +19,7 @@ import {
   removeGitWorktree,
   gitDefaultBranch,
   mergeGitWorktreeIntoDefault,
+  applyGitPatch,
 } from '../tauri/git';
 import type { ScmView, HunkNavDirection, GitRepoState, GitSlice } from './git/gitTypes';
 import { EMPTY_REVIEW_STATE } from './git/gitTypes';
@@ -52,6 +56,13 @@ export {
   selectChangedFileCount,
   selectBranchNameForPath,
 };
+
+/** What `commit` reads from the merge slice and the toasts, duck-typed like agentSlice does. */
+interface CommitHost {
+  mergeStates?: Record<string, GitMergeState>;
+  concludeMerge?: (repoPath: string, message: string) => Promise<string>;
+  showToast?: (message: string, variant?: 'info' | 'success' | 'error') => unknown;
+}
 
 export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
   /**
@@ -201,22 +212,29 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
         return { diffByTabId: next };
       }),
 
-    upsertReviewComment: (comment) => {
-      const id = reviewCommentId(comment);
+    addReviewComment: (comment) => {
       const body = comment.body.trim();
-      set((s) => {
-        const without = s.reviewComments.filter((c) => c.id !== id);
-        if (!body) return { reviewComments: without };
-        const existing = s.reviewComments.find((c) => c.id === id);
-        const next: ReviewComment = {
-          ...comment,
-          id,
-          body,
-          createdAt: existing?.createdAt ?? Date.now(),
-        };
-        return { reviewComments: [...without, next] };
-      });
-      return id;
+      if (!body) return null;
+      const next: ReviewComment = {
+        ...comment,
+        id: newReviewCommentId(),
+        body,
+        createdAt: Date.now(),
+      };
+      set((s) => ({ reviewComments: [...s.reviewComments, next] }));
+      return next.id;
+    },
+
+    editReviewComment: (id, body) => {
+      const existing = get().reviewComments.find((c) => c.id === id);
+      if (!existing || existing.sentInRound !== undefined) return false;
+      const trimmed = body.trim();
+      set((s) => ({
+        reviewComments: trimmed
+          ? s.reviewComments.map((c) => (c.id === id ? { ...c, body: trimmed } : c))
+          : s.reviewComments.filter((c) => c.id !== id),
+      }));
+      return true;
     },
 
     removeReviewComment: (id) =>
@@ -226,6 +244,20 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
       set((s) => ({
         reviewComments: repoPath ? s.reviewComments.filter((c) => c.repoPath !== repoPath) : [],
       })),
+
+    markReviewCommentsSent: (repoPath, round) =>
+      set((s) => {
+        const next = markCommentsSent(s.reviewComments, repoPath, round);
+        return next === s.reviewComments ? s : { reviewComments: next };
+      }),
+
+    requestCommitFocus: (repoPath) =>
+      set((s) => ({
+        commitFocusRequest: { repoPath, nonce: (s.commitFocusRequest?.nonce ?? 0) + 1 },
+      })),
+
+    clearCommitFocusRequest: (nonce) =>
+      set((s) => (s.commitFocusRequest?.nonce === nonce ? { commitFocusRequest: null } : s)),
 
     resetGitInMemory: () =>
       set({
@@ -311,8 +343,43 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
       await get().refreshRepoStatus(repoPath);
     },
 
+    applyHunkAction: async (repoPath, filePath, rawPatch, hunkIndex, action) => {
+      const cut = patchForHunkAction(rawPatch, hunkIndex, action);
+      if (!cut) throw new Error(`Could not ${action} this hunk of ${filePath} on its own.`);
+      // The hunk was cut from this diff; git refuses if that side moved on since.
+      const side = action === 'unstage' ? 'staged' : 'unstaged';
+      try {
+        await applyGitPatch(repoPath, cut.patch, cut.target, {
+          filePath,
+          side,
+          diff: rawPatch,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(`Could not ${action} the hunk in ${filePath}: ${detail}`);
+      } finally {
+        // On refusal too: the file moved on, and the diff should show where it is now.
+        await get().refreshRepoStatus(repoPath);
+      }
+    },
+
     commit: async (repoPath) => {
       const repoState = get().repoStates[repoPath];
+      const host = get() as GitSlice & CommitHost;
+      const mergeState = host.mergeStates?.[repoPath];
+      const route = commitRouteFor(mergeState, { agentic: false });
+      if (route.kind === 'refuse') {
+        host.showToast?.(route.message, 'error');
+        return null;
+      }
+      if (route.kind === 'conclude-merge' && host.concludeMerge) {
+        // MERGE_MSG stands in for an empty box, as `git commit` would use it.
+        const message = repoState?.commitMessage.trim() || mergeState?.message?.trim() || '';
+        if (!message) return null;
+        const oid = await host.concludeMerge(repoPath, message);
+        set((s) => ({ repoStates: setRepoField(s.repoStates, repoPath, { commitMessage: '' }) }));
+        return oid;
+      }
       const commitMessage = repoState?.commitMessage ?? '';
       if (!commitMessage.trim()) return null;
 

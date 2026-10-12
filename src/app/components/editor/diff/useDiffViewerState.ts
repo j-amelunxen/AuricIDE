@@ -7,27 +7,44 @@ import {
   isEditableDiffSource,
   reloadDiffPatch,
 } from '@/lib/git/applyLineEdit';
-import { openReviewCommentsSpawn } from '@/lib/git/reviewComments';
+import { riskFlagsForPatch } from '@/lib/git/review/riskFlags';
 import { useStore } from '@/lib/store';
 import { parseDiff } from '@/lib/git/parseDiff';
+import { isOpenComment, sendReviewComments } from './sendReviewComments';
 import {
+  hunkCommentTarget,
   hunkCountOf,
-  type CommentTarget,
   type DiffViewerProps,
   type EditSession,
-  type LineCommentApi,
   type LineEditApi,
 } from './types';
+import { useHunkActions } from './useHunkActions';
+import { useLineCommentApi } from './useLineCommentApi';
+
+function isTextEntry(target: EventTarget): boolean {
+  return target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
+}
 
 export function useDiffViewerState({ diff, fileName, repoPath, source }: DiffViewerProps) {
   const [viewMode, setViewMode] = useState<'unified' | 'side-by-side'>('side-by-side');
   const [activeHunk, setActiveHunk] = useState(0);
   const [edit, setEdit] = useState<EditSession | null>(null);
   const [saving, setSaving] = useState(false);
-  const [commentDraft, setCommentDraft] = useState<CommentTarget | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
-  const lines = parseDiff(diff);
+  // A finished hunk action or comment can take the focused control with it; focus goes back to the diff.
+  const refocusViewer = useCallback(() => viewerRef.current?.focus(), []);
+  const lines = useMemo(() => parseDiff(diff), [diff]);
   const hunkCount = hunkCountOf(lines);
+  // After a hunk is staged or discarded there may be fewer: keep the focus on a real one.
+  const focusedHunk = Math.min(activeHunk, Math.max(0, hunkCount - 1));
+  const riskFlags = useMemo(() => riskFlagsForPatch(fileName, diff), [diff, fileName]);
+  const hunkActions = useHunkActions({
+    diff,
+    fileName,
+    repoPath,
+    source,
+    afterAction: refocusViewer,
+  });
 
   const fileStatus = useStore((s) => {
     if (!repoPath) return undefined;
@@ -89,74 +106,17 @@ export function useDiffViewerState({ diff, fileName, repoPath, source }: DiffVie
     }
   }, [edit, fileName, repoPath, saving, source]);
 
-  const comments = useStore((s) => s.reviewComments);
-  const canComment = !!repoPath;
-
-  const startCommentDraft = useCallback((target: CommentTarget) => {
-    setCommentDraft(target);
-  }, []);
-
-  const cancelCommentDraft = useCallback(() => {
-    setCommentDraft(null);
-  }, []);
-
-  const saveCommentDraft = useCallback(
-    (body: string) => {
-      if (!repoPath || !commentDraft) return;
-      useStore.getState().upsertReviewComment({
-        repoPath,
-        filePath: fileName,
-        lineNo: commentDraft.lineNo,
-        side: commentDraft.side,
-        lineContent: commentDraft.lineContent,
-        body,
-      });
-      setCommentDraft(null);
-    },
-    [commentDraft, fileName, repoPath]
+  const lineComment = useLineCommentApi(repoPath, fileName, refocusViewer);
+  const canComment = lineComment.enabled;
+  const repoCommentCount = useStore((s) =>
+    repoPath
+      ? s.reviewComments.filter((c) => c.repoPath === repoPath && isOpenComment(c)).length
+      : 0
   );
-
-  const removeComment = useCallback((id: string) => {
-    useStore.getState().removeReviewComment(id);
-  }, []);
 
   const sendComments = useCallback(() => {
-    if (!repoPath) return;
-    openReviewCommentsSpawn(useStore.getState(), useStore.getState().reviewComments, repoPath);
+    if (repoPath) sendReviewComments(repoPath);
   }, [repoPath]);
-
-  const fileComments = useMemo(
-    () =>
-      comments.filter((comment) => {
-        if (!repoPath) return false;
-        return comment.repoPath === repoPath && comment.filePath === fileName;
-      }),
-    [comments, fileName, repoPath]
-  );
-  const repoCommentCount = repoPath
-    ? comments.filter((comment) => comment.repoPath === repoPath && comment.body.trim()).length
-    : 0;
-
-  const lineComment = useMemo<LineCommentApi>(
-    () => ({
-      enabled: canComment,
-      comments: fileComments,
-      draft: commentDraft,
-      startDraft: startCommentDraft,
-      cancelDraft: cancelCommentDraft,
-      saveDraft: saveCommentDraft,
-      removeComment,
-    }),
-    [
-      canComment,
-      cancelCommentDraft,
-      commentDraft,
-      fileComments,
-      removeComment,
-      saveCommentDraft,
-      startCommentDraft,
-    ]
-  );
 
   const lineEdit = useMemo<LineEditApi>(
     () => ({
@@ -184,11 +144,11 @@ export function useDiffViewerState({ diff, fileName, repoPath, source }: DiffVie
   );
 
   const goToHunkRef = useRef(goToHunk);
-  const activeHunkRef = useRef(activeHunk);
+  const activeHunkRef = useRef(focusedHunk);
 
   useEffect(() => {
     goToHunkRef.current = goToHunk;
-    activeHunkRef.current = activeHunk;
+    activeHunkRef.current = focusedHunk;
   });
 
   useEffect(() => {
@@ -201,23 +161,52 @@ export function useDiffViewerState({ diff, fileName, repoPath, source }: DiffVie
     });
   }, []);
 
+  const runHunkKey = (event: KeyboardEvent<HTMLDivElement>): boolean => {
+    if (event.altKey || event.metaKey || event.ctrlKey || hunkCount === 0) return false;
+    const { available, run } = hunkActions;
+    if (event.key === 's' || event.key === 'S') {
+      const action = available.find((a) => a !== 'discard');
+      if (!action) return false;
+      void run(focusedHunk, action);
+      return true;
+    }
+    if ((event.key === 'Backspace' || event.key === 'Delete') && available.includes('discard')) {
+      void run(focusedHunk, 'discard');
+      return true;
+    }
+    if (event.key === 'c' || event.key === 'C') {
+      // The composer focuses itself; Esc and ⌘↵ hand focus back to the diff.
+      const target = lineComment.enabled ? hunkCommentTarget(lines, focusedHunk) : null;
+      if (!target) return false;
+      lineComment.startDraft(target);
+      return true;
+    }
+    return false;
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.target instanceof HTMLTextAreaElement) return;
+    if (isTextEntry(event.target)) return;
+    if (runHunkKey(event)) {
+      event.preventDefault();
+      return;
+    }
     if (!event.altKey) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      goToHunk(activeHunk + 1);
+      goToHunk(focusedHunk + 1);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      goToHunk(activeHunk - 1);
+      goToHunk(focusedHunk - 1);
     }
   };
 
   return {
     viewMode,
     setViewMode,
-    activeHunk,
+    activeHunk: focusedHunk,
     lines,
+    riskFlags,
+    hunkActions,
     viewerRef,
     canEditFile,
     canComment,

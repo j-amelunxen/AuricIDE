@@ -1,8 +1,13 @@
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { countModeChanged, MODE_CHANGE_HINT_THRESHOLD } from '@/lib/git/modeChange';
 import { isStaged, isUnstagedTracked, isUntracked } from '@/lib/git/statusSplit';
+import { useStore } from '@/lib/store';
 import type { ProviderInfo } from '@/lib/tauri/providers';
+import { MergeBanner } from '../merge/MergeBanner';
+import { MergeBranchMenu } from '../merge/MergeBranchMenu';
+import { ReviewChangesButton } from '../review/ReviewChangesButton';
 import { AgenticControls } from './AgenticControls';
+import { CommitMessageBox } from './CommitMessageBox';
 import { FileSection } from './FileSection';
 import type { DiffSide, RepoView } from './types';
 
@@ -23,6 +28,8 @@ export interface RepoBodyProps {
   onUnstageAll?: () => void;
   onFileClick?: (path: string, side: DiffSide) => void;
   onDiscardFile?: (path: string) => void;
+  /** Off where a section header carries the branch actions instead. */
+  showMergeMenu?: boolean;
 }
 
 /** The commit box plus the Staged/Changes/Untracked lists for one repo. */
@@ -43,12 +50,16 @@ export function RepoBody({
   onUnstageAll,
   onFileClick,
   onDiscardFile,
+  showMergeMenu = true,
 }: RepoBodyProps) {
   const visible = repo.fileStatuses.filter((s) => s.status !== 'ignored');
   const staged = visible.filter(isStaged);
   const changed = visible.filter(isUnstagedTracked);
   const untracked = visible.filter(isUntracked);
   const hasChanges = staged.length + changed.length + untracked.length > 0;
+  // During a merge the conflicted files sit in the banner, not in these lists,
+  // and the commit box becomes the merge commit.
+  const merging = useStore((s) => s.mergeStates[repo.repoPath]?.inProgress ?? false);
   const modeChangedCount = countModeChanged(visible);
   const pushButton = onPush ? (
     <button
@@ -65,83 +76,103 @@ export function RepoBody({
   return (
     <>
       <div className="px-3 pb-3">
-        {repo.ticketPrefix && (
-          <div
-            data-testid="ticket-badge"
-            className="mb-2 inline-flex items-center gap-1.5 rounded bg-primary/10 border border-primary/20 px-2 py-0.5"
-          >
-            <AuricIcon name="confirmation_number" className="text-primary-light text-xs" />
-            <span className="text-[11px] font-mono font-bold text-primary-light">
-              {repo.ticketPrefix}
-            </span>
-          </div>
-        )}
-        <textarea
-          placeholder="Commit message"
-          value={repo.commitMessage}
-          onChange={(e) => onCommitMessageChange(e.target.value)}
-          className="w-full resize-none rounded border border-border-dark bg-editor-bg px-3 py-2 text-xs text-foreground placeholder:text-foreground-muted focus:border-primary focus:outline-none"
-          rows={3}
-        />
-        {renderAgenticControls && (
-          <div className="mt-2">
-            <AgenticControls
-              agenticCommit={agenticCommit}
-              providers={providers}
-              selectedProviderId={selectedProviderId}
-              onAgenticToggle={onAgenticToggle}
-              onProviderChange={onProviderChange}
+        {merging ? (
+          <MergeBanner
+            repoPath={repo.repoPath}
+            commitMessage={repo.commitMessage}
+            onCommitMessageChange={onCommitMessageChange}
+          />
+        ) : (
+          <>
+            {(repo.ticketPrefix || (showMergeMenu && repo.branchName) || hasChanges) && (
+              <div className="mb-2 flex items-center gap-2">
+                {repo.ticketPrefix && (
+                  <div
+                    data-testid="ticket-badge"
+                    className="inline-flex items-center gap-1.5 rounded bg-primary/10 border border-primary/20 px-2 py-0.5"
+                  >
+                    <AuricIcon name="confirmation_number" className="text-primary-light text-xs" />
+                    <span className="text-[11px] font-mono font-bold text-primary-light">
+                      {repo.ticketPrefix}
+                    </span>
+                  </div>
+                )}
+                <span className="ml-auto flex items-center gap-1">
+                  {hasChanges && <ReviewChangesButton repoPath={repo.repoPath} />}
+                  {showMergeMenu && repo.branchName && (
+                    <MergeBranchMenu repoPath={repo.repoPath} currentBranch={repo.branchName} />
+                  )}
+                </span>
+              </div>
+            )}
+            <CommitMessageBox
+              repoPath={repo.repoPath}
+              value={repo.commitMessage}
+              onChange={onCommitMessageChange}
             />
-          </div>
-        )}
-        {/* Commit stays local. Commit & Push publishes. In agentic mode both
+            {renderAgenticControls && (
+              <div className="mt-2">
+                <AgenticControls
+                  agenticCommit={agenticCommit}
+                  providers={providers}
+                  selectedProviderId={selectedProviderId}
+                  onAgenticToggle={onAgenticToggle}
+                  onProviderChange={onProviderChange}
+                />
+              </div>
+            )}
+            {/* Commit stays local. Commit & Push publishes. In agentic mode both
         are one click each; the agent prompt is the same, the last sentence
         is not. Push of already-committed work stays its own button. */}
-        <div className="mt-2 flex flex-col gap-2">
-          {agenticCommit && repo.isCommitting ? (
-            <button
-              type="button"
-              disabled
-              className="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white opacity-50 cursor-not-allowed"
-            >
-              Running Agent...
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onCommit()}
-                disabled={
-                  agenticCommit
-                    ? repo.isCommitting
-                    : !repo.commitMessage.trim() || repo.isCommitting
-                }
-                title={agenticCommit ? 'Agent writes the commit. Stays local.' : undefined}
-                className="flex-1 whitespace-nowrap rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color,opacity] duration-100 ease-out hover:bg-primary/90 active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-              >
-                {repo.isCommitting ? 'Committing...' : 'Commit'}
-              </button>
-              {agenticCommit && (
+            <div className="mt-2 flex flex-col gap-2">
+              {agenticCommit && repo.isCommitting ? (
                 <button
                   type="button"
-                  onClick={() => onCommit({ push: true })}
-                  disabled={repo.isCommitting}
-                  title="Agent writes the commit and pushes to origin."
-                  className="flex-1 whitespace-nowrap rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color,opacity] duration-100 ease-out hover:bg-primary/90 active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                  disabled
+                  className="rounded bg-primary px-3 py-1.5 text-xs font-medium text-white opacity-50 cursor-not-allowed"
                 >
-                  Commit & Push
+                  Running Agent...
                 </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onCommit()}
+                    disabled={
+                      agenticCommit
+                        ? repo.isCommitting
+                        : !repo.commitMessage.trim() || repo.isCommitting
+                    }
+                    title={agenticCommit ? 'Agent writes the commit. Stays local.' : undefined}
+                    className="flex-1 whitespace-nowrap rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color,opacity] duration-100 ease-out hover:bg-primary/90 active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                  >
+                    {repo.isCommitting ? 'Committing...' : 'Commit'}
+                  </button>
+                  {agenticCommit && (
+                    <button
+                      type="button"
+                      onClick={() => onCommit({ push: true })}
+                      disabled={repo.isCommitting}
+                      title="Agent writes the commit and pushes to origin."
+                      className="flex-1 whitespace-nowrap rounded bg-primary px-3 py-1.5 text-xs font-medium text-white transition-[transform,background-color,opacity] duration-100 ease-out hover:bg-primary/90 active:scale-[0.96] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                    >
+                      Commit & Push
+                    </button>
+                  )}
+                  {!agenticCommit && pushButton}
+                </div>
               )}
-              {!agenticCommit && pushButton}
+              {agenticCommit && pushButton}
             </div>
-          )}
-          {agenticCommit && pushButton}
-        </div>
+          </>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto border-t border-border-dark">
         {!hasChanges ? (
-          <p className="p-3 text-xs text-foreground-muted">No changes</p>
+          <p className="p-3 text-xs text-foreground-muted">
+            {merging ? 'No other changes' : 'No changes'}
+          </p>
         ) : (
           <>
             {/* Lives here, not in RepoSection: a single root repo renders

@@ -1,4 +1,5 @@
 import type { DiffTabState } from '../../git/diffTab';
+import type { HunkAction } from '../../git/hunkPatch';
 import type { ReviewComment } from '../../git/reviewComments';
 import type {
   BlameHunk,
@@ -71,15 +72,43 @@ export interface GitSlice {
   setDiffTab: (tabId: string, state: DiffTabState) => void;
   clearDiffTab: (tabId: string) => void;
   reviewComments: ReviewComment[];
-  upsertReviewComment: (comment: Omit<ReviewComment, 'id' | 'createdAt'>) => string;
+  /** Adds a comment to its line's thread; `null` (and nothing added) for a blank body. */
+  addReviewComment: (comment: Omit<ReviewComment, 'id' | 'createdAt'>) => string | null;
+  /**
+   * Rewrites an open comment; a blank body removes it. A sent comment is the
+   * record of what the agent was told and is refused (`false`), as is an unknown id.
+   */
+  editReviewComment: (id: string, body: string) => boolean;
   removeReviewComment: (id: string) => void;
   clearReviewComments: (repoPath?: string) => void;
+  /** Marks one repo's open comments as sent in `round` (`markCommentsSent`). */
+  markReviewCommentsSent: (repoPath: string, round: number) => void;
+  /**
+   * Asks the Source Control commit box of `repoPath` to take focus (Approve
+   * in a review). The nonce makes a repeated request for the same repo count.
+   */
+  commitFocusRequest: { repoPath: string; nonce: number } | null;
+  requestCommitFocus: (repoPath: string) => void;
+  /** Clears the request once a commit box acted on it, unless a newer one arrived. */
+  clearCommitFocusRequest: (nonce: number) => void;
   resetGitInMemory: () => void;
   stageFile: (repoPath: string, path: string) => Promise<void>;
   /** Stages every changed file except the ignored ones, in one round trip. */
   stageAll: (repoPath: string) => Promise<void>;
   unstageFile: (repoPath: string, path: string) => Promise<void>;
   unstageAll: (repoPath: string) => Promise<void>;
+  /**
+   * Stage, unstage or discard one hunk of the patch a diff tab shows, then
+   * refresh the repo. Throws a message naming the file when the hunk cannot
+   * be cut or no longer applies; the repo is refreshed either way.
+   */
+  applyHunkAction: (
+    repoPath: string,
+    filePath: string,
+    rawPatch: string,
+    hunkIndex: number,
+    action: HunkAction
+  ) => Promise<void>;
   commit: (repoPath: string) => Promise<string | null>;
   /** Pushes the current branch to origin. Rethrows so the caller can report. */
   push: (repoPath: string) => Promise<void>;
@@ -116,4 +145,5 @@ export const EMPTY_REVIEW_STATE = {
   hunkNavNonce: 0,
   hunkNavDirection: null,
   reviewComments: [] as ReviewComment[],
+  commitFocusRequest: null as { repoPath: string; nonce: number } | null,
 };

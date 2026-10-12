@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { openMergeTabOrToast } from '@/lib/ide/openMergeTab';
 import { generateCommitSubject } from '@/lib/git/commitSubject';
 import { offerWorktreeMerge, type WorktreeMergeOfferAgent } from '@/lib/git/offerWorktreeMerge';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
@@ -54,6 +55,15 @@ export function useWorktreeMergeOffer(
         mergeAgentWorktree,
         commitSubjectFor,
         showToast,
+        // The merge is now in progress in the source repo: land in the panel on its first file.
+        onConflicts: (repoPath, paths) => {
+          void useStore
+            .getState()
+            .refreshMergeState(repoPath)
+            .then(() => {
+              if (paths[0]) openMergeTabOrToast(repoPath, paths[0]);
+            });
+        },
       });
     },
     [confirm, commitSubjectFor, defaultBranchFor, mergeAgentWorktree, showToast, worktrees]

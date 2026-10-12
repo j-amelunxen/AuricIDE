@@ -47,6 +47,15 @@ export function mergeTreeChanges(a: TreeChange, b: TreeChange): TreeChange {
   };
 }
 
+/**
+ * One merge-state read per repo per status refresh, so a merge started (or
+ * aborted) in a terminal shows up in Source Control with the next refresh.
+ */
+async function refreshMergeStates(): Promise<void> {
+  const { repos, refreshMergeState } = useStore.getState();
+  await Promise.all(repos.map((repo) => refreshMergeState(repo.path)));
+}
+
 function gitStatusCounts(repoStates: Record<string, GitRepoState>): Record<string, number> {
   let statuses = 0;
   for (const path in repoStates) statuses += repoStates[path].fileStatuses.length;
@@ -74,12 +83,14 @@ export function useTreeRefresh(
   const refreshProjectIndexes = useCallback(
     async (rootPath: string, scope: IndexScope): Promise<void> => {
       const store = useStore.getState();
-      const gitRefresh = perfBreadcrumbs.span(
-        scope.discoverRepos ? 'git-discover-refresh' : 'git-status-refresh',
-        () =>
-          scope.discoverRepos ? store.discoverAndRefreshGit(rootPath) : store.refreshGitStatus(),
-        () => gitStatusCounts(useStore.getState().repoStates)
-      );
+      const gitRefresh = perfBreadcrumbs
+        .span(
+          scope.discoverRepos ? 'git-discover-refresh' : 'git-status-refresh',
+          () =>
+            scope.discoverRepos ? store.discoverAndRefreshGit(rootPath) : store.refreshGitStatus(),
+          () => gitStatusCounts(useStore.getState().repoStates)
+        )
+        .then(refreshMergeStates);
       // The project-wide file list only changes when paths appear or vanish;
       // walking it again for a content write is the most expensive no-op here.
       const fileList = scope.listFiles
@@ -213,6 +224,8 @@ export function useTreeRefresh(
     state.setPdfData(null);
     state.setMindmapData(null);
     state.resetGitInMemory();
+    state.resetReviewInMemory();
+    state.resetMergeInMemory();
   }, [state]);
 
   return {

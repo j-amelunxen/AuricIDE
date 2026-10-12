@@ -4,11 +4,15 @@ import { useConfirm } from '@/lib/hooks/useConfirm';
 import { worktreeIsOccupied } from '@/lib/git/agentWorktree';
 import { useStore } from '@/lib/store';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { withMergeBase } from '@/lib/git/review/withMergeBase';
+import { getMergeBase, type GitWorktree } from '@/lib/tauri/git';
+import { openReviewTab } from './review/ReviewChangesButton';
 
 export function AgentWorktreesPanel() {
   const worktrees = useStore((s) => s.agentWorktrees);
   const agents = useStore((s) => s.agents);
   const removeAgentWorktree = useStore((s) => s.removeAgentWorktree);
+  const defaultBranchFor = useStore((s) => s.defaultBranchFor);
   const showToast = useStore((s) => s.showToast);
   const { confirm, confirmDialog } = useConfirm();
 
@@ -37,6 +41,23 @@ export function AgentWorktreesPanel() {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       showToast(`Could not remove worktree: ${detail}`, 'error');
+    }
+  };
+
+  // Commits on the branch: review against where it left the default branch, which is what a
+  // merge brings in (the ref diff reaches into the work tree, so uncommitted work is part of
+  // it). Only uncommitted work: review the working tree, where hunks can be rejected.
+  const handleReview = async (tree: GitWorktree) => {
+    if (!tree.branchAhead) {
+      openReviewTab({ kind: 'worktree', repoPath: tree.path });
+      return;
+    }
+    try {
+      const ref = await defaultBranchFor(tree.sourceRepo);
+      openReviewTab(await withMergeBase({ kind: 'ref', repoPath: tree.path, ref }, getMergeBase));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      showToast(`Could not find main or master to review against: ${detail}`, 'error');
     }
   };
 
@@ -79,9 +100,23 @@ export function AgentWorktreesPanel() {
               </div>
               <button
                 type="button"
+                data-testid="agent-worktree-review"
+                onClick={() => void handleReview(tree)}
+                disabled={!tree.dirty && !tree.branchAhead}
+                title={
+                  tree.dirty || tree.branchAhead
+                    ? 'Review what this agent changed'
+                    : 'Nothing to review: no commits and no uncommitted work'
+                }
+                className="min-h-6 rounded px-2 text-[11px] font-medium text-foreground-muted hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Review
+              </button>
+              <button
+                type="button"
                 onClick={() => void handleRemove(tree.path)}
                 disabled={occupied}
-                className="rounded px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-6 rounded px-2 text-[11px] font-medium text-foreground-muted hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Remove
               </button>

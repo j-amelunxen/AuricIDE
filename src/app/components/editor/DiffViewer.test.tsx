@@ -567,7 +567,7 @@ describe('DiffViewer line comments', () => {
 
   it('sends the repo comments to the spawn dialog as a checklist', async () => {
     const user = userEvent.setup();
-    useStore.getState().upsertReviewComment({
+    useStore.getState().addReviewComment({
       repoPath: '/repo',
       filePath: 'file.txt',
       lineNo: 2,
@@ -575,7 +575,7 @@ describe('DiffViewer line comments', () => {
       lineContent: 'new line',
       body: 'rename this',
     });
-    useStore.getState().upsertReviewComment({
+    useStore.getState().addReviewComment({
       repoPath: '/other',
       filePath: 'x.ts',
       lineNo: 1,

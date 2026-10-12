@@ -1,4 +1,5 @@
 use super::discovery::primary_project_path;
+use super::merge::start_merge;
 use super::staging::{git_commit_impl, git_stage_impl};
 use super::status::{git_status_impl, repo_is_dirty, repo_is_dirty_in};
 use super::types::*;
@@ -318,6 +319,13 @@ fn fast_forward_branch(
     Ok(())
 }
 
+/// A merge either lands as a commit or stops on conflicts. Only the caller
+/// knows whether a conflict can be left in progress in the work tree.
+enum MergeAttempt {
+    Committed(git2::Oid),
+    Conflicted,
+}
+
 fn merge_commits_onto_branch(
     repo: &Repository,
     default_branch: &str,
@@ -325,7 +333,7 @@ fn merge_commits_onto_branch(
     ours_id: git2::Oid,
     theirs_id: git2::Oid,
     checkout: bool,
-) -> Result<git2::Oid, String> {
+) -> Result<MergeAttempt, String> {
     let ours = repo
         .find_commit(ours_id)
         .map_err(|e| format!("could not read {default_branch}: {e}"))?;
@@ -336,9 +344,7 @@ fn merge_commits_onto_branch(
         .merge_commits(&ours, &theirs, None)
         .map_err(|e| format!("could not merge: {e}"))?;
     if index.has_conflicts() {
-        return Err(
-            "merge conflict — the worktree was left in place so you can resolve it".to_string(),
-        );
+        return Ok(MergeAttempt::Conflicted);
     }
     let tree_oid = index
         .write_tree_to(repo)
@@ -365,9 +371,38 @@ fn merge_commits_onto_branch(
         repo.checkout_head(Some(CheckoutBuilder::default().force()))
             .map_err(|e| format!("could not update working tree: {e}"))?;
     }
-    Ok(oid)
+    Ok(MergeAttempt::Committed(oid))
 }
 
+/// The conflict lands in the merge panel when the main work tree is on the
+/// default branch; anywhere else there is no work tree to leave it in.
+fn conflicted_worktree_merge(
+    repo: &Repository,
+    default_branch: &str,
+    theirs_branch: &str,
+    on_default: bool,
+) -> Result<WorktreeMergeResult, String> {
+    if !on_default {
+        return Err(format!(
+            "merge conflict — check out {default_branch} and merge {theirs_branch} to resolve it in the merge panel"
+        ));
+    }
+    let reference = repo
+        .find_branch(theirs_branch, BranchType::Local)
+        .map_err(|e| format!("branch {theirs_branch} not found: {e}"))?
+        .into_reference();
+    let conflicts = start_merge(repo, &reference)?;
+    Ok(WorktreeMergeResult {
+        default_branch: default_branch.to_string(),
+        merged: false,
+        fast_forward: false,
+        cleaned_up: false,
+        oid: None,
+        conflicts,
+    })
+}
+
+// code-gate: complexity-cyclomatic - one linear flow: commit, resolve, already-merged, dirty, ff/merge/conflict
 pub fn git_worktree_merge_into_default_impl(
     repo_path: &str,
     worktree_path: &str,
@@ -403,6 +438,7 @@ pub fn git_worktree_merge_into_default_impl(
             fast_forward: false,
             cleaned_up: true,
             oid: Some(ours_id.to_string()),
+            conflicts: Vec::new(),
         });
     }
 
@@ -423,14 +459,24 @@ pub fn git_worktree_merge_into_default_impl(
         fast_forward_branch(&repo, &default_branch, theirs_id, on_default)?;
         theirs_id
     } else {
-        merge_commits_onto_branch(
+        match merge_commits_onto_branch(
             &repo,
             &default_branch,
             &theirs_branch,
             ours_id,
             theirs_id,
             on_default,
-        )?
+        )? {
+            MergeAttempt::Committed(oid) => oid,
+            MergeAttempt::Conflicted => {
+                return conflicted_worktree_merge(
+                    &repo,
+                    &default_branch,
+                    &theirs_branch,
+                    on_default,
+                )
+            }
+        }
     };
 
     let cleaned_up = git_worktree_remove_impl(repo_path, worktree_path, true).is_ok();
@@ -440,6 +486,7 @@ pub fn git_worktree_merge_into_default_impl(
         fast_forward: can_ff,
         cleaned_up,
         oid: Some(oid.to_string()),
+        conflicts: Vec::new(),
     })
 }
 

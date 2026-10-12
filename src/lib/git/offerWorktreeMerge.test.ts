@@ -26,7 +26,9 @@ function deps(overrides: Partial<Parameters<typeof offerWorktreeMerge>[0]> = {})
       fastForward: true,
       cleanedUp: true,
       oid: 'abc',
+      conflicts: [] as string[],
     })),
+    onConflicts: vi.fn(),
     commitSubjectFor: vi.fn(async () => 'Cache the repo discovery walk'),
     showToast: vi.fn(),
     ...overrides,
@@ -168,5 +170,43 @@ describe('offerWorktreeMerge', () => {
     await offerWorktreeMerge(input);
     expect(input.defaultBranchFor).toHaveBeenCalledWith(tree.path);
     expect(input.confirm).toHaveBeenCalled();
+  });
+
+  it('hands a conflicted merge to the merge panel instead of claiming success', async () => {
+    const input = deps({
+      mergeAgentWorktree: vi.fn(async () => ({
+        defaultBranch: 'main',
+        merged: false,
+        fastForward: false,
+        cleanedUp: false,
+        oid: null,
+        conflicts: ['a.ts', 'b.ts'],
+      })),
+    });
+    await offerWorktreeMerge(input);
+    expect(input.onConflicts).toHaveBeenCalledWith('/w', ['a.ts', 'b.ts']);
+    expect(input.showToast).toHaveBeenCalledTimes(1);
+    expect(input.showToast).toHaveBeenCalledWith(
+      'Merge stopped on 2 conflicting files. Resolve them in the merge panel.',
+      'info'
+    );
+  });
+
+  it('says file, not files, for a single conflict', async () => {
+    const input = deps({
+      mergeAgentWorktree: vi.fn(async () => ({
+        defaultBranch: 'main',
+        merged: false,
+        fastForward: false,
+        cleanedUp: false,
+        oid: null,
+        conflicts: ['a.ts'],
+      })),
+    });
+    await offerWorktreeMerge(input);
+    expect(input.showToast).toHaveBeenCalledWith(
+      'Merge stopped on 1 conflicting file. Resolve it in the merge panel.',
+      'info'
+    );
   });
 });

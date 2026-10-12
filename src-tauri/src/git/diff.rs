@@ -17,6 +17,12 @@ pub(crate) fn print_diff(diff: &git2::Diff) -> Result<String, String> {
             'H' => {
                 diff_text.push_str(&String::from_utf8_lossy(line.content()));
             }
+            // End-of-file newline markers. libgit2 hands over the whole
+            // "\n\\ No newline at end of file\n", leading break included, so a
+            // hunk cut from this text still applies byte for byte.
+            '=' | '>' | '<' => {
+                diff_text.push_str(&String::from_utf8_lossy(line.content()));
+            }
             _ => {}
         }
         true
@@ -197,6 +203,10 @@ fn diff_ref_to_workdir<'a>(
 ) -> Result<git2::Diff<'a>, String> {
     let tree = peel_ref_to_tree(repo, ref_name)?;
     let mut opts = git2::DiffOptions::new();
+    // A worktree review must show new files too: the merge commits them.
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true);
     if let Some(path) = pathspec {
         opts.pathspec(path);
     }

@@ -46,9 +46,27 @@ function clearDiffTabsFor(get: () => TabsSlice, ids: string[]): void {
   }
 }
 
+function closeMergeDocsFor(get: () => TabsSlice, ids: string[]): void {
+  const combined = get() as TabsSlice & { closeMergeDoc?: (id: string) => void };
+  if (typeof combined.closeMergeDoc !== 'function') return;
+  for (const id of ids) {
+    combined.closeMergeDoc(id);
+  }
+}
+
+function closeReviewSessionsFor(get: () => TabsSlice, ids: string[]): void {
+  const combined = get() as TabsSlice & { closeReviewSession?: (id: string) => void };
+  if (typeof combined.closeReviewSession !== 'function') return;
+  for (const id of ids) {
+    combined.closeReviewSession(id);
+  }
+}
+
 function onTabsClosed(get: () => TabsSlice, ids: string[]): void {
   clearDiagnosticsFor(get, ids);
   clearDiffTabsFor(get, ids);
+  closeMergeDocsFor(get, ids);
+  closeReviewSessionsFor(get, ids);
 }
 
 export const createTabsSlice: StateCreator<TabsSlice> = (set, get) => ({

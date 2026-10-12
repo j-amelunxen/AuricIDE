@@ -81,6 +81,32 @@ describe('ConfirmDialog', () => {
     expect(onBackdropClick).not.toHaveBeenCalled();
   });
 
+  it.each(['s', 'S', 'v', '[', ']', 'Backspace', 'Enter'])(
+    'keeps %s inside the dialog, away from the view that asked',
+    (key) => {
+      // A viewer with single-key shortcuts renders the dialog inside its own
+      // tree; the portal still bubbles React events up to it.
+      const onViewerKey = vi.fn();
+      const onWindowKey = vi.fn();
+      window.addEventListener('keydown', onWindowKey);
+      render(
+        <div onKeyDown={onViewerKey}>
+          <ConfirmDialog
+            title="Discard hunk?"
+            message="m"
+            confirmLabel="Discard"
+            onConfirm={vi.fn()}
+            onCancel={vi.fn()}
+          />
+        </div>
+      );
+      fireEvent.keyDown(screen.getByRole('dialog'), { key });
+      expect(onViewerKey).not.toHaveBeenCalled();
+      expect(onWindowKey).not.toHaveBeenCalled();
+      window.removeEventListener('keydown', onWindowKey);
+    }
+  );
+
   it('keeps Escape from reaching window listeners behind it', () => {
     // Callers such as the agent terminal listen for Escape on window to close
     // themselves. If that listener also sees this key, the thing that asked

@@ -23,6 +23,17 @@ export interface OfferWorktreeMergeInput {
    */
   commitSubjectFor: (worktreePath: string, task: string) => Promise<string>;
   showToast: (message: string, variant?: 'info' | 'success' | 'error') => unknown;
+  /**
+   * The merge stopped on conflicts and is now in progress in the source
+   * repo's main work tree. The caller opens the merge panel for it.
+   */
+  onConflicts?: (repoPath: string, conflicts: string[]) => void;
+}
+
+function conflictToast(count: number): string {
+  return count === 1
+    ? 'Merge stopped on 1 conflicting file. Resolve it in the merge panel.'
+    : `Merge stopped on ${count} conflicting files. Resolve them in the merge panel.`;
 }
 
 /**
@@ -64,6 +75,13 @@ export async function offerWorktreeMerge(input: OfferWorktreeMergeInput): Promis
 
   try {
     const result = await input.mergeAgentWorktree(path, commitMessage);
+    // `?? []`: a backend from before the merge panel leaves the field off.
+    const conflicts = result.conflicts ?? [];
+    if (conflicts.length > 0) {
+      input.onConflicts?.(tree?.sourceRepo ?? path, conflicts);
+      input.showToast(conflictToast(conflicts.length), 'info');
+      return;
+    }
     input.showToast(`Merged into ${result.defaultBranch} and removed the worktree.`, 'success');
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

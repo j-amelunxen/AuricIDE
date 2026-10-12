@@ -214,6 +214,32 @@ describe('tabsSlice - diff payload cleanup on tab close', () => {
     expect(useStore.getState().diffByTabId[id]).toBeUndefined();
   });
 
+  it('closeTab on a merge: id drops its merge document', () => {
+    const id = 'merge:/repo:src/a.ts';
+    useStore.setState({ mergeDocs: { [id]: {} as never, 'merge:/repo:src/b.ts': {} as never } });
+    useStore.getState().openTab({ id, path: 'src/a.ts', name: 'a.ts (merge)' });
+
+    useStore.getState().closeTab(id);
+
+    expect(Object.keys(useStore.getState().mergeDocs)).toEqual(['merge:/repo:src/b.ts']);
+  });
+
+  it('closeTab on a review: id drops its review session', () => {
+    const id = 'review:/repo:worktree';
+    const session = {
+      source: { kind: 'worktree' as const, repoPath: '/repo' },
+      files: [],
+      loading: false,
+      error: null,
+    };
+    useStore.setState({ reviewSessions: { [id]: session, 'review:/other:worktree': session } });
+    useStore.getState().openTab({ id, path: '/repo', name: 'Review: repo' });
+
+    useStore.getState().closeTab(id);
+
+    expect(Object.keys(useStore.getState().reviewSessions)).toEqual(['review:/other:worktree']);
+  });
+
   it('closeAllTabs clears every stored diff payload', () => {
     useStore.getState().setDiffTab('diff:unstaged:src/a.ts', sample);
     useStore.getState().setDiffTab('diff:unstaged:src/b.ts', { ...sample, filePath: 'src/b.ts' });
