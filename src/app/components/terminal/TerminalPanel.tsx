@@ -5,6 +5,7 @@ import type { AgentInfo } from '@/lib/tauri/agents';
 import { sendToAgent } from '@/lib/tauri/agents';
 import { XtermTerminal } from './XtermTerminal';
 import { useNow } from '@/lib/hooks/useNow';
+import { useStore } from '@/lib/store';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
@@ -42,11 +43,15 @@ export function TerminalPanel({
 }: TerminalPanelProps) {
   const [activeTab, setActiveTab] = useState<TerminalTabId>('terminal');
 
-  // Synchronize activeTab with selectedAgentId
+  // Synchronize activeTab with selectedAgentId — unless the terminals are
+  // detached. A tab that becomes active fits its terminal and takes the PTY
+  // size with it, which would shrink the same agent's pane in the agent
+  // window to the width of this panel.
+  const agentWindowOpen = useStore((s) => s.agentWindowOpen);
   const [prevAgentId, setPrevAgentId] = useState(selectedAgentId);
   if (selectedAgentId !== prevAgentId) {
     setPrevAgentId(selectedAgentId);
-    if (selectedAgentId) {
+    if (selectedAgentId && !agentWindowOpen) {
       setActiveTab(selectedAgentId);
     }
   }

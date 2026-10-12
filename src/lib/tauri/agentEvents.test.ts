@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import {
   onAgentOutput,
+  onAgentPtyResized,
   onAgentStatus,
   type AgentOutputEvent,
   type AgentStatusEvent,
@@ -39,6 +40,7 @@ describe('agentEvents', () => {
         stream: 'stdout',
         line: 'hello world',
         timestamp: 1700000000000,
+        endOffset: 11,
       };
 
       mockListen.mockImplementation(
@@ -119,6 +121,30 @@ describe('agentEvents', () => {
 
       unsubscribe();
       expect(mockUnlisten).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('onAgentPtyResized', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockListen.mockResolvedValue(vi.fn());
+  });
+
+  it('listens under the name Rust emits and passes the payload on', async () => {
+    const callback = vi.fn();
+    mockListen.mockImplementation(
+      (_eventName: string, handler: (event: { payload: unknown }) => void) => {
+        handler({ payload: { agentId: 'agent-1', rows: 50, cols: 160 } });
+        return Promise.resolve(vi.fn());
+      }
+    );
+
+    onAgentPtyResized(callback);
+
+    await vi.waitFor(() => {
+      expect(mockListen).toHaveBeenCalledWith('agent-pty-resized', expect.any(Function));
+      expect(callback).toHaveBeenCalledWith({ agentId: 'agent-1', rows: 50, cols: 160 });
     });
   });
 });

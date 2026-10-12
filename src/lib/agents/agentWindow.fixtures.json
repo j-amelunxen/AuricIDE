@@ -1,0 +1,214 @@
+{
+  "_comment": [
+    "The single source of truth for the detached agent window (docs/design-agent-window.md).",
+    "Rust reads it via include_str! (src-tauri/src/agent_window.rs and the modules that emit the",
+    "events below); src/lib/agents/agentWindow.contract.ts validates every message that crosses a",
+    "window boundary against the same shapes. Add a case here before changing either side."
+  ],
+  "windows": {
+    "main": "main",
+    "agents": "agents",
+    "agentsRoute": "/agents"
+  },
+  "commands": {
+    "open": "open_agent_window",
+    "focus": "focus_agent_window",
+    "focusMain": "focus_main_window"
+  },
+  "rustEvents": {
+    "_comment": "Emitted by Rust as global broadcasts; both windows listen.",
+    "agentOutput": "agent-output",
+    "ptyResized": "agent-pty-resized",
+    "windowState": "agent-window-state"
+  },
+  "hostEvents": {
+    "_comment": "Main window -> agent window.",
+    "hostReady": "agent-window:host-ready",
+    "welcome": "agent-window:welcome",
+    "roster": "agent-window:roster",
+    "snapshot": "agent-window:snapshot",
+    "show": "agent-window:show"
+  },
+  "clientEvents": {
+    "_comment": "Agent window -> main window.",
+    "hello": "agent-window:hello",
+    "snapshotRequest": "agent-window:snapshot-request",
+    "action": "agent-window:action"
+  },
+  "defaultPtySize": { "rows": 24, "cols": 80 },
+  "rosterThrottleMs": 250,
+  "snapshotTimeoutMs": 5000,
+  "messages": {
+    "agentOutput": [
+      {
+        "name": "first batch of a run starts at offset 0",
+        "raw": {
+          "agentId": "agent-1",
+          "stream": "stdout",
+          "line": "hello\r\n",
+          "timestamp": 1760000000000,
+          "repoPath": "/work/project",
+          "endOffset": 7
+        }
+      },
+      {
+        "name": "offsets count UTF-8 bytes, not characters",
+        "raw": {
+          "agentId": "agent-1",
+          "stream": "stdout",
+          "line": "✓ ok",
+          "timestamp": 1760000000100,
+          "repoPath": null,
+          "endOffset": 13
+        }
+      }
+    ],
+    "ptyResized": [
+      {
+        "name": "a view fitted the pty",
+        "raw": { "agentId": "agent-1", "rows": 50, "cols": 160 }
+      }
+    ],
+    "windowState": [
+      { "name": "opened", "raw": { "open": true } },
+      { "name": "closed", "raw": { "open": false } }
+    ],
+    "welcome": [
+      {
+        "name": "one agent, single terminal",
+        "raw": {
+          "agents": [
+            {
+              "id": "agent-1",
+              "name": "Fix the parser",
+              "status": "running",
+              "model": "model-a",
+              "provider": "provider-a",
+              "startedAt": 1760000000000
+            }
+          ],
+          "errorDigests": {},
+          "activeAgentId": "agent-1",
+          "gridCells": null
+        }
+      },
+      {
+        "name": "split grid handed over, no agent yet active",
+        "raw": {
+          "agents": [],
+          "errorDigests": {},
+          "activeAgentId": null,
+          "gridCells": ["agent-1", "agent-2", "agent-1", "agent-2"]
+        }
+      }
+    ],
+    "roster": [
+      {
+        "name": "a failed agent carries its digest",
+        "raw": {
+          "agents": [
+            {
+              "id": "agent-2",
+              "name": "Run the suite",
+              "status": "error",
+              "model": "model-a",
+              "provider": "provider-a",
+              "startedAt": 1760000000000,
+              "finishedAt": 1760000005000,
+              "awaitingInput": false
+            }
+          ],
+          "errorDigests": { "agent-2": "exit code 1: suite failed" }
+        }
+      }
+    ],
+    "snapshotRequest": [{ "name": "by agent id", "raw": { "agentId": "agent-1" } }],
+    "snapshot": [
+      {
+        "name": "screen up to an offset",
+        "raw": {
+          "agentId": "agent-1",
+          "data": "\u001b[1mhello\u001b[0m",
+          "rows": 50,
+          "cols": 160,
+          "endOffset": 4096
+        }
+      },
+      {
+        "name": "an agent that never printed",
+        "raw": { "agentId": "agent-3", "data": "", "rows": 24, "cols": 80, "endOffset": 0 }
+      }
+    ],
+    "show": [{ "name": "bring an agent up", "raw": { "agentId": "agent-1" } }],
+    "action": [
+      { "name": "stop a running agent", "raw": { "kind": "kill", "agentId": "agent-1" } },
+      { "name": "clear a stopped agent", "raw": { "kind": "dismiss", "agentId": "agent-2" } },
+      {
+        "name": "save the visible screen",
+        "raw": { "kind": "save-scratch", "agentName": "Fix the parser", "screen": "$ ls\nsrc\n" }
+      },
+      {
+        "name": "dock back with the grid",
+        "raw": {
+          "kind": "dock",
+          "activeAgentId": "agent-1",
+          "gridCells": ["agent-1", "agent-2", "agent-1", "agent-2"]
+        }
+      },
+      {
+        "name": "dock back with nothing shown",
+        "raw": { "kind": "dock", "activeAgentId": null, "gridCells": null }
+      }
+    ]
+  },
+  "invalidMessages": [
+    {
+      "name": "output without an offset",
+      "message": "agentOutput",
+      "raw": { "agentId": "agent-1", "stream": "stdout", "line": "x", "timestamp": 1 }
+    },
+    {
+      "name": "negative offset",
+      "message": "snapshot",
+      "raw": { "agentId": "agent-1", "data": "", "rows": 24, "cols": 80, "endOffset": -1 }
+    },
+    {
+      "name": "zero-sized pty",
+      "message": "ptyResized",
+      "raw": { "agentId": "agent-1", "rows": 0, "cols": 80 }
+    },
+    {
+      "name": "grid with three cells",
+      "message": "welcome",
+      "raw": {
+        "agents": [],
+        "errorDigests": {},
+        "activeAgentId": null,
+        "gridCells": ["a", "b", "c"]
+      }
+    },
+    {
+      "name": "unknown action",
+      "message": "action",
+      "raw": { "kind": "spawn", "agentId": "agent-1" }
+    },
+    {
+      "name": "kill without an agent",
+      "message": "action",
+      "raw": { "kind": "kill" }
+    },
+    {
+      "name": "empty agent id",
+      "message": "snapshotRequest",
+      "raw": { "agentId": "" }
+    },
+    {
+      "name": "roster entry without a status",
+      "message": "roster",
+      "raw": {
+        "agents": [{ "id": "agent-1", "name": "x", "model": "m", "provider": "p", "startedAt": 1 }],
+        "errorDigests": {}
+      }
+    }
+  ]
+}

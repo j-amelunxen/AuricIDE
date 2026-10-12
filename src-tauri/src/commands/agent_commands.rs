@@ -1,4 +1,6 @@
-use super::terminal_commands::{TerminalSession, TerminalState};
+use super::terminal_commands::{
+    TerminalSession, TerminalState, DEFAULT_PTY_COLS, DEFAULT_PTY_ROWS,
+};
 use crate::agent_persistence::AgentPersistenceState;
 use crate::agents::{self, AgentConfig, AgentInfo, AgentManagerState};
 use crate::memory_report;
@@ -75,6 +77,8 @@ pub async fn spawn_agent_with_session(
     let session = Arc::new(AsyncMutex::new(TerminalSession {
         writer: Some(writer),
         master: Some(master),
+        rows: DEFAULT_PTY_ROWS,
+        cols: DEFAULT_PTY_COLS,
     }));
 
     {

@@ -4,7 +4,7 @@ import { useCallback, useMemo } from 'react';
 import { useStore } from '@/lib/store';
 import { openFolderDialog, createDirectory, writeFile } from '@/lib/tauri/fs';
 import { openExternalUrl } from '@/lib/tauri/opener';
-import { type AgentConfig } from '@/lib/tauri/agents';
+import { type AgentConfig, type AgentInfo } from '@/lib/tauri/agents';
 import { persistQuietly } from '@/lib/store/persistFeedback';
 import { isClosedTicketStatus } from '@/lib/pm/enums';
 import { defaultCommands } from '@/lib/commands/registry';
@@ -19,6 +19,7 @@ import {
   scaffoldProjectFiles,
   type NewProjectOptions,
 } from '@/lib/project/newProject';
+import { showAgentInWindow } from '@/lib/agents/agentWindowHost';
 import { repoForGlobalGitAction } from './useGitActionHandlers';
 import type { IDEState } from './liveIDEState';
 
@@ -105,27 +106,47 @@ export function useAgentAndCommandHandlers({
 
   const handleKillAgent = useCallback((id: string) => state.killRunningAgent(id), [state]);
 
-  const handleSelectAgent = useCallback(
-    (id: string | null) => {
-      state.selectAgent(id);
-      if (id) {
-        const agent = state.agents.find((a) => a.id === id);
-        if (agent) state.setFullscreenAgent(agent);
+  /**
+   * Detached means one place: with the agent window open it comes forward on
+   * this agent and no second set of terminals opens here. If that window
+   * turns out to be gone, the modal opens as if it had never been there.
+   */
+  const showAgentTerminal = useCallback(
+    (agent: AgentInfo) => {
+      if (!useStore.getState().agentWindowOpen) {
+        state.setFullscreenAgent(agent);
+        return;
       }
+      void showAgentInWindow(agent.id)
+        .catch(() => false)
+        .then((shown) => {
+          if (!shown) state.setFullscreenAgent(agent);
+        });
     },
     [state]
+  );
+
+  const handleSelectAgent = useCallback(
+    (id: string | null) => {
+      // Selecting also marks a finished agent as reviewed, wherever it is shown.
+      state.selectAgent(id);
+      if (!id) return;
+      const agent = state.agents.find((a) => a.id === id);
+      if (agent) showAgentTerminal(agent);
+    },
+    [state, showAgentTerminal]
   );
 
   const handleResumeInterrupted = useCallback(
     async (id: string) => {
       try {
         const agent = await state.resumeInterruptedAgent(id);
-        state.setFullscreenAgent(agent);
+        showAgentTerminal(agent);
       } catch (err) {
         console.error('Failed to resume interrupted agent', err);
       }
     },
-    [state]
+    [state, showAgentTerminal]
   );
 
   const handleOpenTerminalHere = useCallback(

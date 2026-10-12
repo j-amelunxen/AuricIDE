@@ -43,6 +43,7 @@ use crate::agent_usage::capture::{
 };
 use crate::agent_usage::holdback::ResultHoldback;
 use crate::agent_usage::record::Outcome;
+use crate::commands::terminal_commands::{DEFAULT_PTY_COLS, DEFAULT_PTY_ROWS};
 use crate::providers::ProviderRegistryState;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::Read;
@@ -307,8 +308,8 @@ pub async fn spawn_agent_impl(
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
-            rows: 24,
-            cols: 80,
+            rows: DEFAULT_PTY_ROWS,
+            cols: DEFAULT_PTY_COLS,
             pixel_width: 0,
             pixel_height: 0,
         })
@@ -492,6 +493,9 @@ pub async fn spawn_agent_impl(
     let sniffing_usage = usage.clone().filter(UsageCapture::sniffs_output);
 
     tauri::async_runtime::spawn(async move {
+        // One counter for everything this agent emits, the error line below
+        // included.
+        let mut emitted = OutputOffset::default();
         let has_produced_output =
             pump_agent_output(&mut rx, OUTPUT_BATCH_INTERVAL, holdback.as_mut(), |data| {
                 if let Some(capture) = &sniffing_usage {
@@ -500,7 +504,8 @@ pub async fn spawn_agent_impl(
                 if let Some(buffers) = &output_buffers {
                     buffers.append(&id_clone, &data);
                 }
-                emit_agent_output(&app_clone, &id_clone, &rp_clone, data)
+                let end_offset = emitted.advance(&data);
+                emit_agent_output(&app_clone, &id_clone, &rp_clone, data, end_offset)
             })
             .await;
         let cli_result = holdback.as_mut().and_then(ResultHoldback::take_result);
@@ -514,6 +519,7 @@ pub async fn spawn_agent_impl(
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
+            let end_offset = emitted.advance(&error_msg);
 
             let _ = app_clone.emit(
                 "agent-output",
@@ -523,6 +529,7 @@ pub async fn spawn_agent_impl(
                     line: error_msg,
                     timestamp,
                     repo_path: rp_clone.clone(),
+                    end_offset,
                 },
             );
         }
@@ -758,6 +765,7 @@ pub async fn emit_agent_output(
     id: &str,
     repo_path: &Option<String>,
     data: String,
+    end_offset: u64,
 ) {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -772,6 +780,7 @@ pub async fn emit_agent_output(
             line: data,
             timestamp,
             repo_path: repo_path.clone(),
+            end_offset,
         },
     );
 }

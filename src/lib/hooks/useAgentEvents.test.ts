@@ -9,7 +9,12 @@ vi.mock('../tauri/agentEvents', () => ({
   onAgentStatus: (...args: unknown[]) => mockOnAgentStatus(...args),
 }));
 
-import { useAgentEvents, useBatchedAgentEvents } from './useAgentEvents';
+import {
+  agentOutputOffset,
+  flushAgentOutput,
+  useAgentEvents,
+  useBatchedAgentEvents,
+} from './useAgentEvents';
 
 describe('useAgentEvents', () => {
   const mockUnsubOutput = vi.fn();
@@ -127,5 +132,51 @@ describe('useBatchedAgentEvents – going hidden', () => {
     document.dispatchEvent(new Event('visibilitychange'));
 
     expect(onBatch).toHaveBeenCalledWith([['a', ['pending'], [expect.any(Number)]]]);
+  });
+});
+
+describe('useBatchedAgentEvents – what a snapshot for the agent window needs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOnAgentOutput.mockReturnValue(vi.fn());
+    mockOnAgentStatus.mockReturnValue(vi.fn());
+  });
+
+  const output = () => mockOnAgentOutput.mock.calls[0][0] as (e: unknown) => void;
+
+  it('knows no offset for an agent it never heard from', () => {
+    expect(agentOutputOffset('never-seen')).toBe(0);
+  });
+
+  it('records the newest offset per agent', () => {
+    renderHook(() => useBatchedAgentEvents(vi.fn(), vi.fn()));
+    output()({ agentId: 'o1', stream: 'stdout', line: 'hello', timestamp: 0, endOffset: 5 });
+    output()({ agentId: 'o2', stream: 'stdout', line: 'x', timestamp: 0, endOffset: 1 });
+    output()({ agentId: 'o1', stream: 'stdout', line: ' you', timestamp: 0, endOffset: 9 });
+
+    expect(agentOutputOffset('o1')).toBe(9);
+    expect(agentOutputOffset('o2')).toBe(1);
+  });
+
+  it('hands pending output over at once on flushAgentOutput, up to the recorded offset', () => {
+    const onBatch = vi.fn();
+    renderHook(() => useBatchedAgentEvents(onBatch, vi.fn()));
+    output()({ agentId: 'f1', stream: 'stdout', line: 'pending', timestamp: 0, endOffset: 7 });
+    expect(onBatch).not.toHaveBeenCalled();
+
+    flushAgentOutput();
+
+    expect(onBatch).toHaveBeenCalledWith([['f1', ['pending'], [expect.any(Number)]]]);
+    expect(agentOutputOffset('f1')).toBe(7);
+  });
+
+  it('flushes nothing once the listener is gone', () => {
+    const onBatch = vi.fn();
+    const { unmount } = renderHook(() => useBatchedAgentEvents(onBatch, vi.fn()));
+    unmount();
+    onBatch.mockClear();
+
+    expect(() => flushAgentOutput()).not.toThrow();
+    expect(onBatch).not.toHaveBeenCalled();
   });
 });

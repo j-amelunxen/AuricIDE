@@ -418,6 +418,46 @@ it first), the reasoning ADR 0003.
   `node scripts/probe-agent-control.mjs`, and
   `cargo test control_socket_against_running_app -- --ignored --nocapture`.
 
+### The terminals in a window of their own
+
+The terminal modal can be detached into a second OS window (label `agents`,
+route `/agents`) and docked back, so the fleet can sit on a second monitor. A
+second webview is a second JavaScript heap: its own store, its own terminal
+mirrors, and none of the raw output from before it opened. The contract is
+`docs/design-agent-window.md`, the machine-checkable half
+`src/lib/agents/agentWindow.fixtures.json` (read by Rust and TS — change it
+first).
+
+- **The main window stays the truth.** The agent window gets the agent list
+  and the screen so far from it (`agentWindowHost.ts` → `agentWindowClient.ts`),
+  live output straight from Rust's `agent-output` broadcast, and sends typing
+  and resizes straight to Rust. Stop, clear, the merge offer and saving a
+  scratch go back to the main window as an action, because they touch tickets,
+  goals, worktrees and the project folder.
+- **One writer per field.** In the agent window only the roster writes
+  `agents`. It derives no `awaitingInput` or status of its own — it lacks the
+  output from before it opened and would classify the same agent differently.
+  Its log path is `appendAgentTerminalChunks`, never `appendAgentLogBatch`.
+- **Nothing twice, nothing lost at the seam.** Rust stamps every
+  `agent-output` batch with `endOffset`. A snapshot names the offset it
+  reaches; the client buffers batches until it has one and drops everything at
+  or below that offset (`agentWindowGate.ts`). The host flushes its output
+  batcher before it serializes, or the offset would claim more than the screen
+  holds.
+- **Detached means one place.** While the window is open the modal does not
+  open in the main window; selecting an agent there brings the agent window
+  forward on that agent.
+- **Closing a window ends no work.** Only the main window's `Destroyed` cleans
+  up agents, and it takes the agent window along. Before this, any window
+  closing booked every running agent as killed.
+- **Three things are scoped to `main` on purpose:** `ui_pong` (a healthy
+  second window must not hide a stalled main one), Cmd+W (closes the focused
+  agent window, never an editor tab from there), and the control bridge (a
+  second listener would carry out every spawn and kill twice).
+- **PTY geometry crosses the window boundary.** Rust emits `agent-pty-resized`
+  only on a real change; a size that arrived that way is never sent back as
+  `shell_resize`.
+
 ### The console feed reads like a group chat, on purpose
 
 The Agent Console's feed (`ActivityFeed.tsx`) interleaves every agent, and with

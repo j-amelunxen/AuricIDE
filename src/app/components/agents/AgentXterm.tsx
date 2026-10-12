@@ -182,8 +182,10 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
       // Another view (the bottom terminal preview) may take the PTY geometry
       // over. Adopt it and redraw from a fresh mirror snapshot — keeping a
       // screen laid out for the old width produces scrambled fragments.
-      const unsubPtyResize = onAgentPtyResize(agentId, ({ rows, cols }) => {
-        if (term.rows === rows && term.cols === cols) return;
+      // A seed is not about size: the mirror got its screen from another
+      // window after this view attached, so it redraws at the same geometry.
+      const unsubPtyResize = onAgentPtyResize(agentId, ({ rows, cols, seeded }) => {
+        if (!seeded && term.rows === rows && term.cols === cols) return;
         detachStream();
         term.resize(cols, rows);
         term.reset();
@@ -226,6 +228,21 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
         resizeObserver.observe(containerRef.current);
       }
 
+      // Another view of this agent — the bottom panel, or the other window —
+      // may have taken the PTY size while this one was not being looked at,
+      // and this container did not change, so nothing above would take it
+      // back. Coming back to the terminal does: a fit, and only when the size
+      // really is not the one this view would have.
+      const reclaimSize = () => {
+        try {
+          const fitted = fitAddon.proposeDimensions();
+          if (!fitted || (fitted.rows === term.rows && fitted.cols === term.cols)) return;
+          fitAddon.fit();
+        } catch {}
+      };
+      window.addEventListener('focus', reclaimSize);
+      host.addEventListener('focusin', reclaimSize);
+
       if (!disposed && autoFocusRef.current) term.focus();
 
       return () => {
@@ -236,6 +253,8 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
         detachFileDrop();
         clearTimeout(resizeTimer);
         resizeObserver.disconnect();
+        window.removeEventListener('focus', reclaimSize);
+        host.removeEventListener('focusin', reclaimSize);
         host.removeEventListener('contextmenu', handleContextMenu);
         window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
         if (termRef.current === term) {

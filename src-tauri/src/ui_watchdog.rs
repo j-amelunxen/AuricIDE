@@ -244,13 +244,48 @@ pub fn start(app: &tauri::AppHandle) {
     });
 }
 
+/// Whether this window is the one the watchdog watches. Only the main
+/// window is: a healthy agent window answering on time would otherwise hide a
+/// main window that has stopped answering, and its own long tasks would read
+/// as stalls of the editor.
+fn is_watched_window(window_label: &str) -> bool {
+    window_label == crate::agent_window::MAIN_WINDOW_LABEL
+}
+
+/// A pong as the tracker gets to see it: from any other window it is dropped.
+fn pong_from_window(
+    window_label: &str,
+    tracker: &mut StallTracker,
+    now_ms: u64,
+    visible: bool,
+) -> Option<StallEvent> {
+    if !is_watched_window(window_label) {
+        return None;
+    }
+    tracker.on_pong(now_ms, visible)
+}
+
+/// A frontend stall line as the log gets to see it: from any other window it
+/// is accepted and not written.
+fn stall_line_from_window(window_label: &str, path: &Path, line: &str) -> Result<(), String> {
+    if !is_watched_window(window_label) {
+        return Ok(());
+    }
+    if line.contains('\n') {
+        return Err("A stall record must be a single line".to_string());
+    }
+    append_line(path, line)
+}
+
 #[tauri::command]
-pub fn ui_pong(visible: bool, state: tauri::State<'_, UiWatchdogState>) {
-    let event = state
-        .tracker
-        .lock()
-        .ok()
-        .and_then(|mut tracker| tracker.on_pong(state.now_ms(), visible));
+pub fn ui_pong(
+    visible: bool,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, UiWatchdogState>,
+) {
+    let event = state.tracker.lock().ok().and_then(|mut tracker| {
+        pong_from_window(window.label(), &mut tracker, state.now_ms(), visible)
+    });
     if let (Some(event), Some(path)) = (event, state.log_path.clone()) {
         // Sampling runs `ps`; keep it off the IPC thread.
         std::thread::spawn(move || write_event(&path, &event));
@@ -261,20 +296,98 @@ pub fn ui_pong(visible: bool, state: tauri::State<'_, UiWatchdogState>) {
 #[tauri::command]
 pub fn record_ui_stall(
     line: String,
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, UiWatchdogState>,
 ) -> Result<(), String> {
     let Some(path) = &state.log_path else {
         return Ok(());
     };
-    if line.contains('\n') {
-        return Err("A stall record must be a single line".to_string());
-    }
-    append_line(path, &line)
+    stall_line_from_window(window.label(), path, &line)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MAIN: &str = crate::agent_window::MAIN_WINDOW_LABEL;
+    const AGENTS: &str = crate::agent_window::AGENT_WINDOW_LABEL;
+
+    #[test]
+    fn only_the_main_window_is_watched() {
+        assert!(is_watched_window(MAIN));
+        assert!(!is_watched_window(AGENTS));
+        assert!(!is_watched_window("something-else"));
+    }
+
+    #[test]
+    fn a_pong_from_the_agent_window_does_not_reach_the_tracker() {
+        let mut tracker = StallTracker::new();
+        assert_eq!(pong_from_window(MAIN, &mut tracker, 1_000, true), None);
+        assert_eq!(tracker.last_pong_ms, Some(1_000));
+
+        assert_eq!(pong_from_window(AGENTS, &mut tracker, 2_000, false), None);
+        assert_eq!(tracker.last_pong_ms, Some(1_000));
+        assert!(
+            tracker.visible,
+            "the agent window hiding is not the UI hiding"
+        );
+    }
+
+    #[test]
+    fn a_healthy_agent_window_does_not_end_a_stall_of_the_main_window() {
+        let mut tracker = tracker_with_pong_at(0);
+        // The main window has been silent for five seconds; the agent window
+        // answers on time throughout.
+        for second in 1..=5 {
+            assert_eq!(
+                pong_from_window(AGENTS, &mut tracker, second * 1_000, true),
+                None
+            );
+        }
+        let recovered = pong_from_window(MAIN, &mut tracker, 5_000, true);
+        assert!(
+            matches!(recovered, Some(StallEvent::Recovered { duration_ms, .. }) if duration_ms >= 4_000),
+            "{recovered:?}"
+        );
+    }
+
+    #[test]
+    fn a_stall_line_from_the_agent_window_is_not_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FREEZE_LOG);
+
+        assert_eq!(
+            stall_line_from_window(AGENTS, &path, "{\"from\":\"agents\"}"),
+            Ok(())
+        );
+        assert!(!path.exists());
+
+        assert_eq!(
+            stall_line_from_window(MAIN, &path, "{\"from\":\"main\"}"),
+            Ok(())
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"from\":\"main\"}\n"
+        );
+
+        assert_eq!(
+            stall_line_from_window(AGENTS, &path, "{\"from\":\"agents\"}"),
+            Ok(())
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"from\":\"main\"}\n"
+        );
+    }
+
+    #[test]
+    fn a_stall_line_from_the_main_window_must_still_be_one_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FREEZE_LOG);
+        assert!(stall_line_from_window(MAIN, &path, "a\nb").is_err());
+        assert!(!path.exists());
+    }
 
     fn tracker_with_pong_at(ms: u64) -> StallTracker {
         let mut tracker = StallTracker::new();

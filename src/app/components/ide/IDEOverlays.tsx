@@ -14,6 +14,7 @@ import { useStore } from '@/lib/store';
 import { ImportSpecDialog } from '@/app/components/agents/ImportSpecDialog';
 import { GenerateDiagramDialog } from '@/app/components/agents/GenerateDiagramDialog';
 import { AgentTerminalModal } from '@/app/components/agents/AgentTerminalModal';
+import { AgentWindowHostBridge } from '@/app/components/agents/AgentWindowHostBridge';
 import { LinkGraphModal } from '@/app/components/graph/LinkGraphModal';
 import { BlueprintsGallery } from '@/app/components/blueprints/BlueprintsGallery';
 import { AgentConsole } from '@/app/components/console/AgentConsole';
@@ -168,7 +169,11 @@ export function IDEOverlays({
   const goalsDraft = useStore((s) => s.goalsDraft);
   // The terminal modal only uses the list while an agent is open full-screen
   // (it renders nothing otherwise), so only then does this subscribe to it.
-  const activeAgents = useStore((s) => (fullscreenAgent ? s.agents : NO_AGENTS));
+  // Detached means one place: while the agent window is open the terminals
+  // live there, and the modal stays away whatever asks for it.
+  const agentWindowOpen = useStore((s) => s.agentWindowOpen);
+  const terminalAgent = agentWindowOpen ? null : fullscreenAgent;
+  const activeAgents = useStore((s) => (terminalAgent ? s.agents : NO_AGENTS));
   const recentCommandIds = useStore((s) => s.recentCommandIds);
   const promptHistory = useStore((s) => s.promptHistory);
   const loadPromptHistory = useStore((s) => s.loadPromptHistory);
@@ -243,8 +248,9 @@ export function IDEOverlays({
           console instead. */}
       <CommandCenter onRunCommand={handleCommandExecute} onOpenProject={handleOpenRecent} />
       <AgentConsole onOpenTerminal={handleSelectAgent} />
+      <AgentWindowHostBridge setFullscreenAgent={setFullscreenAgent} />
       <AgentTerminalModal
-        agent={fullscreenAgent}
+        agent={terminalAgent}
         agents={activeAgents}
         onSwitchAgent={setFullscreenAgent}
         onClose={() => setFullscreenAgent(null)}
