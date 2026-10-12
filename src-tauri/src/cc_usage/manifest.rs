@@ -320,6 +320,7 @@ mod tests {
             "claude-opus-5",
             "claude-sonnet-5-5",
             "claude-sonnet-5",
+            "claude-haiku-5-5",
             "claude-haiku-4-5",
         ] {
             let model = plugin
@@ -373,6 +374,20 @@ mod tests {
         assert_eq!(rate.output_per_m_tok, 10.0);
         assert!(sonnet.cache.is_none());
         assert!(sonnet.fast_rates.is_none());
+    }
+
+    #[test]
+    fn haiku_5_5_bills_at_the_short_prompt_list_price() {
+        // $0.10 / $0.50 for prompts up to 100k tokens; cache 1.25× / 2× / 0.1×
+        // are the shared multipliers. The over-100k tier ($0.50 / $2.50) is not
+        // modelled: the price list has no prompt-length dimension.
+        let plugin = built_in();
+        let haiku = plugin.model_for("claude-haiku-5-5").expect("haiku 5.5");
+        assert_eq!(haiku.label, "Haiku 5.5");
+        let rate = rate_on(&haiku.rates, "2026-10-12").expect("rate");
+        assert_eq!(rate.input_per_m_tok, 0.1);
+        assert_eq!(rate.output_per_m_tok, 0.5);
+        assert!(haiku.cache.is_none());
     }
 
     #[test]
