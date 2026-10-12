@@ -99,6 +99,17 @@
         "rates": [{ "inputPerMTok": 3.0, "outputPerMTok": 15.0 }]
       },
       {
+        "id": "claude-haiku-5-5",
+        "label": "Haiku 5.5",
+        "rates": [
+          {
+            "inputPerMTok": 0.1,
+            "outputPerMTok": 0.5,
+            "note": "Prompts up to 100k tokens. Over 100k Anthropic bills $0.50 / $2.50, not modelled here."
+          }
+        ]
+      },
+      {
         "id": "claude-haiku-4-5",
         "label": "Haiku 4.5",
         "aliases": ["haiku", "claude-haiku-4-5-20251001"],
