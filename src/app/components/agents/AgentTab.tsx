@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -166,6 +166,11 @@ export interface AgentTabProps {
    * terminal, so a background tab must not offer this.
    */
   onSaveScreen?: () => void;
+  /**
+   * The primary button went down on the tab — the start of a possible drag
+   * into the terminal area. Whether it becomes one is the caller's call.
+   */
+  onDragStart?: (event: MouseEvent<HTMLElement>) => void;
 }
 
 const TAB_ACTION =
@@ -228,7 +233,15 @@ function AgentTabActions({
   );
 }
 
-export function AgentTab({ agent, isActive, now, onSelect, onEnd, onSaveScreen }: AgentTabProps) {
+export function AgentTab({
+  agent,
+  isActive,
+  now,
+  onSelect,
+  onEnd,
+  onSaveScreen,
+  onDragStart,
+}: AgentTabProps) {
   const { shellRef, placement, open, close, closeNow, hold } = usePromptPreview();
 
   const state = agentState(agent, now);
@@ -263,6 +276,11 @@ export function AgentTab({ agent, isActive, now, onSelect, onEnd, onSaveScreen }
         onBlur={closeNow}
         onMouseDown={(e) => {
           if (e.button === 1) e.preventDefault();
+          if (e.button === 0 && onDragStart) {
+            // A card hanging off the tab would ride along over the drop zones.
+            closeNow();
+            onDragStart(e);
+          }
         }}
         onAuxClick={(e) => {
           if (e.button === 1) {

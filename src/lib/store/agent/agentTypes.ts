@@ -1,6 +1,7 @@
 import type { AgentColor } from '@/lib/agents/colors';
 import type { HeartbeatBucket } from '@/lib/agents/events/heartbeat';
 import type { StreamLine } from '@/lib/agents/events/streamCapture';
+import type { GridCells } from '@/lib/agents/terminalGrid';
 import type { AgentEvent } from '@/lib/agents/events/types';
 import type { PersistedAgentEvent } from '@/lib/tauri/agentLog';
 import type { AgentConfig, AgentInfo, InterruptedAgent } from '@/lib/tauri/agents';
@@ -103,6 +104,13 @@ export interface AgentSlice {
    */
   minimizedAgentIds: string[];
   /**
+   * Which agents the terminal shows side by side, one id per quadrant
+   * (`terminalGrid.ts`). Null is the plain single terminal. View state like
+   * parking; ids of agents that are gone are dropped where it is read
+   * (`reconcileGrid`), so nothing has to clear it.
+   */
+  terminalGridCells: GridCells | null;
+  /**
    * Repo groups folded shut in the agents panel. Keyed by repo path (or
    * 'Unknown'), session-scoped like the parked list.
    */
@@ -149,6 +157,7 @@ export interface AgentSlice {
   markLaneSeen: (agentId: string, at: number) => void;
   toggleAgentRepoCollapsed: (repoPath: string) => void;
   setAgentMinimized: (agentId: string, minimized: boolean) => void;
+  setTerminalGridCells: (cells: GridCells | null) => void;
   loadPromptHistory: (projectPath: string | null) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   /** Re-spawns a failed agent with its original config and dismisses the failure. */

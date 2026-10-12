@@ -20,21 +20,35 @@ import { visibleTerminalText, type ViewportTerminal } from '@/lib/terminal/viewp
 export interface AgentXtermProps {
   agentId: string;
   onSelectionSpawn?: (selection: string) => void;
+  /**
+   * Take the keyboard once the terminal is up. Off for the panes of a split
+   * view that are not the active one — several terminals open at the same
+   * moment, and the last to finish must not be the one that ends up typing.
+   */
+  autoFocus?: boolean;
 }
 
 export interface AgentXtermHandle {
   /** Null until the terminal exists. Empty when the screen has no text. */
   visibleText: () => string | null;
+  /** Hands the keyboard to this terminal. Does nothing until it exists. */
+  focus: () => void;
 }
 
 export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function AgentXterm(
-  { agentId, onSelectionSpawn },
+  { agentId, onSelectionSpawn, autoFocus = true },
   ref
 ) {
+  const autoFocusRef = useRef(autoFocus);
+  useEffect(() => {
+    autoFocusRef.current = autoFocus;
+  }, [autoFocus]);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<ViewportTerminal | null>(null);
+  const focusRef = useRef<(() => void) | null>(null);
   useImperativeHandle(ref, () => ({
     visibleText: () => (termRef.current ? visibleTerminalText(termRef.current) : null),
+    focus: () => focusRef.current?.(),
   }));
   const onSelectionSpawnRef = useRef(onSelectionSpawn);
   useEffect(() => {
@@ -109,6 +123,7 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
         fitAddon.fit();
       } catch {}
       termRef.current = term;
+      focusRef.current = () => term.focus();
 
       // Right-click: always show a clipboard menu. Spawn stays a bonus
       // when there is a selection — never the only entry, and never gated
@@ -211,7 +226,7 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
         resizeObserver.observe(containerRef.current);
       }
 
-      if (!disposed) term.focus();
+      if (!disposed && autoFocusRef.current) term.focus();
 
       return () => {
         disposed = true;
@@ -223,7 +238,10 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
         resizeObserver.disconnect();
         host.removeEventListener('contextmenu', handleContextMenu);
         window.removeEventListener(APP_CONFIG_CHANGED_EVENT, onConfigChange);
-        if (termRef.current === term) termRef.current = null;
+        if (termRef.current === term) {
+          termRef.current = null;
+          focusRef.current = null;
+        }
         term.dispose();
       };
     };

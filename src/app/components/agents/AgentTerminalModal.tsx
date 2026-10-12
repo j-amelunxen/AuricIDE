@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { writeFile } from '@/lib/tauri/fs';
 import { saveTerminalScreen } from '@/lib/scratch/fromTerminal';
@@ -13,13 +13,24 @@ import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel } from '@/lib/agents/state';
 import { groupAgentTabs } from '@/lib/agents/tabGroups';
+import {
+  isSplit,
+  placeAgent,
+  reconcileGrid,
+  removeAgent,
+  showAgent,
+  type DropZone,
+  type GridCells,
+} from '@/lib/agents/terminalGrid';
 import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
 import { AgentTab } from './AgentTab';
-import { AgentXterm, type AgentXtermHandle } from './AgentXterm';
+import type { AgentXtermHandle } from './AgentXterm';
+import { TerminalGrid } from './TerminalGrid';
+import { useTabGridDrag } from './useTabGridDrag';
 
 export { AgentXterm } from './AgentXterm';
 
@@ -143,6 +154,57 @@ function neighborAfterClose(agents: AgentInfo[], closingId: string): AgentInfo |
   return remaining[Math.min(idx, remaining.length - 1)];
 }
 
+/**
+ * Which agents the terminal area shows, and the moves that change it. The
+ * stored grid is read against the live fleet every time, so an agent that
+ * ended simply gives its pane up.
+ */
+function useTerminalGrid(
+  agent: AgentInfo,
+  agents: AgentInfo[] | undefined,
+  onSwitchAgent: ((agent: AgentInfo) => void) | undefined
+) {
+  const stored = useStore((s) => s.terminalGridCells);
+  const setStored = useStore((s) => s.setTerminalGridCells);
+  const cells = useMemo(
+    () =>
+      reconcileGrid(
+        stored,
+        (agents ?? []).map((a) => a.id),
+        agent.id
+      ),
+    [stored, agents, agent.id]
+  );
+
+  const apply = useCallback(
+    (next: GridCells | null, activeId: string) => {
+      setStored(next && isSplit(next) ? next : null);
+      const target = activeId === agent.id ? null : agents?.find((a) => a.id === activeId);
+      if (target) onSwitchAgent?.(target);
+    },
+    [agent.id, agents, onSwitchAgent, setStored]
+  );
+
+  /** A tab was chosen: an agent already on screen gets the focus, any other takes the focused pane. */
+  const show = useCallback(
+    (agentId: string) => apply(showAgent(cells, agent.id, agentId), agentId),
+    [agent.id, apply, cells]
+  );
+  const place = useCallback(
+    (agentId: string, zone: DropZone) => apply(placeAgent(cells, agentId, zone), agentId),
+    [apply, cells]
+  );
+  const remove = useCallback(
+    (agentId: string) => {
+      const next = removeAgent(cells, agentId);
+      apply(next, next && agentId === agent.id ? next[0] : agent.id);
+    },
+    [agent.id, apply, cells]
+  );
+
+  return { cells, show, place, remove };
+}
+
 function AgentTerminalDialog({
   agent,
   agents,
@@ -153,7 +215,19 @@ function AgentTerminalDialog({
   onDismiss,
 }: AgentTerminalDialogProps) {
   const dialogRef = useDialogA11y<HTMLDivElement>();
-  const screenRef = useRef<AgentXtermHandle>(null);
+  const terminals = useRef(new Map<string, AgentXtermHandle>());
+  const registerTerminal = useCallback((agentId: string, handle: AgentXtermHandle | null) => {
+    if (handle) terminals.current.set(agentId, handle);
+    else terminals.current.delete(agentId);
+  }, []);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const grid = useTerminalGrid(agent, agents, onSwitchAgent);
+  const tabDrag = useTabGridDrag(areaRef, grid.place);
+  // A pane that is already open does not remount when it becomes the active
+  // one, so the keyboard has to be handed over.
+  useEffect(() => {
+    terminals.current.get(agent.id)?.focus();
+  }, [agent.id]);
   const savingScreen = useRef(false);
   const { confirm, confirmDialog } = useConfirm();
   const offerMerge = useWorktreeMergeOffer(confirm);
@@ -199,12 +273,13 @@ function AgentTerminalDialog({
   const saveVisibleScreen = useCallback(() => {
     if (savingScreen.current) return;
     savingScreen.current = true;
-    void captureAgentScreen(agent.name, () => screenRef.current?.visibleText() ?? null).finally(
-      () => {
-        savingScreen.current = false;
-      }
-    );
-  }, [agent.name]);
+    void captureAgentScreen(
+      agent.name,
+      () => terminals.current.get(agent.id)?.visibleText() ?? null
+    ).finally(() => {
+      savingScreen.current = false;
+    });
+  }, [agent.id, agent.name]);
 
   const now = useNow();
   const state = agentState(agent, now);
@@ -346,8 +421,9 @@ function AgentTerminalDialog({
                       isActive={isActive}
                       now={now}
                       onSelect={() => {
-                        if (!isActive) onSwitchAgent?.(a);
+                        if (!tabDrag.consumeClick()) grid.show(a.id);
                       }}
+                      onDragStart={(event) => tabDrag.begin(a.id, event)}
                       onEnd={canEnd ? () => void closeTab(a) : undefined}
                       onSaveScreen={isActive ? saveVisibleScreen : undefined}
                     />
@@ -358,10 +434,18 @@ function AgentTerminalDialog({
           </div>
         )}
 
-        {/* xterm.js Terminal */}
-        <div className="flex-1 min-h-0 p-2">
-          <AgentXterm ref={screenRef} agentId={agent.id} onSelectionSpawn={onSelectionSpawn} />
-        </div>
+        {/* xterm.js terminals — one, or up to four side by side */}
+        <TerminalGrid
+          cells={grid.cells}
+          activeId={agent.id}
+          agents={agents ?? [agent]}
+          areaRef={areaRef}
+          drag={tabDrag.drag}
+          onFocusPane={grid.show}
+          onRemovePane={grid.remove}
+          registerTerminal={registerTerminal}
+          onSelectionSpawn={onSelectionSpawn}
+        />
       </div>
       {confirmDialog}
     </div>
