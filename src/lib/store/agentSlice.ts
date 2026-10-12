@@ -52,6 +52,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   selectedAgentId: null,
   interruptedAgents: [],
   minimizedAgentIds: [],
+  terminalGridCells: null,
   collapsedAgentRepos: [],
   agentColors: {},
   reviewedAgentIds: [],
@@ -97,6 +98,8 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
       minimizedAgentIds: minimized ? [...current, agentId] : current.filter((id) => id !== agentId),
     });
   },
+
+  setTerminalGridCells: (cells) => set({ terminalGridCells: cells }),
 
   loadPromptHistory: async (projectPath) => {
     if (!projectPath) {
