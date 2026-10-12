@@ -6,7 +6,8 @@ import { selectBlameHunks } from '@/lib/store/gitSlice';
 import { repoForPath, relativeToRepo } from '@/lib/git/repos';
 import { createGitGutter, diffToLineChanges } from '@/lib/editor/gitGutterExtension';
 import { createBlameGutter } from '@/lib/editor/blameGutterExtension';
-import { diffTabId, isDiffTabId } from '@/lib/git/diffTabId';
+import { diffTabId } from '@/lib/git/diffTabId';
+import { isVirtualTabId } from '@/lib/git/virtualTabId';
 import { createStatusSignatureSelector } from '@/lib/git/statusSignature';
 
 const NO_STATUSES: never[] = [];
@@ -77,14 +78,14 @@ export function useEditorGitExtensions({
 
   const blameVisible = useStore((s) => s.blameVisible);
   const blameHunks = useStore((s) => selectBlameHunks(s, filePath));
-  const isFileTab = !!filePath && !isDiffTabId(filePath);
+  const isFileTab = !!filePath && !isVirtualTabId(filePath);
   const repoForFile = useStore((s) => (filePath ? repoForPath(filePath, s.repos) : null));
   const showBlameToggle = !!repoForFile && isFileTab;
 
   const openBlameHunk = useCallback(
     async (hunk: { oid: string; summary: string }) => {
       const store = useStore.getState();
-      if (!filePath || isDiffTabId(filePath)) return;
+      if (!filePath || isVirtualTabId(filePath)) return;
       const repo = repoForPath(filePath, store.repos);
       if (!repo) return;
       const relativePath = relativeToRepo(filePath, repo.path);
@@ -110,7 +111,7 @@ export function useEditorGitExtensions({
     if (!view) return;
     const repos = useStore.getState().repos;
     const repo = filePath ? repoForPath(filePath, repos) : null;
-    if (!blameVisible || !repo || !filePath || isDiffTabId(filePath)) {
+    if (!blameVisible || !repo || !filePath || isVirtualTabId(filePath)) {
       view.dispatch({ effects: compartments.current.blameGutter.reconfigure([]) });
       return;
     }
@@ -122,7 +123,7 @@ export function useEditorGitExtensions({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    if (!blameVisible || !filePath || isDiffTabId(filePath)) {
+    if (!blameVisible || !filePath || isVirtualTabId(filePath)) {
       view.dispatch({ effects: compartments.current.blameGutter.reconfigure([]) });
       return;
     }

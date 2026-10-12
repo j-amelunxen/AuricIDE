@@ -194,6 +194,8 @@ pub(crate) fn commit_in(repo_path: &str, file: &str, contents: &str, message: &s
 mod diff_tests;
 mod discovery_tests;
 mod log_tests;
+mod merge_tests;
+mod operation_step_tests;
 mod staging_tests;
 mod status_tests;
 mod worktree_tests;

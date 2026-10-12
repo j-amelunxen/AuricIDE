@@ -52,13 +52,14 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            // Callers often listen for Escape on window to close themselves.
-            // This question is in front of that listener — answering it must
-            // not also dismiss the thing that asked.
-            e.stopPropagation();
-            onCancel();
-          }
+          // No key pressed while the question is open reaches what is behind
+          // it. Callers listen on window (Escape closes them) or carry
+          // single-key shortcuts (the diff viewer's S, V, [ and ]); the portal
+          // still bubbles React events to them. Answering must not also act
+          // on the thing that asked. Default actions, such as Enter on a
+          // focused button, still happen.
+          e.stopPropagation();
+          if (e.key === 'Escape') onCancel();
         }}
         className="bg-background-secondary border border-border-dark rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-3"
       >

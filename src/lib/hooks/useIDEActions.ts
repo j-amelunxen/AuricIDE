@@ -15,6 +15,7 @@ import { flushAgentLog } from '@/lib/agents/events/persistence';
 import { type OutputBatch } from '@/lib/agents/outputBatcher';
 import { installLaneSummarySubscriber } from '@/lib/agents/laneSummarySubscriber';
 import { installControlBridge } from '@/lib/agents/controlBridge';
+import { subscribeReviewPersistence } from '@/lib/git/review/reviewPersistence';
 import { useFileWatcher } from '@/lib/hooks/useFileWatcher';
 import { useBatchedAgentEvents } from '@/lib/hooks/useAgentEvents';
 import { useAgentConsoleAutoOpen } from '@/lib/hooks/useAgentConsoleAutoOpen';
@@ -24,6 +25,7 @@ import { useCloseTabShortcut } from '@/lib/hooks/useCloseTabShortcut';
 import { useMenuCommands } from '@/lib/hooks/useMenuCommands';
 import { useNotificationInbox } from '@/lib/hooks/useNotificationInbox';
 import { useAgentUsageSync } from '@/lib/hooks/useAgentUsageSync';
+import { useMergeStateSync } from '@/lib/hooks/useMergeStateSync';
 import { useTitleBarGutter } from '@/lib/hooks/useTitleBarGutter';
 import type { IDEState } from './ide/liveIDEState';
 import { type useIDEHandlers } from './useIDEHandlers';
@@ -121,6 +123,14 @@ export function useIDEActions(state: IDEState, handlers: ReturnType<typeof useID
   // --control`) run through the same store actions as the UI, and input typed
   // through it shows up in the feed. See docs/design-agent-control.md.
   useEffect(() => installControlBridge(() => useStore.getState()), []);
+
+  // Review comments and viewed marks outlive the app session, per project.
+  // See docs/design-merge-panel.md, "The diff viewer is a review panel now".
+  useEffect(() => subscribeReviewPersistence(useStore, () => useStore.getState().rootPath), []);
+
+  // A merge started, concluded or aborted in a terminal never reaches the
+  // file watcher (it ignores .git/), so merge state is asked for instead.
+  useMergeStateSync();
 
   // A project's own agent settings — its commit prompt, its ticket pattern —
   // replace the previous project's as soon as it is opened. Credentials it

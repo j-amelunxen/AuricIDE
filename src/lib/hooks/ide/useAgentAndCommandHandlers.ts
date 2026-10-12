@@ -172,6 +172,8 @@ export function useAgentAndCommandHandlers({
     state.setPdfData(null);
     state.setMindmapData(null);
     state.resetGitInMemory();
+    state.resetReviewInMemory();
+    state.resetMergeInMemory();
   }, [state]);
 
   const handleOpenFolder = useCallback(async () => {

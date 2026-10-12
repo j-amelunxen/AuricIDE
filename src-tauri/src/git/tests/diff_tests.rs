@@ -278,3 +278,19 @@ fn git_blame_errors_in_empty_repo() {
     fs::write(empty.path().join("file.txt"), "hi\n").unwrap();
     assert!(git_blame_impl(empty.path().to_str().unwrap(), "file.txt").is_err());
 }
+
+#[test]
+fn git_diff_marks_a_missing_newline_at_end_of_file() {
+    let dir = init_test_repo();
+    let repo_path = dir.path().to_str().unwrap();
+    commit_file(&dir, "file.txt", "line 1\nlast", "init");
+    fs::write(dir.path().join("file.txt"), "line 1\nlast changed").unwrap();
+
+    let diff = git_diff_impl(repo_path, "file.txt", Some("unstaged")).unwrap();
+    assert!(
+        diff.ends_with(
+            "-last\n\\ No newline at end of file\n+last changed\n\\ No newline at end of file\n"
+        ),
+        "{diff}"
+    );
+}

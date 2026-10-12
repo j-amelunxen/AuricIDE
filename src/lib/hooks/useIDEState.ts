@@ -172,6 +172,8 @@ export function useIDEState() {
   const spawnAgentWorktree = useStore((s) => s.spawnAgentWorktree);
   const setDiffTab = useStore((s) => s.setDiffTab);
   const resetGitInMemory = useStore((s) => s.resetGitInMemory);
+  const resetReviewInMemory = useStore((s) => s.resetReviewInMemory);
+  const resetMergeInMemory = useStore((s) => s.resetMergeInMemory);
   const scratchDir = useStore((s) => s.scratchDir);
   const scratches = useStore((s) => s.scratches);
   const notificationsUnreadCount = useStore((s) => s.notificationsUnreadCount);
@@ -383,6 +385,8 @@ export function useIDEState() {
     spawnAgentWorktree,
     setDiffTab,
     resetGitInMemory,
+    resetReviewInMemory,
+    resetMergeInMemory,
     scratchDir,
     scratches,
     notificationsUnreadCount,

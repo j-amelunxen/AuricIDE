@@ -79,6 +79,17 @@ vi.mock('@/lib/agents/laneSummarySubscriber', () => ({
   installLaneSummarySubscriber: () => installLaneSummarySubscriberMock(),
 }));
 
+const stopReviewPersistence = vi.fn();
+const subscribeReviewPersistenceMock = vi.fn(() => stopReviewPersistence);
+vi.mock('@/lib/git/review/reviewPersistence', () => ({
+  subscribeReviewPersistence: () => subscribeReviewPersistenceMock(),
+}));
+
+const useMergeStateSyncMock = vi.fn();
+vi.mock('@/lib/hooks/useMergeStateSync', () => ({
+  useMergeStateSync: () => useMergeStateSyncMock(),
+}));
+
 vi.mock('@/lib/store', () => ({
   useStore: {
     getState: () => ({
@@ -236,6 +247,30 @@ describe('useIDEActions – the lane summary subscriber', () => {
     unmount();
 
     expect(uninstallLaneSummarySubscriber).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useIDEActions – review persistence', () => {
+  beforeEach(() => {
+    subscribeReviewPersistenceMock.mockClear();
+    stopReviewPersistence.mockClear();
+  });
+
+  it('subscribes once on mount and stops on unmount, so the last write is flushed', () => {
+    const { unmount } = renderHook(() => useIDEActions(state, handlers));
+    expect(subscribeReviewPersistenceMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    expect(stopReviewPersistence).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useIDEActions – merge state sync', () => {
+  it('keeps merge state in sync while the IDE is mounted', () => {
+    useMergeStateSyncMock.mockClear();
+    renderHook(() => useIDEActions(state, handlers));
+    expect(useMergeStateSyncMock).toHaveBeenCalled();
   });
 });
 

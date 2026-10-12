@@ -3,6 +3,7 @@ use super::types::*;
 use git2::{Repository, StatusOptions};
 use std::path::Path;
 
+// code-gate: complexity-cyclomatic - one flag-to-label mapping per libgit2 status bit, read top to bottom
 pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
     let repo = match Repository::open(repo_path) {
         Ok(r) => r,
@@ -29,6 +30,19 @@ pub fn git_status_impl(repo_path: &str) -> Result<Vec<GitFileStatus>, String> {
                 status: "ignored".to_string(),
                 staged: None,
                 unstaged: None,
+                mode_changed: false,
+            });
+            continue;
+        }
+
+        // A conflict has no meaningful index side: the stages are git's, not
+        // something the user staged. It is work still to do in the tree.
+        if status.is_conflicted() {
+            result.push(GitFileStatus {
+                path,
+                status: "conflicted".to_string(),
+                staged: None,
+                unstaged: Some("conflicted".to_string()),
                 mode_changed: false,
             });
             continue;

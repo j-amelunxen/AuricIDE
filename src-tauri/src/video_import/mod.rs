@@ -1,7 +1,7 @@
-mod failure;
+pub(crate) mod failure;
 mod installer;
 mod media;
-mod preflight;
+pub(crate) mod preflight;
 
 #[cfg(test)]
 mod tests;

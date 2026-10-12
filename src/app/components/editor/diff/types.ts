@@ -12,7 +12,7 @@ export const lineStyles: Record<DiffLine['type'], string> = {
 export const TEXT_WRAP = 'min-w-0 flex-1 whitespace-pre-wrap break-all pr-4';
 export const COLUMN = 'flex w-1/2 min-w-0 overflow-hidden';
 export const GUTTER_BTN =
-  'relative mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted transition-opacity duration-150 before:absolute before:-inset-2 hover:bg-hover-bg hover:text-foreground focus-visible:opacity-100 active:scale-[0.96]';
+  'relative mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted transition-opacity duration-150 before:absolute before:-inset-2 hover:bg-hover-bg hover:text-foreground focus-visible:opacity-100 motion-safe:active:scale-[0.96]';
 
 export interface DiffViewerProps {
   diff: string;
@@ -44,11 +44,20 @@ export interface CommentTarget {
   lineContent: string;
 }
 
+/** The composer that is open: a new comment on a line, or an open comment being rewritten. */
+export interface CommentDraft extends CommentTarget {
+  /** The open comment being rewritten; absent for a new comment. */
+  editingId?: string;
+}
+
 export interface LineCommentApi {
   enabled: boolean;
   comments: ReviewComment[];
-  draft: CommentTarget | null;
+  draft: CommentDraft | null;
+  /** Opens the composer for a new comment on the line, beside any it already has. */
   startDraft: (target: CommentTarget) => void;
+  /** Opens the composer on an open comment. Sent comments are not edited. */
+  editComment: (comment: ReviewComment) => void;
   cancelDraft: () => void;
   saveDraft: (body: string) => void;
   removeComment: (id: string) => void;
@@ -91,6 +100,32 @@ export function commentButtonLabel(target: CommentTarget): string {
   return target.side === 'old'
     ? `Comment on old line ${target.lineNo}`
     : `Comment on line ${target.lineNo}`;
+}
+
+export function replyButtonLabel(target: CommentTarget): string {
+  return target.side === 'old'
+    ? `Reply on old line ${target.lineNo}`
+    : `Reply on line ${target.lineNo}`;
+}
+
+/**
+ * Where `C` opens a comment for a hunk: its first added line on the new side,
+ * or, when the hunk only removes, its first removed line on the old side.
+ */
+export function hunkCommentTarget(lines: DiffLine[], hunkIndex: number): CommentTarget | null {
+  let hunk = -1;
+  let removed: CommentTarget | null = null;
+  for (const line of lines) {
+    if (isHunkHeader(line)) {
+      if (hunk === hunkIndex) break;
+      hunk++;
+      continue;
+    }
+    if (hunk !== hunkIndex) continue;
+    if (line.type === 'added') return commentTargetFor(line, 'new');
+    if (line.type === 'removed' && !removed) removed = commentTargetFor(line, 'old');
+  }
+  return removed;
 }
 
 export function sameCommentTarget(a: CommentTarget, b: CommentTarget): boolean {

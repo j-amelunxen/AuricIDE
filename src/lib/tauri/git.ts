@@ -1,6 +1,8 @@
-export type GitStatusLabel = 'added' | 'modified' | 'deleted' | 'untracked' | 'ignored';
+export type GitStatusLabel =
+  'added' | 'modified' | 'deleted' | 'untracked' | 'ignored' | 'conflicted';
 export type GitStagedKind = 'added' | 'modified' | 'deleted';
-export type GitUnstagedKind = 'modified' | 'deleted' | 'untracked';
+/** `conflicted` comes with `status: 'conflicted'` and `staged: null`. */
+export type GitUnstagedKind = 'modified' | 'deleted' | 'untracked' | 'conflicted';
 export interface GitFileStatus {
   path: string;
   status: GitStatusLabel;
@@ -85,6 +87,31 @@ export async function pushChanges(repoPath: string): Promise<void> {
   await invoke('git_push', { repoPath });
 }
 
+/** The diff a hunk was cut from, as the viewer showed it. */
+export interface ApplyPatchGuard {
+  filePath: string;
+  side: 'staged' | 'unstaged';
+  /** The raw patch `git_diff` returned for that side. */
+  diff: string;
+}
+
+/**
+ * Applies one hunk patch (see `src/lib/git/hunkPatch.ts`) to the index or the
+ * work tree. Refuses, naming the file, when it no longer applies cleanly, or,
+ * with `guard`, when that side's diff is no longer the one the hunk came from.
+ */
+export async function applyGitPatch(
+  repoPath: string,
+  patch: string,
+  target: 'index' | 'workdir',
+  guard?: ApplyPatchGuard
+): Promise<void> {
+  await invoke(
+    'git_apply_patch',
+    guard ? { repoPath, patch, target, guard } : { repoPath, patch, target }
+  );
+}
+
 export async function discardChanges(repoPath: string, filePath: string): Promise<void> {
   await invoke('git_discard', { repoPath, filePath });
 }
@@ -155,6 +182,11 @@ export async function getGitDiffRefFiles(
   return await invoke<GitNameStatus[]>('git_diff_ref_files', { repoPath, refName });
 }
 
+/** Full oid of the best common ancestor of two revisions. Throws when they share none. */
+export async function getMergeBase(repoPath: string, a: string, b: string): Promise<string> {
+  return await invoke<string>('git_merge_base', { repoPath, a, b });
+}
+
 export async function getGitDiffFileRef(
   repoPath: string,
   refName: string,
@@ -201,6 +233,8 @@ export interface WorktreeMergeResult {
   fastForward: boolean;
   cleanedUp: boolean;
   oid: string | null;
+  /** Paths left conflicted; empty unless the merge stopped in the main work tree. */
+  conflicts: string[];
 }
 
 /**

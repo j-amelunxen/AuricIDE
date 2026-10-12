@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
+import { useStore } from '@/lib/store';
+import { MergeBranchMenu } from '../merge/MergeBranchMenu';
 import { RepoBody } from './RepoBody';
 import type { DiffSide, RepoView } from './types';
 
@@ -41,6 +43,7 @@ export function RepoSection({
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const expanded = userExpanded ?? changeCount > 0;
   const canIgnore = repo.kind !== 'root' && !!onIgnoreRepo;
+  const merging = useStore((s) => s.mergeStates[repo.repoPath]?.inProgress ?? false);
 
   return (
     <div
@@ -80,6 +83,11 @@ export function RepoSection({
             {changeCount}
           </span>
         </button>
+        {repo.branchName && !merging && (
+          <span className="mr-1 shrink-0">
+            <MergeBranchMenu repoPath={repo.repoPath} currentBranch={repo.branchName} compact />
+          </span>
+        )}
         {canIgnore && (
           <button
             type="button"
@@ -108,6 +116,7 @@ export function RepoSection({
           onUnstageAll={onUnstageAll}
           onFileClick={onFileClick}
           onDiscardFile={onDiscardFile}
+          showMergeMenu={false}
         />
       )}
     </div>

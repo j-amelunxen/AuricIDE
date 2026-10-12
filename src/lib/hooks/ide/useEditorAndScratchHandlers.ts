@@ -7,6 +7,10 @@ import { readFile, readFileBase64, writeFile, deleteFile, movePath } from '@/lib
 import { nextScratchName } from '@/lib/scratch/naming';
 import { imageDataUri, localFileSrc, previewKind } from '@/lib/media/preview';
 import { isDiffTabId } from '@/lib/git/diffTabId';
+import { isMergeTabId } from '@/lib/git/mergeTabId';
+import { isReviewTabId } from '@/lib/git/review/reviewSession';
+import { tabBreadcrumbs } from '@/lib/ide/tabBreadcrumbs';
+import { isVirtualTabId } from '@/lib/git/virtualTabId';
 import { extractHeadings, getHeadingBreadcrumbs } from '@/lib/editor/markdownHeadingParser';
 import type { IDEState } from './liveIDEState';
 import type { StoreDiagnostic } from '@/lib/store/diagnosticsSlice';
@@ -101,7 +105,9 @@ export function useEditorAndScratchHandlers(
   );
 
   const handleSave = useCallback(async () => {
-    if (!state.activeTabId) return;
+    // Diff, merge and review tabs are not files: ⌘S there must not write the
+    // last editor content to a path named after the tab id.
+    if (!state.activeTabId || isVirtualTabId(state.activeTabId)) return;
     autosave.schedule(state.activeTabId, state.editorContent);
     await autosave.flush();
   }, [state, autosave]);
@@ -109,7 +115,9 @@ export function useEditorAndScratchHandlers(
   const handleEditorChange = useCallback(
     (newContent: string) => {
       state.setEditorContent(newContent);
-      if (!state.activeTabId) return;
+      // Same rule as handleSave: a diff, merge or review tab is not a file, so
+      // it is never dirty and nothing is scheduled to a path named after its id.
+      if (!state.activeTabId || isVirtualTabId(state.activeTabId)) return;
       state.markDirty(state.activeTabId, true);
       autosave.schedule(state.activeTabId, newContent);
     },
@@ -204,8 +212,8 @@ export function useEditorAndScratchHandlers(
   );
 
   const breadcrumbs = useMemo(() => {
-    if (!state.activeTabId) return ['AuricIDE'];
-    return ['AuricIDE', ...state.activeTabId.split('/').filter(Boolean)];
+    const tab = useStore.getState().openTabs.find((t) => t.id === state.activeTabId);
+    return tabBreadcrumbs(state.activeTabId, tab);
   }, [state.activeTabId]);
 
   const isMarkdownFile = useMemo(
@@ -262,6 +270,8 @@ export function useEditorAndScratchHandlers(
   }, [state.activeTabId]);
 
   const isDiffTab = !!state.activeTabId && isDiffTabId(state.activeTabId);
+  const isMergeTab = !!state.activeTabId && isMergeTabId(state.activeTabId);
+  const isReviewTab = !!state.activeTabId && isReviewTabId(state.activeTabId);
   const isWorkflowFile = !!state.activeTabId?.endsWith('.workflow.md');
   const isMindmapTab = !!state.activeTabId?.endsWith('.mindmap.md');
   const isObsidianCanvas = !!state.activeTabId?.endsWith('.canvas');
@@ -286,6 +296,8 @@ export function useEditorAndScratchHandlers(
     activeDiagnostics,
     activeLanguage,
     isDiffTab,
+    isMergeTab,
+    isReviewTab,
     isWorkflowFile,
     isMindmapTab,
     isObsidianCanvas,

@@ -74,7 +74,9 @@ vi.mock('../tauri/git', () => ({
     fastForward: true,
     cleanedUp: true,
     oid: 'abc',
+    conflicts: [],
   })),
+  applyGitPatch: vi.fn(async () => undefined),
 }));
 
 describe('gitSlice', () => {
@@ -550,6 +552,53 @@ describe('gitSlice', () => {
       expect(store.getState().repoStates[repoRoot.path]?.commitMessage).toBe('');
     });
 
+    it('concludes the merge instead of a plain commit while a merge is in progress', async () => {
+      const { commitChanges } = await import('../tauri/git');
+      const concludeMerge = vi.fn(async () => 'merge-oid');
+      store.setState({
+        mergeStates: { [repoRoot.path]: { inProgress: true, operation: 'merge', message: null } },
+        concludeMerge,
+      } as never);
+      store.getState().setCommitMessage(repoRoot.path, 'Merge feature');
+
+      const oid = await store.getState().commit(repoRoot.path);
+
+      expect(concludeMerge).toHaveBeenCalledWith(repoRoot.path, 'Merge feature');
+      expect(commitChanges).not.toHaveBeenCalled();
+      expect(oid).toBe('merge-oid');
+      expect(store.getState().repoStates[repoRoot.path]?.commitMessage).toBe('');
+    });
+
+    it('uses MERGE_MSG when the box is empty during a merge', async () => {
+      const concludeMerge = vi.fn(async () => 'merge-oid');
+      store.setState({
+        mergeStates: {
+          [repoRoot.path]: { inProgress: true, operation: 'merge', message: "Merge branch 'x'" },
+        },
+        concludeMerge,
+      } as never);
+      await store.getState().commit(repoRoot.path);
+      expect(concludeMerge).toHaveBeenCalledWith(repoRoot.path, "Merge branch 'x'");
+    });
+
+    it('refuses with a toast during a rebase, cherry-pick or revert', async () => {
+      const { commitChanges } = await import('../tauri/git');
+      const showToast = vi.fn();
+      for (const operation of ['rebase', 'cherry-pick', 'revert']) {
+        store.setState({
+          mergeStates: { [repoRoot.path]: { inProgress: true, operation, message: null } },
+          showToast,
+        } as never);
+        store.getState().setCommitMessage(repoRoot.path, 'wip');
+        expect(await store.getState().commit(repoRoot.path)).toBeNull();
+        expect(showToast).toHaveBeenLastCalledWith(
+          expect.stringContaining(`${operation} is in progress`),
+          'error'
+        );
+      }
+      expect(commitChanges).not.toHaveBeenCalled();
+    });
+
     it('commit with something staged does not call stageFiles', async () => {
       const { getGitStatus, stageFiles: mockStage, commitChanges } = await import('../tauri/git');
       vi.mocked(getGitStatus).mockResolvedValue([file('a.md', 'modified', 'modified', null)]);
@@ -655,6 +704,91 @@ describe('gitSlice', () => {
       await store.getState().stageAll(repoRoot.path);
 
       expect(mockStage).not.toHaveBeenCalled();
+    });
+
+    it('never stages a conflicted file, which would mark it resolved', async () => {
+      const { getGitStatus, stageFiles: mockStage } = await import('../tauri/git');
+      vi.mocked(getGitStatus).mockResolvedValue([
+        file('a.md', 'modified', null, 'modified'),
+        file('both.md', 'conflicted', null, 'conflicted'),
+      ]);
+      await store.getState().refreshRepoStatus(repoRoot.path);
+
+      await store.getState().stageAll(repoRoot.path);
+
+      expect(mockStage).toHaveBeenCalledWith(repoRoot.path, ['a.md']);
+    });
+  });
+
+  describe('applyHunkAction', () => {
+    const PATCH =
+      [
+        'diff --git a/file.md b/file.md',
+        'index 1111111..2222222 100644',
+        '--- a/file.md',
+        '+++ b/file.md',
+        '@@ -1,2 +1,2 @@',
+        ' a',
+        '-b',
+        '+c',
+        '@@ -10,2 +10,2 @@',
+        ' x',
+        '-y',
+        '+z',
+      ].join('\n') + '\n';
+
+    beforeEach(async () => {
+      const { discoverGitRepos } = await import('../tauri/git');
+      vi.mocked(discoverGitRepos).mockResolvedValue([repoRoot]);
+      await store.getState().discoverAndRefreshGit('/w');
+    });
+
+    it('stages one hunk to the index and refreshes the repo', async () => {
+      const { applyGitPatch, getGitStatus } = await import('../tauri/git');
+      vi.mocked(getGitStatus).mockClear();
+      await store.getState().applyHunkAction(repoRoot.path, 'file.md', PATCH, 1, 'stage');
+      const [repo, patch, target, guard] = vi.mocked(applyGitPatch).mock.calls[0];
+      expect(repo).toBe(repoRoot.path);
+      expect(target).toBe('index');
+      expect(guard).toEqual({ filePath: 'file.md', side: 'unstaged', diff: PATCH });
+      expect(patch).toContain('@@ -10,2 +10,2 @@');
+      expect(patch).not.toContain('@@ -1,2 +1,2 @@');
+      expect(getGitStatus).toHaveBeenCalledWith(repoRoot.path);
+    });
+
+    it('discards by applying the reversed hunk to the work tree', async () => {
+      const { applyGitPatch } = await import('../tauri/git');
+      await store.getState().applyHunkAction(repoRoot.path, 'file.md', PATCH, 0, 'discard');
+      const [, patch, target, guard] = vi.mocked(applyGitPatch).mock.calls[0];
+      expect(target).toBe('workdir');
+      expect(guard).toEqual({ filePath: 'file.md', side: 'unstaged', diff: PATCH });
+      expect(patch).toContain('-c\n+b\n');
+    });
+
+    it('guards an unstage with the staged diff', async () => {
+      const { applyGitPatch } = await import('../tauri/git');
+      await store.getState().applyHunkAction(repoRoot.path, 'file.md', PATCH, 0, 'unstage');
+      const [, , target, guard] = vi.mocked(applyGitPatch).mock.calls[0];
+      expect(target).toBe('index');
+      expect(guard).toEqual({ filePath: 'file.md', side: 'staged', diff: PATCH });
+    });
+
+    it('refuses a hunk that cannot be cut, without calling git', async () => {
+      const { applyGitPatch } = await import('../tauri/git');
+      await expect(
+        store.getState().applyHunkAction(repoRoot.path, 'file.md', PATCH, 5, 'stage')
+      ).rejects.toThrow(/file\.md/);
+      expect(applyGitPatch).not.toHaveBeenCalled();
+    });
+
+    it('names the file when git refuses, and still refreshes', async () => {
+      const { applyGitPatch, getGitStatus } = await import('../tauri/git');
+      vi.mocked(applyGitPatch).mockRejectedValueOnce(new Error('patch does not apply'));
+      vi.mocked(getGitStatus).mockClear();
+      await expect(
+        store.getState().applyHunkAction(repoRoot.path, 'file.md', PATCH, 0, 'unstage')
+      ).rejects.toThrow(/file\.md.*patch does not apply/);
+      expect(getGitStatus).toHaveBeenCalledWith(repoRoot.path);
     });
   });
 
@@ -957,6 +1091,28 @@ describe('gitSlice', () => {
     });
   });
 
+  describe('commitFocusRequest', () => {
+    it('counts every request, so asking twice for the same repo still lands', () => {
+      store.getState().requestCommitFocus('/repo');
+      const first = store.getState().commitFocusRequest!;
+      store.getState().requestCommitFocus('/repo');
+      expect(store.getState().commitFocusRequest).toEqual({
+        repoPath: '/repo',
+        nonce: first.nonce + 1,
+      });
+    });
+
+    it('is cleared only by whoever handled the newest request', () => {
+      store.getState().requestCommitFocus('/a');
+      const stale = store.getState().commitFocusRequest!.nonce;
+      store.getState().requestCommitFocus('/b');
+      store.getState().clearCommitFocusRequest(stale);
+      expect(store.getState().commitFocusRequest?.repoPath).toBe('/b');
+      store.getState().clearCommitFocusRequest(stale + 1);
+      expect(store.getState().commitFocusRequest).toBeNull();
+    });
+  });
+
   describe('reviewComments', () => {
     const draft = {
       repoPath: '/repo',
@@ -971,30 +1127,87 @@ describe('gitSlice', () => {
       expect(store.getState().reviewComments).toEqual([]);
     });
 
-    it('upserts a comment by file/side/line', () => {
-      store.getState().upsertReviewComment(draft);
-      store.getState().upsertReviewComment({ ...draft, body: 'rename x to count' });
-
-      expect(store.getState().reviewComments).toHaveLength(1);
-      expect(store.getState().reviewComments[0].body).toBe('rename x to count');
-      expect(store.getState().reviewComments[0].lineContent).toBe('const x = 1');
+    it("marks one repo's open comments sent and leaves the rest alone", () => {
+      store.getState().addReviewComment(draft);
+      store.getState().addReviewComment({ ...draft, repoPath: '/other' });
+      store.getState().markReviewCommentsSent('/repo', 2);
+      const [mine, theirs] = store.getState().reviewComments;
+      expect(mine.sentInRound).toBe(2);
+      expect(theirs.sentInRound).toBeUndefined();
     });
 
-    it('removes a comment when the body is cleared', () => {
-      store.getState().upsertReviewComment(draft);
-      store.getState().upsertReviewComment({ ...draft, body: '   ' });
+    it('keeps the same array when nothing was open', () => {
+      const before = store.getState().reviewComments;
+      store.getState().markReviewCommentsSent('/repo', 1);
+      expect(store.getState().reviewComments).toBe(before);
+    });
+
+    it('adds a second comment on the same line as its own entry', () => {
+      const a = store.getState().addReviewComment(draft);
+      const b = store.getState().addReviewComment({ ...draft, body: 'and add a test' });
+
+      expect(a).not.toBeNull();
+      expect(b).not.toBeNull();
+      expect(a).not.toBe(b);
+      expect(store.getState().reviewComments.map((c) => c.body)).toEqual([
+        'rename x',
+        'and add a test',
+      ]);
+    });
+
+    it('keeps a sent comment when a new one lands on its line', () => {
+      const sentId = store.getState().addReviewComment(draft)!;
+      store.getState().markReviewCommentsSent('/repo', 1);
+      store.getState().addReviewComment({ ...draft, body: 'still wrong' });
+
+      const sent = store.getState().reviewComments.find((c) => c.id === sentId);
+      expect(sent).toMatchObject({ body: 'rename x', sentInRound: 1 });
+      expect(store.getState().reviewComments).toHaveLength(2);
+    });
+
+    it('adds nothing for a blank body', () => {
+      expect(store.getState().addReviewComment({ ...draft, body: '   ' })).toBeNull();
       expect(store.getState().reviewComments).toEqual([]);
     });
 
-    it('removeReviewComment drops that id', () => {
-      const id = store.getState().upsertReviewComment(draft);
+    it('edits an open comment by id and keeps its line and time', () => {
+      const id = store.getState().addReviewComment(draft)!;
+      const createdAt = store.getState().reviewComments[0].createdAt;
+
+      expect(store.getState().editReviewComment(id, '  rename x to count ')).toBe(true);
+      expect(store.getState().reviewComments[0]).toMatchObject({
+        id,
+        body: 'rename x to count',
+        lineContent: 'const x = 1',
+        createdAt,
+      });
+    });
+
+    it('refuses to edit a sent comment', () => {
+      const id = store.getState().addReviewComment(draft)!;
+      store.getState().markReviewCommentsSent('/repo', 1);
+      const before = store.getState().reviewComments;
+
+      expect(store.getState().editReviewComment(id, 'changed my mind')).toBe(false);
+      expect(store.getState().reviewComments).toBe(before);
+    });
+
+    it('removes an open comment whose body is cleared by an edit', () => {
+      const id = store.getState().addReviewComment(draft)!;
+      expect(store.getState().editReviewComment(id, '   ')).toBe(true);
+      expect(store.getState().reviewComments).toEqual([]);
+    });
+
+    it('removeReviewComment drops that id and leaves the rest of the thread', () => {
+      const id = store.getState().addReviewComment(draft)!;
+      store.getState().addReviewComment({ ...draft, body: 'second' });
       store.getState().removeReviewComment(id);
-      expect(store.getState().reviewComments).toEqual([]);
+      expect(store.getState().reviewComments.map((c) => c.body)).toEqual(['second']);
     });
 
     it('clearReviewComments can scope to one repo', () => {
-      store.getState().upsertReviewComment(draft);
-      store.getState().upsertReviewComment({ ...draft, repoPath: '/other', filePath: 'b.ts' });
+      store.getState().addReviewComment(draft);
+      store.getState().addReviewComment({ ...draft, repoPath: '/other', filePath: 'b.ts' });
       store.getState().clearReviewComments('/repo');
       expect(store.getState().reviewComments).toHaveLength(1);
       expect(store.getState().reviewComments[0].repoPath).toBe('/other');

@@ -2,6 +2,9 @@ import type { DiffTabState } from '@/lib/git/diffTab';
 import type { useIDEState } from '@/lib/hooks/useIDEState';
 import type { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
 import { DiffViewer } from '../editor/DiffViewer';
+import { MergeView } from '../git/merge/MergeView';
+import { ReviewView } from '../git/review/ReviewView';
+import { useStore } from '@/lib/store';
 import { ImageViewer } from '../editor/ImageViewer';
 import { VideoViewer } from '../editor/VideoViewer';
 import { PDFViewer } from '../editor/PDFViewer';
@@ -18,6 +21,7 @@ interface EditorContentRouterProps {
   diffTab: DiffTabState | undefined;
 }
 
+// code-gate: complexity-cyclomatic, complexity-function-length - flat router, one early return per tab type
 export function EditorContentRouter({ state, handlers, diffTab }: EditorContentRouterProps) {
   if (!state.activeTabId) return null;
 
@@ -28,6 +32,30 @@ export function EditorContentRouter({ state, handlers, diffTab }: EditorContentR
         fileName={diffTab.filePath}
         repoPath={diffTab.repoPath}
         source={diffTab.source}
+      />
+    );
+  }
+
+  if (handlers.isReviewTab) {
+    return (
+      <ReviewView
+        tabId={state.activeTabId}
+        onApproveWorkingTree={(repoPath) => {
+          // Approve on a working tree ends at the commit box of that repo.
+          const store = useStore.getState();
+          store.setScmView('changes');
+          store.requestCommitFocus(repoPath);
+          state.setActiveActivity('source-control');
+        }}
+      />
+    );
+  }
+
+  if (handlers.isMergeTab) {
+    return (
+      <MergeView
+        tabId={state.activeTabId}
+        onOpenSourceControl={() => state.setActiveActivity('source-control')}
       />
     );
   }

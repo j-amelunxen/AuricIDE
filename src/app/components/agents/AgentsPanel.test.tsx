@@ -1092,6 +1092,7 @@ describe('AgentsPanel – merge worktree after ending', () => {
     fastForward: true,
     cleanedUp: true,
     oid: 'abc',
+    conflicts: [] as string[],
   }));
 
   beforeEach(() => {

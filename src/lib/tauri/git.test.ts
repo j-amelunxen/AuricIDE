@@ -113,6 +113,17 @@ describe('git IPC wrappers', () => {
     });
   });
 
+  it('getMergeBase invokes git_merge_base', async () => {
+    mockInvoke.mockResolvedValueOnce('a'.repeat(40));
+    const { getMergeBase } = await import('./git');
+    expect(await getMergeBase('/wt', 'main', 'HEAD')).toBe('a'.repeat(40));
+    expect(mockInvoke).toHaveBeenCalledWith('git_merge_base', {
+      repoPath: '/wt',
+      a: 'main',
+      b: 'HEAD',
+    });
+  });
+
   it('getGitDiffRefFiles invokes git_diff_ref_files', async () => {
     mockInvoke.mockResolvedValueOnce([{ path: 'file.md', status: 'modified' }]);
     const { getGitDiffRefFiles } = await import('./git');

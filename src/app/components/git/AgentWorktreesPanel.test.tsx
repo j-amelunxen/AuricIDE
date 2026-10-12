@@ -5,6 +5,12 @@ import { AgentWorktreesPanel } from './AgentWorktreesPanel';
 import { useStore } from '@/lib/store';
 import type { GitWorktree } from '@/lib/tauri/git';
 
+const mockGetMergeBase = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/tauri/git', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/tauri/git')>()),
+  getMergeBase: (...args: unknown[]) => mockGetMergeBase(...args),
+}));
+
 const tree: GitWorktree = {
   path: '/w.auric-wt/fix-ab12',
   name: 'fix-ab12',
@@ -62,5 +68,66 @@ describe('AgentWorktreesPanel', () => {
     render(<AgentWorktreesPanel />);
     expect(screen.getByText(/agent running/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /remove/i })).toBeDisabled();
+  });
+});
+
+describe('AgentWorktreesPanel review entry', () => {
+  beforeEach(() => {
+    useStore.setState({
+      agents: [],
+      openTabs: [],
+      reviewSessions: {},
+      showToast: vi.fn(),
+      refreshReviewSession: vi.fn(async () => undefined),
+      defaultBranchFor: vi.fn(async () => 'main'),
+    });
+  });
+
+  it('reviews uncommitted work as a working-tree session', async () => {
+    useStore.setState({ agentWorktrees: [{ ...tree, dirty: true }] });
+    const user = userEvent.setup();
+    render(<AgentWorktreesPanel />);
+    await user.click(screen.getByTestId('agent-worktree-review'));
+    const id = `review:${tree.path}:worktree`;
+    expect(useStore.getState().reviewSessions[id]?.source).toEqual({
+      kind: 'worktree',
+      repoPath: tree.path,
+    });
+    expect(useStore.getState().openTabs.find((t) => t.id === id)?.name).toBe('Review: fix-ab12');
+  });
+
+  it('reviews a branch with commits from where it left the default branch', async () => {
+    mockGetMergeBase.mockReset().mockResolvedValue('b'.repeat(40));
+    useStore.setState({ agentWorktrees: [{ ...tree, branchAhead: true }] });
+    const user = userEvent.setup();
+    render(<AgentWorktreesPanel />);
+    await user.click(screen.getByTestId('agent-worktree-review'));
+    expect(useStore.getState().defaultBranchFor).toHaveBeenCalledWith('/w');
+    expect(mockGetMergeBase).toHaveBeenCalledWith(tree.path, 'main', 'HEAD');
+    expect(useStore.getState().reviewSessions[`review:${tree.path}:ref=main`]?.source).toEqual({
+      kind: 'ref',
+      repoPath: tree.path,
+      ref: 'main',
+      base: { kind: 'merge-base', oid: 'b'.repeat(40) },
+    });
+  });
+
+  it('falls back to the tip of the default branch when there is no merge base', async () => {
+    mockGetMergeBase.mockReset().mockRejectedValue(new Error('no common ancestor'));
+    useStore.setState({ agentWorktrees: [{ ...tree, branchAhead: true }] });
+    const user = userEvent.setup();
+    render(<AgentWorktreesPanel />);
+    await user.click(screen.getByTestId('agent-worktree-review'));
+    expect(
+      useStore.getState().reviewSessions[`review:${tree.path}:ref=main`]?.source
+    ).toMatchObject({
+      base: { kind: 'tip', reason: 'no common ancestor' },
+    });
+  });
+
+  it('offers no review when there is nothing to review', () => {
+    useStore.setState({ agentWorktrees: [tree] });
+    render(<AgentWorktreesPanel />);
+    expect(screen.getByTestId('agent-worktree-review')).toBeDisabled();
   });
 });

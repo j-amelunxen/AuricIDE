@@ -68,7 +68,7 @@ export function EditableLineBody({
           event.stopPropagation();
           startEdit(lineNo, line.content);
         }}
-        className="relative mt-px mr-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted opacity-0 transition-opacity duration-150 before:absolute before:-inset-2 hover:bg-hover-bg hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 active:scale-[0.96]"
+        className="relative mt-px mr-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted opacity-0 transition-opacity duration-150 before:absolute before:-inset-2 hover:bg-hover-bg hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 motion-safe:active:scale-[0.96]"
       >
         <AuricIcon name="edit" className="text-[13px]" />
       </button>

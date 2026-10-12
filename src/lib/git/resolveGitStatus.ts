@@ -11,6 +11,7 @@ function toBadge(status: GitFileStatus['status']): FileNode['gitStatus'] {
   if (status === 'modified') return 'modified';
   if (status === 'deleted') return 'deleted';
   if (status === 'ignored') return 'ignored';
+  if (status === 'conflicted') return 'conflicted';
   return undefined;
 }
 

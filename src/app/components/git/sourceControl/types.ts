@@ -65,6 +65,8 @@ export const statusBadge: Record<string, { label: string; className: string }> =
   modified: { label: 'M', className: 'text-git-modified' },
   deleted: { label: 'D', className: 'text-git-deleted' },
   untracked: { label: 'U', className: 'text-foreground-muted' },
+  // A status, so it takes the status red; the `!` reads without the colour.
+  conflicted: { label: '!', className: 'text-git-deleted' },
 };
 
 export type RowAction = 'stage' | 'unstage';

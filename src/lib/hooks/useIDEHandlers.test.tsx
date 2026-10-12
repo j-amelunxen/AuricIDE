@@ -1,3 +1,4 @@
+import { AUTOSAVE_DELAY_MS } from '@/lib/editor/autosave';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -112,8 +113,10 @@ const mockSetInboxCaptureOpen = vi.fn();
 const mockCloseWorkPlace = vi.fn();
 const mockDiscardPmChanges = vi.fn();
 let mockPmDirty = false;
+let mockMergeStates: Record<string, { inProgress: boolean; operation: string }> = {};
 vi.mock('@/lib/store', () => {
   const getState = () => ({
+    openTabs: [],
     refreshGitStatus: mockRefreshGitStatus,
     discoverAndRefreshGit: mockDiscoverAndRefreshGit,
     bumpProjectDirtyEpoch: mockBumpProjectDirtyEpoch,
@@ -153,6 +156,7 @@ vi.mock('@/lib/store', () => {
     markDirty: mockMarkDirty,
     updateFileInIndex: mockUpdateFileInIndex,
     showToast: mockShowToast,
+    mergeStates: mockMergeStates,
     scratchDir: mockScratchDir,
     scratches: mockScratches,
     inboxItems: mockInboxItems,
@@ -219,6 +223,8 @@ describe('useIDEHandlers', () => {
     setMindmapData: vi.fn(),
     setDiffTab: vi.fn(),
     resetGitInMemory: vi.fn(),
+    resetMergeInMemory: vi.fn(),
+    resetReviewInMemory: vi.fn(),
     closeProject: vi.fn(),
     setActiveActivity: vi.fn(),
     pmDraftTickets: [],
@@ -1855,6 +1861,23 @@ describe('useIDEHandlers', () => {
       expect(mockStageAll).not.toHaveBeenCalled();
     });
 
+    it('refuses a commit agent while a merge is in progress, with a toast', async () => {
+      mockMergeStates = { '/p': { inProgress: true, operation: 'merge' } };
+      mockState.repoStates = { '/p': repoStateStub('main') };
+      mockState.agentSettings = { ...mockState.agentSettings, agenticCommit: true };
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      await result.current.handleCommit('/p');
+
+      expect(mockState.spawnNewAgent).not.toHaveBeenCalled();
+      expect(mockState.commit).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringMatching(/merge is in progress/),
+        'error'
+      );
+      mockMergeStates = {};
+    });
+
     it('spawns an agent that also pushes when asked', async () => {
       mockState.repoStates = { '/p': repoStateStub('feature/AUR-42-thing') };
       mockState.agentSettings = {
@@ -2188,6 +2211,24 @@ describe('useIDEHandlers', () => {
       expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('disk full'), 'error');
       expect(mockMarkDirty).not.toHaveBeenCalledWith('/project/notes.md', false);
     });
+
+    it.each(['merge:/repo:src/a.ts', 'diff:unstaged:/repo:src/a.ts'])(
+      'never marks or autosaves a virtual tab (%s) as a file',
+      async (tabId) => {
+        const virtualState = { ...editorState, activeTabId: tabId };
+        const { result } = renderHook(() => useIDEHandlers(virtualState));
+
+        vi.useFakeTimers();
+        try {
+          result.current.handleEditorChange('typed into a virtual tab');
+          expect(virtualState.markDirty).not.toHaveBeenCalled();
+          await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 3);
+          expect(mockWriteFile).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      }
+    );
 
     it('saves the current buffer even when nothing was typed since the last save', async () => {
       const { result } = renderHook(() => useIDEHandlers(editorState));

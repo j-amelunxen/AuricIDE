@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { parseModeChange } from '@/lib/git/modeChange';
 import {
@@ -8,16 +9,42 @@ import {
   type DiffLine,
   type SideBySideRow,
 } from '@/lib/git/parseDiff';
+import { fileLevelFlags } from '@/lib/git/review/riskChips';
+import { useShortcutSheet, type ShortcutSheetContent } from '../git/shared/ShortcutSheet';
+import { isShortcutSheetKey } from '../git/shared/shortcutKeys';
+import { DiffNavButtons } from './diff/DiffNavButtons';
+import { HunkHeaderContext } from './diff/HunkHeaderContext';
 import { LineCommentContext } from './diff/LineCommentContext';
 import { LineEditContext } from './diff/LineEditContext';
 import { ModeOnlyChange } from './diff/ModeOnlyChange';
 import { SideBySideView } from './diff/SideBySideView';
 import { UnifiedView } from './diff/UnifiedView';
+import { RiskChips } from './diff/RiskChips';
 import { useDiffViewerState } from './diff/useDiffViewerState';
+import { hunkCountOf } from './diff/types';
+import { useHunkHeaderApi } from './diff/useHunkHeaderApi';
+import { useNarrow } from './diff/useNarrow';
 import type { DiffViewerProps } from './diff/types';
 
 export type { DiffLine, SideBySideRow, DiffViewerProps };
 export { parseDiff, buildSideBySideRows };
+
+const DIFF_SHORTCUTS: ShortcutSheetContent = {
+  title: 'Diff shortcuts',
+  groups: [
+    {
+      label: 'Hunks',
+      items: [
+        { keys: ['⌥', '↓'], action: 'Next hunk' },
+        { keys: ['⌥', '↑'], action: 'Previous hunk' },
+        { keys: ['S'], action: 'Stage the focused hunk (unstage in a staged diff)' },
+        { keys: ['⌫'], action: 'Discard the focused hunk (asks first)' },
+        { keys: ['C'], action: 'Comment on the focused hunk' },
+        { keys: ['?'], action: 'Show these shortcuts' },
+      ],
+    },
+  ],
+};
 
 export function DiffViewer(props: DiffViewerProps) {
   const { diff, fileName } = props;
@@ -26,6 +53,8 @@ export function DiffViewer(props: DiffViewerProps) {
     setViewMode,
     activeHunk,
     lines,
+    riskFlags,
+    hunkActions,
     viewerRef,
     canEditFile,
     canComment,
@@ -36,6 +65,21 @@ export function DiffViewer(props: DiffViewerProps) {
     lineComment,
     lineEdit,
   } = useDiffViewerState(props);
+  const { toolbarActions, busy, confirmDialog } = hunkActions;
+
+  const { narrow, measureRef } = useNarrow();
+  const shortcuts = useShortcutSheet(DIFF_SHORTCUTS);
+  // Two columns stop being readable below the narrow width; the toggle comes back with the room.
+  const effectiveMode = narrow ? 'unified' : viewMode;
+  const hunkHeader = useHunkHeaderApi({
+    focusedHunk: activeHunk,
+    hunkCount: hunkCountOf(lines),
+    fileName,
+    riskFlags,
+    toolbarActions,
+    busy,
+  });
+  const fileFlags = useMemo(() => fileLevelFlags(riskFlags), [riskFlags]);
 
   if (!diff.trim()) {
     return (
@@ -53,15 +97,26 @@ export function DiffViewer(props: DiffViewerProps) {
 
   return (
     <div
-      ref={viewerRef}
+      ref={(node) => {
+        viewerRef.current = node;
+        measureRef(node);
+      }}
       data-testid="diff-viewer"
       tabIndex={0}
-      onKeyDown={onKeyDown}
+      onKeyDown={(event) => {
+        if (isShortcutSheetKey(event)) {
+          event.preventDefault();
+          shortcuts.open();
+          return;
+        }
+        onKeyDown(event);
+      }}
       className="flex h-full flex-col overflow-hidden bg-editor-bg"
     >
       <div className="flex items-center gap-2 border-b border-border-dark px-4 py-2">
         <AuricIcon name="difference" className="text-sm text-primary-light" />
         <span className="text-xs font-medium text-foreground">{fileName}</span>
+        <RiskChips flags={fileFlags} />
         {canEditFile && (
           <span className="text-[10px] text-foreground-muted">Double-click a line to edit</span>
         )}
@@ -74,52 +129,35 @@ export function DiffViewer(props: DiffViewerProps) {
               type="button"
               data-testid="diff-send-comments"
               onClick={sendComments}
-              className="mr-1 flex items-center gap-1 rounded px-2 py-0.5 text-xs text-primary hover:bg-primary/10 active:scale-[0.96]"
+              className="mr-1 flex items-center gap-1 rounded px-2 py-0.5 text-xs text-primary hover:bg-primary/10 motion-safe:active:scale-[0.96]"
               title="Send review comments to an agent"
             >
               <AuricIcon name="bolt" className="text-sm" />
               Send {repoCommentCount} {repoCommentCount === 1 ? 'comment' : 'comments'}
             </button>
           )}
-          <button
-            data-testid="diff-prev-hunk"
-            onClick={() => goToHunk(activeHunk - 1)}
-            className="flex items-center rounded px-1.5 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
-            title="Previous hunk"
-          >
-            <AuricIcon name="arrow_upward" className="text-sm" />
-          </button>
-          <button
-            data-testid="diff-next-hunk"
-            onClick={() => goToHunk(activeHunk + 1)}
-            className="flex items-center rounded px-1.5 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
-            title="Next hunk"
-          >
-            <AuricIcon name="arrow_downward" className="text-sm" />
-          </button>
-          <button
-            data-testid="diff-view-toggle"
-            onClick={() => setViewMode((m) => (m === 'unified' ? 'side-by-side' : 'unified'))}
-            className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-foreground-muted hover:bg-hover-bg hover:text-foreground"
-            title={viewMode === 'unified' ? 'Switch to side-by-side' : 'Switch to unified'}
-          >
-            <AuricIcon
-              name={viewMode === 'unified' ? 'view_column_2' : 'view_agenda'}
-              className="text-sm"
-            />
-            {viewMode === 'unified' ? 'Side-by-side' : 'Unified'}
-          </button>
+          <DiffNavButtons
+            viewMode={effectiveMode}
+            narrow={narrow}
+            onPrev={() => goToHunk(activeHunk - 1)}
+            onNext={() => goToHunk(activeHunk + 1)}
+            onToggleView={() => setViewMode((m) => (m === 'unified' ? 'side-by-side' : 'unified'))}
+          />
         </div>
       </div>
       <LineCommentContext.Provider value={lineComment}>
         <LineEditContext.Provider value={lineEdit}>
-          {viewMode === 'unified' ? (
-            <UnifiedView lines={lines} />
-          ) : (
-            <SideBySideView lines={lines} />
-          )}
+          <HunkHeaderContext.Provider value={hunkHeader}>
+            {effectiveMode === 'unified' ? (
+              <UnifiedView lines={lines} />
+            ) : (
+              <SideBySideView lines={lines} />
+            )}
+          </HunkHeaderContext.Provider>
         </LineEditContext.Provider>
       </LineCommentContext.Provider>
+      {confirmDialog}
+      {shortcuts.sheet}
     </div>
   );
 }

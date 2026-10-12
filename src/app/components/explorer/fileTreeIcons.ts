@@ -2,6 +2,7 @@ export const gitBadgeMap = {
   added: { label: 'A', className: 'text-git-added' },
   modified: { label: 'M', className: 'text-git-modified' },
   deleted: { label: 'D', className: 'text-git-deleted' },
+  conflicted: { label: '!', className: 'text-git-deleted' },
 } as const;
 
 export function getFileIcon(name: string): { icon: string; color?: string } {
