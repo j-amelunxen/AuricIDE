@@ -191,8 +191,14 @@ function useTerminalGrid(
     [agent.id, apply, cells]
   );
   const place = useCallback(
-    (agentId: string, zone: DropZone) => apply(placeAgent(cells, agentId, zone), agentId),
-    [apply, cells]
+    (agentId: string, zone: DropZone) => {
+      // Whoever the dragged terminal leaves room for: the tabs after it, wrapping round.
+      const ids = (agents ?? []).map((a) => a.id);
+      const at = ids.indexOf(agentId);
+      const spare = at < 0 ? ids : [...ids.slice(at + 1), ...ids.slice(0, at)];
+      apply(placeAgent(cells, agentId, zone, spare), agentId);
+    },
+    [agents, apply, cells]
   );
   const remove = useCallback(
     (agentId: string) => {
@@ -423,7 +429,11 @@ function AgentTerminalDialog({
                       onSelect={() => {
                         if (!tabDrag.consumeClick()) grid.show(a.id);
                       }}
-                      onDragStart={(event) => tabDrag.begin(a.id, event)}
+                      onDragStart={
+                        (agents?.length ?? 0) > 1
+                          ? (event) => tabDrag.begin(a.id, event)
+                          : undefined
+                      }
                       onEnd={canEnd ? () => void closeTab(a) : undefined}
                       onSaveScreen={isActive ? saveVisibleScreen : undefined}
                     />
