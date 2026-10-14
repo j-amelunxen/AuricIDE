@@ -21,6 +21,7 @@ vi.mock('@/lib/tauri/git', () => ({
 
 import {
   applyDiffLineEdit,
+  applyFullFileEdit,
   canEditStagedAgainstWorktree,
   isEditableDiffSource,
   LineEditError,
@@ -34,7 +35,7 @@ describe('isEditableDiffSource', () => {
     [{ kind: 'combined' }, true],
     [{ kind: 'staged' }, true],
     [{ kind: 'revision', oid: 'abc', summary: 'wip' }, false],
-    [{ kind: 'ref', ref: 'main' }, false],
+    [{ kind: 'ref', ref: 'main' }, true],
   ])('%j → %s', (source, expected) => {
     expect(isEditableDiffSource(source)).toBe(expected);
   });
@@ -188,5 +189,61 @@ describe('reloadDiffPatch', () => {
       reloadDiffPatch('/repo', 'a.ts', { kind: 'ref', ref: 'origin/main' })
     ).resolves.toBe('from-ref');
     expect(mockGetGitDiffFileRef).toHaveBeenCalledWith('/repo', 'origin/main', 'a.ts');
+  });
+});
+
+describe('applyFullFileEdit', () => {
+  beforeEach(() => {
+    mockReadFile.mockReset();
+    mockWriteFile.mockReset();
+    mockStageFiles.mockReset();
+    mockReadFile.mockResolvedValue('a\nb\n');
+    mockWriteFile.mockResolvedValue(undefined);
+    mockStageFiles.mockResolvedValue(undefined);
+  });
+
+  it('writes the new content when the file on disk is what the editor started from', async () => {
+    await applyFullFileEdit({
+      repoPath: '/repo',
+      filePath: 'src/a.ts',
+      expectedOnDisk: 'a\nb\n',
+      nextContent: 'a\nc\n',
+      restage: false,
+    });
+    expect(mockWriteFile).toHaveBeenCalledWith('/repo/src/a.ts', 'a\nc\n');
+    expect(mockStageFiles).not.toHaveBeenCalled();
+  });
+
+  it('refuses to overwrite a file that changed underneath the editor', async () => {
+    mockReadFile.mockResolvedValue('somebody else\n');
+    await expect(
+      applyFullFileEdit({
+        repoPath: '/repo',
+        filePath: 'src/a.ts',
+        expectedOnDisk: 'a\nb\n',
+        nextContent: 'a\nc\n',
+        restage: false,
+      })
+    ).rejects.toMatchObject({ code: 'mismatch' });
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the content did not change, and restages after a real write', async () => {
+    await applyFullFileEdit({
+      repoPath: '/repo',
+      filePath: 'src/a.ts',
+      expectedOnDisk: 'a\nb\n',
+      nextContent: 'a\nb\n',
+      restage: true,
+    });
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    await applyFullFileEdit({
+      repoPath: '/repo',
+      filePath: 'src/a.ts',
+      expectedOnDisk: 'a\nb\n',
+      nextContent: 'x\n',
+      restage: true,
+    });
+    expect(mockStageFiles).toHaveBeenCalledWith('/repo', ['src/a.ts']);
   });
 });

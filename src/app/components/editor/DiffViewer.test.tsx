@@ -6,6 +6,12 @@ import { DiffViewer } from './DiffViewer';
 
 const mockApplyDiffLineEdit = vi.hoisted(() => vi.fn());
 const mockReloadDiffPatch = vi.hoisted(() => vi.fn());
+const mockReadFile = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/tauri/fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/tauri/fs')>();
+  return { ...actual, readFile: (...args: unknown[]) => mockReadFile(...args) };
+});
 
 vi.mock('@/lib/git/applyLineEdit', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/git/applyLineEdit')>();
@@ -592,5 +598,78 @@ describe('DiffViewer line comments', () => {
     expect(useStore.getState().initialAgentTask).toContain('rename this');
     expect(useStore.getState().initialAgentTask).toMatch(/checklist/i);
     expect(useStore.getState().initialAgentTask).not.toContain('ignore me');
+  });
+});
+
+describe('DiffViewer lock', () => {
+  beforeEach(() => {
+    mockReadFile.mockReset();
+    mockReadFile.mockResolvedValue('line1\nnew line\nline3\n');
+    mockReloadDiffPatch.mockReset();
+    mockReloadDiffPatch.mockResolvedValue(sampleDiff);
+  });
+
+  it('offers the lock on a compare against a ref, whose right side is the file on disk', () => {
+    render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'ref', ref: 'main' }}
+      />
+    );
+    expect(screen.getByTestId('diff-lock-toggle')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('offers no lock on a commit snapshot or without a repo', () => {
+    const { rerender } = render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'revision', oid: 'abc', summary: 'old' }}
+      />
+    );
+    expect(screen.queryByTestId('diff-lock-toggle')).not.toBeInTheDocument();
+    rerender(<DiffViewer diff={sampleDiff} fileName="file.txt" />);
+    expect(screen.queryByTestId('diff-lock-toggle')).not.toBeInTheDocument();
+  });
+
+  it('swaps the diff for the editor when unlocked and back again, reloading the patch', async () => {
+    const user = userEvent.setup();
+    render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'unstaged' }}
+      />
+    );
+    await user.click(screen.getByTestId('diff-lock-toggle'));
+    expect(screen.getByTestId('diff-unlocked-editor')).toBeInTheDocument();
+    expect(screen.getByTestId('diff-lock-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(mockReadFile).toHaveBeenCalledWith('/repo/file.txt'));
+
+    await user.click(screen.getByTestId('diff-lock-toggle'));
+    expect(screen.queryByTestId('diff-unlocked-editor')).not.toBeInTheDocument();
+    await waitFor(() => expect(mockReloadDiffPatch).toHaveBeenCalled());
+  });
+
+  it('shows the file in a real editor with the added line still marked', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <DiffViewer
+        diff={sampleDiff}
+        fileName="file.txt"
+        repoPath="/repo"
+        source={{ kind: 'unstaged' }}
+      />
+    );
+    await user.click(screen.getByTestId('diff-lock-toggle'));
+    await waitFor(() => expect(container.querySelector('.cm-content')).not.toBeNull());
+    expect(container.querySelector('.cm-content')?.textContent).toContain('new line');
+    const marked = container.querySelectorAll('.cm-diff-changed-line');
+    expect(marked).toHaveLength(1);
+    expect(marked[0].textContent).toBe('new line');
   });
 });

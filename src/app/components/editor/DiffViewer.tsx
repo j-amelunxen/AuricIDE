@@ -19,6 +19,7 @@ import { LineEditContext } from './diff/LineEditContext';
 import { ModeOnlyChange } from './diff/ModeOnlyChange';
 import { SideBySideView } from './diff/SideBySideView';
 import { UnifiedView } from './diff/UnifiedView';
+import { UnlockedEditor } from './diff/UnlockedEditor';
 import { RiskChips } from './diff/RiskChips';
 import { useDiffViewerState } from './diff/useDiffViewerState';
 import { hunkCountOf } from './diff/types';
@@ -47,7 +48,7 @@ const DIFF_SHORTCUTS: ShortcutSheetContent = {
 };
 
 export function DiffViewer(props: DiffViewerProps) {
-  const { diff, fileName } = props;
+  const { diff, fileName, repoPath, source } = props;
   const {
     viewMode,
     setViewMode,
@@ -57,6 +58,9 @@ export function DiffViewer(props: DiffViewerProps) {
     hunkActions,
     viewerRef,
     canEditFile,
+    unlocked,
+    toggleLock,
+    onUnlockedClosed,
     canComment,
     repoCommentCount,
     sendComments,
@@ -79,6 +83,13 @@ export function DiffViewer(props: DiffViewerProps) {
     toolbarActions,
     busy,
   });
+  const addedLineNumbers = useMemo(
+    () =>
+      lines.flatMap((line) =>
+        line.type === 'added' && line.newLineNo !== null ? [line.newLineNo] : []
+      ),
+    [lines]
+  );
   const fileFlags = useMemo(() => fileLevelFlags(riskFlags), [riskFlags]);
 
   if (!diff.trim()) {
@@ -118,7 +129,30 @@ export function DiffViewer(props: DiffViewerProps) {
         <span className="text-xs font-medium text-foreground">{fileName}</span>
         <RiskChips flags={fileFlags} />
         {canEditFile && (
-          <span className="text-[10px] text-foreground-muted">Double-click a line to edit</span>
+          <button
+            type="button"
+            data-testid="diff-lock-toggle"
+            aria-pressed={unlocked}
+            aria-label={unlocked ? 'Lock the diff' : 'Unlock to edit the file'}
+            title={
+              unlocked
+                ? 'Lock again and return to the diff'
+                : 'Unlock: edit the whole file freely, with syntax highlighting'
+            }
+            onClick={toggleLock}
+            className={`flex min-h-6 items-center rounded px-1.5 text-sm hover:bg-hover-bg motion-safe:active:scale-[0.96] ${
+              unlocked ? 'text-primary' : 'text-foreground-muted hover:text-foreground'
+            }`}
+          >
+            <AuricIcon name={unlocked ? 'lock_open' : 'lock'} />
+          </button>
+        )}
+        {canEditFile && (
+          <span className="text-[10px] text-foreground-muted">
+            {unlocked
+              ? 'Unlocked: edit freely, right-click for rename and find & replace'
+              : 'Double-click a line to edit'}
+          </span>
         )}
         {canComment && (
           <span className="text-[10px] text-foreground-muted">Comment a line for the agent</span>
@@ -148,7 +182,15 @@ export function DiffViewer(props: DiffViewerProps) {
       <LineCommentContext.Provider value={lineComment}>
         <LineEditContext.Provider value={lineEdit}>
           <HunkHeaderContext.Provider value={hunkHeader}>
-            {effectiveMode === 'unified' ? (
+            {unlocked && repoPath ? (
+              <UnlockedEditor
+                repoPath={repoPath}
+                filePath={fileName}
+                addedLineNumbers={addedLineNumbers}
+                restage={source?.kind === 'staged'}
+                onClosed={onUnlockedClosed}
+              />
+            ) : effectiveMode === 'unified' ? (
               <UnifiedView lines={lines} />
             ) : (
               <SideBySideView lines={lines} />
