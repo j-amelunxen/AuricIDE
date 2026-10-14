@@ -118,6 +118,21 @@ export function QuickAccessSkillsEditor({
     onAnnounce(`Added ${found.name}`);
   };
 
+  const linkedAuric = new Set(skills.map((skill) => skill.auricSkillId).filter(Boolean));
+
+  const adoptAuric = (definition: AuricSkillDefinition) => {
+    onChange([
+      ...skills,
+      {
+        id: crypto.randomUUID(),
+        label: definition.name,
+        prompt: definition.prompt,
+        auricSkillId: definition.id,
+      },
+    ]);
+    onAnnounce(`Added ${definition.name}`);
+  };
+
   const multipleSources = new Set(discovered.map((entry) => entry.sourceId)).size > 1;
 
   return (
@@ -308,9 +323,29 @@ export function QuickAccessSkillsEditor({
       {showDiscovery && (
         <details data-testid="quick-access-discovery">
           <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-foreground-muted">
-            Found on disk ({discovered.length})
+            Available skills ({auricSkills.length + discovered.length})
           </summary>
           <div className="mt-2 flex flex-col gap-3">
+            {/* First, because these are the ones the user wrote for exactly this:
+                the library in Settings → Skills, the same on every project. */}
+            {auricSkills.length > 0 && (
+              <div data-testid="quick-access-discovery-auric">
+                <p className="mb-1 text-[9px] font-bold uppercase tracking-wider text-foreground-muted/50">
+                  Auric Skills ({auricSkills.length})
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {auricSkills.map((definition) => (
+                    <DiscoveryRow
+                      key={`auric:${definition.id}`}
+                      name={definition.name}
+                      detail={definition.prompt}
+                      added={linkedAuric.has(definition.id)}
+                      onAdd={() => adoptAuric(definition)}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
             {SCOPE_ORDER.map(({ scope, title }) => {
               const entries = discovered.filter((entry) => entry.scope === scope);
               if (entries.length === 0) return null;
@@ -320,46 +355,23 @@ export function QuickAccessSkillsEditor({
                     {title} ({entries.length})
                   </p>
                   <ul className="flex flex-col gap-1">
-                    {entries.map((entry) => {
-                      const alreadyAdded = adopted.has(entry.invocation);
-                      return (
-                        <li
-                          key={`${entry.sourceId}:${entry.path}`}
-                          className="flex items-center gap-2 rounded border border-white/5 px-2 py-1.5"
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[11px] text-foreground">
-                              {entry.name}
-                              {multipleSources && (
-                                <span className="ml-1.5 text-[9px] text-foreground-muted/60">
-                                  {entry.sourceId}
-                                </span>
-                              )}
-                            </span>
-                            <span
-                              title={entry.description ?? undefined}
-                              className="block truncate font-mono text-[10px] text-foreground-muted"
-                            >
-                              {entry.invocation}
-                            </span>
-                          </span>
-                          <button
-                            type="button"
-                            disabled={alreadyAdded}
-                            aria-label={alreadyAdded ? `${entry.name} added` : `Add ${entry.name}`}
-                            onClick={() => adopt(entry)}
-                            className="rounded bg-white/5 px-2 py-1 text-[10px] text-foreground-muted transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            {alreadyAdded ? 'Added' : 'Add'}
-                          </button>
-                        </li>
-                      );
-                    })}
+                    {entries.map((entry) => (
+                      <DiscoveryRow
+                        key={`${entry.sourceId}:${entry.path}`}
+                        name={entry.name}
+                        tag={multipleSources ? entry.sourceId : undefined}
+                        detail={entry.invocation}
+                        description={entry.description ?? undefined}
+                        mono
+                        added={adopted.has(entry.invocation)}
+                        onAdd={() => adopt(entry)}
+                      />
+                    ))}
                   </ul>
                 </div>
               );
             })}
-            {discoveryReady && discovered.length === 0 && (
+            {discoveryReady && discovered.length === 0 && auricSkills.length === 0 && (
               <p className="text-[10px] text-foreground-muted/70">
                 Nothing found. Settings → Agent → Skill discovery controls where to look.
               </p>
@@ -368,5 +380,45 @@ export function QuickAccessSkillsEditor({
         </details>
       )}
     </SettingsSection>
+  );
+}
+
+interface DiscoveryRowProps {
+  name: string;
+  /** Which source rule found it, shown only when there is more than one. */
+  tag?: string;
+  detail: string;
+  description?: string;
+  /** An invocation reads as code; an Auric skill's prompt is prose. */
+  mono?: boolean;
+  added: boolean;
+  onAdd: () => void;
+}
+
+function DiscoveryRow({ name, tag, detail, description, mono, added, onAdd }: DiscoveryRowProps) {
+  return (
+    <li className="flex items-center gap-2 rounded border border-white/5 px-2 py-1.5">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] text-foreground">
+          {name}
+          {tag && <span className="ml-1.5 text-[9px] text-foreground-muted/60">{tag}</span>}
+        </span>
+        <span
+          title={description ?? detail}
+          className={`block truncate text-[10px] text-foreground-muted ${mono ? 'font-mono' : ''}`}
+        >
+          {detail}
+        </span>
+      </span>
+      <button
+        type="button"
+        disabled={added}
+        aria-label={added ? `${name} added` : `Add ${name}`}
+        onClick={onAdd}
+        className="rounded bg-white/5 px-2 py-1 text-[10px] text-foreground-muted transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {added ? 'Added' : 'Add'}
+      </button>
+    </li>
   );
 }
