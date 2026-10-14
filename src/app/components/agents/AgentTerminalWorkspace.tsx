@@ -13,6 +13,7 @@ import { useStore } from '@/lib/store';
 import { loadAppConfig } from '@/lib/config/appConfig';
 import { distinctStreamColors } from '@/lib/agents/streamColors';
 import { useNow } from '@/lib/hooks/useNow';
+import { useAltHeld } from '@/lib/hooks/useAltHeld';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent } from '@/lib/agents/fleet';
@@ -211,16 +212,19 @@ export function AgentTerminalWorkspace({
 
   const splitView = isSplit(grid.cells);
   const markers = useStore((s) => s.agentColors);
-  // One agent has no one to be told apart from, so colour would only be noise.
+  // Colour is a lookup, not a permanent coat: it shows while Alt is held, so the
+  // panes stay calm until the user asks who is who. One agent has no one to be
+  // told apart from, so it would only be noise there.
+  const altHeld = useAltHeld();
   const accents = useMemo(
     () =>
-      (agents?.length ?? 0) > 1
+      altHeld && (agents?.length ?? 0) > 1
         ? distinctStreamColors(
             (agents ?? []).map((a) => a.id),
             markers
           )
         : {},
-    [agents, markers]
+    [agents, markers, altHeld]
   );
 
   const canEnd = useCallback(
