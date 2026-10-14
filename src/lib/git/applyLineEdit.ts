@@ -13,9 +13,18 @@ export class LineEditError extends Error {
   }
 }
 
-/** Live work-tree diffs can be edited. Historical snapshots cannot. */
+/**
+ * Live work-tree diffs can be edited. A `ref` compare qualifies too: its right
+ * side is the file on disk, so its new-file line numbers are the file's own.
+ * A `revision` is a commit snapshot and cannot.
+ */
 export function isEditableDiffSource(source: DiffSource): boolean {
-  return source.kind === 'unstaged' || source.kind === 'combined' || source.kind === 'staged';
+  return (
+    source.kind === 'unstaged' ||
+    source.kind === 'combined' ||
+    source.kind === 'staged' ||
+    source.kind === 'ref'
+  );
 }
 
 /**
@@ -81,6 +90,32 @@ export async function applyDiffLineEdit(args: {
   const next = replaceFileLine(current, args.lineNo, args.expected, args.nextText);
   if (next === current) return;
   await writeFile(abs, next);
+  if (args.restage) {
+    await stageFiles(args.repoPath, [args.filePath]);
+  }
+}
+
+/**
+ * Writes a whole edited file (the unlocked editor). `expectedOnDisk` is the
+ * content the editor started from: if the file moved on since, nothing is written.
+ */
+export async function applyFullFileEdit(args: {
+  repoPath: string;
+  filePath: string;
+  expectedOnDisk: string;
+  nextContent: string;
+  restage: boolean;
+}): Promise<void> {
+  const abs = `${args.repoPath}/${args.filePath}`;
+  const current = await readFile(abs);
+  if (current !== args.expectedOnDisk) {
+    throw new LineEditError(
+      'mismatch',
+      'The file changed since this review opened — refresh the diff and try again'
+    );
+  }
+  if (args.nextContent === current) return;
+  await writeFile(abs, args.nextContent);
   if (args.restage) {
     await stageFiles(args.repoPath, [args.filePath]);
   }

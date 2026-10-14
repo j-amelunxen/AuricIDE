@@ -30,6 +30,7 @@ export function useDiffViewerState({ diff, fileName, repoPath, source }: DiffVie
   const [activeHunk, setActiveHunk] = useState(0);
   const [edit, setEdit] = useState<EditSession | null>(null);
   const [saving, setSaving] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
   // A finished hunk action or comment can take the focused control with it; focus goes back to the diff.
   const refocusViewer = useCallback(() => viewerRef.current?.focus(), []);
@@ -55,6 +56,32 @@ export function useDiffViewerState({ diff, fileName, repoPath, source }: DiffVie
     !!source &&
     isEditableDiffSource(source) &&
     (source.kind !== 'staged' || canEditStagedAgainstWorktree(fileStatus));
+
+  // The lock closes itself when the file can no longer be written (source or status moved on).
+  const isUnlocked = unlocked && canEditFile;
+
+  const toggleLock = useCallback(() => {
+    if (!canEditFile) return;
+    setEdit(null);
+    setUnlocked((open) => !open);
+  }, [canEditFile]);
+
+  /** Called by the editor once its last write has landed: bring the diff and the repo up to it. */
+  const onUnlockedClosed = useCallback(async () => {
+    if (!repoPath || !source) return;
+    try {
+      const store = useStore.getState();
+      const tabId = store.activeTabId;
+      const current = tabId ? store.diffByTabId[tabId] : undefined;
+      const patch = await reloadDiffPatch(repoPath, fileName, source);
+      if (tabId && current) store.setDiffTab(tabId, { ...current, patch });
+      await store.refreshRepoStatus(repoPath);
+      if (source.kind === 'ref') await store.loadCompare(repoPath, source.ref);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      useStore.getState().showToast(message, 'error');
+    }
+  }, [fileName, repoPath, source]);
 
   const startEdit = useCallback(
     (lineNo: number, content: string) => {
@@ -209,6 +236,9 @@ export function useDiffViewerState({ diff, fileName, repoPath, source }: DiffVie
     hunkActions,
     viewerRef,
     canEditFile,
+    unlocked: isUnlocked,
+    toggleLock,
+    onUnlockedClosed,
     canComment,
     repoCommentCount,
     sendComments,
