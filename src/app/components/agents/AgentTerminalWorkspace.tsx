@@ -22,12 +22,17 @@ import { groupAgentTabs } from '@/lib/agents/tabGroups';
 import {
   autoPlace,
   isSplit,
+  paneLayout,
   placeAgent,
+  PRESET_PANES,
+  presetGrid,
   reconcileGrid,
   removeAgent,
   showAgent,
+  singleGrid,
   type DropZone,
   type GridCells,
+  type PresetPanes,
 } from '@/lib/agents/terminalGrid';
 import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -162,7 +167,74 @@ function useTerminalGrid(
     [agent.id, apply, cells]
   );
 
-  return { cells, show, place, remove };
+  /** A layout button: the first tabs in strip order fill the panes, the first one gets the focus. */
+  const arrange = useCallback(
+    (orderedIds: readonly string[], panes: PresetPanes) => {
+      const next = presetGrid(orderedIds, panes);
+      if (!next) return;
+      apply(next, next.includes(agent.id) ? agent.id : next[0]);
+    },
+    [agent.id, apply]
+  );
+
+  return { cells, show, place, remove, arrange };
+}
+
+/** A small drawing of the preset itself, so the button shows what it will do. */
+function PresetGlyph({ panes }: { panes: PresetPanes }) {
+  const layout = paneLayout(presetGrid(['1', '2', '3', '4'], panes) ?? singleGrid('1'));
+  return (
+    <svg viewBox="0 0 16 12" aria-hidden="true" className="h-3 w-4">
+      {layout.map((pane) => (
+        <rect
+          key={pane.agentId}
+          x={(pane.col - 1) * 8 + 0.75}
+          y={(pane.row - 1) * 6 + 0.75}
+          width={pane.colSpan * 8 - 1.5}
+          height={pane.rowSpan * 6 - 1.5}
+          rx={1}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.2}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/** Two, three or four panes in one click, filled from the front of the tab strip. */
+function LayoutPresets({
+  agentCount,
+  onArrange,
+}: {
+  agentCount: number;
+  onArrange: (panes: PresetPanes) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Terminal layout"
+      className="flex items-center gap-0.5 rounded-lg border border-white/10 p-0.5"
+    >
+      {PRESET_PANES.map((panes) => {
+        const label = `Show the first ${panes} tabs side by side`;
+        const enough = agentCount >= panes;
+        return (
+          <button
+            key={panes}
+            type="button"
+            onClick={() => onArrange(panes)}
+            disabled={!enough}
+            aria-label={label}
+            title={enough ? label : `Needs ${panes} agents — ${agentCount} open`}
+            className="rounded-md p-1.5 text-foreground-muted transition-all hover:bg-white/10 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground-muted"
+          >
+            <PresetGlyph panes={panes} />
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -320,6 +392,17 @@ export function AgentTerminalWorkspace({
         </div>
 
         <div className="flex items-center gap-2">
+          {(agents?.length ?? 0) > 1 && (
+            <LayoutPresets
+              agentCount={agents?.length ?? 0}
+              onArrange={(panes) =>
+                grid.arrange(
+                  tabOrder.map((a) => a.id),
+                  panes
+                )
+              }
+            />
+          )}
           <span className="font-mono text-[9px] text-foreground-muted opacity-40">{agent.id}</span>
           {headerActions}
           {closeLabel !== null && (
