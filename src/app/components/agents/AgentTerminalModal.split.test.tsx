@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { AgentTerminalModal } from './AgentTerminalModal';
@@ -276,9 +276,28 @@ describe('AgentTerminalModal – terminals side by side', () => {
     expect(paneIds()).toEqual(['terminal-pane-a']);
   });
 
+  const holdAlt = () =>
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', altKey: true }));
+    });
+
+  it('wears no colour by default, and shows it while Alt is held', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'c', 'd'] });
+    renderModal();
+    expect(screen.queryByTestId('agent-tab-accent-a')).not.toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-a').dataset.accent).toBeUndefined();
+    holdAlt();
+    expect(screen.getByTestId('agent-tab-accent-a')).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt', altKey: false }));
+    });
+    expect(screen.queryByTestId('agent-tab-accent-a')).not.toBeInTheDocument();
+  });
+
   it('gives every tab and pane of a fleet its own colour', () => {
     useStore.setState({ terminalGridCells: ['a', 'b', 'c', 'd'] });
     renderModal();
+    holdAlt();
     const tabColors = AGENTS.map((agent) =>
       screen.getByTestId(`agent-tab-accent-${agent.id}`).getAttribute('data-accent')
     );
@@ -293,6 +312,7 @@ describe('AgentTerminalModal – terminals side by side', () => {
   it('a marker the user set is the colour the tab and pane wear', () => {
     useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'], agentColors: { b: 'red' } });
     renderModal();
+    holdAlt();
     expect(screen.getByTestId('agent-tab-accent-b').dataset.accent).toBe('#ff6b6b');
     expect(screen.getByTestId('terminal-pane-b').dataset.accent).toBe('#ff6b6b');
   });
