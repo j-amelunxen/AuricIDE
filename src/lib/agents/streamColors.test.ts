@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STREAM_COLORS, streamColorFor } from './streamColors';
+import { distinctStreamColors, STREAM_COLORS, streamColorFor } from './streamColors';
 import { AGENT_COLORS } from './colors';
 
 describe('streamColorFor', () => {
@@ -56,5 +56,35 @@ describe('streamColorFor', () => {
 
   it('has no duplicate entries in the palette', () => {
     expect(new Set(STREAM_COLORS).size).toBe(STREAM_COLORS.length);
+  });
+});
+
+describe('distinctStreamColors', () => {
+  const ids = Array.from({ length: 200 }, (_, i) => `agent-${i}`);
+
+  it('never gives two of the first eight agents the same colour', () => {
+    for (let start = 0; start < ids.length - 8; start += 7) {
+      const group = ids.slice(start, start + 8);
+      const colors = distinctStreamColors(group, {});
+      expect(new Set(group.map((id) => colors[id])).size).toBe(group.length);
+    }
+  });
+
+  it('does not depend on the order the agents are listed in', () => {
+    const group = ['agent-1', 'agent-2', 'agent-3', 'agent-4'];
+    expect(distinctStreamColors([...group].reverse(), {})).toEqual(distinctStreamColors(group, {}));
+  });
+
+  it('keeps a marker and gives nobody else that hue', () => {
+    const red = AGENT_COLORS.find((c) => c.key === 'red')?.hex;
+    const colors = distinctStreamColors(['agent-1', 'agent-2'], { 'agent-1': 'red' });
+    expect(colors['agent-1']).toBe(red);
+    expect(colors['agent-2']).not.toBe(red);
+  });
+
+  it('still answers for more agents than the palette holds', () => {
+    const colors = distinctStreamColors(ids.slice(0, 20), {});
+    expect(Object.keys(colors)).toHaveLength(20);
+    for (const hex of Object.values(colors)) expect(STREAM_COLORS).toContain(hex);
   });
 });

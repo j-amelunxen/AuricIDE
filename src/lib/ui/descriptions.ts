@@ -44,5 +44,7 @@ export const GUIDANCE = {
       'Shows remaining usage and reset times. Claude updates while its interactive agent runs; Codex updates every 15 minutes, or when you refresh.',
     agentConsoleAutoOpen:
       'When no project is open and agents are running, shows the Agent Console instead of the start screen.',
+    agentTerminalAutoArrange:
+      'A new agent takes a free spot in the terminal grid by itself, up to four side by side. Turn it off to arrange them by dragging tabs.',
   },
 };

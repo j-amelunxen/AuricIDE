@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  autoPlace,
   DROP_ZONES,
   isSplit,
   paneLayout,
@@ -212,5 +213,38 @@ describe('terminalGrid – where the pointer is', () => {
     expect(zoneRect('left')).toEqual({ left: 0, top: 0, width: 0.5, height: 1 });
     expect(zoneRect('br')).toEqual({ left: 0.5, top: 0.5, width: 0.5, height: 0.5 });
     expect(zoneRect('center')).toEqual({ left: 0, top: 0, width: 1, height: 1 });
+  });
+});
+
+describe('terminalGrid – arranging an arrival by itself', () => {
+  it('puts the second agent in the right half', () => {
+    expect(autoPlace(singleGrid('a'), 'b')).toEqual(['a', 'b', 'a', 'b']);
+  });
+
+  it('puts the third in the bottom right, the fourth in the bottom left', () => {
+    const three = autoPlace(['a', 'b', 'a', 'b'], 'c');
+    expect(three).toEqual(['a', 'b', 'a', 'c']);
+    expect(autoPlace(three, 'd')).toEqual(['a', 'b', 'd', 'c']);
+  });
+
+  it('takes the quadrant from whoever holds two, wherever the user put them', () => {
+    expect(autoPlace(['a', 'a', 'b', 'b'], 'c')).toEqual(['a', 'a', 'b', 'c']);
+    expect(autoPlace(['a', 'a', 'b', 'c'], 'd')).toEqual(['a', 'd', 'b', 'c']);
+  });
+
+  it('leaves a full grid alone, and an agent that is already shown', () => {
+    const full: GridCells = ['a', 'b', 'c', 'd'];
+    expect(autoPlace(full, 'e')).toEqual(full);
+    expect(autoPlace(['a', 'b', 'a', 'b'], 'b')).toEqual(['a', 'b', 'a', 'b']);
+  });
+
+  it('keeps every agent a rectangle', () => {
+    let cells: GridCells = singleGrid('a');
+    for (const id of ['b', 'c', 'd']) {
+      cells = autoPlace(cells, id);
+      for (const pane of paneLayout(cells)) {
+        expect(pane.rowSpan * pane.colSpan).toBe(cells.filter((c) => c === pane.agentId).length);
+      }
+    }
   });
 });

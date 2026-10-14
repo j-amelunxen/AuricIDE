@@ -51,3 +51,42 @@ export function streamColorFor(agentId: string, marker?: AgentColor | null): str
   if (chosen) return chosen;
   return STREAM_COLORS[hashAgentId(agentId) % STREAM_COLORS.length];
 }
+
+/**
+ * Colours for a set of agents that have to be told apart at a glance — the
+ * tabs and panes of the terminal. Two agents sharing a hue there would
+ * defeat the point, so a collision moves the later agent to the next free
+ * palette slot instead of keeping its hash.
+ *
+ * Markers are placed first and keep their hue, which no one else then takes.
+ * The rest are handled in hash order, not in the order given, so the answer
+ * does not depend on how the fleet happens to be listed. With more agents
+ * than hues the surplus fall back to their own hash colour.
+ */
+export function distinctStreamColors(
+  agentIds: readonly string[],
+  markers: Readonly<Record<string, AgentColor | undefined>>
+): Record<string, string> {
+  const colors: Record<string, string> = {};
+  const taken = new Set<string>();
+  const unmarked: string[] = [];
+  for (const id of agentIds) {
+    const chosen = agentColorHex(markers[id]);
+    if (chosen) {
+      colors[id] = chosen;
+      taken.add(chosen);
+    } else {
+      unmarked.push(id);
+    }
+  }
+  unmarked.sort((a, b) => hashAgentId(a) - hashAgentId(b) || a.localeCompare(b));
+  for (const id of unmarked) {
+    const wanted = hashAgentId(id) % STREAM_COLORS.length;
+    const free = STREAM_COLORS.map(
+      (_, step) => STREAM_COLORS[(wanted + step) % STREAM_COLORS.length]
+    ).find((hex) => !taken.has(hex));
+    colors[id] = free ?? STREAM_COLORS[wanted];
+    taken.add(colors[id]);
+  }
+  return colors;
+}

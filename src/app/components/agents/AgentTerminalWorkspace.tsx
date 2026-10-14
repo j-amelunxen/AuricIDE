@@ -10,6 +10,8 @@ import {
 } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
+import { loadAppConfig } from '@/lib/config/appConfig';
+import { distinctStreamColors } from '@/lib/agents/streamColors';
 import { useNow } from '@/lib/hooks/useNow';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
@@ -17,6 +19,7 @@ import { isFinishedAgent } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel } from '@/lib/agents/state';
 import { groupAgentTabs } from '@/lib/agents/tabGroups';
 import {
+  autoPlace,
   isSplit,
   placeAgent,
   reconcileGrid,
@@ -106,6 +109,26 @@ function useTerminalGrid(
     [stored, agents, agent.id]
   );
 
+  // An agent that appears while this is open takes a free quadrant by itself
+  // (see `autoPlace`). Only the arrival decides: a split taken apart on
+  // purpose stays apart, and opening the modal rearranges nothing.
+  const agentIds = (agents ?? []).map((a) => a.id).join('\n');
+  const knownIds = useRef(new Set(agentIds ? agentIds.split('\n') : []));
+  useEffect(() => {
+    const ids = agentIds ? agentIds.split('\n') : [];
+    const arrived = ids.filter((id) => !knownIds.current.has(id));
+    const before = ids.filter((id) => knownIds.current.has(id));
+    knownIds.current = new Set(ids);
+    if (arrived.length === 0 || before.length === 0) return;
+    if (!loadAppConfig().agentTerminalAutoArrange) return;
+    const anchor = before.includes(agent.id) ? agent.id : before[0];
+    const next = arrived.reduce(
+      (grid, id) => autoPlace(grid, id),
+      reconcileGrid(stored, before, anchor)
+    );
+    if (isSplit(next)) setStored(next);
+  }, [agentIds, agent.id, stored, setStored]);
+
   const apply = useCallback(
     (next: GridCells | null, activeId: string) => {
       setStored(next && isSplit(next) ? next : null);
@@ -185,6 +208,20 @@ export function AgentTerminalWorkspace({
   // Grouping reorders the strip, so "the tab beside this one" has to be read
   // off the strip — the raw list would send the user to another project.
   const tabOrder = useMemo(() => tabGroups.flatMap((group) => group.agents), [tabGroups]);
+
+  const splitView = isSplit(grid.cells);
+  const markers = useStore((s) => s.agentColors);
+  // One agent has no one to be told apart from, so colour would only be noise.
+  const accents = useMemo(
+    () =>
+      (agents?.length ?? 0) > 1
+        ? distinctStreamColors(
+            (agents ?? []).map((a) => a.id),
+            markers
+          )
+        : {},
+    [agents, markers]
+  );
 
   const canEnd = useCallback(
     (target: AgentInfo) => !!onEndAgent && (canEndAgent?.(target) ?? true),
@@ -350,6 +387,8 @@ export function AgentTerminalWorkspace({
                     onDragStart={
                       (agents?.length ?? 0) > 1 ? (event) => tabDrag.begin(a.id, event) : undefined
                     }
+                    accent={accents[a.id]}
+                    inView={splitView && grid.cells.includes(a.id)}
                     onEnd={canEnd(a) ? () => void closeTab(a) : undefined}
                     onSaveScreen={isActive && onSaveScreen ? saveVisibleScreen : undefined}
                   />
@@ -369,6 +408,9 @@ export function AgentTerminalWorkspace({
         drag={tabDrag.drag}
         onFocusPane={grid.show}
         onRemovePane={grid.remove}
+        accents={accents}
+        canEndPane={canEnd}
+        onEndPane={(target) => void closeTab(target)}
         registerTerminal={registerTerminal}
         onSelectionSpawn={onSelectionSpawn}
       />

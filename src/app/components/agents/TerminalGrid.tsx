@@ -9,9 +9,17 @@ import {
   type DropZone,
   type GridCells,
 } from '@/lib/agents/terminalGrid';
+import { isFinishedAgent } from '@/lib/agents/fleet';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { AgentXterm, type AgentXtermHandle } from './AgentXterm';
 import type { TabGridDrag } from './useTabGridDrag';
+
+const PANE_ACTION =
+  'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[transform,color,background-color] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-primary/60';
+
+/** The active pane's frame is the full hue, the others a quiet version of it. */
+const paneFrame = (accent: string, active: boolean) =>
+  active ? accent : `color-mix(in srgb, ${accent} 35%, transparent)`;
 
 const percent = (share: number) => `${share * 100}%`;
 
@@ -65,7 +73,14 @@ interface TerminalGridProps {
   areaRef: RefObject<HTMLDivElement | null>;
   drag: TabGridDrag | null;
   onFocusPane: (agentId: string) => void;
+  /** Identity colour per agent; the pane's frame and name wear it. Absent: the plain frame. */
+  accents?: Record<string, string>;
+  /** Takes the pane out of the split. The agent keeps running. */
   onRemovePane: (agentId: string) => void;
+  /** Whether a pane gets the end control — the same answer the tab strip uses. */
+  canEndPane?: (agent: AgentInfo) => boolean;
+  /** Ends the agent, exactly as its tab's X does. */
+  onEndPane?: (agent: AgentInfo) => void;
   registerTerminal: (agentId: string, handle: AgentXtermHandle | null) => void;
   onSelectionSpawn?: (selection: string) => void;
 }
@@ -83,6 +98,9 @@ export function TerminalGrid({
   drag,
   onFocusPane,
   onRemovePane,
+  accents,
+  canEndPane,
+  onEndPane,
   registerTerminal,
   onSelectionSpawn,
 }: TerminalGridProps) {
@@ -92,15 +110,21 @@ export function TerminalGrid({
       <div className={`grid h-full grid-cols-2 grid-rows-2 ${split ? 'gap-2' : ''}`}>
         {paneLayout(cells).map((pane) => {
           const isActive = pane.agentId === activeId;
-          const name = agents.find((a) => a.id === pane.agentId)?.name ?? pane.agentId;
+          const paneAgent = agents.find((a) => a.id === pane.agentId);
+          const accent = accents?.[pane.agentId];
+          const name = paneAgent?.name ?? pane.agentId;
+          const endLabel =
+            paneAgent && isFinishedAgent(paneAgent) ? `Dismiss ${name}` : `Stop ${name}`;
           return (
             <div
               key={pane.agentId}
               data-testid={`terminal-pane-${pane.agentId}`}
               data-active={isActive}
+              data-accent={accent}
               style={{
                 gridRow: `${pane.row} / span ${pane.rowSpan}`,
                 gridColumn: `${pane.col} / span ${pane.colSpan}`,
+                ...(split && accent ? { borderColor: paneFrame(accent, isActive) } : {}),
               }}
               onMouseDownCapture={() => {
                 if (!isActive) onFocusPane(pane.agentId);
@@ -108,7 +132,7 @@ export function TerminalGrid({
               className={`flex min-h-0 min-w-0 flex-col ${
                 split
                   ? `overflow-hidden rounded-lg border transition-colors ${
-                      isActive ? 'border-primary/40' : 'border-white/10'
+                      accent ? '' : isActive ? 'border-primary/40' : 'border-white/10'
                     }`
                   : ''
               }`}
@@ -116,6 +140,7 @@ export function TerminalGrid({
               {split && (
                 <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/5 bg-black/40 py-1 pl-3 pr-1">
                   <span
+                    style={accent && isActive ? { color: accent } : undefined}
                     className={`min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-wider ${
                       isActive ? 'text-foreground' : 'text-foreground-muted'
                     }`}
@@ -129,10 +154,27 @@ export function TerminalGrid({
                     title="Take out of the split view (the agent keeps running)"
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={() => onRemovePane(pane.agentId)}
-                    className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-foreground-muted transition-[transform,color,background-color] hover:bg-white/10 hover:text-foreground active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-primary/60"
+                    className={`${PANE_ACTION} hover:bg-white/10 hover:text-foreground`}
                   >
-                    <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
+                    <AuricIcon
+                      name="right_panel_close"
+                      aria-hidden="true"
+                      className="text-[11px]"
+                    />
                   </button>
+                  {paneAgent && onEndPane && (canEndPane?.(paneAgent) ?? true) && (
+                    <button
+                      type="button"
+                      data-testid={`terminal-pane-end-${pane.agentId}`}
+                      aria-label={endLabel}
+                      title={endLabel}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={() => onEndPane(paneAgent)}
+                      className={`${PANE_ACTION} hover:bg-red-500/15 hover:text-red-400`}
+                    >
+                      <AuricIcon name="close" aria-hidden="true" className="text-[11px]" />
+                    </button>
+                  )}
                 </div>
               )}
               <div className="min-h-0 flex-1">
