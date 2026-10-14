@@ -145,6 +145,24 @@ export function autoPlace(cells: GridCells, arrivedId: string): GridCells {
   ) as unknown as GridCells;
 }
 
+export type PresetPanes = 2 | 3 | 4;
+
+export const PRESET_PANES: readonly PresetPanes[] = [2, 3, 4];
+
+/**
+ * A one-click layout over the first agents in tab order: two side by side,
+ * three with the first one on the left half, or one per quadrant. Null when
+ * there are fewer agents than panes — a preset that has to leave a pane
+ * doubled up is not the preset that was asked for.
+ */
+export function presetGrid(agentIds: readonly string[], panes: PresetPanes): GridCells | null {
+  if (agentIds.length < panes) return null;
+  const [a, b, c, d] = agentIds;
+  if (panes === 2) return [a, b, a, b];
+  if (panes === 3) return [a, b, a, c];
+  return [a, b, c, d];
+}
+
 /** Takes an agent out; its neighbours grow into the space. Null when it was the last one. */
 export function removeAgent(cells: GridCells, agentId: string): GridCells | null {
   if (!cells.includes(agentId)) return cells;

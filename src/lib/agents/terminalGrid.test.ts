@@ -5,6 +5,7 @@ import {
   isSplit,
   paneLayout,
   placeAgent,
+  presetGrid,
   reconcileGrid,
   removeAgent,
   showAgent,
@@ -246,5 +247,31 @@ describe('terminalGrid – arranging an arrival by itself', () => {
         expect(pane.rowSpan * pane.colSpan).toBe(cells.filter((c) => c === pane.agentId).length);
       }
     }
+  });
+});
+
+describe('terminalGrid – preset layouts', () => {
+  it('two panes put the first two agents side by side', () => {
+    expect(presetGrid(['a', 'b', 'c'], 2)).toEqual(['a', 'b', 'a', 'b']);
+  });
+
+  it('three panes give the first agent the left half and stack the next two on the right', () => {
+    expect(presetGrid(['a', 'b', 'c', 'd'], 3)).toEqual(['a', 'b', 'a', 'c']);
+  });
+
+  it('four panes give each of the first four agents a quadrant', () => {
+    expect(presetGrid(['a', 'b', 'c', 'd', 'e'], 4)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('every preset keeps the panes rectangular', () => {
+    for (const panes of [2, 3, 4] as const) {
+      expect(paneLayout(presetGrid(['a', 'b', 'c', 'd'], panes) ?? singleGrid('a'))).toHaveLength(
+        panes
+      );
+    }
+  });
+
+  it('is null when there are fewer agents than panes', () => {
+    expect(presetGrid(['a', 'b'], 3)).toBeNull();
   });
 });

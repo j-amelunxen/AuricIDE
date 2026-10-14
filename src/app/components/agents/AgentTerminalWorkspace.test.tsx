@@ -59,6 +59,34 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
     useStore.setState({ terminalGridCells: null, overlayStack: { layers: [] } });
   });
 
+  it('a layout button puts the first tabs into the panes and focuses the first one', async () => {
+    const user = userEvent.setup();
+    const third: AgentInfo = { ...running, id: 'c', name: 'Gamma' };
+    const fourth: AgentInfo = { ...running, id: 'd', name: 'Delta' };
+    const { onSwitchAgent } = renderWorkspace({
+      agent: fourth,
+      agents: [running, finished, third, fourth],
+    });
+    await user.click(screen.getByRole('button', { name: 'Show the first 3 tabs side by side' }));
+    expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'a', 'c']);
+    expect(onSwitchAgent).toHaveBeenCalledWith(running);
+  });
+
+  it('offers a layout only when there are enough tabs to fill it', () => {
+    renderWorkspace();
+    expect(
+      screen.getByRole('button', { name: 'Show the first 2 tabs side by side' })
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Show the first 4 tabs side by side' })
+    ).toBeDisabled();
+  });
+
+  it('shows no layout buttons for a single agent', () => {
+    renderWorkspace({ agents: [running] });
+    expect(screen.queryByRole('group', { name: 'Terminal layout' })).not.toBeInTheDocument();
+  });
+
   it('brings no dialog and no backdrop of its own', () => {
     renderWorkspace();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
