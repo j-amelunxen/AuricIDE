@@ -120,6 +120,31 @@ export function placeAgent(
   return fill(draft) ?? singleGrid(agentId);
 }
 
+/**
+ * Where a newly arrived agent goes when nobody arranged it: the second beside
+ * the first, then the third and fourth into the corners. Once all four
+ * quadrants hold their own agent the grid stays as it is — the rest are tabs.
+ *
+ * It reads the layout rather than counting slots, so a user's own arrangement
+ * is respected: the agent holding two quadrants (the later one, if both do)
+ * gives up its last one.
+ */
+export function autoPlace(cells: GridCells, arrivedId: string): GridCells {
+  if (cells.includes(arrivedId)) return cells;
+  const shown = [...new Set(cells)];
+  if (shown.length === 1) return placeAgent(cells, arrivedId, 'right');
+  if (shown.length >= 4) return cells;
+  const lastQuadrant = Math.max(
+    ...shown
+      .map((id) => cellsOf([...cells], id))
+      .filter((own) => own.length === 2)
+      .flat()
+  );
+  return cells.map((id, index) =>
+    index === lastQuadrant ? arrivedId : id
+  ) as unknown as GridCells;
+}
+
 /** Takes an agent out; its neighbours grow into the space. Null when it was the last one. */
 export function removeAgent(cells: GridCells, agentId: string): GridCells | null {
   if (!cells.includes(agentId)) return cells;

@@ -61,6 +61,14 @@ export function AgentContent() {
     void (checked ? refreshUsageLimits() : loadUsageLimits());
   };
 
+  const [agentTerminalAutoArrange, setAgentTerminalAutoArrange] = useState(
+    () => loadAppConfig().agentTerminalAutoArrange
+  );
+  const handleAgentTerminalAutoArrangeChange = (checked: boolean) => {
+    setAppConfigValue('agentTerminalAutoArrange', checked);
+    setAgentTerminalAutoArrange(checked);
+  };
+
   const handleAgentConsoleAutoOpenChange = (checked: boolean) => {
     setAppConfigValue('agentConsoleAutoOpen', checked);
     setAgentConsoleAutoOpen(checked);
@@ -197,6 +205,15 @@ export function AgentContent() {
       </SettingsSection>
 
       <SettingsSection title="Agent Console" icon="dashboard">
+        <SettingsToggle
+          label="Arrange new agents in the terminal grid"
+          description="A new agent takes a free spot beside the others, up to four at once. Agents after that stay as tabs."
+          tooltip={GUIDANCE.settings.agentTerminalAutoArrange}
+          testId="agent-terminal-auto-arrange-toggle"
+          checked={agentTerminalAutoArrange}
+          onChange={handleAgentTerminalAutoArrangeChange}
+        />
+
         <SettingsToggle
           label="Open Agent Console on launch"
           description="When no project is open and agents are running, open the Agent Console instead of the start screen."

@@ -159,6 +159,10 @@ export interface AgentTabProps {
   /** Shared clock, so a strip of tabs ages in one step rather than per tab. */
   now: number;
   onSelect: () => void;
+  /** Drawn in one of the split panes right now. Only passed while the view is split. */
+  inView?: boolean;
+  /** The agent's identity colour. A bar on the tab's left edge, never on the status chip. */
+  accent?: string;
   /** Absent when neither killing nor dismissing is wired up. */
   onEnd?: () => void;
   /**
@@ -238,6 +242,8 @@ export function AgentTab({
   isActive,
   now,
   onSelect,
+  inView = false,
+  accent,
   onEnd,
   onSaveScreen,
   onDragStart,
@@ -252,6 +258,7 @@ export function AgentTab({
     <div
       ref={shellRef}
       data-testid={`agent-tab-shell-${agent.id}`}
+      data-in-view={inView ? 'true' : undefined}
       onMouseEnter={open}
       onMouseLeave={close}
       className={`group flex min-w-40 flex-1 items-center overflow-hidden rounded-lg border whitespace-nowrap transition-colors ${
@@ -260,6 +267,15 @@ export function AgentTab({
           : 'border-white/5 bg-white/[0.02] text-foreground-muted hover:bg-white/5 hover:text-foreground'
       }`}
     >
+      {accent && (
+        <span
+          aria-hidden="true"
+          data-testid={`agent-tab-accent-${agent.id}`}
+          data-accent={accent}
+          style={{ backgroundColor: accent }}
+          className="w-1 flex-shrink-0 self-stretch"
+        />
+      )}
       <button
         role="tab"
         aria-selected={isActive}
@@ -296,6 +312,14 @@ export function AgentTab({
           className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${style.dot}`}
         />
         <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+        {inView && (
+          <AuricIcon
+            name="view_column_2"
+            title="Shown in the split view"
+            style={accent ? { color: accent } : undefined}
+            className="flex-shrink-0 text-[11px] text-primary"
+          />
+        )}
         <span className={`flex-shrink-0 text-[8px] font-black tracking-widest ${style.label}`}>
           {agentStateLabel(state, agent.headless)}
         </span>

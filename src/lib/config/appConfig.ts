@@ -43,6 +43,7 @@ export const APP_CONFIG_KEYS = {
   cliUsageLimits: 'auric.cli-usage-limits',
   agentTerminalFontSize: 'auric.agent-terminal-font-size',
   agentConsoleAutoOpen: 'auric.agent-console-auto-open',
+  agentTerminalAutoArrange: 'auric.agent-terminal.auto-arrange',
   agentConsoleFeedHeight: 'auric.agent-console.feed-height',
   agentConsoleProjectsCollapsed: 'auric.agent-console.projects-collapsed',
   agentLogPersist: 'auric.agent-log.persist',
@@ -114,6 +115,12 @@ export interface AppConfig {
    */
   agentConsoleAutoOpen: boolean;
   /**
+   * A new agent takes a free quadrant of the terminal grid by itself (up to
+   * four), instead of waiting to be dragged there. On by default: a fleet
+   * you have to arrange by hand before you can watch it is the surprise.
+   */
+  agentTerminalAutoArrange: boolean;
+  /**
    * Keep the Agent Console's activity feed on disk instead of in memory only.
    * Off by default: writing a record of what agents did to the user's machine
    * is a choice they make, never one an install makes for them.
@@ -130,6 +137,7 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   cliUsageLimits: false,
   agentTerminalFontSize: 14,
   agentConsoleAutoOpen: false,
+  agentTerminalAutoArrange: true,
   agentLogPersist: false,
   agentLogRetentionDays: 2,
 };
@@ -208,6 +216,10 @@ export function loadAppConfig(): AppConfig {
     agentConsoleAutoOpen: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.agentConsoleAutoOpen),
       APP_CONFIG_DEFAULTS.agentConsoleAutoOpen
+    ),
+    agentTerminalAutoArrange: decodeBoolean(
+      readAppPref(APP_CONFIG_KEYS.agentTerminalAutoArrange),
+      APP_CONFIG_DEFAULTS.agentTerminalAutoArrange
     ),
     agentLogPersist: decodeBoolean(
       readAppPref(APP_CONFIG_KEYS.agentLogPersist),

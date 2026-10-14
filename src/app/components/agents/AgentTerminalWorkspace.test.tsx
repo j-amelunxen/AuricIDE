@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
@@ -112,6 +112,32 @@ describe('AgentTerminalWorkspace – outside the modal', () => {
     await waitFor(() => expect(onEndAgent).toHaveBeenCalledTimes(1));
     expect(onEndAgent).toHaveBeenCalledWith(finished);
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('a pane’s X ends the agent exactly like the tab’s X; the split control only takes it out', async () => {
+    const user = userEvent.setup();
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    const { confirm, onEndAgent } = renderWorkspace({ agents: [running, finished] });
+
+    await user.click(screen.getByTestId('terminal-pane-remove-b'));
+    expect(onEndAgent).not.toHaveBeenCalled();
+    expect(useStore.getState().terminalGridCells).toBeNull();
+
+    act(() => useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] }));
+    await user.click(screen.getByTestId('terminal-pane-end-b'));
+    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(finished));
+    expect(confirm).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('terminal-pane-end-a'));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onEndAgent).toHaveBeenCalledWith(running));
+  });
+
+  it('offers no end control on a pane where the shell allows none', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderWorkspace({ canEndAgent: (target) => target.id !== 'b' });
+    expect(screen.queryByTestId('terminal-pane-end-b')).not.toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-end-a')).toBeInTheDocument();
   });
 
   it('closes when the last tab is ended', async () => {

@@ -28,6 +28,7 @@ describe('app config', () => {
     setAppConfigValue('cliUsageLimits', true);
     setAppConfigValue('agentTerminalFontSize', 16);
     setAppConfigValue('agentConsoleAutoOpen', true);
+    setAppConfigValue('agentTerminalAutoArrange', false);
     setAppConfigValue('agentLogPersist', true);
     setAppConfigValue('agentLogRetentionDays', 7);
 
@@ -38,9 +39,16 @@ describe('app config', () => {
       cliUsageLimits: true,
       agentTerminalFontSize: 16,
       agentConsoleAutoOpen: true,
+      agentTerminalAutoArrange: false,
       agentLogPersist: true,
       agentLogRetentionDays: 7,
     });
+  });
+
+  it('arranges new agents in the terminal grid unless told not to', () => {
+    expect(APP_CONFIG_DEFAULTS.agentTerminalAutoArrange).toBe(true);
+    expect(loadAppConfig().agentTerminalAutoArrange).toBe(true);
+    expect(APP_CONFIG_KEYS.agentTerminalAutoArrange).toBe('auric.agent-terminal.auto-arrange');
   });
 
   it('keeps the Agent Console closed on launch until asked for', () => {

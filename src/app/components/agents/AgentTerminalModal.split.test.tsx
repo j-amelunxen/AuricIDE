@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AgentTerminalModal } from './AgentTerminalModal';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
+import { setAppConfigValue } from '@/lib/config/appConfig';
 
 const mockFocus = vi.fn();
 
@@ -41,6 +42,8 @@ const AGENTS = [
   makeAgent('c', 'Gamma'),
   makeAgent('d', 'Delta'),
 ];
+
+const ALL_FIVE = [...AGENTS, makeAgent('e', 'Epsilon')];
 
 const AREA = { left: 0, top: 100, width: 1000, height: 600 };
 
@@ -94,7 +97,8 @@ const paneIds = () =>
 describe('AgentTerminalModal – terminals side by side', () => {
   beforeEach(() => {
     mockFocus.mockClear();
-    useStore.setState({ terminalGridCells: null });
+    localStorage.clear();
+    useStore.setState({ terminalGridCells: null, agentColors: {} });
   });
   afterEach(() => {
     useStore.setState({ terminalGridCells: null, overlayStack: { layers: [] } });
@@ -231,6 +235,88 @@ describe('AgentTerminalModal – terminals side by side', () => {
     dragTab('a', 0.5, 0.5);
     expect(paneIds()).toEqual(['terminal-pane-a']);
     expect(useStore.getState().terminalGridCells).toBeNull();
+  });
+
+  it('a second agent arriving puts the two side by side by itself', () => {
+    const view = renderModal([AGENTS[0]]);
+    expect(paneIds()).toEqual(['terminal-pane-a']);
+
+    view.rerender(<Harness onClose={vi.fn()} agents={[AGENTS[0], AGENTS[1]]} />);
+
+    expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'a', 'b']);
+    expect(paneIds()).toEqual(['terminal-pane-a', 'terminal-pane-b']);
+    expect(screen.getByTestId('terminal-pane-a')).toHaveAttribute('data-active', 'true');
+  });
+
+  it('a modal that opens onto two agents is left as the user had it', () => {
+    renderModal([AGENTS[0], AGENTS[1]]);
+    expect(paneIds()).toEqual(['terminal-pane-a']);
+    expect(useStore.getState().terminalGridCells).toBeNull();
+  });
+
+  it('the third and fourth take the bottom corners; the fifth stays a tab', () => {
+    const view = renderModal([AGENTS[0]]);
+    const show = (count: number) =>
+      view.rerender(<Harness onClose={vi.fn()} agents={ALL_FIVE.slice(0, count)} />);
+    show(2);
+    show(3);
+    expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'a', 'c']);
+    show(4);
+    expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'd', 'c']);
+    show(5);
+    expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'd', 'c']);
+    expect(screen.getByTestId('agent-tab-e')).toBeInTheDocument();
+  });
+
+  it('arranges nothing when the setting is off', () => {
+    setAppConfigValue('agentTerminalAutoArrange', false);
+    const view = renderModal([AGENTS[0]]);
+    view.rerender(<Harness onClose={vi.fn()} agents={[AGENTS[0], AGENTS[1]]} />);
+    expect(useStore.getState().terminalGridCells).toBeNull();
+    expect(paneIds()).toEqual(['terminal-pane-a']);
+  });
+
+  it('gives every tab and pane of a fleet its own colour', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'c', 'd'] });
+    renderModal();
+    const tabColors = AGENTS.map((agent) =>
+      screen.getByTestId(`agent-tab-accent-${agent.id}`).getAttribute('data-accent')
+    );
+    expect(new Set(tabColors).size).toBe(4);
+    for (const agent of AGENTS) {
+      expect(screen.getByTestId(`terminal-pane-${agent.id}`).dataset.accent).toBe(
+        screen.getByTestId(`agent-tab-accent-${agent.id}`).dataset.accent
+      );
+    }
+  });
+
+  it('a marker the user set is the colour the tab and pane wear', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'], agentColors: { b: 'red' } });
+    renderModal();
+    expect(screen.getByTestId('agent-tab-accent-b').dataset.accent).toBe('#ff6b6b');
+    expect(screen.getByTestId('terminal-pane-b').dataset.accent).toBe('#ff6b6b');
+  });
+
+  it('one agent alone wears no colour', () => {
+    renderModal([AGENTS[0]]);
+    expect(screen.queryByTestId('agent-tab-accent-a')).not.toBeInTheDocument();
+  });
+
+  it('taking a pane out is not undone by the next render', () => {
+    const view = renderModal([AGENTS[0]]);
+    view.rerender(<Harness onClose={vi.fn()} agents={[AGENTS[0], AGENTS[1]]} />);
+    fireEvent.click(screen.getByTestId('terminal-pane-remove-b'));
+    view.rerender(<Harness onClose={vi.fn()} agents={[AGENTS[0], AGENTS[1]]} />);
+    expect(paneIds()).toEqual(['terminal-pane-a']);
+  });
+
+  it('marks the tabs that are on screen, only while the view is split', () => {
+    renderModal();
+    expect(screen.getByTestId('agent-tab-shell-a')).not.toHaveAttribute('data-in-view');
+    dragTab('b', 0.9, 0.5);
+    expect(screen.getByTestId('agent-tab-shell-a')).toHaveAttribute('data-in-view', 'true');
+    expect(screen.getByTestId('agent-tab-shell-b')).toHaveAttribute('data-in-view', 'true');
+    expect(screen.getByTestId('agent-tab-shell-c')).not.toHaveAttribute('data-in-view');
   });
 
   it('an agent that is gone gives its pane up', () => {
