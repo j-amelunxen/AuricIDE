@@ -471,6 +471,43 @@ describe('QuickAccessSettingsDialog', () => {
       expect(await screen.findByRole('button', { name: /changelog added/i })).toBeDisabled();
     });
 
+    it('lists the global Auric skills beside the ones on disk, ahead of them', async () => {
+      saveAuricSkills([{ id: 'review', name: 'Code Review', prompt: 'Review the change.' }]);
+      mockListProjectSkills.mockResolvedValue([discovery({ scope: 'project' })]);
+      renderDialog();
+
+      await screen.findByTestId('quick-access-discovery-project');
+      const groups = screen.getAllByTestId(/^quick-access-discovery-(auric|project|user)$/);
+      expect(groups[0]).toHaveAttribute('data-testid', 'quick-access-discovery-auric');
+      expect(groups[0]).toHaveTextContent('Code Review');
+    });
+
+    it('offers the Auric skills even when nothing is found on disk', async () => {
+      saveAuricSkills([{ id: 'review', name: 'Code Review', prompt: 'Review the change.' }]);
+      renderDialog();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Code Review' }));
+      expect(screen.getByLabelText('Skill 1 saved skill')).toHaveValue('review');
+      expect(screen.getByLabelText('Skill 1 name')).toHaveValue('Code Review');
+      expect(screen.getByLabelText('Skill 1 prompt')).toHaveValue('Review the change.');
+      expect(screen.queryByText(/nothing found/i)).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('quick-access-settings-save'));
+      expect(useStore.getState().starredProjects[0].skills?.[0]).toMatchObject({
+        auricSkillId: 'review',
+        label: 'Code Review',
+      });
+    });
+
+    it('marks an Auric skill that is already linked as added', async () => {
+      saveAuricSkills([{ id: 'review', name: 'Code Review', prompt: 'Review the change.' }]);
+      renderDialog({
+        ...website,
+        skills: [{ id: 'a', label: 'Code Review', prompt: 'Review.', auricSkillId: 'review' }],
+      });
+      expect(await screen.findByRole('button', { name: /code review added/i })).toBeDisabled();
+    });
+
     it('stays quiet when the discovery command is unavailable', async () => {
       mockListProjectSkills.mockResolvedValue([]);
       renderDialog();
