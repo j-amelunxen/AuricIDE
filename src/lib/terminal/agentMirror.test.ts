@@ -351,3 +351,71 @@ describe('a mirror seeded from another window’s snapshot', () => {
     expect(agentMirrorResized('a1')).toBe(true);
   });
 });
+
+describe('mouse encoding in a restored screen', () => {
+  // TUIs like Codex and Claude Code turn mouse tracking on once, at start,
+  // with SGR encoding. The serializer carries the tracking mode but not the
+  // encoding; a view restored without it falls back to the legacy encoding,
+  // which xterm hands to onBinary, which nobody forwards: the wheel goes dead.
+  const MOUSE_ON = '\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h';
+
+  beforeEach(() => {
+    disposeAllAgentMirrors();
+    resetRemovedAgents();
+    useStore.setState({ agentLogs: {}, agentLogMeta: {}, agents: [] });
+  });
+
+  /** DECRQM answer for `mode` in a fresh terminal that was given `screen`. */
+  async function modeIn(screen: string, mode: number): Promise<string> {
+    const view = new Terminal({ cols: 80, rows: 24, allowProposedApi: true });
+    const replies: string[] = [];
+    view.onData((data) => replies.push(data));
+    await new Promise<void>((resolve) => view.write(screen, resolve));
+    await new Promise<void>((resolve) => view.write(`\x1b[?${mode}$p`, resolve));
+    view.dispose();
+    return replies.join('');
+  }
+
+  it('keeps SGR mouse encoding switched on', async () => {
+    useStore.getState().appendAgentLog('a1', `${MOUSE_ON}tui`);
+    const snapshot = await snapshotAgentScreen('a1');
+
+    expect(await modeIn(snapshot!.data, 1006)).toBe('\x1b[?1006;1$y');
+  });
+
+  it('keeps SGR-pixel mouse encoding switched on', async () => {
+    useStore.getState().appendAgentLog('a1', '\x1b[?1003h\x1b[?1016htui');
+    const snapshot = await snapshotAgentScreen('a1');
+
+    expect(await modeIn(snapshot!.data, 1016)).toBe('\x1b[?1016;1$y');
+  });
+
+  it('leaves the encoding off once the agent switched it off again', async () => {
+    useStore.getState().appendAgentLog('a1', `${MOUSE_ON}tui\x1b[?1006l`);
+    const snapshot = await snapshotAgentScreen('a1');
+
+    expect(await modeIn(snapshot!.data, 1006)).toBe('\x1b[?1006;2$y');
+  });
+
+  it('forgets the encoding on a full reset', async () => {
+    useStore.getState().appendAgentLog('a1', `${MOUSE_ON}tui\x1bcplain`);
+    const snapshot = await snapshotAgentScreen('a1');
+
+    expect(await modeIn(snapshot!.data, 1006)).toBe('\x1b[?1006;2$y');
+  });
+
+  it('survives a freeze and a thaw of the finished agent', async () => {
+    const agent = (status: 'running' | 'idle') =>
+      ({ id: 'a1', name: 'A', model: 'm', provider: 'codex', status, startedAt: 0 }) as const;
+    useStore.setState({ agents: [agent('running')] });
+    useStore.getState().appendAgentLog('a1', `${MOUSE_ON}tui`);
+    useStore.setState({ agents: [agent('idle')] });
+    await vi.waitFor(() => expect(agentMirrorIsLive('a1')).toBe(false));
+
+    expect(await modeIn((await snapshotAgentScreen('a1'))!.data, 1006)).toBe('\x1b[?1006;1$y');
+
+    resizeAgentMirror('a1', 30, 100);
+    expect(agentMirrorIsLive('a1')).toBe(true);
+    expect(await modeIn((await snapshotAgentScreen('a1'))!.data, 1006)).toBe('\x1b[?1006;1$y');
+  });
+});

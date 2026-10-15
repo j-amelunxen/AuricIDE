@@ -74,6 +74,12 @@ interface AgentMirror {
    * geometry the terminal has now, so a resize waits until it is in.
    */
   settling: boolean;
+  /**
+   * The mouse encoding the agent switched on, as the DECSET that restores it.
+   * The serializer writes the tracking mode but not the encoding, so this is
+   * appended to every snapshot (see `serializeScreen`).
+   */
+  mouseEncoding: string | null;
 }
 
 interface LiveMirror extends AgentMirror {
@@ -134,9 +140,50 @@ function openTerminal(mirror: AgentMirror): LiveMirror {
   });
   const serialize = new SerializeAddon();
   term.loadAddon(serialize);
+  trackMouseEncoding(term, mirror);
   mirror.term = term;
   mirror.serialize = serialize;
   return mirror as LiveMirror;
+}
+
+/** DEC private modes that pick a mouse encoding, and the DECSET for each. */
+const MOUSE_ENCODING_MODES: Record<number, string> = {
+  1006: '\x1b[?1006h',
+  1016: '\x1b[?1016h',
+};
+
+/**
+ * Follow the mouse encoding as the terminal's own parser sees it: DECSET of
+ * 1006/1016 picks one, DECRST of either falls back to the legacy encoding
+ * (as xterm does), and a full reset forgets it. The handlers return false so
+ * xterm still applies every sequence itself.
+ *
+ * Without this, a TUI that enables SGR mouse reporting once at start (Codex,
+ * Claude Code) loses it in every view restored from a snapshot. xterm then
+ * reports the wheel in the legacy encoding through `onBinary`, which the
+ * agent views do not forward, and the wheel does nothing at all.
+ */
+function trackMouseEncoding(term: Terminal, mirror: AgentMirror): void {
+  mirror.mouseEncoding = null;
+  const onMode = (set: boolean) => (params: (number | number[])[]) => {
+    for (const param of params) {
+      const mode = typeof param === 'number' ? param : param[0];
+      if (!(mode in MOUSE_ENCODING_MODES)) continue;
+      mirror.mouseEncoding = set ? MOUSE_ENCODING_MODES[mode] : null;
+    }
+    return false;
+  };
+  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, onMode(true));
+  term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, onMode(false));
+  term.parser.registerEscHandler({ final: 'c' }, () => {
+    mirror.mouseEncoding = null;
+    return false;
+  });
+}
+
+/** The mirror's screen as a string a fresh terminal can be given. */
+function serializeScreen(mirror: LiveMirror): string {
+  return mirror.serialize.serialize() + (mirror.mouseEncoding ?? '');
 }
 
 function createMirror(agentId: string): LiveMirror {
@@ -153,6 +200,7 @@ function createMirror(agentId: string): LiveMirror {
     resized: false,
     awaitingLog: false,
     settling: false,
+    mouseEncoding: null,
   };
   mirrors.set(agentId, mirror);
   return openTerminal(mirror);
@@ -204,7 +252,7 @@ function freeze(agentId: string, mirror: AgentMirror): void {
     if (mirrors.get(agentId) !== mirror || mirror.term !== term || mirror.seq !== seq) return;
     const status = useStore.getState().agents.find((a) => a.id === agentId)?.status;
     if (!isFinished(status) || mirror.pending.length > 0) return;
-    mirror.frozen = flatten(live.serialize.serialize());
+    mirror.frozen = flatten(serializeScreen(live));
     term.dispose();
     mirror.term = null;
     mirror.serialize = null;
@@ -274,14 +322,14 @@ export function snapshotAgentScreen(agentId: string): Promise<AgentScreenSnapsho
   if (!mirror.term) return Promise.resolve({ data: mirror.frozen ?? '', seq });
   const live = mirror as LiveMirror;
   drain(live);
-  const { term, serialize } = live;
+  const { term } = live;
   return new Promise((resolve) => {
     // xterm parses queued writes in order and fires this callback before any
     // write queued after it is parsed — the serialized state matches `seq`.
     term.write('', () => {
       // A freeze that landed first serialized this same state and released
       // the terminal; its string is the answer.
-      resolve({ data: mirror.term === term ? serialize.serialize() : (mirror.frozen ?? ''), seq });
+      resolve({ data: mirror.term === term ? serializeScreen(live) : (mirror.frozen ?? ''), seq });
     });
   });
 }
@@ -357,6 +405,7 @@ export function seedAgentMirror(agentId: string, seed: AgentMirrorSeed): void {
     resized: true,
     awaitingLog: loggedSeq === undefined,
     settling: true,
+    mouseEncoding: null,
   };
   mirrors.set(agentId, mirror);
   const { term } = openTerminal(mirror);
