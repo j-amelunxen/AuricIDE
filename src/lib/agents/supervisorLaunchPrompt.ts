@@ -202,16 +202,31 @@ const REPORT =
   'Report per agent: id, project, model, and its result (the ANSWER line, or why there is ' +
   'none). Keep the human informed; do not invent results you have not read.';
 
+/** What a launch adds to the generated prompt; every part is optional. */
+export interface SupervisorPromptOptions {
+  /** A skill's prompt, handed over as the first task. */
+  firstTask?: string;
+  skills?: SupervisorPromptSkill[];
+  /** Claude in Chrome is switched on (Settings → Supervisor). */
+  chrome?: boolean;
+  /** The human's standing instructions (Settings → Supervisor → Instructions). */
+  instructions?: string;
+}
+
+const INSTRUCTIONS_PREAMBLE =
+  'Standing instructions from the human you work for. Follow them; where they differ from ' +
+  'the guidance above, they win. They do not change what your tools allow: a refused call ' +
+  'stays refused.';
+
 /**
- * The supervisor's start instruction for the projects its policy shows. A
- * skill launched from the tile adds its prompt as the first task, after the
- * rules, so the rules are read before the work is.
+ * The supervisor's start instruction for the projects its policy shows. The
+ * human's own instructions come after the built-in rules, so they can refine
+ * them; a skill launched from the tile adds its prompt as the first task, last,
+ * so the rules are read before the work is.
  */
 export function buildSupervisorLaunchPrompt(
   projects: SupervisorPromptProject[],
-  firstTask?: string,
-  skills: SupervisorPromptSkill[] = [],
-  chrome = false
+  { firstTask, skills = [], chrome = false, instructions }: SupervisorPromptOptions = {}
 ): string {
   const projectSection =
     projects.length > 0
@@ -240,6 +255,9 @@ export function buildSupervisorLaunchPrompt(
     CHILD_RULES,
     '## Reporting',
     REPORT,
+    ...(instructions?.trim()
+      ? ['## Instructions from the human', INSTRUCTIONS_PREAMBLE, instructions.trim()]
+      : []),
     ...(firstTask?.trim() ? ['## Your first task', firstTask.trim()] : []),
   ].join('\n\n');
 }

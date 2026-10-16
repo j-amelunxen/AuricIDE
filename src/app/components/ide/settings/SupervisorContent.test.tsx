@@ -162,6 +162,33 @@ describe('SupervisorContent', () => {
     expect(screen.getByTestId('supervisor-save')).toBeDisabled();
   });
 
+  it('loads, edits and saves the standing instructions without touching the policy file', async () => {
+    localStorage.setItem('auric.supervisor.instructions', 'Answer in German.');
+    await renderLoaded();
+    const field = screen.getByTestId('supervisor-instructions') as HTMLTextAreaElement;
+    expect(field.value).toBe('Answer in German.');
+    expect(screen.getByTestId('supervisor-save')).toBeDisabled();
+
+    fireEvent.change(field, { target: { value: 'Prefer small models.' } });
+    expect(screen.getByTestId('supervisor-save-hint')).toHaveTextContent('Unsaved changes');
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+
+    await waitFor(() =>
+      expect(localStorage.getItem('auric.supervisor.instructions')).toBe('Prefer small models.')
+    );
+    expect(supervisorPolicySet).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('supervisor-save')).toBeDisabled());
+    localStorage.removeItem('auric.supervisor.instructions');
+  });
+
+  it('removes the stored instructions when the field is cleared', async () => {
+    localStorage.setItem('auric.supervisor.instructions', 'Answer in German.');
+    await renderLoaded();
+    fireEvent.change(screen.getByTestId('supervisor-instructions'), { target: { value: '  ' } });
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(localStorage.getItem('auric.supervisor.instructions')).toBeNull());
+  });
+
   it('sets a load-balancing share per provider and states the split it makes', async () => {
     projectProviderPolicyGet.mockResolvedValue({ allow: null, deny: [] });
     await renderLoaded();

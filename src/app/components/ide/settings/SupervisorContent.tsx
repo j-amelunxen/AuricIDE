@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
-import { readProjectProviderPolicies } from '@/lib/agents/supervisorLaunch';
+import {
+  readProjectProviderPolicies,
+  readSupervisorInstructions,
+  writeSupervisorInstructions,
+} from '@/lib/agents/supervisorLaunch';
 import { modelSizeLabel } from '@/lib/agents/supervisorLaunchPrompt';
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
@@ -72,6 +76,9 @@ export function SupervisorContent() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<SupervisorPolicy | null>(null);
   const [saving, setSaving] = useState(false);
+  // An app preference, not part of the policy file: it steers, it grants nothing.
+  const [savedInstructions, setSavedInstructions] = useState(readSupervisorInstructions);
+  const [instructions, setInstructions] = useState(savedInstructions);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +123,9 @@ export function SupervisorContent() {
     return <p className="text-xs text-foreground-muted">Loading supervisor settings…</p>;
   }
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(loaded.saved);
+  const policyDirty = JSON.stringify(draft) !== JSON.stringify(loaded.saved);
+  const instructionsDirty = instructions.trim() !== savedInstructions.trim();
+  const dirty = policyDirty || instructionsDirty;
   // Rust refuses these at spawn anyway; saving them would only store a choice
   // that can never run.
   const blockers = unattendedBlockers(draft, loaded.providers, loaded.projectPolicies);
@@ -133,9 +142,15 @@ export function SupervisorContent() {
     setSaving(true);
     try {
       // Rust answers with the file as it now reads it; that is the new baseline.
-      const state = await supervisorPolicySet(draft);
-      setLoaded({ ...loaded, saved: state.policy, rejected: state.rejected });
-      setDraft(state.policy);
+      if (instructionsDirty) {
+        writeSupervisorInstructions(instructions);
+        setSavedInstructions(instructions.trim() ? instructions : '');
+      }
+      if (policyDirty) {
+        const state = await supervisorPolicySet(draft);
+        setLoaded({ ...loaded, saved: state.policy, rejected: state.rejected });
+        setDraft(state.policy);
+      }
       showToast('Supervisor settings saved', 'success');
     } catch (error) {
       showToast(`Could not save the supervisor settings: ${String(error)}`, 'error');
@@ -187,12 +202,17 @@ export function SupervisorContent() {
         onChange={(skills) => setDraft({ ...draft, skills })}
       />
 
+      <SupervisorInstructions value={instructions} onChange={setInstructions} />
+
       <SaveBar
         saving={saving}
         dirty={dirty}
         blockedReason={blockedReason}
         onSave={() => void save()}
-        onDiscard={() => setDraft(loaded.saved)}
+        onDiscard={() => {
+          setDraft(loaded.saved);
+          setInstructions(savedInstructions);
+        }}
       />
     </div>
   );
@@ -294,6 +314,33 @@ function SupervisorHeader({ draft, claude, onChange }: SupervisorHeaderProps) {
           />
         </label>
       </div>
+    </SettingsSection>
+  );
+}
+
+function SupervisorInstructions({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <SettingsSection title="Instructions" icon="edit_note">
+      <label htmlFor="supervisor-instructions" className="block text-xs text-foreground-muted">
+        Added to the supervisor&apos;s start prompt, after its built-in rules. Where they differ,
+        yours win; they cannot widen what the limits on this page allow. A supervisor that is
+        already running keeps the instructions it started with.
+      </label>
+      <textarea
+        id="supervisor-instructions"
+        data-testid="supervisor-instructions"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={6}
+        placeholder="e.g. Answer in German. Ask me before starting more than two agents."
+        className="mt-2 w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-foreground placeholder:text-foreground-muted focus:border-primary focus:outline-none"
+      />
     </SettingsSection>
   );
 }
