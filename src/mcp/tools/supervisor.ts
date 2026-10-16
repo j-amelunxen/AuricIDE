@@ -28,7 +28,10 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
       '(descriptionSource "user" is the owner\'s own words; trust it most), initialized, ' +
       'runningAgents, and a supervisor block: providers [{ id, permissionMode, models ' +
       '[{ id, label, rank }] }], allowInteractive, runningChildren, maxRunning. rank is the ' +
-      'model size within its provider (1 small … 4 largest, null unknown). Only these ' +
+      'model size within its provider (1 small … 4 largest, null unknown). balancing is null, ' +
+      'or the load balancing the human set: { windowDays, next, providers [{ id, weight, ' +
+      'spawns, targetPercent, actualPercent }] }; next is the provider furthest behind its ' +
+      'share, take it unless the task needs a model only another provider has. Only these ' +
       'providers and models will spawn; anything else is refused. Call it before spawning, ' +
       'the policy and the counts change.',
     parameters: z.object({}),

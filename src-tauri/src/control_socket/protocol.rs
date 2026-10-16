@@ -422,6 +422,8 @@ pub struct SupervisorAccess {
     pub allow_interactive: bool,
     pub running_children: u32,
     pub max_running: u32,
+    /// The project's load balancing, `None` when it has none. Advisory.
+    pub balancing: Option<crate::supervisor::policy::Balancing>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -432,6 +434,7 @@ pub struct ListProjectsResult {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::supervisor::policy::{Balancing, ProviderBalance};
 
     pub(crate) const FIXTURES: &str =
         include_str!("../../../src/lib/agents/agentControl.fixtures.json");
@@ -744,6 +747,26 @@ pub(crate) mod tests {
                 allow_interactive: true,
                 running_children: 1,
                 max_running: 2,
+                balancing: Some(Balancing {
+                    window_days: 7,
+                    next: Some("codex".into()),
+                    providers: vec![
+                        ProviderBalance {
+                            id: "claude".into(),
+                            weight: 2,
+                            spawns: 3,
+                            target_percent: 67,
+                            actual_percent: Some(75),
+                        },
+                        ProviderBalance {
+                            id: "codex".into(),
+                            weight: 1,
+                            spawns: 1,
+                            target_percent: 33,
+                            actual_percent: Some(25),
+                        },
+                    ],
+                }),
             }),
         };
         let ours: Vec<(&str, Value)> = vec![

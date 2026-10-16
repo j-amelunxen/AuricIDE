@@ -309,6 +309,22 @@ const supervisorProjectBlock = z.object({
   allowInteractive: z.boolean(),
   runningChildren: offset,
   maxRunning: offset,
+  /** Load balancing (`providerWeights`), advisory; `null` when the project has none. */
+  balancing: z
+    .object({
+      windowDays: offset,
+      next: z.string().nullable(),
+      providers: z.array(
+        z.object({
+          id: z.string(),
+          weight: offset,
+          spawns: offset,
+          targetPercent: offset,
+          actualPercent: offset.nullable(),
+        })
+      ),
+    })
+    .nullable(),
 });
 
 const runResult = z.object({

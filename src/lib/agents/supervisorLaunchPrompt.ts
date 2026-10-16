@@ -22,6 +22,8 @@ export interface SupervisorPromptModel {
 export interface SupervisorPromptProvider {
   id: string;
   permissionMode: string | null;
+  /** Load-balancing weight; `null` where the project names none for it. */
+  weight: number | null;
   models: SupervisorPromptModel[];
 }
 
@@ -73,6 +75,7 @@ export function supervisorPromptProjects(
       return {
         id: entry.id,
         permissionMode: entry.permissionMode,
+        weight: entry.weight,
         models: entry.models.map((id) => {
           const option = info?.models.find((model) => model.value === id);
           return { id, label: option?.label ?? id, rank: option?.rank ?? null };
@@ -130,6 +133,16 @@ function describeModel(model: SupervisorPromptModel): string {
   return `\`${model.id}\`${label} — ${modelSizeLabel(model.rank)}`;
 }
 
+/** `claude 2 : codex 1`, or `null` when no provider here has a weight above 0. */
+function describeBalancing(providers: SupervisorPromptProvider[]): string | null {
+  if (!providers.some((provider) => (provider.weight ?? 0) > 0)) return null;
+  const ratio = providers.map((provider) => `${provider.id} ${provider.weight ?? 0}`).join(' : ');
+  return (
+    `Load balancing: ${ratio} (share of agents started in this project). ` +
+    'list_projects names the provider that is behind as `balancing.next`.'
+  );
+}
+
 function describeProject(project: SupervisorPromptProject): string {
   const lines = [`### ${project.path}`];
   if (project.description) lines.push(project.description);
@@ -147,6 +160,8 @@ function describeProject(project: SupervisorPromptProject): string {
     lines.push('No provider is usable here right now: do not spawn in this project.');
     return lines.join('\n');
   }
+  const balancing = describeBalancing(project.providers);
+  if (balancing) lines.push(balancing);
   for (const provider of project.providers) {
     const mode = provider.permissionMode
       ? `permission mode ${provider.permissionMode}`
@@ -165,6 +180,9 @@ const SPAWN_RULES = [
   '- **Long-running or multi-step work, or work a human may need to answer**: ' +
     '`headless: false`, only where interactive runs are allowed. Report the agent id and do ' +
     'not wait on it.',
+  '- **Provider: follow the load balancing.** Where a project has it, take the provider ' +
+    'list_projects names as `balancing.next`. Take another one only when that provider has no ' +
+    'model the task needs, and say why in your spawn line.',
   '- **Model: the smallest allowed one that fits.** Trivial → small, normal work → medium, ' +
     'hard reasoning or architecture → large. Use the largest only with a stated reason. Never ' +
     'pick a model of unknown size unless nothing else is allowed.',

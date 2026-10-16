@@ -22,6 +22,8 @@ struct FakeBackend {
     offered: Mutex<BTreeMap<String, Vec<ModelOption>>>,
     modes: Mutex<BTreeMap<String, crate::supervisor::policy::ProviderModes>>,
     project_policies: Mutex<HashMap<String, ProviderPolicy>>,
+    /// Finished runs per provider, the same for every project.
+    recent_runs: Mutex<BTreeMap<String, u32>>,
 }
 
 impl ControlBackend for FakeBackend {
@@ -46,6 +48,10 @@ impl ControlBackend for FakeBackend {
         _policy: &SupervisorPolicy,
     ) -> BTreeMap<String, crate::supervisor::policy::ProviderModes> {
         self.modes.lock().unwrap().clone()
+    }
+
+    fn recent_runs(&self, _project_root: &Path, _since: &str) -> BTreeMap<String, u32> {
+        self.recent_runs.lock().unwrap().clone()
     }
 
     fn project_provider_policy(&self, project_root: &Path) -> ProviderPolicy {
@@ -1206,7 +1212,8 @@ fn a_supervisor_lists_the_allowed_projects_with_what_it_may_use_there() {
                   "models": [{ "id": "gpt-6-luna", "label": "Label gpt-6-luna", "rank": 1 },
                              { "id": "auto", "label": "Label auto", "rank": null }] }
             ],
-            "allowInteractive": true, "runningChildren": 1, "maxRunning": 2
+            "allowInteractive": true, "runningChildren": 1, "maxRunning": 2,
+            "balancing": null
         })
     );
     let built = projects
@@ -1223,6 +1230,37 @@ fn a_supervisor_lists_the_allowed_projects_with_what_it_may_use_there() {
             .get("supervisor")
             .is_none(),
         "only a supervisor's list carries the block"
+    );
+}
+
+#[test]
+fn a_supervisor_is_told_which_provider_is_behind_its_load_balancing_share() {
+    let s = supervised_scope();
+    let mut policy = scope_policy(&s.path);
+    let rules = policy.projects.get_mut(&s.path).unwrap();
+    rules.provider_weights = BTreeMap::from([("claude".into(), 1), ("codex".into(), 1)]);
+    *s.h.backend.policy.lock().unwrap() = policy;
+    // One finished Codex run in the window; three Claude agents still running
+    // here (whoever started them), not booked yet.
+    *s.h.backend.recent_runs.lock().unwrap() = BTreeMap::from([("codex".into(), 1)]);
+
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": "a", "method": "list_projects" }),
+    );
+
+    let project = &response["result"]["projects"][0];
+    assert_eq!(
+        project["supervisor"]["balancing"],
+        json!({
+            "windowDays": 7,
+            "next": "codex",
+            "providers": [
+                { "id": "claude", "weight": 1, "spawns": 3, "targetPercent": 50, "actualPercent": 75 },
+                { "id": "codex", "weight": 1, "spawns": 1, "targetPercent": 50, "actualPercent": 25 }
+            ]
+        })
     );
 }
 

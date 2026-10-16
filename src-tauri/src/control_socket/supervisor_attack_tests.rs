@@ -102,6 +102,9 @@ impl ControlBackend for Backend {
     fn project_provider_policy(&self, _project_root: &Path) -> ProviderPolicy {
         ProviderPolicy::default()
     }
+    fn recent_runs(&self, _project_root: &Path, _since: &str) -> BTreeMap<String, u32> {
+        BTreeMap::new()
+    }
 }
 
 struct Rig {
