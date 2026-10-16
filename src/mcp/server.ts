@@ -21,6 +21,7 @@ import { registerNotificationTools } from './tools/notifications';
 import { registerAgentLaunchTools } from './tools/agentLaunch';
 import { registerAgentControlTools } from './tools/agentControl';
 import { registerAgentUsageTools } from './tools/agentUsage';
+import { registerSupervisorTools } from './tools/supervisor';
 import { openNotificationsDb } from './notificationsDb';
 
 /**
@@ -113,17 +114,34 @@ export function createControlServer(): FastMCP {
   return server;
 }
 
+/**
+ * `auric-mcp --supervisor`: the supervisor tools and nothing else. Runs inside
+ * the supervisor agent; the socket scopes it to its own children (ADR 0004).
+ */
+export function createSupervisorServer(): FastMCP {
+  const server = new FastMCP({
+    name: 'auric-supervisor',
+    version: '1.0.0',
+  });
+  registerSupervisorTools(server);
+  return server;
+}
+
 const isMainModule =
   (import.meta as ImportMeta & { main?: boolean }).main === true ||
   (typeof process !== 'undefined' && process.argv[1]?.includes('server'));
 
-// CLI entry point: `auric-mcp --project-root <project-directory>` or `auric-mcp --control`
+// CLI entry point: `auric-mcp --project-root <project-directory>`, `--control` or `--supervisor`
 if (isMainModule) {
   Promise.resolve()
     .then(async () => {
       const mode = resolveMcpCliMode(process.argv.slice(2));
       if (mode.mode === 'control') {
         await createControlServer().start({ transportType: 'stdio' });
+        return;
+      }
+      if (mode.mode === 'supervisor') {
+        await createSupervisorServer().start({ transportType: 'stdio' });
         return;
       }
       const { openDatabase } = await import('./db');

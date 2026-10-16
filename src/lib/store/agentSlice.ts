@@ -15,6 +15,7 @@ import {
   handleResumeInterruptedAgent,
   handleRetryFailedAgent,
   handleSpawnNewAgent,
+  handleSpawnSupervisor,
   handleUpdateAgentStatus,
 } from './agent/agentLifecycle';
 import {
@@ -129,6 +130,8 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   },
 
   spawnNewAgent: (config) => handleSpawnNewAgent(config, get, set),
+
+  spawnSupervisor: (skill) => handleSpawnSupervisor(get, skill),
 
   retryFailedAgent: (agentId) => handleRetryFailedAgent(agentId, get),
 

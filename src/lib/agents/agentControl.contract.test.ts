@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fixtures from './agentControl.fixtures.json';
 import {
+  AGENT_ROLES,
   buildControlRequest,
   CLIENT_ERROR_CODES,
   CONTROL_ERROR_CODES,
@@ -9,6 +10,8 @@ import {
   ControlError,
   parseControlRequestLine,
   parseControlResponse,
+  RUN_RESULT_SOURCES,
+  RUN_SOURCES,
   type ControlMethod,
 } from './agentControl.contract';
 
@@ -24,6 +27,15 @@ describe('agent control contract', () => {
     expect(CONTROL_LIMITS.defaultTailBytes).toBe(fixtures.limits.defaultTailBytes);
     expect(CONTROL_LIMITS.maxTailBytes).toBe(fixtures.limits.maxTailBytes);
     expect(CONTROL_LIMITS.frontendTimeoutMs).toBe(fixtures.limits.frontendTimeoutMs);
+    expect(CONTROL_LIMITS.defaultAwaitSeconds).toBe(fixtures.limits.defaultAwaitSeconds);
+    expect(CONTROL_LIMITS.maxAwaitSeconds).toBe(fixtures.limits.maxAwaitSeconds);
+    expect(CONTROL_LIMITS.awaitClientGraceSeconds).toBe(fixtures.limits.awaitClientGraceSeconds);
+  });
+
+  it('knows exactly the roles, run sources and run result sources the fixtures name', () => {
+    expect([...AGENT_ROLES]).toEqual(fixtures.roles);
+    expect([...RUN_SOURCES]).toEqual(fixtures.runSources);
+    expect([...RUN_RESULT_SOURCES]).toEqual(fixtures.runResultSources);
   });
 
   describe('requests', () => {
@@ -90,6 +102,26 @@ describe('agent control contract', () => {
     it('accepts an invalid_request answer that could not echo the id', () => {
       const raw = { id: null, ok: false, error: { code: 'invalid_request', message: 'bad' } };
       expect(parseControlResponse('kill', raw, 8)).toMatchObject({ ok: false });
+    });
+
+    for (const extra of fixtures.additionalResponses) {
+      it(`accepts: ${extra.name}`, () => {
+        const parsed = parseControlResponse(extra.method as ControlMethod, extra.raw, extra.raw.id);
+        expect(parsed).toEqual(
+          extra.raw.ok
+            ? { ok: true, result: (extra.raw as { result: unknown }).result }
+            : { ok: false, error: (extra.raw as { error: unknown }).error }
+        );
+      });
+    }
+
+    it('rejects a supervisor_denied reason the policy fixtures do not name', () => {
+      const raw = {
+        id: 7,
+        ok: false,
+        error: { code: 'supervisor_denied', message: 'no', reason: 'feeling_lucky' },
+      };
+      expect(() => parseControlResponse('spawn', raw, 7)).toThrow(/reason/);
     });
 
     for (const invalid of fixtures.invalidResponses) {

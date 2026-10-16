@@ -40,7 +40,17 @@ export interface AgentInfo {
    * form). Frontend-only provenance, distinct from spawnedByTicketId so a
    * reviewer is never mistaken for the implementer of the ticket. */
   spawnedForReviewOfTicketId?: string;
+  /**
+   * `supervisor`: the one IDE agent the control socket admits, scoped to its
+   * own children (ADR 0004). Absent reads as `worker`.
+   */
+  role?: AgentRole;
+  /** The supervisor that started this agent; `null`/absent for everyone else. */
+  spawnedByAgentId?: string | null;
 }
+
+/** What an agent is to the control socket (`agentControl.fixtures.json`, `roles`). */
+export type AgentRole = 'worker' | 'supervisor';
 
 export type PermissionMode =
   'bypassPermissions' | 'acceptEdits' | 'plan' | 'auto' | 'default' | 'yolo';
@@ -71,7 +81,7 @@ export interface AgentConfig {
    * Who started the run. Kept with the run's usage row (`pm_agent_usage`), and
    * read by the frontend to tell conductor runs from ones a person started.
    */
-  runSource?: 'ui' | 'conductor' | 'schedule' | 'mcp';
+  runSource?: 'ui' | 'conductor' | 'schedule' | 'mcp' | 'supervisor';
   /** What the run was for; the backend derives it from the ticket and goal ids when absent. */
   runKind?: UsageRunKind;
   /** The ticket a review run judges — its cost is attributed there, not to the implementer. */
@@ -109,6 +119,10 @@ export interface AgentConfig {
    * not a repository (a workspace with nested checkouts or submodules).
    */
   worktreeRepoPath?: string;
+  /** See `AgentInfo.role`. A supervisor caller can never set this on a child. */
+  role?: AgentRole;
+  /** Set by Rust for a supervisor's child; the frontend only passes it through. */
+  spawnedByAgentId?: string | null;
 }
 
 /** One remembered agent start prompt in the per-project history (capped at 100). */
@@ -159,6 +173,15 @@ export async function killAgent(agentId: string): Promise<void> {
 /** Gives a running agent a human-chosen name; survives a restart-and-resume. */
 export async function renameAgent(agentId: string, name: string): Promise<AgentInfo> {
   return await invoke<AgentInfo>('rename_agent', { agentId, name });
+}
+
+/**
+ * Drops the kept results of a supervisor's children once its card is cleared;
+ * until then they stay readable even after the supervisor ended. Returns how
+ * many were dropped.
+ */
+export async function forgetSupervisorRunResults(supervisorId: string): Promise<number> {
+  return await invoke<number>('agent_run_results_forget', { supervisorId });
 }
 
 export async function killAgentsForRepo(repoPath: string): Promise<number> {

@@ -14,6 +14,7 @@ import { LOG_PREVIEW_CHUNKS } from './card/cardConstants';
 import { AgentCardHeader } from './card/AgentCardHeader';
 import { AgentCardStatusBody } from './card/AgentCardStatusBody';
 import { AgentCardTerminalBody } from './card/AgentCardTerminalBody';
+import { SupervisorRelation } from './card/SupervisorRelation';
 import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 
 export { AgentCardHeader } from './card/AgentCardHeader';
@@ -216,6 +217,8 @@ export function AgentCard({
         toggleView={toggleView}
         cancelSkillCombo={cancelSkillCombo}
       />
+
+      <SupervisorRelation agent={agent} onSelect={onSelect} />
 
       <div className="flex-1 min-h-0 relative">
         {viewMode === 'status' ? (

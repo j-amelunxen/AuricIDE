@@ -24,6 +24,12 @@ import { AgentsPanelHeader } from './panel/AgentsPanelHeader';
 import { InterruptedAgentsSection } from './panel/InterruptedAgentsSection';
 import { FinishedAgentsSection } from './panel/FinishedAgentsSection';
 
+/**
+ * The supervisors' group. A label, not a path: repo groups are keyed by an
+ * absolute path, so this can never collide with one in `collapsedRepos`.
+ */
+const SUPERVISOR_GROUP_KEY = 'supervisor';
+
 export { AgentsPanelHeader } from './panel/AgentsPanelHeader';
 export { InterruptedAgentsSection } from './panel/InterruptedAgentsSection';
 export { FinishedAgentsSection } from './panel/FinishedAgentsSection';
@@ -136,7 +142,10 @@ export function AgentsPanel({
   };
 
   const { active, finished, parked } = splitFleet(agents, minimizedAgentIds);
-  const grouped = groupAgentsByRepo(active);
+  // A supervisor works in no project of its own (its folder is the app's), so
+  // it gets a group of its own above the projects instead of a folder name.
+  const supervisors = active.filter((a) => a.role === 'supervisor');
+  const grouped = groupAgentsByRepo(active.filter((a) => a.role !== 'supervisor'));
   const repoKeys = Object.keys(grouped);
   const runningCount = agents.filter((a) => a.status === 'running').length;
 
@@ -176,22 +185,110 @@ export function AgentsPanel({
     void offerMerge(agent);
   };
 
+  const confirmStopAll = async (running: number, where: string) => {
+    if (running === 0) return true;
+    const what = running === 1 ? '1 running agent' : `${running} running agents`;
+    return confirm({
+      title: 'Stop all agents?',
+      message: `Stop ${what} in ${where}? Their work in progress is lost.`,
+      confirmLabel: 'Stop all',
+    });
+  };
+
   const confirmKillRepo = async (repoPath: string) => {
     const running = agents.filter(
-      (a) => (a.repoPath ?? UNGROUPED_REPO_KEY) === repoPath && a.status === 'running'
+      (a) =>
+        a.role !== 'supervisor' &&
+        (a.repoPath ?? UNGROUPED_REPO_KEY) === repoPath &&
+        a.status === 'running'
     ).length;
     const repoName =
       repoPath === UNGROUPED_REPO_KEY ? 'this group' : (repoPath.split('/').pop() ?? repoPath);
-    const what = running === 1 ? '1 running agent' : `${running} running agents`;
-    if (running > 0) {
-      const go = await confirm({
-        title: 'Stop all agents?',
-        message: `Stop ${what} in ${repoName}? Their work in progress is lost.`,
-        confirmLabel: 'Stop all',
-      });
-      if (!go) return;
-    }
+    if (!(await confirmStopAll(running, repoName))) return;
     onKillRepo?.(repoPath);
+  };
+
+  // Each supervisor one by one: its folder is shared with nothing, but a
+  // repo-wide kill on it would be the wrong tool should that ever change.
+  const confirmKillSupervisors = async () => {
+    const running = supervisors.filter((a) => a.status === 'running').length;
+    if (!(await confirmStopAll(running, 'Supervisor'))) return;
+    for (const supervisor of supervisors) await Promise.resolve(onKill(supervisor.id));
+  };
+
+  const renderGroup = (
+    groupKey: string,
+    label: string,
+    groupAgents: AgentInfo[],
+    onStopAll: (() => void) | undefined
+  ) => {
+    const isCollapsed = collapsedRepos.includes(groupKey);
+    return (
+      <div key={groupKey} data-testid={`agent-group-${groupKey}`} className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          {onToggleRepoCollapsed ? (
+            <button
+              type="button"
+              onClick={() => onToggleRepoCollapsed(groupKey)}
+              aria-expanded={!isCollapsed}
+              aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${label}`}
+              className="group/repo -ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-xs font-semibold text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+            >
+              <AuricIcon
+                name="expand_more"
+                aria-hidden="true"
+                className={`text-sm transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+              />
+              {label}
+              {isCollapsed && (
+                <span className="ml-0.5 rounded-full bg-white/5 px-1.5 text-[10px] tabular-nums">
+                  {groupAgents.length}
+                </span>
+              )}
+              {isCollapsed && groupAgents.some((a) => needsAttention(a, now)) && (
+                <span
+                  data-testid="repo-attention-dot"
+                  role="img"
+                  aria-label="Agent needs attention"
+                  className="ml-0.5 h-1.5 w-1.5 rounded-full bg-amber-400"
+                />
+              )}
+            </button>
+          ) : (
+            <span className="text-xs font-semibold text-foreground-muted">{label}</span>
+          )}
+          {onStopAll && (
+            <button
+              type="button"
+              onClick={onStopAll}
+              aria-label={`Stop all agents in ${label}`}
+              className="min-h-6 rounded px-1.5 py-0.5 text-[10px] text-foreground-muted transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60"
+            >
+              Stop all
+            </button>
+          )}
+        </div>
+        {!isCollapsed &&
+          groupAgents.map((agent) => (
+            <div
+              key={agent.id}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, agent.id)}
+              className="min-w-0"
+            >
+              <AgentCard
+                agent={agent}
+                onKill={(id) => void confirmKill(id)}
+                onSelect={onSelectAgent}
+                onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
+                onRename={onRename}
+                color={agentColors[agent.id]}
+                onContextMenu={onSetColor && openColorMenu}
+              />
+            </div>
+          ))}
+      </div>
+    );
   };
 
   return (
@@ -245,78 +342,22 @@ export function AgentsPanel({
         {agents.length === 0 ? (
           <p className="text-xs text-foreground-muted text-center py-4">No agents running</p>
         ) : (
-          repoKeys.map((repoPath) => {
-            const repoName = repoPath === 'Unknown' ? 'Unknown' : repoPath.split('/').pop();
-            const isCollapsed = collapsedRepos.includes(repoPath);
-            const groupAgents = grouped[repoPath];
-
-            return (
-              <div key={repoPath} className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  {onToggleRepoCollapsed ? (
-                    <button
-                      type="button"
-                      onClick={() => onToggleRepoCollapsed(repoPath)}
-                      aria-expanded={!isCollapsed}
-                      aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${repoName}`}
-                      className="group/repo -ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-xs font-semibold text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
-                    >
-                      <AuricIcon
-                        name="expand_more"
-                        aria-hidden="true"
-                        className={`text-sm transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
-                      />
-                      {repoName}
-                      {isCollapsed && (
-                        <span className="ml-0.5 rounded-full bg-white/5 px-1.5 text-[10px] tabular-nums">
-                          {groupAgents.length}
-                        </span>
-                      )}
-                      {isCollapsed && groupAgents.some((a) => needsAttention(a, now)) && (
-                        <span
-                          data-testid="repo-attention-dot"
-                          role="img"
-                          aria-label="Agent needs attention"
-                          className="ml-0.5 h-1.5 w-1.5 rounded-full bg-amber-400"
-                        />
-                      )}
-                    </button>
-                  ) : (
-                    <span className="text-xs font-semibold text-foreground-muted">{repoName}</span>
-                  )}
-                  {onKillRepo && (
-                    <button
-                      type="button"
-                      onClick={() => void confirmKillRepo(repoPath)}
-                      aria-label={`Stop all agents in ${repoName}`}
-                      className="min-h-6 rounded px-1.5 py-0.5 text-[10px] text-foreground-muted transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:ring-2 focus-visible:ring-red-400/60"
-                    >
-                      Stop all
-                    </button>
-                  )}
-                </div>
-                {!isCollapsed &&
-                  groupAgents.map((agent) => (
-                    <div
-                      key={agent.id}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, agent.id)}
-                      className="min-w-0"
-                    >
-                      <AgentCard
-                        agent={agent}
-                        onKill={(id) => void confirmKill(id)}
-                        onSelect={onSelectAgent}
-                        onMinimize={onToggleMinimize && ((id) => onToggleMinimize(id, true))}
-                        onRename={onRename}
-                        color={agentColors[agent.id]}
-                        onContextMenu={onSetColor && openColorMenu}
-                      />
-                    </div>
-                  ))}
-              </div>
-            );
-          })
+          <>
+            {supervisors.length > 0 &&
+              renderGroup(SUPERVISOR_GROUP_KEY, 'Supervisor', supervisors, () => {
+                void confirmKillSupervisors();
+              })}
+            {repoKeys.map((repoPath) =>
+              renderGroup(
+                repoPath,
+                repoPath === UNGROUPED_REPO_KEY
+                  ? UNGROUPED_REPO_KEY
+                  : (repoPath.split('/').pop() ?? repoPath),
+                grouped[repoPath],
+                onKillRepo && (() => void confirmKillRepo(repoPath))
+              )
+            )}
+          </>
         )}
 
         {parked.length > 0 && (

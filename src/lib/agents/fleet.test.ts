@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo } from '../tauri/agents';
-import { isFinishedAgent, splitFleet } from './fleet';
+import { isFinishedAgent, splitFleet, supervisorChildSummary } from './fleet';
 
 const agent = (
   id: string,
@@ -111,5 +111,80 @@ describe('splitFleet', () => {
     const input = [agent('b', 'idle', 200), agent('a', 'running', 100)];
     splitFleet(input, []);
     expect(input.map((a) => a.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('splitFleet with supervisors', () => {
+  const sup = (id: string, status: AgentInfo['status'], startedAt = 0) =>
+    agent(id, status, startedAt, { role: 'supervisor' });
+  const child = (id: string, parent: string, status: AgentInfo['status'], startedAt = 0) =>
+    agent(id, status, startedAt, { spawnedByAgentId: parent });
+
+  it('orders children directly under their supervisor among the cards', () => {
+    const { active } = splitFleet(
+      [
+        sup('s', 'running', 1),
+        agent('x', 'running', 2),
+        child('c1', 's', 'running', 3),
+        agent('y', 'queued', 4),
+        child('c2', 's', 'queued', 5),
+      ],
+      []
+    );
+    expect(active.map((a) => a.id)).toEqual(['s', 'c1', 'c2', 'x', 'y']);
+  });
+
+  it('groups within the finished list too, newest outcome first per level', () => {
+    const { finished } = splitFleet(
+      [
+        { ...sup('s', 'idle'), finishedAt: 10 },
+        { ...child('c1', 's', 'idle'), finishedAt: 30 },
+        { ...agent('x', 'idle'), finishedAt: 20 },
+        { ...child('c2', 's', 'error'), finishedAt: 40 },
+      ],
+      []
+    );
+    expect(finished.map((a) => a.id)).toEqual(['x', 's', 'c2', 'c1']);
+  });
+
+  it('keeps a child in its own shape when the supervisor is in another one', () => {
+    const { active, finished, parked } = splitFleet(
+      [
+        { ...sup('s', 'idle'), finishedAt: 1 },
+        child('c1', 's', 'running'),
+        child('c2', 's', 'running'),
+      ],
+      ['c2']
+    );
+    expect(finished.map((a) => a.id)).toEqual(['s']);
+    expect(active.map((a) => a.id)).toEqual(['c1']);
+    expect(parked.map((a) => a.id)).toEqual(['c2']);
+  });
+
+  it('never changes how many agents each shape holds', () => {
+    const agents = [
+      sup('s', 'running'),
+      child('c1', 's', 'running'),
+      child('orphan', 'gone', 'running'),
+      agent('x', 'idle'),
+    ];
+    const split = splitFleet(agents, []);
+    expect(split.active).toHaveLength(3);
+    expect(split.finished).toHaveLength(1);
+    expect(split.active.map((a) => a.id)).toContain('orphan');
+  });
+});
+
+describe('supervisorChildSummary', () => {
+  it('counts every child and the running ones', () => {
+    const agents = [
+      agent('s', 'running', 0, { role: 'supervisor' }),
+      agent('c1', 'running', 0, { spawnedByAgentId: 's' }),
+      agent('c2', 'idle', 0, { spawnedByAgentId: 's' }),
+      agent('c3', 'running', 0, { spawnedByAgentId: 'other' }),
+    ];
+    expect(supervisorChildSummary(agents, 's')).toBe('2 children · 1 running');
+    expect(supervisorChildSummary(agents, 'other')).toBe('1 child · 1 running');
+    expect(supervisorChildSummary(agents, 'none')).toBe('No children yet');
   });
 });

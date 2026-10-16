@@ -1,5 +1,6 @@
 use super::protocol::tests::sample_agent;
 use super::*;
+use crate::agents::run_results::RunResult;
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
 
@@ -16,7 +17,11 @@ struct FakeBackend {
     projects: Mutex<Vec<ProjectEntry>>,
     /// A frontend that answers a kill with ok but does not actually kill.
     kill_leaves_agent: Mutex<bool>,
-    agent_pids: Mutex<std::collections::HashSet<u32>>,
+    agent_pids: Mutex<HashMap<u32, (String, AgentRole)>>,
+    policy: Mutex<SupervisorPolicy>,
+    offered: Mutex<BTreeMap<String, Vec<ModelOption>>>,
+    modes: Mutex<BTreeMap<String, crate::supervisor::policy::ProviderModes>>,
+    project_policies: Mutex<HashMap<String, ProviderPolicy>>,
 }
 
 impl ControlBackend for FakeBackend {
@@ -24,8 +29,32 @@ impl ControlBackend for FakeBackend {
         self.agents.lock().unwrap().clone()
     }
 
-    fn agent_pids(&self) -> std::collections::HashSet<u32> {
+    fn agent_pids(&self) -> HashMap<u32, (String, AgentRole)> {
         self.agent_pids.lock().unwrap().clone()
+    }
+
+    fn supervisor_policy(&self) -> SupervisorPolicy {
+        self.policy.lock().unwrap().clone()
+    }
+
+    fn offered_models(&self) -> BTreeMap<String, Vec<ModelOption>> {
+        self.offered.lock().unwrap().clone()
+    }
+
+    fn provider_modes(
+        &self,
+        _policy: &SupervisorPolicy,
+    ) -> BTreeMap<String, crate::supervisor::policy::ProviderModes> {
+        self.modes.lock().unwrap().clone()
+    }
+
+    fn project_provider_policy(&self, project_root: &Path) -> ProviderPolicy {
+        self.project_policies
+            .lock()
+            .unwrap()
+            .get(&project_root.to_string_lossy().into_owned())
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn write_input(&self, agent_id: &str, data: &str) -> Result<(), String> {
@@ -63,6 +92,7 @@ struct Harness {
     backend: Arc<FakeBackend>,
     buffers: Arc<OutputBuffers>,
     pending: Arc<PendingRequests>,
+    run_results: Arc<RunResults>,
     dispatcher: Dispatcher,
 }
 
@@ -75,11 +105,19 @@ fn harness_with(agents: Vec<AgentInfo>, timeout: Duration) -> Harness {
     });
     pending.mark_ready();
     let buffers = Arc::new(OutputBuffers::default());
-    let dispatcher = Dispatcher::new(backend.clone(), buffers.clone(), pending.clone(), timeout);
+    let run_results = Arc::new(RunResults::default());
+    let dispatcher = Dispatcher::new(
+        backend.clone(),
+        buffers.clone(),
+        pending.clone(),
+        run_results.clone(),
+        timeout,
+    );
     Harness {
         backend,
         buffers,
         pending,
+        run_results,
         dispatcher,
     }
 }
@@ -104,7 +142,11 @@ fn agent(id: &str, headless: bool) -> AgentInfo {
 }
 
 fn call(h: &Harness, request: Value) -> Value {
-    serde_json::from_str(&h.dispatcher.handle_line(&request.to_string())).unwrap()
+    call_as(h, &Caller::External, request)
+}
+
+fn call_as(h: &Harness, caller: &Caller, request: Value) -> Value {
+    serde_json::from_str(&h.dispatcher.handle_line(caller, &request.to_string())).unwrap()
 }
 
 fn error_code(response: &Value) -> &str {
@@ -311,7 +353,8 @@ fn spawn_forwards_all_params_and_returns_the_new_agent_id() {
         requests[0].params,
         json!({
             "projectPath": project, "prompt": "run the tests", "provider": null,
-            "model": null, "permissionMode": null, "headless": null, "name": null
+            "model": null, "permissionMode": null, "headless": null, "name": null,
+            "role": null
         })
     );
 }
@@ -354,6 +397,7 @@ fn list_projects_passes_the_backend_list_through() {
         running_agents: 0,
         description: None,
         description_source: None,
+        supervisor: None,
     };
     *h.backend.projects.lock().unwrap() = vec![entry];
     let response = call(&h, json!({ "id": "a", "method": "list_projects" }));
@@ -401,11 +445,18 @@ fn unready_harness(timeout: Duration) -> Harness {
         pending: pending.clone(),
         ..FakeBackend::default()
     });
-    let dispatcher = Dispatcher::new(backend.clone(), h.buffers.clone(), pending.clone(), timeout);
+    let dispatcher = Dispatcher::new(
+        backend.clone(),
+        h.buffers.clone(),
+        pending.clone(),
+        h.run_results.clone(),
+        timeout,
+    );
     Harness {
         backend,
         buffers: h.buffers,
         pending,
+        run_results: h.run_results,
         dispatcher,
     }
 }
@@ -556,7 +607,11 @@ fn a_caller_inside_an_agent_is_refused_at_connect() {
     let listener = bind(&path).unwrap();
     let h = harness(vec![]);
     // This test process descends from its parent; pretend that is an agent.
-    *h.backend.agent_pids.lock().unwrap() = [std::os::unix::process::parent_id()].into();
+    *h.backend.agent_pids.lock().unwrap() = [(
+        std::os::unix::process::parent_id(),
+        ("agent-w".to_string(), AgentRole::Worker),
+    )]
+    .into();
     let dispatcher = Arc::new(h.dispatcher);
     std::thread::spawn(move || serve(listener, dispatcher, Duration::from_secs(5)));
 
@@ -603,7 +658,8 @@ fn a_real_process_inside_an_agent_is_refused_over_the_socket() {
         .spawn()
         .unwrap();
     // Registered before `nc` starts, as a running agent's PID would be.
-    *backend.agent_pids.lock().unwrap() = [agent.id()].into();
+    *backend.agent_pids.lock().unwrap() =
+        [(agent.id(), ("agent-w".to_string(), AgentRole::Worker))].into();
     let output = agent.wait_with_output().unwrap();
     let line = String::from_utf8_lossy(&output.stdout);
     let response: Value = serde_json::from_str(line.trim()).unwrap_or_else(|_| panic!("{line}"));
@@ -652,4 +708,556 @@ fn control_socket_against_running_app() {
     println!("{response:#}");
     assert_eq!(response["ok"], true, "{response}");
     assert!(response["result"]["agents"].is_array());
+}
+
+// ── Supervisor scope (ADR 0004) ─────────────────────────────────────────────
+
+const SUPERVISOR_PID: u32 = 100;
+const CHILD_PID: u32 = 200;
+
+struct Scope {
+    h: Harness,
+    _project: tempfile::TempDir,
+    path: String,
+    supervisor: Caller,
+}
+
+fn model(value: &str, rank: Option<i64>) -> ModelOption {
+    ModelOption {
+        value: value.into(),
+        label: format!("Label {value}"),
+        rank,
+    }
+}
+
+fn agent_in(id: &str, parent: Option<&str>, project: &str, status: AgentStatus) -> AgentInfo {
+    AgentInfo {
+        id: id.into(),
+        status,
+        project_path: Some(project.into()),
+        spawned_by_agent_id: parent.map(str::to_string),
+        ..sample_agent()
+    }
+}
+
+fn scope_policy(path: &str) -> SupervisorPolicy {
+    serde_json::from_value(json!({
+        "version": 1,
+        "supervisor": { "provider": "claude", "model": null },
+        "maxRunningChildren": 4,
+        "projects": {
+            path: {
+                "allowed": true, "providers": ["claude", "codex"],
+                "models": { "claude": ["haiku"] },
+                "permissionMode": { "codex": "acceptEdits" },
+                "allowInteractive": true, "maxRunning": 2
+            },
+            "/abs/not-allowed": { "allowed": false, "providers": null, "models": {},
+                "permissionMode": {}, "allowInteractive": false, "maxRunning": 2 }
+        }
+    }))
+    .unwrap()
+}
+
+/// A supervisor `agent-sup` with one running child in an allowed project, a
+/// child of another supervisor, an agent the human started, and the stored
+/// result of a child whose supervisor is gone.
+fn supervised_scope() -> Scope {
+    let project = auric_project();
+    let path = crate::supervisor::canonical_project_path(&project.path().to_string_lossy());
+    let supervisor = AgentInfo {
+        id: "agent-sup".into(),
+        role: AgentRole::Supervisor,
+        project_path: None,
+        ..sample_agent()
+    };
+    let h = harness(vec![
+        supervisor,
+        agent_in(
+            "agent-child",
+            Some("agent-sup"),
+            &path,
+            AgentStatus::Running,
+        ),
+        agent_in(
+            "agent-other",
+            Some("agent-sup-2"),
+            &path,
+            AgentStatus::Running,
+        ),
+        agent_in("agent-human", None, &path, AgentStatus::Running),
+    ]);
+    *h.backend.policy.lock().unwrap() = scope_policy(&path);
+    *h.backend.offered.lock().unwrap() = BTreeMap::from([
+        (
+            "claude".to_string(),
+            vec![model("haiku", Some(1)), model("opus", Some(3))],
+        ),
+        (
+            "codex".to_string(),
+            vec![model("gpt-6-luna", Some(1)), model("auto", None)],
+        ),
+    ]);
+    *h.backend.agent_pids.lock().unwrap() = HashMap::from([
+        (
+            SUPERVISOR_PID,
+            ("agent-sup".to_string(), AgentRole::Supervisor),
+        ),
+        (CHILD_PID, ("agent-child".to_string(), AgentRole::Worker)),
+    ]);
+    h.run_results.record(
+        RunResult::from_finish(
+            "agent-orphan",
+            AgentStatus::Idle,
+            Some(0),
+            None,
+            || Some("ANSWER: done".into()),
+            1,
+        ),
+        Some("agent-dead".into()),
+    );
+    *h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: true,
+        result: Some(json!({ "agentId": "agent-new" })),
+        error: None,
+    });
+    Scope {
+        h,
+        _project: project,
+        path,
+        supervisor: Caller::Supervisor {
+            agent_id: "agent-sup".into(),
+        },
+    }
+}
+
+/// A process whose parent is `ancestor` (or with no agent above it).
+fn below(ancestor: Option<u32>) -> impl Fn(u32) -> Option<u32> {
+    move |pid| match (pid, ancestor) {
+        (999, Some(agent)) => Some(agent),
+        _ => Some(1),
+    }
+}
+
+#[test]
+fn admission_tells_external_supervisor_and_worker_callers_apart() {
+    let s = supervised_scope();
+    let d = &s.h.dispatcher;
+    assert_eq!(d.admit_peer(Some(999), below(None)), Ok(Caller::External));
+    assert_eq!(
+        d.admit_peer(Some(999), below(Some(SUPERVISOR_PID))),
+        Ok(s.supervisor.clone())
+    );
+    assert_eq!(
+        d.admit_peer(Some(SUPERVISOR_PID), below(None)),
+        Ok(s.supervisor.clone()),
+        "the supervisor process itself"
+    );
+    for refused in [
+        d.admit_peer(Some(999), below(Some(CHILD_PID))),
+        d.admit_peer(None, below(None)),
+    ] {
+        assert_eq!(refused.unwrap_err().code, ErrorCode::ForbiddenAgentCaller);
+    }
+}
+
+#[test]
+fn every_caller_scope_case_in_the_contract_holds() {
+    let fixtures: Value = serde_json::from_str(super::protocol::tests::FIXTURES).unwrap();
+    let cases = fixtures["callerScope"]["cases"].as_array().unwrap();
+    assert!(!cases.is_empty());
+    for case in cases {
+        let s = supervised_scope();
+        let name = case["name"].as_str().unwrap();
+        let expected = case["expected"].as_str().unwrap();
+        let admitted = match case["caller"].as_str().unwrap() {
+            "external" => s.h.dispatcher.admit_peer(Some(999), below(None)),
+            "supervisor" => {
+                s.h.dispatcher
+                    .admit_peer(Some(999), below(Some(SUPERVISOR_PID)))
+            }
+            "worker" => s.h.dispatcher.admit_peer(Some(999), below(Some(CHILD_PID))),
+            "unknown" => s.h.dispatcher.admit_peer(None, below(None)),
+            other => panic!("{name}: unknown caller {other}"),
+        };
+        let caller = match admitted {
+            Ok(caller) => caller,
+            Err(error) => {
+                assert_eq!(json!(error.code), json!(expected), "{name}");
+                continue;
+            }
+        };
+        let target = match case["target"].as_str() {
+            Some("own_child") => "agent-child",
+            Some("other_supervisors_child") => "agent-other",
+            Some("self") => "agent-sup",
+            Some("child_of_killed_supervisor") => "agent-orphan",
+            _ => "agent-human",
+        };
+        let method = case["method"].as_str().unwrap();
+        let mut params = match method {
+            "spawn" => json!({ "projectPath": s.path, "prompt": "x" }),
+            "send_input" => json!({ "agentId": target, "text": "hi" }),
+            "await_result" => json!({ "agentId": target, "waitSeconds": 0 }),
+            "list_agents" | "list_projects" => json!({}),
+            _ => json!({ "agentId": target }),
+        };
+        if let Some(extra) = case.get("params").and_then(Value::as_object) {
+            for (key, value) in extra {
+                params[key] = value.clone();
+            }
+        }
+        let response = call_as(
+            &s.h,
+            &caller,
+            json!({ "id": 1, "method": method, "params": params }),
+        );
+        match expected {
+            "ok" => assert_eq!(response["ok"], true, "{name}: {response}"),
+            "ok_own_children_only" => {
+                let ids: Vec<&str> = response["result"]["agents"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{name}: {response}"))
+                    .iter()
+                    .map(|agent| agent["id"].as_str().unwrap())
+                    .collect();
+                assert_eq!(ids, vec!["agent-child"], "{name}");
+            }
+            code => assert_eq!(error_code(&response), code, "{name}: {response}"),
+        }
+    }
+}
+
+#[test]
+fn a_supervisor_spawn_reaches_the_frontend_with_what_rust_decided() {
+    let s = supervised_scope();
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 7, "method": "spawn", "params": {
+            "projectPath": format!("{}/", s.path), "prompt": "reply PONG",
+            "provider": "codex", "model": "gpt-6-luna", "headless": true, "name": "Ping"
+        } }),
+    );
+    assert_eq!(
+        response["result"],
+        json!({ "agentId": "agent-new" }),
+        "{response}"
+    );
+    let requests = s.h.backend.requests.lock().unwrap();
+    assert_eq!(
+        requests[0].params,
+        json!({
+            "projectPath": s.path, "prompt": "reply PONG", "provider": "codex",
+            "model": "gpt-6-luna", "permissionMode": "acceptEdits", "headless": true,
+            "name": "Ping", "role": "worker", "spawnedByAgentId": "agent-sup",
+            "runSource": "supervisor"
+        })
+    );
+}
+
+#[test]
+fn a_refused_spawn_names_its_reason_and_never_reaches_the_frontend() {
+    let s = supervised_scope();
+    let spawn = |provider: &str, model: &str, headless: bool| {
+        call_as(
+            &s.h,
+            &s.supervisor,
+            json!({ "id": 7, "method": "spawn", "params": {
+                "projectPath": s.path, "prompt": "p",
+                "provider": provider, "model": model, "headless": headless
+            } }),
+        )
+    };
+    let refused = spawn("claude", "opus", true);
+    assert_eq!(error_code(&refused), "supervisor_denied");
+    assert_eq!(refused["error"]["reason"], "model_not_allowed");
+    assert!(refused["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Allowed: haiku"));
+    assert_eq!(
+        spawn("grok", "grok-5", true)["error"]["reason"],
+        "provider_not_installed"
+    );
+    let elsewhere = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 7, "method": "spawn", "params": {
+            "projectPath": "/abs/not-allowed", "prompt": "p",
+            "provider": "claude", "model": "haiku", "headless": true
+        } }),
+    );
+    assert_eq!(elsewhere["error"]["reason"], "project_not_allowed");
+    assert!(s.h.backend.requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn the_project_policy_applies_on_top_of_the_supervisor_policy() {
+    let s = supervised_scope();
+    s.h.backend.project_policies.lock().unwrap().insert(
+        s.path.clone(),
+        ProviderPolicy {
+            allow: None,
+            deny: vec!["claude".into()],
+        },
+    );
+    let refused = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 7, "method": "spawn", "params": {
+            "projectPath": s.path, "prompt": "p",
+            "provider": "claude", "model": "haiku", "headless": true
+        } }),
+    );
+    assert_eq!(refused["error"]["reason"], "provider_denied_by_project");
+}
+
+#[test]
+fn the_limit_counts_this_supervisors_running_and_queued_children() {
+    let s = supervised_scope();
+    s.h.backend.agents.lock().unwrap().push(agent_in(
+        "agent-child-2",
+        Some("agent-sup"),
+        &s.path,
+        AgentStatus::Queued,
+    ));
+    let refused = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 7, "method": "spawn", "params": {
+            "projectPath": s.path, "prompt": "p",
+            "provider": "claude", "model": "haiku", "headless": true
+        } }),
+    );
+    assert_eq!(refused["error"]["reason"], "project_limit_reached");
+}
+
+#[test]
+fn an_external_caller_starts_a_supervisor_and_role_reaches_the_frontend() {
+    let s = supervised_scope();
+    let response = call(
+        &s.h,
+        json!({ "id": 16, "method": "spawn", "params": {
+            "projectPath": s.path, "prompt": "supervise", "role": "supervisor"
+        } }),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    let params = &s.h.backend.requests.lock().unwrap()[0].params;
+    assert_eq!(params["role"], "supervisor");
+    assert!(params.get("spawnedByAgentId").is_none());
+    assert!(params.get("runSource").is_none());
+}
+
+#[test]
+fn await_result_wakes_when_the_result_lands() {
+    let s = supervised_scope();
+    let results = s.h.run_results.clone();
+    let landing = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        results.record(
+            RunResult::from_finish(
+                "agent-child",
+                AgentStatus::Idle,
+                Some(0),
+                None,
+                || Some("ANSWER: PONG".into()),
+                2,
+            ),
+            Some("agent-sup".into()),
+        );
+    });
+    let started = Instant::now();
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 18, "method": "await_result",
+                "params": { "agentId": "agent-child", "waitSeconds": 30 } }),
+    );
+    landing.join().unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "woken, not timed out"
+    );
+    assert_eq!(response["result"]["done"], true, "{response}");
+    assert_eq!(response["result"]["result"]["answer"], "ANSWER: PONG");
+    assert_eq!(response["result"]["result"]["source"], "console_tail");
+}
+
+#[test]
+fn await_result_ends_its_wait_with_the_live_status() {
+    let s = supervised_scope();
+    s.h.buffers.append("agent-child", "working");
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 18, "method": "await_result",
+                "params": { "agentId": "agent-child", "waitSeconds": 0 } }),
+    );
+    assert_eq!(
+        response["result"],
+        json!({ "done": false, "agentId": "agent-child", "status": "running", "outputBytes": 7 })
+    );
+    let unknown = call(
+        &s.h,
+        json!({ "id": 18, "method": "await_result", "params": { "agentId": "ghost" } }),
+    );
+    assert_eq!(error_code(&unknown), "unknown_agent");
+}
+
+#[test]
+fn a_killed_supervisors_children_stay_readable_until_its_card_is_cleared() {
+    let s = supervised_scope();
+    s.h.run_results.record(
+        RunResult::from_finish(
+            "agent-done",
+            AgentStatus::Error,
+            Some(1),
+            None,
+            || Some("boom".into()),
+            3,
+        ),
+        Some("agent-sup".into()),
+    );
+    let read_as = |caller: &Caller| {
+        call_as(
+            &s.h,
+            caller,
+            json!({ "id": 18, "method": "await_result",
+                    "params": { "agentId": "agent-done", "waitSeconds": 0 } }),
+        )
+    };
+    assert_eq!(read_as(&s.supervisor)["result"]["result"]["isError"], true);
+    // The supervisor is killed: gone from the manager.
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|agent| agent.id != "agent-sup");
+    assert_eq!(read_as(&Caller::External)["result"]["done"], true);
+    s.h.run_results.forget_children_of("agent-sup");
+    assert_eq!(error_code(&read_as(&Caller::External)), "unknown_agent");
+}
+
+#[test]
+// code-gate: complexity-function-length - one scenario: a listed, an unlisted and a hidden project side by side
+fn a_supervisor_lists_the_allowed_projects_with_what_it_may_use_there() {
+    let s = supervised_scope();
+    let unlisted = auric_project();
+    let unlisted_path =
+        crate::supervisor::canonical_project_path(&unlisted.path().to_string_lossy());
+    let mut policy = scope_policy(&s.path);
+    let mut rules = policy.projects[&s.path].clone();
+    rules.providers = Some(vec!["claude".into()]);
+    rules.allow_interactive = false;
+    policy.projects.insert(unlisted_path.clone(), rules);
+    *s.h.backend.policy.lock().unwrap() = policy;
+    *s.h.backend.projects.lock().unwrap() = vec![
+        ProjectEntry {
+            path: s.path.clone(),
+            name: "listed".into(),
+            starred: true,
+            is_open: false,
+            initialized: true,
+            last_opened_at: Some(5),
+            running_agents: 3,
+            description: Some("Listed project".into()),
+            description_source: Some(DescriptionSource::User),
+            supervisor: None,
+        },
+        ProjectEntry {
+            path: "/abs/not-allowed".into(),
+            name: "hidden".into(),
+            starred: true,
+            is_open: false,
+            initialized: true,
+            last_opened_at: None,
+            running_agents: 0,
+            description: None,
+            description_source: None,
+            supervisor: None,
+        },
+    ];
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": "a", "method": "list_projects" }),
+    );
+    let projects = response["result"]["projects"].as_array().unwrap();
+    let mut expected_paths = vec![s.path.clone(), unlisted_path.clone()];
+    expected_paths.sort();
+    let paths: Vec<&str> = projects
+        .iter()
+        .map(|p| p["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(paths, expected_paths, "allowed only, sorted by path");
+    let listed = projects
+        .iter()
+        .find(|p| p["path"] == s.path.as_str())
+        .unwrap();
+    assert_eq!(listed["name"], "listed");
+    assert_eq!(
+        listed["supervisor"],
+        json!({
+            "providers": [
+                { "id": "claude", "permissionMode": null,
+                  "models": [{ "id": "haiku", "label": "Label haiku", "rank": 1 }] },
+                { "id": "codex", "permissionMode": "acceptEdits",
+                  "models": [{ "id": "gpt-6-luna", "label": "Label gpt-6-luna", "rank": 1 },
+                             { "id": "auto", "label": "Label auto", "rank": null }] }
+            ],
+            "allowInteractive": true, "runningChildren": 1, "maxRunning": 2
+        })
+    );
+    let built = projects
+        .iter()
+        .find(|p| p["path"] == unlisted_path.as_str())
+        .unwrap();
+    assert_eq!(built["starred"], false);
+    assert_eq!(built["initialized"], true);
+    assert_eq!(built["supervisor"]["runningChildren"], 0);
+    assert_eq!(built["supervisor"]["providers"][0]["id"], "claude");
+    let external = call(&s.h, json!({ "id": "a", "method": "list_projects" }));
+    assert!(
+        external["result"]["projects"][0]
+            .get("supervisor")
+            .is_none(),
+        "only a supervisor's list carries the block"
+    );
+}
+
+#[test]
+fn a_supervisor_is_admitted_over_a_real_socket_in_its_scope() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = socket_path_in(dir.path());
+    let listener = bind(&path).unwrap();
+    let s = supervised_scope();
+    // This test process descends from its parent; pretend that is a supervisor.
+    *s.h.backend.agent_pids.lock().unwrap() = HashMap::from([(
+        std::os::unix::process::parent_id(),
+        ("agent-sup".to_string(), AgentRole::Supervisor),
+    )]);
+    let dispatcher = Arc::new(s.h.dispatcher);
+    std::thread::spawn(move || serve(listener, dispatcher, Duration::from_secs(5)));
+
+    let mut stream = UnixStream::connect(&path).unwrap();
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let listed = roundtrip(
+        &mut stream,
+        &mut reader,
+        r#"{"id":1,"method":"list_agents"}"#,
+    );
+    let ids: Vec<&str> = listed["result"]["agents"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{listed}"))
+        .iter()
+        .map(|agent| agent["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, vec!["agent-child"]);
+    let typed = roundtrip(
+        &mut stream,
+        &mut reader,
+        r#"{"id":2,"method":"send_input","params":{"agentId":"agent-child","text":"y"}}"#,
+    );
+    assert_eq!(error_code(&typed), "outside_supervisor_scope");
 }

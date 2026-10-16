@@ -28,6 +28,8 @@ pub fn persisted_from_config(
         run_source: config.run_source.clone(),
         run_kind: config.run_kind.clone(),
         review_of_ticket_id: config.review_of_ticket_id.clone(),
+        role: config.role,
+        spawned_by_agent_id: config.spawned_by_agent_id.clone(),
     }
 }
 
@@ -58,6 +60,8 @@ pub fn resumed_config(
         run_source: persisted.run_source,
         run_kind: persisted.run_kind,
         review_of_ticket_id: persisted.review_of_ticket_id,
+        role: persisted.role,
+        spawned_by_agent_id: persisted.spawned_by_agent_id,
     }
 }
 

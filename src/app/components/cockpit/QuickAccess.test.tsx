@@ -1369,9 +1369,11 @@ describe('QuickAccess', () => {
       });
     });
 
-    it('shows no dock until something is in it', () => {
+    it('holds only the supervisor tile until a project is docked', () => {
       render(<QuickAccess currentPath={null} />);
-      expect(screen.queryByTestId('quick-access-dock')).toBeNull();
+      const dock = screen.getByTestId('quick-access-dock');
+      expect(within(dock).queryAllByTestId(/^quick-access-tile-/)).toHaveLength(0);
+      expect(within(dock).getByTestId('quick-access-supervisor')).toBeInTheDocument();
     });
 
     it('moves a project to the dock from the menu and out of the grid', () => {
@@ -1413,7 +1415,9 @@ describe('QuickAccess', () => {
       fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/apps'));
       fireEvent.click(screen.getByRole('menuitem', { name: /remove from dock/i }));
 
-      expect(screen.queryByTestId('quick-access-dock')).toBeNull();
+      expect(
+        within(screen.getByTestId('quick-access-dock')).queryAllByTestId(/^quick-access-tile-/)
+      ).toHaveLength(0);
       expect(useStore.getState().starredProjects[0].dockIndex).toBeUndefined();
     });
 
@@ -1477,7 +1481,9 @@ describe('QuickAccess', () => {
       });
       fireEvent.drop(screen.getByTestId('quick-access-row'), { dataTransfer: transfer });
 
-      expect(screen.queryByTestId('quick-access-dock')).toBeNull();
+      expect(
+        within(screen.getByTestId('quick-access-dock')).queryAllByTestId(/^quick-access-tile-/)
+      ).toHaveLength(0);
       expect(ids(screen.getByTestId('quick-access-row'))).toEqual([
         'quick-access-tile-/a/apps',
         'quick-access-tile-/a/blog',

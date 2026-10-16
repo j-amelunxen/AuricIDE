@@ -191,6 +191,8 @@ export default function Home() {
                   onOpenAgents={showAgents}
                   onSwitchProject={switchProject}
                   onCloseProject={handlers.handleCloseProject}
+                  onOpenSettings={openSettings}
+                  onSelectAgent={handlers.handleSelectAgent}
                 />
               </div>
             ) : (
@@ -199,6 +201,8 @@ export default function Home() {
                 onNewProject={() => setNewProjectOpen(true)}
                 onOpenRecent={(path) => handlers.handleOpenRecent(path)}
                 dailyTip={handlers.dailyTip}
+                onOpenSettings={openSettings}
+                onSelectAgent={handlers.handleSelectAgent}
               />
             )}
           </div>

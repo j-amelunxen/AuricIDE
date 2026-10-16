@@ -44,6 +44,11 @@ interface QuickAccessSkillsEditorProps {
    * combo buries the steps it is meant to help with.
    */
   showDiscovery?: boolean;
+  /**
+   * Pins every row to one provider and offers only its model — the supervisor's
+   * case, where Rust decides provider and permission mode whatever a row says.
+   */
+  fixedProvider?: ProviderInfo;
 }
 
 /**
@@ -63,6 +68,7 @@ export function QuickAccessSkillsEditor({
   itemNoun = 'Skill',
   addTestId = 'quick-access-add-skill',
   showDiscovery = true,
+  fixedProvider,
 }: QuickAccessSkillsEditorProps) {
   // skill.id is both the React key and the focus token, so no parallel key
   // array is needed to survive reordering.
@@ -139,7 +145,7 @@ export function QuickAccessSkillsEditor({
     <SettingsSection title={title} icon="auto_awesome">
       <ul aria-label={title} className="flex flex-col gap-2">
         {skills.map((skill, index) => {
-          const provider = providers.find((p) => p.id === skill.providerId);
+          const provider = fixedProvider ?? providers.find((p) => p.id === skill.providerId);
           const auricDefinition = auricSkills.find((entry) => entry.id === skill.auricSkillId);
           const name = skill.label || `${itemNoun.toLowerCase()} ${index + 1}`;
           return (
@@ -247,29 +253,31 @@ export function QuickAccessSkillsEditor({
                   Launch options
                   {provider ? `: ${provider.name}` : ''}
                 </summary>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  <select
-                    aria-label={`${itemNoun} ${index + 1} provider`}
-                    value={skill.providerId ?? ''}
-                    onChange={(event) =>
-                      // Clearing model and permission is deliberate: carrying a
-                      // Claude model id over to Crush only produces a preset
-                      // that degrades again at launch time.
-                      update(index, {
-                        providerId: event.target.value || undefined,
-                        model: undefined,
-                        permissionMode: undefined,
-                      })
-                    }
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Default provider</option>
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className={`mt-2 grid gap-2 ${fixedProvider ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                  {!fixedProvider && (
+                    <select
+                      aria-label={`${itemNoun} ${index + 1} provider`}
+                      value={skill.providerId ?? ''}
+                      onChange={(event) =>
+                        // Clearing model and permission is deliberate: carrying a
+                        // Claude model id over to Crush only produces a preset
+                        // that degrades again at launch time.
+                        update(index, {
+                          providerId: event.target.value || undefined,
+                          model: undefined,
+                          permissionMode: undefined,
+                        })
+                      }
+                      className={SELECT_CLASS}
+                    >
+                      <option value="">Default provider</option>
+                      {providers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <select
                     aria-label={`${itemNoun} ${index + 1} model`}
                     value={skill.model ?? ''}
@@ -277,32 +285,36 @@ export function QuickAccessSkillsEditor({
                     onChange={(event) => update(index, { model: event.target.value || undefined })}
                     className={SELECT_CLASS}
                   >
-                    <option value="">Provider default</option>
+                    <option value="">
+                      {fixedProvider ? "Supervisor's default" : 'Provider default'}
+                    </option>
                     {provider?.models.map((model) => (
                       <option key={model.value} value={model.value}>
                         {model.label}
                       </option>
                     ))}
                   </select>
-                  <select
-                    aria-label={`${itemNoun} ${index + 1} permission mode`}
-                    value={skill.permissionMode ?? ''}
-                    disabled={!provider}
-                    onChange={(event) =>
-                      update(index, {
-                        permissionMode: (event.target.value || undefined) as
-                          PermissionMode | undefined,
-                      })
-                    }
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Provider default</option>
-                    {provider?.permissionModes.map((mode) => (
-                      <option key={mode.value} value={mode.value}>
-                        {mode.label}
-                      </option>
-                    ))}
-                  </select>
+                  {!fixedProvider && (
+                    <select
+                      aria-label={`${itemNoun} ${index + 1} permission mode`}
+                      value={skill.permissionMode ?? ''}
+                      disabled={!provider}
+                      onChange={(event) =>
+                        update(index, {
+                          permissionMode: (event.target.value || undefined) as
+                            PermissionMode | undefined,
+                        })
+                      }
+                      className={SELECT_CLASS}
+                    >
+                      <option value="">Provider default</option>
+                      {provider?.permissionModes.map((mode) => (
+                        <option key={mode.value} value={mode.value}>
+                          {mode.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </details>
             </li>

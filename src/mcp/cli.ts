@@ -8,14 +8,17 @@ export interface McpCliBinding {
 }
 
 /**
- * The two ways the server runs. `project` is what the IDE hands its own agents
- * (PM tools for one project); `control` is for clients outside the IDE and
- * offers only the agent-control tools (`docs/design-agent-control.md`).
+ * The three ways the server runs. `project` is what the IDE hands its own
+ * agents (PM tools for one project); `control` is for clients outside the IDE
+ * and offers only the agent-control tools; `supervisor` is the one IDE agent
+ * the socket admits, with only its scoped tools (`docs/design-agent-control.md`).
  */
-export type McpCliMode = ({ mode: 'project' } & McpCliBinding) | { mode: 'control' };
+export type McpCliMode =
+  ({ mode: 'project' } & McpCliBinding) | { mode: 'control' } | { mode: 'supervisor' };
 
 const USAGE =
-  'Usage: auric-mcp --project-root <project-directory> | auric-mcp --control (unsupported arguments)';
+  'Usage: auric-mcp --project-root <project-directory> | auric-mcp --control | ' +
+  'auric-mcp --supervisor (unsupported arguments)';
 
 /**
  * Picks the server mode from the command line. `--control` is refused inside a
@@ -27,6 +30,13 @@ export function resolveMcpCliMode(
   args: readonly string[],
   env: Readonly<Record<string, string | undefined>> = process.env
 ): McpCliMode {
+  // Runs inside the supervisor agent, so the marker is expected here. The
+  // socket, not this check, decides what it may do: it admits the process only
+  // because its nearest agent ancestor has the supervisor role (ADR 0004).
+  if (args.includes('--supervisor')) {
+    if (args.length !== 1) throw new Error(USAGE);
+    return { mode: 'supervisor' };
+  }
   if (args.includes('--control')) {
     if (args.length !== 1) throw new Error(USAGE);
     // The marker is set on every IDE agent; AURIC_AGENT_CWD only on those with

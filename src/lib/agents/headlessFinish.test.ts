@@ -43,6 +43,20 @@ describe('shouldNotifyHeadlessFinish', () => {
   it('does not fire for conductor-spawned agents, even when they are headless', () => {
     expect(shouldNotifyHeadlessFinish({ headless: true, runSource: 'conductor' })).toBe(false);
   });
+
+  // The supervisor that started it reads the result itself; the child's
+  // finish is its business, not a ping for the human.
+  it('does not fire for a supervisor child, even when it is headless', () => {
+    expect(
+      shouldNotifyHeadlessFinish({
+        headless: true,
+        runSource: 'supervisor',
+        spawnedByAgentId: 'sup-1',
+      })
+    ).toBe(false);
+    expect(shouldNotifyHeadlessFinish({ headless: true, spawnedByAgentId: 'sup-1' })).toBe(false);
+    expect(shouldNotifyHeadlessFinish({ headless: true, spawnedByAgentId: null })).toBe(true);
+  });
 });
 
 describe('headlessFinishNotification', () => {

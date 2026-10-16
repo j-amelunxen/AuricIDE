@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import {
   quickAccessCombos,
@@ -9,25 +9,10 @@ import {
   type QuickAccessSkill,
   type StarredProject,
 } from '@/lib/store/starredProjectsSlice';
-import {
-  launchEntriesForProject,
-  resolveWheelEntry,
-  wheelEntryLabel,
-  wheelEntryName,
-  wheelKnownIds,
-  wheelSlotId,
-} from '@/lib/quickAccess/launchSkills';
-import {
-  assignSkillToSlot,
-  clearWheelSlot,
-  normalizeWheelSlots,
-  slotIndexAt,
-  wheelSlotChoices,
-} from '@/lib/quickAccess/wheel';
+import { launchEntriesForProject } from '@/lib/quickAccess/launchSkills';
 import { badgeChipStyle, normalizeProjectBadge } from '@/lib/quickAccess/badge';
 import { ProjectTileFace } from './ProjectTileFace';
-import { SkillWheel, useSkillWheel } from './SkillWheel';
-import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
+import { useLaunchWheel } from './useLaunchWheel';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 
 /** Hold-to-confirm threshold for unstarring — long enough to rule out an
@@ -90,40 +75,31 @@ export function ProjectTile({
   const [holding, setHolding] = useState(false);
   const [removing, setRemoving] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tileRef = useRef<HTMLButtonElement>(null);
-  const { machine, dispatch } = useSkillWheel(wheelSuppressed);
   const setStarredProjectWheelSlots = useStore((s) => s.setStarredProjectWheelSlots);
   const setStarredProjectBadge = useStore((s) => s.setStarredProjectBadge);
-  // 'assign' picks what goes on the slot, 'manage' acts on what is already
-  // there. Both keep the wheel pinned open while they are up.
-  const [picker, setPicker] = useState<{
-    slot: number;
-    x: number;
-    y: number;
-    mode: 'assign' | 'manage';
-  } | null>(null);
-  const pickerHandover = useRef(false);
-
-  const entries = launchEntriesForProject(project);
-  const knownIds = wheelKnownIds(project);
-  const slotIds = normalizeWheelSlots(quickAccessWheelSlots(project), knownIds);
-  const slotted = slotIds.map((id) => resolveWheelEntry(project, id));
-
-  const wheelLive = machine.phase !== 'idle' || machine.mode !== 'none';
-  // Hovering a tile does two things at once: it reveals the remove ×, and it
-  // starts the wheel's dwell. Gating the × on "the wheel is doing something"
-  // meant the dwell hid it from the first frame of every hover, and the wheel
-  // opens 300ms in and never closes while the pointer rests there — so the ×
-  // was unreachable by pointer, full stop. It now yields only to an actual
-  // hold gesture, where a release could otherwise land on it by accident.
-  const wheelGrabbed = machine.mode === 'hold';
-  const onWheelActivityRef = useRef(onWheelActivity);
-  useEffect(() => {
-    onWheelActivityRef.current = onWheelActivity;
-  }, [onWheelActivity]);
-  useEffect(() => {
-    onWheelActivityRef.current(wheelLive);
-  }, [wheelLive]);
+  const {
+    tileRef,
+    dispatch: wheelDispatch,
+    wheelLive,
+    wheelGrabbed,
+    consumedClick,
+    containerHandlers,
+    buttonHandlers,
+    wheel,
+    pickerMenu,
+  } = useLaunchWheel({
+    wheelId: project.path,
+    entries: launchEntriesForProject(project),
+    storedSlots: quickAccessWheelSlots(project),
+    writeSlots: (slots) => setStarredProjectWheelSlots(project.path, slots),
+    onLaunch: (entry) => {
+      if (entry.kind === 'combo') onLaunchCombo(entry.combo);
+      else onLaunchSkill(entry.skill);
+    },
+    onConfigure: onOpenSettings,
+    suppressed: wheelSuppressed,
+    onActivity: onWheelActivity,
+  });
 
   const startHold = () => {
     if (holdTimer.current || removing) return;
@@ -146,152 +122,19 @@ export function ProjectTile({
     setHolding(false);
   };
 
-  const aimFromPointer = (event: React.PointerEvent) => {
-    const slotEl = (event.target as HTMLElement | null)?.closest?.('[data-wheel-slot]');
-    if (slotEl instanceof HTMLElement && slotEl.dataset.wheelSlot !== undefined) {
-      dispatch({ type: 'aim', slot: Number(slotEl.dataset.wheelSlot) });
-      return;
-    }
-    const origin = tileRef.current;
-    if (!origin) return;
-    const rect = origin.getBoundingClientRect();
-    dispatch({
-      type: 'aim',
-      slot: slotIndexAt(
-        event.clientX - (rect.left + rect.width / 2),
-        event.clientY - (rect.top + rect.height / 2)
-      ),
-    });
-  };
-
-  const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
-    const action = dispatch({ type: 'up', now: event.timeStamp });
-    if (action.type === 'hold-release' && action.slot !== null) {
-      launchEntry(slotted[action.slot]);
-    }
-  };
-
-  const launchEntry = (entry: (typeof slotted)[number]) => {
-    if (!entry) return;
-    if (entry.kind === 'combo') onLaunchCombo(entry.combo);
-    else onLaunchSkill(entry.skill);
-  };
-
-  const byId = (id: string) => entries.find((entry) => wheelSlotId(entry) === id) ?? null;
-  const resolveChoices = (ids: { id: string }[]) =>
-    ids
-      .map((choice) => byId(choice.id))
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-  const choices = picker
-    ? wheelSlotChoices(
-        entries.map((entry) => ({ id: wheelSlotId(entry), label: wheelEntryLabel(entry) })),
-        slotIds,
-        picker.slot
-      )
-    : { free: [], placed: [] };
-  const freeEntries = resolveChoices(choices.free);
-  const placedEntries = resolveChoices(choices.placed);
-
-  const writeSlots = (slots: (string | null)[]) => setStarredProjectWheelSlots(project.path, slots);
-
-  const assignEntry = (entry: (typeof freeEntries)[number]) => {
-    if (!picker) return;
-    writeSlots(assignSkillToSlot(slotIds, picker.slot, wheelSlotId(entry), knownIds));
-  };
-
-  const entryOption = (entry: (typeof freeEntries)[number]): ContextMenuOption => ({
-    label: wheelEntryLabel(entry),
-    icon: entry.kind === 'combo' ? 'account_tree' : 'auto_awesome',
-    action: () => assignEntry(entry),
-  });
-
-  const assignMenuOptions = (): ContextMenuOption[] => {
-    if (freeEntries.length === 0 && placedEntries.length === 0) {
-      return [
-        {
-          label: entries.length === 0 ? 'Configure skills…' : 'Nothing left to put here',
-          icon: 'settings',
-          action: () => {
-            if (entries.length === 0) onOpenSettings();
-          },
-        },
-      ];
-    }
-    const combos = freeEntries.filter((entry) => entry.kind === 'combo');
-    const skills = freeEntries.filter((entry) => entry.kind === 'skill');
-    const options: ContextMenuOption[] = [];
-    if (combos.length > 0) {
-      options.push({ type: 'header', label: 'Combos' }, ...combos.map(entryOption));
-    }
-    if (combos.length > 0 && skills.length > 0) {
-      options.push({ type: 'separator' });
-    }
-    if (skills.length > 0) {
-      options.push({ type: 'header', label: 'Skills' }, ...skills.map(entryOption));
-    }
-    // Moving one here empties the slot it came from — or swaps, if this slot is
-    // taken. Either way nothing is lost, so it sits in the same list.
-    if (placedEntries.length > 0) {
-      if (options.length > 0) options.push({ type: 'separator' });
-      options.push(
-        { type: 'header', label: 'Already on the wheel' },
-        ...placedEntries.map(entryOption)
-      );
-    }
-    return options;
-  };
-
-  const manageMenuOptions = (): ContextMenuOption[] => {
-    const entry = picker ? slotted[picker.slot] : null;
-    if (!entry || !picker) return [];
-    return [
-      { type: 'header', label: wheelEntryName(entry) },
-      {
-        label: 'Replace with…',
-        icon: 'move_item',
-        action: () => {
-          pickerHandover.current = true;
-          setPicker({ ...picker, mode: 'assign' });
-        },
-      },
-      {
-        label: 'Take off the wheel',
-        icon: 'close',
-        danger: true,
-        action: () => writeSlots(clearWheelSlot(slotIds, picker.slot, knownIds)),
-      },
-    ];
-  };
-
   return (
     <div
       data-testid={`quick-access-item-${project.path}`}
       draggable={drag !== undefined}
       onDragStart={(event) => {
         cancelHold();
-        dispatch({ type: 'cancel' });
+        wheelDispatch({ type: 'cancel' });
         drag?.onDragStart(event);
       }}
       onDragOver={drag?.onDragOver}
       onDrop={drag?.onDrop}
       onDragEnd={drag?.onDragEnd}
-      onPointerEnter={(event) => dispatch({ type: 'enter', now: event.timeStamp })}
-      onPointerMove={(event) => {
-        if (machine.mode === 'hold' && machine.phase === 'open') {
-          aimFromPointer(event);
-          return;
-        }
-        // A menu that closed while the pointer sat on the tile leaves no enter
-        // to come — without this the wheel would stay shut until the pointer
-        // crossed the boundary again.
-        if (machine.mode === 'none') dispatch({ type: 'enter', now: event.timeStamp });
-      }}
-      onPointerLeave={(event) => {
-        if (picker) return;
-        dispatch({ type: 'leave', now: event.timeStamp });
-      }}
+      {...containerHandlers}
       className={`group/tile relative flex w-20 flex-col items-center gap-1.5 quick-access-tile-enter ${
         removing ? 'quick-access-tile-exit' : ''
       } ${wheelLive ? 'z-20' : ''}`}
@@ -303,20 +146,11 @@ export function ProjectTile({
           data-testid={`quick-access-tile-${project.path}`}
           data-active={active}
           onClick={() => {
-            if (machine.consumedClick) return;
+            if (consumedClick) return;
             onSwitch();
           }}
           onContextMenu={onContextMenu}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            dispatch({ type: 'down', now: event.timeStamp });
-            event.currentTarget.setPointerCapture?.(event.pointerId);
-          }}
-          onPointerMove={(event) => {
-            if (machine.mode === 'hold' && machine.phase === 'open') aimFromPointer(event);
-          }}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={() => dispatch({ type: 'cancel' })}
+          {...buttonHandlers}
           // The description rides along as the hover's second line: it is what
           // agents read about this project, and a tile has no room for prose.
           title={project.description ? `${label}\n${project.description}` : label}
@@ -353,16 +187,7 @@ export function ProjectTile({
             </span>
           )}
         </button>
-        <SkillWheel
-          path={project.path}
-          phase={machine.phase}
-          mode={machine.mode}
-          armedSlot={machine.armedSlot}
-          slots={slotted}
-          onSlotClick={(index) => launchEntry(slotted[index])}
-          onPlusClick={(index, x, y) => setPicker({ slot: index, x, y, mode: 'assign' })}
-          onSlotManage={(index, x, y) => setPicker({ slot: index, x, y, mode: 'manage' })}
-        />
+        {wheel}
         <button
           type="button"
           data-testid={`quick-access-unstar-${project.path}`}
@@ -463,29 +288,7 @@ export function ProjectTile({
       >
         {project.name}
       </span>
-      {picker && (
-        <ContextMenu
-          // Keyed by mode: swapping the manage menu for the assign one is a new
-          // menu, and it has to take focus like one.
-          key={picker.mode}
-          x={picker.x}
-          y={picker.y}
-          onClose={() => {
-            // ContextMenu closes itself after every action, including the one
-            // that only swaps this menu for the other — that swap is not a close.
-            if (pickerHandover.current) {
-              pickerHandover.current = false;
-              return;
-            }
-            setPicker(null);
-            // Reaching the menu already fired the tile's leave, and that one was
-            // swallowed to hold the wheel open. Hand it back now, or the wheel
-            // has no way left to close.
-            dispatch({ type: 'leave', now: performance.now() });
-          }}
-          options={picker.mode === 'manage' ? manageMenuOptions() : assignMenuOptions()}
-        />
-      )}
+      {pickerMenu}
     </div>
   );
 }

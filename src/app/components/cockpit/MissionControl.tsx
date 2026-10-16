@@ -138,6 +138,10 @@ export interface MissionControlProps {
   onSwitchProject?: (path: string) => void;
   /** Leaves the open project and returns to the start screen. */
   onCloseProject?: () => void;
+  /** Opens Settings at a section (the supervisor tile's way to its settings). */
+  onOpenSettings?: (category: 'supervisor') => void;
+  /** Selects an agent and shows its terminal (the supervisor tile). */
+  onSelectAgent?: (agentId: string) => void;
 }
 
 /**
@@ -172,6 +176,8 @@ export function MissionControl({
   onOpenAgents,
   onSwitchProject,
   onCloseProject,
+  onOpenSettings,
+  onSelectAgent,
 }: MissionControlProps) {
   const rootPath = useStore((s) => s.rootPath);
   const allFilePaths = useStore((s) => s.allFilePaths);
@@ -467,7 +473,12 @@ export function MissionControl({
 
         {/* One surface for "take me elsewhere": starred workspaces up front,
           recents a tab away — starring happens over there, so it is not a hunt. */}
-        <ProjectSwitcher currentPath={rootPath} onOpenProject={onSwitchProject} />
+        <ProjectSwitcher
+          currentPath={rootPath}
+          onOpenProject={onSwitchProject}
+          onOpenSettings={onOpenSettings}
+          onSelectAgent={onSelectAgent}
+        />
       </div>
     </div>
   );

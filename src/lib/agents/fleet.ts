@@ -51,5 +51,41 @@ export function splitFleet(agents: AgentInfo[], minimizedAgentIds: string[]): Fl
     .map((id) => byId.get(id))
     .filter((a): a is AgentInfo => a !== undefined);
 
-  return { active, finished, parked };
+  return { active: underSupervisors(active), finished: underSupervisors(finished), parked };
+}
+
+/**
+ * Moves each supervisor's children directly beneath it, keeping the list's
+ * own order everywhere else. Only within one list: a child whose supervisor
+ * sits in another shape (stopped, parked) stays where its own state put it,
+ * so the move never changes what a shape holds — only where a row sits.
+ */
+function underSupervisors(list: AgentInfo[]): AgentInfo[] {
+  const present = new Set(list.map((a) => a.id));
+  const children = new Map<string, AgentInfo[]>();
+  for (const agent of list) {
+    const parent = agent.spawnedByAgentId;
+    if (!parent || !present.has(parent)) continue;
+    children.set(parent, [...(children.get(parent) ?? []), agent]);
+  }
+  if (children.size === 0) return list;
+  return list
+    .filter((agent) => !agent.spawnedByAgentId || !present.has(agent.spawnedByAgentId))
+    .flatMap((agent) => [agent, ...(children.get(agent.id) ?? [])]);
+}
+
+/**
+ * "2 children · 1 running" for a supervisor's card. A string on purpose: it is
+ * what a store selector returns, and a primitive keeps that selector stable.
+ */
+export function supervisorChildSummary(agents: AgentInfo[], supervisorId: string): string {
+  let total = 0;
+  let running = 0;
+  for (const agent of agents) {
+    if (agent.spawnedByAgentId !== supervisorId) continue;
+    total += 1;
+    if (agent.status === 'running') running += 1;
+  }
+  if (total === 0) return 'No children yet';
+  return `${total} ${total === 1 ? 'child' : 'children'} · ${running} running`;
 }

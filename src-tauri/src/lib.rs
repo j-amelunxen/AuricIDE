@@ -30,6 +30,7 @@ mod providers;
 mod recent_creations;
 mod recent_projects;
 mod schedules;
+mod supervisor;
 mod themes;
 mod ui_watchdog;
 mod usage_limits;
@@ -288,6 +289,7 @@ pub fn run() {
         .manage(agents::new_agent_manager_state())
         .manage(agents::output_buffer::new_output_buffers_state())
         .manage(control_socket::PendingRequestsState::default())
+        .manage(agents::run_results::new_run_results_state())
         .manage(mcp::McpServerState::new())
         .manage(Arc::new(recent_creations::RecentCreations::default()))
         .manage(WatcherState {
@@ -299,6 +301,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             control_socket::control_respond,
             control_socket::control_ready,
+            agents::run_results::agent_run_results_forget,
+            supervisor::supervisor_policy_get,
+            supervisor::supervisor_policy_set,
+            provider_policy::project_provider_policy_get,
             agent_window::open_agent_window,
             agent_window::focus_agent_window,
             agent_window::focus_main_window,

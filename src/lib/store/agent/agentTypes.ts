@@ -65,6 +65,19 @@ export type AgentRuntimeRecords = Pick<
   | 'agentSentMessages'
 >;
 
+/** What pressing the Supervisor tile came to. */
+export interface SupervisorSkillLaunch {
+  task: string;
+  model?: string;
+}
+
+export type SupervisorLaunch =
+  | { kind: 'running'; agent: AgentInfo }
+  /** A skill's prompt went to the running supervisor as a message. */
+  | { kind: 'sent'; agent: AgentInfo }
+  | { kind: 'spawned'; agent: AgentInfo }
+  | { kind: 'nothing-visible' };
+
 export interface AgentSlice {
   agents: AgentInfo[];
   agentLogs: Record<string, string[]>;
@@ -183,6 +196,16 @@ export interface AgentSlice {
   setTerminalGridCells: (cells: GridCells | null) => void;
   loadPromptHistory: (projectPath: string | null) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
+  /**
+   * Starts the one supervisor agent (ADR 0004), or hands back the one already
+   * running. Spawns nothing when the supervisor policy allows no project: the
+   * caller sends the user to Settings → Supervisor instead.
+   */
+  /**
+   * Starts the supervisor, one at a time. With a skill's `task` it is the
+   * first task of a new one, or a message to the one already running.
+   */
+  spawnSupervisor: (skill?: SupervisorSkillLaunch) => Promise<SupervisorLaunch>;
   /** Re-spawns a failed agent with its original config and dismisses the failure. */
   retryFailedAgent: (agentId: string) => Promise<AgentInfo | null>;
   killRunningAgent: (agentId: string) => Promise<void>;

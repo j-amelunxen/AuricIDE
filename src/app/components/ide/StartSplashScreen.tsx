@@ -9,6 +9,10 @@ interface StartSplashScreenProps {
   onNewProject: () => void;
   onOpenRecent: (path: string) => void;
   dailyTip: DailyTip;
+  /** Opens Settings at a section (the supervisor tile's way to its settings). */
+  onOpenSettings?: (category: 'supervisor') => void;
+  /** Selects an agent and shows its terminal (the supervisor tile). */
+  onSelectAgent?: (agentId: string) => void;
 }
 
 export function StartSplashScreen({
@@ -16,6 +20,8 @@ export function StartSplashScreen({
   onNewProject,
   onOpenRecent,
   dailyTip,
+  onOpenSettings,
+  onSelectAgent,
 }: StartSplashScreenProps) {
   return (
     // items-center only (not justify-center): the hero's position
@@ -57,7 +63,12 @@ export function StartSplashScreen({
           data-testid="start-project-switcher"
           className="mt-6 flex w-full min-w-0 justify-center"
         >
-          <ProjectSwitcher currentPath={null} onOpenProject={onOpenRecent} />
+          <ProjectSwitcher
+            currentPath={null}
+            onOpenProject={onOpenRecent}
+            onOpenSettings={onOpenSettings}
+            onSelectAgent={onSelectAgent}
+          />
         </div>
         {/* Same width as the switcher above it: two blocks sharing
             one edge read as a column, two different widths read as

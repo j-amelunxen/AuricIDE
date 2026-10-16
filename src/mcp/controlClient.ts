@@ -3,10 +3,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
   buildControlRequest,
+  CONTROL_LIMITS,
   ControlError,
   parseControlResponse,
   type ControlMethod,
+  type ControlParams,
   type ControlParamsInput,
+  type ControlRequest,
   type ControlResult,
 } from '../lib/agents/agentControl.contract';
 
@@ -34,7 +37,19 @@ export function controlSocketPath(
   );
 }
 
-function timeoutFor(method: ControlMethod): number {
+/**
+ * How long one call may take before the client reports `timeout`. An
+ * `await_result` is meant to sit for its `waitSeconds`, so it gets exactly
+ * that plus a grace period; anything less would report a healthy wait as dead.
+ */
+export function controlTimeoutMs<M extends ControlMethod>(
+  method: M,
+  params: ControlParams<M>
+): number {
+  if (method === 'await_result') {
+    const { waitSeconds } = params as ControlParams<'await_result'>;
+    return (waitSeconds + CONTROL_LIMITS.awaitClientGraceSeconds) * 1000;
+  }
   return method === 'spawn' || method === 'kill' ? FRONTEND_METHOD_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
 }
 
@@ -61,16 +76,16 @@ export function callControl<M extends ControlMethod>(
   options: ControlCallOptions = {}
 ): Promise<ControlResult<M>> {
   const socketPath = options.socketPath ?? controlSocketPath();
-  const timeoutMs = options.timeoutMs ?? timeoutFor(method);
 
   return new Promise((resolve, reject) => {
-    let request;
+    let request: ControlRequest<M>;
     try {
       request = buildControlRequest(nextRequestId++, method, params);
     } catch (error) {
       reject(error);
       return;
     }
+    const timeoutMs = options.timeoutMs ?? controlTimeoutMs(method, request.params);
 
     let settled = false;
     let buffer = '';
@@ -114,7 +129,10 @@ export function callControl<M extends ControlMethod>(
         // `forbidden_agent_caller` right after connecting, before it asked.
         const response = parseControlResponse(method, value, request.id);
         if (response.ok) finish(() => resolve(response.result));
-        else fail(new ControlError(response.error.code, response.error.message));
+        else {
+          const { code, message, reason } = response.error;
+          fail(new ControlError(code, message, reason));
+        }
       } catch (error) {
         fail(error as ControlError);
       }

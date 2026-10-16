@@ -309,6 +309,8 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
         run_source: None,
         run_kind: None,
         review_of_ticket_id: None,
+        role: None,
+        spawned_by_agent_id: None,
     };
     let persisted = persisted_from_config(&config, "agent-4", "claude", 123);
     assert_eq!(persisted.id, "agent-4");
@@ -643,6 +645,8 @@ fn agent_info_tells_the_frontend_the_run_is_headless() {
         spawned_by_ticket_id: None,
         spawned_by_goal_id: None,
         headless: true,
+        role: AgentRole::Worker,
+        spawned_by_agent_id: None,
     };
     let json = serde_json::to_value(&info).expect("serializes");
     assert_eq!(json["headless"], serde_json::Value::Bool(true));
@@ -726,4 +730,245 @@ fn a_persistence_file_from_before_attribution_still_loads() {
 
     assert!(agent.run_source.is_none() && agent.run_kind.is_none());
     assert!(agent.review_of_ticket_id.is_none());
+}
+
+// ── Supervisor spawns (ADR 0004) ────────────────────────────────────────────
+
+fn supervisor_test_config(extra: serde_json::Value) -> AgentConfig {
+    let mut base = serde_json::json!({
+        "name": "a", "model": "haiku", "task": "t", "cwd": "/somewhere",
+        "permissionMode": null, "dangerouslyIgnorePermissions": null,
+        "autoAcceptEdits": null, "provider": "claude", "headless": true
+    });
+    for (key, value) in extra.as_object().unwrap() {
+        base[key] = value.clone();
+    }
+    serde_json::from_value(base).unwrap()
+}
+
+/// An app data dir whose policy allows `haiku` headless in one project, and
+/// that project (initialised, no provider policy of its own).
+fn supervisor_test_world() -> (tempfile::TempDir, tempfile::TempDir, String) {
+    let app_data = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join(".auric")).unwrap();
+    std::fs::write(project.path().join(".auric/project.db"), b"").unwrap();
+    let path = crate::supervisor::canonical_project_path(&project.path().to_string_lossy());
+    let policy = crate::supervisor::validate_for_write(serde_json::json!({
+        "projects": { path.clone(): {
+            "allowed": true, "providers": ["claude"], "models": { "claude": ["haiku"] },
+            "maxRunning": 1 } }
+    }))
+    .unwrap();
+    crate::supervisor::write_policy_atomic(
+        &crate::supervisor::policy_path_in(app_data.path()),
+        &policy,
+    )
+    .unwrap();
+    (app_data, project, path)
+}
+
+fn no_modes(
+    _: &crate::supervisor::policy::SupervisorPolicy,
+) -> std::collections::BTreeMap<String, crate::supervisor::policy::ProviderModes> {
+    std::collections::BTreeMap::new()
+}
+
+fn offered_claude() -> std::collections::BTreeMap<String, Vec<String>> {
+    std::collections::BTreeMap::from([(
+        "claude".to_string(),
+        vec!["haiku".to_string(), "opus".to_string()],
+    )])
+}
+
+#[test]
+fn a_spawn_naming_a_supervisor_is_checked_against_the_policy_again() {
+    let (app_data, _project, path) = supervisor_test_world();
+    let child = |model: &str| {
+        supervisor_test_config(serde_json::json!({
+            "model": model, "projectPath": path, "spawnedByAgentId": "agent-sup",
+            "runSource": "ui"
+        }))
+    };
+    let admitted = admit_spawn(
+        child("haiku"),
+        Some(app_data.path()),
+        &[],
+        &offered_claude(),
+        &no_modes,
+    )
+    .expect("inside the policy");
+    assert_eq!(
+        admitted.run_source.as_deref(),
+        Some("supervisor"),
+        "booked as the supervisor's, whatever the frontend said"
+    );
+
+    let refused = admit_spawn(
+        child("opus"),
+        Some(app_data.path()),
+        &[],
+        &offered_claude(),
+        &no_modes,
+    );
+    assert!(refused.unwrap_err().contains("model_not_allowed"));
+
+    let busy = AgentInfo {
+        id: "agent-busy".into(),
+        project_path: Some(path.clone()),
+        spawned_by_agent_id: Some("agent-sup".into()),
+        ..crate::control_socket::protocol::tests::sample_agent()
+    };
+    let full = admit_spawn(
+        child("haiku"),
+        Some(app_data.path()),
+        &[busy],
+        &offered_claude(),
+        &no_modes,
+    );
+    assert!(full.unwrap_err().contains("project_limit_reached"));
+
+    let unchecked = admit_spawn(child("haiku"), None, &[], &offered_claude(), &no_modes);
+    assert!(
+        unchecked.is_err(),
+        "no app data dir: refused, not run unchecked"
+    );
+}
+
+#[test]
+fn a_spawn_without_a_supervisor_is_left_alone() {
+    let config = supervisor_test_config(serde_json::json!({ "model": "opus" }));
+    let admitted = admit_spawn(config, None, &[], &offered_claude(), &no_modes).unwrap();
+    assert_eq!(admitted.model, "opus");
+    assert_eq!(admitted.cwd.as_deref(), Some("/somewhere"));
+}
+
+#[test]
+fn a_supervisor_runs_interactive_unbound_in_its_own_folder_in_default_mode() {
+    let app_data = tempfile::tempdir().unwrap();
+    let config = supervisor_test_config(serde_json::json!({
+        "role": "supervisor", "projectPath": "/some/project",
+        "permissionMode": "bypassPermissions", "dangerouslyIgnorePermissions": true,
+        "autoAcceptEdits": true, "headless": true, "launchRequestUid": "req-1"
+    }));
+    let admitted = admit_spawn(
+        config,
+        Some(app_data.path()),
+        &[],
+        &offered_claude(),
+        &no_modes,
+    )
+    .unwrap();
+    let folder = app_data.path().join(crate::supervisor::SUPERVISOR_DIR_NAME);
+    assert!(folder.is_dir());
+    assert_eq!(
+        admitted.cwd.as_deref(),
+        Some(folder.to_string_lossy().as_ref())
+    );
+    assert_eq!(admitted.project_path, None);
+    assert_eq!(admitted.headless, Some(false));
+    assert_eq!(admitted.permission_mode.as_deref(), Some("default"));
+    assert_eq!(admitted.dangerously_ignore_permissions, Some(false));
+    assert_eq!(admitted.auto_accept_edits, Some(false));
+    assert_eq!(admitted.launch_request_uid, None);
+
+    let nested = supervisor_test_config(serde_json::json!({
+        "role": "supervisor", "spawnedByAgentId": "agent-sup"
+    }));
+    assert!(admit_spawn(
+        nested,
+        Some(app_data.path()),
+        &[],
+        &offered_claude(),
+        &no_modes
+    )
+    .is_err());
+}
+
+#[test]
+fn a_supervisor_runs_on_claude_with_only_its_own_tools_preapproved() {
+    assert!(check_supervisor_provider("claude").is_ok());
+    assert!(check_supervisor_provider("codex")
+        .unwrap_err()
+        .contains("Claude Code"));
+    assert_eq!(
+        supervisor_claude_arguments("/data/agent-bindings/sup $1.mcp.json"),
+        vec![
+            "--mcp-config",
+            "\"/data/agent-bindings/sup \\$1.mcp.json\"",
+            "--strict-mcp-config",
+            "--tools",
+            "\"\"",
+            "--restricted",
+            "--allowedTools",
+            "\"mcp__auric-supervisor__*\"",
+            "--permission-mode",
+            "default",
+        ]
+    );
+}
+
+#[test]
+fn the_supervisor_flags_land_behind_the_executable_and_before_the_task() {
+    let config: crate::providers::ProviderConfig = serde_json::from_str(
+        r#"{
+          "id": "claude", "name": "Claude Code", "executable": "claude",
+          "arguments": [
+            { "type": "model", "flag": "--model", "ignoreIfAuto": true },
+            { "type": "headless", "flag": "-p" },
+            { "type": "task", "quote": true },
+            { "type": "permission", "map": { "default": "" }, "fallback": "" }
+          ],
+          "info": { "models": [], "permissionModes": [], "defaultModel": "sonnet",
+                    "defaultPermissionMode": "default" },
+          "versionCheck": { "command": "claude", "args": ["--version"] },
+          "promptTemplate": "claude -p \""
+        }"#,
+    )
+    .unwrap();
+    let provider = crate::providers::DynamicProvider::new(config);
+    let cmd = crate::providers::AgentProvider::build_spawn_command(
+        &provider,
+        "opus",
+        "plan the week",
+        Some("default"),
+        false,
+        false,
+        false,
+    )
+    .with_injection(SpawnInjection {
+        arguments: supervisor_claude_arguments("/c.json"),
+        env_vars: Vec::new(),
+    });
+    assert_eq!(
+        cmd.command,
+        "claude --mcp-config \"/c.json\" --strict-mcp-config --tools \"\" --restricted \
+         --allowedTools \"mcp__auric-supervisor__*\" --permission-mode default --model opus \
+         \"plan the week\""
+    );
+}
+
+#[test]
+fn role_and_supervisor_survive_a_restart() {
+    let config = supervisor_test_config(serde_json::json!({
+        "spawnedByAgentId": "agent-sup", "role": "worker"
+    }));
+    let persisted = persisted_from_config(&config, "agent-9", "claude", 1);
+    let resumed = resumed_config(persisted, None);
+    assert_eq!(resumed.role, Some(AgentRole::Worker));
+    assert_eq!(resumed.spawned_by_agent_id.as_deref(), Some("agent-sup"));
+}
+
+#[test]
+fn a_launch_file_goes_when_the_agent_entry_goes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("supervisor-x.mcp.json");
+    std::fs::write(&path, b"{}").unwrap();
+    let owned = OwnedFile(path.clone());
+    assert!(path.exists());
+    drop(owned);
+    assert!(
+        !path.exists(),
+        "a supervisor's MCP config does not outlive it"
+    );
 }

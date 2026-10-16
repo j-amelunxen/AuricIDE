@@ -217,6 +217,184 @@ describe('control-request spawn', () => {
   });
 });
 
+describe('control-request spawn for a supervisor', () => {
+  // What Rust emits for a supervisor's child: the policy already decided
+  // provider, model and permission mode.
+  const child = {
+    projectPath: '/tmp/example-project',
+    prompt: 'check the parser',
+    provider: 'codex',
+    model: 'gpt-6-luna',
+    permissionMode: null,
+    headless: true,
+    name: null,
+    role: 'worker',
+    spawnedByAgentId: 'agent-sup',
+    runSource: 'supervisor',
+  };
+
+  beforeEach(() => {
+    // A folder whose last launch differs in every field the policy decides.
+    loadSpawnDefaultsMock.mockReturnValue({
+      providerId: 'claude',
+      model: 'opus',
+      permissionMode: 'bypassPermissions',
+      headless: false,
+    });
+  });
+
+  it("passes a child's provider, model and permission mode through verbatim", async () => {
+    const h = host();
+    await handleControlRequest(
+      { reqId: 's1', method: 'spawn', params: child, expiresAt: fresh() },
+      h
+    );
+
+    const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
+    expect(config).toMatchObject({
+      task: 'check the parser',
+      cwd: '/tmp/example-project',
+      projectPath: '/tmp/example-project',
+      provider: 'codex',
+      model: 'gpt-6-luna',
+      headless: true,
+      role: 'worker',
+      spawnedByAgentId: 'agent-sup',
+      runSource: 'supervisor',
+    });
+    // null is the provider's own default, never the folder's last launch.
+    expect(config.permissionMode).toBeUndefined();
+    expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the permission mode the policy named', async () => {
+    const h = host();
+    await handleControlRequest(
+      {
+        reqId: 's2',
+        method: 'spawn',
+        params: { ...child, permissionMode: 'acceptEdits' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(vi.mocked(h.spawnNewAgent).mock.calls[0][0].permissionMode).toBe('acceptEdits');
+  });
+
+  it('refuses a child without a model rather than filling one in', async () => {
+    const h = host();
+    await handleControlRequest(
+      { reqId: 's3', method: 'spawn', params: { ...child, model: null }, expiresAt: fresh() },
+      h
+    );
+    expect(h.spawnNewAgent).not.toHaveBeenCalled();
+    expect(answered()[0].args).toMatchObject({ ok: false, error: { code: 'invalid_params' } });
+  });
+
+  it('says which supervisor started the child', async () => {
+    const h = host({ agents: [agent('agent-sup', { name: 'Supervisor', role: 'supervisor' })] });
+    await handleControlRequest(
+      { reqId: 's4', method: 'spawn', params: child, expiresAt: fresh() },
+      h
+    );
+    expect(h.showToast).toHaveBeenCalledWith(
+      expect.stringMatching(/ started by Supervisor$/),
+      'success'
+    );
+  });
+
+  it('starts a supervisor with its role and no launch defaults', async () => {
+    const h = host();
+    await handleControlRequest(
+      {
+        reqId: 's5',
+        method: 'spawn',
+        params: {
+          projectPath: '/tmp/example-project',
+          prompt: 'supervise',
+          provider: 'claude',
+          model: 'sonnet',
+          role: 'supervisor',
+        },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(vi.mocked(h.spawnNewAgent).mock.calls[0][0]).toMatchObject({
+      role: 'supervisor',
+      provider: 'claude',
+      model: 'sonnet',
+      spawnedByAgentId: null,
+      headless: false,
+    });
+    expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
+    expect(h.showToast).toHaveBeenCalledWith(
+      expect.stringMatching(/ started by an MCP client$/),
+      'success'
+    );
+  });
+
+  it("starts a supervisor without provider on Claude at that provider's default model", async () => {
+    const claude = {
+      id: 'claude',
+      name: 'Claude',
+      models: [],
+      permissionModes: [],
+      defaultModel: 'sonnet',
+      defaultPermissionMode: 'default',
+    };
+    const h = host({ providers: [claude] });
+    await handleControlRequest(
+      {
+        reqId: 's8',
+        method: 'spawn',
+        params: { projectPath: '/tmp/example-project', prompt: 'supervise', role: 'supervisor' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(vi.mocked(h.spawnNewAgent).mock.calls[0][0]).toMatchObject({
+      role: 'supervisor',
+      provider: 'claude',
+      model: 'sonnet',
+    });
+    expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses provenance of the wrong shape as invalid_params', async () => {
+    const h = host();
+    await handleControlRequest(
+      {
+        reqId: 's6',
+        method: 'spawn',
+        params: { ...child, runSource: 'robot' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(h.spawnNewAgent).not.toHaveBeenCalled();
+    expect(answered()[0].args).toMatchObject({ ok: false, error: { code: 'invalid_params' } });
+  });
+
+  it('leaves an ordinary spawn on the launch defaults', async () => {
+    const h = host();
+    await handleControlRequest(
+      {
+        reqId: 's7',
+        method: 'spawn',
+        params: { projectPath: '/tmp/example-project', prompt: 'x', spawnedByAgentId: null },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    expect(vi.mocked(h.spawnNewAgent).mock.calls[0][0]).toMatchObject({
+      provider: 'claude',
+      model: 'opus',
+    });
+    expect(vi.mocked(h.spawnNewAgent).mock.calls[0][0].role).toBeUndefined();
+  });
+});
+
 describe('expired requests', () => {
   it('answers frontend_unavailable and neither kills nor spawns', async () => {
     const h = host();

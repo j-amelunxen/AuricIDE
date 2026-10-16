@@ -24,6 +24,7 @@ import { PROJECT_TILE_COLUMNS, PROJECT_TILE_GRID } from './projectGrid';
 import { ProjectBadgeField } from './ProjectBadgeField';
 import { ProjectDescriptionDialog } from './ProjectDescriptionDialog';
 import { QuickAccessSettingsDialog } from './QuickAccessSettingsDialog';
+import { SUPERVISOR_WHEEL_ID, SupervisorTile, type SupervisorTileProps } from './SupervisorTile';
 import { ProjectTile, type ProjectTileProps } from './ProjectTile';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -43,7 +44,7 @@ const MAX_MENU_SKILLS = 8;
  */
 export const QUICK_ACCESS_HINT = 'hold × to remove';
 
-export interface QuickAccessProps {
+export interface QuickAccessProps extends SupervisorTileProps {
   /** The currently open project's path, used to highlight/star the active tile. */
   currentPath: string | null;
   /** Switch to another project by path (reuses the recent-project open flow). */
@@ -60,7 +61,12 @@ export interface QuickAccessProps {
  * tiles after them. Unstarring requires a deliberate hold (not a single tap)
  * so a stray click can't drop a tile.
  */
-export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) {
+export function QuickAccess({
+  currentPath,
+  onSwitchProject,
+  onOpenSettings,
+  onSelectAgent,
+}: QuickAccessProps) {
   const starredProjects = useStore((s) => s.starredProjects);
   const removeStarredProject = useStore((s) => s.removeStarredProject);
   const addStarredProject = useStore((s) => s.addStarredProject);
@@ -254,6 +260,13 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
       : {}),
   });
 
+  /** One wheel open at a time, across project tiles and the supervisor tile. */
+  const wheelActivity = (id: string) => (active: boolean) =>
+    setWheelPath((current) => {
+      if (active) return id;
+      return current === id ? null : current;
+    });
+
   const renderTile = (project: StarredProject, inDock: boolean) => (
     <ProjectTile
       key={project.path}
@@ -272,12 +285,7 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
       onLaunchSkill={(skill) => launchSkill(project.path, skill)}
       onLaunchCombo={(combo) => launchCombo(project.path, combo)}
       onOpenSettings={() => setSettingsPath(project.path)}
-      onWheelActivity={(active) => {
-        setWheelPath((current) => {
-          if (active) return project.path;
-          return current === project.path ? null : current;
-        });
-      }}
+      onWheelActivity={wheelActivity(project.path)}
       drag={tileProps(project, inDock)}
     />
   );
@@ -388,26 +396,32 @@ export function QuickAccess({ currentPath, onSwitchProject }: QuickAccessProps) 
           </div>
         )}
       </div>
-      {(dock.length > 0 || dragging) && (
-        <div
-          role="group"
-          aria-label="Dock"
-          data-testid="quick-access-dock"
-          data-drop-active={dragging}
-          className={`flex min-h-[4.5rem] w-full max-w-fit flex-wrap items-start justify-center gap-x-1 gap-y-2 rounded-2xl border px-3 py-2.5 transition-[border-color,background-color] duration-150 ${
-            dragging ? 'border-primary/40 bg-primary/5' : 'border-white/10 bg-white/[0.03]'
-          }`}
-          {...dockDropZone}
-        >
-          {dock.length === 0 ? (
-            <p className="self-center px-4 text-[11px] text-foreground-muted/70">
-              Drop projects here to keep them in place.
-            </p>
-          ) : (
-            dock.map((project) => renderTile(project, true))
-          )}
-        </div>
-      )}
+      {/* Always there: the supervisor tile lives in the dock, docked
+          projects or not. */}
+      <div
+        role="group"
+        aria-label="Dock"
+        data-testid="quick-access-dock"
+        data-drop-active={dragging}
+        className={`flex min-h-[4.5rem] w-full max-w-fit flex-wrap items-start justify-center gap-x-1 gap-y-2 rounded-2xl border px-3 py-2.5 transition-[border-color,background-color] duration-150 ${
+          dragging ? 'border-primary/40 bg-primary/5' : 'border-white/10 bg-white/[0.03]'
+        }`}
+        {...dockDropZone}
+      >
+        <SupervisorTile
+          onOpenSettings={onOpenSettings}
+          onSelectAgent={onSelectAgent}
+          wheelSuppressed={wheelPath !== null && wheelPath !== SUPERVISOR_WHEEL_ID}
+          onWheelActivity={wheelActivity(SUPERVISOR_WHEEL_ID)}
+        />
+        {dock.length === 0 && dragging ? (
+          <p className="self-center px-4 text-[11px] text-foreground-muted/70">
+            Drop projects here to keep them in place.
+          </p>
+        ) : (
+          dock.map((project) => renderTile(project, true))
+        )}
+      </div>
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

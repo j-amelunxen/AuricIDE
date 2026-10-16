@@ -60,14 +60,6 @@ export function wheelKnownIds(project: StarredProject): string[] {
   return launchEntriesForProject(project).map(wheelSlotId);
 }
 
-export function resolveWheelEntry(
-  project: StarredProject,
-  slotId: string | null
-): WheelLaunchEntry | null {
-  if (slotId === null) return null;
-  return launchEntriesForProject(project).find((entry) => wheelSlotId(entry) === slotId) ?? null;
-}
-
 export function wheelEntryLabel(entry: WheelLaunchEntry): string {
   return entry.kind === 'combo' ? comboMenuLabel(entry.combo) : entry.skill.label;
 }

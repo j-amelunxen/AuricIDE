@@ -248,6 +248,8 @@ mod tests {
             spawned_by_ticket_id: None,
             spawned_by_goal_id: None,
             headless: false,
+            role: super::super::types::AgentRole::Worker,
+            spawned_by_agent_id: None,
         }
     }
 

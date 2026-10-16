@@ -117,6 +117,7 @@ describe('SettingsModal – Grouped nav', () => {
     expect(within(application).getByTestId('settings-nav-credentials')).toBeInTheDocument();
     expect(within(application).getByTestId('settings-nav-appearance')).toBeInTheDocument();
     expect(within(application).getByTestId('settings-nav-skills')).toBeInTheDocument();
+    expect(within(application).getByTestId('settings-nav-supervisor')).toBeInTheDocument();
     // …the provider policy and the commit conventions are the repository's.
     expect(within(project).getByTestId('settings-nav-providers')).toBeInTheDocument();
     expect(within(project).getByTestId('settings-nav-project-agent')).toBeInTheDocument();

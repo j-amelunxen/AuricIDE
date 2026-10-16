@@ -5,6 +5,7 @@ pub mod manager;
 pub mod output_buffer;
 pub mod persistence;
 pub mod project_binding;
+pub mod run_results;
 pub mod shell_env;
 pub mod types;
 pub mod write_sandbox;

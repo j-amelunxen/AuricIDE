@@ -47,6 +47,31 @@ pub struct AgentConfig {
     /// The ticket a review run judges; its cost is booked on that ticket.
     #[serde(default)]
     pub review_of_ticket_id: Option<String>,
+    /// `supervisor` starts the one agent the control socket admits
+    /// (ADR 0004); absent is a worker.
+    #[serde(default)]
+    pub role: Option<AgentRole>,
+    /// The supervisor that started this agent. Set by the control-socket
+    /// dispatcher; `spawn_agent_impl` checks the supervisor policy again for
+    /// any spawn that carries it.
+    #[serde(default)]
+    pub spawned_by_agent_id: Option<String>,
+}
+
+impl AgentConfig {
+    pub fn role(&self) -> AgentRole {
+        self.role.unwrap_or_default()
+    }
+}
+
+/// What an agent may do on the control socket (`docs/design-agent-control.md`,
+/// "Supervisor scope").
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentRole {
+    #[default]
+    Worker,
+    Supervisor,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -76,6 +101,9 @@ pub struct AgentInfo {
     /// Runs unattended (`claude -p`, `codex exec`). Such a CLI may print nothing
     /// until it ends, so the frontend does not read its silence as a stall.
     pub headless: bool,
+    pub role: AgentRole,
+    /// The supervisor that started this agent, else `None`.
+    pub spawned_by_agent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,6 +149,19 @@ pub struct AgentProcess {
     pub launch_request_uid: Option<String>,
     /// Books the run's usage when it ends; `None` outside an initialised project.
     pub usage: Option<crate::agent_usage::capture::UsageCapture>,
+    /// A launch file only this agent uses (a supervisor's MCP config); it is
+    /// deleted when the process entry goes, however the agent ended.
+    pub launch_file: Option<OwnedFile>,
+}
+
+/// A file that belongs to one agent and is removed when this value drops.
+#[derive(Debug)]
+pub struct OwnedFile(pub std::path::PathBuf);
+
+impl Drop for OwnedFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
 }
 
 pub struct AgentManager {

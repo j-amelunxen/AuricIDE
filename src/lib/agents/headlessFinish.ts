@@ -14,11 +14,13 @@ const LLM_SYSTEM =
  * Headless is the signal that nobody is watching the terminal. Conductor
  * tickets also run headless so the verdict is collected on exit — those
  * already have their own inbox rows, and a ping per ticket would bury them.
+ * A supervisor's child is the same case: the supervisor awaits its result
+ * and reports it, so a second ping would only repeat it.
  */
 export function shouldNotifyHeadlessFinish(
-  config: Pick<AgentConfig, 'headless' | 'runSource'> | undefined
+  config: Pick<AgentConfig, 'headless' | 'runSource' | 'spawnedByAgentId'> | undefined
 ): boolean {
-  return config?.headless === true && config.runSource !== 'conductor';
+  return config?.headless === true && config.runSource !== 'conductor' && !config.spawnedByAgentId;
 }
 
 export function headlessFinishNotification(input: {

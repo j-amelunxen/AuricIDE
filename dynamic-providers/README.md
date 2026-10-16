@@ -88,13 +88,15 @@ Here is an example structure of a provider definition:
   "info": {
     "models": [
       { "value": "auto", "label": "Auto Model" },
-      { "value": "model-XYZ", "label": "Model XYZ" }
+      { "value": "model-small", "label": "Model Small", "rank": 1 },
+      { "value": "model-XYZ", "label": "Model XYZ", "rank": 3 }
     ],
     "permissionModes": [
       {
         "value": "bypassPermissions",
         "label": "Autonomous",
-        "description": "Skip all permission prompts"
+        "description": "Skip all permission prompts",
+        "unattended": true
       },
       {
         "value": "default",
@@ -112,6 +114,29 @@ Here is an example structure of a provider definition:
   "promptTemplate": "agent-cli --use-model model-xyz -i \""
 }
 ```
+
+`rank` on a model is optional: an integer that orders the provider's models by
+size, higher is bigger. The supervisor agent reads it to pick the smallest model
+that fits a task, and Settings shows it as a size label. Only the order within
+one provider matters; the shipped convention is 1 small, 2 medium, 3 large and
+4 largest (Claude haiku, sonnet, opus, fable; Codex by family luna, terra, sol,
+astra, whatever the version). A model without `rank` (`auto`, an untiered model)
+has no known size and is never picked by default. A `rank` that is not an
+integer is treated as absent rather than failing the config.
+
+`unattended` on a permission mode is optional and marks a mode in which the CLI
+acts without asking. Agents started by the supervisor never run in such a mode:
+the policy cannot be saved with one, and a spawn whose mode (the policy's, or
+the provider's `defaultPermissionMode` when the policy names none) is unattended
+is refused with `permission_mode_unattended`. Marking is the explicit way; the
+check also fails closed on its own: `bypassPermissions`, and any mode whose
+mapped arguments contain `--dangerously-…`, `--yolo`, `--auto`,
+`--bypass-permissions` or `bypassPermissions`, count as unattended even
+unmarked (`supervisor::SKIP_PERMISSION_FLAGS`). A mode that hands approvals to
+the CLI's own reviewer (Codex `--approve-for-me`, Claude's `auto`) is not
+unattended: each request is still decided. Mark a mode when
+its flag says something else, for example a CLI whose "auto" is spelled
+`--trust-all`.
 
 `projectBinding` is optional. It declares provider-specific launch material that
 is added only when the caller explicitly binds an agent to a project. Argument
