@@ -19,6 +19,14 @@ import {
 } from '@/lib/config/supervisorPolicyEdit';
 import { listProviders, type ProviderInfo } from '@/lib/tauri/providers';
 import { supervisorPolicyGet, supervisorPolicySet } from '@/lib/tauri/supervisorPolicy';
+import { listProjectSkills } from '@/lib/tauri/projectSkills';
+import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
+import {
+  SupervisorSkills,
+  invalidBashPatterns,
+  skillFolderOf,
+  type SupervisorSkillCandidate,
+} from './SupervisorSkills';
 import {
   NUMBER_CLASS,
   SELECT_CLASS,
@@ -31,6 +39,21 @@ interface Loaded {
   rejected: SupervisorPolicyRejection[];
   providers: ProviderInfo[];
   projectPolicies: Record<string, ProviderPolicy>;
+  /** The user's own skills, offered for approval; scanned once per visit. */
+  skillCandidates: SupervisorSkillCandidate[];
+}
+
+/** User-level skills only: a project's skills belong to that project's agents. */
+async function readSkillCandidates(projectPath: string | undefined) {
+  if (!projectPath) return [];
+  const found = await listProjectSkills(projectPath, enabledSkillSources(loadSkillSources()));
+  return found
+    .filter((skill) => skill.source === 'skill' && skill.scope === 'user')
+    .map((skill) => ({
+      folder: skillFolderOf(skill.path),
+      name: skill.name,
+      description: skill.description,
+    }));
 }
 
 /**
@@ -54,13 +77,20 @@ export function SupervisorContent() {
     let cancelled = false;
     void (async () => {
       try {
-        const [state, providers, projectPolicies] = await Promise.all([
+        const [state, providers, projectPolicies, skillCandidates] = await Promise.all([
           supervisorPolicyGet(),
           listProviders().catch(() => [] as ProviderInfo[]),
           readProjectProviderPolicies(starredProjects.map((p) => p.path)),
+          readSkillCandidates(starredProjects[0]?.path),
         ]);
         if (cancelled) return;
-        setLoaded({ saved: state.policy, rejected: state.rejected, providers, projectPolicies });
+        setLoaded({
+          saved: state.policy,
+          rejected: state.rejected,
+          providers,
+          projectPolicies,
+          skillCandidates,
+        });
         setDraft(state.policy);
       } catch (error) {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
@@ -90,10 +120,13 @@ export function SupervisorContent() {
   // Rust refuses these at spawn anyway; saving them would only store a choice
   // that can never run.
   const blockers = unattendedBlockers(draft, loaded.providers, loaded.projectPolicies);
+  const badPatterns = invalidBashPatterns(draft.skills);
   const blockedReason =
     blockers.length > 0
       ? `Pick a permission mode for ${blockers.length === 1 ? '1 provider' : `${blockers.length} providers`} that would run without asking`
-      : null;
+      : badPatterns.length > 0
+        ? 'Fix the entry marked under Skills'
+        : null;
   const claude = loaded.providers.find((p) => p.id === draft.supervisor.provider);
 
   const save = async () => {
@@ -148,6 +181,12 @@ export function SupervisorContent() {
         )}
       </SettingsSection>
 
+      <SupervisorSkills
+        skills={draft.skills}
+        candidates={loaded.skillCandidates}
+        onChange={(skills) => setDraft({ ...draft, skills })}
+      />
+
       <SaveBar
         saving={saving}
         dirty={dirty}
@@ -170,8 +209,8 @@ function RejectedNotice({ rejected }: { rejected: SupervisorPolicyRejection[] })
       <p className="font-semibold">Parts of the saved file were ignored:</p>
       <ul className="list-disc space-y-0.5 pl-4 text-foreground-muted">
         {rejected.map((entry, index) => (
-          <li key={`${entry.project ?? 'file'}-${index}`}>
-            {entry.project ? `${entry.project}: ` : ''}
+          <li key={`${entry.project ?? entry.skill ?? 'file'}-${index}`}>
+            {(entry.project ?? entry.skill) ? `${entry.project ?? entry.skill}: ` : ''}
             {SUPERVISOR_PARSE_REASONS[entry.reason] ?? entry.reason}
           </li>
         ))}
@@ -219,6 +258,23 @@ function SupervisorHeader({ draft, claude, onChange }: SupervisorHeaderProps) {
               </option>
             ))}
           </select>
+        </label>
+        <label className="flex items-center gap-2 text-xs text-foreground">
+          <input
+            type="checkbox"
+            data-testid="supervisor-chrome"
+            checked={draft.supervisor.chrome}
+            onChange={(e) =>
+              onChange({
+                ...draft,
+                supervisor: { ...draft.supervisor, chrome: e.target.checked },
+              })
+            }
+          />
+          Claude in Chrome
+          <span className="text-[10px] text-foreground-muted">
+            (your own browser, logged-in sessions included)
+          </span>
         </label>
         <label className="flex items-center gap-2 text-xs text-foreground">
           Max running agents

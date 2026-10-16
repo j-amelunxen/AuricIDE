@@ -1,6 +1,7 @@
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
   permissionModesOf,
+  supervisorPmServers,
   visibleProjects,
   type OfferedModels,
   type SupervisorPolicy,
@@ -9,7 +10,11 @@ import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import { projectProviderPolicyGet } from '@/lib/tauri/providerPolicy';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { isFinishedAgent } from './fleet';
-import { buildSupervisorLaunchPrompt, supervisorPromptProjects } from './supervisorLaunchPrompt';
+import {
+  buildSupervisorLaunchPrompt,
+  supervisorPromptProjects,
+  supervisorPromptSkills,
+} from './supervisorLaunchPrompt';
 
 /** One supervisor at a time: the tile focuses this one instead of starting a second. */
 export function findRunningSupervisor(agents: AgentInfo[]): AgentInfo | undefined {
@@ -56,8 +61,9 @@ export interface SupervisorSpawnInput {
  * The spawn config of a supervisor, or `null` when the policy shows it no
  * project — a supervisor with nothing to supervise is a Settings question.
  *
- * Rust owns the rest of its shape (ADR 0004): working directory, MCP binding,
- * permission mode and interactivity are set there whatever this config says.
+ * Rust owns the rest of its shape (ADR 0004): run folder, MCP binding, tools,
+ * approved skills, permission mode and interactivity are set there whatever
+ * this config says.
  */
 export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig | null {
   const visible = visibleProjects(
@@ -75,8 +81,15 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
     provider: providerId,
     model: input.model ?? input.policy.supervisor.model ?? provider?.defaultModel ?? '',
     task: buildSupervisorLaunchPrompt(
-      supervisorPromptProjects(visible, input.providers, input.descriptions),
-      input.firstTask
+      supervisorPromptProjects(
+        visible,
+        input.providers,
+        input.descriptions,
+        supervisorPmServers(input.policy)
+      ),
+      input.firstTask,
+      supervisorPromptSkills(input.policy.skills ?? {}),
+      input.policy.supervisor.chrome === true
     ),
     projectPath: null,
     headless: false,

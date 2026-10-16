@@ -29,11 +29,24 @@ export interface SupervisorProjectPolicy {
   maxRunning: number;
 }
 
+/**
+ * A skill the supervisor may load, keyed by its folder (the one holding
+ * `SKILL.md`). `bash` are the only shell commands it may run, as Claude Code
+ * `Bash(...)` rule patterns; none means no shell.
+ */
+export interface SupervisorSkillPolicy {
+  bash: string[];
+  /** Folders besides the run folder its file tools may use (a skill's workspace). */
+  dirs: string[];
+}
+
 export interface SupervisorPolicy {
   version: 1;
-  supervisor: { provider: string; model: string | null };
+  /** `chrome`: Claude in Chrome, the user's own logged-in browser; off unless switched on. */
+  supervisor: { provider: string; model: string | null; chrome: boolean };
   maxRunningChildren: number;
   projects: Record<string, SupervisorProjectPolicy>;
+  skills: Record<string, SupervisorSkillPolicy>;
 }
 
 export type SupervisorParseReason =
@@ -47,6 +60,8 @@ export type SupervisorParseReason =
 export interface SupervisorPolicyRejection {
   /** The project key as written, or `null` when the whole file was refused. */
   project: string | null;
+  /** The skill key as written, for an entry under `skills`. */
+  skill?: string;
   reason: SupervisorParseReason;
 }
 
@@ -89,6 +104,7 @@ export function emptySupervisorPolicy(): SupervisorPolicy {
     supervisor: { ...DEFAULTS.supervisor },
     maxRunningChildren: DEFAULTS.maxRunningChildren,
     projects: {},
+    skills: {},
   };
 }
 
@@ -119,6 +135,103 @@ export function normalizeProjectPath(path: string): string {
 class InvalidEntry extends Error {
   constructor(readonly reason: SupervisorParseReason) {
     super(reason);
+  }
+}
+
+const PM_SERVER_PREFIX = 'auric-pm-';
+const PM_SLUG_MAX = 16;
+
+/**
+ * `auric-pm-<slug>` per project path, in the order given (fixture
+ * `pmServerNames`). Rust starts these servers; the launch prompt names them.
+ */
+export function pmServerNames(paths: string[]): string[] {
+  const names: string[] = [];
+  for (const path of paths) {
+    const base = (normalizeProjectPath(path).split('/').pop() ?? '').toLowerCase();
+    let slug = base
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+/, '')
+      .slice(0, PM_SLUG_MAX)
+      .replace(/-+$/, '');
+    if (!slug) slug = 'project';
+    let name = `${PM_SERVER_PREFIX}${slug}`;
+    for (let n = 2; names.includes(name); n++) name = `${PM_SERVER_PREFIX}${slug}-${n}`;
+    names.push(name);
+  }
+  return names;
+}
+
+/** Project path → its `auric-pm` server, named over every permitted project like Rust. */
+export function supervisorPmServers(policy: SupervisorPolicy): Record<string, string> {
+  const permitted = Object.keys(policy.projects)
+    .filter((path) => policy.projects[path].allowed)
+    .sort();
+  const names = pmServerNames(permitted);
+  return Object.fromEntries(permitted.map((path, i) => [path, names[i]]));
+}
+
+/**
+ * A pattern becomes `Bash(<pattern>)`: a bracket would end the rule early and
+ * a line break or quote would split the launch command (fixture
+ * `skillPatternRules`).
+ */
+export function isBashPattern(pattern: string): boolean {
+  return !/[()"`\\\u0000-\u001f\u007f-\u009f]/.test(pattern);
+}
+
+function parseSkillEntry(value: unknown): SupervisorSkillPolicy {
+  if (!isObject(value)) throw new InvalidEntry('invalid_entry');
+  const raw = value.bash ?? [];
+  if (!Array.isArray(raw) || !raw.every((entry) => typeof entry === 'string')) {
+    throw new InvalidEntry('invalid_entry');
+  }
+  const bash: string[] = [];
+  for (const pattern of (raw as string[]).map((entry) => entry.trim())) {
+    if (!pattern || bash.includes(pattern)) continue;
+    if (!isBashPattern(pattern)) throw new InvalidEntry('invalid_entry');
+    bash.push(pattern);
+  }
+  const rawDirs = value.dirs ?? [];
+  if (!Array.isArray(rawDirs) || !rawDirs.every((entry) => typeof entry === 'string')) {
+    throw new InvalidEntry('invalid_entry');
+  }
+  const dirs: string[] = [];
+  for (const raw of (rawDirs as string[]).map((entry) => entry.trim())) {
+    if (!raw) continue;
+    if (!raw.startsWith('/') || !isBashPattern(raw)) throw new InvalidEntry('invalid_entry');
+    const dir = normalizeProjectPath(raw);
+    if (dir === '/') throw new InvalidEntry('invalid_entry');
+    if (!dirs.includes(dir)) dirs.push(dir);
+  }
+  return { bash, dirs };
+}
+
+function parseSkills(
+  skills: Record<string, unknown>,
+  policy: SupervisorPolicy,
+  rejected: SupervisorPolicyRejection[]
+): void {
+  // Sorted like Rust's map, so both sides list rejections in one order.
+  for (const key of Object.keys(skills).sort()) {
+    if (!key.startsWith('/')) {
+      rejected.push({ project: null, skill: key, reason: 'path_not_absolute' });
+      continue;
+    }
+    try {
+      const path = normalizeProjectPath(key);
+      const entry = parseSkillEntry(skills[key]);
+      const earlier = policy.skills[path];
+      policy.skills[path] = earlier
+        ? {
+            bash: earlier.bash.filter((pattern) => entry.bash.includes(pattern)),
+            dirs: earlier.dirs.filter((dir) => entry.dirs.includes(dir)),
+          }
+        : entry;
+    } catch (error) {
+      if (!(error instanceof InvalidEntry)) throw error;
+      rejected.push({ project: null, skill: key, reason: error.reason });
+    }
   }
 }
 
@@ -215,6 +328,7 @@ function parseSupervisorBlock(value: unknown): SupervisorPolicy['supervisor'] {
         ? providerId(value.provider)
         : fallback.provider,
     model: typeof value.model === 'string' && value.model ? value.model : fallback.model,
+    chrome: value.chrome === true,
   };
 }
 
@@ -286,6 +400,9 @@ export function parseSupervisorPolicy(raw: string | null | undefined): ParsedSup
   if (parsed.projects !== undefined && parsed.projects !== null && !isObject(parsed.projects)) {
     return refuse('malformed');
   }
+  if (parsed.skills !== undefined && parsed.skills !== null && !isObject(parsed.skills)) {
+    return refuse('malformed');
+  }
   const projects = isObject(parsed.projects) ? parsed.projects : {};
   for (const [key, value] of Object.entries(projects)) {
     if (!key.startsWith('/')) {
@@ -302,6 +419,7 @@ export function parseSupervisorPolicy(raw: string | null | undefined): ParsedSup
       rejected.push({ project: key, reason: error.reason });
     }
   }
+  parseSkills(isObject(parsed.skills) ? parsed.skills : {}, policy, rejected);
   return { policy, rejected };
 }
 

@@ -23,9 +23,20 @@ use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 pub const POLICY_FILE_NAME: &str = "supervisor-policy.json";
-/// The supervisor's working directory under the app data dir. It owns no
-/// project, so it does not run inside one.
-pub const SUPERVISOR_DIR_NAME: &str = "supervisor";
+/// Every supervisor run works in a folder of its own under the user's home,
+/// `~/.auric/supervisors/<start time>/`, the home-level twin of a project's
+/// `.auric/`. It owns no project, so it does not run inside one; its file tools
+/// reach this folder and nothing else (`--restricted`).
+pub const SUPERVISOR_RUNS_DIR: [&str; 2] = [".auric", "supervisors"];
+/// The per-run plugin folders that carry the approved skills. They sit under
+/// the app data dir, outside the run folder, so the supervisor cannot edit a
+/// skill it is about to run.
+pub const SKILL_PLUGINS_DIR_NAME: &str = "supervisor-skills";
+/// The plugin name Claude Code shows in front of an approved skill
+/// (`/auric:video-to-tasklist`); the bare `/video-to-tasklist` resolves too.
+pub const SKILL_PLUGIN_NAME: &str = "auric";
+/// Plugin folders of runs older than this are removed at the next launch.
+const SKILL_PLUGIN_RETENTION: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
 
 pub fn policy_path_in(app_data: &Path) -> PathBuf {
     app_data.join(POLICY_FILE_NAME)
@@ -60,7 +71,15 @@ pub fn with_canonical_keys(policy: SupervisorPolicy) -> SupervisorPolicy {
     for (path, rules) in policy.projects {
         insert_stricter(&mut projects, canonical_project_path(&path), rules);
     }
-    SupervisorPolicy { projects, ..policy }
+    let mut skills = BTreeMap::new();
+    for (path, rules) in policy.skills {
+        policy::insert_skill(&mut skills, canonical_project_path(&path), rules);
+    }
+    SupervisorPolicy {
+        projects,
+        skills,
+        ..policy
+    }
 }
 
 /// Arguments that make a CLI run without asking: a mode whose launch carries
@@ -305,13 +324,17 @@ pub fn validate_for_write(mut value: Value) -> Result<SupervisorPolicy, String> 
         .or_insert_with(|| Value::from(POLICY_VERSION));
     let parsed = parse(Some(&value.to_string()));
     if let Some(entry) = parsed.rejected.first() {
-        let project = entry.project.as_deref().unwrap_or("the file");
+        let project = entry
+            .project
+            .as_deref()
+            .or(entry.skill.as_deref())
+            .unwrap_or("the file");
         return Err(match entry.reason {
             ParseReason::BypassPermissions => {
                 format!("bypassPermissions is never allowed for a supervisor's agents ({project}).")
             }
             ParseReason::PathNotAbsolute => {
-                format!("Project paths must be absolute ({project}).")
+                format!("Project and skill paths must be absolute ({project}).")
             }
             ParseReason::UnsupportedVersion => {
                 format!("This build only writes supervisor policy version {POLICY_VERSION}.")
@@ -364,12 +387,189 @@ fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("No app data directory: {error}"))
 }
 
-/// The supervisor's working directory, created when missing.
-pub fn supervisor_cwd(app_data: &Path) -> Result<PathBuf, String> {
-    let dir = app_data.join(SUPERVISOR_DIR_NAME);
-    std::fs::create_dir_all(&dir)
+/// Every permitted project gets its own `auric-pm` server, named
+/// `auric-pm-<folder>` (fixture `pmServerNames`).
+pub const PM_SERVER_PREFIX: &str = "auric-pm-";
+/// Keeps `mcp__auric-pm-<slug>__<longest tool>` inside Claude Code's 64
+/// characters.
+const PM_SLUG_MAX: usize = 16;
+
+/// `auric-pm-<slug>` per project path, in the order given. The slug is the
+/// folder name in lowercase ASCII letters, digits and dashes, at most 16
+/// long; a repeat gets `-2`, `-3`, … The TS twin names the same servers in
+/// the launch prompt, so both read `supervisorPolicy.fixtures.json`.
+pub fn pm_server_names(paths: &[String]) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for path in paths {
+        let folder = normalize_project_path(path);
+        let base = folder.rsplit('/').next().unwrap_or("").to_lowercase();
+        let mut slug = String::new();
+        for c in base.chars() {
+            let c = if c.is_ascii_alphanumeric() { c } else { '-' };
+            if !(c == '-' && (slug.is_empty() || slug.ends_with('-'))) {
+                slug.push(c);
+            }
+        }
+        slug.truncate(PM_SLUG_MAX);
+        let slug = match slug.trim_end_matches('-') {
+            "" => "project".to_string(),
+            trimmed => trimmed.to_string(),
+        };
+        let mut name = format!("{PM_SERVER_PREFIX}{slug}");
+        let mut n = 2;
+        while names.contains(&name) {
+            name = format!("{PM_SERVER_PREFIX}{slug}-{n}");
+            n += 1;
+        }
+        names.push(name);
+    }
+    names
+}
+
+/// The `auric-pm` servers a supervisor gets: one per permitted project that
+/// has a project database, named over every permitted project so a name does
+/// not shift when another project is initialised.
+pub fn supervisor_pm_servers(policy: &SupervisorPolicy) -> Vec<(String, String)> {
+    let permitted: Vec<String> = policy
+        .projects
+        .iter()
+        .filter(|(_, rules)| rules.allowed)
+        .map(|(path, _)| path.clone())
+        .collect();
+    pm_server_names(&permitted)
+        .into_iter()
+        .zip(permitted)
+        .filter(|(_, path)| Path::new(path).join(".auric").join("project.db").is_file())
+        .collect()
+}
+
+/// `~/.auric/supervisors` for this home directory.
+pub fn supervisor_runs_root(home: &Path) -> PathBuf {
+    SUPERVISOR_RUNS_DIR
+        .iter()
+        .fold(home.to_path_buf(), |path, part| path.join(part))
+}
+
+/// A new, empty working folder for one supervisor run, named by its start
+/// time. Two runs in the same second get `-2`, `-3`, …: `create_dir` fails on
+/// an existing folder, so a run never inherits another one's files.
+pub fn new_supervisor_run_dir(home: &Path, started: &str) -> Result<PathBuf, String> {
+    let root = supervisor_runs_root(home);
+    std::fs::create_dir_all(&root)
         .map_err(|error| format!("Could not create the supervisor folder: {error}"))?;
-    Ok(dir)
+    for attempt in 1..=100 {
+        let name = match attempt {
+            1 => started.to_string(),
+            n => format!("{started}-{n}"),
+        };
+        let dir = root.join(name);
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("Could not create the supervisor folder: {error}")),
+        }
+    }
+    Err("Could not create the supervisor folder: too many runs started this second".to_string())
+}
+
+/// The approved skills a run actually gets: folders that still hold a
+/// `SKILL.md`, with the Bash patterns they declare.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct SkillPlugin {
+    /// `None` when no approved skill could be loaded: no `--plugin-dir`.
+    pub dir: Option<PathBuf>,
+    /// Folder names, which are what the skills are called.
+    pub skills: Vec<String>,
+    pub bash: Vec<String>,
+    /// Extra folders for the file tools (`--add-dir`), those that exist.
+    pub dirs: Vec<String>,
+}
+
+/// Builds `<app_data>/supervisor-skills/<run>/` as a Claude Code plugin whose
+/// `skills/` links to each approved skill folder, and nothing else. A listed
+/// skill whose folder is gone is left out rather than failing the launch; two
+/// skills with one folder name keep the first by path.
+pub fn build_skill_plugin(
+    app_data: &Path,
+    run_name: &str,
+    skills: &BTreeMap<String, policy::SkillRules>,
+) -> Result<SkillPlugin, String> {
+    let root = app_data.join(SKILL_PLUGINS_DIR_NAME);
+    prune_skill_plugins(&root);
+    let mut plugin = SkillPlugin::default();
+    let mut links = Vec::new();
+    for (path, rules) in skills {
+        let source = Path::new(path);
+        let Some(name) = source.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !source.join("SKILL.md").is_file() || plugin.skills.iter().any(|seen| seen == name) {
+            continue;
+        }
+        plugin.skills.push(name.to_string());
+        links.push((name.to_string(), source.to_path_buf()));
+        for pattern in &rules.bash {
+            if !plugin.bash.contains(pattern) {
+                plugin.bash.push(pattern.clone());
+            }
+        }
+        for dir in &rules.dirs {
+            if Path::new(dir).is_dir() && !plugin.dirs.contains(dir) {
+                plugin.dirs.push(dir.clone());
+            }
+        }
+    }
+    if links.is_empty() {
+        return Ok(plugin);
+    }
+    let dir = root.join(run_name);
+    let fail =
+        |error: std::io::Error| format!("Could not prepare the supervisor's skills: {error}");
+    std::fs::create_dir_all(dir.join(".claude-plugin")).map_err(fail)?;
+    std::fs::create_dir_all(dir.join("skills")).map_err(fail)?;
+    let manifest = serde_json::json!({ "name": SKILL_PLUGIN_NAME, "version": "1.0.0",
+        "description": "The skills Settings → Supervisor approves for this run." });
+    std::fs::write(
+        dir.join(".claude-plugin").join("plugin.json"),
+        manifest.to_string(),
+    )
+    .map_err(fail)?;
+    for (name, source) in links {
+        link_dir(&source, &dir.join("skills").join(name)).map_err(fail)?;
+    }
+    plugin.dir = Some(dir);
+    Ok(plugin)
+}
+
+#[cfg(unix)]
+fn link_dir(source: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, link)
+}
+
+#[cfg(not(unix))]
+fn link_dir(_source: &Path, _link: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::other(
+        "skill folders are linked on unix only",
+    ))
+}
+
+/// Removes plugin folders of runs that started more than a week ago. Only the
+/// links are removed, never the skill folders they point at.
+fn prune_skill_plugins(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > SKILL_PLUGIN_RETENTION);
+        if old {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 /// The policy as the file holds it, with what was dropped and why.
@@ -601,5 +801,128 @@ mod tests {
         assert!(!is_unattended_mode(&provider, "acceptEdits"));
         assert!(is_unattended_mode(&provider, "yolo"));
         assert!(is_unattended_mode(&provider, "bypassPermissions"));
+    }
+
+    #[test]
+    fn a_run_folder_is_new_every_time_and_lives_under_the_home_dot_auric() {
+        let home = tempfile::tempdir().unwrap();
+        let first = new_supervisor_run_dir(home.path(), "2026-10-16_185017").unwrap();
+        let second = new_supervisor_run_dir(home.path(), "2026-10-16_185017").unwrap();
+        let root = home.path().join(".auric").join("supervisors");
+        assert_eq!(first, root.join("2026-10-16_185017"));
+        assert_eq!(second, root.join("2026-10-16_185017-2"));
+        assert!(first.is_dir() && second.is_dir());
+    }
+
+    fn skill_folder(root: &Path, name: &str) -> String {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+        dir.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn the_plugin_links_only_approved_skills_that_still_exist() {
+        let app_data = tempfile::tempdir().unwrap();
+        let sources = tempfile::tempdir().unwrap();
+        let review = skill_folder(sources.path(), "review");
+        let notes = skill_folder(sources.path(), "notes");
+        let gone = sources.path().join("gone").to_string_lossy().into_owned();
+        let skills = BTreeMap::from([
+            (
+                review.clone(),
+                policy::SkillRules {
+                    bash: vec!["review/scripts/*".into()],
+                    dirs: vec![
+                        sources.path().to_string_lossy().into_owned(),
+                        "/abs/not-there".into(),
+                    ],
+                },
+            ),
+            (notes.clone(), policy::SkillRules::default()),
+            (
+                gone,
+                policy::SkillRules {
+                    bash: vec!["gone *".into()],
+                    dirs: Vec::new(),
+                },
+            ),
+        ]);
+        let plugin = build_skill_plugin(app_data.path(), "run-1", &skills).unwrap();
+        let dir = plugin.dir.clone().unwrap();
+        assert_eq!(
+            dir,
+            app_data.path().join(SKILL_PLUGINS_DIR_NAME).join("run-1")
+        );
+        assert_eq!(plugin.skills, vec!["notes", "review"]);
+        assert_eq!(
+            plugin.bash,
+            vec!["review/scripts/*"],
+            "a missing skill brings no shell"
+        );
+        assert_eq!(
+            plugin.dirs,
+            vec![sources.path().to_string_lossy().into_owned()],
+            "a folder that does not exist is not handed out"
+        );
+        let manifest: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join(".claude-plugin/plugin.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["name"], SKILL_PLUGIN_NAME);
+        let link = dir.join("skills").join("review");
+        assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from(&review));
+        assert!(!dir.join("skills").join("gone").exists());
+    }
+
+    #[test]
+    fn no_approved_skill_means_no_plugin_and_no_shell() {
+        let app_data = tempfile::tempdir().unwrap();
+        let plugin = build_skill_plugin(app_data.path(), "run-1", &BTreeMap::new()).unwrap();
+        assert_eq!(plugin, SkillPlugin::default());
+        assert!(!app_data
+            .path()
+            .join(SKILL_PLUGINS_DIR_NAME)
+            .join("run-1")
+            .exists());
+    }
+
+    #[test]
+    fn every_pm_server_name_matches_the_fixture() {
+        let fixtures: Value = serde_json::from_str(include_str!(
+            "../../../src/lib/config/supervisorPolicy.fixtures.json"
+        ))
+        .unwrap();
+        for case in fixtures["pmServerNames"].as_array().unwrap() {
+            let paths: Vec<String> = serde_json::from_value(case["paths"].clone()).unwrap();
+            let expected: Vec<String> = serde_json::from_value(case["expected"].clone()).unwrap();
+            assert_eq!(pm_server_names(&paths), expected, "{}", case["name"]);
+        }
+    }
+
+    #[test]
+    fn only_permitted_initialised_projects_get_an_auric_pm() {
+        let root = tempfile::tempdir().unwrap();
+        let project = |name: &str, initialised: bool| {
+            let dir = root.path().join(name);
+            std::fs::create_dir_all(dir.join(".auric")).unwrap();
+            if initialised {
+                std::fs::write(dir.join(".auric").join("project.db"), "").unwrap();
+            }
+            dir.to_string_lossy().into_owned()
+        };
+        let (a, b, c) = (project("a", true), project("b", false), project("c", true));
+        let mut policy = SupervisorPolicy::default();
+        for (path, allowed) in [(&a, true), (&b, true), (&c, false)] {
+            let rules = policy::ProjectRules {
+                allowed,
+                ..Default::default()
+            };
+            policy.projects.insert(path.clone(), rules);
+        }
+        assert_eq!(
+            supervisor_pm_servers(&policy),
+            vec![("auric-pm-a".to_string(), a)]
+        );
     }
 }

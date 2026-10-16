@@ -5,6 +5,7 @@ import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import {
   buildSupervisorLaunchPrompt,
+  supervisorPromptSkills,
   modelSizeLabel,
   supervisorPromptProjects,
 } from './supervisorLaunchPrompt';
@@ -136,9 +137,37 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(text).toContain('`auto` (Auto) — size unknown');
   });
 
-  it('has no tools to offer beyond its own, and says so', () => {
-    expect(prompt).toContain('no shell and no file tools');
+  it('names its tools and the run folder they reach, and no shell without a skill', () => {
+    expect(prompt).toContain('The file tools reach only your run folder');
+    expect(prompt).toContain('No skill is approved for you, and you have no shell.');
     expect(prompt).not.toMatch(/Bash, Edit and every other tool ask/);
+  });
+
+  it("names a project's auric-pm server, and tells it to load deferred tools", () => {
+    const text = buildSupervisorLaunchPrompt([{ ...projects[0], pmServer: 'auric-pm-alpha' }]);
+    expect(text).toContain('the `auric-pm-alpha` tools (`mcp__auric-pm-alpha__*`)');
+    expect(text).toContain('fetch them with ToolSearch');
+  });
+
+  it('mentions the browser and its limits only when Chrome is switched on', () => {
+    expect(prompt).not.toContain('## Browser');
+    const text = buildSupervisorLaunchPrompt(projects, undefined, [], true);
+    expect(text).toContain('## Browser');
+    expect(text).toContain('never touch tabs you did not open');
+  });
+
+  it('lists approved skills by folder name with exactly their shell commands', () => {
+    const skills = supervisorPromptSkills({
+      '/abs/skills/video-to-tasklist/': { bash: ['/abs/skills/video-to-tasklist/scripts/*'] },
+      '/abs/skills/notes': { bash: [] },
+    });
+    expect(skills.map((skill) => skill.name)).toEqual(['notes', 'video-to-tasklist']);
+    const text = buildSupervisorLaunchPrompt(projects, undefined, skills);
+    expect(text).toContain('- `/notes` — no shell');
+    expect(text).toContain(
+      '- `/video-to-tasklist` — shell commands it may run: `/abs/skills/video-to-tasklist/scripts/*`'
+    );
+    expect(text.indexOf('## Skills')).toBeLessThan(text.indexOf('## Starting an agent'));
   });
 
   it('ends with the first task when a skill started it', () => {

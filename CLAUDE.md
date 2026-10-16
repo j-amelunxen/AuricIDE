@@ -435,9 +435,18 @@ ADR 0004.
   from a child goes to the human. Children keep running when the supervisor is
   killed; their results (`agents/run_results.rs`) stay until its card is
   cleared.
-- **The supervisor itself has no shell.** Rust forces its launch: cwd
-  `<app_data_dir>/supervisor/`, `--tools "" --restricted`, one MCP server,
-  `--permission-mode default`.
+- **The supervisor itself has a shell only through approved skills.** Rust
+  forces its launch: a fresh cwd `~/.auric/supervisors/<start time>/`, file
+  tools + `Skill` under `--restricted` (they reach only that folder), one MCP
+  server, `--permission-mode dontAsk` (unlisted is refused, never asked).
+  Settings → Supervisor → Skills approves skill folders and the `Bash(...)`
+  patterns each may run; Rust links them into a per-run `--plugin-dir` under
+  `<app_data_dir>/supervisor-skills/`, and `Bash` exists only while one of them
+  declares a pattern; a skill's `dirs` become `--add-dir`. Every permitted,
+  initialised project adds an `auric-pm-<folder>` server (fixture
+  `pmServerNames`, no `AURIC_AGENT_CWD`, so spawning stays with the policy),
+  which is why `ToolSearch` is in its tool set. Claude in Chrome is the
+  `supervisor.chrome` switch (`--chrome`, else explicitly `--no-chrome`).
 - **What it may start is `<app_data_dir>/supervisor-policy.json`**, Rust-owned,
   0600, fail closed: an unlisted project allows nothing. It is intersected with
   the project's provider policy, and a mode that runs unattended is refused
@@ -453,8 +462,9 @@ ADR 0004.
   right-click lists its skills, "Quick Access Settings" edits them
   (`useLaunchWheel` is shared with project tiles). The skills are
   application-wide (`supervisorPresets.ts`, app pref
-  `auric.supervisor.quick-access`) and are prompts, never `/skill` calls:
-  `--restricted` loads no skills from disk. A skill becomes the first task of
+  `auric.supervisor.quick-access`) and are prompts; a `/skill` call works only
+  for a skill approved in Settings → Supervisor, because `--restricted` loads
+  no skills from disk otherwise. A skill becomes the first task of
   a new supervisor, or a message to the running one. Model is the only launch
   option; there are no combos.
 - Real-app check: `node scripts/probe-supervisor.mjs`.

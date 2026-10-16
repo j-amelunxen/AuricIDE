@@ -31,6 +31,8 @@ export interface SupervisorPromptProject {
   allowInteractive: boolean;
   maxRunning: number;
   providers: SupervisorPromptProvider[];
+  /** Its `auric-pm` MCP server, when the policy names one. */
+  pmServer?: string;
 }
 
 const RANK_LABELS: Record<number, string> = { 1: 'small', 2: 'medium', 3: 'large', 4: 'largest' };
@@ -57,10 +59,12 @@ function byRank(models: SupervisorPromptModel[]): SupervisorPromptModel[] {
 export function supervisorPromptProjects(
   visible: VisibleProject[],
   providers: ProviderInfo[],
-  descriptions: Record<string, string | null | undefined> = {}
+  descriptions: Record<string, string | null | undefined> = {},
+  pmServers: Record<string, string> = {}
 ): SupervisorPromptProject[] {
   return visible.map((project) => ({
     path: project.path,
+    ...(pmServers[project.path] ? { pmServer: pmServers[project.path] } : {}),
     description: descriptions[project.path] ?? null,
     allowInteractive: project.allowInteractive,
     maxRunning: project.maxRunning,
@@ -80,9 +84,46 @@ export function supervisorPromptProjects(
 
 const ROLE =
   'You are the AuricIDE supervisor. You orchestrate agents in other projects; you never do ' +
-  "the projects' work yourself. Your own tools (auric-supervisor) run without asking, and " +
-  'they are all you have: no shell and no file tools. Work that needs either belongs to an ' +
-  'agent you start.';
+  "the projects' work yourself. Your tools run without asking, and they are all you have: " +
+  "auric-supervisor, each project's auric-pm, the file tools (Read, Write, Edit, Glob, " +
+  'Grep) and the skills listed below. MCP tools may load deferred: fetch them with ' +
+  'ToolSearch rather than concluding they are missing. The file tools reach only your run folder, the working directory this run started ' +
+  'in; keep collected data, notes and artifacts there. Anything else is refused, not asked. ' +
+  'Work that needs more belongs to an agent you start.';
+
+/** A skill Settings → Supervisor approves: its name and the only shell commands it may run. */
+export interface SupervisorPromptSkill {
+  name: string;
+  bash: string[];
+}
+
+/** Folder name → skill name, as Rust links it into the run's plugin. */
+export function supervisorPromptSkills(
+  skills: Record<string, { bash: string[] }>
+): SupervisorPromptSkill[] {
+  const byName = new Map<string, SupervisorPromptSkill>();
+  for (const path of Object.keys(skills).sort()) {
+    const name = path.replace(/\/+$/, '').split('/').pop() ?? '';
+    if (name && !byName.has(name)) byName.set(name, { name, bash: skills[path].bash });
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function describeSkills(skills: SupervisorPromptSkill[]): string {
+  if (skills.length === 0) {
+    return 'No skill is approved for you, and you have no shell. Settings → Supervisor approves skills.';
+  }
+  const lines = skills.map((skill) =>
+    skill.bash.length > 0
+      ? `- \`/${skill.name}\` — shell commands it may run: ${skill.bash.map((p) => `\`${p}\``).join(', ')}`
+      : `- \`/${skill.name}\` — no shell`
+  );
+  return [
+    ...lines,
+    'A shell command outside these patterns is refused. A skill that needs one is work for an ' +
+      'agent you start.',
+  ].join('\n');
+}
 
 function describeModel(model: SupervisorPromptModel): string {
   const label = model.label && model.label !== model.id ? ` (${model.label})` : '';
@@ -96,6 +137,12 @@ function describeProject(project: SupervisorPromptProject): string {
     `Interactive runs: ${project.allowInteractive ? 'allowed' : 'not allowed, headless only'}. ` +
       `At most ${project.maxRunning} of your agents at once here.`
   );
+  if (project.pmServer) {
+    lines.push(
+      `Tickets, goals and stations: the \`${project.pmServer}\` tools ` +
+        `(\`mcp__${project.pmServer}__*\`), when list_projects reports it initialized.`
+    );
+  }
   if (project.providers.length === 0) {
     lines.push('No provider is usable here right now: do not spawn in this project.');
     return lines.join('\n');
@@ -144,7 +191,9 @@ const REPORT =
  */
 export function buildSupervisorLaunchPrompt(
   projects: SupervisorPromptProject[],
-  firstTask?: string
+  firstTask?: string,
+  skills: SupervisorPromptSkill[] = [],
+  chrome = false
 ): string {
   const projectSection =
     projects.length > 0
@@ -157,6 +206,16 @@ export function buildSupervisorLaunchPrompt(
     'What you may use when you started. Call list_projects for the live state: the policy, ' +
       'the running counts and the allowed models can change.',
     projectSection,
+    '## Skills',
+    describeSkills(skills),
+    ...(chrome
+      ? [
+          '## Browser',
+          "Claude in Chrome (`claude-in-chrome`) drives the human's own Chrome, logged-in " +
+            'sessions included. Open new tabs for your work, never touch tabs you did not open, ' +
+            'and never submit, buy, send or delete anything without the human saying so.',
+        ]
+      : []),
     '## Starting an agent',
     SPAWN_RULES,
     '## Working with your agents',

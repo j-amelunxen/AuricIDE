@@ -13,7 +13,8 @@
     "_comment": "What a field that is absent from a valid file means. An absent project entry allows nothing.",
     "supervisor": {
       "provider": "claude",
-      "model": null
+      "model": null,
+      "chrome": false
     },
     "maxRunningChildren": 4,
     "project": {
@@ -74,10 +75,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -95,10 +98,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -116,10 +121,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -137,10 +144,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -158,7 +167,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": "opus"
+            "model": "opus",
+            "chrome": false
           },
           "maxRunningChildren": 6,
           "projects": {
@@ -174,7 +184,8 @@
               "allowInteractive": true,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -187,7 +198,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -199,7 +211,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -212,7 +225,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -228,7 +242,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -241,7 +256,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -253,7 +269,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -266,7 +283,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -278,7 +296,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -291,7 +310,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -305,7 +325,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -318,7 +339,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -330,7 +352,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -343,7 +366,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -355,7 +379,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": [
           {
@@ -373,7 +398,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -385,7 +411,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": [
           {
@@ -403,7 +430,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -415,7 +443,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": [
           {
@@ -433,10 +462,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -454,7 +485,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -466,7 +498,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": [
           {
@@ -484,7 +517,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -496,7 +530,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -509,10 +544,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -530,10 +567,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -551,7 +590,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -565,7 +605,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -578,7 +619,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -590,7 +632,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": [
           {
@@ -608,10 +651,12 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
-          "projects": {}
+          "projects": {},
+          "skills": {}
         },
         "rejected": [
           {
@@ -629,7 +674,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -643,7 +689,8 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
-          }
+          },
+          "skills": {}
         },
         "rejected": []
       }
@@ -656,7 +703,8 @@
           "version": 1,
           "supervisor": {
             "provider": "claude",
-            "model": null
+            "model": null,
+            "chrome": false
           },
           "maxRunningChildren": 4,
           "projects": {
@@ -668,7 +716,227 @@
               "allowInteractive": false,
               "maxRunning": 2
             }
+          },
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "an approved skill keeps its folder without the trailing slash and its patterns trimmed and deduplicated",
+      "raw": "{\"version\": 1, \"skills\": {\"/abs/skills/review/\": {\"bash\": [\"  /abs/skills/review/scripts/* \", \"/abs/skills/review/scripts/*\", \"\"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {
+            "/abs/skills/review": {
+              "bash": ["/abs/skills/review/scripts/*"],
+              "dirs": []
+            }
           }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a skill without bash patterns loads without a shell",
+      "raw": "{\"version\": 1, \"skills\": {\"/abs/skills/notes\": {}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {
+            "/abs/skills/notes": {
+              "bash": [],
+              "dirs": []
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a relative skill path, a bracket in a pattern and a non-object entry are refused one by one",
+      "raw": "{\"version\": 1, \"skills\": {\"skills/rel\": {\"bash\": [\"x\"]}, \"/abs/skills/bad\": {\"bash\": [\"rm -rf /) Bash(*\"]}, \"/abs/skills/odd\": \"yes\", \"/abs/skills/ok\": {\"bash\": [\"ls\"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {
+            "/abs/skills/ok": {
+              "bash": ["ls"],
+              "dirs": []
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": null,
+            "skill": "/abs/skills/bad",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "skill": "/abs/skills/odd",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "skill": "skills/rel",
+            "reason": "path_not_absolute"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two spellings of one skill folder keep only the patterns both allow",
+      "raw": "{\"version\": 1, \"skills\": {\"/abs/skills/rec\": {\"bash\": [\"a *\", \"b *\"]}, \"/abs/skills/rec/\": {\"bash\": [\"b *\"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {
+            "/abs/skills/rec": {
+              "bash": ["b *"],
+              "dirs": []
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a skills block that is not an object refuses the file",
+      "raw": "{\"version\": 1, \"skills\": [\"/abs/skills/review\"]}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "malformed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a skill's extra folders are kept absolute, without trailing slashes and repeats",
+      "raw": "{\"version\": 1, \"skills\": {\"/abs/skills/rec\": {\"dirs\": [\"/abs/work/\", \"/abs/work\", \" \"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {
+            "/abs/skills/rec": {
+              "bash": [],
+              "dirs": ["/abs/work"]
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a relative extra folder or the root refuses the skill entry",
+      "raw": "{\"version\": 1, \"skills\": {\"/abs/skills/a\": {\"dirs\": [\"work\"]}, \"/abs/skills/b\": {\"dirs\": [\"/\"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "skill": "/abs/skills/a",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "skill": "/abs/skills/b",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "chrome is on only for a literal true",
+      "raw": "{\"version\": 1, \"supervisor\": {\"chrome\": true}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": true
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "chrome of any other type stays off",
+      "raw": "{\"version\": 1, \"supervisor\": {\"chrome\": \"yes\"}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {}
         },
         "rejected": []
       }
@@ -690,7 +958,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": null
+          "model": null,
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -774,7 +1043,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": null
+          "model": null,
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -822,7 +1092,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": null
+          "model": null,
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -870,7 +1141,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": null
+          "model": null,
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -910,7 +1182,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": null
+          "model": null,
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {}
@@ -929,7 +1202,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1023,7 +1297,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1079,7 +1354,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1135,7 +1411,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1192,7 +1469,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": null
+          "model": null,
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {}
@@ -1228,7 +1506,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1285,7 +1564,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1342,7 +1622,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1399,7 +1680,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1456,7 +1738,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1513,7 +1796,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1569,7 +1853,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1626,7 +1911,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1683,7 +1969,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1740,7 +2027,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1796,7 +2084,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1853,7 +2142,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1910,7 +2200,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -1968,7 +2259,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2024,7 +2316,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2081,7 +2374,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2137,7 +2431,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2195,7 +2490,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2254,7 +2550,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2314,7 +2611,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2371,7 +2669,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2430,7 +2729,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2491,7 +2791,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2550,7 +2851,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2610,7 +2912,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2671,7 +2974,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2729,7 +3033,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2788,7 +3093,8 @@
         "version": 1,
         "supervisor": {
           "provider": "claude",
-          "model": "opus"
+          "model": "opus",
+          "chrome": false
         },
         "maxRunningChildren": 4,
         "projects": {
@@ -2855,5 +3161,40 @@
     "entry: allowed and allowInteractive only if both say so, maxRunning the smaller, providers the intersection (null is everything),",
     "models per provider the intersection where both list it, else the one list. permissionMode: one named mode is kept; two different",
     "modes for one provider make the project allowed: false with permissionMode {} (there is no stricter of two modes)."
+  ],
+  "skillPatternRules": [
+    "A skill entry is keyed by the absolute path of its folder (the one holding SKILL.md); trailing slashes are dropped.",
+    "bash is a list of Claude Code Bash rule patterns, passed as Bash(<pattern>). Blank and repeated patterns are dropped; one containing ( ) \" ` \\\\ or a control character refuses the whole skill entry (invalid_entry), because it would end the rule or split the launch command.",
+    "No pattern means the skill loads without a shell. Bash is in the supervisor's tool set only while at least one loaded skill has a pattern.",
+    "dirs are folders besides the run folder the file tools may use (passed as --add-dir). Each must be absolute, not the root, and free of the characters a pattern may not hold; otherwise the skill entry is invalid_entry. Trailing slashes are dropped, repeats removed.",
+    "Two keys that name one folder keep only the patterns both allow.",
+    "Rejected skill entries are listed as { project: null, skill: <key as written>, reason }."
+  ],
+  "pmServerNames": [
+    {
+      "name": "the folder name in lowercase",
+      "paths": ["/abs/AuricIDE"],
+      "expected": ["auric-pm-auricide"]
+    },
+    {
+      "name": "other characters become one dash, edges trimmed",
+      "paths": ["/abs/My Project_v2!/"],
+      "expected": ["auric-pm-my-project-v2"]
+    },
+    {
+      "name": "at most 16 characters, no trailing dash after the cut",
+      "paths": ["/abs/very-long-project-folder-name"],
+      "expected": ["auric-pm-very-long-projec"]
+    },
+    {
+      "name": "a repeat gets a number in path order",
+      "paths": ["/a/app", "/b/app", "/c/App"],
+      "expected": ["auric-pm-app", "auric-pm-app-2", "auric-pm-app-3"]
+    },
+    {
+      "name": "nothing usable becomes project",
+      "paths": ["/abs/___"],
+      "expected": ["auric-pm-project"]
+    }
   ]
 }

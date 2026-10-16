@@ -28,6 +28,10 @@ pub const REJECTED_PERMISSION_MODES: [&str; 1] = ["bypassPermissions"];
 pub struct SupervisorModel {
     pub provider: String,
     pub model: Option<String>,
+    /// Claude in Chrome (`--chrome`): the user's own browser, logged-in
+    /// sessions included, so it is off unless switched on.
+    #[serde(default)]
+    pub chrome: bool,
 }
 
 impl Default for SupervisorModel {
@@ -35,6 +39,7 @@ impl Default for SupervisorModel {
         Self {
             provider: DEFAULT_SUPERVISOR_PROVIDER.to_string(),
             model: None,
+            chrome: false,
         }
     }
 }
@@ -65,6 +70,18 @@ impl Default for ProjectRules {
     }
 }
 
+/// A skill the supervisor may load, keyed by its folder (the one holding
+/// `SKILL.md`). `bash` are the only shell commands it may run, as Claude Code
+/// `Bash(...)` rule patterns; no pattern, no shell. `dirs` are folders besides
+/// the run folder its file tools may read and write (a skill's workspace).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillRules {
+    pub bash: Vec<String>,
+    #[serde(default)]
+    pub dirs: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisorPolicy {
@@ -72,6 +89,8 @@ pub struct SupervisorPolicy {
     pub supervisor: SupervisorModel,
     pub max_running_children: u32,
     pub projects: BTreeMap<String, ProjectRules>,
+    #[serde(default)]
+    pub skills: BTreeMap<String, SkillRules>,
 }
 
 impl Default for SupervisorPolicy {
@@ -82,6 +101,7 @@ impl Default for SupervisorPolicy {
             supervisor: SupervisorModel::default(),
             max_running_children: DEFAULT_MAX_RUNNING_CHILDREN,
             projects: BTreeMap::new(),
+            skills: BTreeMap::new(),
         }
     }
 }
@@ -102,6 +122,9 @@ pub enum ParseReason {
 pub struct RejectedEntry {
     /// The project key as written, `None` when the whole file was refused.
     pub project: Option<String>,
+    /// The skill key as written, for an entry under `skills`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill: Option<String>,
     pub reason: ParseReason,
 }
 
@@ -116,6 +139,7 @@ fn refused(reason: ParseReason) -> ParsedPolicy {
         policy: SupervisorPolicy::default(),
         rejected: vec![RejectedEntry {
             project: None,
+            skill: None,
             reason,
         }],
     }
@@ -143,6 +167,11 @@ pub fn parse(raw: Option<&str>) -> ParsedPolicy {
         Some(Value::Object(projects)) => projects.clone(),
         Some(_) => return refused(ParseReason::Malformed),
     };
+    let skills = match source.get("skills") {
+        None | Some(Value::Null) => Map::new(),
+        Some(Value::Object(skills)) => skills.clone(),
+        Some(_) => return refused(ParseReason::Malformed),
+    };
 
     let mut policy = SupervisorPolicy {
         supervisor: parse_supervisor(source.get("supervisor")),
@@ -158,11 +187,93 @@ pub fn parse(raw: Option<&str>) -> ParsedPolicy {
             Ok((path, rules)) => insert_stricter(&mut policy.projects, path, rules),
             Err(reason) => rejected.push(RejectedEntry {
                 project: Some(key.clone()),
+                skill: None,
+                reason,
+            }),
+        }
+    }
+    for (key, entry) in &skills {
+        match parse_skill(key, entry) {
+            Ok((path, rules)) => insert_skill(&mut policy.skills, path, rules),
+            Err(reason) => rejected.push(RejectedEntry {
+                project: None,
+                skill: Some(key.clone()),
                 reason,
             }),
         }
     }
     ParsedPolicy { policy, rejected }
+}
+
+fn parse_skill(key: &str, entry: &Value) -> Result<(String, SkillRules), ParseReason> {
+    if !key.starts_with('/') {
+        return Err(ParseReason::PathNotAbsolute);
+    }
+    let Value::Object(source) = entry else {
+        return Err(ParseReason::InvalidEntry);
+    };
+    let bash = match source.get("bash") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(value) => string_list(value)?,
+    };
+    let mut patterns: Vec<String> = Vec::new();
+    for pattern in bash.iter().map(|pattern| pattern.trim()) {
+        if pattern.is_empty() || patterns.iter().any(|seen| seen == pattern) {
+            continue;
+        }
+        if !is_bash_pattern(pattern) {
+            return Err(ParseReason::InvalidEntry);
+        }
+        patterns.push(pattern.to_string());
+    }
+    let mut dirs: Vec<String> = Vec::new();
+    let listed = match source.get("dirs") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(value) => string_list(value)?,
+    };
+    for dir in listed.iter().map(|dir| dir.trim()) {
+        if dir.is_empty() {
+            continue;
+        }
+        if !dir.starts_with('/') || !is_bash_pattern(dir) {
+            return Err(ParseReason::InvalidEntry);
+        }
+        let dir = normalize_project_path(dir);
+        if dir == "/" {
+            return Err(ParseReason::InvalidEntry);
+        }
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    Ok((
+        normalize_project_path(key),
+        SkillRules {
+            bash: patterns,
+            dirs,
+        },
+    ))
+}
+
+/// A pattern becomes `Bash(<pattern>)`: a bracket would end the rule early and
+/// a line break or quote would split the launch command (fixture
+/// `skillPatternRules`).
+pub fn is_bash_pattern(pattern: &str) -> bool {
+    !pattern
+        .chars()
+        .any(|c| matches!(c, '(' | ')' | '"' | '`' | '\\') || c.is_control())
+}
+
+/// Two spellings of one skill folder keep only the patterns both allow.
+pub fn insert_skill(skills: &mut BTreeMap<String, SkillRules>, path: String, rules: SkillRules) {
+    let merged = match skills.remove(&path) {
+        Some(existing) => SkillRules {
+            bash: intersect(&existing.bash, &rules.bash),
+            dirs: intersect(&existing.dirs, &rules.dirs),
+        },
+        None => rules,
+    };
+    skills.insert(path, merged);
 }
 
 fn parse_supervisor(value: Option<&Value>) -> SupervisorModel {
@@ -183,6 +294,8 @@ fn parse_supervisor(value: Option<&Value>) -> SupervisorModel {
             .map(str::trim)
             .filter(|model| !model.is_empty())
             .map(str::to_string),
+        // Only a literal `true` switches the browser on.
+        chrome: source.get("chrome").and_then(Value::as_bool) == Some(true),
     }
 }
 
