@@ -30,6 +30,7 @@ import { QuickAccessSkillsEditor } from './QuickAccessSkillsEditor';
 import { QuickAccessCombosEditor } from './QuickAccessCombosEditor';
 import { QuickAccessWheelEditor } from './QuickAccessWheelEditor';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
+import { menuSkillEntries, pinSlottedLibrarySkills } from '@/lib/quickAccess/menuSkills';
 
 interface QuickAccessSettingsDialogProps {
   project: StarredProject;
@@ -188,8 +189,14 @@ function PresetsPanel({
   const { confirm, confirmDialog } = useConfirm();
   const [auricSkills] = useState(loadAuricSkills);
 
-  const entries = launchEntries(skills, combos);
+  // The wheel offers the Settings → Skills library too, like the right-click
+  // menu does; picking one from it pins it to this tile's skills.
+  const entries = launchEntries(menuSkillEntries(skills, auricSkills), combos);
   const draftSlots = normalizeWheelSlots(wheelSlots, entries.map(wheelSlotId));
+  const changeWheelSlots = (slots: (string | null)[]) => {
+    setWheelSlots(slots);
+    setSkills(pinSlottedLibrarySkills(skills, slots, auricSkills));
+  };
 
   const dirty =
     JSON.stringify({ icon, skills, combos, wheelSlots: draftSlots }) !==
@@ -235,7 +242,9 @@ function PresetsPanel({
     if (incomplete) return;
     onSave({
       icon,
-      skills: skills.map((skill) => ({
+      // A library skill can sit on a slot whose pinned copy was deleted from
+      // the list afterwards; saving pins it again rather than losing the slot.
+      skills: pinSlottedLibrarySkills(skills, draftSlots, auricSkills).map((skill) => ({
         ...skill,
         label: skill.label.trim(),
         prompt: skill.prompt.trim(),
@@ -299,7 +308,6 @@ function PresetsPanel({
           discoveryReady={discoveryReady}
           onChange={setSkills}
           onAnnounce={setAnnouncement}
-          showDiscovery={!fixedProvider}
           fixedProvider={fixedProvider}
         />
 
@@ -318,7 +326,7 @@ function PresetsPanel({
         <QuickAccessWheelEditor
           entries={entries}
           slots={draftSlots}
-          onChange={setWheelSlots}
+          onChange={changeWheelSlots}
           onAnnounce={setAnnouncement}
         />
 

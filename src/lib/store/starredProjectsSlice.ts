@@ -5,6 +5,7 @@ import { normalizeProjectBadge } from '../quickAccess/badge';
 import { normalizeWheelSlots } from '../quickAccess/wheel';
 import { DOCK_MAX, applyDockPlace, splitDock } from '../quickAccess/dock';
 import { loadAuricSkills, resolveAuricSkillReference } from '../settings/auricSkills';
+import { pinSlottedLibrarySkills } from '../quickAccess/menuSkills';
 
 const STORAGE_KEY = 'auric-starred-projects';
 const MAX_STARRED = 50;
@@ -293,7 +294,9 @@ export const createStarredProjectsSlice: StateCreator<StarredProjectsSlice> = (s
     if (!target) return;
     get().updateStarredProjectSettings(path, {
       icon: target.icon,
-      skills: quickAccessSkills(target),
+      // The live wheel offers the Settings → Skills library as well; a library
+      // skill put on a slot is pinned here, or the slot would not survive.
+      skills: pinSlottedLibrarySkills(quickAccessSkills(target), wheelSlots, loadAuricSkills()),
       combos: quickAccessCombos(target),
       wheelSlots,
     });

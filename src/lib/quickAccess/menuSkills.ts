@@ -24,3 +24,21 @@ export function menuSkillEntries(
     }));
   return [...pinned, ...unpinned];
 }
+
+/**
+ * A wheel offers the same list as the menu, so a library skill can go on a
+ * slot directly. Putting it there is what pins it: the skill joins the tile's
+ * own list under the `auric:` id the slot already holds, and the slot keeps
+ * resolving. Returns `pinned` itself when nothing new was slotted.
+ */
+export function pinSlottedLibrarySkills(
+  pinned: QuickAccessSkill[],
+  slots: (string | null)[],
+  library: AuricSkillDefinition[]
+): QuickAccessSkill[] {
+  const slotted = new Set(slots);
+  const picked = menuSkillEntries(pinned, library)
+    .slice(pinned.length)
+    .filter((skill) => slotted.has(skill.id));
+  return picked.length > 0 ? [...pinned, ...picked] : pinned;
+}

@@ -28,6 +28,8 @@ describe('QuickAccess', () => {
     mockLoadProjectsDirty.mockReset();
     mockLoadProjectsDirty.mockResolvedValue({});
     localStorage.removeItem(APP_CONFIG_KEYS.quickAccessSort);
+    // The library feeds every wheel now; one test's skills must not reach the next.
+    saveAuricSkills([]);
     useStore.setState({ starredProjects: [], toasts: [], projectDirtyEpoch: 0 });
   });
 
@@ -1162,6 +1164,20 @@ describe('QuickAccess', () => {
       await dwellOpen();
       fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
       expect(screen.getByRole('menuitem', { name: /configure skills/i })).toBeInTheDocument();
+    });
+
+    it('offers the Settings → Skills library on an empty slot and pins the pick', async () => {
+      saveAuricSkills([{ id: 'review', name: 'Code Review', prompt: 'Review the change.' }]);
+      useStore.setState({
+        starredProjects: [{ path: '/a/website', name: 'website', starredAt: 1 }],
+      });
+      render(<QuickAccess currentPath="/a/apps" />);
+      await dwellOpen();
+      fireEvent.click(screen.getByTestId('quick-access-wheel-slot-/a/website-0'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /code review/i }));
+      const [website] = useStore.getState().starredProjects;
+      expect(website.skills?.map((skill) => skill.auricSkillId)).toEqual(['review']);
+      expect(website.wheelSlots?.[0]).toBe('auric:review');
     });
 
     it('opens the wheel on hold and launches on release over a slot', async () => {

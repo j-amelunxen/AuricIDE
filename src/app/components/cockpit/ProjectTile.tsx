@@ -10,6 +10,7 @@ import {
   type StarredProject,
 } from '@/lib/store/starredProjectsSlice';
 import { launchEntriesForProject } from '@/lib/quickAccess/launchSkills';
+import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { badgeChipStyle, normalizeProjectBadge } from '@/lib/quickAccess/badge';
 import { ProjectTileFace } from './ProjectTileFace';
 import { useLaunchWheel } from './useLaunchWheel';
@@ -89,7 +90,7 @@ export function ProjectTile({
     pickerMenu,
   } = useLaunchWheel({
     wheelId: project.path,
-    entries: launchEntriesForProject(project),
+    entries: launchEntriesForProject(project, loadAuricSkills()),
     storedSlots: quickAccessWheelSlots(project),
     writeSlots: (slots) => setStarredProjectWheelSlots(project.path, slots),
     onLaunch: (entry) => {
