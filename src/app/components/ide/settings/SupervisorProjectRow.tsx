@@ -12,6 +12,7 @@ import {
 import { modelSizeLabel } from '@/lib/agents/supervisorLaunchPrompt';
 import type { ModelOption, ProviderInfo } from '@/lib/tauri/providers';
 import type { StarredProject } from '@/lib/tauri/starredProjects';
+import { DESCRIPTION_MAX_CHARS } from '@/lib/quickAccess/description';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
 
 const DENIED_REASON = "Blocked by this project's own provider settings";
@@ -34,6 +35,9 @@ interface SupervisorProjectRowProps {
   providers: ProviderInfo[];
   /** The project's own provider policy; `undefined` (no backend) counts as the open default, as in Rust. */
   projectPolicy: ProviderPolicy | undefined;
+  /** The draft of the project's own description, the one Quick Access edits too. */
+  description: string;
+  onDescriptionChange: (description: string) => void;
   onAllowedChange: (allowed: boolean) => void;
   onChange: (entry: SupervisorProjectPolicy) => void;
 }
@@ -43,11 +47,14 @@ interface SupervisorProjectRowProps {
  * below the switch only shows while it is on — an off project has nothing to
  * tune, and five greyed-out controls would read as five decisions to make.
  */
+// code-gate: complexity-parameter-count - one props object; each prop is a named field, not a positional parameter
 export function SupervisorProjectRow({
   project,
   entry,
   providers,
   projectPolicy,
+  description,
+  onDescriptionChange,
   onAllowedChange,
   onChange,
 }: SupervisorProjectRowProps) {
@@ -69,6 +76,11 @@ export function SupervisorProjectRow({
       />
       {allowed && entry && (
         <div className="space-y-3 border-t border-white/5 pt-3">
+          <DescriptionField
+            path={project.path}
+            value={description}
+            onChange={onDescriptionChange}
+          />
           <fieldset className="space-y-2">
             <legend className="mb-1 text-[10px] font-semibold tracking-wide text-foreground-muted">
               Providers and models
@@ -126,6 +138,52 @@ export function SupervisorProjectRow({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The supervisor picks a project by what `list_projects` says about it, and a
+ * folder name alone ("tools-v2") rarely says enough. This is the starred
+ * project's own description, so it is the same text whichever page edits it.
+ */
+function DescriptionField({
+  path,
+  value,
+  onChange,
+}: {
+  path: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const id = `supervisor-description-${path}`;
+  return (
+    <div className="space-y-1">
+      <label
+        htmlFor={id}
+        className="block text-[10px] font-semibold tracking-wide text-foreground-muted"
+      >
+        Description
+      </label>
+      <textarea
+        id={id}
+        data-testid={id}
+        aria-describedby={`${id}-hint`}
+        value={value}
+        maxLength={DESCRIPTION_MAX_CHARS}
+        rows={2}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="What this project is for, and anything an agent should know first"
+        className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-foreground placeholder:text-foreground-muted/60 focus:border-primary focus:outline-none"
+      />
+      <p id={`${id}-hint`} className="flex justify-between gap-2 text-[10px] text-foreground-muted">
+        <span>
+          The supervisor reads this to choose where to start agents. Empty: the README is used.
+        </span>
+        <span className="tabular-nums">
+          {Array.from(value).length}/{DESCRIPTION_MAX_CHARS}
+        </span>
+      </p>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { normalizeProjectDescription } from '@/lib/quickAccess/description';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import {
   readProjectProviderPolicies,
@@ -69,6 +70,7 @@ async function readSkillCandidates(projectPath: string | undefined) {
  * in force while the next box is still being ticked. Rust validates the file
  * again before it writes it, and reads it on every spawn.
  */
+// code-gate: complexity-function-length - one save flow over policy, instructions and descriptions; the sections are already components
 export function SupervisorContent() {
   const starredProjects = useStore((s) => s.starredProjects);
   const showToast = useStore((s) => s.showToast);
@@ -79,6 +81,7 @@ export function SupervisorContent() {
   // An app preference, not part of the policy file: it steers, it grants nothing.
   const [savedInstructions, setSavedInstructions] = useState(readSupervisorInstructions);
   const [instructions, setInstructions] = useState(savedInstructions);
+  const descriptions = useDescriptionDrafts();
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +128,7 @@ export function SupervisorContent() {
 
   const policyDirty = JSON.stringify(draft) !== JSON.stringify(loaded.saved);
   const instructionsDirty = instructions.trim() !== savedInstructions.trim();
-  const dirty = policyDirty || instructionsDirty;
+  const dirty = policyDirty || instructionsDirty || descriptions.dirty;
   // Rust refuses these at spawn anyway; saving them would only store a choice
   // that can never run.
   const blockers = unattendedBlockers(draft, loaded.providers, loaded.projectPolicies);
@@ -146,6 +149,7 @@ export function SupervisorContent() {
         writeSupervisorInstructions(instructions);
         setSavedInstructions(instructions.trim() ? instructions : '');
       }
+      descriptions.save();
       if (policyDirty) {
         const state = await supervisorPolicySet(draft);
         setLoaded({ ...loaded, saved: state.policy, rejected: state.rejected });
@@ -184,6 +188,8 @@ export function SupervisorContent() {
                 entry={draft.projects[normalizeProjectPath(project.path)]}
                 providers={loaded.providers}
                 projectPolicy={loaded.projectPolicies[project.path]}
+                description={descriptions.value(project.path)}
+                onDescriptionChange={(text) => descriptions.edit(project.path, text)}
                 onAllowedChange={(allowed) =>
                   setDraft(setProjectAllowed(draft, project.path, allowed))
                 }
@@ -212,10 +218,39 @@ export function SupervisorContent() {
         onDiscard={() => {
           setDraft(loaded.saved);
           setInstructions(savedInstructions);
+          descriptions.discard();
         }}
       />
     </div>
   );
+}
+
+/**
+ * The projects' own descriptions, edited here and saved with the page. The
+ * saved text stays on the starred record, so a row without a draft shows that,
+ * and an edit made in Quick Access meanwhile is not overwritten by a stale copy.
+ */
+function useDescriptionDrafts() {
+  const starredProjects = useStore((s) => s.starredProjects);
+  const setStarredProjectDescription = useStore((s) => s.setStarredProjectDescription);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const changed = starredProjects.filter(
+    (p) =>
+      p.path in drafts &&
+      normalizeProjectDescription(drafts[p.path]) !== normalizeProjectDescription(p.description)
+  );
+  return {
+    dirty: changed.length > 0,
+    value: (path: string) =>
+      drafts[path] ?? starredProjects.find((p) => p.path === path)?.description ?? '',
+    edit: (path: string, text: string) => setDrafts({ ...drafts, [path]: text }),
+    save: () => {
+      for (const project of changed)
+        setStarredProjectDescription(project.path, drafts[project.path]);
+      setDrafts({});
+    },
+    discard: () => setDrafts({}),
+  };
 }
 
 function RejectedNotice({ rejected }: { rejected: SupervisorPolicyRejection[] }) {
