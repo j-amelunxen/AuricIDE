@@ -1,3 +1,4 @@
+import { APP_CONFIG_KEYS, readAppPref, removeAppPref, writeAppPref } from '@/lib/config/appConfig';
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
   permissionModesOf,
@@ -19,6 +20,21 @@ import {
 /** One supervisor at a time: the tile focuses this one instead of starting a second. */
 export function findRunningSupervisor(agents: AgentInfo[]): AgentInfo | undefined {
   return agents.find((agent) => agent.role === 'supervisor' && !isFinishedAgent(agent));
+}
+
+/**
+ * The human's standing instructions for every supervisor (Settings →
+ * Supervisor). An app preference, not part of `supervisor-policy.json`: they
+ * steer how the supervisor works, never what Rust lets it do.
+ */
+export function readSupervisorInstructions(): string {
+  return readAppPref(APP_CONFIG_KEYS.supervisorInstructions) ?? '';
+}
+
+/** A blank text removes the preference, so "no instructions" is one state. */
+export function writeSupervisorInstructions(text: string): void {
+  if (text.trim()) writeAppPref(APP_CONFIG_KEYS.supervisorInstructions, text);
+  else removeAppPref(APP_CONFIG_KEYS.supervisorInstructions);
 }
 
 export function offeredModelsOf(providers: ProviderInfo[]): OfferedModels {
@@ -55,6 +71,8 @@ export interface SupervisorSpawnInput {
   firstTask?: string;
   /** A skill's model; the policy's supervisor model otherwise. */
   model?: string;
+  /** The human's standing instructions from Settings → Supervisor. */
+  instructions?: string;
 }
 
 /**
@@ -87,9 +105,12 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
         input.descriptions,
         supervisorPmServers(input.policy)
       ),
-      input.firstTask,
-      supervisorPromptSkills(input.policy.skills ?? {}),
-      input.policy.supervisor.chrome === true
+      {
+        firstTask: input.firstTask,
+        skills: supervisorPromptSkills(input.policy.skills ?? {}),
+        chrome: input.policy.supervisor.chrome === true,
+        instructions: input.instructions,
+      }
     ),
     projectPath: null,
     headless: false,

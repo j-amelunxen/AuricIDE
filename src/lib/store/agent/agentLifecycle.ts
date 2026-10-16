@@ -9,6 +9,7 @@ import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
 import {
   findRunningSupervisor,
   readProjectProviderPolicies,
+  readSupervisorInstructions,
   supervisorSpawnConfig,
 } from '@/lib/agents/supervisorLaunch';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
@@ -204,6 +205,7 @@ export async function handleSpawnSupervisor(
     ),
     firstTask: task || undefined,
     model: skill?.model,
+    instructions: readSupervisorInstructions(),
   });
   if (!config) return { kind: 'nothing-visible' };
   return { kind: 'spawned', agent: await get().spawnNewAgent(config) };

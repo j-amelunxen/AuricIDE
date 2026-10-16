@@ -459,6 +459,12 @@ ADR 0004.
   supervisor's `list_projects`: target vs. actual share of agents started
   there in 7 days, and `next`, the provider that is behind. Spawns are never
   refused over it; a task that needs another provider's model may deviate.
+- **Your own words go into its prompt, not its policy.** Settings → Supervisor
+  → Instructions is the app pref `auric.supervisor.instructions`
+  (`readSupervisorInstructions`), added to the launch prompt after the built-in
+  rules and before a skill's first task. It steers; it grants nothing, so it
+  stays out of `supervisor-policy.json` and Rust never reads it. A running
+  supervisor keeps the text it started with.
 - **Model size is a `rank`** on `info.models` entries in
   `dynamic-providers/*.json` (higher is bigger). The launch prompt
   (`supervisorLaunchPrompt.ts`) asks for the smallest fitting one; unranked

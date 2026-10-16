@@ -153,7 +153,7 @@ describe('buildSupervisorLaunchPrompt', () => {
 
   it('mentions the browser and its limits only when Chrome is switched on', () => {
     expect(prompt).not.toContain('## Browser');
-    const text = buildSupervisorLaunchPrompt(projects, undefined, [], true);
+    const text = buildSupervisorLaunchPrompt(projects, { chrome: true });
     expect(text).toContain('## Browser');
     expect(text).toContain('never touch tabs you did not open');
   });
@@ -164,7 +164,7 @@ describe('buildSupervisorLaunchPrompt', () => {
       '/abs/skills/notes': { bash: [] },
     });
     expect(skills.map((skill) => skill.name)).toEqual(['notes', 'video-to-tasklist']);
-    const text = buildSupervisorLaunchPrompt(projects, undefined, skills);
+    const text = buildSupervisorLaunchPrompt(projects, { skills });
     expect(text).toContain('- `/notes` — no shell');
     expect(text).toContain(
       '- `/video-to-tasklist` — shell commands it may run: `/abs/skills/video-to-tasklist/scripts/*`'
@@ -173,9 +173,29 @@ describe('buildSupervisorLaunchPrompt', () => {
   });
 
   it('ends with the first task when a skill started it', () => {
-    const text = buildSupervisorLaunchPrompt(projects, '  Ask every project for its status  ');
+    const text = buildSupervisorLaunchPrompt(projects, {
+      firstTask: '  Ask every project for its status  ',
+    });
     expect(text.endsWith('## Your first task\n\nAsk every project for its status')).toBe(true);
-    expect(buildSupervisorLaunchPrompt(projects, '   ')).toBe(prompt);
+    expect(buildSupervisorLaunchPrompt(projects, { firstTask: '   ' })).toBe(prompt);
+  });
+
+  it("adds the human's own instructions after the built-in rules, before the first task", () => {
+    expect(prompt).not.toContain('## Instructions from the human');
+    const text = buildSupervisorLaunchPrompt(projects, {
+      instructions: '  Answer in German.\nPrefer codex for reviews.  ',
+      firstTask: 'Ask every project for its status',
+    });
+    expect(text).toContain('## Instructions from the human');
+    expect(text).toContain('Answer in German.\nPrefer codex for reviews.');
+    expect(text).toContain('a refused call stays refused');
+    expect(text.indexOf('## Reporting')).toBeLessThan(
+      text.indexOf('## Instructions from the human')
+    );
+    expect(text.indexOf('## Instructions from the human')).toBeLessThan(
+      text.indexOf('## Your first task')
+    );
+    expect(buildSupervisorLaunchPrompt(projects, { instructions: ' \n ' })).toBe(prompt);
   });
 
   it('says plainly when nothing is allowed', () => {

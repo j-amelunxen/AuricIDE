@@ -104,6 +104,20 @@ describe('supervisorSpawnConfig', () => {
     expect(config?.task).not.toContain('gpt-luna');
   });
 
+  it("passes the human's standing instructions into the prompt", () => {
+    const config = supervisorSpawnConfig({
+      policy: policyWith({
+        '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },
+      }),
+      providers: [CLAUDE],
+      projectPolicies: {},
+      descriptions: {},
+      instructions: 'Always answer in German.',
+    });
+    expect(config?.task).toContain('## Instructions from the human');
+    expect(config?.task).toMatch(/they win\.[^#]*\n\nAlways answer in German\.$/);
+  });
+
   it('leaves out a provider that would run without asking', () => {
     const agy: ProviderInfo = {
       id: 'agy',
