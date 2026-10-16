@@ -301,11 +301,31 @@ one is refused with `permission_mode_unattended`.
 ```
 { providers: [{ id, permissionMode: string | null,
                 models: [{ id, label, rank: number | null }] }],
-  allowInteractive: boolean, runningChildren: number, maxRunning: number }
+  allowInteractive: boolean, runningChildren: number, maxRunning: number,
+  balancing: null | { windowDays: number, next: string | null,
+                      providers: [{ id, weight, spawns, targetPercent,
+                                    actualPercent: number | null }] } }
 ```
 
 `rank` orders models by size within a provider (higher is bigger); `null` is
 a model without a known size, which the supervisor does not pick by default.
+
+**Load balancing is advisory.** A project entry may carry `providerWeights`
+(provider id → a whole number 0..99, Settings: "Load-balancing share"), e.g.
+`{ claude: 2, codex: 1 }` for twice as many Claude Code agents as Codex.
+`checkSpawn` never reads it, so a spawn is never refused for its provider's
+share. `balancing` reports, over the providers the supervisor may use there,
+each one's target share against the agents actually started in that project
+in the last `windowDays` (7): the finished runs in `pm_agent_usage` plus the
+agents still running, whoever started them. It counts agents, not tokens or
+cost: one provider's tokens say nothing about another's allowance, and cost is
+only known once a run ends. `next` is the provider with the fewest agents per
+share (a tie goes to the larger share, then the first id). The launch prompt
+tells the supervisor to take `next`, then the smallest model there that fits,
+and to pick another provider only when the task needs a model `next` does not
+have, saying why. The rules for the field itself are `providerWeightsRules` in
+`supervisorPolicy.fixtures.json`; the arithmetic is `policy::balancing` in Rust
+only, since nothing in TypeScript computes it.
 
 ### Children
 

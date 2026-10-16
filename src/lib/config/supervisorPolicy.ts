@@ -25,6 +25,12 @@ export interface SupervisorProjectPolicy {
   models: Record<string, string[]>;
   /** Per provider; absent means the provider's own default. Never `bypassPermissions`. */
   permissionMode: Record<string, string>;
+  /**
+   * Load balancing: provider id → its share of spawns (0..99), e.g. `{ claude: 2, codex: 1 }`.
+   * Advisory: the spawn check never reads it; `list_projects` turns it into a suggestion.
+   * `{}` means no balancing.
+   */
+  providerWeights: Record<string, number>;
   allowInteractive: boolean;
   maxRunning: number;
 }
@@ -110,7 +116,7 @@ export function emptySupervisorPolicy(): SupervisorPolicy {
 
 /** The entry a project gets when it is first switched on in Settings. */
 export function defaultSupervisorProjectPolicy(): SupervisorProjectPolicy {
-  return { ...DEFAULTS.project, models: {}, permissionMode: {} };
+  return { ...DEFAULTS.project, models: {}, permissionMode: {}, providerWeights: {} };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -282,6 +288,13 @@ function readModelList(entry: unknown): string[] {
   return [...new Set(entry as string[])];
 }
 
+export const MAX_PROVIDER_WEIGHT = 99;
+
+function readWeight(entry: unknown): number {
+  if (!isLimit(entry) || entry > MAX_PROVIDER_WEIGHT) throw new InvalidEntry('invalid_entry');
+  return entry;
+}
+
 function readPermissionMode(entry: unknown): string {
   if (typeof entry !== 'string') throw new InvalidEntry('invalid_entry');
   return entry;
@@ -302,6 +315,7 @@ function parseProjectEntry(value: unknown): SupervisorProjectPolicy {
     providers: parseProviders(value.providers),
     models: parseProviderMap(value.models, readModelList, mergeModelLists),
     permissionMode: parseProviderMap(value.permissionMode, readPermissionMode),
+    providerWeights: sortedKeys(parseProviderMap(value.providerWeights, readWeight, Math.min)),
     allowInteractive: optionalOf(
       value.allowInteractive,
       isBoolean,
@@ -354,6 +368,16 @@ function intersectModels(
  * entry (the fixtures' `parseMergeRules`). Two different modes for one
  * provider have no stricter one, so the project then allows nothing.
  */
+/** Keys in code-point order, as Rust's `BTreeMap` serialises them. */
+function sortedKeys<T>(map: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(map).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+function sameWeights(a: Record<string, number>, b: Record<string, number>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((id) => a[id] === b[id]);
+}
+
 function stricterEntry(
   a: SupervisorProjectPolicy,
   b: SupervisorProjectPolicy
@@ -366,6 +390,8 @@ function stricterEntry(
     providers: intersectProviders(a.providers, b.providers),
     models: intersectModels(a.models, b.models),
     permissionMode: modesClash ? {} : { ...a.permissionMode, ...b.permissionMode },
+    // A hint, not a permission: two spellings that disagree balance nothing.
+    providerWeights: sameWeights(a.providerWeights, b.providerWeights) ? a.providerWeights : {},
     allowInteractive: a.allowInteractive && b.allowInteractive,
     maxRunning: Math.min(a.maxRunning, b.maxRunning),
   };
@@ -431,6 +457,8 @@ export interface VisibleProvider {
   models: string[];
   /** `null`: the provider's own default, never the launch defaults. */
   permissionMode: string | null;
+  /** Its load-balancing weight; `null` where `providerWeights` does not name it. */
+  weight: number | null;
 }
 
 export interface VisibleProject {
@@ -523,6 +551,7 @@ export function visibleProjects(
           id,
           models: modelsFor(entry, id, offeredModels[id]),
           permissionMode: entry.permissionMode[id] ?? null,
+          weight: entry.providerWeights[id] ?? null,
         }))
         .filter((provider) => provider.models.length > 0)
         .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

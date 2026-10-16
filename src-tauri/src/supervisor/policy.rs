@@ -22,6 +22,10 @@ pub const DEFAULT_MAX_RUNNING_CHILDREN: u32 = 4;
 pub const DEFAULT_PROJECT_MAX_RUNNING: u32 = 2;
 /// Never a mode a supervisor's child may run under, whatever the file says.
 pub const REJECTED_PERMISSION_MODES: [&str; 1] = ["bypassPermissions"];
+/// The largest load-balancing share a provider may be given.
+pub const MAX_PROVIDER_WEIGHT: u64 = 99;
+/// How far back `list_projects` counts the agents started in a project.
+pub const BALANCING_WINDOW_DAYS: u32 = 7;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +57,10 @@ pub struct ProjectRules {
     /// Absent provider: every model it offers. Empty list: none.
     pub models: BTreeMap<String, Vec<String>>,
     pub permission_mode: BTreeMap<String, String>,
+    /// Load balancing: each provider's share of the agents started here.
+    /// Advisory: `check_spawn` never reads it. Empty: no balancing.
+    #[serde(default)]
+    pub provider_weights: BTreeMap<String, u32>,
     pub allow_interactive: bool,
     pub max_running: u32,
 }
@@ -64,6 +72,7 @@ impl Default for ProjectRules {
             providers: None,
             models: BTreeMap::new(),
             permission_mode: BTreeMap::new(),
+            provider_weights: BTreeMap::new(),
             allow_interactive: false,
             max_running: DEFAULT_PROJECT_MAX_RUNNING,
         }
@@ -327,6 +336,7 @@ fn parse_project(key: &str, entry: &Value) -> Result<(String, ProjectRules), Par
         providers: parse_providers(source.get("providers"))?,
         models: parse_models(source.get("models"))?,
         permission_mode: parse_permission_modes(source.get("permissionMode"))?,
+        provider_weights: parse_weights(source.get("providerWeights"))?,
         allow_interactive: optional(source, "allowInteractive", Value::as_bool)?
             .unwrap_or(defaults.allow_interactive),
         max_running: optional(source, "maxRunning", as_limit)?.unwrap_or(defaults.max_running),
@@ -422,6 +432,30 @@ fn parse_permission_modes(value: Option<&Value>) -> Result<BTreeMap<String, Stri
     Ok(modes)
 }
 
+/// Two keys for one provider keep the smaller share (fixture `providerWeightsRules`).
+fn parse_weights(value: Option<&Value>) -> Result<BTreeMap<String, u32>, ParseReason> {
+    let mut weights: BTreeMap<String, u32> = BTreeMap::new();
+    let Some(source) = object_of(value)? else {
+        return Ok(weights);
+    };
+    for (provider, weight) in source {
+        let id = normalize_provider_id(provider);
+        let weight = weight
+            .as_u64()
+            .filter(|weight| *weight <= MAX_PROVIDER_WEIGHT)
+            .ok_or(ParseReason::InvalidEntry)?;
+        if id.is_empty() {
+            return Err(ParseReason::InvalidEntry);
+        }
+        let weight = weight as u32;
+        let kept = weights
+            .get(&id)
+            .map_or(weight, |earlier| weight.min(*earlier));
+        weights.insert(id, kept);
+    }
+    Ok(weights)
+}
+
 /// Adds `rules` under `path`; when the path is there already (two spellings of
 /// one folder), the stricter of both stays, so a deny can never lose to an
 /// allow by how the keys sort (fixture `parseMergeRules`).
@@ -468,11 +502,18 @@ fn stricter(a: ProjectRules, b: ProjectRules) -> ProjectRules {
         // There is no stricter of two modes; the project allows nothing.
         permission_mode.clear();
     }
+    // A hint, not a permission: two spellings that disagree balance nothing.
+    let provider_weights = if a.provider_weights == b.provider_weights {
+        a.provider_weights
+    } else {
+        BTreeMap::new()
+    };
     ProjectRules {
         allowed: a.allowed && b.allowed && !conflict,
         providers,
         models,
         permission_mode,
+        provider_weights,
         allow_interactive: a.allow_interactive && b.allow_interactive,
         max_running: a.max_running.min(b.max_running),
     }
@@ -519,6 +560,8 @@ pub struct VisibleProvider {
     pub id: String,
     pub models: Vec<String>,
     pub permission_mode: Option<String>,
+    /// Its load-balancing share; `None` where the rules name none.
+    pub weight: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -573,6 +616,7 @@ pub fn visible_projects(
                     id: id.clone(),
                     models: usable_models(rules, id, models),
                     permission_mode: rules.permission_mode.get(id).cloned(),
+                    weight: rules.provider_weights.get(id).copied(),
                 })
                 .filter(|provider| !provider.models.is_empty())
                 .collect();
@@ -584,6 +628,93 @@ pub fn visible_projects(
             }
         })
         .collect()
+}
+
+// ── Load balancing ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderBalance {
+    pub id: String,
+    pub weight: u32,
+    /// Agents of this provider started in the project within the window.
+    pub spawns: u32,
+    pub target_percent: u32,
+    /// `None` while nothing was started in the window.
+    pub actual_percent: Option<u32>,
+}
+
+/// What `list_projects` tells a supervisor about a project's load balancing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Balancing {
+    pub window_days: u32,
+    /// The provider furthest behind its share: the one to start next.
+    pub next: Option<String>,
+    pub providers: Vec<ProviderBalance>,
+}
+
+fn percent(part: u32, total: u32) -> u32 {
+    ((u64::from(part) * 200 + u64::from(total)) / (2 * u64::from(total))) as u32
+}
+
+/// The split among the providers a supervisor may use here, against how many
+/// agents each actually got (`spawns`, by provider id). `None` when no usable
+/// provider has a share above 0. `next` is the provider with the fewest spawns
+/// per share; a tie goes to the larger share, then to the first by id.
+pub fn balancing(
+    providers: &[VisibleProvider],
+    spawns: &BTreeMap<String, u32>,
+) -> Option<Balancing> {
+    let weighted: Vec<(&str, u32, u32)> = providers
+        .iter()
+        .map(|p| {
+            let weight = p.weight.unwrap_or(0);
+            (
+                p.id.as_str(),
+                weight,
+                spawns.get(&p.id).copied().unwrap_or(0),
+            )
+        })
+        .collect();
+    let total_weight: u32 = weighted.iter().map(|(_, weight, _)| weight).sum();
+    if total_weight == 0 {
+        return None;
+    }
+    let total_spawns: u32 = weighted.iter().map(|(_, _, count)| count).sum();
+    // a is further behind than b when a.count / a.weight < b.count / b.weight.
+    let behind = |a: &(&str, u32, u32), b: &(&str, u32, u32)| {
+        let (lhs, rhs) = (
+            u64::from(a.2) * u64::from(b.1),
+            u64::from(b.2) * u64::from(a.1),
+        );
+        lhs < rhs || (lhs == rhs && a.1 > b.1)
+    };
+    let next = weighted
+        .iter()
+        .filter(|(_, weight, _)| *weight > 0)
+        .fold(
+            None,
+            |best: Option<&(&str, u32, u32)>, candidate| match best {
+                Some(best) if !behind(candidate, best) => Some(best),
+                _ => Some(candidate),
+            },
+        )
+        .map(|(id, _, _)| id.to_string());
+    Some(Balancing {
+        window_days: BALANCING_WINDOW_DAYS,
+        next,
+        providers: weighted
+            .iter()
+            .map(|(id, weight, count)| ProviderBalance {
+                id: id.to_string(),
+                weight: *weight,
+                spawns: *count,
+                target_percent: percent(*weight, total_weight),
+                actual_percent: (total_spawns > 0).then(|| percent(*count, total_spawns)),
+            })
+            .collect(),
+    })
 }
 
 // ── Whether one spawn may go ahead ──────────────────────────────────────────
@@ -943,5 +1074,72 @@ pub(crate) mod tests {
             };
             assert_eq!(&actual, expected, "{name}");
         }
+    }
+
+    fn usable(weights: &[(&str, Option<u32>)]) -> Vec<VisibleProvider> {
+        weights
+            .iter()
+            .map(|(id, weight)| VisibleProvider {
+                id: id.to_string(),
+                models: vec!["m".into()],
+                permission_mode: None,
+                weight: *weight,
+            })
+            .collect()
+    }
+
+    fn counts(pairs: &[(&str, u32)]) -> BTreeMap<String, u32> {
+        pairs.iter().map(|(id, n)| (id.to_string(), *n)).collect()
+    }
+
+    #[test]
+    fn balancing_is_absent_without_a_share_above_zero() {
+        assert_eq!(
+            balancing(&usable(&[("claude", None), ("codex", None)]), &counts(&[])),
+            None
+        );
+        assert_eq!(
+            balancing(&usable(&[("claude", Some(0))]), &counts(&[("claude", 4)])),
+            None
+        );
+    }
+
+    #[test]
+    fn balancing_names_the_provider_furthest_behind_its_share() {
+        let providers = usable(&[
+            ("antigravity", None),
+            ("claude", Some(2)),
+            ("codex", Some(1)),
+        ]);
+        // Nothing started yet: the tie goes to the larger share.
+        let fresh = balancing(&providers, &counts(&[])).unwrap();
+        assert_eq!(fresh.next.as_deref(), Some("claude"));
+        assert_eq!(fresh.window_days, BALANCING_WINDOW_DAYS);
+        let targets: Vec<u32> = fresh.providers.iter().map(|p| p.target_percent).collect();
+        assert_eq!(targets, vec![0, 67, 33]);
+        assert!(fresh.providers.iter().all(|p| p.actual_percent.is_none()));
+
+        // claude 2 of 2, codex 0 of 1: codex is behind.
+        let after_two = balancing(&providers, &counts(&[("claude", 2)])).unwrap();
+        assert_eq!(after_two.next.as_deref(), Some("codex"));
+
+        // claude 3 per 2, codex 1 per 1: codex is still behind; a provider
+        // without a share is never suggested, even when it ran most.
+        let later = balancing(
+            &providers,
+            &counts(&[("antigravity", 9), ("claude", 3), ("codex", 1)]),
+        )
+        .unwrap();
+        assert_eq!(later.next.as_deref(), Some("codex"));
+        let actual: Vec<Option<u32>> = later.providers.iter().map(|p| p.actual_percent).collect();
+        assert_eq!(actual, vec![Some(69), Some(23), Some(8)]);
+        assert_eq!(later.providers[1].spawns, 3);
+    }
+
+    #[test]
+    fn balancing_ties_on_the_same_share_go_to_the_first_by_id() {
+        let providers = usable(&[("claude", Some(1)), ("codex", Some(1))]);
+        let tie = balancing(&providers, &counts(&[("claude", 1), ("codex", 1)])).unwrap();
+        assert_eq!(tie.next.as_deref(), Some("claude"));
     }
 }

@@ -454,6 +454,11 @@ ADR 0004.
   `src-tauri/src/supervisor/policy.rs`, both on
   `supervisorPolicy.fixtures.json` — change the fixtures first. Settings →
   Supervisor edits it.
+- **Load balancing per project is a hint, not a gate.** `providerWeights`
+  (Settings → Supervisor, "Load-balancing share") becomes `balancing` in a
+  supervisor's `list_projects`: target vs. actual share of agents started
+  there in 7 days, and `next`, the provider that is behind. Spawns are never
+  refused over it; a task that needs another provider's model may deviate.
 - **Model size is a `rank`** on `info.models` entries in
   `dynamic-providers/*.json` (higher is bigger). The launch prompt
   (`supervisorLaunchPrompt.ts`) asks for the smallest fitting one; unranked

@@ -64,6 +64,7 @@ describe('supervisorPromptProjects', () => {
       {
         id: 'codex',
         permissionMode: 'acceptEdits',
+        weight: null,
         models: [
           { id: 'gpt-6-luna', label: 'GPT-6 Luna', rank: 1 },
           { id: 'gpt-6-sol', label: 'GPT-6 Sol', rank: 3 },
@@ -79,7 +80,7 @@ describe('supervisorPromptProjects', () => {
           path: '/abs/x',
           allowInteractive: false,
           maxRunning: 1,
-          providers: [{ id: 'new', models: ['m1'], permissionMode: null }],
+          providers: [{ id: 'new', models: ['m1'], permissionMode: null, weight: null }],
         },
       ],
       PROVIDERS
@@ -122,6 +123,7 @@ describe('buildSupervisorLaunchPrompt', () => {
               id: 'codex',
               models: ['auto', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'],
               permissionMode: null,
+              weight: null,
             },
           ],
         },
@@ -191,5 +193,21 @@ describe('buildSupervisorLaunchPrompt', () => {
       },
     ]);
     expect(text).toContain('No provider is usable here right now');
+  });
+
+  it('states a load-balancing ratio only for a project that has one, unnamed providers at 0', () => {
+    const weighted = policyFixtures.visibleProjects.find((c) => c.name.includes('its weight'))!;
+    const [project] = supervisorPromptProjects(
+      visibleProjects(
+        weighted.policy as SupervisorPolicy,
+        weighted.projectPolicies as Record<string, ProviderPolicy>,
+        weighted.offeredModels as unknown as Record<string, string[]>
+      ),
+      PROVIDERS
+    );
+    const text = buildSupervisorLaunchPrompt([project]);
+    expect(text).toContain('Load balancing: antigravity 0 : claude 2 : codex 1');
+    expect(text).toContain('`balancing.next`');
+    expect(prompt).not.toContain('Load balancing:');
   });
 });

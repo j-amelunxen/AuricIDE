@@ -1,10 +1,11 @@
 'use client';
 
 import { isProviderAllowed, type ProviderPolicy } from '@/lib/config/providerPolicy';
-import type { SupervisorProjectPolicy } from '@/lib/config/supervisorPolicy';
+import { MAX_PROVIDER_WEIGHT, type SupervisorProjectPolicy } from '@/lib/config/supervisorPolicy';
 import {
   offerablePermissionModes,
   setSupervisorPermissionMode,
+  setSupervisorProviderWeight,
   toggleSupervisorModel,
   toggleSupervisorProvider,
 } from '@/lib/config/supervisorPolicyEdit';
@@ -88,6 +89,13 @@ export function SupervisorProjectRow({
               );
             })}
           </fieldset>
+          <BalancingSummary
+            testId={`supervisor-balancing-${project.path}`}
+            providers={providers.filter(
+              (p) => permittedHere(p.id) && (entry.providers?.includes(p.id) ?? true)
+            )}
+            weights={entry.providerWeights}
+          />
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <div className="min-w-[14rem] flex-1">
               <SettingsToggle
@@ -119,6 +127,42 @@ export function SupervisorProjectRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The split the shares make among the ticked providers, in percent. The
+ * supervisor is shown the same weights and, in `list_projects`, which provider
+ * is behind; it may still pick another when a task needs that one's model.
+ */
+function BalancingSummary({
+  testId,
+  providers,
+  weights,
+}: {
+  testId: string;
+  providers: ProviderInfo[];
+  weights: Record<string, number>;
+}) {
+  const total = providers.reduce((sum, p) => sum + (weights[p.id] ?? 0), 0);
+  return (
+    <p data-testid={testId} className="px-2 text-[10px] leading-snug text-foreground-muted">
+      {total === 0 ? (
+        <>
+          No load balancing. Give providers a share to balance them, e.g. 2 and 1 for twice as many
+          agents of the first.
+        </>
+      ) : (
+        <>
+          <span className="text-foreground">Load balancing: </span>
+          {providers
+            .map((p) => `${p.name} ${Math.round(((weights[p.id] ?? 0) * 100) / total)} %`)
+            .join(' · ')}{' '}
+          of the agents started here over 7 days. The supervisor follows it unless a task needs a
+          model only another provider has.
+        </>
+      )}
+    </p>
   );
 }
 
@@ -215,6 +259,29 @@ function ProviderBlock({
             entry={entry}
             onChange={onChange}
           />
+          <label className="flex items-center gap-2 text-[11px] text-foreground-muted">
+            Load-balancing share
+            <input
+              type="number"
+              min={0}
+              max={MAX_PROVIDER_WEIGHT}
+              step={1}
+              placeholder="–"
+              aria-label={`${provider.name} load-balancing share`}
+              data-testid={`supervisor-weight-${testKey}`}
+              value={entry.providerWeights[provider.id] ?? ''}
+              onChange={(e) =>
+                onChange(
+                  setSupervisorProviderWeight(
+                    entry,
+                    provider.id,
+                    e.target.value === '' ? null : Number(e.target.value)
+                  )
+                )
+              }
+              className={NUMBER_CLASS}
+            />
+          </label>
         </div>
       )}
     </div>

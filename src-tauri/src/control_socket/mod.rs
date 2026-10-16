@@ -72,6 +72,9 @@ pub trait ControlBackend: Send + Sync {
     /// (of those it lists, its default and those `policy` names) skip the
     /// permission prompts (`supervisor::provider_modes`).
     fn provider_modes(&self, policy: &SupervisorPolicy) -> BTreeMap<String, ProviderModes>;
+    /// Finished runs per provider id in the project at `project_root` that
+    /// started at or after `since` (RFC 3339), from its `pm_agent_usage`.
+    fn recent_runs(&self, project_root: &Path, since: &str) -> BTreeMap<String, u32>;
 }
 
 /// Who sent a request, as the kernel's peer PID says (`Dispatcher::admit`).
@@ -769,6 +772,10 @@ impl ControlBackend for TauriBackend {
 
     fn project_provider_policy(&self, project_root: &Path) -> ProviderPolicy {
         crate::provider_policy::policy_for_project(project_root)
+    }
+
+    fn recent_runs(&self, project_root: &Path, since: &str) -> BTreeMap<String, u32> {
+        crate::agent_usage::store::runs_by_provider_since(project_root, since)
     }
 
     fn provider_modes(&self, policy: &SupervisorPolicy) -> BTreeMap<String, ProviderModes> {

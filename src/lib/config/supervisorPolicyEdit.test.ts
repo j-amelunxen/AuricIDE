@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { emptySupervisorPolicy } from './supervisorPolicy';
+import { emptySupervisorPolicy, parseSupervisorPolicy } from './supervisorPolicy';
 import {
   offerablePermissionModes,
   setProjectAllowed,
   setSupervisorPermissionMode,
+  setSupervisorProviderWeight,
   toggleSupervisorModel,
   toggleSupervisorProvider,
   unattendedBlockers,
@@ -50,6 +51,22 @@ describe('toggleSupervisorModel', () => {
     expect(none.models.codex).toEqual([]);
     const back = toggleSupervisorModel(none, 'codex', 'luna', true, ['luna', 'sol']);
     expect(back.models.codex).toEqual(['luna']);
+  });
+});
+
+describe('setSupervisorProviderWeight', () => {
+  it('keeps whole shares from 0 to 99 that the parser reads back, and drops a cleared one', () => {
+    const policy = setProjectAllowed(emptySupervisorPolicy(), PATH, true);
+    let entry = setSupervisorProviderWeight(policy.projects[PATH], 'claude', 2);
+    entry = setSupervisorProviderWeight(entry, 'codex', 1.7);
+    entry = setSupervisorProviderWeight(entry, 'grok', 500);
+    entry = setSupervisorProviderWeight(entry, 'agy', -3);
+    expect(entry.providerWeights).toEqual({ claude: 2, codex: 1, grok: 99, agy: 0 });
+    const saved = JSON.stringify({ ...policy, projects: { [PATH]: entry } });
+    expect(parseSupervisorPolicy(saved).rejected).toEqual([]);
+    expect(setSupervisorProviderWeight(entry, 'claude', null).providerWeights).not.toHaveProperty(
+      'claude'
+    );
   });
 });
 

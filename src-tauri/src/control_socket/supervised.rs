@@ -12,9 +12,12 @@ use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use crate::supervisor::policy::{
-    check_spawn, normalize_provider_id, visible_projects, SpawnRequest,
+    balancing, check_spawn, normalize_provider_id, visible_projects, SpawnRequest,
+    BALANCING_WINDOW_DAYS,
 };
-use crate::supervisor::{canonical_project_path, model_names, running_children};
+use crate::supervisor::{
+    canonical_project_path, live_runs_by_provider, model_names, running_children,
+};
 use std::path::Path;
 
 impl Dispatcher {
@@ -162,6 +165,8 @@ impl Dispatcher {
         let agents = self.backend.agents();
         let running = running_children(&agents, supervisor);
         let listed = self.backend.projects();
+        let since = (chrono::Utc::now() - chrono::Duration::days(BALANCING_WINDOW_DAYS.into()))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let projects = visible
             .into_iter()
             .map(|project| {
@@ -170,6 +175,20 @@ impl Dispatcher {
                     .find(|entry| canonical_project_path(&entry.path) == project.path)
                     .cloned()
                     .unwrap_or_else(|| unlisted_entry(&project.path, &agents));
+                // Only worth a database read where the project balances at all.
+                let balanced = project
+                    .providers
+                    .iter()
+                    .any(|provider| provider.weight.unwrap_or(0) > 0);
+                let balancing = balanced
+                    .then(|| {
+                        let mut runs = self.backend.recent_runs(Path::new(&project.path), &since);
+                        for (id, live) in live_runs_by_provider(&agents, &project.path) {
+                            *runs.entry(id).or_default() += live;
+                        }
+                        balancing(&project.providers, &runs)
+                    })
+                    .flatten();
                 let providers = project
                     .providers
                     .into_iter()
@@ -188,6 +207,7 @@ impl Dispatcher {
                     allow_interactive: project.allow_interactive,
                     running_children: running.by_project.get(&project.path).copied().unwrap_or(0),
                     max_running: project.max_running,
+                    balancing,
                 });
                 entry
             })

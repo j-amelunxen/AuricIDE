@@ -894,7 +894,27 @@
                 ],
                 "allowInteractive": true,
                 "runningChildren": 1,
-                "maxRunning": 2
+                "maxRunning": 2,
+                "balancing": {
+                  "windowDays": 7,
+                  "next": "codex",
+                  "providers": [
+                    {
+                      "id": "claude",
+                      "weight": 2,
+                      "spawns": 3,
+                      "targetPercent": 67,
+                      "actualPercent": 75
+                    },
+                    {
+                      "id": "codex",
+                      "weight": 1,
+                      "spawns": 1,
+                      "targetPercent": 33,
+                      "actualPercent": 25
+                    }
+                  ]
+                }
               }
             }
           ]

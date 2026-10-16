@@ -150,6 +150,7 @@ describe('SupervisorContent', () => {
           providers: null,
           models: { claude: ['haiku', 'custom'] },
           permissionMode: { claude: 'acceptEdits' },
+          providerWeights: {},
           allowInteractive: expect.any(Boolean),
           maxRunning: 3,
         },
@@ -159,6 +160,36 @@ describe('SupervisorContent', () => {
       expect(useStore.getState().toasts.at(-1)?.message).toBe('Supervisor settings saved')
     );
     expect(screen.getByTestId('supervisor-save')).toBeDisabled();
+  });
+
+  it('sets a load-balancing share per provider and states the split it makes', async () => {
+    projectProviderPolicyGet.mockResolvedValue({ allow: null, deny: [] });
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId(`supervisor-allowed-${OPEN}`));
+    expect(screen.getByTestId(`supervisor-balancing-${OPEN}`)).toHaveTextContent(
+      'No load balancing'
+    );
+    fireEvent.change(screen.getByTestId(`supervisor-weight-${OPEN}-claude`), {
+      target: { value: '2' },
+    });
+    fireEvent.change(screen.getByTestId(`supervisor-weight-${OPEN}-codex`), {
+      target: { value: '1' },
+    });
+    expect(screen.getByTestId(`supervisor-balancing-${OPEN}`)).toHaveTextContent(
+      'Claude Code 67 % · Codex 33 %'
+    );
+    fireEvent.change(screen.getByTestId(`supervisor-weight-${OPEN}-codex`), {
+      target: { value: '' },
+    });
+    expect(screen.getByTestId(`supervisor-balancing-${OPEN}`)).toHaveTextContent(
+      'Claude Code 100 % · Codex 0 %'
+    );
+
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
+    expect(supervisorPolicySet.mock.calls[0][0]).toMatchObject({
+      projects: { [OPEN]: { providerWeights: { claude: 2 } } },
+    });
   });
 
   it('takes what Rust wrote back as the new saved state', async () => {
@@ -205,6 +236,7 @@ describe('SupervisorContent — modes that skip permission prompts', () => {
         providers: null,
         models: {},
         permissionMode: {},
+        providerWeights: {},
         allowInteractive: false,
         maxRunning: 2,
         ...entry,

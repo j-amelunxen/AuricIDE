@@ -236,6 +236,26 @@ pub fn running_children(agents: &[AgentInfo], supervisor_id: &str) -> RunningChi
     running
 }
 
+/// Live agents (running or queued) per provider id in the project at
+/// `project_path` (canonical), whoever started them. They are not in
+/// `pm_agent_usage` yet: a run is booked when it ends.
+pub fn live_runs_by_provider(agents: &[AgentInfo], project_path: &str) -> BTreeMap<String, u32> {
+    let mut live = BTreeMap::new();
+    for agent in agents {
+        let counts = matches!(agent.status, AgentStatus::Running | AgentStatus::Queued);
+        let here = agent
+            .project_path
+            .as_deref()
+            .is_some_and(|path| canonical_project_path(path) == project_path);
+        if counts && here {
+            *live
+                .entry(policy::normalize_provider_id(&agent.provider))
+                .or_default() += 1;
+        }
+    }
+    live
+}
+
 /// Everything the child check needs besides the spawn config.
 pub struct ChildCheckInputs<'a> {
     /// Keys canonicalised (`with_canonical_keys`).

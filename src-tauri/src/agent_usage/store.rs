@@ -1,6 +1,7 @@
 //! `pm_agent_usage` in `<project>/.auric/project.db`: append a row, read them
 //! back, and read the status a ticket had when a run started.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -33,6 +34,32 @@ pub fn open_existing(project_path: &Path) -> Result<Option<Connection>, String> 
         .map_err(|e| format!("Failed to set the busy timeout: {e}"))?;
     crate::database::run_migrations(&conn)?;
     Ok(Some(conn))
+}
+
+/// Runs per provider id that started at or after `since` (RFC 3339, the
+/// format the rows are written in, so the text compares in time order). A
+/// project without a database or a usage table counts nothing; this only
+/// reads, so it never creates or migrates one.
+pub fn runs_by_provider_since(project_path: &Path, since: &str) -> BTreeMap<String, u32> {
+    let read = || -> rusqlite::Result<BTreeMap<String, u32>> {
+        let conn = Connection::open_with_flags(
+            project_db_path(project_path),
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        let mut statement = conn.prepare(
+            "SELECT lower(trim(provider)), COUNT(*) FROM pm_agent_usage
+             WHERE started_at >= ?1 GROUP BY lower(trim(provider))",
+        )?;
+        let rows = statement.query_map(params![since], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?;
+        rows.collect()
+    };
+    if !project_db_path(project_path).is_file() {
+        return BTreeMap::new();
+    }
+    read().unwrap_or_default()
 }
 
 pub fn insert(conn: &Connection, row: &UsageRecord) -> Result<(), String> {
@@ -229,6 +256,31 @@ mod tests {
         let ids: Vec<String> = load(&conn).unwrap().into_iter().map(|r| r.id).collect();
 
         assert_eq!(ids, ["new", "mid", "old"]);
+    }
+
+    #[test]
+    fn runs_are_counted_per_provider_from_the_given_start() {
+        let dir = project();
+        let conn = open_existing(dir.path()).unwrap().unwrap();
+        insert(&conn, &row("before", "2026-09-20T08:00:00Z")).unwrap();
+        insert(&conn, &row("a", "2026-09-30T08:00:00Z")).unwrap();
+        let mut codex = row("b", "2026-09-30T09:00:00Z");
+        codex.provider = "Codex".into();
+        insert(&conn, &codex).unwrap();
+        insert(&conn, &row("c", "2026-09-30T10:00:00Z")).unwrap();
+
+        let counts = runs_by_provider_since(dir.path(), "2026-09-23T08:00:00Z");
+
+        assert_eq!(
+            counts,
+            BTreeMap::from([("claude".into(), 2), ("codex".into(), 1)])
+        );
+        let none = tempfile::tempdir().unwrap();
+        assert!(runs_by_provider_since(none.path(), "2026-09-23T08:00:00Z").is_empty());
+        assert!(
+            !project_db_path(none.path()).exists(),
+            "reading creates no database"
+        );
     }
 
     #[test]

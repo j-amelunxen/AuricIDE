@@ -22,6 +22,7 @@
       "providers": null,
       "models": {},
       "permissionMode": {},
+      "providerWeights": {},
       "allowInteractive": false,
       "maxRunning": 2
     }
@@ -181,6 +182,7 @@
               "permissionMode": {
                 "codex": "acceptEdits"
               },
+              "providerWeights": {},
               "allowInteractive": true,
               "maxRunning": 2
             }
@@ -208,6 +210,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -239,6 +242,7 @@
               "permissionMode": {
                 "codex": "acceptEdits"
               },
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -266,6 +270,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -293,6 +298,7 @@
               "providers": [],
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -322,6 +328,7 @@
                 "claude": []
               },
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -349,6 +356,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -376,6 +384,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -408,6 +417,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -440,6 +450,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -495,6 +506,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -527,6 +539,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -602,6 +615,7 @@
                 "codex": ["gpt-6-luna", "gpt-6-sol"]
               },
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -629,6 +643,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -686,6 +701,7 @@
                 "claude": ["haiku", "sonnet"]
               },
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -713,6 +729,7 @@
               "providers": null,
               "models": {},
               "permissionMode": {},
+              "providerWeights": {},
               "allowInteractive": false,
               "maxRunning": 2
             }
@@ -940,6 +957,136 @@
         },
         "rejected": []
       }
+    },
+    {
+      "name": "provider weights are kept per normalised provider id; two keys for one provider keep the smaller",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerWeights\": {\" Claude \": 2, \"codex\": 1, \"Codex\": 3, \"antigravity\": 0}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {
+                "antigravity": 0,
+                "claude": 2,
+                "codex": 1
+              },
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          },
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a weight that is not an integer from 0 to 99 drops its project",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providerWeights\": {\"claude\": 1.5}}, \"/abs/project-b\": {\"allowed\": true, \"providerWeights\": {\"claude\": 100}}, \"/abs/project-c\": {\"allowed\": true, \"providerWeights\": {\"claude\": -1}}, \"/abs/project-d\": {\"allowed\": true, \"providerWeights\": {\" \": 1}}, \"/abs/project-e\": {\"allowed\": true, \"providerWeights\": [1]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {}
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": "/abs/project-b",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": "/abs/project-c",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": "/abs/project-d",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": "/abs/project-e",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two spellings with different provider weights merge to no balancing",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a/\": {\"allowed\": true, \"providerWeights\": {\"claude\": 2, \"codex\": 1}}, \"/abs/project-a\": {\"allowed\": true, \"providerWeights\": {\"claude\": 1}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          },
+          "skills": {}
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "two spellings with the same provider weights keep them",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a/\": {\"allowed\": true, \"providerWeights\": {\"claude\": 2, \"codex\": 1}}, \"/abs/project-a\": {\"allowed\": true, \"providerWeights\": {\"codex\": 1, \"claude\": 2}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "providerWeights": {
+                "claude": 2,
+                "codex": 1
+              },
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          },
+          "skills": {}
+        },
+        "rejected": []
+      }
     }
   ],
   "visibleProjectsRules": [
@@ -970,6 +1117,7 @@
               "claude": ["haiku", "sonnet"]
             },
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -982,6 +1130,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -990,6 +1139,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1017,7 +1167,8 @@
             {
               "id": "codex",
               "models": ["gpt-6-luna", "gpt-6-sol"],
-              "permissionMode": "acceptEdits"
+              "permissionMode": "acceptEdits",
+              "weight": null
             }
           ],
           "allowInteractive": true,
@@ -1029,7 +1180,8 @@
             {
               "id": "claude",
               "models": ["haiku", "sonnet"],
-              "permissionMode": null
+              "permissionMode": null,
+              "weight": null
             }
           ],
           "allowInteractive": false,
@@ -1055,6 +1207,7 @@
               "codex": []
             },
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1078,7 +1231,8 @@
             {
               "id": "claude",
               "models": ["haiku", "sonnet", "opus", "fable"],
-              "permissionMode": null
+              "permissionMode": null,
+              "weight": null
             }
           ],
           "allowInteractive": false,
@@ -1104,6 +1258,7 @@
               "claude": ["haiku", "claude-3-old"]
             },
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1127,7 +1282,8 @@
             {
               "id": "claude",
               "models": ["haiku"],
-              "permissionMode": null
+              "permissionMode": null,
+              "weight": null
             }
           ],
           "allowInteractive": false,
@@ -1151,6 +1307,7 @@
             "providers": ["grok"],
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1212,6 +1369,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -1223,6 +1381,7 @@
               "antigravity": "plan",
               "opencode": "auto"
             },
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1255,7 +1414,8 @@
             {
               "id": "claude",
               "models": ["haiku", "sonnet", "opus", "fable"],
-              "permissionMode": null
+              "permissionMode": null,
+              "weight": null
             }
           ],
           "allowInteractive": false,
@@ -1267,12 +1427,80 @@
             {
               "id": "antigravity",
               "models": ["gemini-3-pro"],
-              "permissionMode": "plan"
+              "permissionMode": "plan",
+              "weight": null
             },
             {
               "id": "claude",
               "models": ["haiku", "sonnet", "opus", "fable"],
-              "permissionMode": null
+              "permissionMode": null,
+              "weight": null
+            }
+          ],
+          "allowInteractive": false,
+          "maxRunning": 2
+        }
+      ]
+    },
+    {
+      "name": "each visible provider carries its weight, null where the weights do not name it",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null,
+          "chrome": false
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "providerWeights": {
+              "claude": 2,
+              "codex": 1,
+              "grok": 3
+            },
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicies": {
+        "/abs/project-a": {
+          "allow": null,
+          "deny": ["grok"]
+        }
+      },
+      "offeredModels": {
+        "antigravity": ["gemini-4"],
+        "claude": ["haiku", "sonnet"],
+        "codex": ["gpt-6-luna"],
+        "grok": ["grok-5"]
+      },
+      "expected": [
+        {
+          "path": "/abs/project-a",
+          "providers": [
+            {
+              "id": "antigravity",
+              "models": ["gemini-4"],
+              "permissionMode": null,
+              "weight": null
+            },
+            {
+              "id": "claude",
+              "models": ["haiku", "sonnet"],
+              "permissionMode": null,
+              "weight": 2
+            },
+            {
+              "id": "codex",
+              "models": ["gpt-6-luna"],
+              "permissionMode": null,
+              "weight": 1
             }
           ],
           "allowInteractive": false,
@@ -1311,6 +1539,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1319,6 +1548,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1368,6 +1598,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1376,6 +1607,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1425,6 +1657,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1433,6 +1666,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1520,6 +1754,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1528,6 +1763,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1578,6 +1814,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1586,6 +1823,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1636,6 +1874,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1644,6 +1883,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1694,6 +1934,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1702,6 +1943,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1752,6 +1994,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1760,6 +2003,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1810,6 +2054,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1818,6 +2063,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1867,6 +2113,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1875,6 +2122,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1925,6 +2173,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1933,6 +2182,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -1983,6 +2233,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -1991,6 +2242,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2041,6 +2293,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2049,6 +2302,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2098,6 +2352,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2106,6 +2361,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2156,6 +2412,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2164,6 +2421,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2215,6 +2473,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2223,6 +2482,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2273,6 +2533,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2281,6 +2542,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2330,6 +2592,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -2338,6 +2601,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2388,6 +2652,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           },
@@ -2396,6 +2661,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2445,6 +2711,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2453,6 +2720,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2504,6 +2772,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2512,6 +2781,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2564,6 +2834,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2572,6 +2843,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2625,6 +2897,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 0
           },
@@ -2633,6 +2906,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2683,6 +2957,7 @@
             "permissionMode": {
               "codex": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           },
@@ -2691,6 +2966,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -2741,6 +3017,7 @@
             "permissionMode": {
               "opencode": "acceptEdits"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -2801,6 +3078,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -2863,6 +3141,7 @@
             "permissionMode": {
               "antigravity": "plan"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -2924,6 +3203,7 @@
             "permissionMode": {
               "antigravity": "yolo"
             },
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -2984,6 +3264,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3043,6 +3324,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": false,
             "maxRunning": 2
           }
@@ -3103,6 +3385,7 @@
             "providers": null,
             "models": {},
             "permissionMode": {},
+            "providerWeights": {},
             "allowInteractive": true,
             "maxRunning": 2
           }
@@ -3160,7 +3443,16 @@
     "Two keys that name one project (after trailing-slash removal here, after realpath in Rust) merge to the stricter",
     "entry: allowed and allowInteractive only if both say so, maxRunning the smaller, providers the intersection (null is everything),",
     "models per provider the intersection where both list it, else the one list. permissionMode: one named mode is kept; two different",
-    "modes for one provider make the project allowed: false with permissionMode {} (there is no stricter of two modes)."
+    "modes for one provider make the project allowed: false with permissionMode {} (there is no stricter of two modes).",
+    "providerWeights is a load-balancing hint, not a permission: the two entries keep their weights only",
+    "when both name the same ones, otherwise the merged project has providerWeights {} (no balancing)."
+  ],
+  "providerWeightsRules": [
+    "providerWeights: provider id -> an integer 0..99, the share of spawns that provider should get in this project",
+    "(load balancing, e.g. {claude: 2, codex: 1}). Advisory only: checkSpawn never reads it. Absent or {} means no",
+    "balancing. Keys normalise like provider ids; two keys for one provider keep the smaller weight; a blank key, a",
+    "non-integer, a negative number or one above 99 drops the project. visibleProjects reports each provider's",
+    "weight, null where the map does not name it."
   ],
   "skillPatternRules": [
     "A skill entry is keyed by the absolute path of its folder (the one holding SKILL.md); trailing slashes are dropped.",

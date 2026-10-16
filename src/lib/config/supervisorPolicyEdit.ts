@@ -3,6 +3,7 @@ import { DEFAULT_PROVIDER_POLICY, isProviderAllowed, type ProviderPolicy } from 
 import fixtures from './supervisorPolicy.fixtures.json';
 import {
   defaultSupervisorProjectPolicy,
+  MAX_PROVIDER_WEIGHT,
   normalizeProjectPath,
   permissionModesOf,
   runsUnattended,
@@ -83,6 +84,21 @@ export function setSupervisorPermissionMode(
   if (mode === null) delete permissionMode[providerId];
   else permissionMode[providerId] = mode;
   return { ...entry, permissionMode };
+}
+
+/**
+ * A provider's load-balancing share, clamped to a whole number in 0..99 like
+ * the parser demands. `null` (an emptied field) takes the provider out of the map.
+ */
+export function setSupervisorProviderWeight(
+  entry: SupervisorProjectPolicy,
+  providerId: string,
+  weight: number | null
+): SupervisorProjectPolicy {
+  const providerWeights = { ...entry.providerWeights };
+  if (weight === null || !Number.isFinite(weight)) delete providerWeights[providerId];
+  else providerWeights[providerId] = Math.min(MAX_PROVIDER_WEIGHT, Math.max(0, Math.floor(weight)));
+  return { ...entry, providerWeights };
 }
 
 /**
