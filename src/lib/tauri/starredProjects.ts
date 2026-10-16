@@ -15,6 +15,11 @@ export interface QuickAccessSkill {
   permissionMode?: PermissionMode;
   invocation?: string;
   auricSkillId?: string;
+  /**
+   * Supervisor tile only: a global accelerator (`Control+Alt+KeyV`) that starts
+   * this skill from the menu bar. Project tiles neither offer nor store it.
+   */
+  shortcut?: string;
 }
 
 export interface QuickAccessCombo {

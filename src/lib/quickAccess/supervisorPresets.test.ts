@@ -61,4 +61,16 @@ describe('supervisor presets', () => {
       wheelSlots: ['s'],
     });
   });
+  it('keeps a skill shortcut, and drops a blank one', () => {
+    const parsed = parseSupervisorPresets(
+      JSON.stringify({
+        skills: [
+          { id: 'a', label: 'A', prompt: 'a', shortcut: 'Control+Alt+KeyV' },
+          { id: 'b', label: 'B', prompt: 'b', shortcut: '  ' },
+        ],
+      })
+    );
+    expect(parsed.skills[0].shortcut).toBe('Control+Alt+KeyV');
+    expect(parsed.skills[1]).not.toHaveProperty('shortcut');
+  });
 });
