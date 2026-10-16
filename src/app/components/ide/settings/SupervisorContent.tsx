@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { normalizeProjectDescription } from '@/lib/quickAccess/description';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { SupervisorMenuBarSettings } from './SupervisorMenuBarSettings';
 import {
   readProjectProviderPolicies,
   readSupervisorInstructions,
@@ -221,6 +222,8 @@ export function SupervisorContent() {
           descriptions.discard();
         }}
       />
+
+      <SupervisorMenuBarSettings />
     </div>
   );
 }

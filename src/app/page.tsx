@@ -20,6 +20,7 @@ import { useIDEState } from '@/lib/hooks/useIDEState';
 import { useLiveIDEState } from '@/lib/hooks/ide/liveIDEState';
 import { type SettingsCategory } from './components/ide/SettingsModal';
 import { useIDEActions } from '@/lib/hooks/useIDEActions';
+import { useSupervisorMenuBar } from '@/lib/hooks/useSupervisorMenuBar';
 import { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
 import { CloseWindowGuard } from '@/lib/hooks/useCloseWindowGuard';
 import { useStore } from '@/lib/store';
@@ -92,6 +93,8 @@ export default function Home() {
     },
     [state]
   );
+  // The supervisor's menu bar icon and global shortcuts (Settings → Supervisor).
+  useSupervisorMenuBar(openSettings);
   const selectTab = useCallback(
     (id: string) => {
       if (useStore.getState().pmDirty) {

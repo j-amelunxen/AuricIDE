@@ -8,6 +8,8 @@ import type { PermissionMode } from '@/lib/tauri/agents';
 import type { ProjectSkill, ProjectSkillScope } from '@/lib/tauri/projectSkills';
 import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
 import { SkillInvocationInput } from './SkillInvocationInput';
+import { ShortcutRecorder } from './ShortcutRecorder';
+import { duplicateShortcuts, formatAccelerator } from '@/lib/quickAccess/supervisorMenuBar';
 import type { AuricSkillDefinition } from '@/lib/settings/auricSkills';
 
 const SELECT_CLASS =
@@ -140,6 +142,7 @@ export function QuickAccessSkillsEditor({
   };
 
   const multipleSources = new Set(discovered.map((entry) => entry.sourceId)).size > 1;
+  const sharedShortcuts = fixedProvider ? duplicateShortcuts(skills) : new Set<string>();
 
   return (
     <SettingsSection title={title} icon="auto_awesome">
@@ -252,6 +255,7 @@ export function QuickAccessSkillsEditor({
                 <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-foreground-muted">
                   Launch options
                   {provider ? `: ${provider.name}` : ''}
+                  {skill.shortcut ? ` · ${formatAccelerator(skill.shortcut)}` : ''}
                 </summary>
                 <div className={`mt-2 grid gap-2 ${fixedProvider ? 'grid-cols-1' : 'grid-cols-3'}`}>
                   {!fixedProvider && (
@@ -294,6 +298,15 @@ export function QuickAccessSkillsEditor({
                       </option>
                     ))}
                   </select>
+                  {fixedProvider && (
+                    // Supervisor only: it is the one tile the menu bar can start.
+                    <ShortcutRecorder
+                      value={skill.shortcut}
+                      ariaLabel={`${itemNoun} ${index + 1} shortcut`}
+                      duplicate={!!skill.shortcut && sharedShortcuts.has(skill.shortcut)}
+                      onChange={(shortcut) => update(index, { shortcut })}
+                    />
+                  )}
                   {!fixedProvider && (
                     <select
                       aria-label={`${itemNoun} ${index + 1} permission mode`}
@@ -385,7 +398,9 @@ export function QuickAccessSkillsEditor({
             })}
             {discoveryReady && discovered.length === 0 && auricSkills.length === 0 && (
               <p className="text-[10px] text-foreground-muted/70">
-                Nothing found. Settings → Agent → Skill discovery controls where to look.
+                {fixedProvider
+                  ? 'Nothing here yet. Settings → Skills is where they are written.'
+                  : 'Nothing found. Settings → Agent → Skill discovery controls where to look.'}
               </p>
             )}
           </div>

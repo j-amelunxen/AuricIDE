@@ -52,6 +52,8 @@ export const APP_CONFIG_KEYS = {
   quickAccessSort: 'auric.quick-access.sort',
   supervisorQuickAccess: 'auric.supervisor.quick-access',
   supervisorInstructions: 'auric.supervisor.instructions',
+  supervisorMenuBar: 'auric.supervisor.menu-bar',
+  supervisorGlobalShortcuts: 'auric.supervisor.global-shortcuts',
   pmTicketSort: 'auric.pm.ticket-sort',
   pmTicketUsageColumns: 'auric.pm.ticket-usage-columns',
   goalTableColumns: 'auric.goals.table-columns',

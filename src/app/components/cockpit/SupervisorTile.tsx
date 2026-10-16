@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import { findRunningSupervisor } from '@/lib/agents/supervisorLaunch';
+import { openSupervisor } from '@/lib/agents/openSupervisor';
 import { launchEntries } from '@/lib/quickAccess/launchSkills';
-import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
+import { menuSkillEntries, pinSlottedLibrarySkills } from '@/lib/quickAccess/menuSkills';
 import { saveSupervisorPresets } from '@/lib/quickAccess/supervisorPresets';
 import { useSupervisorPresets } from '@/lib/quickAccess/useSupervisorPresets';
-import { loadAuricSkills, resolveAuricSkillReference } from '@/lib/settings/auricSkills';
+import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useStore } from '@/lib/store';
-import type { SupervisorSkillLaunch } from '@/lib/store/agent/agentTypes';
 import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
@@ -56,6 +56,7 @@ export function SupervisorTile({
   const selectAgent = useStore((s) => s.selectAgent);
   const showToast = useStore((s) => s.showToast);
   const presets = useSupervisorPresets();
+  const library = loadAuricSkills();
   const [starting, setStarting] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -64,25 +65,12 @@ export function SupervisorTile({
 
   const open = async (skill?: QuickAccessSkill) => {
     if (starting) return;
-    const resolved = skill ? resolveAuricSkillReference(skill) : undefined;
-    const launch: SupervisorSkillLaunch | undefined = resolved
-      ? { task: resolved.prompt, model: resolved.model }
-      : undefined;
     setStarting(true);
     try {
-      const result = await spawnSupervisor(launch);
-      if (result.kind === 'nothing-visible') {
-        showToast('Allow at least one project for the supervisor first', 'info');
-        onOpenSettings?.('supervisor');
-        return;
-      }
-      if (result.kind === 'sent') {
-        showToast(`Sent "${resolved?.label ?? 'skill'}" to the running supervisor`, 'success');
-      }
-      show(result.agent.id);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      showToast(`Could not start the supervisor: ${detail}`, 'error');
+      await openSupervisor({ spawnSupervisor, showToast }, skill, {
+        onNothingVisible: () => onOpenSettings?.('supervisor'),
+        onShow: show,
+      });
     } finally {
       setStarting(false);
     }
@@ -98,9 +86,13 @@ export function SupervisorTile({
     pickerMenu,
   } = useLaunchWheel({
     wheelId: SUPERVISOR_WHEEL_ID,
-    entries: launchEntries(presets.skills, []),
+    entries: launchEntries(menuSkillEntries(presets.skills, library), []),
     storedSlots: presets.wheelSlots,
-    writeSlots: (wheelSlots) => saveSupervisorPresets({ ...presets, wheelSlots }),
+    writeSlots: (wheelSlots) =>
+      saveSupervisorPresets({
+        skills: pinSlottedLibrarySkills(presets.skills, wheelSlots, library),
+        wheelSlots,
+      }),
     onLaunch: (entry) => {
       if (entry.kind === 'skill') void open(entry.skill);
     },
@@ -109,7 +101,7 @@ export function SupervisorTile({
     onActivity: (active) => onWheelActivity?.(active),
   });
 
-  const menuSkills = menuSkillEntries(presets.skills, loadAuricSkills());
+  const menuSkills = menuSkillEntries(presets.skills, library);
   const shownSkills = menuSkills.slice(0, MAX_MENU_SKILLS);
   const menuOptions: ContextMenuOption[] = [
     ...(shownSkills.length > 0

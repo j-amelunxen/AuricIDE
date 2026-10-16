@@ -478,6 +478,17 @@ ADR 0004.
   no skills from disk otherwise. A skill becomes the first task of
   a new supervisor, or a message to the running one. Model is the only launch
   option; there are no combos.
+- **It also lives in the macOS menu bar.** Settings → Supervisor → Menu bar
+  switches on an icon (`menu_bar.rs`) listing the same skills as the tile's
+  right-click menu, and global shortcuts per pinned skill (recorded under the
+  skill's Launch options, field `shortcut`). The frontend sends the finished
+  list through `menu_bar_sync` (`useSupervisorMenuBar`, main window only);
+  Rust draws, registers and emits `menu-bar-launch` back, which runs the
+  tile's own path (`openSupervisor`). Both switches are off by default.
+- **Wheels offer the Settings → Skills library too**, as the right-click menu
+  does. Putting a library skill on a slot pins it under its `auric:<id>`
+  (`pinSlottedLibrarySkills`) — for project tiles inside
+  `setStarredProjectWheelSlots`, so no caller can forget it.
 - Real-app check: `node scripts/probe-supervisor.mjs`.
 
 ### The terminals in a window of their own

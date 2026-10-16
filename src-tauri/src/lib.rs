@@ -21,6 +21,7 @@ mod mcp;
 mod memory_report;
 #[cfg(target_os = "macos")]
 mod menu;
+mod menu_bar;
 mod missions;
 mod notifications;
 mod project_icons;
@@ -67,7 +68,12 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(menu_bar::on_shortcut)
+                .build(),
+        );
 
     // Both WDIO plugins are intentionally unavailable unless the dedicated
     // E2E Cargo feature is selected. Normal dev and release artifacts never
@@ -88,6 +94,7 @@ pub fn run() {
                 crashlog::set_crash_log_dir(log_dir);
             }
             ui_watchdog::start(app.handle());
+            app.manage(menu_bar::MenuBarState::default());
             app.manage(providers::new_provider_registry(Some(app.handle())));
 
             let recent_projects_path = app
@@ -302,6 +309,7 @@ pub fn run() {
             control_socket::control_respond,
             control_socket::control_ready,
             agents::run_results::agent_run_results_forget,
+            menu_bar::menu_bar_sync,
             supervisor::supervisor_policy_get,
             supervisor::supervisor_policy_set,
             provider_policy::project_provider_policy_get,

@@ -33,12 +33,14 @@ function parseSkill(value: unknown): QuickAccessSkill | null {
   if (typeof label !== 'string' || typeof prompt !== 'string') return null;
   const model = optionalString(value.model);
   const auricSkillId = optionalString(value.auricSkillId);
+  const shortcut = optionalString(value.shortcut);
   return {
     id,
     label,
     prompt,
     ...(model ? { model } : {}),
     ...(auricSkillId ? { auricSkillId } : {}),
+    ...(shortcut ? { shortcut } : {}),
   };
 }
 
