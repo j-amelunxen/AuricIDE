@@ -123,6 +123,15 @@ pub fn policy_for_project(cwd: &Path) -> ProviderPolicy {
     parse_provider_policy(raw.as_deref())
 }
 
+/// The provider policy of a project that may not be open, for Settings
+/// (the supervisor rows list every starred project). Same read as the spawn
+/// path: read-only, nothing created, and anything unreadable is the open
+/// default.
+#[tauri::command]
+pub fn project_provider_policy_get(project_path: String) -> ProviderPolicy {
+    policy_for_project(Path::new(&project_path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,6 +256,15 @@ mod tests {
     fn an_unopened_project_is_open() {
         let dir = temp_dir("unopened");
         assert_eq!(policy_for_project(&dir), ProviderPolicy::default());
+        let missing = project_provider_policy_get(dir.join("gone").to_string_lossy().into_owned());
+        assert_eq!(
+            serde_json::to_value(missing).unwrap(),
+            serde_json::json!({ "allow": null, "deny": [] })
+        );
+        assert!(
+            !dir.join(".auric").exists(),
+            "reading creates nothing in the project"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -276,6 +294,14 @@ mod tests {
 
         let policy = policy_for_project(&dir);
         assert_eq!(policy.allow, Some(vec!["claude".to_string()]));
+        assert_eq!(
+            serde_json::to_value(project_provider_policy_get(
+                dir.to_string_lossy().into_owned()
+            ))
+            .unwrap(),
+            serde_json::json!({ "allow": ["claude"], "deny": ["grok"] }),
+            "the command answers in providerPolicy.ts's shape"
+        );
         assert!(is_provider_allowed("claude", &policy));
         assert!(!is_provider_allowed("grok", &policy));
 

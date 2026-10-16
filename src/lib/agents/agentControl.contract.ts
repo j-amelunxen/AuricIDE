@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import fixtures from './agentControl.fixtures.json';
+import policyFixtures from '../config/supervisorPolicy.fixtures.json';
 
 /**
  * The agent-control socket protocol, TypeScript half (`docs/design-agent-control.md`).
@@ -19,6 +20,7 @@ export const CONTROL_METHODS = [
   'kill',
   'spawn',
   'list_projects',
+  'await_result',
 ] as const;
 export type ControlMethod = (typeof CONTROL_METHODS)[number];
 
@@ -33,6 +35,8 @@ export const CONTROL_ERROR_CODES = [
   'provider_denied',
   'frontend_unavailable',
   'forbidden_agent_caller',
+  'supervisor_denied',
+  'outside_supervisor_scope',
   'internal',
 ] as const;
 export type ControlErrorCode = (typeof CONTROL_ERROR_CODES)[number];
@@ -48,7 +52,31 @@ export const CONTROL_LIMITS = {
   defaultTailBytes: 16384,
   maxTailBytes: 262144,
   frontendTimeoutMs: 30000,
+  defaultAwaitSeconds: 60,
+  maxAwaitSeconds: 120,
+  /** How much longer than `waitSeconds` the client waits before it reports `timeout`. */
+  awaitClientGraceSeconds: 5,
 } as const;
+
+/**
+ * What an agent is to the socket. A `supervisor` may steer its own children
+ * (ADR 0004); every other IDE agent is a `worker` and is refused at the socket.
+ */
+export const AGENT_ROLES = ['worker', 'supervisor'] as const;
+
+/** Who started a run, as booked with its usage row (`docs/design-agent-usage.md`). */
+export const RUN_SOURCES = ['ui', 'conductor', 'schedule', 'mcp', 'supervisor', 'other'] as const;
+
+/** Where a finished run's `answer` came from. */
+export const RUN_RESULT_SOURCES = ['cli_result', 'console_tail'] as const;
+
+/**
+ * The stable keys a `supervisor_denied` refusal names in `error.reason`
+ * (`supervisorPolicy.fixtures.json`, `reasons.checkSpawn`).
+ */
+export const SUPERVISOR_DENIED_REASONS = Object.keys(policyFixtures.reasons.checkSpawn).filter(
+  (key) => key !== '_comment'
+);
 
 /**
  * Set on every agent process the IDE spawns, and so inherited by any MCP
@@ -77,7 +105,9 @@ export const SPAWN_REFUSALS: readonly { code: ControlErrorCode; pattern: string 
 export class ControlError extends Error {
   constructor(
     readonly code: ControlErrorCode | ClientErrorCode,
-    message: string
+    message: string,
+    /** The stable reason key of a `supervisor_denied` refusal. */
+    readonly reason?: string
   ) {
     super(message);
     this.name = 'ControlError';
@@ -126,6 +156,7 @@ const PARAMS = {
       permissionMode: optionalText,
       headless: z.boolean().nullish(),
       name: optionalText,
+      role: z.enum(AGENT_ROLES).nullish(),
     })
     .transform((p) => ({
       projectPath: p.projectPath,
@@ -135,7 +166,16 @@ const PARAMS = {
       permissionMode: p.permissionMode ?? null,
       headless: p.headless ?? null,
       name: p.name ?? null,
+      // A worker is what every spawn starts anyway; only a supervisor is news.
+      role: p.role === 'supervisor' ? ('supervisor' as const) : null,
     })),
+  await_result: z.object({ agentId, waitSeconds: offset.nullish() }).transform((p) => ({
+    agentId: p.agentId,
+    waitSeconds: Math.min(
+      p.waitSeconds ?? CONTROL_LIMITS.defaultAwaitSeconds,
+      CONTROL_LIMITS.maxAwaitSeconds
+    ),
+  })),
 } satisfies Record<ControlMethod, z.ZodType>;
 
 type ControlParamsSchemas = typeof PARAMS;
@@ -251,6 +291,35 @@ const agentSummary = z.object({
   spawnedByGoalId: z.string().nullable(),
   headless: z.boolean(),
   outputBytes: offset,
+  role: z.enum(AGENT_ROLES),
+  spawnedByAgentId: z.string().nullable(),
+});
+
+/** What a supervisor may use in one project; only a supervisor's `list_projects` carries it. */
+const supervisorProjectBlock = z.object({
+  providers: z.array(
+    z.object({
+      id: z.string(),
+      permissionMode: z.string().nullable(),
+      models: z.array(
+        z.object({ id: z.string(), label: z.string(), rank: z.number().int().nullable() })
+      ),
+    })
+  ),
+  allowInteractive: z.boolean(),
+  runningChildren: offset,
+  maxRunning: offset,
+});
+
+const runResult = z.object({
+  agentId: z.string(),
+  status: z.enum(['idle', 'error']),
+  exitCode: z.number().int().nullable(),
+  answer: z.string().nullable(),
+  isError: z.boolean(),
+  source: z.enum(RUN_RESULT_SOURCES),
+  finishedAt: z.number(),
+  costUsd: z.number().nullable(),
 });
 
 const RESULTS = {
@@ -278,19 +347,41 @@ const RESULTS = {
         runningAgents: offset,
         description: z.string().nullable(),
         descriptionSource: z.enum(['user', 'readme', 'package', 'cargo']).nullable(),
+        supervisor: supervisorProjectBlock.optional(),
       })
     ),
   }),
+  await_result: z.discriminatedUnion('done', [
+    z.object({
+      done: z.literal(false),
+      agentId: z.string(),
+      status: agentStatus,
+      outputBytes: offset,
+    }),
+    z.object({ done: z.literal(true), result: runResult }),
+  ]),
 } satisfies Record<ControlMethod, z.ZodType>;
 
 export type ControlResult<M extends ControlMethod> = z.output<(typeof RESULTS)[M]>;
 
-const errorBody = z.object({ code: z.enum(CONTROL_ERROR_CODES), message: z.string() });
+const errorBody = z
+  .object({
+    code: z.enum(CONTROL_ERROR_CODES),
+    message: z.string(),
+    reason: z.string().optional(),
+  })
+  .refine(
+    (body) =>
+      body.code !== 'supervisor_denied' ||
+      (body.reason !== undefined && SUPERVISOR_DENIED_REASONS.includes(body.reason)),
+    { message: 'supervisor_denied must carry a known reason key', path: ['reason'] }
+  );
 const responseId = z.union([z.string(), z.number()]).nullable();
 
 interface ControlResponseError {
   code: ControlErrorCode;
   message: string;
+  reason?: string;
 }
 
 export type ControlResponse<M extends ControlMethod> =

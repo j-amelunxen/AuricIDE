@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FastMCP, UserError } from 'fastmcp';
+import type { z } from 'zod';
 import type Database from 'better-sqlite3';
 import fixtures from '../../lib/agents/agentControl.fixtures.json';
 import { ControlError } from '../../lib/agents/agentControl.contract';
@@ -8,6 +9,7 @@ import { createControlServer, createMcpServer } from '../server';
 import { registerAgentControlTools, type ControlCaller } from './agentControl';
 
 const CONTROL_TOOLS = [
+  'await_agent_result',
   'kill_agent',
   'list_agents',
   'list_projects',
@@ -45,11 +47,24 @@ describe('agent control tools', () => {
       send_agent_input: 'send_input',
       spawn_agent: 'spawn',
       list_projects: 'list_projects',
+      await_agent_result: 'await_result',
     };
     for (const [tool, method] of Object.entries(methods)) {
       await tools.get(tool)!.execute({});
       expect(call).toHaveBeenLastCalledWith(method, {});
     }
+  });
+
+  it('spawn_agent lets an outside caller start a supervisor, and nothing else by role', async () => {
+    const call = vi.fn(async () => fixtures.responses.spawn.result) as unknown as ControlCaller;
+    const spawn = capture(call).get('spawn_agent') as CapturedTool & { parameters: z.ZodType };
+    const base = { projectPath: '/tmp/example-project', prompt: 'supervise' };
+    expect(spawn.parameters.safeParse({ ...base, role: 'supervisor' }).success).toBe(true);
+    expect(spawn.parameters.safeParse({ ...base, role: 'worker' }).success).toBe(false);
+    expect(spawn.parameters.safeParse(base).success).toBe(true);
+
+    await spawn.execute({ ...base, role: 'supervisor' });
+    expect(call).toHaveBeenCalledWith('spawn', { ...base, role: 'supervisor' });
   });
 
   it('turn a socket error into a tool error "<code>: <message>"', async () => {

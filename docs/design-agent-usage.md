@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS pm_agent_usage (
   ticket_id TEXT,                       -- no FK: a deleted ticket keeps its cost history
   goal_id TEXT,
   run_kind TEXT NOT NULL,               -- 'ticket' | 'goal' | 'review' | 'other'
-  run_source TEXT NOT NULL,             -- 'ui' | 'conductor' | 'schedule' | 'mcp' | 'other'
+  run_source TEXT NOT NULL,             -- 'ui' | 'conductor' | 'schedule' | 'mcp' | 'supervisor' | 'other'
   provider TEXT NOT NULL,
   model TEXT,                           -- as reported by the CLI when known, else requested
   headless INTEGER NOT NULL DEFAULT 0,
@@ -187,15 +187,17 @@ Kill counts: a killed run still reads its transcript. Tokens spent before a kill
 
 Rust `AgentConfig` gains three optional camelCase fields, sent by the frontend:
 
-| Field              | Values                               | Set by                                                 |
-| ------------------ | ------------------------------------ | ------------------------------------------------------ |
-| `runSource`        | `ui`, `conductor`, `schedule`, `mcp` | already on the TS config; now forwarded                |
-| `runKind`          | `ticket`, `goal`, `review`, `other`  | derived by the frontend at spawn                       |
-| `reviewOfTicketId` | ticket id                            | conductor review spawns (`spawnedForReviewOfTicketId`) |
+| Field              | Values                                             | Set by                                                                                           |
+| ------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `runSource`        | `ui`, `conductor`, `schedule`, `mcp`, `supervisor` | already on the TS config; now forwarded; `supervisor` is set by Rust for a supervisor's children |
+| `runKind`          | `ticket`, `goal`, `review`, `other`                | derived by the frontend at spawn                                                                 |
+| `reviewOfTicketId` | ticket id                                          | conductor review spawns (`spawnedForReviewOfTicketId`)                                           |
 
 The stored `ticket_id` = `spawnedByTicketId ?? reviewOfTicketId`. When `runKind` is absent,
 Rust derives it: review id → `review`, ticket id → `ticket`, goal id → `goal`, else `other`.
-`runSource` absent → `other`. `ticket_status_at_start` is read by Rust from `pm_tickets` at
+`runSource` absent → `other`. A child started by a supervisor agent
+(`docs/design-agent-control.md`, "Supervisor scope") is booked with `runSource: supervisor`; Rust
+sets it in the control-socket dispatcher, so the frontend cannot book such a run as `ui`. `ticket_status_at_start` is read by Rust from `pm_tickets` at
 spawn.
 
 ## IPC

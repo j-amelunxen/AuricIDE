@@ -1,30 +1,67 @@
-//! Who is on the other end of a connection. The socket refuses any process
-//! that descends from a running IDE agent, whatever provider that agent runs
-//! and whatever it did with its environment (`docs/design-agent-control.md`).
+//! Who is on the other end of a connection. The socket finds the nearest
+//! running IDE agent among the caller's ancestors, whatever provider that
+//! agent runs and whatever it did with its environment; the dispatcher then
+//! admits a supervisor in its scope and refuses every other agent
+//! (`docs/design-agent-control.md`, ADR 0004).
 
 use std::collections::HashSet;
 use std::os::unix::net::UnixStream;
 
-/// Deeper than any real process tree; a cycle in a stale reading ends here.
-pub const MAX_ANCESTORS: usize = 64;
+/// More steps than there are process ids (macOS caps them below 100 000), so
+/// only a parent lookup that keeps inventing pids gets here. It is a backstop,
+/// not a depth limit: reaching it is "could not trace", never "no agent".
+pub const MAX_ANCESTORS: usize = 100_000;
 
-/// Whether `peer` or any of its ancestors is one of `agent_pids`.
+/// What walking up from a peer found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ancestry {
+    /// The nearest running agent among the peer and its ancestors.
+    Agent(u32),
+    /// The walk reached launchd/init without meeting an agent.
+    NoAgent,
+    /// The walk could not finish: a parent could not be read, the chain ran
+    /// in a circle, or the backstop was reached. Treated like an agent.
+    Untraceable,
+}
+
+/// Walks from `peer` (itself included) to pid 1. Only reaching pid 1 proves
+/// there is no agent above: a chain nested deeper than any limit is still
+/// below its agent, so running out is never read as "external".
+pub fn nearest_agent(
+    peer: u32,
+    agent_pids: &HashSet<u32>,
+    parent_of: impl Fn(u32) -> Option<u32>,
+) -> Ancestry {
+    let mut seen = HashSet::new();
+    let mut pid = peer;
+    while seen.len() < MAX_ANCESTORS {
+        if agent_pids.contains(&pid) {
+            return Ancestry::Agent(pid);
+        }
+        if !seen.insert(pid) {
+            return Ancestry::Untraceable;
+        }
+        match parent_of(pid) {
+            Some(parent) if parent <= 1 => return Ancestry::NoAgent,
+            Some(parent) => pid = parent,
+            None => return Ancestry::Untraceable,
+        }
+    }
+    Ancestry::Untraceable
+}
+
+/// The nearest agent above `peer`, or `None` when there is none or the walk
+/// could not tell. Admission uses `nearest_agent`, which keeps the two apart.
+#[cfg(test)]
 pub fn descends_from_agent(
     peer: u32,
     agent_pids: &HashSet<u32>,
     parent_of: impl Fn(u32) -> Option<u32>,
-) -> bool {
-    let mut pid = peer;
-    for _ in 0..MAX_ANCESTORS {
-        if agent_pids.contains(&pid) {
-            return true;
-        }
-        match parent_of(pid) {
-            Some(parent) if parent > 1 && parent != pid => pid = parent,
-            _ => return false,
-        }
+) -> Option<u32> {
+    match nearest_agent(peer, agent_pids, parent_of) {
+        Ancestry::Agent(pid) => Some(pid),
+        Ancestry::NoAgent | Ancestry::Untraceable => None,
     }
-    false
 }
 
 /// The PID of the process that connected, as the kernel recorded it.
@@ -126,10 +163,14 @@ mod tests {
             _ => None,
         };
         let agents: HashSet<u32> = [40].into();
-        assert!(descends_from_agent(50, &agents, parent));
-        assert!(descends_from_agent(40, &agents, parent), "the agent itself");
-        assert!(!descends_from_agent(30, &agents, parent));
-        assert!(!descends_from_agent(50, &HashSet::new(), parent));
+        assert_eq!(descends_from_agent(50, &agents, parent), Some(40));
+        assert_eq!(
+            descends_from_agent(40, &agents, parent),
+            Some(40),
+            "the agent itself"
+        );
+        assert_eq!(descends_from_agent(30, &agents, parent), None);
+        assert_eq!(descends_from_agent(50, &HashSet::new(), parent), None);
     }
 
     #[test]
@@ -145,26 +186,41 @@ mod tests {
             _ => None,
         };
         let agents: HashSet<u32> = [20].into();
-        assert!(descends_from_agent(22, &agents, parent));
-        assert!(
-            !descends_from_agent(31, &agents, parent),
+        assert_eq!(descends_from_agent(22, &agents, parent), Some(20));
+        assert_eq!(
+            descends_from_agent(31, &agents, parent),
+            None,
             "the terminal panel is the IDE's child, not an agent's"
         );
     }
 
     #[test]
-    fn the_walk_stops_at_pid_1_and_at_the_depth_cap() {
+    fn the_walk_stops_at_pid_1_and_running_out_is_untraceable_never_external() {
         let agents: HashSet<u32> = [1].into();
-        assert!(
-            !descends_from_agent(5, &agents, |_| Some(1)),
+        assert_eq!(
+            nearest_agent(5, &agents, |_| Some(1)),
+            Ancestry::NoAgent,
             "launchd/init is never followed"
         );
 
-        // A straight chain 1000 → 999 → … with the agent just past the cap.
-        let agents: HashSet<u32> = [1000 - MAX_ANCESTORS as u32].into();
-        assert!(!descends_from_agent(1000, &agents, |pid| Some(pid - 1)));
-        let agents: HashSet<u32> = [1000 - MAX_ANCESTORS as u32 + 1].into();
-        assert!(descends_from_agent(1000, &agents, |pid| Some(pid - 1)));
+        // A straight chain far deeper than the old cap of 64 still finds its
+        // agent at the bottom.
+        let agents: HashSet<u32> = [10].into();
+        assert_eq!(
+            nearest_agent(10_000, &agents, |pid| Some(pid - 1)),
+            Ancestry::Agent(10)
+        );
+        // No agent, no pid 1 within the backstop: untraceable, not external.
+        let start = MAX_ANCESTORS as u32 + 50;
+        assert_eq!(
+            nearest_agent(start + 1_000_000, &HashSet::new(), |pid| Some(pid + 1)),
+            Ancestry::Untraceable
+        );
+        // A parent that cannot be read mid-chain is untraceable as well.
+        assert_eq!(
+            nearest_agent(50, &HashSet::new(), |pid| (pid == 50).then_some(40)),
+            Ancestry::Untraceable
+        );
     }
 
     #[test]
@@ -191,18 +247,22 @@ mod tests {
         let own = descends_from_agent(std::process::id(), &agents, parent_pid);
         let _ = agent.kill();
         let _ = agent.wait();
-        assert_eq!(result, Some(true), "sleep descends from the agent shell");
-        assert!(!own, "the test process does not");
+        assert_eq!(
+            result,
+            Some(Some(agent_pid)),
+            "sleep descends from the agent shell"
+        );
+        assert_eq!(own, None, "the test process does not");
     }
 
     #[test]
     fn a_cycle_in_the_parent_chain_ends() {
         let agents: HashSet<u32> = [99].into();
-        assert!(!descends_from_agent(5, &agents, |pid| Some(if pid == 5 {
-            6
-        } else {
-            5
-        })));
+        assert_eq!(
+            nearest_agent(5, &agents, |pid| Some(if pid == 5 { 6 } else { 5 })),
+            Ancestry::Untraceable,
+            "a circle is not proof that no agent is above"
+        );
     }
 
     #[test]

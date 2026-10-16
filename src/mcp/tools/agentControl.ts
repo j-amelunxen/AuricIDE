@@ -22,7 +22,8 @@ export type ControlCaller = <M extends ControlMethod>(
   params: ControlParamsInput<M>
 ) => Promise<ControlResult<M>>;
 
-async function run<M extends ControlMethod>(
+/** Calls one socket method; the result as JSON text, a refusal as `<code> (<reason>): <message>`. */
+export async function runControl<M extends ControlMethod>(
   call: ControlCaller,
   method: M,
   params: ControlParamsInput<M>
@@ -30,29 +31,21 @@ async function run<M extends ControlMethod>(
   try {
     return JSON.stringify(await call(method, params), null, 2);
   } catch (error) {
-    if (error instanceof ControlError) throw new UserError(`${error.code}: ${error.message}`);
+    if (error instanceof ControlError) {
+      const code = error.reason ? `${error.code} (${error.reason})` : error.code;
+      throw new UserError(`${code}: ${error.message}`);
+    }
     throw new UserError(`internal: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-const agentIdParam = z.string().describe('Agent id as list_agents reports it, e.g. "agent-3"');
+export const agentIdParam = z
+  .string()
+  .describe('Agent id as list_agents reports it, e.g. "agent-3"');
 
-export function registerAgentControlTools(
-  server: FastMCP,
-  call: ControlCaller = callControl
-): void {
-  server.addTool({
-    name: 'list_agents',
-    description:
-      'List every agent the running AuricIDE knows, across all projects: id, name, provider, ' +
-      'model, status (running | idle | queued | error), the task it was started with, its ' +
-      'project, whether it runs headless, and outputBytes — the byte offset of its console ' +
-      'output so far. Pass outputBytes as sinceOffset to read_agent_output to get only what is new.',
-    parameters: z.object({}),
-    execute: async () => run(call, 'list_agents', {}),
-  });
-
-  server.addTool({
+/** `read_agent_output`, the same for the control and the supervisor server. */
+export function readAgentOutputTool(call: ControlCaller, scopeNote = '') {
+  return {
     name: 'read_agent_output',
     description:
       "Read an agent's console output. The text is the terminal output cleaned as it arrived " +
@@ -63,7 +56,8 @@ export function registerAgentControlTools(
       `max ${CONTROL_LIMITS.maxTailBytes}), and truncated: true means older output exists before ` +
       'it. To follow an agent, poll with sinceOffset set to the previous endOffset; there ' +
       'truncated: true means that offset is no longer buffered and the text starts at the ' +
-      'oldest byte still kept, so some output was missed.',
+      'oldest byte still kept, so some output was missed.' +
+      scopeNote,
     parameters: z.object({
       agentId: agentIdParam,
       tailBytes: z
@@ -79,8 +73,54 @@ export function registerAgentControlTools(
         .optional()
         .describe('Return only output from this byte offset on (a previous endOffset)'),
     }),
-    execute: async (args) => run(call, 'read_output', args),
+    execute: async (args: ControlParamsInput<'read_output'>) =>
+      runControl(call, 'read_output', args),
+  };
+}
+
+/** `await_agent_result`, the same for the control and the supervisor server. */
+export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
+  return {
+    name: 'await_agent_result',
+    description:
+      `Wait up to waitSeconds (default ${CONTROL_LIMITS.defaultAwaitSeconds}, max ` +
+      `${CONTROL_LIMITS.maxAwaitSeconds}) for an agent to finish. Still running when the wait ` +
+      'ends: { done: false, status, outputBytes } — call it again. Finished (now or earlier): ' +
+      '{ done: true, result: { status "idle" | "error", exitCode, answer, isError, source, ' +
+      "finishedAt, costUsd } }. answer is the CLI's own final text when source is " +
+      '"cli_result" (headless Claude), otherwise the last 8 KiB of the cleaned console ' +
+      '("console_tail"). waitSeconds 0 only looks.' +
+      scopeNote,
+    parameters: z.object({
+      agentId: agentIdParam,
+      waitSeconds: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe(`Seconds to wait, at most ${CONTROL_LIMITS.maxAwaitSeconds}`),
+    }),
+    execute: async (args: ControlParamsInput<'await_result'>) =>
+      runControl(call, 'await_result', args),
+  };
+}
+
+export function registerAgentControlTools(
+  server: FastMCP,
+  call: ControlCaller = callControl
+): void {
+  server.addTool({
+    name: 'list_agents',
+    description:
+      'List every agent the running AuricIDE knows, across all projects: id, name, provider, ' +
+      'model, status (running | idle | queued | error), the task it was started with, its ' +
+      'project, whether it runs headless, and outputBytes — the byte offset of its console ' +
+      'output so far. Pass outputBytes as sinceOffset to read_agent_output to get only what is new.',
+    parameters: z.object({}),
+    execute: async () => runControl(call, 'list_agents', {}),
   });
+
+  server.addTool(readAgentOutputTool(call));
 
   server.addTool({
     name: 'send_agent_input',
@@ -95,7 +135,7 @@ export function registerAgentControlTools(
       text: z.string().describe('What to type; may be empty for a bare Enter'),
       enter: z.boolean().optional().describe('Press Enter after the text (default true)'),
     }),
-    execute: async (args) => run(call, 'send_input', args),
+    execute: async (args) => runControl(call, 'send_input', args),
   });
 
   server.addTool({
@@ -104,7 +144,7 @@ export function registerAgentControlTools(
       'Stop an agent, the same as the kill button in the IDE (ticket and goal bookkeeping ' +
       'included). Does not ask for confirmation — the work in progress is gone.',
     parameters: z.object({ agentId: agentIdParam }),
-    execute: async (args) => run(call, 'kill', args),
+    execute: async (args) => runControl(call, 'kill', args),
   });
 
   server.addTool({
@@ -126,8 +166,15 @@ export function registerAgentControlTools(
         .optional()
         .describe('Run without a console (no input possible, output arrives at the end)'),
       name: z.string().optional().describe('Display name in the IDE'),
+      role: z
+        .literal('supervisor')
+        .optional()
+        .describe(
+          'Start a supervisor instead of a worker: Claude, interactive, scoped to the projects ' +
+            'its policy (Settings → Supervisor) allows. Leave out for an ordinary agent.'
+        ),
     }),
-    execute: async (args) => run(call, 'spawn', args),
+    execute: async (args) => runControl(call, 'spawn', args),
   });
 
   server.addTool({
@@ -142,6 +189,8 @@ export function registerAgentControlTools(
       'by description and name; only initialized: true projects can take spawn_agent, and ' +
       'runningAgents > 0 means work is already going on there. Pass path as projectPath.',
     parameters: z.object({}),
-    execute: async () => run(call, 'list_projects', {}),
+    execute: async () => runControl(call, 'list_projects', {}),
   });
+
+  server.addTool(awaitAgentResultTool(call));
 }

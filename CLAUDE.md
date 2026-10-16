@@ -418,6 +418,47 @@ it first), the reasoning ADR 0003.
   `node scripts/probe-agent-control.mjs`, and
   `cargo test control_socket_against_running_app -- --ignored --nocapture`.
 
+### The supervisor — the one agent the socket answers
+
+A supervisor (Quick Access tile "Supervisor", or an external
+`spawn { role: "supervisor" }`) is an interactive Claude agent that starts
+agents in other projects through `auric-mcp --supervisor`. The contract is the
+"Supervisor scope" section of `docs/design-agent-control.md`, the reasoning
+ADR 0004.
+
+- **Identity comes from the kernel, not from a token.** The PID walk returns
+  the matched agent and its role; a supervisor is admitted with its own scope,
+  a worker still gets `forbidden_agent_caller`. A walk that cannot finish
+  (unreadable parent, a loop) is refused too, never treated as external.
+- **Its scope is its own children.** List, read, await and kill only what it
+  spawned; `send_input` is refused (`outside_supervisor_scope`), so a question
+  from a child goes to the human. Children keep running when the supervisor is
+  killed; their results (`agents/run_results.rs`) stay until its card is
+  cleared.
+- **The supervisor itself has no shell.** Rust forces its launch: cwd
+  `<app_data_dir>/supervisor/`, `--tools "" --restricted`, one MCP server,
+  `--permission-mode default`.
+- **What it may start is `<app_data_dir>/supervisor-policy.json`**, Rust-owned,
+  0600, fail closed: an unlisted project allows nothing. It is intersected with
+  the project's provider policy, and a mode that runs unattended is refused
+  (`permission_mode_unattended`). Twin: `src/lib/config/supervisorPolicy.ts` ↔
+  `src-tauri/src/supervisor/policy.rs`, both on
+  `supervisorPolicy.fixtures.json` — change the fixtures first. Settings →
+  Supervisor edits it.
+- **Model size is a `rank`** on `info.models` entries in
+  `dynamic-providers/*.json` (higher is bigger). The launch prompt
+  (`supervisorLaunchPrompt.ts`) asks for the smallest fitting one; unranked
+  models are never picked by default.
+- **Its tile is a Quick Access tile.** Hover or hold opens a skill wheel,
+  right-click lists its skills, "Quick Access Settings" edits them
+  (`useLaunchWheel` is shared with project tiles). The skills are
+  application-wide (`supervisorPresets.ts`, app pref
+  `auric.supervisor.quick-access`) and are prompts, never `/skill` calls:
+  `--restricted` loads no skills from disk. A skill becomes the first task of
+  a new supervisor, or a message to the running one. Model is the only launch
+  option; there are no combos.
+- Real-app check: `node scripts/probe-supervisor.mjs`.
+
 ### The terminals in a window of their own
 
 The terminal modal can be detached into a second OS window (label `agents`,

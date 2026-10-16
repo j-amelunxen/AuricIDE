@@ -4,7 +4,8 @@
     "Two implementations read this file: src-tauri/src/control_socket (cargo test, via include_str!)",
     "parses the requests and must produce responses of the shapes below; src/mcp/controlClient.ts",
     "(Vitest) builds the requests and validates every response against the same shapes, and the",
-    "TS mock socket server answers with these responses. Add a case here before changing either side."
+    "TS mock socket server answers with these responses. Add a case here before changing either side.",
+    "Supervisor scope (ADR 0004): callerScope says which caller may use which method and what a supervisor caller is refused; additionalResponses holds the further valid answers a method can give."
   ],
   "errorCodes": [
     "invalid_request",
@@ -16,6 +17,8 @@
     "provider_denied",
     "frontend_unavailable",
     "forbidden_agent_caller",
+    "supervisor_denied",
+    "outside_supervisor_scope",
     "internal"
   ],
   "clientOnlyErrorCodes": ["app_not_running", "timeout", "contract_violation"],
@@ -25,7 +28,12 @@
     "bufferBytesPerAgent": 262144,
     "finishedAgentsKept": 20,
     "frontendTimeoutMs": 30000,
-    "connectionIdleTimeoutMs": 60000
+    "connectionIdleTimeoutMs": 60000,
+    "defaultAwaitSeconds": 60,
+    "maxAwaitSeconds": 120,
+    "awaitClientGraceSeconds": 5,
+    "runResultsKept": 200,
+    "consoleTailAnswerBytes": 8192
   },
   "enter": "\r",
   "environment": {
@@ -147,7 +155,8 @@
           "model": null,
           "permissionMode": null,
           "headless": null,
-          "name": null
+          "name": null,
+          "role": null
         }
       }
     },
@@ -159,6 +168,78 @@
         "method": "kill",
         "params": {
           "agentId": "agent-3"
+        }
+      }
+    },
+    {
+      "name": "spawn a supervisor (external callers only)",
+      "raw": "{\"id\":16,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"supervise\",\"role\":\"supervisor\"}}",
+      "expected": {
+        "id": 16,
+        "method": "spawn",
+        "params": {
+          "projectPath": "/tmp/example-project",
+          "prompt": "supervise",
+          "provider": null,
+          "model": null,
+          "permissionMode": null,
+          "headless": null,
+          "name": null,
+          "role": "supervisor"
+        }
+      }
+    },
+    {
+      "name": "spawn with role worker is the same as no role",
+      "raw": "{\"id\":17,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"run the tests\",\"role\":\"worker\"}}",
+      "expected": {
+        "id": 17,
+        "method": "spawn",
+        "params": {
+          "projectPath": "/tmp/example-project",
+          "prompt": "run the tests",
+          "provider": null,
+          "model": null,
+          "permissionMode": null,
+          "headless": null,
+          "name": null,
+          "role": null
+        }
+      }
+    },
+    {
+      "name": "await_result defaults waitSeconds",
+      "raw": "{\"id\":18,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\"}}",
+      "expected": {
+        "id": 18,
+        "method": "await_result",
+        "params": {
+          "agentId": "agent-5",
+          "waitSeconds": 60
+        }
+      }
+    },
+    {
+      "name": "await_result clamps waitSeconds to the maximum",
+      "raw": "{\"id\":19,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\",\"waitSeconds\":600}}",
+      "expected": {
+        "id": 19,
+        "method": "await_result",
+        "params": {
+          "agentId": "agent-5",
+          "waitSeconds": 120
+        }
+      }
+    },
+    {
+      "name": "await_result with waitSeconds 0 only looks",
+      "raw": "{\"id\":20,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\",\"waitSeconds\":0}}",
+      "expected": {
+        "id": 20,
+        "method": "await_result",
+        "params": {
+          "agentId": "agent-5",
+          "waitSeconds": 0
         }
       }
     },
@@ -225,6 +306,30 @@
         "id": 15,
         "code": "invalid_params"
       }
+    },
+    {
+      "name": "spawn with an unknown role",
+      "raw": "{\"id\":21,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"x\",\"role\":\"admin\"}}",
+      "expectedError": {
+        "id": 21,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "await_result without agentId",
+      "raw": "{\"id\":22,\"method\":\"await_result\",\"params\":{}}",
+      "expectedError": {
+        "id": 22,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "await_result with negative waitSeconds",
+      "raw": "{\"id\":23,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\",\"waitSeconds\":-1}}",
+      "expectedError": {
+        "id": 23,
+        "code": "invalid_params"
+      }
     }
   ],
   "responses": {
@@ -247,7 +352,9 @@
             "spawnedByTicketId": null,
             "spawnedByGoalId": null,
             "headless": false,
-            "outputBytes": 5120
+            "outputBytes": 5120,
+            "role": "worker",
+            "spawnedByAgentId": null
           }
         ]
       }
@@ -326,6 +433,23 @@
             "descriptionSource": null
           }
         ]
+      }
+    },
+    "await_result": {
+      "id": 18,
+      "ok": true,
+      "result": {
+        "done": true,
+        "result": {
+          "agentId": "agent-5",
+          "status": "idle",
+          "exitCode": 0,
+          "answer": "ANSWER: the parser handles empty input.",
+          "isError": false,
+          "source": "cli_result",
+          "finishedAt": 1790000060000,
+          "costUsd": 0.0123
+        }
       }
     },
     "error": {
@@ -438,6 +562,114 @@
           ]
         }
       }
+    },
+    {
+      "name": "await_result done without a result",
+      "method": "await_result",
+      "raw": {
+        "id": 18,
+        "ok": true,
+        "result": {
+          "done": true
+        }
+      }
+    },
+    {
+      "name": "await_result not done without status",
+      "method": "await_result",
+      "raw": {
+        "id": 18,
+        "ok": true,
+        "result": {
+          "done": false,
+          "agentId": "agent-5",
+          "outputBytes": 0
+        }
+      }
+    },
+    {
+      "name": "run result source outside the enum",
+      "method": "await_result",
+      "raw": {
+        "id": 18,
+        "ok": true,
+        "result": {
+          "done": true,
+          "result": {
+            "agentId": "agent-5",
+            "status": "idle",
+            "exitCode": 0,
+            "answer": null,
+            "isError": false,
+            "source": "transcript",
+            "finishedAt": 1,
+            "costUsd": null
+          }
+        }
+      }
+    },
+    {
+      "name": "run result with a running status",
+      "method": "await_result",
+      "raw": {
+        "id": 18,
+        "ok": true,
+        "result": {
+          "done": true,
+          "result": {
+            "agentId": "agent-5",
+            "status": "running",
+            "exitCode": null,
+            "answer": null,
+            "isError": false,
+            "source": "console_tail",
+            "finishedAt": 1,
+            "costUsd": null
+          }
+        }
+      }
+    },
+    {
+      "name": "agent role outside the enum",
+      "method": "list_agents",
+      "raw": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "agents": [
+            {
+              "id": "agent-1",
+              "name": "x",
+              "model": "m",
+              "provider": "p",
+              "status": "running",
+              "currentTask": null,
+              "startedAt": 1,
+              "lastActivityAt": null,
+              "projectPath": null,
+              "repoPath": null,
+              "spawnedByTicketId": null,
+              "spawnedByGoalId": null,
+              "headless": false,
+              "outputBytes": 0,
+              "role": "admin",
+              "spawnedByAgentId": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "supervisor_denied without a reason",
+      "method": "spawn",
+      "raw": {
+        "id": 7,
+        "ok": false,
+        "error": {
+          "code": "supervisor_denied",
+          "message": "no"
+        }
+      }
     }
   ],
   "projectDescription": {
@@ -537,5 +769,357 @@
     ],
     "userMaxChars": 300,
     "sources": ["user", "readme", "package", "cargo"]
+  },
+  "roles": ["worker", "supervisor"],
+  "runSources": ["ui", "conductor", "schedule", "mcp", "supervisor", "other"],
+  "runResultSources": ["cli_result", "console_tail"],
+  "additionalResponses": [
+    {
+      "name": "await_result while the agent still runs",
+      "method": "await_result",
+      "raw": {
+        "id": 18,
+        "ok": true,
+        "result": {
+          "done": false,
+          "agentId": "agent-5",
+          "status": "running",
+          "outputBytes": 2048
+        }
+      }
+    },
+    {
+      "name": "await_result for an agent that failed, answer from the console tail",
+      "method": "await_result",
+      "raw": {
+        "id": 18,
+        "ok": true,
+        "result": {
+          "done": true,
+          "result": {
+            "agentId": "agent-6",
+            "status": "error",
+            "exitCode": null,
+            "answer": "Error: could not reach the model",
+            "isError": true,
+            "source": "console_tail",
+            "finishedAt": 1790000090000,
+            "costUsd": null
+          }
+        }
+      }
+    },
+    {
+      "name": "list_agents for a supervisor: its children only",
+      "method": "list_agents",
+      "raw": {
+        "id": 1,
+        "ok": true,
+        "result": {
+          "agents": [
+            {
+              "id": "agent-5",
+              "name": "Check the parser",
+              "model": "haiku",
+              "provider": "claude",
+              "status": "running",
+              "currentTask": "check the parser",
+              "startedAt": 1790000000000,
+              "lastActivityAt": 1790000005000,
+              "projectPath": "/tmp/example-project",
+              "repoPath": "/tmp/example-project",
+              "spawnedByTicketId": null,
+              "spawnedByGoalId": null,
+              "headless": true,
+              "outputBytes": 2048,
+              "role": "worker",
+              "spawnedByAgentId": "agent-sup"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "list_projects for a supervisor: allowed projects with what it may use there",
+      "method": "list_projects",
+      "raw": {
+        "id": "a",
+        "ok": true,
+        "result": {
+          "projects": [
+            {
+              "path": "/tmp/example-project",
+              "name": "example-project",
+              "starred": true,
+              "isOpen": true,
+              "initialized": true,
+              "lastOpenedAt": 1790000000000,
+              "runningAgents": 1,
+              "description": "A small example service that parses invoices.",
+              "descriptionSource": "readme",
+              "supervisor": {
+                "providers": [
+                  {
+                    "id": "claude",
+                    "permissionMode": null,
+                    "models": [
+                      {
+                        "id": "haiku",
+                        "label": "Haiku",
+                        "rank": 1
+                      },
+                      {
+                        "id": "sonnet",
+                        "label": "Sonnet",
+                        "rank": 2
+                      }
+                    ]
+                  },
+                  {
+                    "id": "codex",
+                    "permissionMode": "acceptEdits",
+                    "models": [
+                      {
+                        "id": "gpt-6-luna",
+                        "label": "GPT-6 Luna",
+                        "rank": 1
+                      },
+                      {
+                        "id": "auto",
+                        "label": "Auto",
+                        "rank": null
+                      }
+                    ]
+                  }
+                ],
+                "allowInteractive": true,
+                "runningChildren": 1,
+                "maxRunning": 2
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "spawn refused by the supervisor policy carries a reason key",
+      "method": "spawn",
+      "raw": {
+        "id": 7,
+        "ok": false,
+        "error": {
+          "code": "supervisor_denied",
+          "message": "Model 'opus' is not allowed for claude in /tmp/example-project. Allowed: haiku, sonnet.",
+          "reason": "model_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "send_input from a supervisor",
+      "method": "send_input",
+      "raw": {
+        "id": 5,
+        "ok": false,
+        "error": {
+          "code": "outside_supervisor_scope",
+          "message": "A supervisor cannot type into agents. Ask the human to answer in agent-5's window."
+        }
+      }
+    }
+  ],
+  "callerScope": {
+    "_comment": [
+      "Who is asking decides what a request may do. Rust learns the caller from the peer PID: it walks the",
+      "parent chain and returns the first running IDE agent it meets, with that agent's role. No agent in the",
+      "chain: external. A supervisor: supervisor. Any other agent: worker, refused at admission. A PID that",
+      "cannot be read is refused like a worker (fail closed). Scope checks run in the dispatcher, after the",
+      "request has parsed, so an unparseable request is still invalid_request / invalid_params first."
+    ],
+    "callers": {
+      "external": {
+        "methods": [
+          "list_agents",
+          "read_output",
+          "send_input",
+          "kill",
+          "spawn",
+          "list_projects",
+          "await_result"
+        ],
+        "scope": "all_agents",
+        "mayPass": ["role", "permissionMode"]
+      },
+      "supervisor": {
+        "methods": ["list_projects", "list_agents", "read_output", "await_result", "spawn", "kill"],
+        "refusedMethods": {
+          "send_input": "outside_supervisor_scope"
+        },
+        "scope": "own_children",
+        "outsideScope": "unknown_agent",
+        "refusedParams": {
+          "role": "invalid_params",
+          "permissionMode": "outside_supervisor_scope"
+        },
+        "requiredSpawnParams": ["provider", "model", "headless"],
+        "listProjects": "allowed_only_with_supervisor_block",
+        "spawnPolicy": "supervisorPolicy.fixtures.json checkSpawn; refusal is supervisor_denied with its reason",
+        "children": {
+          "role": "worker",
+          "spawnedByAgentId": "<the supervisor's agent id>",
+          "runSource": "supervisor"
+        }
+      },
+      "worker": {
+        "methods": [],
+        "admission": "forbidden_agent_caller"
+      }
+    },
+    "cases": [
+      {
+        "name": "external caller may do everything",
+        "caller": "external",
+        "method": "send_input",
+        "target": "any",
+        "expected": "ok"
+      },
+      {
+        "name": "external caller may start a supervisor",
+        "caller": "external",
+        "method": "spawn",
+        "params": {
+          "role": "supervisor"
+        },
+        "expected": "ok"
+      },
+      {
+        "name": "external caller may await any agent",
+        "caller": "external",
+        "method": "await_result",
+        "target": "any",
+        "expected": "ok"
+      },
+      {
+        "name": "worker is refused at admission",
+        "caller": "worker",
+        "method": "list_agents",
+        "expected": "forbidden_agent_caller"
+      },
+      {
+        "name": "unreadable peer PID is refused",
+        "caller": "unknown",
+        "method": "list_agents",
+        "expected": "forbidden_agent_caller"
+      },
+      {
+        "name": "supervisor reads its own child",
+        "caller": "supervisor",
+        "method": "read_output",
+        "target": "own_child",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor awaits its own child",
+        "caller": "supervisor",
+        "method": "await_result",
+        "target": "own_child",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor kills its own child",
+        "caller": "supervisor",
+        "method": "kill",
+        "target": "own_child",
+        "expected": "ok"
+      },
+      {
+        "name": "another supervisor's child does not exist for it",
+        "caller": "supervisor",
+        "method": "read_output",
+        "target": "other_supervisors_child",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "an agent the human started does not exist for it",
+        "caller": "supervisor",
+        "method": "kill",
+        "target": "unrelated_agent",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "a supervisor cannot await itself",
+        "caller": "supervisor",
+        "method": "await_result",
+        "target": "self",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "list_agents lists own children only",
+        "caller": "supervisor",
+        "method": "list_agents",
+        "expected": "ok_own_children_only"
+      },
+      {
+        "name": "supervisor cannot type, not even into its own child",
+        "caller": "supervisor",
+        "method": "send_input",
+        "target": "own_child",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "supervisor cannot pass role",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "role": "supervisor"
+        },
+        "expected": "invalid_params"
+      },
+      {
+        "name": "supervisor cannot pass role even as worker",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "role": "worker"
+        },
+        "expected": "invalid_params"
+      },
+      {
+        "name": "supervisor cannot choose a permission mode",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "permissionMode": "acceptEdits"
+        },
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "supervisor spawn without model",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "provider": "claude",
+          "headless": true
+        },
+        "expected": "invalid_params"
+      },
+      {
+        "name": "supervisor spawn the policy refuses",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "provider": "claude",
+          "model": "opus",
+          "headless": true
+        },
+        "expected": "supervisor_denied"
+      },
+      {
+        "name": "a killed supervisor's child result stays readable to external callers",
+        "caller": "external",
+        "method": "await_result",
+        "target": "child_of_killed_supervisor",
+        "expected": "ok"
+      }
+    ]
   }
 }

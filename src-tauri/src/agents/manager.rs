@@ -197,6 +197,151 @@ fn bind_to_project_mcp(
     }))
 }
 
+/// The provider a supervisor runs on in this version: its scope is enforced
+/// through Claude Code's `--allowedTools` and `--strict-mcp-config`.
+pub const SUPERVISOR_PROVIDER: &str = "claude";
+/// The supervisor's one MCP server, and the tool pattern pre-approved for it.
+pub const SUPERVISOR_MCP_SERVER: &str = "auric-supervisor";
+
+/// What a supervisor spawn always runs with, whatever the caller asked for:
+/// interactive, in its own folder, bound to no project, in Claude's
+/// `default` permission mode so its own Bash and Edit calls ask the human.
+pub fn supervisor_config(mut config: AgentConfig, cwd: &std::path::Path) -> AgentConfig {
+    config.cwd = Some(cwd.to_string_lossy().into_owned());
+    config.project_path = None;
+    config.headless = Some(false);
+    config.permission_mode = Some("default".to_string());
+    config.dangerously_ignore_permissions = Some(false);
+    config.auto_accept_edits = Some(false);
+    config.launch_request_uid = None;
+    config.agent_notification_uid = None;
+    config.agent_notification_action_id = None;
+    config
+}
+
+pub fn check_supervisor_provider(provider_id: &str) -> Result<(), String> {
+    if provider_id == SUPERVISOR_PROVIDER {
+        Ok(())
+    } else {
+        Err(format!(
+            "The supervisor runs on Claude Code in this version; '{provider_id}' cannot run it."
+        ))
+    }
+}
+
+/// Claude Code flags for a supervisor. `--tools ""` removes every built-in
+/// tool (Bash, Edit, Write, WebFetch, …), so only the `auric-supervisor` MCP
+/// tools are left. `--restricted` also ignores the user's, project's and local
+/// settings files, so allow rules such as `Bash(npx:*)` there do not apply,
+/// and refuses bypassPermissions. `--mcp-config`, `--tools` and
+/// `--allowedTools` take several values, so each is followed by another flag
+/// rather than by the task. Checked against Claude Code 2.1.301: with these
+/// flags the CLI reports no tools at all.
+pub fn supervisor_claude_arguments(mcp_config_path: &str) -> Vec<String> {
+    vec![
+        "--mcp-config".to_string(),
+        format!(
+            "\"{}\"",
+            crate::providers::shell_escape_double_quoted(mcp_config_path)
+        ),
+        "--strict-mcp-config".to_string(),
+        "--tools".to_string(),
+        "\"\"".to_string(),
+        "--restricted".to_string(),
+        "--allowedTools".to_string(),
+        format!("\"mcp__{SUPERVISOR_MCP_SERVER}__*\""),
+        "--permission-mode".to_string(),
+        "default".to_string(),
+    ]
+}
+
+/// Binds a supervisor to its own MCP server (`auric-mcp --supervisor`) and
+/// nothing else.
+fn bind_to_supervisor_mcp(
+    spawn_cmd: crate::providers::SpawnCommand,
+    app: &AppHandle,
+) -> Result<(crate::providers::SpawnCommand, OwnedFile), String> {
+    let runtime = crate::mcp::runtime_entrypoint(app)?;
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("The supervisor needs the app data directory: {error}"))?;
+    let config_file = OwnedFile(crate::mcp::ensure_supervisor_mcp_config(
+        &app_data, &runtime,
+    )?);
+    let arguments = supervisor_claude_arguments(&config_file.0.to_string_lossy());
+    Ok((
+        spawn_cmd.with_injection(crate::providers::SpawnInjection {
+            arguments,
+            env_vars: Vec::new(),
+        }),
+        config_file,
+    ))
+}
+
+/// The first gate of every spawn, before anything is resolved or opened
+/// (ADR 0004). A supervisor spawn gets its fixed shape (`supervisor_config`);
+/// a spawn that names the supervisor that asked for it is checked against the
+/// supervisor policy again. The dispatcher checked before the frontend saw
+/// the request; this holds whatever route the spawn took from there.
+///
+/// `app_data` is where the policy file and the supervisor's folder live;
+/// without it, both kinds of spawn are refused rather than run unchecked.
+pub fn admit_spawn(
+    mut config: AgentConfig,
+    app_data: Option<&std::path::Path>,
+    agents: &[AgentInfo],
+    offered: &std::collections::BTreeMap<String, Vec<String>>,
+    modes_for: &dyn Fn(
+        &crate::supervisor::policy::SupervisorPolicy,
+    ) -> std::collections::BTreeMap<
+        String,
+        crate::supervisor::policy::ProviderModes,
+    >,
+) -> Result<AgentConfig, String> {
+    let needs_app_data = || {
+        app_data.ok_or_else(|| {
+            "The app data directory is unavailable; a supervisor spawn cannot be checked"
+                .to_string()
+        })
+    };
+    if config.role() == AgentRole::Supervisor {
+        if config.spawned_by_agent_id.is_some() {
+            return Err("A supervisor cannot start another supervisor.".to_string());
+        }
+        let cwd = crate::supervisor::supervisor_cwd(needs_app_data()?)?;
+        return Ok(supervisor_config(config, &cwd));
+    }
+    let Some(supervisor_id) = config.spawned_by_agent_id.clone() else {
+        return Ok(config);
+    };
+    let policy = crate::supervisor::current_policy(needs_app_data()?);
+    let project = config
+        .project_path
+        .as_deref()
+        .map(crate::supervisor::canonical_project_path);
+    let project_policy = project
+        .as_deref()
+        .map(|path| crate::provider_policy::policy_for_project(std::path::Path::new(path)))
+        .unwrap_or_default();
+    let running = crate::supervisor::running_children(agents, &supervisor_id);
+    let modes = modes_for(&policy);
+    crate::supervisor::check_child_config(
+        &config,
+        project.as_deref(),
+        &crate::supervisor::ChildCheckInputs {
+            policy: &policy,
+            offered,
+            modes: &modes,
+            project_policy: &project_policy,
+            running: &running,
+        },
+    )?;
+    // Booked as the supervisor's, whatever the frontend said.
+    config.run_source = Some(crate::control_socket::protocol::RUN_SOURCE_SUPERVISOR.to_string());
+    Ok(config)
+}
+
 /// Runs the agent under `write_sandbox` when its provider config asks for it
 /// for the permission mode this launch resolves to. Applied last, so the
 /// sandbox wraps the finished command line and everything it starts.
@@ -297,6 +442,15 @@ pub async fn spawn_agent_impl(
     ),
     String,
 > {
+    let config = admit_spawn(
+        config,
+        app.path().app_data_dir().ok().as_deref(),
+        &list_agents_impl(state).await?,
+        &crate::supervisor::model_names(&crate::supervisor::offered_models(providers.as_ref())),
+        &|policy| crate::supervisor::provider_modes(providers.as_ref(), policy),
+    )?;
+    let is_supervisor = config.role() == AgentRole::Supervisor;
+
     // Resolve once, before opening the PTY. The resulting binding is immutable
     // for the process lifetime and never follows later UI/project changes.
     let project_binding = resolve_project_binding(config.project_path.as_deref())?;
@@ -330,7 +484,12 @@ pub async fn spawn_agent_impl(
     let (provider_id, provider) =
         resolve_permitted_provider(config.provider.as_deref(), providers, &policy)?;
     let provider_id = provider_id.as_str();
+    if is_supervisor {
+        check_supervisor_provider(provider_id)?;
+    }
 
+    // Removed with the agent's process entry, or here if the spawn fails.
+    let mut launch_file: Option<OwnedFile> = None;
     let usage_config = provider.usage_config();
     let (mut spawn_cmd, usage_session_id) = crate::agent_usage::launch::with_session_id(
         provider.build_spawn_command(
@@ -343,7 +502,11 @@ pub async fn spawn_agent_impl(
         ),
         usage_config.as_ref(),
     );
-    if let Some(binding) = project_binding.as_ref() {
+    if is_supervisor {
+        let (bound, config_file) = bind_to_supervisor_mcp(spawn_cmd, app)?;
+        spawn_cmd = bound;
+        launch_file = Some(config_file);
+    } else if let Some(binding) = project_binding.as_ref() {
         spawn_cmd = bind_to_project_mcp(
             spawn_cmd,
             app,
@@ -427,6 +590,8 @@ pub async fn spawn_agent_impl(
 
     let launch_request_uid = config.launch_request_uid.clone();
     let info = AgentInfo {
+        role: config.role(),
+        spawned_by_agent_id: config.spawned_by_agent_id.clone(),
         id: id.clone(),
         name: config.name,
         model: config.model,
@@ -461,6 +626,7 @@ pub async fn spawn_agent_impl(
         child,
         launch_request_uid: launch_request_uid.clone(),
         usage: usage.clone(),
+        launch_file,
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
@@ -491,6 +657,10 @@ pub async fn spawn_agent_impl(
         .filter(|capture| capture.holds_back_result())
         .map(|_| ResultHoldback::default());
     let sniffing_usage = usage.clone().filter(UsageCapture::sniffs_output);
+    let run_results = app
+        .try_state::<super::run_results::RunResultsState>()
+        .map(|results| results.inner().clone());
+    let parent_id = info.spawned_by_agent_id.clone();
 
     tauri::async_runtime::spawn(async move {
         // One counter for everything this agent emits, the error line below
@@ -558,6 +728,35 @@ pub async fn spawn_agent_impl(
         } else {
             AgentStatus::Error
         };
+        // Before the buffer is marked finished, so a waiter that sees the
+        // finished buffer always finds the result next to it. A kill got
+        // there first when the agent is gone from the manager, and its
+        // result stands.
+        if let (true, Some(results)) = (report_exit, &run_results) {
+            let console_tail = || {
+                output_buffers
+                    .as_ref()
+                    .and_then(|buffers| {
+                        buffers.read(
+                            &id_clone,
+                            super::run_results::CONSOLE_TAIL_ANSWER_BYTES,
+                            None,
+                        )
+                    })
+                    .map(|slice| slice.text)
+            };
+            results.record(
+                super::run_results::RunResult::from_finish(
+                    &id_clone,
+                    status.clone(),
+                    Some(exit_code),
+                    cli_result.as_ref(),
+                    console_tail,
+                    now_ms(),
+                ),
+                parent_id,
+            );
+        }
         if let Some(buffers) = &output_buffers {
             buffers.finish(&id_clone, status.clone());
         }
@@ -760,6 +959,13 @@ fn shown(holdback: &mut Option<&mut ResultHoldback>, text: &str) -> String {
     }
 }
 
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 pub async fn emit_agent_output(
     app: &AppHandle,
     id: &str,
@@ -798,9 +1004,35 @@ pub async fn kill_agent_impl(
     drop(manager);
 
     let _ = process.child.kill();
+    let buffers = app.try_state::<super::output_buffer::OutputBuffersState>();
+    if let Some(results) = app.try_state::<super::run_results::RunResultsState>() {
+        let console_tail = || {
+            buffers
+                .as_ref()
+                .and_then(|buffers| {
+                    buffers.read(
+                        agent_id,
+                        super::run_results::CONSOLE_TAIL_ANSWER_BYTES,
+                        None,
+                    )
+                })
+                .map(|slice| slice.text)
+        };
+        results.record(
+            super::run_results::RunResult::from_finish(
+                agent_id,
+                AgentStatus::Idle,
+                None,
+                None,
+                console_tail,
+                now_ms(),
+            ),
+            process.info.spawned_by_agent_id.clone(),
+        );
+    }
     // Finished now, not when the PTY closes: a grandchild that inherited the
     // PTY can keep it open long after the agent itself is gone.
-    if let Some(buffers) = app.try_state::<super::output_buffer::OutputBuffersState>() {
+    if let Some(buffers) = buffers {
         buffers.finish(agent_id, AgentStatus::Idle);
     }
     // Tokens spent before a kill were spent, so the run is booked from its

@@ -22,6 +22,7 @@ import { ExcalidrawContent } from './settings/ExcalidrawContent';
 import { VideoImportContent } from './settings/VideoImportContent';
 import { PushoverContent } from './settings/PushoverContent';
 import { AuricSkillsContent } from './settings/AuricSkillsContent';
+import { SupervisorContent } from './settings/SupervisorContent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 
@@ -31,6 +32,7 @@ const JUDGE_HINT =
 export type SettingsCategory =
   | 'agent'
   | 'skills'
+  | 'supervisor'
   | 'credentials'
   | 'llm'
   | 'judge'
@@ -93,6 +95,7 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     items: [
       { id: 'agent', icon: 'robot_2', label: 'Agent' },
       { id: 'skills', icon: 'auto_awesome', label: 'Skills' },
+      { id: 'supervisor', icon: 'account_tree', label: 'Supervisor' },
     ],
   },
   {
@@ -178,12 +181,15 @@ function SettingsDialog({
     })).filter((group) => group.items.length > 0);
   }, [search]);
 
+  // code-gate: complexity-cyclomatic - one case per settings section, a lookup with nothing to branch on
   const renderContent = () => {
     switch (activeCategory) {
       case 'agent':
         return <AgentContent />;
       case 'skills':
         return <AuricSkillsContent />;
+      case 'supervisor':
+        return <SupervisorContent />;
       case 'credentials':
         return <CredentialsContent />;
       case 'providers':

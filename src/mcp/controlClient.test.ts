@@ -10,7 +10,7 @@ import {
   type ControlMethod,
   type ControlRequest,
 } from '../lib/agents/agentControl.contract';
-import { callControl, controlSocketPath } from './controlClient';
+import { callControl, controlSocketPath, controlTimeoutMs } from './controlClient';
 
 type Answer = (request: ControlRequest) => unknown;
 
@@ -115,6 +115,35 @@ describe('callControl', () => {
     expect(error).toBeInstanceOf(ControlError);
     expect(error?.code).toBe('headless_no_stdin');
     expect(error?.message).toBe('agent-2 runs headless and does not read input');
+  });
+
+  it('keeps the reason of a supervisor_denied refusal', async () => {
+    const refusal = fixtures.additionalResponses.find(
+      (entry) => entry.raw.ok === false && entry.method === 'spawn'
+    )!;
+    server = await startMockSocket(
+      socketPath,
+      (request) => ({ ...refusal.raw, id: request.id }),
+      received
+    );
+    const error = await callControl(
+      'spawn',
+      { projectPath: '/tmp/example-project', prompt: 'x', provider: 'claude', model: 'opus' },
+      { socketPath }
+    ).catch((e: unknown) => e as ControlError);
+    expect(error).toMatchObject({ code: 'supervisor_denied', reason: 'model_not_allowed' });
+  });
+
+  it('waits waitSeconds plus the grace period for await_result', () => {
+    const grace = fixtures.limits.awaitClientGraceSeconds;
+    expect(controlTimeoutMs('await_result', { agentId: 'a', waitSeconds: 0 })).toBe(grace * 1000);
+    expect(
+      controlTimeoutMs('await_result', {
+        agentId: 'a',
+        waitSeconds: fixtures.limits.maxAwaitSeconds,
+      })
+    ).toBe((fixtures.limits.maxAwaitSeconds + grace) * 1000);
+    expect(controlTimeoutMs('list_agents', {})).toBe(5_000);
   });
 
   it('reports app_not_running with the socket path when there is no socket', async () => {

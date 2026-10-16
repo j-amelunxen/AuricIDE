@@ -13,6 +13,7 @@ import { agentColorHex, agentColorLabel, type AgentColor } from '@/lib/agents/co
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { agentDisplayName } from '@/lib/agents/displayName';
 import { ComboProgressBadge } from './ComboProgressBadge';
+import { SupervisorRelation } from './card/SupervisorRelation';
 
 const EMPTY_LOGS: string[] = [];
 
@@ -147,6 +148,11 @@ export function CompactAgentRow({
           </span>
         )}
       </button>
+      {(agent.role === 'supervisor' || agent.spawnedByAgentId) && (
+        <span className="max-w-[45%] flex-shrink-0">
+          <SupervisorRelation agent={agent} compact />
+        </span>
+      )}
       {/* One number, chosen by state. Parked and running: how long it has
           been going. Stopped: how fresh the outcome is — a review list sorts
           by recency, and the start time answers a question nobody is asking

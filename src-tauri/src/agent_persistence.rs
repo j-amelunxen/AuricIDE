@@ -46,6 +46,12 @@ pub struct PersistedAgent {
     pub run_kind: Option<String>,
     #[serde(default)]
     pub review_of_ticket_id: Option<String>,
+    /// Supervisor scope (ADR 0004). Missing on old files: a worker started by
+    /// nobody.
+    #[serde(default)]
+    pub role: Option<crate::agents::AgentRole>,
+    #[serde(default)]
+    pub spawned_by_agent_id: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -244,6 +250,8 @@ mod tests {
             run_source: None,
             run_kind: None,
             review_of_ticket_id: None,
+            role: None,
+            spawned_by_agent_id: None,
         }
     }
 

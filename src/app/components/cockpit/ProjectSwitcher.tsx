@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { QUICK_ACCESS_HINT, QuickAccess } from './QuickAccess';
+import type { SupervisorTileProps } from './SupervisorTile';
 import { RecentProjects } from './RecentProjects';
 
 type SwitcherTab = 'quick' | 'recent';
@@ -12,7 +13,7 @@ const TABS: { id: SwitcherTab; label: string }[] = [
   { id: 'recent', label: 'Recent' },
 ];
 
-export interface ProjectSwitcherProps {
+export interface ProjectSwitcherProps extends SupervisorTileProps {
   /** The currently open project, so Quick Access can mark its own tile. */
   currentPath: string | null;
   /** Open another project by path — the same flow for both tabs. */
@@ -30,7 +31,12 @@ export interface ProjectSwitcherProps {
  * click away for everything else — and it is where starring happens, so the
  * two tabs feed each other.
  */
-export function ProjectSwitcher({ currentPath, onOpenProject }: ProjectSwitcherProps) {
+export function ProjectSwitcher({
+  currentPath,
+  onOpenProject,
+  onOpenSettings,
+  onSelectAgent,
+}: ProjectSwitcherProps) {
   const [tab, setTab] = useState<SwitcherTab>('quick');
   const starredCount = useStore((s) => s.starredProjects.length);
   const recentCount = useStore((s) => s.recentProjects.length);
@@ -133,7 +139,12 @@ export function ProjectSwitcher({ currentPath, onOpenProject }: ProjectSwitcherP
         }`}
       >
         {tab === 'quick' ? (
-          <QuickAccess currentPath={currentPath} onSwitchProject={onOpenProject} />
+          <QuickAccess
+            currentPath={currentPath}
+            onSwitchProject={onOpenProject}
+            onOpenSettings={onOpenSettings}
+            onSelectAgent={onSelectAgent}
+          />
         ) : (
           <RecentProjects onOpenProject={onOpenProject} />
         )}

@@ -83,6 +83,17 @@ describe('agent IPC wrappers', () => {
     });
   });
 
+  describe('forgetSupervisorRunResults', () => {
+    it("drops a supervisor's kept child results by its id", async () => {
+      mockInvoke.mockResolvedValueOnce(3);
+      const { forgetSupervisorRunResults } = await import('./agents');
+      await expect(forgetSupervisorRunResults('agent-sup')).resolves.toBe(3);
+      expect(mockInvoke).toHaveBeenCalledWith('agent_run_results_forget', {
+        supervisorId: 'agent-sup',
+      });
+    });
+  });
+
   describe('killAgentsForRepo', () => {
     it('calls invoke correctly', async () => {
       mockInvoke.mockResolvedValueOnce(5);

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { buildSpawnConfig, NotificationActionError } from '@/lib/notifications/execute';
 import type { NotificationAction } from '@/lib/notifications/types';
 import type { AgentConfig, AgentInfo, PermissionMode } from '@/lib/tauri/agents';
@@ -9,10 +10,12 @@ import {
   CONTROL_EVENTS,
   ControlError,
   parseControlParams,
+  RUN_SOURCES,
   SPAWN_REFUSALS,
   type ControlErrorCode,
   type ControlParams,
 } from './agentControl.contract';
+import { deriveAgentName } from './naming';
 
 /**
  * The frontend end of the agent-control socket (`docs/design-agent-control.md`).
@@ -91,18 +94,84 @@ function spawnConfigFor(params: ControlParams<'spawn'>, providers: ProviderInfo[
   }
 }
 
+/**
+ * What Rust adds to a spawn it hands over, beyond the socket's own params: for
+ * a supervisor's child the supervisor's id and `runSource: "supervisor"` (the
+ * dispatcher sets both; a caller cannot). Absent for every other spawn.
+ */
+const spawnProvenance = z.object({
+  spawnedByAgentId: z.string().min(1).nullish(),
+  runSource: z.enum(RUN_SOURCES).exclude(['other']).nullish(),
+});
+
+type SpawnRequest = ControlParams<'spawn'> & z.output<typeof spawnProvenance>;
+
+function parseSpawnRequest(raw: unknown): SpawnRequest {
+  const params = parseControlParams('spawn', raw);
+  const provenance = spawnProvenance.safeParse(raw ?? {});
+  if (!provenance.success) {
+    throw new ControlError('invalid_params', `spawn: ${provenance.error.issues[0].message}`);
+  }
+  return { ...params, ...provenance.data };
+}
+
+const SUPERVISOR_PROVIDER = 'claude';
+
+/** A supervisor, or a supervisor's child: what Rust decided is what runs. */
+function isVerbatimSpawn(request: SpawnRequest): boolean {
+  return Boolean(request.spawnedByAgentId) || request.role === 'supervisor';
+}
+
+/**
+ * The launch config for a supervisor spawn, without the launch-default
+ * fill-in `spawnConfigFor` does. For a child, Rust has already checked
+ * provider, model and permission mode against the supervisor policy; filling a
+ * gap from whatever was last launched in that folder would run something the
+ * policy never saw. A `null` permission mode stays the provider's own default.
+ */
+function verbatimSpawnConfig(request: SpawnRequest, providers: ProviderInfo[]): AgentConfig {
+  const child = Boolean(request.spawnedByAgentId);
+  // A supervisor itself runs on Claude in v1 (ADR 0004), at that provider's
+  // own default model unless the caller named one. A child gets nothing.
+  const providerId = request.provider ?? (child ? null : SUPERVISOR_PROVIDER);
+  const provider = providers.find((entry) => entry.id === providerId);
+  const model = request.model ?? (child ? null : provider?.defaultModel);
+  if (!providerId || !model) {
+    throw new ControlError(
+      'invalid_params',
+      "a supervisor's child names its provider and model; nothing is filled in"
+    );
+  }
+  const folder = request.projectPath.split('/').filter(Boolean).pop();
+  return {
+    name: request.name ?? deriveAgentName(request.prompt, folder),
+    model,
+    task: request.prompt,
+    projectPath: request.projectPath,
+    cwd: request.projectPath,
+    provider: providerId,
+    permissionMode: (request.permissionMode ?? undefined) as PermissionMode | undefined,
+    headless: request.headless ?? false,
+    runSource: request.runSource ?? (request.spawnedByAgentId ? 'supervisor' : 'mcp'),
+    role: request.role ?? 'worker',
+    spawnedByAgentId: request.spawnedByAgentId ?? null,
+  };
+}
+
 function spawnFailureCode(message: string): ControlErrorCode {
   return SPAWN_REFUSALS.find(({ pattern }) => message.includes(pattern))?.code ?? 'internal';
 }
 
-async function spawnFromControl(params: ControlParams<'spawn'>, host: ControlHost) {
+async function spawnFromControl(params: SpawnRequest, host: ControlHost) {
   if (!(await isDir(params.projectPath))) {
     throw new ControlError(
       'invalid_params',
       `projectPath is not an existing directory: ${params.projectPath}`
     );
   }
-  const config = spawnConfigFor(params, host.providers);
+  const config = isVerbatimSpawn(params)
+    ? verbatimSpawnConfig(params, host.providers)
+    : spawnConfigFor(params, host.providers);
   let spawned: AgentInfo;
   try {
     spawned = await host.spawnNewAgent(config);
@@ -111,8 +180,14 @@ async function spawnFromControl(params: ControlParams<'spawn'>, host: ControlHos
     throw new ControlError(spawnFailureCode(message), message);
   }
   // Not selected: nobody clicked, and the user may be looking at something else.
-  host.showToast?.(`${spawned.name} started by an MCP client`, 'success');
+  host.showToast?.(`${spawned.name} started by ${starterName(params, host)}`, 'success');
   return { agentId: spawned.id };
+}
+
+function starterName(params: SpawnRequest, host: ControlHost): string {
+  if (!params.spawnedByAgentId) return 'an MCP client';
+  const supervisor = host.agents.find((entry) => entry.id === params.spawnedByAgentId);
+  return supervisor?.name ?? 'a supervisor';
 }
 
 async function respond(
@@ -146,7 +221,7 @@ export async function handleControlRequest(
     const result =
       event.method === 'kill'
         ? await killFromControl(parseControlParams('kill', event.params), host)
-        : await spawnFromControl(parseControlParams('spawn', event.params), host);
+        : await spawnFromControl(parseSpawnRequest(event.params), host);
     await respond(event.reqId, { ok: true, result });
   } catch (error) {
     const failure =

@@ -2,12 +2,15 @@
 //! JSON response per line out. `src/lib/agents/agentControl.fixtures.json` is
 //! the contract; the tests below run every case in it.
 
-use crate::agents::{AgentInfo, AgentStatus};
+use crate::agents::run_results::RunResult;
+use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 pub const DEFAULT_TAIL_BYTES: u64 = 16 * 1024;
 pub const MAX_TAIL_BYTES: u64 = 256 * 1024;
+pub const DEFAULT_AWAIT_SECONDS: u64 = 60;
+pub const MAX_AWAIT_SECONDS: u64 = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -21,6 +24,8 @@ pub enum ErrorCode {
     ProviderDenied,
     FrontendUnavailable,
     ForbiddenAgentCaller,
+    SupervisorDenied,
+    OutsideSupervisorScope,
     Internal,
 }
 
@@ -28,6 +33,10 @@ pub enum ErrorCode {
 pub struct ControlError {
     pub code: ErrorCode,
     pub message: String,
+    /// A stable key from `supervisorPolicy.fixtures.json`, on
+    /// `supervisor_denied` only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 impl ControlError {
@@ -35,7 +44,13 @@ impl ControlError {
         Self {
             code,
             message: message.into(),
+            reason: None,
         }
+    }
+
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
     }
 }
 
@@ -88,6 +103,23 @@ pub struct SpawnParams {
     pub headless: Option<bool>,
     #[serde(default)]
     pub name: Option<String>,
+    /// `supervisor` from an external caller starts a supervisor; `worker` is
+    /// the same as leaving it out and parses to `None`.
+    #[serde(default)]
+    pub role: Option<AgentRole>,
+    /// Whether the request named a role at all, `worker` included. A
+    /// supervisor caller may not, and `role` alone no longer says so.
+    #[serde(skip)]
+    pub role_passed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwaitResultParams {
+    pub agent_id: String,
+    /// Always `Some` after parsing: defaulted and clamped there.
+    #[serde(default)]
+    pub wait_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -99,15 +131,17 @@ pub enum Request {
     Kill(AgentIdParams),
     Spawn(SpawnParams),
     ListProjects(EmptyParams),
+    AwaitResult(AwaitResultParams),
 }
 
-const METHODS: [&str; 6] = [
+const METHODS: [&str; 7] = [
     "list_agents",
     "read_output",
     "send_input",
     "kill",
     "spawn",
     "list_projects",
+    "await_result",
 ];
 
 /// A request line that could not be turned into a `Request`. `id` is echoed
@@ -164,6 +198,14 @@ pub fn parse_request(line: &str) -> Result<(Value, Request), Rejected> {
                 format!("invalid params for {method}: {error}"),
             )
         })?;
+    let role_passed = params.get("role").is_some_and(|role| !role.is_null());
+    let request = match request {
+        Request::Spawn(mut spawn) => {
+            spawn.role_passed = role_passed;
+            Request::Spawn(spawn)
+        }
+        other => other,
+    };
     match normalise(request) {
         Ok(request) => Ok((id, request)),
         Err(message) => Err(reject(id, ErrorCode::InvalidParams, message)),
@@ -194,6 +236,20 @@ fn normalise(request: Request) -> Result<Request, String> {
         Request::Kill(params) if blank(&params.agent_id) => Err("agentId must not be empty".into()),
         Request::Spawn(params) if blank(&params.project_path) || blank(&params.prompt) => {
             Err("projectPath and prompt must not be empty".into())
+        }
+        Request::Spawn(mut params) => {
+            if params.role == Some(AgentRole::Worker) {
+                params.role = None;
+            }
+            Ok(Request::Spawn(params))
+        }
+        Request::AwaitResult(mut params) => {
+            if blank(&params.agent_id) {
+                return Err("agentId must not be empty".into());
+            }
+            let wait = params.wait_seconds.unwrap_or(DEFAULT_AWAIT_SECONDS);
+            params.wait_seconds = Some(wait.min(MAX_AWAIT_SECONDS));
+            Ok(Request::AwaitResult(params))
         }
         other => Ok(other),
     }
@@ -257,6 +313,62 @@ pub struct SpawnResult {
     pub agent_id: String,
 }
 
+/// What `spawn` hands the frontend: the caller's params plus what only Rust
+/// may set. For a supervisor's child Rust sets `role`, `permissionMode`,
+/// `spawnedByAgentId` and `runSource`; the bridge passes them on verbatim.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendSpawnParams {
+    #[serde(flatten)]
+    pub params: SpawnParams,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spawned_by_agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_source: Option<String>,
+}
+
+/// `runSource` of a run a supervisor started (`docs/design-agent-usage.md`).
+pub const RUN_SOURCE_SUPERVISOR: &str = "supervisor";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwaitPending {
+    /// Always `false`.
+    pub done: bool,
+    pub agent_id: String,
+    pub status: AgentStatus,
+    pub output_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AwaitDone {
+    /// Always `true`.
+    pub done: bool,
+    pub result: RunResult,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum AwaitOutcome {
+    Pending(AwaitPending),
+    Done(AwaitDone),
+}
+
+impl AwaitOutcome {
+    pub fn pending(agent_id: &str, status: AgentStatus, output_bytes: u64) -> Self {
+        Self::Pending(AwaitPending {
+            done: false,
+            agent_id: agent_id.to_string(),
+            status,
+            output_bytes,
+        })
+    }
+
+    pub fn done(result: RunResult) -> Self {
+        Self::Done(AwaitDone { done: true, result })
+    }
+}
+
 /// Where `ProjectEntry.description` came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -281,6 +393,35 @@ pub struct ProjectEntry {
     pub running_agents: usize,
     pub description: Option<String>,
     pub description_source: Option<DescriptionSource>,
+    /// Only in a supervisor's `list_projects`: what it may use there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supervisor: Option<SupervisorAccess>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisorModelEntry {
+    pub id: String,
+    pub label: String,
+    /// Higher is bigger; `None` is a model without a known size.
+    pub rank: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisorProviderAccess {
+    pub id: String,
+    pub permission_mode: Option<String>,
+    pub models: Vec<SupervisorModelEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisorAccess {
+    pub providers: Vec<SupervisorProviderAccess>,
+    pub allow_interactive: bool,
+    pub running_children: u32,
+    pub max_running: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -340,6 +481,8 @@ pub(crate) mod tests {
             ErrorCode::ProviderDenied,
             ErrorCode::FrontendUnavailable,
             ErrorCode::ForbiddenAgentCaller,
+            ErrorCode::SupervisorDenied,
+            ErrorCode::OutsideSupervisorScope,
             ErrorCode::Internal,
         ];
         let ours: Vec<Value> = codes
@@ -354,6 +497,22 @@ pub(crate) mod tests {
         let limits = &fixtures()["limits"];
         assert_eq!(limits["defaultTailBytes"], DEFAULT_TAIL_BYTES);
         assert_eq!(limits["maxTailBytes"], MAX_TAIL_BYTES);
+        assert_eq!(limits["defaultAwaitSeconds"], DEFAULT_AWAIT_SECONDS);
+        assert_eq!(limits["maxAwaitSeconds"], MAX_AWAIT_SECONDS);
+    }
+
+    #[test]
+    fn roles_and_the_supervisor_run_source_match_the_contract() {
+        let fixtures = fixtures();
+        let roles: Vec<Value> = [AgentRole::Worker, AgentRole::Supervisor]
+            .iter()
+            .map(|role| serde_json::to_value(role).unwrap())
+            .collect();
+        assert_eq!(Value::Array(roles), fixtures["roles"]);
+        assert!(fixtures["runSources"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(RUN_SOURCE_SUPERVISOR)));
     }
 
     pub(crate) fn sample_agent() -> AgentInfo {
@@ -371,10 +530,26 @@ pub(crate) mod tests {
             spawned_by_ticket_id: None,
             spawned_by_goal_id: None,
             headless: false,
+            role: AgentRole::Worker,
+            spawned_by_agent_id: None,
+        }
+    }
+
+    pub(crate) fn sample_run_result() -> RunResult {
+        RunResult {
+            agent_id: "agent-5".into(),
+            status: AgentStatus::Idle,
+            exit_code: Some(0),
+            answer: Some("ANSWER: the parser handles empty input.".into()),
+            is_error: false,
+            source: crate::agents::run_results::RunResultSource::CliResult,
+            finished_at: 1_790_000_060_000,
+            cost_usd: Some(0.0123),
         }
     }
 
     #[test]
+    // code-gate: complexity-function-length - one literal per fixture response; the list mirrors the contract file
     fn serialised_responses_match_the_fixture_responses() {
         let fixtures = fixtures();
         let expected = &fixtures["responses"];
@@ -452,6 +627,7 @@ pub(crate) mod tests {
                                     "Customer portal; ask before touching billing.".into(),
                                 ),
                                 description_source: Some(DescriptionSource::User),
+                                supervisor: None,
                             },
                             ProjectEntry {
                                 path: "/tmp/example-project".into(),
@@ -465,6 +641,7 @@ pub(crate) mod tests {
                                     "A small example service that parses invoices.".into(),
                                 ),
                                 description_source: Some(DescriptionSource::Readme),
+                                supervisor: None,
                             },
                             ProjectEntry {
                                 path: "/tmp/other-project".into(),
@@ -476,10 +653,15 @@ pub(crate) mod tests {
                                 running_agents: 0,
                                 description: None,
                                 description_source: None,
+                                supervisor: None,
                             },
                         ],
                     },
                 ),
+            ),
+            (
+                "await_result",
+                ok_response(&json!(18), AwaitOutcome::done(sample_run_result())),
             ),
             (
                 "error",
@@ -500,6 +682,122 @@ pub(crate) mod tests {
         );
         for (name, actual) in cases {
             assert_eq!(&actual, &expected[name], "{name}");
+        }
+    }
+
+    /// The further answers a method can give, built from our own types.
+    #[test]
+    // code-gate: complexity-function-length - one literal per fixture response; the list mirrors the contract file
+    fn additional_fixture_responses_are_what_we_serialise() {
+        let fixtures = fixtures();
+        let mut child = sample_agent();
+        child.id = "agent-5".into();
+        child.name = "Check the parser".into();
+        child.model = "haiku".into();
+        child.current_task = Some("check the parser".into());
+        child.headless = true;
+        child.spawned_by_agent_id = Some("agent-sup".into());
+        let failed = RunResult {
+            agent_id: "agent-6".into(),
+            status: AgentStatus::Error,
+            exit_code: None,
+            answer: Some("Error: could not reach the model".into()),
+            is_error: true,
+            source: crate::agents::run_results::RunResultSource::ConsoleTail,
+            finished_at: 1_790_000_090_000,
+            cost_usd: None,
+        };
+        let model = |id: &str, label: &str, rank: Option<i64>| SupervisorModelEntry {
+            id: id.into(),
+            label: label.into(),
+            rank,
+        };
+        let project = ProjectEntry {
+            path: "/tmp/example-project".into(),
+            name: "example-project".into(),
+            starred: true,
+            is_open: true,
+            initialized: true,
+            last_opened_at: Some(1_790_000_000_000),
+            running_agents: 1,
+            description: Some("A small example service that parses invoices.".into()),
+            description_source: Some(DescriptionSource::Readme),
+            supervisor: Some(SupervisorAccess {
+                providers: vec![
+                    SupervisorProviderAccess {
+                        id: "claude".into(),
+                        permission_mode: None,
+                        models: vec![
+                            model("haiku", "Haiku", Some(1)),
+                            model("sonnet", "Sonnet", Some(2)),
+                        ],
+                    },
+                    SupervisorProviderAccess {
+                        id: "codex".into(),
+                        permission_mode: Some("acceptEdits".into()),
+                        models: vec![
+                            model("gpt-6-luna", "GPT-6 Luna", Some(1)),
+                            model("auto", "Auto", None),
+                        ],
+                    },
+                ],
+                allow_interactive: true,
+                running_children: 1,
+                max_running: 2,
+            }),
+        };
+        let ours: Vec<(&str, Value)> = vec![
+            (
+                "await_result while the agent still runs",
+                ok_response(&json!(18), AwaitOutcome::pending("agent-5", AgentStatus::Running, 2048)),
+            ),
+            (
+                "await_result for an agent that failed, answer from the console tail",
+                ok_response(&json!(18), AwaitOutcome::done(failed)),
+            ),
+            (
+                "list_agents for a supervisor: its children only",
+                ok_response(
+                    &json!(1),
+                    ListAgentsResult {
+                        agents: vec![AgentSummary { info: child, output_bytes: 2048 }],
+                    },
+                ),
+            ),
+            (
+                "list_projects for a supervisor: allowed projects with what it may use there",
+                ok_response(&json!("a"), ListProjectsResult { projects: vec![project] }),
+            ),
+            (
+                "spawn refused by the supervisor policy carries a reason key",
+                error_response(
+                    &json!(7),
+                    &ControlError::new(
+                        ErrorCode::SupervisorDenied,
+                        "Model 'opus' is not allowed for claude in /tmp/example-project. Allowed: haiku, sonnet.",
+                    )
+                    .with_reason("model_not_allowed"),
+                ),
+            ),
+            (
+                "send_input from a supervisor",
+                error_response(
+                    &json!(5),
+                    &ControlError::new(
+                        ErrorCode::OutsideSupervisorScope,
+                        "A supervisor cannot type into agents. Ask the human to answer in agent-5's window.",
+                    ),
+                ),
+            ),
+        ];
+        let cases = fixtures["additionalResponses"].as_array().unwrap();
+        assert_eq!(cases.len(), ours.len(), "a fixture response has no case");
+        for (name, actual) in ours {
+            let case = cases
+                .iter()
+                .find(|case| case["name"] == name)
+                .unwrap_or_else(|| panic!("no fixture named {name}"));
+            assert_eq!(actual, case["raw"], "{name}");
         }
     }
 }

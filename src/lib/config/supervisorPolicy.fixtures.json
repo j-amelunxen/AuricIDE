@@ -1,0 +1,2859 @@
+{
+  "_comment": [
+    "The single source of truth for what a supervisor agent may start (ADR 0004, docs/design-agent-control.md",
+    "'Supervisor scope'). Two implementations read this file: src/lib/config/supervisorPolicy.ts (Vitest) decides",
+    "what Settings and the supervisor's launch prompt offer, src-tauri/src/supervisor/policy.rs (cargo test, via",
+    "include_str!) decides what actually spawns. If they disagree, the prompt would offer a model the socket",
+    "refuses, or the socket would start one nobody was shown. Add a case here before changing either side.",
+    "The file is <app_data_dir>/supervisor-policy.json, written by Rust only. Every error fails closed:",
+    "nothing the file does not plainly allow is allowed. Paths are canonicalised by Rust before lookup",
+    "(realpath); the cases below only cover what is pure: absolute, trailing slash removed."
+  ],
+  "defaults": {
+    "_comment": "What a field that is absent from a valid file means. An absent project entry allows nothing.",
+    "supervisor": {
+      "provider": "claude",
+      "model": null
+    },
+    "maxRunningChildren": 4,
+    "project": {
+      "allowed": false,
+      "providers": null,
+      "models": {},
+      "permissionMode": {},
+      "allowInteractive": false,
+      "maxRunning": 2
+    }
+  },
+  "rejectedPermissionModes": ["bypassPermissions"],
+  "reasons": {
+    "_comment": "Stable reason keys. Rust sends one as error.reason with code supervisor_denied (checkSpawn) or lists it in parse.rejected (parse). The message beside it is for humans and may change; the key may not.",
+    "parse": {
+      "file_missing": "There is no supervisor-policy.json. Nothing is allowed.",
+      "malformed": "The file is not valid JSON, or not an object. Nothing is allowed.",
+      "unsupported_version": "The file has a version this build does not know. Nothing is allowed.",
+      "invalid_entry": "A project entry is not an object, or a field has the wrong type. That project allows nothing.",
+      "path_not_absolute": "A project key is not an absolute path. That project allows nothing.",
+      "bypass_permissions": "A project names bypassPermissions as a permission mode. That project allows nothing."
+    },
+    "checkSpawn": {
+      "project_not_listed": "The project has no entry in the policy (or the file is missing or unreadable).",
+      "project_not_allowed": "The project is listed with allowed: false.",
+      "provider_not_installed": "The provider offers no models on this machine.",
+      "provider_not_allowed": "The provider is not on this project's supervisor provider list.",
+      "provider_denied_by_project": "The project's own provider policy does not permit this provider.",
+      "provider_has_no_models": "The policy lists an empty model list for this provider.",
+      "model_not_allowed": "The model is not on the policy's model list for this provider.",
+      "model_not_offered": "The provider does not offer this model (any more).",
+      "permission_mode_unattended": "The permission mode the child would run under (the policy's, or the provider's default when the policy names none) skips permission prompts.",
+      "interactive_not_allowed": "An interactive run was requested and the project has allowInteractive: false.",
+      "project_limit_reached": "The supervisor already has maxRunning children running in this project.",
+      "global_limit_reached": "The supervisor already has maxRunningChildren children running in total."
+    }
+  },
+  "checkOrder": [
+    "project_not_listed",
+    "project_not_allowed",
+    "provider_not_installed",
+    "provider_not_allowed",
+    "provider_denied_by_project",
+    "provider_has_no_models",
+    "model_not_allowed",
+    "model_not_offered",
+    "permission_mode_unattended",
+    "interactive_not_allowed",
+    "project_limit_reached",
+    "global_limit_reached"
+  ],
+  "parse": [
+    {
+      "name": "missing file allows nothing",
+      "raw": null,
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "file_missing"
+          }
+        ]
+      }
+    },
+    {
+      "name": "malformed JSON allows nothing",
+      "raw": "{ not json",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "malformed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JSON that is not an object allows nothing",
+      "raw": "[1,2]",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "malformed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown version allows nothing",
+      "raw": "{\"version\": 2, \"projects\": {\"/abs/project-a\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "unsupported_version"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a full valid file",
+      "raw": "{\"version\": 1, \"supervisor\": {\"provider\": \"claude\", \"model\": \"opus\"}, \"maxRunningChildren\": 6, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providers\": [\"codex\"], \"models\": {\"codex\": [\"gpt-6-luna\", \"gpt-6-sol\"]}, \"permissionMode\": {\"codex\": \"acceptEdits\"}, \"allowInteractive\": true, \"maxRunning\": 2}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": "opus"
+          },
+          "maxRunningChildren": 6,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": ["codex"],
+              "models": {
+                "codex": ["gpt-6-luna", "gpt-6-sol"]
+              },
+              "permissionMode": {
+                "codex": "acceptEdits"
+              },
+              "allowInteractive": true,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "absent fields take the defaults, and an entry without allowed is not allowed",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": false,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "provider ids are trimmed and lowercased, duplicates and blanks drop out; model ids stay verbatim",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providers\": [\" Codex\", \"codex\", \"\"], \"models\": {\" CODEX \": [\"gpt-6-Luna\"]}, \"permissionMode\": {\"Codex\": \"acceptEdits\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": ["codex"],
+              "models": {
+                "codex": ["gpt-6-Luna"]
+              },
+              "permissionMode": {
+                "codex": "acceptEdits"
+              },
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "providers null means the project policy decides",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providers\": null}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "an empty provider list is kept: it allows no provider",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"providers\": []}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": [],
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "an empty model list is kept: it blocks that provider",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"models\": {\"claude\": []}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {
+                "claude": []
+              },
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a trailing slash on a project path is removed",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a/\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a relative project path is dropped, the others stay",
+      "raw": "{\"version\": 1, \"projects\": {\"project-a\": {\"allowed\": true}, \"/abs/project-b\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-b": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": "project-a",
+            "reason": "path_not_absolute"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a project entry that is not an object is dropped",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": true, \"/abs/project-b\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-b": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a field of the wrong type drops its project, not the file",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": \"yes\"}, \"/abs/project-b\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-b": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a negative limit drops its project",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"maxRunning\": -1}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bypassPermissions is rejected and drops its project",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"permissionMode\": {\"claude\": \"bypassPermissions\"}}, \"/abs/project-b\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-b": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "bypass_permissions"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an invalid maxRunningChildren falls back to the default",
+      "raw": "{\"version\": 1, \"maxRunningChildren\": \"many\", \"projects\": {\"/abs/project-a\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a missing version allows nothing",
+      "raw": "{\"projects\": {\"/abs/project-a\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "unsupported_version"
+          }
+        ]
+      }
+    },
+    {
+      "name": "projects that is not an object allows nothing",
+      "raw": "{\"version\": 1, \"projects\": [\"/abs/project-a\"]}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "malformed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two model keys for the same provider are merged, duplicates once",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"models\": {\"Codex\": [\"gpt-6-luna\"], \"codex\": [\"gpt-6-luna\", \"gpt-6-sol\"]}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": true,
+              "providers": null,
+              "models": {
+                "codex": ["gpt-6-luna", "gpt-6-sol"]
+              },
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a provider key that is blank drops its project",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"models\": {\" \": [\"x\"]}}, \"/abs/project-b\": {\"allowed\": true}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-b": {
+              "allowed": true,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bypassPermissions with surrounding blanks is still rejected",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a\": {\"allowed\": true, \"permissionMode\": {\"claude\": \" bypassPermissions \"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {}
+        },
+        "rejected": [
+          {
+            "project": "/abs/project-a",
+            "reason": "bypass_permissions"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two spellings of one project path: the stricter entry wins",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a/\": {\"allowed\": false}, \"/abs/project-a\": {\"allowed\": true, \"providers\": [\"claude\", \"codex\"], \"models\": {\"claude\": [\"haiku\", \"sonnet\"]}, \"allowInteractive\": true, \"maxRunning\": 3}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": false,
+              "providers": ["claude", "codex"],
+              "models": {
+                "claude": ["haiku", "sonnet"]
+              },
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "two spellings that name different permission modes for one provider: the project allows nothing",
+      "raw": "{\"version\": 1, \"projects\": {\"/abs/project-a/\": {\"allowed\": true, \"permissionMode\": {\"codex\": \"plan\"}}, \"/abs/project-a\": {\"allowed\": true, \"permissionMode\": {\"codex\": \"acceptEdits\"}}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null
+          },
+          "maxRunningChildren": 4,
+          "projects": {
+            "/abs/project-a": {
+              "allowed": false,
+              "providers": null,
+              "models": {},
+              "permissionMode": {},
+              "allowInteractive": false,
+              "maxRunning": 2
+            }
+          }
+        },
+        "rejected": []
+      }
+    }
+  ],
+  "visibleProjectsRules": [
+    "Visible = listed with allowed: true. A visible project lists the providers that survive all of:",
+    "on the supervisor list (or every offered provider when providers is null), permitted by the project's",
+    "provider policy, and left with at least one model. Models are the policy list (or every offered model",
+    "when absent) intersected with what the provider offers now, in the provider's own order. Projects are",
+    "sorted by path, providers by id. permissionMode is null where the policy names none: the provider's",
+    "own default, never the launch defaults.",
+    "A provider whose effective permission mode is unattended (permissionModesRules) is left out."
+  ],
+  "visibleProjects": [
+    {
+      "name": "only allowed projects are visible, sorted by path, with the providers and models they offer",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-b": {
+            "allowed": true,
+            "providers": ["claude"],
+            "models": {
+              "claude": ["haiku", "sonnet"]
+            },
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          },
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "grok"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-c": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicies": {
+        "/abs/project-a": {
+          "allow": null,
+          "deny": ["grok"]
+        },
+        "/abs/project-b": {
+          "allow": null,
+          "deny": []
+        }
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "expected": [
+        {
+          "path": "/abs/project-a",
+          "providers": [
+            {
+              "id": "codex",
+              "models": ["gpt-6-luna", "gpt-6-sol"],
+              "permissionMode": "acceptEdits"
+            }
+          ],
+          "allowInteractive": true,
+          "maxRunning": 2
+        },
+        {
+          "path": "/abs/project-b",
+          "providers": [
+            {
+              "id": "claude",
+              "models": ["haiku", "sonnet"],
+              "permissionMode": null
+            }
+          ],
+          "allowInteractive": false,
+          "maxRunning": 2
+        }
+      ]
+    },
+    {
+      "name": "providers null lists every offered provider the project policy permits, with all offered models",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {
+              "codex": []
+            },
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicies": {
+        "/abs/project-a": {
+          "allow": ["claude", "codex"],
+          "deny": []
+        }
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "expected": [
+        {
+          "path": "/abs/project-a",
+          "providers": [
+            {
+              "id": "claude",
+              "models": ["haiku", "sonnet", "opus", "fable"],
+              "permissionMode": null
+            }
+          ],
+          "allowInteractive": false,
+          "maxRunning": 2
+        }
+      ]
+    },
+    {
+      "name": "a listed model the provider no longer offers is not shown",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["claude"],
+            "models": {
+              "claude": ["haiku", "claude-3-old"]
+            },
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicies": {
+        "/abs/project-a": {
+          "allow": null,
+          "deny": []
+        }
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "expected": [
+        {
+          "path": "/abs/project-a",
+          "providers": [
+            {
+              "id": "claude",
+              "models": ["haiku"],
+              "permissionMode": null
+            }
+          ],
+          "allowInteractive": false,
+          "maxRunning": 2
+        }
+      ]
+    },
+    {
+      "name": "an allowed project whose providers all fall away stays visible with no providers",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["grok"],
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicies": {
+        "/abs/project-a": {
+          "allow": null,
+          "deny": ["grok"]
+        }
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "expected": [
+        {
+          "path": "/abs/project-a",
+          "providers": [],
+          "allowInteractive": false,
+          "maxRunning": 2
+        }
+      ]
+    },
+    {
+      "name": "an empty policy shows nothing",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null
+        },
+        "maxRunningChildren": 4,
+        "projects": {}
+      },
+      "projectPolicies": {},
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "expected": []
+    },
+    {
+      "name": "a provider whose effective mode is unattended is not offered",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {
+              "antigravity": "plan",
+              "opencode": "auto"
+            },
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicies": {},
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "expected": [
+        {
+          "path": "/abs/project-a",
+          "providers": [
+            {
+              "id": "claude",
+              "models": ["haiku", "sonnet", "opus", "fable"],
+              "permissionMode": null
+            }
+          ],
+          "allowInteractive": false,
+          "maxRunning": 2
+        },
+        {
+          "path": "/abs/project-b",
+          "providers": [
+            {
+              "id": "antigravity",
+              "models": ["gemini-3-pro"],
+              "permissionMode": "plan"
+            },
+            {
+              "id": "claude",
+              "models": ["haiku", "sonnet", "opus", "fable"],
+              "permissionMode": null
+            }
+          ],
+          "allowInteractive": false,
+          "maxRunning": 2
+        }
+      ]
+    }
+  ],
+  "checkSpawnRules": [
+    "Checks run in checkOrder; the first that fails is the reason. running counts the calling supervisor's",
+    "children with status running: total across projects, byProject per path. Queued counts as running.",
+    "A limit is reached when the count is >= the limit. offeredModels is what each installed provider offers",
+    "now; a provider missing from it is not installed. projectPolicy is the project's provider policy",
+    "(providerPolicy.fixtures.json). On success permissionMode is the policy's value for that provider, or",
+    "null; Rust passes it verbatim and the frontend fills in nothing.",
+    "permission_mode_unattended: see permissionModesRules; the provider's default counts when the policy names no mode."
+  ],
+  "checkSpawn": [
+    {
+      "name": "allowed: listed provider, listed model, headless",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": "acceptEdits"
+      }
+    },
+    {
+      "name": "allowed: a provider without a permission mode entry gets null (the provider's own default)",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "claude",
+        "model": "haiku",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": null
+      }
+    },
+    {
+      "name": "project not listed",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-z",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "project_not_listed"
+      }
+    },
+    {
+      "name": "missing policy file allows nothing",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": null
+        },
+        "maxRunningChildren": 4,
+        "projects": {}
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "claude",
+        "model": "haiku",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "project_not_listed"
+      }
+    },
+    {
+      "name": "project listed with allowed false",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-b",
+        "provider": "claude",
+        "model": "haiku",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "project_not_allowed"
+      }
+    },
+    {
+      "name": "provider not on the supervisor list",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "grok",
+        "model": "grok-5",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "provider_not_allowed"
+      }
+    },
+    {
+      "name": "provider not installed",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "gemini",
+        "model": "gemini-3",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "provider_not_installed"
+      }
+    },
+    {
+      "name": "provider on the supervisor list but denied by the project policy",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": ["codex"]
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "provider_denied_by_project"
+      }
+    },
+    {
+      "name": "provider on the supervisor list but outside the project allow list",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": ["codex"],
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "claude",
+        "model": "haiku",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "provider_denied_by_project"
+      }
+    },
+    {
+      "name": "providers null follows the project policy: permitted",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "grok",
+        "model": "grok-5",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": null
+      }
+    },
+    {
+      "name": "providers null follows the project policy: denied",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": ["grok"]
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "grok",
+        "model": "grok-5",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "provider_denied_by_project"
+      }
+    },
+    {
+      "name": "model not on the list",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-astra",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "model_not_allowed"
+      }
+    },
+    {
+      "name": "model ids compare exactly",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "GPT-6-LUNA",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "model_not_allowed"
+      }
+    },
+    {
+      "name": "models absent for the provider: any offered model",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "claude",
+        "model": "fable",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": null
+      }
+    },
+    {
+      "name": "models absent for the provider: a model it does not offer",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "claude",
+        "model": "claude-3-old",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "model_not_offered"
+      }
+    },
+    {
+      "name": "a listed model the provider no longer offers",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-sol",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "model_not_offered"
+      }
+    },
+    {
+      "name": "an empty model list blocks the provider",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna"],
+              "claude": []
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "claude",
+        "model": "haiku",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "provider_has_no_models"
+      }
+    },
+    {
+      "name": "interactive allowed",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": false
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": "acceptEdits"
+      }
+    },
+    {
+      "name": "interactive requested while allowInteractive is false",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": false,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "interactive_not_allowed"
+      }
+    },
+    {
+      "name": "headless is fine while allowInteractive is false",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": false,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": "acceptEdits"
+      }
+    },
+    {
+      "name": "one below the project limit",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 1,
+        "byProject": {
+          "/abs/project-a": 1
+        }
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": "acceptEdits"
+      }
+    },
+    {
+      "name": "project limit reached",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 2,
+        "byProject": {
+          "/abs/project-a": 2
+        }
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "project_limit_reached"
+      }
+    },
+    {
+      "name": "global limit reached while the project still has room",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 4,
+        "byProject": {
+          "/abs/project-a": 1,
+          "/abs/project-b": 3
+        }
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "global_limit_reached"
+      }
+    },
+    {
+      "name": "maxRunning 0 allows no run in that project",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 0
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "codex",
+        "model": "gpt-6-luna",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "project_limit_reached"
+      }
+    },
+    {
+      "name": "the first failing check wins: a denied provider is reported before a full project",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": ["codex", "claude"],
+            "models": {
+              "codex": ["gpt-6-luna", "gpt-6-sol"]
+            },
+            "permissionMode": {
+              "codex": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          },
+          "/abs/project-b": {
+            "allowed": false,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "codex": ["gpt-6-luna", "gpt-6-terra", "gpt-6-sol", "gpt-6-astra", "auto"],
+        "grok": ["grok-5"]
+      },
+      "running": {
+        "total": 4,
+        "byProject": {
+          "/abs/project-a": 2
+        }
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "grok",
+        "model": "grok-5",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "provider_not_allowed"
+      }
+    },
+    {
+      "name": "an unattended mode the policy names is refused",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {
+              "opencode": "acceptEdits"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "opencode",
+        "model": "oc-model",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "permission_mode_unattended"
+      }
+    },
+    {
+      "name": "a provider whose default mode is unattended is refused when the policy names no mode",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "antigravity",
+        "model": "gemini-3-pro",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "permission_mode_unattended"
+      }
+    },
+    {
+      "name": "a provider whose default mode is unattended runs under an attended mode the policy names",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {
+              "antigravity": "plan"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "antigravity",
+        "model": "gemini-3-pro",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": "plan"
+      }
+    },
+    {
+      "name": "a mode outside the provider's own list is still judged by the unattended list",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {
+              "antigravity": "yolo"
+            },
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "antigravity",
+        "model": "gemini-3-pro",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "permission_mode_unattended"
+      }
+    },
+    {
+      "name": "an attended default passes the unattended check",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "claude",
+        "model": "haiku",
+        "headless": true
+      },
+      "expected": {
+        "ok": true,
+        "permissionMode": null
+      }
+    },
+    {
+      "name": "an unattended mode is reported before an interactive refusal",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": false,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "opencode",
+        "model": "oc-model",
+        "headless": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "permission_mode_unattended"
+      }
+    },
+    {
+      "name": "a model the provider does not offer is reported before an unattended mode",
+      "policy": {
+        "version": 1,
+        "supervisor": {
+          "provider": "claude",
+          "model": "opus"
+        },
+        "maxRunningChildren": 4,
+        "projects": {
+          "/abs/project-a": {
+            "allowed": true,
+            "providers": null,
+            "models": {},
+            "permissionMode": {},
+            "allowInteractive": true,
+            "maxRunning": 2
+          }
+        }
+      },
+      "projectPolicy": {
+        "allow": null,
+        "deny": []
+      },
+      "offeredModels": {
+        "claude": ["haiku", "sonnet", "opus", "fable"],
+        "antigravity": ["gemini-3-pro"],
+        "opencode": ["oc-model"]
+      },
+      "permissionModes": {
+        "claude": {
+          "default": "default",
+          "unattended": ["bypassPermissions"]
+        },
+        "antigravity": {
+          "default": "auto",
+          "unattended": ["auto", "bypassPermissions", "yolo"]
+        },
+        "opencode": {
+          "default": "auto",
+          "unattended": ["auto", "acceptEdits", "bypassPermissions"]
+        }
+      },
+      "running": {
+        "total": 0,
+        "byProject": {}
+      },
+      "request": {
+        "projectPath": "/abs/project-a",
+        "provider": "opencode",
+        "model": "gone",
+        "headless": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "supervisor_denied",
+        "reason": "model_not_offered"
+      }
+    }
+  ],
+  "permissionModesRules": [
+    "Optional on visibleProjects and checkSpawn cases: permissionModes = { provider: { default: string|null, unattended: string[] } }.",
+    "unattended lists the modes of that provider that skip permission prompts. Rust derives it from the provider config: a",
+    "permissionModes entry marked \"unattended\": true, bypassPermissions, or a mode whose mapped arguments carry a known skip flag",
+    "(--dangerously-*, --yolo, --auto, bypassPermissions). A reviewer mode (Codex --approve-for-me) is attended. The effective mode is the policy's permissionMode for",
+    "the provider, else default. A provider missing from permissionModes has default null and no unattended mode.",
+    "Unattended effective mode: checkSpawn refuses with permission_mode_unattended; visibleProjects leaves the provider out."
+  ],
+  "parseMergeRules": [
+    "Two keys that name one project (after trailing-slash removal here, after realpath in Rust) merge to the stricter",
+    "entry: allowed and allowInteractive only if both say so, maxRunning the smaller, providers the intersection (null is everything),",
+    "models per provider the intersection where both list it, else the one list. permissionMode: one named mode is kept; two different",
+    "modes for one provider make the project allowed: false with permissionMode {} (there is no stricter of two modes)."
+  ]
+}

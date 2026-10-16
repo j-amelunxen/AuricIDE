@@ -7,7 +7,10 @@ import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
 import { useStore } from '@/lib/store';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { useConfirm } from '@/lib/hooks/useConfirm';
-import { FALLBACK_CRUSH_PROVIDER } from '@/lib/tauri/providers';
+import { FALLBACK_CRUSH_PROVIDER, listProviders, type ProviderInfo } from '@/lib/tauri/providers';
+import { supervisorPolicyGet } from '@/lib/tauri/supervisorPolicy';
+import { saveSupervisorPresets } from '@/lib/quickAccess/supervisorPresets';
+import { useSupervisorPresets } from '@/lib/quickAccess/useSupervisorPresets';
 import { useAllowedProviders } from '@/lib/hooks/useAllowedProviders';
 import { listProjectSkills, type ProjectSkill } from '@/lib/tauri/projectSkills';
 import { enabledSkillSources, loadSkillSources } from '@/lib/settings/skillSources';
@@ -33,6 +36,24 @@ interface QuickAccessSettingsDialogProps {
   onClose: () => void;
 }
 
+/** What one Quick Access tile can launch, as the dialog edits it. */
+interface TilePresets {
+  icon?: ProjectIconOverride;
+  skills: QuickAccessSkill[];
+  combos: QuickAccessCombo[];
+  wheelSlots: (string | null)[];
+}
+
+/** Until the registry answers: the supervisor runs on Claude Code in this version. */
+const SUPERVISOR_PROVIDER_STUB: ProviderInfo = {
+  id: 'claude',
+  name: 'Claude Code',
+  models: [],
+  permissionModes: [],
+  defaultModel: '',
+  defaultPermissionMode: 'default',
+};
+
 /**
  * Per-project Quick Access settings: the tile's mark, and the launch presets
  * that the radial wheel can pin to a slot.
@@ -41,22 +62,13 @@ interface QuickAccessSettingsDialogProps {
  * from the persisted settings — the same shape SpawnAgentDialog uses.
  */
 export function QuickAccessSettingsDialog({ project, onClose }: QuickAccessSettingsDialogProps) {
-  return <QuickAccessSettingsPanel key={project.path} project={project} onClose={onClose} />;
+  return <ProjectSettingsPanel key={project.path} project={project} onClose={onClose} />;
 }
 
-function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialogProps) {
+function ProjectSettingsPanel({ project, onClose }: QuickAccessSettingsDialogProps) {
   const updateStarredProjectSettings = useStore((s) => s.updateStarredProjectSettings);
-  const dialogRef = useDialogA11y<HTMLDivElement>();
-
-  const [icon, setIcon] = useState<ProjectIconOverride | undefined>(project.icon);
-  const [skills, setSkills] = useState<QuickAccessSkill[]>(quickAccessSkills(project));
-  const [combos, setCombos] = useState<QuickAccessCombo[]>(quickAccessCombos(project));
-  const [wheelSlots, setWheelSlots] = useState<(string | null)[]>(quickAccessWheelSlots(project));
-  const [announcement, setAnnouncement] = useState('');
-  const { confirm, confirmDialog } = useConfirm();
   const [discovered, setDiscovered] = useState<ProjectSkill[]>([]);
   const [discoveryReady, setDiscoveryReady] = useState(false);
-  const [auricSkills] = useState(loadAuricSkills);
   // This dialog configures a project from the launcher, which is not
   // necessarily the open one — so ask about that project's policy.
   const { providers } = useAllowedProviders(FALLBACK_CRUSH_PROVIDER, project.path);
@@ -73,21 +85,121 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
     };
   }, [project.path]);
 
-  // The skills list is a draft, so what the wheel may hold moves with it. Both
-  // sides of the dirty check are normalised against their own set of ids —
-  // otherwise deleting a slotted skill would read as an edit to the wheel too.
+  return (
+    <PresetsPanel
+      title={`Quick Access: ${project.name}`}
+      discardMessage="The edits to this project's Quick Access settings have not been saved."
+      initial={{
+        icon: project.icon,
+        skills: quickAccessSkills(project),
+        combos: quickAccessCombos(project),
+        wheelSlots: quickAccessWheelSlots(project),
+      }}
+      iconPath={project.path}
+      showCombos
+      providers={providers}
+      discovered={discovered}
+      discoveryReady={discoveryReady}
+      onSave={(saved) => updateStarredProjectSettings(project.path, saved)}
+      onClose={onClose}
+    />
+  );
+}
+
+/**
+ * The supervisor tile's skills and wheel. No icon, no combos and no skills
+ * from disk: the supervisor loads none (`--restricted`), so every skill is a
+ * prompt, and its provider is fixed — only the model is a choice.
+ */
+export function SupervisorQuickAccessDialog({ onClose }: { onClose: () => void }) {
+  const presets = useSupervisorPresets();
+  const [provider, setProvider] = useState<ProviderInfo>(SUPERVISOR_PROVIDER_STUB);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([listProviders(), supervisorPolicyGet()])
+      .then(([providers, { policy }]) => {
+        const found = providers.find((p) => p.id === policy.supervisor.provider);
+        if (!cancelled && found) setProvider(found);
+      })
+      // No backend: the stub stays, and the model list stays empty.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <PresetsPanel
+      title="Quick Access: Supervisor"
+      discardMessage="The edits to the supervisor's Quick Access settings have not been saved."
+      initial={{ skills: presets.skills, combos: [], wheelSlots: presets.wheelSlots }}
+      showCombos={false}
+      providers={[provider]}
+      fixedProvider={provider}
+      discovered={[]}
+      discoveryReady
+      note="The supervisor loads no skills from disk, so each skill here is a prompt. It becomes the first task of a new supervisor, or a message to the one already running."
+      onSave={(saved) =>
+        saveSupervisorPresets({ skills: saved.skills, wheelSlots: saved.wheelSlots })
+      }
+      onClose={onClose}
+    />
+  );
+}
+
+interface PresetsPanelProps {
+  title: string;
+  discardMessage: string;
+  initial: TilePresets;
+  /** Shows the icon picker for this folder; left out where a tile has no icon to pick. */
+  iconPath?: string;
+  showCombos: boolean;
+  providers: ProviderInfo[];
+  fixedProvider?: ProviderInfo;
+  discovered: ProjectSkill[];
+  discoveryReady: boolean;
+  note?: string;
+  onSave: (presets: TilePresets) => void;
+  onClose: () => void;
+}
+
+function PresetsPanel({
+  title,
+  discardMessage,
+  initial,
+  iconPath,
+  showCombos,
+  providers,
+  fixedProvider,
+  discovered,
+  discoveryReady,
+  note,
+  onSave,
+  onClose,
+}: PresetsPanelProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>();
+
+  const [icon, setIcon] = useState<ProjectIconOverride | undefined>(initial.icon);
+  const [skills, setSkills] = useState<QuickAccessSkill[]>(initial.skills);
+  const [combos, setCombos] = useState<QuickAccessCombo[]>(initial.combos);
+  const [wheelSlots, setWheelSlots] = useState<(string | null)[]>(initial.wheelSlots);
+  const [announcement, setAnnouncement] = useState('');
+  const { confirm, confirmDialog } = useConfirm();
+  const [auricSkills] = useState(loadAuricSkills);
+
   const entries = launchEntries(skills, combos);
   const draftSlots = normalizeWheelSlots(wheelSlots, entries.map(wheelSlotId));
 
   const dirty =
     JSON.stringify({ icon, skills, combos, wheelSlots: draftSlots }) !==
     JSON.stringify({
-      icon: project.icon,
-      skills: quickAccessSkills(project),
-      combos: quickAccessCombos(project),
+      icon: initial.icon,
+      skills: initial.skills,
+      combos: initial.combos,
       wheelSlots: normalizeWheelSlots(
-        quickAccessWheelSlots(project),
-        launchEntries(quickAccessSkills(project), quickAccessCombos(project)).map(wheelSlotId)
+        initial.wheelSlots,
+        launchEntries(initial.skills, initial.combos).map(wheelSlotId)
       ),
     });
   const incompleteSkill = skills.some((skill) => !skill.label.trim() || !skill.prompt.trim());
@@ -106,7 +218,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
     }
     const discard = await confirm({
       title: 'Discard changes?',
-      message: "The edits to this project's Quick Access settings have not been saved.",
+      message: discardMessage,
       confirmLabel: 'Discard',
       variant: 'discard',
     });
@@ -121,7 +233,7 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
 
   const handleSave = () => {
     if (incomplete) return;
-    updateStarredProjectSettings(project.path, {
+    onSave({
       icon,
       skills: skills.map((skill) => ({
         ...skill,
@@ -164,16 +276,20 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
             id="quick-access-settings-title"
             className="text-sm font-bold tracking-tight text-foreground"
           >
-            Quick Access: {project.name}
+            {title}
           </h2>
         </header>
 
-        <QuickAccessIconPicker
-          path={project.path}
-          value={icon}
-          onChange={setIcon}
-          onAnnounce={setAnnouncement}
-        />
+        {note && <p className="text-[11px] leading-relaxed text-foreground-muted">{note}</p>}
+
+        {iconPath && (
+          <QuickAccessIconPicker
+            path={iconPath}
+            value={icon}
+            onChange={setIcon}
+            onAnnounce={setAnnouncement}
+          />
+        )}
 
         <QuickAccessSkillsEditor
           skills={skills}
@@ -183,17 +299,21 @@ function QuickAccessSettingsPanel({ project, onClose }: QuickAccessSettingsDialo
           discoveryReady={discoveryReady}
           onChange={setSkills}
           onAnnounce={setAnnouncement}
+          showDiscovery={!fixedProvider}
+          fixedProvider={fixedProvider}
         />
 
-        <QuickAccessCombosEditor
-          combos={combos}
-          providers={providers}
-          discovered={discovered}
-          auricSkills={auricSkills}
-          discoveryReady={discoveryReady}
-          onChange={setCombos}
-          onAnnounce={setAnnouncement}
-        />
+        {showCombos && (
+          <QuickAccessCombosEditor
+            combos={combos}
+            providers={providers}
+            discovered={discovered}
+            auricSkills={auricSkills}
+            discoveryReady={discoveryReady}
+            onChange={setCombos}
+            onAnnounce={setAnnouncement}
+          />
+        )}
 
         <QuickAccessWheelEditor
           entries={entries}

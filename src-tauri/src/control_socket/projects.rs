@@ -103,6 +103,7 @@ pub fn list_projects(
             running_agents: running_in(&path),
             description,
             description_source,
+            supervisor: None,
             name: if name.is_empty() {
                 project_name(&path)
             } else {

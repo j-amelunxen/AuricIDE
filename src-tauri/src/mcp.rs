@@ -189,6 +189,58 @@ pub(crate) fn write_agent_mcp_configs(
     })
 }
 
+/// The private MCP config of one supervisor (ADR 0004): the single server
+/// `auric-supervisor`, the packaged runtime in `--supervisor` mode, pointed at
+/// this app's control socket. Lives next to the per-agent configs.
+pub fn ensure_supervisor_mcp_config(app_data: &Path, runtime: &Path) -> Result<PathBuf, String> {
+    let directory = app_data.join("agent-bindings");
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not create agent MCP config directory: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("Could not secure agent MCP config directory: {error}"))?;
+    }
+    write_supervisor_mcp_config(
+        &directory,
+        runtime,
+        &crate::control_socket::socket_path_in(app_data),
+    )
+}
+
+pub(crate) fn write_supervisor_mcp_config(
+    directory: &Path,
+    runtime: &Path,
+    socket: &Path,
+) -> Result<PathBuf, String> {
+    let mut hasher = DefaultHasher::new();
+    socket.hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .hash(&mut hasher);
+    AGENT_CONFIG_SEQUENCE
+        .fetch_add(1, Ordering::Relaxed)
+        .hash(&mut hasher);
+    let path = directory.join(format!("supervisor-{:016x}.mcp.json", hasher.finish()));
+    let mut servers = serde_json::Map::new();
+    servers.insert(
+        crate::agents::SUPERVISOR_MCP_SERVER.to_string(),
+        serde_json::json!({
+            "command": "node",
+            "args": [runtime, "--supervisor"],
+            "env": { "AURIC_CONTROL_SOCKET": socket },
+        }),
+    );
+    let content = serde_json::to_vec_pretty(&serde_json::json!({ "mcpServers": servers }))
+        .map_err(|error| format!("Could not serialize the supervisor MCP config: {error}"))?;
+    write_new_private_file(&path, &content)?;
+    Ok(path)
+}
+
 #[derive(Debug, Serialize, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum McpServerStatus {
@@ -717,6 +769,34 @@ mod tests {
         ] {
             assert!(crush["mcp"]["auric-pm"]["env"][key].is_string(), "{key}");
         }
+    }
+
+    #[test]
+    fn a_supervisor_config_holds_only_its_own_server_privately() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_supervisor_mcp_config(
+            dir.path(),
+            Path::new("/rt/server.mjs"),
+            Path::new("/data/control.sock"),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        let config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            config,
+            serde_json::json!({ "mcpServers": { "auric-supervisor": {
+                "command": "node",
+                "args": ["/rt/server.mjs", "--supervisor"],
+                "env": { "AURIC_CONTROL_SOCKET": "/data/control.sock" }
+            } } })
+        );
+        let second =
+            write_supervisor_mcp_config(dir.path(), Path::new("/rt/server.mjs"), Path::new("/s"))
+                .unwrap();
+        assert_ne!(path, second, "one file per supervisor");
     }
 
     #[test]

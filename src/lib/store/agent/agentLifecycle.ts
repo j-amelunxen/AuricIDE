@@ -5,10 +5,17 @@ import { drainHeartbeatKinds } from '@/lib/agents/events/registry';
 import { isFinishedAgent } from '@/lib/agents/fleet';
 import { announceHeadlessFinish, shouldNotifyHeadlessFinish } from '@/lib/agents/headlessFinish';
 import { uniqueAgentName } from '@/lib/agents/naming';
+import { TERMINAL_ENTER } from '@/lib/agents/terminalKeys';
+import {
+  findRunningSupervisor,
+  readProjectProviderPolicies,
+  supervisorSpawnConfig,
+} from '@/lib/agents/supervisorLaunch';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import {
   discardInterruptedAgent as discardInterruptedAgentApi,
+  forgetSupervisorRunResults,
   killAgent,
   killAgentsForRepo,
   recordAgentPromptHistory,
@@ -19,6 +26,9 @@ import {
 import type { PmGoalRun } from '@/lib/tauri/goals';
 import type { NotificationInput } from '@/lib/tauri/notifications';
 import type { PmTicket } from '@/lib/tauri/pm';
+import { listProviders, type ProviderInfo } from '@/lib/tauri/providers';
+import type { StarredProject } from '@/lib/tauri/starredProjects';
+import { supervisorPolicyGet } from '@/lib/tauri/supervisorPolicy';
 import type { GoalsSlice } from '../goalsSlice';
 import type { EndedStep } from '../skillComboSlice';
 import {
@@ -28,7 +38,13 @@ import {
   withoutAgentRecords,
   withoutColors,
 } from './agentStateHelpers';
-import { MAX_FINISHED_AGENTS, UNGROUPED_REPO_KEY, type AgentSlice } from './agentTypes';
+import {
+  MAX_FINISHED_AGENTS,
+  UNGROUPED_REPO_KEY,
+  type AgentSlice,
+  type SupervisorLaunch,
+  type SupervisorSkillLaunch,
+} from './agentTypes';
 import { markAgentsRemoved } from './removedAgents';
 
 export async function handleSpawnNewAgent(
@@ -124,8 +140,14 @@ export async function handleSpawnNewAgent(
         model: config.model,
         provider: agent.provider,
         // A goal run knows no `schedule` source: a reminder-started run reads as
-        // it did before that value existed, a person's start.
-        source: config.runSource === 'schedule' ? 'ui' : (config.runSource ?? 'ui'),
+        // it did before that value existed, a person's start. A supervisor's
+        // child was started by an agent.
+        source:
+          config.runSource === 'schedule'
+            ? 'ui'
+            : config.runSource === 'supervisor'
+              ? 'agent'
+              : (config.runSource ?? 'ui'),
         outcome: 'running',
         summary: '',
         startedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
@@ -142,6 +164,49 @@ export async function handleSpawnNewAgent(
   }
   replayEarlyStop(agent.id, get, set);
   return named;
+}
+
+/**
+ * The supervisor's start: its prompt lists what the policy lets it use, with
+ * the descriptions people gave their Quick Access tiles. The spawn itself is
+ * the ordinary one, so the card, logs and history behave like any agent's.
+ */
+export async function handleSpawnSupervisor(
+  get: () => AgentSlice,
+  skill?: SupervisorSkillLaunch
+): Promise<SupervisorLaunch> {
+  const task = skill?.task.trim() ?? '';
+  const running = findRunningSupervisor(get().agents);
+  if (running && task) {
+    // Typed by the human through the tile, so the same wire as the composer.
+    await get().sendAgentInput(running.id, `${task}${TERMINAL_ENTER}`);
+    return { kind: 'sent', agent: running };
+  }
+  if (running) return { kind: 'running', agent: running };
+
+  const { policy } = await supervisorPolicyGet();
+  const host = get() as AgentSlice & {
+    providers?: ProviderInfo[];
+    starredProjects?: StarredProject[];
+  };
+  const allowedPaths = Object.entries(policy.projects)
+    .filter(([, entry]) => entry.allowed)
+    .map(([path]) => path);
+  // Fetched, not read from the store: the store's list is narrowed to the open
+  // project's policy, and the supervisor works across projects.
+  const providers = await listProviders().catch(() => host.providers ?? []);
+  const config = supervisorSpawnConfig({
+    policy,
+    providers,
+    projectPolicies: await readProjectProviderPolicies(allowedPaths),
+    descriptions: Object.fromEntries(
+      (host.starredProjects ?? []).map((project) => [project.path, project.description ?? null])
+    ),
+    firstTask: task || undefined,
+    model: skill?.model,
+  });
+  if (!config) return { kind: 'nothing-visible' };
+  return { kind: 'spawned', agent: await get().spawnNewAgent(config) };
 }
 
 export async function handleRetryFailedAgent(
@@ -232,6 +297,21 @@ export async function handleKillRunningAgent(
   });
 }
 
+/**
+ * A supervisor's children's results stay readable after it stops (ADR 0004,
+ * decision 4) — until its card goes. Clearing the card is the end of that.
+ */
+function forgetRunResultsOf(agents: Iterable<AgentInfo>): void {
+  for (const agent of agents) {
+    if (agent.role !== 'supervisor') continue;
+    try {
+      forgetSupervisorRunResults(agent.id).catch(() => {});
+    } catch {
+      // No backend at all (browser/test mode).
+    }
+  }
+}
+
 export function handleDismissFinishedAgent(
   agentId: string,
   get: () => AgentSlice,
@@ -245,6 +325,7 @@ export function handleDismissFinishedAgent(
   const { [agentId]: _config, ...remainingConfigs } = get().agentSpawnConfigs;
   const remainingAgents = agents.filter((a) => a.id !== agentId);
   markAgentsRemoved([agentId]);
+  forgetRunResultsOf([agent]);
   set({
     agentSpawnConfigs: remainingConfigs,
     agents: remainingAgents,
@@ -417,6 +498,7 @@ export function handleUpdateAgentStatus(
   const evictedIds = new Set(oldestFirst.slice(0, excess).map((a) => a.id));
   const remainingAgents = updatedAgents.filter((a) => !evictedIds.has(a.id));
   markAgentsRemoved(evictedIds);
+  forgetRunResultsOf(finished.filter((a) => evictedIds.has(a.id)));
 
   set({
     agents: remainingAgents,

@@ -8,6 +8,25 @@ use std::collections::{BTreeMap, HashMap};
 pub struct ModelOption {
     pub value: String,
     pub label: String,
+    /// Size within the provider, higher is bigger (`dynamic-providers/README.md`).
+    /// Absent: a model without a known size, which the supervisor does not
+    /// pick by default.
+    #[serde(
+        default,
+        deserialize_with = "lenient_rank",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub rank: Option<i64>,
+}
+
+/// A `rank` that is not an integer is no rank, not a provider config that
+/// fails to load: the size is a hint for choosing, the model still runs.
+fn lenient_rank<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value.as_i64())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +35,10 @@ pub struct PermissionModeOption {
     pub value: String,
     pub label: String,
     pub description: String,
+    /// The mode runs without permission prompts (`dynamic-providers/README.md`).
+    /// A supervisor's agents never run in such a mode.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unattended: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

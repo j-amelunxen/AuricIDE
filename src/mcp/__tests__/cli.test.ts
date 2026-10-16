@@ -91,7 +91,21 @@ describe('resolveMcpCliMode', () => {
     }
   });
 
-  it('names both modes when the arguments fit neither', () => {
-    expect(() => resolveMcpCliMode([], {})).toThrow(/--project-root.*--control/);
+  it('names every mode when the arguments fit none', () => {
+    expect(() => resolveMcpCliMode([], {})).toThrow(/--project-root.*--control.*--supervisor/);
+  });
+
+  it('starts the supervisor server inside an IDE agent, under the marker', () => {
+    expect(
+      resolveMcpCliMode(['--supervisor'], { [fixtures.environment.ideAgentMarker]: '1' })
+    ).toEqual({ mode: 'supervisor' });
+    expect(resolveMcpCliMode(['--supervisor'], {})).toEqual({ mode: 'supervisor' });
+  });
+
+  it('refuses --supervisor with extra arguments, and together with --control', () => {
+    expect(() => resolveMcpCliMode(['--supervisor', '--project-root', '/a'], {})).toThrow(
+      /unsupported/i
+    );
+    expect(() => resolveMcpCliMode(['--supervisor', '--control'], {})).toThrow(/unsupported/i);
   });
 });

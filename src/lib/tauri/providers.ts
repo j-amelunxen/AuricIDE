@@ -1,12 +1,19 @@
 export interface ModelOption {
   value: string;
   label: string;
+  /**
+   * Size within its provider, higher is bigger (1 small … 4 largest); absent or
+   * `null` for a model without a known size (`dynamic-providers/README.md`).
+   */
+  rank?: number | null;
 }
 
 export interface PermissionModeOption {
   value: string;
   label: string;
   description: string;
+  /** True when the mode skips permission prompts; Rust leaves it out when false. */
+  unattended?: boolean;
 }
 
 import { invoke } from './invoke';

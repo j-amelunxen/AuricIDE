@@ -8,19 +8,25 @@
 //!
 //! The socket is mode 0600, which keeps other users out. Agents are kept out
 //! by `Dispatcher::admit`: a peer that is, or descends from, a running IDE
-//! agent is refused (`caller.rs`). The write sandbox would not stop one — it
-//! leaves reads and network open.
+//! agent is refused (`caller.rs`), unless that agent is a supervisor, which is
+//! admitted in its own narrow scope (`supervised.rs`, ADR 0004). The write
+//! sandbox would not stop one — it leaves reads and network open.
 
 pub mod caller;
 pub mod projects;
 pub mod protocol;
+mod supervised;
 
 use crate::agents::output_buffer::OutputBuffers;
-use crate::agents::{AgentInfo, AgentStatus};
+use crate::agents::run_results::{RunResult, RunResults, CONSOLE_TAIL_ANSWER_BYTES};
+use crate::agents::{AgentInfo, AgentRole, AgentStatus};
+use crate::provider_policy::ProviderPolicy;
+use crate::providers::ModelOption;
+use crate::supervisor::policy::{ProviderModes, SupervisorPolicy};
 use protocol::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -47,13 +53,34 @@ const MAX_LINE_BYTES: u64 = 1024 * 1024;
 /// state in `TauriBackend`, and by a fake in the tests.
 pub trait ControlBackend: Send + Sync {
     fn agents(&self) -> Vec<AgentInfo>;
-    /// PIDs of the running agents' processes, for the caller check.
-    fn agent_pids(&self) -> std::collections::HashSet<u32>;
+    /// PIDs of the running agents' processes with the agent's id and role,
+    /// for the caller check.
+    fn agent_pids(&self) -> HashMap<u32, (String, AgentRole)>;
     /// Write to the agent's PTY, the same path as the console's keystrokes.
     fn write_input(&self, agent_id: &str, data: &str) -> Result<(), String>;
     fn emit_input_sent(&self, event: &AgentInputSentEvent);
     fn emit_control_request(&self, event: &ControlRequestEvent) -> Result<(), String>;
     fn projects(&self) -> Vec<ProjectEntry>;
+    /// The supervisor policy as the file says now, project keys canonical.
+    /// Missing or broken: a policy that allows nothing.
+    fn supervisor_policy(&self) -> SupervisorPolicy;
+    /// What each installed provider offers now, in its own order.
+    fn offered_models(&self) -> BTreeMap<String, Vec<ModelOption>>;
+    /// The provider policy of the project rooted at `project_root`.
+    fn project_provider_policy(&self, project_root: &Path) -> ProviderPolicy;
+    /// Per installed provider: its default permission mode and which modes
+    /// (of those it lists, its default and those `policy` names) skip the
+    /// permission prompts (`supervisor::provider_modes`).
+    fn provider_modes(&self, policy: &SupervisorPolicy) -> BTreeMap<String, ProviderModes>;
+}
+
+/// Who sent a request, as the kernel's peer PID says (`Dispatcher::admit`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Caller {
+    /// No IDE agent among the ancestors: every method, every agent.
+    External,
+    /// A running supervisor agent: its own children only (`supervised.rs`).
+    Supervisor { agent_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -168,7 +195,11 @@ pub struct Dispatcher {
     backend: Arc<dyn ControlBackend>,
     buffers: Arc<OutputBuffers>,
     pending: Arc<PendingRequests>,
+    run_results: Arc<RunResults>,
     frontend_timeout: Duration,
+    /// Held across a supervisor's policy check and its spawn, so two spawns
+    /// on two connections cannot both pass a limit that only one fits under.
+    supervisor_spawn_gate: Mutex<()>,
 }
 
 type Outcome = Result<Value, ControlError>;
@@ -184,13 +215,16 @@ impl Dispatcher {
         backend: Arc<dyn ControlBackend>,
         buffers: Arc<OutputBuffers>,
         pending: Arc<PendingRequests>,
+        run_results: Arc<RunResults>,
         frontend_timeout: Duration,
     ) -> Self {
         Self {
             backend,
             buffers,
             pending,
+            run_results,
             frontend_timeout,
+            supervisor_spawn_gate: Mutex::new(()),
         }
     }
 
@@ -203,30 +237,59 @@ impl Dispatcher {
     ///
     /// Fails closed: a peer whose PID cannot be read is refused, because it
     /// cannot be told apart from an agent.
-    pub fn admit(&self, stream: &UnixStream) -> Result<(), ControlError> {
-        let Some(peer) = caller::peer_pid(stream) else {
+    ///
+    /// The one agent let through is a supervisor (ADR 0004), recognised by its
+    /// process: the nearest agent among the peer's ancestors has that role.
+    /// Nothing the peer sends can make it one.
+    pub fn admit(&self, stream: &UnixStream) -> Result<Caller, ControlError> {
+        self.admit_peer(caller::peer_pid(stream), caller::parent_pid)
+    }
+
+    /// `admit` for a peer PID (`None`: unreadable) and a parent lookup.
+    pub fn admit_peer(
+        &self,
+        peer: Option<u32>,
+        parent_of: impl Fn(u32) -> Option<u32>,
+    ) -> Result<Caller, ControlError> {
+        let Some(peer) = peer else {
             return Err(ControlError::new(
                 ErrorCode::ForbiddenAgentCaller,
                 "the connecting process could not be identified",
             ));
         };
         let agents = self.backend.agent_pids();
-        if caller::descends_from_agent(peer, &agents, caller::parent_pid) {
-            return Err(ControlError::new(
+        let pids: HashSet<u32> = agents.keys().copied().collect();
+        let matched = match caller::nearest_agent(peer, &pids, parent_of) {
+            caller::Ancestry::NoAgent => return Ok(Caller::External),
+            caller::Ancestry::Agent(pid) => pid,
+            caller::Ancestry::Untraceable => {
+                return Err(ControlError::new(
+                    ErrorCode::ForbiddenAgentCaller,
+                    format!(
+                        "the ancestry of process {peer} could not be traced to launchd; \
+                         it is refused like an agent"
+                    ),
+                ))
+            }
+        };
+        match agents.get(&matched) {
+            Some((agent_id, AgentRole::Supervisor)) => Ok(Caller::Supervisor {
+                agent_id: agent_id.clone(),
+            }),
+            _ => Err(ControlError::new(
                 ErrorCode::ForbiddenAgentCaller,
                 format!(
                     "process {peer} runs inside an IDE agent; \
                      agents may not steer other agents"
                 ),
-            ));
+            )),
         }
-        Ok(())
     }
 
     /// Answer one request line with one response line (no trailing newline).
-    pub fn handle_line(&self, line: &str) -> String {
+    pub fn handle_line(&self, caller: &Caller, line: &str) -> String {
         let response = match parse_request(line) {
-            Ok((id, request)) => match self.dispatch(request) {
+            Ok((id, request)) => match self.dispatch(caller, request) {
                 Ok(result) => ok_response(&id, result),
                 Err(error) => error_response(&id, &error),
             },
@@ -235,24 +298,37 @@ impl Dispatcher {
         response.to_string()
     }
 
-    fn dispatch(&self, request: Request) -> Outcome {
+    fn dispatch(&self, caller: &Caller, request: Request) -> Outcome {
+        let Caller::Supervisor { agent_id } = caller else {
+            return self.dispatch_external(request);
+        };
+        self.dispatch_supervised(agent_id, request)
+    }
+
+    fn dispatch_external(&self, request: Request) -> Outcome {
         match request {
-            Request::ListAgents(_) => self.list_agents(),
+            Request::ListAgents(_) => self.list_agents(|_| true),
             Request::ReadOutput(params) => self.read_output(params),
             Request::SendInput(params) => self.send_input(params),
             Request::Kill(params) => self.kill(params),
-            Request::Spawn(params) => self.spawn(params),
+            Request::Spawn(params) => self.spawn(FrontendSpawnParams {
+                params,
+                spawned_by_agent_id: None,
+                run_source: None,
+            }),
             Request::ListProjects(_) => to_value(ListProjectsResult {
                 projects: self.backend.projects(),
             }),
+            Request::AwaitResult(params) => self.await_result(params),
         }
     }
 
-    fn list_agents(&self) -> Outcome {
+    fn list_agents(&self, keep: impl Fn(&AgentInfo) -> bool) -> Outcome {
         let agents = self
             .backend
             .agents()
             .into_iter()
+            .filter(|info| keep(info))
             .map(|info| AgentSummary {
                 output_bytes: self.buffers.total_bytes(&info.id),
                 info,
@@ -386,7 +462,60 @@ impl Dispatcher {
         })
     }
 
-    fn spawn(&self, params: SpawnParams) -> Outcome {
+    /// Waits up to `waitSeconds` for the agent's result. The connection's idle
+    /// timeout only covers reading the next request, so a long wait here does
+    /// not close it.
+    fn await_result(&self, params: AwaitResultParams) -> Outcome {
+        let agent_id = params.agent_id.as_str();
+        let live = self.find_agent(agent_id);
+        let finished = self
+            .run_results
+            .get(agent_id)
+            .or_else(|| self.result_from_buffers(agent_id));
+        if let Some(result) = finished {
+            return to_value(AwaitOutcome::done(result));
+        }
+        if live.is_none() && !self.buffers.knows(agent_id) {
+            return Err(Self::unknown(agent_id));
+        }
+        let wait = Duration::from_secs(params.wait_seconds.unwrap_or(DEFAULT_AWAIT_SECONDS));
+        if let Some(result) = self.run_results.wait_for(agent_id, Instant::now() + wait) {
+            return to_value(AwaitOutcome::done(result));
+        }
+        let status = self
+            .find_agent(agent_id)
+            .map_or(AgentStatus::Running, |agent| agent.status);
+        to_value(AwaitOutcome::pending(
+            agent_id,
+            status,
+            self.buffers.total_bytes(agent_id),
+        ))
+    }
+
+    /// A finished agent whose result is no longer kept (or predates the
+    /// store) still has its console: answer from that rather than waiting
+    /// for a result that will never come.
+    fn result_from_buffers(&self, agent_id: &str) -> Option<RunResult> {
+        let slice = self
+            .buffers
+            .read(agent_id, CONSOLE_TAIL_ANSWER_BYTES, None)?;
+        let status = slice.final_status.clone()?;
+        // The buffer keeps no finish time; now is the closest honest bound.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |at| at.as_millis() as u64);
+        Some(RunResult::from_finish(
+            agent_id,
+            status,
+            None,
+            None,
+            || Some(slice.text),
+            now,
+        ))
+    }
+
+    fn spawn(&self, spawn: FrontendSpawnParams) -> Outcome {
+        let params = &spawn.params;
         if !Path::new(&params.project_path).is_dir() {
             return Err(ControlError::new(
                 ErrorCode::InvalidParams,
@@ -410,7 +539,7 @@ impl Dispatcher {
                 ),
             ));
         }
-        let result = self.via_frontend("spawn", to_value(&params)?)?;
+        let result = self.via_frontend("spawn", to_value(&spawn)?)?;
         let agent_id = result
             .get("agentId")
             .and_then(Value::as_str)
@@ -543,10 +672,13 @@ fn handle_connection(stream: UnixStream, dispatcher: &Dispatcher, idle_timeout: 
         return;
     };
     let mut reader = BufReader::new(stream);
-    if let Err(error) = dispatcher.admit(reader.get_ref()) {
-        refuse(&mut reader, &mut writer, &error);
-        return;
-    }
+    let caller = match dispatcher.admit(reader.get_ref()) {
+        Ok(caller) => caller,
+        Err(error) => {
+            refuse(&mut reader, &mut writer, &error);
+            return;
+        }
+    };
     loop {
         let mut line = String::new();
         let read = reader
@@ -564,7 +696,7 @@ fn handle_connection(stream: UnixStream, dispatcher: &Dispatcher, idle_timeout: 
                 return;
             }
             Ok(_) if line.trim().is_empty() => continue,
-            Ok(_) => dispatcher.handle_line(line.trim_end()),
+            Ok(_) => dispatcher.handle_line(&caller, line.trim_end()),
             Err(error) if error.kind() == std::io::ErrorKind::InvalidData => {
                 let error = ControlError::new(ErrorCode::InvalidRequest, "request is not UTF-8");
                 let _ = writeln!(writer, "{}", error_response(&Value::Null, &error));
@@ -605,15 +737,46 @@ impl ControlBackend for TauriBackend {
         tauri::async_runtime::block_on(crate::agents::list_agents_impl(&state)).unwrap_or_default()
     }
 
-    fn agent_pids(&self) -> std::collections::HashSet<u32> {
+    fn agent_pids(&self) -> HashMap<u32, (String, AgentRole)> {
         use tauri::Manager;
         let state = self.app.state::<crate::agents::AgentManagerState>();
         let manager = state.blocking_lock();
         manager
             .agents
             .values()
-            .filter_map(|process| process.child.process_id())
+            .filter_map(|process| {
+                let pid = process.child.process_id()?;
+                Some((pid, (process.info.id.clone(), process.info.role)))
+            })
             .collect()
+    }
+
+    fn supervisor_policy(&self) -> SupervisorPolicy {
+        use tauri::Manager;
+        match self.app.path().app_data_dir() {
+            Ok(dir) => crate::supervisor::current_policy(&dir),
+            Err(_) => SupervisorPolicy::default(),
+        }
+    }
+
+    fn offered_models(&self) -> BTreeMap<String, Vec<ModelOption>> {
+        use tauri::Manager;
+        self.app
+            .try_state::<crate::providers::ProviderRegistryState>()
+            .map(|registry| crate::supervisor::offered_models(registry.inner()))
+            .unwrap_or_default()
+    }
+
+    fn project_provider_policy(&self, project_root: &Path) -> ProviderPolicy {
+        crate::provider_policy::policy_for_project(project_root)
+    }
+
+    fn provider_modes(&self, policy: &SupervisorPolicy) -> BTreeMap<String, ProviderModes> {
+        use tauri::Manager;
+        self.app
+            .try_state::<crate::providers::ProviderRegistryState>()
+            .map(|registry| crate::supervisor::provider_modes(registry.inner(), policy))
+            .unwrap_or_default()
     }
 
     fn write_input(&self, agent_id: &str, data: &str) -> Result<(), String> {
@@ -702,8 +865,18 @@ pub fn start(app: &tauri::AppHandle) {
         .inner()
         .clone();
     let pending = app.state::<PendingRequestsState>().inner().clone();
+    let run_results = app
+        .state::<crate::agents::run_results::RunResultsState>()
+        .inner()
+        .clone();
     let backend = Arc::new(TauriBackend { app: app.clone() });
-    let dispatcher = Arc::new(Dispatcher::new(backend, buffers, pending, FRONTEND_TIMEOUT));
+    let dispatcher = Arc::new(Dispatcher::new(
+        backend,
+        buffers,
+        pending,
+        run_results,
+        FRONTEND_TIMEOUT,
+    ));
     std::thread::spawn(move || serve(listener, dispatcher, CONNECTION_IDLE_TIMEOUT));
 }
 
@@ -729,3 +902,6 @@ pub fn control_ready(pending: tauri::State<'_, PendingRequestsState>) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod supervisor_attack_tests;

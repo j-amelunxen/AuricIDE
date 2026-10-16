@@ -11,10 +11,12 @@ impl AgentProvider for CrushProvider {
                 ModelOption {
                     value: "auto".to_string(),
                     label: "Auto / Default".to_string(),
+                    rank: None,
                 },
                 ModelOption {
                     value: "moonshotai/kimi-k2-thinking".to_string(),
                     label: "Moonshot Kimi k2 Thinking".to_string(),
+                    rank: None,
                 },
             ],
             permission_modes: vec![
@@ -22,11 +24,13 @@ impl AgentProvider for CrushProvider {
                     value: "yolo".to_string(),
                     label: "YOLO (Autonomous)".to_string(),
                     description: "Skip all permission prompts (--yolo)".to_string(),
+                    unattended: true,
                 },
                 PermissionModeOption {
                     value: "default".to_string(),
                     label: "Interactive".to_string(),
                     description: "Ask for permissions".to_string(),
+                    unattended: false,
                 },
             ],
             default_model: "auto".to_string(),

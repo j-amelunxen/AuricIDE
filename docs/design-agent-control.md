@@ -60,21 +60,27 @@ external MCP client ─stdio─▶ auric-mcp --control ─unix socket─▶ Rust
 
 All field names are camelCase on the wire.
 
-| method          | params                                                                                   | result                              |
-| --------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- |
-| `list_agents`   | —                                                                                        | `{ agents: AgentSummary[] }`        |
-| `read_output`   | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`      | `OutputChunk`                       |
-| `send_input`    | `{ agentId, text: string, enter?: boolean (default true) }`                              | `{ agentId, bytesWritten: number }` |
-| `kill`          | `{ agentId }`                                                                            | `{ agentId, killed: true }`         |
-| `spawn`         | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name? }` | `{ agentId }`                       |
-| `list_projects` | —                                                                                        | `{ projects: ProjectEntry[] }`      |
+| method          | params                                                                                                        | result                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `list_agents`   | —                                                                                                             | `{ agents: AgentSummary[] }`        |
+| `read_output`   | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                           | `OutputChunk`                       |
+| `send_input`    | `{ agentId, text: string, enter?: boolean (default true) }`                                                   | `{ agentId, bytesWritten: number }` |
+| `kill`          | `{ agentId }`                                                                                                 | `{ agentId, killed: true }`         |
+| `spawn`         | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor" }` | `{ agentId }`                       |
+| `list_projects` | —                                                                                                             | `{ projects: ProjectEntry[] }`      |
+| `await_result`  | `{ agentId, waitSeconds?: number (default 60, max 120) }`                                                     | `AwaitResult`                       |
+
+`role` and `await_result` belong to the supervisor scope and are described
+there. `role: "worker"` is the same as leaving it out.
 
 `AgentSummary` = the Rust `AgentInfo` as it already serialises
 (`id, name, model, provider, status, currentTask, startedAt, lastActivityAt,
-projectPath, repoPath, spawnedByTicketId, spawnedByGoalId, headless`) plus
+projectPath, repoPath, spawnedByTicketId, spawnedByGoalId, headless, role,
+spawnedByAgentId`) plus
 `outputBytes: number` — the running byte offset of that agent's output, so a
 client can poll `read_output { sinceOffset }` for only what is new.
-`status` is `running | idle | queued | error`.
+`status` is `running | idle | queued | error`. `role` is `worker | supervisor`;
+`spawnedByAgentId` names the supervisor that started the agent, else `null`.
 
 `ProjectEntry` = `{ path, name, starred, isOpen, initialized, lastOpenedAt,
 runningAgents, description, descriptionSource }`. The list is starred projects first, then recent
@@ -192,24 +198,174 @@ launch grant on the mission root. The schema stays strict: an agent cannot send
 `replace`. Nothing on the Rust side changes: it reads only the stored folder and
 worktree flag of the request.
 
+## Supervisor scope
+
+A supervisor is an agent the IDE starts so that it can start, watch and stop
+other agents in other projects. It is the one IDE agent the socket admits. The
+reasoning, and the alternatives that were rejected, are in
+`docs/adr/0004-supervisor-agent-scope.md`. The fixture `callerScope` is the
+machine-checkable half of this section, `src/lib/config/supervisorPolicy.fixtures.json`
+the one for the policy.
+
+### Who is asking
+
+The peer PID check above already walks the caller's parent chain. It now
+returns the first running IDE agent it meets instead of a yes or no, and the
+dispatcher reads that agent's `role`:
+
+| caller       | how Rust recognises it                         | admitted                       |
+| ------------ | ---------------------------------------------- | ------------------------------ |
+| `external`   | no IDE agent among the ancestors               | yes, every method, every agent |
+| `supervisor` | the nearest agent ancestor has role supervisor | yes, in the scope below        |
+| `worker`     | the nearest agent ancestor has any other role  | no, `forbidden_agent_caller`   |
+
+A PID that cannot be read is still refused, as before. Nothing the caller
+sends can change which row it is in: there is no token, and `role` on a request
+is a parameter of the agent being started, never a claim about the caller.
+
+A supervisor reaches the socket through its own MCP server,
+`auric-mcp --supervisor`. That mode starts while `AURIC_IDE_AGENT=1` is set
+(`--control` still refuses) and registers only the supervisor tools. The
+supervisor process is Claude, interactive, in `<app_data_dir>/supervisor/`,
+with that one server (`--strict-mcp-config`), `--tools ""` and `--restricted`
+(no built-in tool at all, and the user's settings files with their allow rules
+are not read), `--allowedTools "mcp__auric-supervisor__*"` and
+`--permission-mode default`: its own tools run without asking, and it has no
+shell, file or web tool.
+
+Supervisors are started by the Supervisor tile in Quick Access, or by an
+external caller with `spawn { role: "supervisor" }`. A supervisor cannot
+start another supervisor.
+
+### Methods for a supervisor caller
+
+| method          | what a supervisor gets                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| `list_projects` | only projects its policy allows, each with a `supervisor` block (below)                       |
+| `spawn`         | `provider`, `model` and `headless` required; checked against the policy; the child is its own |
+| `list_agents`   | its own children only                                                                         |
+| `read_output`   | its own children only                                                                         |
+| `await_result`  | its own children only                                                                         |
+| `kill`          | its own children only                                                                         |
+| `send_input`    | refused, `outside_supervisor_scope`                                                           |
+
+- **Own children only.** Any other agent id, including the supervisor's own,
+  an agent the human started and another supervisor's child, is answered with
+  `unknown_agent`, the same as an id that does not exist. A supervisor learns
+  nothing from an id outside its scope, not even whether it exists.
+- **No typing, in v1.** `send_input` is refused even for its own children.
+  Typing into a console can answer a permission prompt, which is the reason
+  agents were kept off the socket in the first place. When a child waits on a
+  question, the supervisor tells the human which window to answer in.
+- **Refused parameters.** `role` on a supervisor's `spawn` is `invalid_params`:
+  the field does not exist for that caller. `permissionMode` is
+  `outside_supervisor_scope`: the policy names the mode, the supervisor does
+  not get to pick a different one. A missing `provider`, `model` or `headless`
+  is `invalid_params`; nothing is filled in from launch defaults.
+- **The policy decides the spawn.** Rust runs `checkSpawn` from
+  `supervisorPolicy.fixtures.json` in the dispatcher before the request reaches
+  the frontend, and `spawn_agent_impl` runs it again for any agent whose parent
+  is a supervisor. A refusal is `supervisor_denied` with a stable `reason` key
+  on the error body (`model_not_allowed`, `project_limit_reached`, …; the list
+  is in the fixture). The project's provider policy still applies on top: the
+  supervisor's provider list is intersected with it, never a way around it.
+
+The policy lives in `<app_data_dir>/supervisor-policy.json`, mode 0600, written
+by Rust and read on every check. It is not in `webview-prefs.json`, because
+either build can win that reconciliation, which is wrong for a security
+setting. A missing or unreadable file, an unlisted project or a project with
+`allowed: false` allows nothing. `bypassPermissions` is rejected when the file
+is read. Any mode that skips the prompts for its provider (marked `unattended`
+in the provider config, or launching with a skip flag) cannot be saved, and a
+spawn whose mode, or whose provider's default when the policy names none, is
+one is refused with `permission_mode_unattended`.
+
+`ProjectEntry.supervisor`, present only in a supervisor's `list_projects`:
+
+```
+{ providers: [{ id, permissionMode: string | null,
+                models: [{ id, label, rank: number | null }] }],
+  allowInteractive: boolean, runningChildren: number, maxRunning: number }
+```
+
+`rank` orders models by size within a provider (higher is bigger); `null` is
+a model without a known size, which the supervisor does not pick by default.
+
+### Children
+
+A child is an ordinary worker. The IDE spawns it through the frontend like
+any other `spawn`, with the usual per-project MCP binding, `role: "worker"`,
+`spawnedByAgentId` set to the supervisor and `runSource: "supervisor"`
+(`docs/design-agent-usage.md`). It is not a descendant of the supervisor's
+process, so if it ever reached the socket it would be refused as a worker.
+There is no recursion. The bridge passes provider, model and permission mode
+through unchanged for these requests.
+
+When a supervisor is killed, its children keep running. Their results stay
+readable, to external callers and in the UI, until the supervisor's card is
+cleared.
+
+### `await_result`
+
+Waits up to `waitSeconds` for the agent to finish, then answers:
+
+```
+{ done: false, agentId, status, outputBytes }      // still running when the wait ended
+{ done: true, result: RunResult }                  // finished, now or earlier
+```
+
+`RunResult` = `{ agentId, status: "idle" | "error", exitCode: number | null,
+answer: string | null, isError, source: "cli_result" | "console_tail",
+finishedAt, costUsd: number | null }`.
+
+- `answer` is the CLI's own result text when it reports one (headless Claude,
+  `source: "cli_result"`), otherwise the last 8 KiB of the cleaned console
+  (`source: "console_tail"`). `costUsd` is `null` where the CLI states no cost.
+- `waitSeconds: 0` only looks. Rust keeps the result of the last **200**
+  finished agents (`run_results.rs`). A wait in progress
+  does not count against the connection's idle timeout, which only applies
+  while the socket waits for the next request line.
+- The client allows `waitSeconds + 5` s before it reports `timeout`.
+- External callers may await any agent; a supervisor only its children.
+
+### Tools (`auric-mcp --supervisor`)
+
+| tool                 | socket method   |
+| -------------------- | --------------- |
+| `list_projects`      | `list_projects` |
+| `spawn_agent`        | `spawn`         |
+| `list_my_agents`     | `list_agents`   |
+| `read_agent_output`  | `read_output`   |
+| `await_agent_result` | `await_result`  |
+| `kill_agent`         | `kill`          |
+
 ## Error codes
 
 `invalid_request`, `unknown_method`, `invalid_params`, `unknown_agent`,
 `agent_not_running`, `headless_no_stdin`, `provider_denied`,
-`frontend_unavailable`, `forbidden_agent_caller`, `internal`. The client adds three of its own: `app_not_running` when the socket does not
+`frontend_unavailable`, `forbidden_agent_caller`, `supervisor_denied`,
+`outside_supervisor_scope`, `internal`.
+
+- `supervisor_denied`: the supervisor policy refuses this spawn. The error
+  body carries `reason`, a stable key from `supervisorPolicy.fixtures.json`.
+- `outside_supervisor_scope`: a supervisor asked for something its scope never
+  includes (`send_input`, a `permissionMode` of its own).
+
+The client adds three of its own: `app_not_running` when the socket does not
 exist or refuses the connection, `timeout` when no answer arrives in time, and
 `contract_violation` when a response does not match the fixture shapes.
 
 ## MCP tools (`auric-mcp --control`)
 
-| tool                | socket method   |
-| ------------------- | --------------- |
-| `list_agents`       | `list_agents`   |
-| `read_agent_output` | `read_output`   |
-| `send_agent_input`  | `send_input`    |
-| `kill_agent`        | `kill`          |
-| `spawn_agent`       | `spawn`         |
-| `list_projects`     | `list_projects` |
+| tool                 | socket method   |
+| -------------------- | --------------- |
+| `list_agents`        | `list_agents`   |
+| `read_agent_output`  | `read_output`   |
+| `send_agent_input`   | `send_input`    |
+| `kill_agent`         | `kill`          |
+| `spawn_agent`        | `spawn`         |
+| `list_projects`      | `list_projects` |
+| `await_agent_result` | `await_result`  |
 
 Each tool returns the result as JSON text; a socket error becomes a tool error
 whose message names the code and the message, e.g.

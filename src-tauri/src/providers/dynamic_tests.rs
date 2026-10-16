@@ -1180,3 +1180,28 @@ fn the_local_claude_and_codex_configs_declare_their_usage_capture() {
         );
     }
 }
+
+// ── Model rank ─────────────────────────────────────────────────────
+
+#[test]
+fn a_model_rank_is_read_and_shown_and_a_missing_or_odd_one_is_none() {
+    let mut config = get_claude_config();
+    config.info.models = serde_json::from_str(
+        r#"[
+          { "value": "haiku", "label": "Claude Haiku", "rank": 1 },
+          { "value": "opus", "label": "Claude Opus", "rank": 3 },
+          { "value": "auto", "label": "Auto / Default" },
+          { "value": "odd", "label": "Odd", "rank": "big" }
+        ]"#,
+    )
+    .unwrap();
+    let info = DynamicProvider::new(config).info();
+    let ranks: Vec<Option<i64>> = info.models.iter().map(|model| model.rank).collect();
+    assert_eq!(ranks, vec![Some(1), Some(3), None, None]);
+    let shown = serde_json::to_value(&info.models).unwrap();
+    assert_eq!(shown[0]["rank"], 1);
+    assert!(
+        shown[2].get("rank").is_none(),
+        "an unranked model has no rank key"
+    );
+}

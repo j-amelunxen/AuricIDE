@@ -1,0 +1,166 @@
+import { describe, expect, it } from 'vitest';
+import policyFixtures from '@/lib/config/supervisorPolicy.fixtures.json';
+import { visibleProjects, type SupervisorPolicy } from '@/lib/config/supervisorPolicy';
+import type { ProviderPolicy } from '@/lib/config/providerPolicy';
+import type { ProviderInfo } from '@/lib/tauri/providers';
+import {
+  buildSupervisorLaunchPrompt,
+  modelSizeLabel,
+  supervisorPromptProjects,
+} from './supervisorLaunchPrompt';
+
+const provider = (id: string, models: [string, string, number | null][]): ProviderInfo => ({
+  id,
+  name: id,
+  models: models.map(([value, label, rank]) => ({ value, label, rank })),
+  permissionModes: [],
+  defaultModel: models[0]?.[0] ?? '',
+  defaultPermissionMode: 'default',
+});
+
+// Deliberately not in rank order, to prove the prompt sorts.
+const PROVIDERS: ProviderInfo[] = [
+  provider('claude', [
+    ['opus', 'Opus', 3],
+    ['haiku', 'Haiku', 1],
+    ['fable', 'Fable', 4],
+    ['sonnet', 'Sonnet', 2],
+  ]),
+  provider('codex', [
+    ['auto', 'Auto', null],
+    ['gpt-6-sol', 'GPT-6 Sol', 3],
+    ['gpt-6-luna', 'GPT-6 Luna', 1],
+    ['gpt-6-terra', 'GPT-6 Terra', 2],
+    ['gpt-6-astra', 'GPT-6 Astra', 4],
+  ]),
+  provider('grok', [['grok-5', 'Grok 5', null]]),
+];
+
+/** The first visibleProjects fixture: project-a codex-only, project-b claude-only, c off. */
+const fixtureCase = policyFixtures.visibleProjects[0];
+const visible = visibleProjects(
+  fixtureCase.policy as SupervisorPolicy,
+  fixtureCase.projectPolicies as Record<string, ProviderPolicy>,
+  fixtureCase.offeredModels as unknown as Record<string, string[]>
+);
+const projects = supervisorPromptProjects(visible, PROVIDERS, {
+  '/abs/project-a': 'A small example service that parses invoices.',
+});
+
+describe('modelSizeLabel', () => {
+  it('names the four ranks and calls anything else unknown', () => {
+    expect([1, 2, 3, 4].map(modelSizeLabel)).toEqual(['small', 'medium', 'large', 'largest']);
+    expect(modelSizeLabel(null)).toBe('size unknown');
+    expect(modelSizeLabel(undefined)).toBe('size unknown');
+    expect(modelSizeLabel(0)).toBe('size unknown');
+    expect(modelSizeLabel(5)).toBe('largest');
+  });
+});
+
+describe('supervisorPromptProjects', () => {
+  it('takes labels and ranks from the providers but models only from the policy', () => {
+    expect(projects[0].providers).toEqual([
+      {
+        id: 'codex',
+        permissionMode: 'acceptEdits',
+        models: [
+          { id: 'gpt-6-luna', label: 'GPT-6 Luna', rank: 1 },
+          { id: 'gpt-6-sol', label: 'GPT-6 Sol', rank: 3 },
+        ],
+      },
+    ]);
+  });
+
+  it('keeps a model the registry does not describe, with its id as label and no size', () => {
+    const [project] = supervisorPromptProjects(
+      [
+        {
+          path: '/abs/x',
+          allowInteractive: false,
+          maxRunning: 1,
+          providers: [{ id: 'new', models: ['m1'], permissionMode: null }],
+        },
+      ],
+      PROVIDERS
+    );
+    expect(project.providers[0].models).toEqual([{ id: 'm1', label: 'm1', rank: null }]);
+    expect(project.description).toBeNull();
+  });
+});
+
+describe('buildSupervisorLaunchPrompt', () => {
+  const prompt = buildSupervisorLaunchPrompt(projects);
+
+  it('matches the snapshot', () => {
+    expect(prompt).toMatchSnapshot();
+  });
+
+  it('never names a model, provider or project the policy does not show', () => {
+    for (const hidden of [
+      'gpt-6-astra',
+      'gpt-6-terra',
+      'opus',
+      'fable',
+      'auto',
+      'grok',
+      'project-c',
+    ]) {
+      expect(prompt).not.toContain(hidden);
+    }
+  });
+
+  it('lists models smallest first, unknown sizes last', () => {
+    const [project] = supervisorPromptProjects(
+      [
+        {
+          path: '/abs/project-a',
+          allowInteractive: true,
+          maxRunning: 2,
+          providers: [
+            {
+              id: 'codex',
+              models: ['auto', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'],
+              permissionMode: null,
+            },
+          ],
+        },
+      ],
+      PROVIDERS
+    );
+    const text = buildSupervisorLaunchPrompt([project]);
+    const order = ['gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra', '`auto`'].map((id) =>
+      text.indexOf(id)
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(text).toContain('`auto` (Auto) — size unknown');
+  });
+
+  it('has no tools to offer beyond its own, and says so', () => {
+    expect(prompt).toContain('no shell and no file tools');
+    expect(prompt).not.toMatch(/Bash, Edit and every other tool ask/);
+  });
+
+  it('ends with the first task when a skill started it', () => {
+    const text = buildSupervisorLaunchPrompt(projects, '  Ask every project for its status  ');
+    expect(text.endsWith('## Your first task\n\nAsk every project for its status')).toBe(true);
+    expect(buildSupervisorLaunchPrompt(projects, '   ')).toBe(prompt);
+  });
+
+  it('says plainly when nothing is allowed', () => {
+    expect(buildSupervisorLaunchPrompt([])).toContain('Settings → Supervisor');
+  });
+
+  it('marks a project whose providers all fell away as unusable', () => {
+    const text = buildSupervisorLaunchPrompt([
+      {
+        path: '/abs/project-a',
+        description: null,
+        allowInteractive: false,
+        maxRunning: 2,
+        providers: [],
+      },
+    ]);
+    expect(text).toContain('No provider is usable here right now');
+  });
+});
