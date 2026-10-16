@@ -1,5 +1,6 @@
 import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import { useStore } from './index';
+import { saveAuricSkills } from '../settings/auricSkills';
 
 const mockStorage: Record<string, string> = {};
 
@@ -305,6 +306,15 @@ describe('starredProjectsSlice', () => {
       const [a] = useStore.getState().starredProjects;
       expect(a.skills).toEqual([blogartikel]);
       expect(a.wheelSlots?.[1]).toBe('s1');
+    });
+
+    it('pins a library skill that is put straight on a wheel slot', () => {
+      saveAuricSkills([{ id: 'review', name: 'Code Review', prompt: 'Review the change.' }]);
+      useStore.getState().setStarredProjectSkills('/a', [blogartikel]);
+      useStore.getState().setStarredProjectWheelSlots('/a', ['auric:review']);
+      const [a] = useStore.getState().starredProjects;
+      expect(a.skills?.map((skill) => skill.id)).toEqual(['s1', 'auric:review']);
+      expect(a.wheelSlots?.[0]).toBe('auric:review');
     });
 
     it('clears a wheel slot whose skill was removed', () => {

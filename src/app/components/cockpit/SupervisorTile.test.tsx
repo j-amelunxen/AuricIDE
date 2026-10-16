@@ -243,7 +243,9 @@ describe('Supervisor tile as a Quick Access tile', () => {
     expect(within(dialog).getByLabelText('Skill 1 model')).toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Skill 1 provider')).toBeNull();
     expect(within(dialog).queryByLabelText('Skill 1 permission mode')).toBeNull();
-    expect(within(dialog).queryByTestId('quick-access-discovery')).toBeNull();
+    // Nothing from disk (the supervisor loads none), only the Settings → Skills library.
+    expect(within(dialog).queryByTestId('quick-access-discovery-project')).toBeNull();
+    expect(within(dialog).queryByTestId('quick-access-discovery-user')).toBeNull();
     expect(within(dialog).queryByText(/combos/i)).toBeNull();
 
     fireEvent.click(within(dialog).getByTestId('quick-access-settings-save'));

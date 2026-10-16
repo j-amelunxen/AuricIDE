@@ -1,4 +1,6 @@
 import { comboMenuLabel } from './combo';
+import { menuSkillEntries } from './menuSkills';
+import type { AuricSkillDefinition } from '@/lib/settings/auricSkills';
 import {
   quickAccessCombos,
   quickAccessSkills,
@@ -18,8 +20,15 @@ export type WheelLaunchEntry =
  * steps are both real Configure objects — hiding one behind the other
  * made the plus look empty.
  */
-export function launchEntriesForProject(project: StarredProject): WheelLaunchEntry[] {
-  return launchEntries(quickAccessSkills(project), quickAccessCombos(project));
+export function launchEntriesForProject(
+  project: StarredProject,
+  library: AuricSkillDefinition[] = []
+): WheelLaunchEntry[] {
+  // Library skills come after the pinned ones, as in the right-click menu.
+  return launchEntries(
+    menuSkillEntries(quickAccessSkills(project), library),
+    quickAccessCombos(project)
+  );
 }
 
 /**

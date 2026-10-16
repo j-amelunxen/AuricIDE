@@ -508,6 +508,22 @@ describe('QuickAccessSettingsDialog', () => {
       expect(await screen.findByRole('button', { name: /code review added/i })).toBeDisabled();
     });
 
+    it('puts an Auric skill on a wheel slot without pinning it first', async () => {
+      saveAuricSkills([{ id: 'review', name: 'Code Review', prompt: 'Review the change.' }]);
+      renderDialog();
+
+      fireEvent.click(screen.getByTestId('wheel-editor-slot-0'));
+      fireEvent.click(await screen.findByTestId('wheel-editor-choice-auric:review'));
+      expect(screen.getByTestId('wheel-editor-slot-0')).toHaveAccessibleName(/code review/i);
+
+      fireEvent.click(screen.getByTestId('quick-access-settings-save'));
+      const saved = useStore.getState().starredProjects[0];
+      expect(saved.skills).toEqual([
+        expect.objectContaining({ id: 'auric:review', auricSkillId: 'review' }),
+      ]);
+      expect(saved.wheelSlots?.[0]).toBe('auric:review');
+    });
+
     it('stays quiet when the discovery command is unavailable', async () => {
       mockListProjectSkills.mockResolvedValue([]);
       renderDialog();

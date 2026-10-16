@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { menuSkillEntries } from './menuSkills';
+import { menuSkillEntries, pinSlottedLibrarySkills } from './menuSkills';
 
 describe('menuSkillEntries', () => {
   it('appends every Auric Skill from the library when nothing is pinned', () => {
@@ -35,5 +35,30 @@ describe('menuSkillEntries', () => {
   it('returns just the pinned skills when the library is empty', () => {
     const pinned = [{ id: 'p1', label: 'Changelog', prompt: '/changelog' }];
     expect(menuSkillEntries(pinned, [])).toEqual(pinned);
+  });
+});
+
+describe('pinSlottedLibrarySkills', () => {
+  const library = [
+    { id: 'a1', name: 'Refactor Check', prompt: '/refactor' },
+    { id: 'a2', name: 'Docs Check', prompt: '/docs' },
+  ];
+  const pinned = [{ id: 'p1', label: 'Changelog', prompt: '/changelog' }];
+
+  it('pins a library skill that was put on a slot, under the id the slot holds', () => {
+    const skills = pinSlottedLibrarySkills(pinned, ['auric:a2', null], library);
+    expect(skills).toEqual([
+      ...pinned,
+      { id: 'auric:a2', label: 'Docs Check', prompt: '/docs', auricSkillId: 'a2' },
+    ]);
+  });
+
+  it('leaves the pinned list alone when no slot names a library skill', () => {
+    expect(pinSlottedLibrarySkills(pinned, ['p1', null], library)).toBe(pinned);
+  });
+
+  it('does not pin a library skill twice once it is pinned', () => {
+    const once = pinSlottedLibrarySkills(pinned, ['auric:a1'], library);
+    expect(pinSlottedLibrarySkills(once, ['auric:a1'], library)).toBe(once);
   });
 });
