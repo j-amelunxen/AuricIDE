@@ -226,12 +226,28 @@ is a parameter of the agent being started, never a claim about the caller.
 A supervisor reaches the socket through its own MCP server,
 `auric-mcp --supervisor`. That mode starts while `AURIC_IDE_AGENT=1` is set
 (`--control` still refuses) and registers only the supervisor tools. The
-supervisor process is Claude, interactive, in `<app_data_dir>/supervisor/`,
-with that one server (`--strict-mcp-config`), `--tools ""` and `--restricted`
-(no built-in tool at all, and the user's settings files with their allow rules
-are not read), `--allowedTools "mcp__auric-supervisor__*"` and
-`--permission-mode default`: its own tools run without asking, and it has no
-shell, file or web tool.
+supervisor process is Claude, interactive, in a fresh run folder
+`~/.auric/supervisors/<start time>/`, with that one server
+(`--strict-mcp-config`) plus one `auric-pm-<folder>` server per permitted,
+initialised project, `--tools "Read,Write,Edit,Glob,Grep,Skill,ToolSearch"` and
+`--restricted` (the file tools reach only the run folder, and the user's
+settings files with their allow rules are not read), those tools plus
+`mcp__auric-supervisor__*` in `--allowedTools`, and `--permission-mode dontAsk`:
+what is listed runs without asking, anything else is refused. It has no web
+tool, a shell only through an approved skill, and Claude in Chrome only when
+Settings → Supervisor switches it on (`supervisor.chrome`; `--chrome`, else
+`--no-chrome`).
+
+**Approved skills** are the `skills` block of the policy: a skill folder (the
+one holding `SKILL.md`) and the `Bash(...)` patterns it may run. Rust links the
+approved folders into a per-run plugin under
+`<app_data_dir>/supervisor-skills/<run>/` (outside the run folder, so the
+supervisor cannot edit a skill it is about to run) and passes `--plugin-dir`.
+`Bash` joins `--tools` only while a loaded skill declares a pattern, and only
+those patterns are allowed. A skill's `dirs` (its workspace) are passed as
+`--add-dir`, so the file tools reach them too. A pattern is the user's statement that the command
+is safe unattended: a process such a command detaches is external to the PID
+walk (see ADR 0004).
 
 Supervisors are started by the Supervisor tile in Quick Access, or by an
 external caller with `spawn { role: "supervisor" }`. A supervisor cannot

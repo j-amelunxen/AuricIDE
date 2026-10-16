@@ -81,7 +81,7 @@ describe('supervisorSpawnConfig', () => {
     const policy = policyWith({
       '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },
     });
-    policy.supervisor = { provider: 'claude', model: 'haiku' };
+    policy.supervisor = { provider: 'claude', model: 'haiku', chrome: false };
     const config = supervisorSpawnConfig({
       policy,
       providers: [CLAUDE, CODEX],

@@ -793,6 +793,7 @@ fn a_spawn_naming_a_supervisor_is_checked_against_the_policy_again() {
     let admitted = admit_spawn(
         child("haiku"),
         Some(app_data.path()),
+        None,
         &[],
         &offered_claude(),
         &no_modes,
@@ -807,6 +808,7 @@ fn a_spawn_naming_a_supervisor_is_checked_against_the_policy_again() {
     let refused = admit_spawn(
         child("opus"),
         Some(app_data.path()),
+        None,
         &[],
         &offered_claude(),
         &no_modes,
@@ -822,13 +824,21 @@ fn a_spawn_naming_a_supervisor_is_checked_against_the_policy_again() {
     let full = admit_spawn(
         child("haiku"),
         Some(app_data.path()),
+        None,
         &[busy],
         &offered_claude(),
         &no_modes,
     );
     assert!(full.unwrap_err().contains("project_limit_reached"));
 
-    let unchecked = admit_spawn(child("haiku"), None, &[], &offered_claude(), &no_modes);
+    let unchecked = admit_spawn(
+        child("haiku"),
+        None,
+        None,
+        &[],
+        &offered_claude(),
+        &no_modes,
+    );
     assert!(
         unchecked.is_err(),
         "no app data dir: refused, not run unchecked"
@@ -838,32 +848,41 @@ fn a_spawn_naming_a_supervisor_is_checked_against_the_policy_again() {
 #[test]
 fn a_spawn_without_a_supervisor_is_left_alone() {
     let config = supervisor_test_config(serde_json::json!({ "model": "opus" }));
-    let admitted = admit_spawn(config, None, &[], &offered_claude(), &no_modes).unwrap();
+    let admitted = admit_spawn(config, None, None, &[], &offered_claude(), &no_modes).unwrap();
     assert_eq!(admitted.model, "opus");
     assert_eq!(admitted.cwd.as_deref(), Some("/somewhere"));
 }
 
 #[test]
-fn a_supervisor_runs_interactive_unbound_in_its_own_folder_in_default_mode() {
+fn a_supervisor_runs_interactive_unbound_in_a_fresh_run_folder_in_default_mode() {
     let app_data = tempfile::tempdir().unwrap();
-    let config = supervisor_test_config(serde_json::json!({
-        "role": "supervisor", "projectPath": "/some/project",
-        "permissionMode": "bypassPermissions", "dangerouslyIgnorePermissions": true,
-        "autoAcceptEdits": true, "headless": true, "launchRequestUid": "req-1"
-    }));
-    let admitted = admit_spawn(
-        config,
-        Some(app_data.path()),
-        &[],
-        &offered_claude(),
-        &no_modes,
-    )
-    .unwrap();
-    let folder = app_data.path().join(crate::supervisor::SUPERVISOR_DIR_NAME);
+    let home = tempfile::tempdir().unwrap();
+    let supervisor = || {
+        supervisor_test_config(serde_json::json!({
+            "role": "supervisor", "projectPath": "/some/project",
+            "permissionMode": "bypassPermissions", "dangerouslyIgnorePermissions": true,
+            "autoAcceptEdits": true, "headless": true, "launchRequestUid": "req-1"
+        }))
+    };
+    let admit = |config| {
+        admit_spawn(
+            config,
+            Some(app_data.path()),
+            Some(home.path()),
+            &[],
+            &offered_claude(),
+            &no_modes,
+        )
+    };
+    let admitted = admit(supervisor()).unwrap();
+    let again = admit(supervisor()).unwrap();
+    let runs = home.path().join(".auric").join("supervisors");
+    let folder = std::path::PathBuf::from(admitted.cwd.clone().unwrap());
+    assert_eq!(folder.parent(), Some(runs.as_path()));
     assert!(folder.is_dir());
-    assert_eq!(
-        admitted.cwd.as_deref(),
-        Some(folder.to_string_lossy().as_ref())
+    assert_ne!(
+        admitted.cwd, again.cwd,
+        "every run gets a folder of its own"
     );
     assert_eq!(admitted.project_path, None);
     assert_eq!(admitted.headless, Some(false));
@@ -872,40 +891,83 @@ fn a_supervisor_runs_interactive_unbound_in_its_own_folder_in_default_mode() {
     assert_eq!(admitted.auto_accept_edits, Some(false));
     assert_eq!(admitted.launch_request_uid, None);
 
+    let homeless = admit_spawn(
+        supervisor(),
+        Some(app_data.path()),
+        None,
+        &[],
+        &offered_claude(),
+        &no_modes,
+    );
+    assert!(
+        homeless.is_err(),
+        "no home: refused, not run somewhere else"
+    );
+
     let nested = supervisor_test_config(serde_json::json!({
         "role": "supervisor", "spawnedByAgentId": "agent-sup"
     }));
-    assert!(admit_spawn(
-        nested,
-        Some(app_data.path()),
-        &[],
-        &offered_claude(),
-        &no_modes
-    )
-    .is_err());
+    assert!(admit(nested).is_err());
 }
 
 #[test]
-fn a_supervisor_runs_on_claude_with_only_its_own_tools_preapproved() {
+fn a_supervisor_without_skills_has_file_tools_and_no_shell() {
     assert!(check_supervisor_provider("claude").is_ok());
     assert!(check_supervisor_provider("codex")
         .unwrap_err()
         .contains("Claude Code"));
     assert_eq!(
-        supervisor_claude_arguments("/data/agent-bindings/sup $1.mcp.json"),
+        supervisor_claude_arguments(
+            "/data/agent-bindings/sup $1.mcp.json",
+            &crate::supervisor::SkillPlugin::default(),
+            &[],
+            false
+        ),
         vec![
             "--mcp-config",
             "\"/data/agent-bindings/sup \\$1.mcp.json\"",
             "--strict-mcp-config",
             "--tools",
-            "\"\"",
+            "\"Read,Write,Edit,Glob,Grep,Skill,ToolSearch\"",
             "--restricted",
             "--allowedTools",
             "\"mcp__auric-supervisor__*\"",
+            "Read",
+            "Write",
+            "Edit",
+            "Glob",
+            "Grep",
+            "Skill",
+            "ToolSearch",
+            "--no-chrome",
             "--permission-mode",
-            "default",
+            "dontAsk",
         ]
     );
+}
+
+#[test]
+fn an_approved_skill_brings_its_plugin_and_exactly_its_shell_commands() {
+    let skills = crate::supervisor::SkillPlugin {
+        dir: Some("/data/supervisor-skills/run 1".into()),
+        skills: vec!["video-to-tasklist".to_string()],
+        bash: vec!["~/.claude/skills/video-to-tasklist/scripts/*".to_string()],
+        dirs: vec!["/home/u/review workspace".to_string()],
+    };
+    let args =
+        supervisor_claude_arguments("/c.json", &skills, &["auric-pm-alpha".to_string()], true);
+    let joined = args.join(" ");
+    assert!(joined.contains("--tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\""));
+    assert!(joined.contains("--add-dir \"/home/u/review workspace\" --allowedTools"));
+    assert!(joined.contains("\"mcp__auric-supervisor__*\" \"mcp__auric-pm-alpha__*\""));
+    assert!(joined.contains("--plugin-dir \"/data/supervisor-skills/run 1\""));
+    assert!(joined.contains("\"Bash(~/.claude/skills/video-to-tasklist/scripts/*)\""));
+    assert!(
+        !args.iter().any(|a| a == "Bash" || a == "\"Bash\""),
+        "never a bare Bash: {joined}"
+    );
+    assert!(joined.ends_with("--chrome --permission-mode dontAsk"));
+    assert!(joined.contains("\"mcp__claude-in-chrome__*\""));
 }
 
 #[test]
@@ -937,14 +999,20 @@ fn the_supervisor_flags_land_behind_the_executable_and_before_the_task() {
         false,
     )
     .with_injection(SpawnInjection {
-        arguments: supervisor_claude_arguments("/c.json"),
+        arguments: supervisor_claude_arguments(
+            "/c.json",
+            &crate::supervisor::SkillPlugin::default(),
+            &[],
+            false,
+        ),
         env_vars: Vec::new(),
     });
     assert_eq!(
         cmd.command,
-        "claude --mcp-config \"/c.json\" --strict-mcp-config --tools \"\" --restricted \
-         --allowedTools \"mcp__auric-supervisor__*\" --permission-mode default --model opus \
-         \"plan the week\""
+        "claude --mcp-config \"/c.json\" --strict-mcp-config \
+         --tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch\" --restricted \
+         --allowedTools \"mcp__auric-supervisor__*\" Read Write Edit Glob Grep Skill ToolSearch \
+         --no-chrome --permission-mode dontAsk --model opus \"plan the week\""
     );
 }
 

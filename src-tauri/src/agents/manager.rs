@@ -229,47 +229,129 @@ pub fn check_supervisor_provider(provider_id: &str) -> Result<(), String> {
     }
 }
 
-/// Claude Code flags for a supervisor. `--tools ""` removes every built-in
-/// tool (Bash, Edit, Write, WebFetch, …), so only the `auric-supervisor` MCP
-/// tools are left. `--restricted` also ignores the user's, project's and local
-/// settings files, so allow rules such as `Bash(npx:*)` there do not apply,
-/// and refuses bypassPermissions. `--mcp-config`, `--tools` and
-/// `--allowedTools` take several values, so each is followed by another flag
-/// rather than by the task. Checked against Claude Code 2.1.301: with these
-/// flags the CLI reports no tools at all.
-pub fn supervisor_claude_arguments(mcp_config_path: &str) -> Vec<String> {
-    vec![
-        "--mcp-config".to_string(),
+/// Claude Code flags for a supervisor (ADR 0004). `--tools` names the only
+/// built-in tools it has: the file tools, `Skill`, `ToolSearch` (many MCP
+/// tools load deferred, and without it they are out of reach), and `Bash`
+/// only when an approved skill declares a command. Each permitted project's
+/// `auric-pm` server (`pm_servers`) is pre-approved like its own tools, and so
+/// is Claude in Chrome when the policy switches it on (`chrome`). `--restricted` confines the file tools
+/// to the working directory (the run folder), ignores the user's, project's
+/// and local settings files, so allow rules such as `Bash(npx:*)` there do
+/// not apply, and loads no skills from disk; the approved ones come in through
+/// `--plugin-dir`. `dontAsk` refuses whatever `--allowedTools` does not name,
+/// so a shell command outside the skills' patterns is refused, not asked.
+/// `--mcp-config`, `--tools`, `--plugin-dir` and `--allowedTools` take several
+/// values, so each is followed by another flag rather than by the task.
+/// Checked against Claude Code 2.1.301.
+pub fn supervisor_claude_arguments(
+    mcp_config_path: &str,
+    skills: &crate::supervisor::SkillPlugin,
+    pm_servers: &[String],
+    chrome: bool,
+) -> Vec<String> {
+    let quoted = |value: &str| {
         format!(
             "\"{}\"",
-            crate::providers::shell_escape_double_quoted(mcp_config_path)
-        ),
+            crate::providers::shell_escape_double_quoted(value)
+        )
+    };
+    let shell = !skills.bash.is_empty();
+    let mut tools = SUPERVISOR_FILE_TOOLS.to_vec();
+    if shell {
+        tools.push("Bash");
+    }
+    let mut arguments = vec![
+        "--mcp-config".to_string(),
+        quoted(mcp_config_path),
         "--strict-mcp-config".to_string(),
         "--tools".to_string(),
-        "\"\"".to_string(),
+        quoted(&tools.join(",")),
         "--restricted".to_string(),
-        "--allowedTools".to_string(),
-        format!("\"mcp__{SUPERVISOR_MCP_SERVER}__*\""),
-        "--permission-mode".to_string(),
-        "default".to_string(),
-    ]
+    ];
+    if let Some(dir) = &skills.dir {
+        arguments.push("--plugin-dir".to_string());
+        arguments.push(quoted(&dir.to_string_lossy()));
+    }
+    if !skills.dirs.is_empty() {
+        arguments.push("--add-dir".to_string());
+        arguments.extend(skills.dirs.iter().map(|dir| quoted(dir)));
+    }
+    arguments.push("--allowedTools".to_string());
+    arguments.push(quoted(&format!("mcp__{SUPERVISOR_MCP_SERVER}__*")));
+    arguments.extend(
+        pm_servers
+            .iter()
+            .map(|name| quoted(&format!("mcp__{name}__*"))),
+    );
+    if chrome {
+        arguments.push(quoted(&format!("mcp__{CHROME_MCP_SERVER}__*")));
+    }
+    arguments.extend(SUPERVISOR_FILE_TOOLS.iter().map(|tool| tool.to_string()));
+    arguments.extend(
+        skills
+            .bash
+            .iter()
+            .map(|pattern| quoted(&format!("Bash({pattern})"))),
+    );
+    // Explicit either way: the user's Claude Code may enable Chrome by itself.
+    arguments.push(if chrome { "--chrome" } else { "--no-chrome" }.to_string());
+    arguments.push("--permission-mode".to_string());
+    arguments.push("dontAsk".to_string());
+    arguments
 }
 
+/// The MCP server name Claude Code gives its Chrome integration.
+pub const CHROME_MCP_SERVER: &str = "claude-in-chrome";
+
+/// The built-in tools every supervisor has. They reach only its run folder.
+pub const SUPERVISOR_FILE_TOOLS: [&str; 7] = [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Skill",
+    "ToolSearch",
+];
+
 /// Binds a supervisor to its own MCP server (`auric-mcp --supervisor`) and
-/// nothing else.
+/// nothing else, and hands it the skills the policy approves.
 fn bind_to_supervisor_mcp(
     spawn_cmd: crate::providers::SpawnCommand,
     app: &AppHandle,
+    cwd: Option<&str>,
 ) -> Result<(crate::providers::SpawnCommand, OwnedFile), String> {
     let runtime = crate::mcp::runtime_entrypoint(app)?;
     let app_data = app
         .path()
         .app_data_dir()
         .map_err(|error| format!("The supervisor needs the app data directory: {error}"))?;
+    let run_name = cwd
+        .and_then(|cwd| std::path::Path::new(cwd).file_name())
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "The supervisor has no run folder.".to_string())?;
+    let policy = crate::supervisor::current_policy(&app_data);
+    let skills = crate::supervisor::build_skill_plugin(&app_data, run_name, &policy.skills)?;
+    let pm = crate::supervisor::supervisor_pm_servers(&policy);
+    // No AURIC_AGENT_CWD: `request_agent_launch` stays refused, so every agent
+    // a supervisor starts goes through `spawn_agent` and the policy.
+    let pm_env = crate::mcp::agent_mcp_server_env(
+        Some(&crate::notifications::db_path_in(&app_data)),
+        app.try_state::<ProviderRegistryState>()
+            .as_deref()
+            .map(|registry| registry.as_ref()),
+        None,
+    );
     let config_file = OwnedFile(crate::mcp::ensure_supervisor_mcp_config(
-        &app_data, &runtime,
+        &app_data, &runtime, &pm, &pm_env,
     )?);
-    let arguments = supervisor_claude_arguments(&config_file.0.to_string_lossy());
+    let pm_names: Vec<String> = pm.into_iter().map(|(name, _)| name).collect();
+    let arguments = supervisor_claude_arguments(
+        &config_file.0.to_string_lossy(),
+        &skills,
+        &pm_names,
+        policy.supervisor.chrome,
+    );
     Ok((
         spawn_cmd.with_injection(crate::providers::SpawnInjection {
             arguments,
@@ -285,11 +367,13 @@ fn bind_to_supervisor_mcp(
 /// supervisor policy again. The dispatcher checked before the frontend saw
 /// the request; this holds whatever route the spawn took from there.
 ///
-/// `app_data` is where the policy file and the supervisor's folder live;
-/// without it, both kinds of spawn are refused rather than run unchecked.
+/// `app_data` is where the policy file lives, `home` where the supervisor's
+/// run folders go; without them, both kinds of spawn are refused rather than
+/// run unchecked.
 pub fn admit_spawn(
     mut config: AgentConfig,
     app_data: Option<&std::path::Path>,
+    home: Option<&std::path::Path>,
     agents: &[AgentInfo],
     offered: &std::collections::BTreeMap<String, Vec<String>>,
     modes_for: &dyn Fn(
@@ -309,7 +393,11 @@ pub fn admit_spawn(
         if config.spawned_by_agent_id.is_some() {
             return Err("A supervisor cannot start another supervisor.".to_string());
         }
-        let cwd = crate::supervisor::supervisor_cwd(needs_app_data()?)?;
+        let home = home.ok_or_else(|| {
+            "The home directory is unavailable; the supervisor has nowhere to work".to_string()
+        })?;
+        let started = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
+        let cwd = crate::supervisor::new_supervisor_run_dir(home, &started)?;
         return Ok(supervisor_config(config, &cwd));
     }
     let Some(supervisor_id) = config.spawned_by_agent_id.clone() else {
@@ -445,6 +533,7 @@ pub async fn spawn_agent_impl(
     let config = admit_spawn(
         config,
         app.path().app_data_dir().ok().as_deref(),
+        dirs::home_dir().as_deref(),
         &list_agents_impl(state).await?,
         &crate::supervisor::model_names(&crate::supervisor::offered_models(providers.as_ref())),
         &|policy| crate::supervisor::provider_modes(providers.as_ref(), policy),
@@ -503,7 +592,7 @@ pub async fn spawn_agent_impl(
         usage_config.as_ref(),
     );
     if is_supervisor {
-        let (bound, config_file) = bind_to_supervisor_mcp(spawn_cmd, app)?;
+        let (bound, config_file) = bind_to_supervisor_mcp(spawn_cmd, app, config.cwd.as_deref())?;
         spawn_cmd = bound;
         launch_file = Some(config_file);
     } else if let Some(binding) = project_binding.as_ref() {

@@ -192,7 +192,14 @@ pub(crate) fn write_agent_mcp_configs(
 /// The private MCP config of one supervisor (ADR 0004): the single server
 /// `auric-supervisor`, the packaged runtime in `--supervisor` mode, pointed at
 /// this app's control socket. Lives next to the per-agent configs.
-pub fn ensure_supervisor_mcp_config(app_data: &Path, runtime: &Path) -> Result<PathBuf, String> {
+/// `pm` are the `auric-pm` servers of the projects the supervisor may work in,
+/// as `(server name, project root)`, each started like a project agent's.
+pub fn ensure_supervisor_mcp_config(
+    app_data: &Path,
+    runtime: &Path,
+    pm: &[(String, String)],
+    env: &BTreeMap<String, String>,
+) -> Result<PathBuf, String> {
     let directory = app_data.join("agent-bindings");
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("Could not create agent MCP config directory: {error}"))?;
@@ -206,6 +213,8 @@ pub fn ensure_supervisor_mcp_config(app_data: &Path, runtime: &Path) -> Result<P
         &directory,
         runtime,
         &crate::control_socket::socket_path_in(app_data),
+        pm,
+        env,
     )
 }
 
@@ -213,6 +222,8 @@ pub(crate) fn write_supervisor_mcp_config(
     directory: &Path,
     runtime: &Path,
     socket: &Path,
+    pm: &[(String, String)],
+    env: &BTreeMap<String, String>,
 ) -> Result<PathBuf, String> {
     let mut hasher = DefaultHasher::new();
     socket.hash(&mut hasher);
@@ -235,6 +246,16 @@ pub(crate) fn write_supervisor_mcp_config(
             "env": { "AURIC_CONTROL_SOCKET": socket },
         }),
     );
+    for (name, project_root) in pm {
+        servers.insert(
+            name.clone(),
+            serde_json::json!({
+                "command": "node",
+                "args": [runtime, "--project-root", project_root],
+                "env": env,
+            }),
+        );
+    }
     let content = serde_json::to_vec_pretty(&serde_json::json!({ "mcpServers": servers }))
         .map_err(|error| format!("Could not serialize the supervisor MCP config: {error}"))?;
     write_new_private_file(&path, &content)?;
@@ -778,6 +799,8 @@ mod tests {
             dir.path(),
             Path::new("/rt/server.mjs"),
             Path::new("/data/control.sock"),
+            &[],
+            &BTreeMap::new(),
         )
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -793,10 +816,51 @@ mod tests {
                 "env": { "AURIC_CONTROL_SOCKET": "/data/control.sock" }
             } } })
         );
-        let second =
-            write_supervisor_mcp_config(dir.path(), Path::new("/rt/server.mjs"), Path::new("/s"))
-                .unwrap();
+        let second = write_supervisor_mcp_config(
+            dir.path(),
+            Path::new("/rt/server.mjs"),
+            Path::new("/s"),
+            &[],
+            &BTreeMap::new(),
+        )
+        .unwrap();
         assert_ne!(path, second, "one file per supervisor");
+    }
+
+    #[test]
+    fn a_supervisor_config_adds_one_auric_pm_per_permitted_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = BTreeMap::from([("AURIC_NOTIFICATIONS_DB".to_string(), "/n.db".to_string())]);
+        let pm = [
+            ("auric-pm-alpha".to_string(), "/abs/alpha".to_string()),
+            ("auric-pm-beta".to_string(), "/abs/beta".to_string()),
+        ];
+        let path = write_supervisor_mcp_config(
+            dir.path(),
+            Path::new("/rt/server.mjs"),
+            Path::new("/s"),
+            &pm,
+            &env,
+        )
+        .unwrap();
+        let config: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let servers = config["mcpServers"].as_object().unwrap();
+        assert_eq!(servers.len(), 3);
+        assert_eq!(
+            servers["auric-pm-beta"],
+            serde_json::json!({
+                "command": "node",
+                "args": ["/rt/server.mjs", "--project-root", "/abs/beta"],
+                "env": { "AURIC_NOTIFICATIONS_DB": "/n.db" }
+            })
+        );
+        assert!(
+            servers["auric-pm-alpha"]["env"]
+                .get("AURIC_AGENT_CWD")
+                .is_none(),
+            "no launch folder: request_agent_launch stays refused, spawns go through the policy"
+        );
     }
 
     #[test]

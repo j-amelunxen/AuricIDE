@@ -8,6 +8,7 @@ import {
   emptySupervisorPolicy,
   effectivePermissionMode,
   permissionModesOf,
+  pmServerNames,
   runsUnattended,
   parseSupervisorPolicy,
   SUPERVISOR_DENIED_REASON_TEXT,
@@ -70,6 +71,14 @@ describe('supervisor policy — shared contract', () => {
       });
     }
   });
+});
+
+describe('pmServerNames', () => {
+  for (const testCase of fixtures.pmServerNames) {
+    it(testCase.name, () => {
+      expect(pmServerNames(testCase.paths)).toEqual(testCase.expected);
+    });
+  }
 });
 
 describe('supervisor policy — fixture coverage', () => {

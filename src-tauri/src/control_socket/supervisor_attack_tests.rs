@@ -951,7 +951,12 @@ fn guard_case_and_normalisation_variants_of_a_folder_share_one_key() {
 /// least deny Bash, and must not load the user's allow rules.
 #[test]
 fn attack_the_supervisor_launch_removes_the_builtin_tools() {
-    let args = crate::agents::supervisor_claude_arguments("/x/supervisor.mcp.json");
+    let args = crate::agents::supervisor_claude_arguments(
+        "/x/supervisor.mcp.json",
+        &crate::supervisor::SkillPlugin::default(),
+        &[],
+        false,
+    );
     let joined = args.join(" ");
     let restricted = args.iter().any(|a| a == "--restricted" || a == "--tools");
     let bash_denied = args
@@ -961,6 +966,19 @@ fn attack_the_supervisor_launch_removes_the_builtin_tools() {
     assert!(
         restricted || bash_denied,
         "the supervisor keeps Bash/Edit/Write and the user's allow rules: {joined}"
+    );
+    let tools = args
+        .iter()
+        .position(|a| a == "--tools")
+        .and_then(|i| args.get(i + 1))
+        .expect("--tools names the built-in set");
+    assert!(
+        !tools.contains("Bash"),
+        "Bash without an approved skill: {joined}"
+    );
+    assert!(
+        joined.contains("dontAsk"),
+        "an unlisted tool must be refused, not asked: {joined}"
     );
 }
 

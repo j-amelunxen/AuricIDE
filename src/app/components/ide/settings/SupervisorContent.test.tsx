@@ -135,13 +135,14 @@ describe('SupervisorContent', () => {
     });
     fireEvent.change(screen.getByTestId('supervisor-model'), { target: { value: 'haiku' } });
     fireEvent.change(screen.getByTestId('supervisor-max-children'), { target: { value: '4' } });
+    fireEvent.click(screen.getByTestId('supervisor-chrome'));
 
     fireEvent.click(screen.getByTestId('supervisor-save'));
 
     await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
     expect(supervisorPolicySet).toHaveBeenCalledWith({
       ...emptySupervisorPolicy(),
-      supervisor: { provider: 'claude', model: 'haiku' },
+      supervisor: { provider: 'claude', model: 'haiku', chrome: true },
       maxRunningChildren: 4,
       projects: {
         [OPEN]: {
