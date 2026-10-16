@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { emptySupervisorPolicy, type SupervisorPolicy } from '@/lib/config/supervisorPolicy';
+import {
+  defaultSupervisorProjectPolicy,
+  emptySupervisorPolicy,
+  type SupervisorPolicy,
+} from '@/lib/config/supervisorPolicy';
 import { useStore } from '@/lib/store';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { SupervisorContent } from './SupervisorContent';
@@ -179,6 +183,55 @@ describe('SupervisorContent', () => {
     expect(supervisorPolicySet).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId('supervisor-save')).toBeDisabled());
     localStorage.removeItem('auric.supervisor.instructions');
+  });
+
+  it('edits the description the supervisor reads in list_projects, on Save only', async () => {
+    const setStarredProjectDescription = vi.fn();
+    useStore.setState({
+      setStarredProjectDescription,
+      starredProjects: [
+        { path: OPEN, name: 'project-open', starredAt: 1, description: 'Old words' },
+        { path: CLOSED, name: 'project-closed', starredAt: 2 },
+      ],
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId(`supervisor-allowed-${OPEN}`));
+    const field = screen.getByTestId(`supervisor-description-${OPEN}`) as HTMLTextAreaElement;
+    expect(field.value).toBe('Old words');
+
+    fireEvent.change(field, { target: { value: 'The marketing site of the shop' } });
+    expect(setStarredProjectDescription).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+
+    await waitFor(() =>
+      expect(setStarredProjectDescription).toHaveBeenCalledWith(
+        OPEN,
+        'The marketing site of the shop'
+      )
+    );
+    expect(setStarredProjectDescription).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves a description alone without writing the policy file, and discards it', async () => {
+    const setStarredProjectDescription = vi.fn();
+    supervisorPolicyGet.mockResolvedValue({
+      policy: policy({
+        [OPEN]: { ...defaultSupervisorProjectPolicy(), allowed: true },
+      }),
+      rejected: [],
+    });
+    useStore.setState({ setStarredProjectDescription });
+    await renderLoaded();
+    const field = screen.getByTestId(`supervisor-description-${OPEN}`) as HTMLTextAreaElement;
+
+    fireEvent.change(field, { target: { value: 'typed' } });
+    fireEvent.click(screen.getByText('Discard changes'));
+    expect(field.value).toBe('');
+
+    fireEvent.change(field, { target: { value: 'kept' } });
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(setStarredProjectDescription).toHaveBeenCalledWith(OPEN, 'kept'));
+    expect(supervisorPolicySet).not.toHaveBeenCalled();
   });
 
   it('removes the stored instructions when the field is cleared', async () => {
