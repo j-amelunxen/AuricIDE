@@ -535,11 +535,14 @@ that is per-project configuration.
   output buffers and the job register every 250 ms (`subscription.rs`).
   Requests run in order on a worker thread, so a 30 s spawn does not hold
   events back; a subscription takes effect when its response is sent.
-- **Documents are files in the projects**, described per project as document
-  types (name, globs, optional index file, name/description fields, schema
-  path) in `<app_data_dir>/supervisor-link.json` (Settings → Supervisor →
-  Supervisor link, Rust-owned, version 2, fails closed; version 1's
-  `scenes.projects` migrates on read to one type `scene`). The content is
+- **Documents are files in the projects**, described as document types
+  (name, globs, optional index file, name/description fields, schema path) in
+  `<app_data_dir>/supervisor-link.json` (Settings → Supervisor → Supervisor
+  link, Rust-owned, version 3, fails closed; versions 1 and 2 migrate on
+  read). Types and job kinds are global `defaults` every listed project
+  inherits; a project entry only overrides (same name), extends, disables or
+  sets `inherit: false`. The link acts on the merged result
+  (`policy::resolve`, fixture `resolution`), never on the raw file. The content is
   opaque JSON. The link never writes into a working tree:
   `documents.propose` commits on a new branch `auric/proposal/…` built from
   `HEAD` with git2, checked against `baseHash`, and drops one inbox
@@ -551,7 +554,9 @@ that is per-project configuration.
 - **Jobs are headless agents in a worktree, under the supervisor policy**
   (`jobs.create { project, kind, payload }`, `job_runner.rs`,
   `control_socket/link_spawn.rs`). Only kinds the project lists run; the agent
-  follows the kind's instructions file and may write only its `writes` globs.
+  follows the kind's instructions file (the project's own wins; else a
+  `globalInstructions` file under `<app_data_dir>/job-kinds/`, read by Rust
+  into the prompt, `instructions.rs`) and may write only its `writes` globs.
   Provider and model are the supervisor's rule (balancing `next`, smallest
   ranked model), never the client's. The payload goes into the prompt fenced
   and named as data. A 2 s tick follows each job to `job.finished`/`failed`,
@@ -561,6 +566,13 @@ that is per-project configuration.
   (default 20 per 24 h, optional per project; 0 is `reason: disabled`)
   answers `quota_exceeded`; the register (`supervisor-link-jobs.json`)
   survives restarts.
+- **Policy changes are proposed, never made, by a supervisor.** MCP
+  `link_policy_get` / `link_policy_propose` (control socket, supervisor
+  callers only; external callers and so the link socket are refused) store a
+  pending proposal with a diff and raise an inbox ask with Apply / Discard
+  (`proposals.rs`, fixture `proposals`). Only the Tauri command
+  `supervisor_link_proposal_decide` behind that button applies it, onto the
+  policy it was made against; 24 h expiry; every outcome in an audit log.
 - Real-app check: `node scripts/probe-supervisor-link.mjs [--watch 20]`.
 
 ### The terminals in a window of their own
