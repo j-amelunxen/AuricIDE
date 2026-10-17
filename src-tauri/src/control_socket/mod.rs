@@ -203,6 +203,11 @@ pub struct Dispatcher {
     /// Held across a supervisor's policy check and its spawn, so two spawns
     /// on two connections cannot both pass a limit that only one fits under.
     supervisor_spawn_gate: Mutex<()>,
+    /// Agent id → working directory of every agent this socket started in a
+    /// worktree, so `remove_worktree` still finds the folder after the IDE
+    /// cleared the agent's card. In memory only: a worktree left over from
+    /// before a restart stays in the Git panel's worktree list for a person.
+    worktrees: Mutex<HashMap<String, String>>,
 }
 
 type Outcome = Result<Value, ControlError>;
@@ -228,6 +233,7 @@ impl Dispatcher {
             run_results,
             frontend_timeout,
             supervisor_spawn_gate: Mutex::new(()),
+            worktrees: Mutex::new(HashMap::new()),
         }
     }
 
@@ -323,6 +329,7 @@ impl Dispatcher {
                 projects: self.backend.projects(),
             }),
             Request::AwaitResult(params) => self.await_result(params),
+            Request::RemoveWorktree(params) => self.remove_worktree(params),
         }
     }
 
@@ -552,9 +559,83 @@ impl Dispatcher {
                     format!("the IDE answered spawn without an agentId: {result}"),
                 )
             })?;
+        if params.worktree == Some(true) {
+            self.remember_worktree(agent_id);
+        }
         to_value(SpawnResult {
             agent_id: agent_id.to_string(),
         })
+    }
+
+    fn worktrees(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
+        self.worktrees
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The frontend created the worktree before the spawn returned, so the
+    /// new agent's working directory is it.
+    fn remember_worktree(&self, agent_id: &str) {
+        if let Some(cwd) = self.find_agent(agent_id).and_then(|agent| agent.repo_path) {
+            self.worktrees().insert(agent_id.to_string(), cwd);
+        }
+    }
+
+    /// Removes the worktree an agent ran in, but only when nothing in it would
+    /// be lost. Never merges, never forces: a worktree with work in it is
+    /// answered with `removed: false` and stays for a person. The folder is
+    /// the agent's own working directory, never a path the caller names.
+    fn remove_worktree(&self, params: AgentIdParams) -> Outcome {
+        let agent_id = params.agent_id;
+        let live = self.find_agent(&agent_id);
+        if live
+            .as_ref()
+            .is_some_and(|agent| matches!(agent.status, AgentStatus::Running | AgentStatus::Queued))
+        {
+            return Err(ControlError::new(
+                ErrorCode::InvalidParams,
+                format!("{agent_id} still runs: await its result or kill it first"),
+            ));
+        }
+        let known = live.is_some() || self.buffers.knows(&agent_id);
+        let cwd = live
+            .and_then(|agent| agent.repo_path)
+            .or_else(|| self.worktrees().get(&agent_id).cloned());
+        let Some(cwd) = cwd else {
+            return Err(if known {
+                Self::no_worktree(&agent_id)
+            } else {
+                Self::unknown(&agent_id)
+            });
+        };
+        if !Path::new(&cwd).is_dir() {
+            self.worktrees().remove(&agent_id);
+            return Err(ControlError::new(
+                ErrorCode::InvalidParams,
+                format!("{agent_id}'s worktree {cwd} is gone already (merged or removed)"),
+            ));
+        }
+        let worktree = crate::git::git_worktree_remove_unless_work_impl(&cwd).map_err(|error| {
+            if error.contains("Auric-managed") {
+                Self::no_worktree(&agent_id)
+            } else {
+                ControlError::new(
+                    ErrorCode::Internal,
+                    format!("could not remove {agent_id}'s worktree: {error}"),
+                )
+            }
+        })?;
+        if worktree.removed {
+            self.worktrees().remove(&agent_id);
+        }
+        to_value(RemoveWorktreeResult { agent_id, worktree })
+    }
+
+    fn no_worktree(agent_id: &str) -> ControlError {
+        ControlError::new(
+            ErrorCode::InvalidParams,
+            format!("{agent_id} did not run in a worktree; there is nothing to remove"),
+        )
     }
 
     /// Emit `control-request` and wait for `control_respond`.

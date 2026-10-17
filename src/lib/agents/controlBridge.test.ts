@@ -36,7 +36,8 @@ vi.mock('./spawnDefaults', async (original) => ({
   loadSpawnDefaults: (cwd?: string) => loadSpawnDefaultsMock(cwd),
 }));
 
-const { handleControlRequest, installControlBridge } = await import('./controlBridge');
+const { handleControlRequest, installControlBridge, WORKTREE_CHILD_NOTE } =
+  await import('./controlBridge');
 type Host = Parameters<typeof handleControlRequest>[1];
 
 function agent(id: string, extra: Partial<AgentInfo> = {}): AgentInfo {
@@ -265,6 +266,31 @@ describe('control-request spawn for a supervisor', () => {
     // null is the provider's own default, never the folder's last launch.
     expect(config.permissionMode).toBeUndefined();
     expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
+  });
+
+  it('starts a child in a worktree and tells it to commit there', async () => {
+    const h = host();
+    await handleControlRequest(
+      { reqId: 's6', method: 'spawn', params: { ...child, worktree: true }, expiresAt: fresh() },
+      h
+    );
+
+    const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
+    expect(config.useWorktree).toBe(true);
+    expect(config.task).toBe(`check the parser\n\n${WORKTREE_CHILD_NOTE}`);
+    // Prompt recall keeps what was asked, not the IDE's own addition.
+    expect(config.historyPrompt).toBe('check the parser');
+  });
+
+  it('leaves a child without worktree in the project folder, task untouched', async () => {
+    const h = host();
+    await handleControlRequest(
+      { reqId: 's7', method: 'spawn', params: child, expiresAt: fresh() },
+      h
+    );
+    const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
+    expect(config.useWorktree).toBeUndefined();
+    expect(config.task).toBe('check the parser');
   });
 
   it('keeps the permission mode the policy named', async () => {

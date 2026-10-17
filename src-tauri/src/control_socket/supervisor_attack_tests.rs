@@ -467,7 +467,7 @@ fn guard_a_supervisor_cannot_smuggle_fields_into_the_frontend_request() {
         json!({
             "projectPath": r.path, "prompt": "p", "provider": "claude",
             "model": "haiku", "headless": true, "name": null, "permissionMode": null,
-            "role": "worker",
+            "role": "worker", "worktree": null,
             "spawnedByAgentId": "agent-sup", "runSource": "supervisor"
         })
     );

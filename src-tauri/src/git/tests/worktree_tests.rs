@@ -243,3 +243,57 @@ fn worktree_list_is_clean_and_not_ahead_right_after_add() {
     assert!(!listed[0].branch_ahead);
     assert!(listed[0].is_auric);
 }
+
+#[test]
+fn remove_unless_work_removes_an_untouched_worktree_and_its_branch() {
+    let dir = TempDir::new().unwrap();
+    let path = committed_repo(&dir);
+    let wt = git_worktree_add_impl(&path, "idle").unwrap();
+
+    let outcome = git_worktree_remove_unless_work_impl(&wt.path).unwrap();
+    assert!(outcome.removed);
+    assert!(!outcome.dirty && !outcome.branch_ahead);
+    assert_eq!(outcome.branch, wt.branch);
+    assert!(!Path::new(&wt.path).exists());
+    let repo = Repository::open(&path).unwrap();
+    assert!(repo
+        .find_branch(wt.branch.as_deref().unwrap(), git2::BranchType::Local)
+        .is_err());
+}
+
+#[test]
+fn remove_unless_work_keeps_a_worktree_with_uncommitted_changes() {
+    let dir = TempDir::new().unwrap();
+    let path = committed_repo(&dir);
+    let wt = git_worktree_add_impl(&path, "dirty").unwrap();
+    fs::write(Path::new(&wt.path).join("a.txt"), "changed").unwrap();
+
+    let outcome = git_worktree_remove_unless_work_impl(&wt.path).unwrap();
+    assert!(!outcome.removed);
+    assert!(outcome.dirty);
+    assert!(Path::new(&wt.path).exists());
+}
+
+#[test]
+fn remove_unless_work_keeps_a_worktree_with_unmerged_commits() {
+    let dir = TempDir::new().unwrap();
+    let path = committed_repo(&dir);
+    let wt = git_worktree_add_impl(&path, "ahead").unwrap();
+    commit_in(&wt.path, "b.txt", "from agent", "agent work");
+
+    let outcome = git_worktree_remove_unless_work_impl(&wt.path).unwrap();
+    assert!(!outcome.removed);
+    assert!(!outcome.dirty);
+    assert!(outcome.branch_ahead);
+    assert!(Path::new(&wt.path).exists());
+    assert_eq!(git_worktree_list_impl(&path).unwrap().len(), 1);
+}
+
+#[test]
+fn remove_unless_work_refuses_a_folder_that_is_no_auric_worktree() {
+    let dir = TempDir::new().unwrap();
+    let path = committed_repo(&dir);
+    let err = git_worktree_remove_unless_work_impl(&path).unwrap_err();
+    assert!(err.contains("Auric-managed"), "{err}");
+    assert!(Path::new(&path).join("a.txt").is_file());
+}

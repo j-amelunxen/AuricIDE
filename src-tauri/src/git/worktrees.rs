@@ -230,6 +230,41 @@ pub fn git_worktree_remove_impl(
     Ok(())
 }
 
+/// Removes the Auric worktree at `worktree_path` only when nothing in it would
+/// be lost: no uncommitted change and no commit the source checkout lacks.
+/// Otherwise it stays, and the answer says why. Nothing here merges or forces;
+/// a worktree with work in it is handed to a person (the supervisor's cleanup,
+/// `docs/design-agent-control.md`).
+pub fn git_worktree_remove_unless_work_impl(
+    worktree_path: &str,
+) -> Result<WorktreeRemoval, String> {
+    let target = Path::new(worktree_path);
+    if !path_is_auric_worktree(target) {
+        return Err("only Auric-managed worktrees can be removed here".to_string());
+    }
+    let (repo, source) = open_main_repo(worktree_path)?;
+    let names = repo.worktrees().map_err(|e| e.to_string())?;
+    let described = names
+        .iter()
+        .flatten()
+        .filter_map(|name| Some((name, repo.find_worktree(name).ok()?)))
+        .find(|(_, wt)| same_path(wt.path(), target))
+        .map(|(name, wt)| describe_worktree(&repo, &source, name, wt.path()))
+        .ok_or_else(|| "worktree not found".to_string())?;
+    let keep = described.dirty || described.branch_ahead;
+    if !keep {
+        git_worktree_remove_impl(&described.source_repo, &described.path, false)?;
+    }
+    Ok(WorktreeRemoval {
+        path: described.path,
+        branch: described.branch,
+        source_repo: described.source_repo,
+        removed: !keep,
+        dirty: described.dirty,
+        branch_ahead: described.branch_ahead,
+    })
+}
+
 pub fn git_default_branch_impl(repo_path: &str) -> Result<String, String> {
     let (repo, _) = open_main_repo(repo_path)?;
     resolve_default_branch(&repo)

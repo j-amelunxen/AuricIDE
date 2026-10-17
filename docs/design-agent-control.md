@@ -60,18 +60,20 @@ external MCP client ─stdio─▶ auric-mcp --control ─unix socket─▶ Rust
 
 All field names are camelCase on the wire.
 
-| method          | params                                                                                                        | result                              |
-| --------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `list_agents`   | —                                                                                                             | `{ agents: AgentSummary[] }`        |
-| `read_output`   | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                           | `OutputChunk`                       |
-| `send_input`    | `{ agentId, text: string, enter?: boolean (default true) }`                                                   | `{ agentId, bytesWritten: number }` |
-| `kill`          | `{ agentId }`                                                                                                 | `{ agentId, killed: true }`         |
-| `spawn`         | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor" }` | `{ agentId }`                       |
-| `list_projects` | —                                                                                                             | `{ projects: ProjectEntry[] }`      |
-| `await_result`  | `{ agentId, waitSeconds?: number (default 60, max 120) }`                                                     | `AwaitResult`                       |
+| method            | params                                                                                                                            | result                              |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `list_agents`     | —                                                                                                                                 | `{ agents: AgentSummary[] }`        |
+| `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                               | `OutputChunk`                       |
+| `send_input`      | `{ agentId, text: string, enter?: boolean (default true) }`                                                                       | `{ agentId, bytesWritten: number }` |
+| `kill`            | `{ agentId }`                                                                                                                     | `{ agentId, killed: true }`         |
+| `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", worktree?: boolean }` | `{ agentId }`                       |
+| `list_projects`   | —                                                                                                                                 | `{ projects: ProjectEntry[] }`      |
+| `await_result`    | `{ agentId, waitSeconds?: number (default 60, max 120) }`                                                                         | `AwaitResult`                       |
+| `remove_worktree` | `{ agentId }`                                                                                                                     | `WorktreeRemoval`                   |
 
 `role` and `await_result` belong to the supervisor scope and are described
-there. `role: "worker"` is the same as leaving it out.
+there. `role: "worker"` is the same as leaving it out. `worktree` and
+`remove_worktree` are described under "Worktrees" below.
 
 `AgentSummary` = the Rust `AgentInfo` as it already serialises
 (`id, name, model, provider, status, currentTask, startedAt, lastActivityAt,
@@ -255,15 +257,16 @@ start another supervisor.
 
 ### Methods for a supervisor caller
 
-| method          | what a supervisor gets                                                                        |
-| --------------- | --------------------------------------------------------------------------------------------- |
-| `list_projects` | only projects its policy allows, each with a `supervisor` block (below)                       |
-| `spawn`         | `provider`, `model` and `headless` required; checked against the policy; the child is its own |
-| `list_agents`   | its own children only                                                                         |
-| `read_output`   | its own children only                                                                         |
-| `await_result`  | its own children only                                                                         |
-| `kill`          | its own children only                                                                         |
-| `send_input`    | refused, `outside_supervisor_scope`                                                           |
+| method            | what a supervisor gets                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| `list_projects`   | only projects its policy allows, each with a `supervisor` block (below)                       |
+| `spawn`           | `provider`, `model` and `headless` required; checked against the policy; the child is its own |
+| `list_agents`     | its own children only                                                                         |
+| `read_output`     | its own children only                                                                         |
+| `await_result`    | its own children only                                                                         |
+| `kill`            | its own children only                                                                         |
+| `remove_worktree` | its own children only                                                                         |
+| `send_input`      | refused, `outside_supervisor_scope`                                                           |
 
 - **Own children only.** Any other agent id, including the supervisor's own,
   an agent the human started and another supervisor's child, is answered with
@@ -366,20 +369,53 @@ finishedAt, costUsd: number | null }`.
 
 ### Tools (`auric-mcp --supervisor`)
 
-| tool                 | socket method   |
-| -------------------- | --------------- |
-| `list_projects`      | `list_projects` |
-| `spawn_agent`        | `spawn`         |
-| `list_my_agents`     | `list_agents`   |
-| `read_agent_output`  | `read_output`   |
-| `await_agent_result` | `await_result`  |
-| `kill_agent`         | `kill`          |
+| tool                 | socket method     |
+| -------------------- | ----------------- |
+| `list_projects`      | `list_projects`   |
+| `spawn_agent`        | `spawn`           |
+| `list_my_agents`     | `list_agents`     |
+| `read_agent_output`  | `read_output`     |
+| `await_agent_result` | `await_result`    |
+| `kill_agent`         | `kill`            |
+| `remove_worktree`    | `remove_worktree` |
 
 ## Error codes
 
 `invalid_request`, `unknown_method`, `invalid_params`, `unknown_agent`,
 `agent_not_running`, `headless_no_stdin`, `provider_denied`,
 `frontend_unavailable`, `forbidden_agent_caller`, `supervisor_denied`,
+
+### Worktrees
+
+`spawn` with `worktree: true` runs the agent in a git worktree of its own:
+the bridge sets `AgentConfig.useWorktree`, so the frontend creates an Auric
+worktree (`<repo>.auric-wt/<name>`, branch `auric/<name>`) before the Rust
+spawn, exactly as the spawn dialog's worktree option does. The bridge also
+appends one fixed paragraph to the task (`WORKTREE_CHILD_NOTE`): commit all
+work on that branch, do not merge it, do not remove the worktree. Without the
+commit, finished work and leftovers look the same.
+
+`remove_worktree { agentId }` is the cleanup. The folder is always the agent's
+own working directory (live from the agent list, else what the socket noted
+at spawn), never a path the caller names, and there is no `force`:
+
+- A running or queued agent is refused (`invalid_params`): await or kill it
+  first. An agent that ran in the project folder itself is refused too.
+- No uncommitted change and no commit the source checkout lacks: the worktree
+  and its `auric/` branch are removed, `removed: true`.
+- Otherwise it stays, `removed: false` with `dirty` and `branchAhead` saying
+  why. That is an answer, not an error: the work waits for a person to merge
+  or discard it in the Git panel. Nothing here merges.
+
+`WorktreeRemoval` = `{ agentId, path, branch: string | null, sourceRepo,
+removed, dirty, branchAhead }`.
+
+The supervisor's launch prompt makes cleanup its duty: remove after reading
+the result, hand over on `removed: false`, and sweep its finished children
+before it ends. The socket's spawn note lives in memory only, so a worktree
+from before an app restart is found through the agent list or not at all; it
+stays in the Git panel's worktree list for a person.
+
 `outside_supervisor_scope`, `internal`.
 
 - `supervisor_denied`: the supervisor policy refuses this spawn. The error
@@ -393,15 +429,16 @@ exist or refuses the connection, `timeout` when no answer arrives in time, and
 
 ## MCP tools (`auric-mcp --control`)
 
-| tool                 | socket method   |
-| -------------------- | --------------- |
-| `list_agents`        | `list_agents`   |
-| `read_agent_output`  | `read_output`   |
-| `send_agent_input`   | `send_input`    |
-| `kill_agent`         | `kill`          |
-| `spawn_agent`        | `spawn`         |
-| `list_projects`      | `list_projects` |
-| `await_agent_result` | `await_result`  |
+| tool                 | socket method     |
+| -------------------- | ----------------- |
+| `list_agents`        | `list_agents`     |
+| `read_agent_output`  | `read_output`     |
+| `send_agent_input`   | `send_input`      |
+| `kill_agent`         | `kill`            |
+| `spawn_agent`        | `spawn`           |
+| `list_projects`      | `list_projects`   |
+| `await_agent_result` | `await_result`    |
+| `remove_worktree`    | `remove_worktree` |
 
 Each tool returns the result as JSON text; a socket error becomes a tool error
 whose message names the code and the message, e.g.

@@ -21,6 +21,7 @@ export const CONTROL_METHODS = [
   'spawn',
   'list_projects',
   'await_result',
+  'remove_worktree',
 ] as const;
 export type ControlMethod = (typeof CONTROL_METHODS)[number];
 
@@ -157,6 +158,7 @@ const PARAMS = {
       headless: z.boolean().nullish(),
       name: optionalText,
       role: z.enum(AGENT_ROLES).nullish(),
+      worktree: z.boolean().nullish(),
     })
     .transform((p) => ({
       projectPath: p.projectPath,
@@ -168,6 +170,7 @@ const PARAMS = {
       name: p.name ?? null,
       // A worker is what every spawn starts anyway; only a supervisor is news.
       role: p.role === 'supervisor' ? ('supervisor' as const) : null,
+      worktree: p.worktree ?? null,
     })),
   await_result: z.object({ agentId, waitSeconds: offset.nullish() }).transform((p) => ({
     agentId: p.agentId,
@@ -176,6 +179,7 @@ const PARAMS = {
       CONTROL_LIMITS.maxAwaitSeconds
     ),
   })),
+  remove_worktree: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
 } satisfies Record<ControlMethod, z.ZodType>;
 
 type ControlParamsSchemas = typeof PARAMS;
@@ -376,6 +380,16 @@ const RESULTS = {
     }),
     z.object({ done: z.literal(true), result: runResult }),
   ]),
+  /** `removed: false` is an answer: the worktree holds work and stays for a person. */
+  remove_worktree: z.object({
+    agentId: z.string(),
+    path: z.string(),
+    branch: z.string().nullable(),
+    sourceRepo: z.string(),
+    removed: z.boolean(),
+    dirty: z.boolean(),
+    branchAhead: z.boolean(),
+  }),
 } satisfies Record<ControlMethod, z.ZodType>;
 
 export type ControlResult<M extends ControlMethod> = z.output<(typeof RESULTS)[M]>;

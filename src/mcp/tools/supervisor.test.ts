@@ -15,6 +15,7 @@ const TOOL_METHODS: Record<string, string> = {
   read_agent_output: 'read_output',
   await_agent_result: 'await_result',
   kill_agent: 'kill',
+  remove_worktree: 'remove_worktree',
 };
 
 const scope = fixtures.callerScope.callers.supervisor;

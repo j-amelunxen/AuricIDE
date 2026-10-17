@@ -78,6 +78,35 @@ export function readAgentOutputTool(call: ControlCaller, scopeNote = '') {
   };
 }
 
+/** `worktree` on `spawn_agent`, the same for the control and the supervisor server. */
+export const worktreeParam = z
+  .boolean()
+  .optional()
+  .describe(
+    'Run in a git worktree of its own (own folder, own branch) instead of the project folder. ' +
+      'Use it for code changes in a repository where others may work at the same time. The ' +
+      'agent is told to commit there; you remove the worktree afterwards with remove_worktree.'
+  );
+
+/** `remove_worktree`, the same for the control and the supervisor server. */
+export function removeWorktreeTool(call: ControlCaller, scopeNote = '') {
+  return {
+    name: 'remove_worktree',
+    description:
+      'Clean up the worktree a finished agent ran in (spawned with worktree: true). It is ' +
+      'removed, branch included, only when nothing would be lost. With uncommitted changes ' +
+      '(dirty) or commits the source branch lacks (branchAhead) it stays and the answer is ' +
+      'removed: false — the work waits for a person to merge or discard it in the IDE, so ' +
+      'report path and branch instead of retrying. Never merges, never forces. A running ' +
+      'agent is refused: await or kill it first. Returns { agentId, path, branch, sourceRepo, ' +
+      'removed, dirty, branchAhead }.' +
+      scopeNote,
+    parameters: z.object({ agentId: agentIdParam }),
+    execute: async (args: ControlParamsInput<'remove_worktree'>) =>
+      runControl(call, 'remove_worktree', args),
+  };
+}
+
 /** `await_agent_result`, the same for the control and the supervisor server. */
 export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
   return {
@@ -166,6 +195,7 @@ export function registerAgentControlTools(
         .optional()
         .describe('Run without a console (no input possible, output arrives at the end)'),
       name: z.string().optional().describe('Display name in the IDE'),
+      worktree: worktreeParam,
       role: z
         .literal('supervisor')
         .optional()
@@ -193,4 +223,6 @@ export function registerAgentControlTools(
   });
 
   server.addTool(awaitAgentResultTool(call));
+
+  server.addTool(removeWorktreeTool(call));
 }

@@ -5,7 +5,9 @@ import {
   agentIdParam,
   awaitAgentResultTool,
   readAgentOutputTool,
+  removeWorktreeTool,
   runControl,
+  worktreeParam,
   type ControlCaller,
 } from './agentControl';
 
@@ -56,6 +58,7 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
       model: z.string().describe("Model id from that provider's list"),
       headless: z.boolean().describe('true: runs unattended and returns an answer'),
       name: z.string().optional().describe('Display name in the IDE'),
+      worktree: worktreeParam,
     }),
     execute: async (args) => runControl(call, 'spawn', args),
   });
@@ -64,7 +67,8 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
     name: 'list_my_agents',
     description:
       'List the agents you started, across projects: id, name, provider, model, status ' +
-      '(running | idle | queued | error), the task, project, headless, and outputBytes (pass ' +
+      '(running | idle | queued | error), the task, project, repoPath (its working folder; a ' +
+      'path containing ".auric-wt" is a worktree you must clean up), headless, and outputBytes (pass ' +
       'it as sinceOffset to read_agent_output for only what is new). Agents the human or ' +
       'another supervisor started are not listed.',
     parameters: z.object({}),
@@ -89,4 +93,6 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
     parameters: z.object({ agentId: agentIdParam }),
     execute: async (args) => runControl(call, 'kill', args),
   });
+
+  server.addTool(removeWorktreeTool(call, OWN_CHILDREN));
 }

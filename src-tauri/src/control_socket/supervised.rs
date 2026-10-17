@@ -38,6 +38,10 @@ impl Dispatcher {
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.kill(params)
             }
+            Request::RemoveWorktree(params) => {
+                self.ensure_child(supervisor, &params.agent_id)?;
+                self.remove_worktree(params)
+            }
             Request::SendInput(params) => Err(ControlError::new(
                 ErrorCode::OutsideSupervisorScope,
                 format!(
