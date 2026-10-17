@@ -181,6 +181,7 @@ export function TerminalGrid({
                 <AgentXterm
                   ref={(handle) => registerTerminal(pane.agentId, handle)}
                   agentId={pane.agentId}
+                  role={paneAgent?.role}
                   autoFocus={isActive}
                   onSelectionSpawn={onSelectionSpawn}
                 />

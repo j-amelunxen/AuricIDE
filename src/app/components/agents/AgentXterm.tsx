@@ -3,7 +3,16 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { attachAgentStream } from '@/lib/terminal/agentStream';
 import { onAgentPtyResize } from '@/lib/terminal/agentMirror';
-import { attachImagePaste, attachFileDrop } from '@/lib/terminal/imageInsert';
+import {
+  attachImagePaste,
+  attachFileDrop,
+  attachSupervisorFileDrop,
+  attachSupervisorImagePaste,
+  absoluteImagePaths,
+  rewriteSupervisorImagePaths,
+} from '@/lib/terminal/imageInsert';
+import type { AgentRole } from '@/lib/tauri/agents';
+import { useStore } from '@/lib/store';
 import { ContextMenu, type ContextMenuOption } from '../ide/ContextMenu';
 import { accentColor, accentRgb } from '@/lib/theme/accent';
 import { APP_CONFIG_CHANGED_EVENT, APP_CONFIG_KEYS, loadAppConfig } from '@/lib/config/appConfig';
@@ -19,6 +28,7 @@ import { visibleTerminalText, type ViewportTerminal } from '@/lib/terminal/viewp
 
 export interface AgentXtermProps {
   agentId: string;
+  role?: AgentRole;
   onSelectionSpawn?: (selection: string) => void;
   /**
    * Take the keyboard once the terminal is up. Off for the panes of a split
@@ -36,7 +46,7 @@ export interface AgentXtermHandle {
 }
 
 export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function AgentXterm(
-  { agentId, onSelectionSpawn, autoFocus = true },
+  { agentId, role, onSelectionSpawn, autoFocus = true },
   ref
 ) {
   const autoFocusRef = useRef(autoFocus);
@@ -198,16 +208,58 @@ export const AgentXterm = forwardRef<AgentXtermHandle, AgentXtermProps>(function
       const sendText = (data: string) => {
         writeToShell(sessionId, data);
       };
-      term.onData(sendText);
+      const attachmentCopied = (count: number) => {
+        useStore
+          .getState()
+          .showToast(
+            `${count === 1 ? 'Image attachment copied' : `${count} image attachments copied`} to supervisor run`,
+            'success'
+          );
+      };
+      let typedLine = '';
+      term.onData((data) => {
+        const submittedLine =
+          data === '\r' ? typedLine : data.endsWith('\r') ? typedLine + data.slice(0, -1) : null;
+        if (
+          role === 'supervisor' &&
+          submittedLine &&
+          absoluteImagePaths(submittedLine).length > 0
+        ) {
+          const original = submittedLine;
+          typedLine = '';
+          void rewriteSupervisorImagePaths(agentId, original)
+            .then((rewritten) => {
+              sendText(`\u0015${rewritten}\r`);
+              attachmentCopied(absoluteImagePaths(original).length);
+            })
+            .catch(() => sendText('\r'));
+          return;
+        }
+        if (data === '\r') typedLine = '';
+        else if (data === '\u007f') typedLine = typedLine.slice(0, -1);
+        else if (!data.includes('\u001b')) typedLine += data;
+        sendText(data);
+      });
 
       // Warp-style image handling: pasting an image saves it to the app
       // cache and inserts its path; dropping files inserts their paths.
-      const detachImagePaste = attachImagePaste(containerRef.current, sendText);
+      const detachImagePaste =
+        role === 'supervisor'
+          ? attachSupervisorImagePaste(containerRef.current, agentId, sendText, attachmentCopied)
+          : attachImagePaste(containerRef.current, sendText);
       // Dropping onto a terminal is asking to talk to it: focus follows the
       // inserted path, so the next keystroke — usually Enter — lands here.
-      const detachFileDrop = attachFileDrop(containerRef.current, sendText, setIsDropTarget, () =>
-        term.focus()
-      );
+      const detachFileDrop =
+        role === 'supervisor'
+          ? attachSupervisorFileDrop(
+              containerRef.current,
+              agentId,
+              sendText,
+              setIsDropTarget,
+              () => term.focus(),
+              attachmentCopied
+            )
+          : attachFileDrop(containerRef.current, sendText, setIsDropTarget, () => term.focus());
 
       // Propagate xterm resize events to PTY backend
       term.onResize(({ rows, cols }) => {
