@@ -1,6 +1,6 @@
 'use client';
 
-import type { RefObject } from 'react';
+import type { MouseEvent, RefObject } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
 import {
   isSplit,
@@ -75,6 +75,11 @@ interface TerminalGridProps {
   onFocusPane: (agentId: string) => void;
   /** Identity colour per agent; the pane's frame and name wear it. Absent: the plain frame. */
   accents?: Record<string, string>;
+  /** Pressing a pane's bar starts the same drag a tab does. */
+  onDragPane?: (agentId: string, event: MouseEvent<HTMLElement>) => void;
+  /** The pane laid over the whole area for a closer look. The layout underneath stays. */
+  maximizedId?: string | null;
+  onToggleMaximize?: (agentId: string) => void;
   /** Takes the pane out of the split. The agent keeps running. */
   onRemovePane: (agentId: string) => void;
   /** Whether a pane gets the end control — the same answer the tab strip uses. */
@@ -97,6 +102,9 @@ export function TerminalGrid({
   areaRef,
   drag,
   onFocusPane,
+  onDragPane,
+  maximizedId = null,
+  onToggleMaximize,
   onRemovePane,
   accents,
   canEndPane,
@@ -107,9 +115,12 @@ export function TerminalGrid({
   const split = isSplit(cells);
   return (
     <div ref={areaRef} data-testid="terminal-grid" className="relative flex-1 min-h-0 p-2">
-      <div className={`grid h-full grid-cols-2 grid-rows-2 ${split ? 'gap-2' : ''}`}>
+      <div className={`relative grid h-full grid-cols-2 grid-rows-2 ${split ? 'gap-2' : ''}`}>
         {paneLayout(cells).map((pane) => {
           const isActive = pane.agentId === activeId;
+          // Laid over the others rather than replacing them: the panes underneath
+          // keep their size, so their terminals do not resize while one is looked at.
+          const maximized = split && pane.agentId === maximizedId;
           const paneAgent = agents.find((a) => a.id === pane.agentId);
           const accent = accents?.[pane.agentId];
           const name = paneAgent?.name ?? pane.agentId;
@@ -120,10 +131,15 @@ export function TerminalGrid({
               key={pane.agentId}
               data-testid={`terminal-pane-${pane.agentId}`}
               data-active={isActive}
+              data-maximized={maximized}
               data-accent={accent}
               style={{
-                gridRow: `${pane.row} / span ${pane.rowSpan}`,
-                gridColumn: `${pane.col} / span ${pane.colSpan}`,
+                ...(maximized
+                  ? { position: 'absolute', inset: 0, zIndex: 30 }
+                  : {
+                      gridRow: `${pane.row} / span ${pane.rowSpan}`,
+                      gridColumn: `${pane.col} / span ${pane.colSpan}`,
+                    }),
                 ...(split && accent ? { borderColor: paneFrame(accent, isActive) } : {}),
               }}
               onMouseDownCapture={() => {
@@ -132,13 +148,21 @@ export function TerminalGrid({
               className={`flex min-h-0 min-w-0 flex-col ${
                 split
                   ? `overflow-hidden rounded-lg border transition-colors ${
-                      accent ? '' : isActive ? 'border-primary/40' : 'border-white/10'
-                    }`
+                      maximized ? 'bg-background-dark shadow-2xl shadow-black/60' : ''
+                    } ${accent ? '' : isActive ? 'border-primary/40' : 'border-white/10'}`
                   : ''
               }`}
             >
               {split && (
-                <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/5 bg-black/40 py-1 pl-3 pr-1">
+                <div
+                  data-testid={`terminal-pane-bar-${pane.agentId}`}
+                  title="Drag to move · double-click to maximize"
+                  onMouseDown={(e) => onDragPane?.(pane.agentId, e)}
+                  onDoubleClick={() => onToggleMaximize?.(pane.agentId)}
+                  className={`flex flex-shrink-0 select-none items-center gap-2 border-b border-white/5 bg-black/40 py-1 pl-3 pr-1 ${
+                    onDragPane ? 'cursor-grab active:cursor-grabbing' : ''
+                  }`}
+                >
                   <span
                     style={accent && isActive ? { color: accent } : undefined}
                     className={`min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-wider ${
@@ -147,6 +171,25 @@ export function TerminalGrid({
                   >
                     {name}
                   </span>
+                  {onToggleMaximize && (
+                    <button
+                      type="button"
+                      data-testid={`terminal-pane-maximize-${pane.agentId}`}
+                      aria-label={maximized ? `Restore ${name}` : `Maximize ${name}`}
+                      aria-pressed={maximized}
+                      title={maximized ? 'Back to the split view' : 'Maximize'}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      onClick={() => onToggleMaximize(pane.agentId)}
+                      className={`${PANE_ACTION} hover:bg-white/10 hover:text-foreground`}
+                    >
+                      <AuricIcon
+                        name={maximized ? 'close_fullscreen' : 'open_in_full'}
+                        aria-hidden="true"
+                        className="text-[11px]"
+                      />
+                    </button>
+                  )}
                   <button
                     type="button"
                     data-testid={`terminal-pane-remove-${pane.agentId}`}

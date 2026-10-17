@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type HTMLAttributes,
   type ReactNode,
 } from 'react';
@@ -308,7 +309,31 @@ export function AgentTerminalWorkspace({
   }, []);
   const areaRef = useRef<HTMLDivElement>(null);
   const grid = useTerminalGrid(agent, agents, onSwitchAgent);
-  const tabDrag = useTabGridDrag(areaRef, grid.place);
+  // View state only: which pane is laid over the split for a closer look.
+  // It lapses by itself once that pane is no longer part of a split.
+  const [maximizedPick, setMaximizedPick] = useState<string | null>(null);
+  const { place } = grid;
+  const dropOnGrid = useCallback(
+    (agentId: string, zone: DropZone) => {
+      // A drop rearranges the layout, so the layout is what is shown again.
+      setMaximizedPick(null);
+      place(agentId, zone);
+    },
+    [place]
+  );
+  const tabDrag = useTabGridDrag(areaRef, dropOnGrid);
+  const maximizedId =
+    maximizedPick && isSplit(grid.cells) && grid.cells.includes(maximizedPick)
+      ? maximizedPick
+      : null;
+  const { show } = grid;
+  const toggleMaximize = useCallback(
+    (agentId: string) => {
+      setMaximizedPick(maximizedId === agentId ? null : agentId);
+      show(agentId);
+    },
+    [maximizedId, show]
+  );
   // A pane that is already open does not remount when it becomes the active
   // one, so the keyboard has to be handed over.
   useEffect(() => {
@@ -537,6 +562,9 @@ export function AgentTerminalWorkspace({
         areaRef={areaRef}
         drag={tabDrag.drag}
         onFocusPane={grid.show}
+        onDragPane={(agents?.length ?? 0) > 1 ? tabDrag.begin : undefined}
+        maximizedId={maximizedId}
+        onToggleMaximize={toggleMaximize}
         onRemovePane={grid.remove}
         accents={accents}
         canEndPane={canEnd}

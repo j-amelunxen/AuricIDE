@@ -92,7 +92,9 @@ function dragTab(agentId: string, fx: number, fy: number, release = true) {
 }
 
 const paneIds = () =>
-  screen.getAllByTestId(/^terminal-pane-(?!remove-)/).map((pane) => pane.dataset.testid);
+  screen
+    .getAllByTestId(/^terminal-pane-(?!remove-|bar-|maximize-|end-)/)
+    .map((pane) => pane.dataset.testid);
 
 describe('AgentTerminalModal – terminals side by side', () => {
   beforeEach(() => {
@@ -227,6 +229,56 @@ describe('AgentTerminalModal – terminals side by side', () => {
     expect(useStore.getState().terminalGridCells).toBeNull();
     expect(screen.getByTestId('agent-tab-b')).toBeInTheDocument();
     expect(screen.getByTestId('agent-tab-a')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('a pane can be dragged by its bar to another place', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal();
+    const bar = screen.getByTestId('terminal-pane-bar-a');
+    fireEvent.mouseDown(bar, { button: 0, clientX: 100, clientY: 110 });
+    fireEvent.mouseMove(window, {
+      clientX: AREA.left + 0.9 * AREA.width,
+      clientY: AREA.top + 0.5 * AREA.height,
+    });
+    expect(screen.getByTestId('terminal-grid-drop-preview')).toHaveAttribute('data-zone', 'right');
+    fireEvent.mouseUp(window);
+
+    expect(useStore.getState().terminalGridCells).toEqual(['b', 'a', 'b', 'a']);
+  });
+
+  it('a double-click on a pane bar lays that pane over the whole area, and back', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal();
+    const bar = screen.getByTestId('terminal-pane-bar-b');
+    fireEvent.doubleClick(bar);
+
+    expect(screen.getByTestId('terminal-pane-b')).toHaveAttribute('data-maximized', 'true');
+    expect(screen.getByTestId('terminal-pane-b')).toHaveAttribute('data-active', 'true');
+    // The others stay mounted underneath, so their terminals keep their size.
+    expect(screen.getByTestId('xterm-a')).toBeInTheDocument();
+    // The layout itself is untouched.
+    expect(useStore.getState().terminalGridCells).toEqual(['a', 'b', 'a', 'b']);
+
+    fireEvent.doubleClick(bar);
+    expect(screen.getByTestId('terminal-pane-b')).toHaveAttribute('data-maximized', 'false');
+  });
+
+  it('the maximize button does the same as the double-click', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal();
+    fireEvent.click(screen.getByTestId('terminal-pane-maximize-a'));
+    expect(screen.getByTestId('terminal-pane-a')).toHaveAttribute('data-maximized', 'true');
+    fireEvent.click(screen.getByTestId('terminal-pane-maximize-a'));
+    expect(screen.getByTestId('terminal-pane-a')).toHaveAttribute('data-maximized', 'false');
+  });
+
+  it('a maximized pane taken out of the split leaves nothing maximized behind', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal();
+    fireEvent.doubleClick(screen.getByTestId('terminal-pane-bar-b'));
+    fireEvent.click(screen.getByTestId('terminal-pane-remove-b'));
+    dragTab('b', 0.9, 0.5);
+    expect(screen.getByTestId('terminal-pane-b')).toHaveAttribute('data-maximized', 'false');
   });
 
   it('a drop on the middle shows that terminal alone again', () => {
