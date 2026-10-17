@@ -165,6 +165,31 @@ describe('supervisorSpawnConfig', () => {
     });
     expect(config?.model).toBe('opus');
   });
+
+  it('supports provider override and omits chrome for non-claude providers', () => {
+    const policy = policyWith({
+      '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },
+    });
+    policy.supervisor = {
+      provider: 'claude',
+      chrome: true,
+      model: null,
+      providers: ['claude', 'codex'],
+    };
+    const config = supervisorSpawnConfig({
+      policy,
+      providers: [CLAUDE, CODEX],
+      projectPolicies: {},
+      descriptions: {},
+      provider: 'codex',
+      instructions: 'Use bash and python.',
+    });
+    expect(config?.provider).toBe('codex');
+    expect(config?.model).toBe('gpt-luna');
+    // Chrome integration prompt section should NOT be present when running on Codex even if policy.supervisor.chrome is true
+    expect(config?.task).not.toContain('Claude in Chrome');
+    expect(config?.task).toContain('Use bash and python.');
+  });
 });
 
 describe('readProjectProviderPolicies', () => {

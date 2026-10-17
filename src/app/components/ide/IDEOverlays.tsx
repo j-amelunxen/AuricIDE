@@ -27,6 +27,7 @@ import { type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import { VideoImportDialog } from '@/app/components/videoImport/VideoImportDialog';
 import { InboxCaptureOverlay } from '@/app/components/inbox/InboxCaptureOverlay';
 import { CommandCenter } from '@/app/components/notifications/CommandCenter';
+import { SupervisorProviderModal } from '@/app/components/cockpit/SupervisorProviderModal';
 
 interface IDEOverlaysProps {
   // Modals state
@@ -179,6 +180,8 @@ export function IDEOverlays({
   const loadPromptHistory = useStore((s) => s.loadPromptHistory);
   const killRunningAgent = useStore((s) => s.killRunningAgent);
   const dismissFinishedAgent = useStore((s) => s.dismissFinishedAgent);
+  const supervisorProviderChoice = useStore((s) => s.supervisorProviderChoice);
+  const closeSupervisorProviderChoice = useStore((s) => s.closeSupervisorProviderChoice);
 
   // One source of truth: the repo the dialog targets and the repo whose prompt
   // history it recalls have to be the same path. Quick Access and ticket
@@ -320,6 +323,10 @@ export function IDEOverlays({
         onClose={() => setFindInFilesOpen(false)}
         onNavigate={handleFindInFilesNavigate}
         rootPath={rootPath}
+      />
+      <SupervisorProviderModal
+        choice={supervisorProviderChoice}
+        onClose={closeSupervisorProviderChoice}
       />
       <PerformanceMonitor />
     </>

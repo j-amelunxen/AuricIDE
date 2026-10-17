@@ -1,6 +1,7 @@
 import fixtures from './supervisorPolicy.fixtures.json';
 import type { ProviderInfo } from '../tauri/providers';
 import { isProviderAllowed, type ProviderPolicy, DEFAULT_PROVIDER_POLICY } from './providerPolicy';
+export { supervisorProvidersOf } from './supervisorProviders';
 
 /**
  * What a supervisor agent may start (ADR 0004, `docs/design-agent-control.md`,
@@ -59,7 +60,12 @@ export interface SupervisorToolPolicy {
 export interface SupervisorPolicy {
   version: 1;
   /** `chrome`: Claude in Chrome, the user's own logged-in browser; off unless switched on. */
-  supervisor: { provider: string; model: string | null; chrome: boolean };
+  supervisor: {
+    provider: string;
+    providers?: string[];
+    model: string | null;
+    chrome: boolean;
+  };
   maxRunningChildren: number;
   projects: Record<string, SupervisorProjectPolicy>;
   skills: Record<string, SupervisorSkillPolicy>;
@@ -405,11 +411,13 @@ function parseProjectEntry(value: unknown): SupervisorProjectPolicy {
 function parseSupervisorBlock(value: unknown): SupervisorPolicy['supervisor'] {
   const fallback = { ...DEFAULTS.supervisor };
   if (!isObject(value)) return fallback;
+  const providers = parseProviders(value.providers);
   return {
     provider:
       typeof value.provider === 'string' && value.provider.trim()
         ? providerId(value.provider)
         : fallback.provider,
+    ...(providers && providers.length > 0 ? { providers } : {}),
     model: typeof value.model === 'string' && value.model ? value.model : fallback.model,
     chrome: value.chrome === true,
   };

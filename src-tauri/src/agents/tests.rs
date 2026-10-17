@@ -913,9 +913,10 @@ fn a_supervisor_runs_interactive_unbound_in_a_fresh_run_folder_in_default_mode()
 #[test]
 fn a_supervisor_without_skills_has_file_tools_and_no_shell() {
     assert!(check_supervisor_provider("claude").is_ok());
-    assert!(check_supervisor_provider("codex")
+    assert!(check_supervisor_provider("codex").is_ok());
+    assert!(check_supervisor_provider("unsupported")
         .unwrap_err()
-        .contains("Claude Code"));
+        .contains("Claude Code and Codex"));
     assert_eq!(
         supervisor_claude_arguments(
             "/data/agent-bindings/sup $1.mcp.json",
@@ -1057,4 +1058,33 @@ fn a_launch_file_goes_when_the_agent_entry_goes() {
         !path.exists(),
         "a supervisor's MCP config does not outlive it"
     );
+}
+
+#[test]
+fn supervisor_codex_arguments_configures_mcp_servers() {
+    let runtime = std::path::Path::new("/bin/runtime.js");
+    let socket = std::path::Path::new("/tmp/auric.sock");
+    let pm = vec![("auric-pm-p1".to_string(), "/work/p1".to_string())];
+    let mut pm_env = std::collections::BTreeMap::new();
+    pm_env.insert("AURIC_PROJECT".to_string(), "p1".to_string());
+
+    let args = supervisor_codex_arguments(runtime, socket, &pm, &pm_env).unwrap();
+    let joined = args.join(" ");
+    assert!(joined.contains("mcp_servers.auric-supervisor.command=\"node\""));
+    assert!(
+        joined.contains("mcp_servers.auric-supervisor.args=[\"/bin/runtime.js\",\"--supervisor\"]")
+    );
+    assert!(joined.contains("mcp_servers.auric-supervisor.required=true"));
+    assert!(joined.contains("mcp_servers.auric-supervisor.default_tools_approval_mode=\"approve\""));
+    assert!(joined.contains(
+        "mcp_servers.auric-supervisor.env={\"AURIC_CONTROL_SOCKET\"=\"/tmp/auric.sock\"}"
+    ));
+
+    assert!(joined.contains("mcp_servers.auric-pm-p1.command=\"node\""));
+    assert!(joined.contains(
+        "mcp_servers.auric-pm-p1.args=[\"/bin/runtime.js\",\"--project-root\",\"/work/p1\"]"
+    ));
+    assert!(joined.contains("mcp_servers.auric-pm-p1.required=true"));
+    assert!(joined.contains("mcp_servers.auric-pm-p1.default_tools_approval_mode=\"approve\""));
+    assert!(joined.contains("mcp_servers.auric-pm-p1.env={\"AURIC_PROJECT\"=\"p1\"}"));
 }

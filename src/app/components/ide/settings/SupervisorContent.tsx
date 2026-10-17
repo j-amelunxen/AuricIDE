@@ -5,12 +5,14 @@ import { useStore } from '@/lib/store';
 import { normalizeProjectDescription } from '@/lib/quickAccess/description';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import { SupervisorMenuBarSettings } from './SupervisorMenuBarSettings';
+import { SupervisorHeader } from './SupervisorHeader';
+import { SupervisorInstructionsEditor } from './SupervisorInstructionsEditor';
+import { readProjectProviderPolicies } from '@/lib/agents/supervisorLaunch';
 import {
-  readProjectProviderPolicies,
-  readSupervisorInstructions,
+  readAllSupervisorInstructions,
+  supervisorProvidersOf,
   writeSupervisorInstructions,
-} from '@/lib/agents/supervisorLaunch';
-import { modelSizeLabel } from '@/lib/agents/supervisorLaunchPrompt';
+} from '@/lib/config/supervisorProviders';
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
   SUPERVISOR_PARSE_REASONS,
@@ -34,12 +36,7 @@ import {
   type SupervisorSkillCandidate,
 } from './SupervisorSkills';
 import { SupervisorTools, invalidToolEntries } from './SupervisorTools';
-import {
-  NUMBER_CLASS,
-  SELECT_CLASS,
-  SupervisorProjectRow,
-  byModelRank,
-} from './SupervisorProjectRow';
+import { SupervisorProjectRow } from './SupervisorProjectRow';
 
 interface Loaded {
   saved: SupervisorPolicy;
@@ -81,8 +78,10 @@ export function SupervisorContent() {
   const [draft, setDraft] = useState<SupervisorPolicy | null>(null);
   const [saving, setSaving] = useState(false);
   // An app preference, not part of the policy file: it steers, it grants nothing.
-  const [savedInstructions, setSavedInstructions] = useState(readSupervisorInstructions);
-  const [instructions, setInstructions] = useState(savedInstructions);
+  const [savedInstructions, setSavedInstructions] = useState<Record<string, string>>(
+    readAllSupervisorInstructions
+  );
+  const [instructions, setInstructions] = useState<Record<string, string>>(savedInstructions);
   const descriptions = useDescriptionDrafts();
 
   useEffect(() => {
@@ -129,7 +128,7 @@ export function SupervisorContent() {
   }
 
   const policyDirty = JSON.stringify(draft) !== JSON.stringify(loaded.saved);
-  const instructionsDirty = instructions.trim() !== savedInstructions.trim();
+  const instructionsDirty = JSON.stringify(instructions) !== JSON.stringify(savedInstructions);
   const dirty = policyDirty || instructionsDirty || descriptions.dirty;
   // Rust refuses these at spawn anyway; saving them would only store a choice
   // that can never run.
@@ -144,7 +143,6 @@ export function SupervisorContent() {
         : badToolEntries.length > 0
           ? 'Fix the entry marked under Tools'
           : null;
-  const claude = loaded.providers.find((p) => p.id === draft.supervisor.provider);
 
   const save = async () => {
     setSaving(true);
@@ -152,7 +150,7 @@ export function SupervisorContent() {
       // Rust answers with the file as it now reads it; that is the new baseline.
       if (instructionsDirty) {
         writeSupervisorInstructions(instructions);
-        setSavedInstructions(instructions.trim() ? instructions : '');
+        setSavedInstructions(readAllSupervisorInstructions());
       }
       descriptions.save();
       if (policyDirty) {
@@ -177,7 +175,7 @@ export function SupervisorContent() {
 
       <RejectedNotice rejected={loaded.rejected} />
 
-      <SupervisorHeader draft={draft} claude={claude} onChange={setDraft} />
+      <SupervisorHeader draft={draft} providers={loaded.providers} onChange={setDraft} />
 
       <SettingsSection title="Projects" icon="star">
         {starredProjects.length === 0 ? (
@@ -215,7 +213,12 @@ export function SupervisorContent() {
 
       <SupervisorTools tools={draft.tools} onChange={(tools) => setDraft({ ...draft, tools })} />
 
-      <SupervisorInstructions value={instructions} onChange={setInstructions} />
+      <SupervisorInstructionsEditor
+        candidates={supervisorProvidersOf(draft)}
+        providers={loaded.providers}
+        instructions={instructions}
+        onChange={setInstructions}
+      />
 
       <SaveBar
         saving={saving}
@@ -283,111 +286,6 @@ function RejectedNotice({ rejected }: { rejected: SupervisorPolicyRejection[] })
       </ul>
       <p className="text-foreground-muted">Saving writes a clean file.</p>
     </div>
-  );
-}
-
-interface SupervisorHeaderProps {
-  draft: SupervisorPolicy;
-  /** The supervisor's provider as the registry describes it; Claude in this version. */
-  claude: ProviderInfo | undefined;
-  onChange: (draft: SupervisorPolicy) => void;
-}
-
-function SupervisorHeader({ draft, claude, onChange }: SupervisorHeaderProps) {
-  return (
-    <SettingsSection title="Supervisor" icon="account_tree">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="flex items-center gap-2 text-xs text-foreground">
-          Runs on
-          <span className="rounded border border-white/10 bg-white/5 px-2 py-1 text-xs">
-            {claude?.name ?? 'Claude Code'}
-          </span>
-          <span className="text-[10px] text-foreground-muted">(fixed in this version)</span>
-        </div>
-        <label className="flex items-center gap-2 text-xs text-foreground">
-          Model
-          <select
-            data-testid="supervisor-model"
-            value={draft.supervisor.model ?? ''}
-            onChange={(e) =>
-              onChange({
-                ...draft,
-                supervisor: { ...draft.supervisor, model: e.target.value || null },
-              })
-            }
-            className={SELECT_CLASS}
-          >
-            <option value="">Provider default</option>
-            {byModelRank(claude?.models ?? []).map((model) => (
-              <option key={model.value} value={model.value}>
-                {model.label} · {modelSizeLabel(model.rank)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-xs text-foreground">
-          <input
-            type="checkbox"
-            data-testid="supervisor-chrome"
-            checked={draft.supervisor.chrome}
-            onChange={(e) =>
-              onChange({
-                ...draft,
-                supervisor: { ...draft.supervisor, chrome: e.target.checked },
-              })
-            }
-          />
-          Claude in Chrome
-          <span className="text-[10px] text-foreground-muted">
-            (your own browser, logged-in sessions included)
-          </span>
-        </label>
-        <label className="flex items-center gap-2 text-xs text-foreground">
-          Max running agents
-          <input
-            type="number"
-            min={0}
-            step={1}
-            data-testid="supervisor-max-children"
-            value={draft.maxRunningChildren}
-            onChange={(e) =>
-              onChange({
-                ...draft,
-                maxRunningChildren: Math.max(0, Math.floor(Number(e.target.value))),
-              })
-            }
-            className={NUMBER_CLASS}
-          />
-        </label>
-      </div>
-    </SettingsSection>
-  );
-}
-
-function SupervisorInstructions({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <SettingsSection title="Instructions" icon="edit_note">
-      <label htmlFor="supervisor-instructions" className="block text-xs text-foreground-muted">
-        Added to the supervisor&apos;s start prompt, after its built-in rules. Where they differ,
-        yours win; they cannot widen what the limits on this page allow. A supervisor that is
-        already running keeps the instructions it started with.
-      </label>
-      <textarea
-        id="supervisor-instructions"
-        data-testid="supervisor-instructions"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={6}
-        placeholder="e.g. Answer in German. Ask me before starting more than two agents."
-        className="mt-2 w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-foreground placeholder:text-foreground-muted focus:border-primary focus:outline-none"
-      />
-    </SettingsSection>
   );
 }
 

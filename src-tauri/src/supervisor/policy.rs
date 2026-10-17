@@ -32,6 +32,9 @@ pub const BALANCING_WINDOW_DAYS: u32 = 7;
 pub struct SupervisorModel {
     pub provider: String,
     pub model: Option<String>,
+    /// Candidate providers allowed to act as supervisor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub providers: Option<Vec<String>>,
     /// Claude in Chrome (`--chrome`): the user's own browser, logged-in
     /// sessions included, so it is off unless switched on.
     #[serde(default)]
@@ -43,8 +46,33 @@ impl Default for SupervisorModel {
         Self {
             provider: DEFAULT_SUPERVISOR_PROVIDER.to_string(),
             model: None,
+            providers: None,
             chrome: false,
         }
+    }
+}
+
+impl SupervisorModel {
+    #[allow(dead_code)]
+    pub fn candidate_providers(&self) -> Vec<String> {
+        let mut candidates = Vec::new();
+        if let Some(ref list) = self.providers {
+            for id in list {
+                let norm = normalize_provider_id(id);
+                if !norm.is_empty() && !candidates.contains(&norm) {
+                    candidates.push(norm);
+                }
+            }
+        }
+        if candidates.is_empty() {
+            let primary = normalize_provider_id(&self.provider);
+            if !primary.is_empty() {
+                candidates.push(primary);
+            } else {
+                candidates.push(DEFAULT_SUPERVISOR_PROVIDER.to_string());
+            }
+        }
+        candidates
     }
 }
 
@@ -397,6 +425,7 @@ fn parse_supervisor(value: Option<&Value>) -> SupervisorModel {
     let Some(Value::Object(source)) = value else {
         return defaults;
     };
+    let providers = parse_providers(source.get("providers")).ok().flatten();
     SupervisorModel {
         provider: source
             .get("provider")
@@ -410,6 +439,7 @@ fn parse_supervisor(value: Option<&Value>) -> SupervisorModel {
             .map(str::trim)
             .filter(|model| !model.is_empty())
             .map(str::to_string),
+        providers,
         // Only a literal `true` switches the browser on.
         chrome: source.get("chrome").and_then(Value::as_bool) == Some(true),
     }
@@ -1248,5 +1278,53 @@ pub(crate) mod tests {
         let providers = usable(&[("claude", Some(1)), ("codex", Some(1))]);
         let tie = balancing(&providers, &counts(&[("claude", 1), ("codex", 1)])).unwrap();
         assert_eq!(tie.next.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn supervisor_candidate_providers_and_parsing() {
+        // Defaults to single provider
+        let default_model = SupervisorModel::default();
+        assert_eq!(default_model.candidate_providers(), vec!["claude"]);
+
+        // Explicit single provider in field
+        let single_model = SupervisorModel {
+            provider: "codex".to_string(),
+            model: None,
+            providers: None,
+            chrome: false,
+        };
+        assert_eq!(single_model.candidate_providers(), vec!["codex"]);
+
+        // Explicit list in providers overrides provider field for candidates
+        let multi_model = SupervisorModel {
+            provider: "claude".to_string(),
+            model: None,
+            providers: Some(vec![
+                "Codex".to_string(),
+                "claude".to_string(),
+                "codex".to_string(),
+            ]),
+            chrome: false,
+        };
+        assert_eq!(multi_model.candidate_providers(), vec!["codex", "claude"]);
+
+        // Parsed from json
+        let parsed = parse(Some(
+            r#"{
+                "version": 1,
+                "supervisor": {
+                    "provider": "claude",
+                    "providers": ["codex", "claude"]
+                }
+            }"#,
+        ));
+        assert_eq!(
+            parsed.policy.supervisor.candidate_providers(),
+            vec!["codex", "claude"]
+        );
+        assert_eq!(
+            parsed.policy.supervisor.providers,
+            Some(vec!["codex".to_string(), "claude".to_string()])
+        );
     }
 }
