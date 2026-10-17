@@ -210,6 +210,7 @@ docs/                  # assets, brand, automation surface notes
 | [`docs/automation-surface.md`](docs/automation-surface.md)                          | Every command addressable from outside the app. **Generated** — don't hand-edit     |
 | [`docs/semantic-markdown-highlighting.md`](docs/semantic-markdown-highlighting.md)  | How the Markdown/NLP highlighting layers work                                       |
 | [`dynamic-providers/README.md`](dynamic-providers/README.md)                        | Agent-provider JSON format                                                          |
+| [`docs/supervisor-control-api.md`](docs/supervisor-control-api.md)                  | Supervisor Control API: drive supervisors, documents and jobs from your own client  |
 | [`themes/README.md`](themes/README.md)                                              | Custom theme JSON format                                                            |
 | [`docs/brand-kit.md`](docs/brand-kit.md) · [`docs/press-kit.md`](docs/press-kit.md) | Visual identity and press material                                                  |
 

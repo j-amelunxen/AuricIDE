@@ -507,7 +507,9 @@ ADR 0004.
 A client (any local app) holds one WebSocket to the IDE instead of a set of
 MCP tools: start a supervisor, see the supervisor tree and its consoles live,
 type and submit, stop agents, read and propose JSON documents, and run jobs in
-projects. The contract is `docs/design-supervisor-link.md`, the
+projects. Integrators read `docs/supervisor-control-api.md` (setup, every
+method, limits, a minimal client). The contract is
+`docs/design-supervisor-link.md`, the
 machine-checkable half `src/lib/agents/supervisorLink.fixtures.json` — change
 it first. AuricIDE knows no client, no document format and no job kind: all of
 that is per-project configuration.
@@ -520,6 +522,10 @@ that is per-project configuration.
   share one dispatcher (`control_socket::dispatcher`).
 - **Every IDE agent is refused at the socket**, supervisors included: same
   PID walk as `control.sock`, then one `error` message and close 1008.
+- **Limits are a contract, not tuning** (fixture `limits`): 16 connections,
+  64 waiting requests per connection, 10 s handshake and write timeouts; over
+  one the answer is `busy` with the limit as `reason`. A `rev` is a commit id,
+  branch or tag name only (fixture `revs`), never a revision expression.
 - **`supervisors.spawn` is the tile's path**, not `spawn { role }`:
   Rust sends the control request `spawn_supervisor`, the bridge calls
   `spawnLinkedSupervisor` (launch prompt, instructions, policy; always a new

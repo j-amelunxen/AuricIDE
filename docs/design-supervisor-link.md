@@ -1,7 +1,10 @@
 # The supervisor link — Supervisor Control API
 
 Status: contract v1, revised 2026-10-17 (documents and jobs replace the
-scene methods of the first draft; no client was live on those). The
+document methods of the first draft; no client was live on those; hardening
+pass the same day: limits, `busy`, `rev` grammar, job withdrawal). The
+integrator-facing guide is [`supervisor-control-api.md`](supervisor-control-api.md);
+this file is the design and the full contract. The
 machine-checkable half is `src/lib/agents/supervisorLink.fixtures.json`; Rust
 reads it in its tests. **Change the fixtures first**, then both this file and
 the code.
@@ -58,6 +61,7 @@ client server ──WebSocket over unix socket──▶ Rust supervisor_link ─
 | Frames      | Text frames, one JSON message per frame. Binary frames are refused (`invalid_request`).                       |
 | Max message | 1 MiB inbound. A larger one closes the connection with code 1009.                                             |
 | Keep-alive  | The server pings every 30 s. Standard clients answer automatically.                                           |
+| Limits      | Fixture `limits`; see "Limits" below.                                                                         |
 
 With Node's `ws` package:
 
@@ -66,6 +70,25 @@ import WebSocket from 'ws';
 const socket = `${process.env.HOME}/Library/Application Support/com.auricide.ide/supervisor-link.sock`;
 const ws = new WebSocket(`ws+unix://${socket}:/v1`);
 ```
+
+### Limits
+
+Clients are processes of the same user, so these are no access control; they
+keep one misbehaving client from pinning threads or memory (fixture `limits`):
+
+- **16 open connections** per IDE. One more gets one `error` message with code
+  `busy`, `reason: "too_many_connections"`, then a close with code 1013. The
+  agent-caller check comes first, so an agent still reads
+  `forbidden_agent_caller`.
+- **64 waiting requests** per connection, beside the one being answered. One
+  more is answered at once with `busy`, `reason: "too_many_pending_requests"`,
+  out of order with the queued ones (it carries its `id`). Before this limit
+  the queue was unbounded: a client that kept sending 1 MiB messages while a
+  slow search ran grew the IDE's memory without end.
+- **10 s to finish the handshake**, counted from connect. Before, a client
+  that connected and sent nothing held a thread for as long as the app ran.
+- **10 s for one outgoing message.** A client that stops reading is dropped
+  instead of blocking its connection thread on a full socket buffer.
 
 Only one AuricIDE build serves the socket at a time (dev and installed share
 the path, the first one to start wins), exactly like `control.sock`.
@@ -127,7 +150,8 @@ type LinkError = { code: ErrorCode; message: string; reason?: string };
 
 - Requests on one connection are answered **in order**. A slow one (a spawn
   waits for the IDE window, up to 30 s) holds the ones behind it; events still
-  flow meanwhile.
+  flow meanwhile. The exception is `busy` for a request past the queue limit,
+  which is answered at once.
 - `seq` counts events on this connection from 1, without gaps. A gap means the
   client lost a frame and should resubscribe.
 - A message that is not JSON, or has no string `method`, gets a response with
@@ -145,7 +169,7 @@ type LinkError = { code: ErrorCode; message: string; reason?: string };
 | `agents.read`        | `{ agentId, sinceOffset?: number, tailBytes?: number }`                               | `OutputChunk`                     |
 | `agents.send`        | `{ agentId, text: string, submit?: boolean (default true) }`                          | `{ agentId, bytesWritten }`       |
 | `agents.kill`        | `{ agentId }`                                                                         | `{ agentId, killed: true }`       |
-| `events.subscribe`   | `{ agentIds?: string[], output?: boolean, sinceOffsets?: Record<string, number> }`    | `{ agents: LinkAgent[] }`         |
+| `events.subscribe`   | `{ agentIds?, output?, sinceOffsets?: Record<string, number>, jobs?: boolean }`       | `{ agents: LinkAgent[] }`         |
 | `events.unsubscribe` | —                                                                                     | `{ subscribed: false }`           |
 | `documents.projects` | —                                                                                     | `{ projects: DocumentProject[] }` |
 | `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                 | `{ documents: DocumentEntry[] }`  |
@@ -370,11 +394,14 @@ in Settings → Supervisor → Supervisor link:
   fixture `policyRejects` lists the refusals.
 - **Globs** know `*` and `?` within one path segment and `**` as a whole
   segment for any number of them, nothing else (fixture `globs`).
-- **Migration from version 1.** The first draft stored
-  `{ "version": 1, "scenes": { "projects": [..] } }`. Each listed project is
-  read as a project with exactly one document type, `scene`, carrying the
-  places and names that draft had fixed (fixture `migration.v1DocumentType`)
-  and no job kinds. The next save writes version 2.
+- **Migration from version 1.** The first draft knew exactly one document
+  format and stored `{ "version": 1, "scenes": { "projects": [..] } }`. Each
+  listed project is read as a project with exactly one document type carrying
+  the places and names that draft had fixed (fixture
+  `migration.v1DocumentType`) and no job kinds. These are the only
+  format-specific values in the link, and only the version-1 reader uses
+  them. Reading never writes; the next save writes version 2, and saving that
+  again changes nothing.
 
 ## Documents
 
@@ -394,7 +421,8 @@ types matches. Nothing else is read.
   document, else the file name without the type's suffix. An index is
   `{ "<entriesKey>": [{ "id", "name", "description", "tags" }] }`; an entry's
   `id` may be the full id or the id without the suffix. A broken index is no
-  index.
+  index, and so is one larger than 4 MiB (fixture `maxIndexBytes`; an index
+  names every document, so it may be larger than one).
 - **Suffix:** the literal end of a glob after its last wildcard
   (`.diagram.json` for `docs/**/*.diagram.json`).
 - **Hash:** the git blob hash of the file's bytes (`git hash-object`), so a
@@ -449,7 +477,7 @@ type Document = {
 ```
 
 Without `rev` the file is read from the working tree, which is what the human
-sees. With `rev` (anything `git rev-parse` accepts: a branch, a tag, a commit)
+sees. With `rev` — a commit id (full or abbreviated) or a branch or tag name —
 it is read from that commit, `rev` in the result is the full commit id, and
 `merged` says whether that commit is `HEAD` or an ancestor of it.
 
@@ -461,10 +489,19 @@ branch name beside it — and keep the working-tree version (no `rev`) as what
 is real. Once the human merged the branch, the same read answers
 `merged: true`, and a read without `rev` shows the new content.
 
+**The `rev` grammar** (fixture `revs`): 1 to 255 characters of
+`[A-Za-z0-9._/-]`, not starting with `-`, and a valid ref name under
+`refs/heads/`. That keeps out anything a git command line would read as an
+option and every revision expression (`HEAD~1`, `main^`, `@{1}`, `:/text`,
+`rev:path`, `a..b`): `:/text` alone searches every commit message, which a
+client should not be able to trigger. libgit2 is called directly; there is no
+shell and no git process. A refused `rev` is `invalid_params` before git sees
+it.
+
 Errors: `document_not_visible`, `document_not_found` (also for a `rev` git
 does not know), `document_invalid` (not JSON, not an object, too large),
-`invalid_params` (bad id, unknown type, relative project path),
-`not_a_git_repo` (a `rev` in a project without a repository).
+`invalid_params` (bad id, unknown type, relative project path, a `rev` outside
+the grammar), `not_a_git_repo` (a `rev` in a project without a repository).
 
 ### `documents.resolve`
 
@@ -631,14 +668,26 @@ files) is the progress signal, not its console.
 ### `jobs.list` and `jobs.cancel`
 
 `jobs.list` answers the register newest first, `limit` 1..200 (default 50).
-The register is `<app_data_dir>/supervisor-link-jobs.json` (0600); finished
-jobs stay seven days (at most 500), so the counter survives a restart. A job
-that was running when AuricIDE quit is `failed` with `interrupted` on the next
-start: its agent ended with the app.
+The register is `<app_data_dir>/supervisor-link-jobs.json` (0600). Every
+running job and every job the counter still counts is kept, however many;
+older finished jobs stay seven days, at most 500 of them. So the counter
+survives a restart. A job that was running when AuricIDE quit is `failed`
+with `interrupted` on the next start: its agent ended with the app; its
+worktree and branch stay for the human. A register that does not parse is
+renamed to `supervisor-link-jobs.json.unreadable-<ms>` and an empty one
+started — the counter then starts at zero, the old file is kept to look at.
 
 `jobs.cancel` stops a running job's agent (the same kill as the IDE's button);
 the next tick ends it as `failed` with `cancelled`, the branch reported as it
-stands. A job that already ended answers `{ cancelled: false, status }`. An
+stands. While the agent still runs, every tick sends the kill again, so a
+cancel that reached an agent still starting is not lost.
+
+**Withdrawn while running.** When the human removes a running job's project
+from the link policy, or removes its kind from the project, the next tick
+stops the agent and the job ends as `cancelled` with the reason in
+`error.message`. The link does not keep acting in a project the human
+withdrew. Nothing is committed for it afterwards (the policy no longer says
+what it may write); the worktree stays. A job that already ended answers `{ cancelled: false, status }`. An
 unknown id is `unknown_job`.
 
 ### The counter
@@ -646,7 +695,9 @@ unknown id is `unknown_job`.
 Not a budget, a guard against a client that starts jobs in a loop: at most
 `jobs.dailyLimit` jobs (default **20**) in any 24 hours in all projects
 together, and optionally `jobs.perProjectDailyLimit` per project. `0` switches
-jobs off; each is at most 1000. Over it, `jobs.create` answers
+jobs off; each is at most 1000. The window uses the wall clock: a job dated
+after "now" (the clock was set back) counts as just started, so setting the
+clock back frees no slot; setting it forward by a day does. Over it, `jobs.create` answers
 `quota_exceeded` with `reason` `daily_limit` or `project_daily_limit` and a
 message saying when the next slot frees up (fixture `jobs.quota`). Settings →
 Supervisor → Supervisor link edits both and shows how many ran in the last 24
@@ -655,30 +706,31 @@ run (`runSource: "supervisor"`).
 
 ## Error codes
 
-| code                     | meaning                                                                     |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `invalid_request`        | not JSON, not a text frame, no `method`                                     |
-| `unsupported_version`    | `v` is not `1`                                                              |
-| `unknown_method`         | no such method in this build                                                |
-| `invalid_params`         | params missing, of the wrong type, unknown, or out of range                 |
-| `forbidden_agent_caller` | the connecting process runs inside an IDE agent                             |
-| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed               |
-| `agent_not_running`      | the agent is in the tree but not running                                    |
-| `headless_no_stdin`      | a headless agent cannot be typed into                                       |
-| `supervisor_unavailable` | the supervisor policy shows a supervisor no project yet                     |
-| `provider_denied`        | the provider policy refused the spawn                                       |
-| `provider_unsupported`   | the supervisor cannot run on that provider (v1: `claude`, `codex`)          |
-| `frontend_unavailable`   | the IDE window did not answer within 30 s                                   |
-| `document_not_visible`   | the project is not in the link policy                                       |
-| `document_not_found`     | no such document (at that revision)                                         |
-| `document_invalid`       | the file or the proposed content is not a JSON object, or too large         |
-| `document_conflict`      | `baseHash` does not match `HEAD`                                            |
-| `not_a_git_repo`         | the project has no git repository, or no commit to build a branch on        |
-| `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule        |
-| `job_kind_not_allowed`   | the project does not list that job kind                                     |
-| `quota_exceeded`         | the job counter is full; `reason` is `daily_limit` or `project_daily_limit` |
-| `unknown_job`            | no such job                                                                 |
-| `internal`               | anything else; the message says what                                        |
+| code                     | meaning                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `invalid_request`        | not JSON, not a text frame, no `method`                                            |
+| `unsupported_version`    | `v` is not `1`                                                                     |
+| `unknown_method`         | no such method in this build                                                       |
+| `invalid_params`         | params missing, of the wrong type, unknown, or out of range                        |
+| `forbidden_agent_caller` | the connecting process runs inside an IDE agent                                    |
+| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed                      |
+| `agent_not_running`      | the agent is in the tree but not running                                           |
+| `headless_no_stdin`      | a headless agent cannot be typed into                                              |
+| `supervisor_unavailable` | the supervisor policy shows a supervisor no project yet                            |
+| `provider_denied`        | the provider policy refused the spawn                                              |
+| `provider_unsupported`   | the supervisor cannot run on that provider (v1: `claude`, `codex`)                 |
+| `frontend_unavailable`   | the IDE window did not answer within 30 s                                          |
+| `document_not_visible`   | the project is not in the link policy                                              |
+| `document_not_found`     | no such document (at that revision)                                                |
+| `document_invalid`       | the file or the proposed content is not a JSON object, or too large                |
+| `document_conflict`      | `baseHash` does not match `HEAD`                                                   |
+| `not_a_git_repo`         | the project has no git repository, or no commit to build a branch on               |
+| `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule               |
+| `job_kind_not_allowed`   | the project does not list that job kind                                            |
+| `quota_exceeded`         | the job counter is full; `reason` is `daily_limit` or `project_daily_limit`        |
+| `unknown_job`            | no such job                                                                        |
+| `busy`                   | a limit was reached; `reason` `too_many_connections` / `too_many_pending_requests` |
+| `internal`               | anything else; the message says what                                               |
 
 ## Examples
 
