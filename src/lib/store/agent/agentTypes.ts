@@ -69,6 +69,7 @@ export type AgentRuntimeRecords = Pick<
 export interface SupervisorSkillLaunch {
   task: string;
   model?: string;
+  provider?: string;
 }
 
 export type SupervisorLaunch =
@@ -76,6 +77,7 @@ export type SupervisorLaunch =
   /** A skill's prompt went to the running supervisor as a message. */
   | { kind: 'sent'; agent: AgentInfo }
   | { kind: 'spawned'; agent: AgentInfo }
+  | { kind: 'cancelled' }
   | { kind: 'nothing-visible' };
 
 export interface AgentSlice {

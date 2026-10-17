@@ -171,7 +171,7 @@ impl ProviderProjectBinding {
     }
 }
 
-fn shell_quote_argument(value: &str) -> String {
+pub fn shell_quote_argument(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
@@ -198,7 +198,7 @@ pub fn shell_word(value: &str) -> String {
 /// strings, which are valid TOML basic strings (same quote and backslash
 /// escapes, control characters as `\uXXXX`), so no value can close the table
 /// or start another key.
-fn toml_inline_table(entries: &BTreeMap<String, String>) -> Result<String, String> {
+pub fn toml_inline_table(entries: &BTreeMap<String, String>) -> Result<String, String> {
     let pairs = entries
         .iter()
         .map(|(key, value)| {

@@ -1,4 +1,3 @@
-import { APP_CONFIG_KEYS, readAppPref, removeAppPref, writeAppPref } from '@/lib/config/appConfig';
 import type { ProviderPolicy } from '@/lib/config/providerPolicy';
 import {
   permissionModesOf,
@@ -22,20 +21,13 @@ export function findRunningSupervisor(agents: AgentInfo[]): AgentInfo | undefine
   return agents.find((agent) => agent.role === 'supervisor' && !isFinishedAgent(agent));
 }
 
-/**
- * The human's standing instructions for every supervisor (Settings →
- * Supervisor). An app preference, not part of `supervisor-policy.json`: they
- * steer how the supervisor works, never what Rust lets it do.
- */
-export function readSupervisorInstructions(): string {
-  return readAppPref(APP_CONFIG_KEYS.supervisorInstructions) ?? '';
-}
+import {
+  readSupervisorInstructions,
+  writeSupervisorInstructions,
+  readAllSupervisorInstructions,
+} from '@/lib/config/supervisorProviders';
 
-/** A blank text removes the preference, so "no instructions" is one state. */
-export function writeSupervisorInstructions(text: string): void {
-  if (text.trim()) writeAppPref(APP_CONFIG_KEYS.supervisorInstructions, text);
-  else removeAppPref(APP_CONFIG_KEYS.supervisorInstructions);
-}
+export { readSupervisorInstructions, writeSupervisorInstructions, readAllSupervisorInstructions };
 
 export function offeredModelsOf(providers: ProviderInfo[]): OfferedModels {
   return Object.fromEntries(providers.map((p) => [p.id, p.models.map((m) => m.value)]));
@@ -67,6 +59,8 @@ export interface SupervisorSpawnInput {
   providers: ProviderInfo[];
   projectPolicies: Record<string, ProviderPolicy>;
   descriptions: Record<string, string | null | undefined>;
+  /** The provider to run the supervisor on. Defaults to policy.supervisor.provider. */
+  provider?: string;
   /** A skill's prompt, handed over as the first task. */
   firstTask?: string;
   /** A skill's model; the policy's supervisor model otherwise. */
@@ -91,8 +85,9 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
     permissionModesOf(input.providers)
   );
   if (visible.length === 0) return null;
-  const providerId = input.policy.supervisor.provider;
+  const providerId = input.provider ?? input.policy.supervisor.provider;
   const provider = input.providers.find((p) => p.id === providerId);
+  const instructions = input.instructions ?? readSupervisorInstructions(providerId);
   return {
     name: 'Supervisor',
     role: 'supervisor',
@@ -109,8 +104,8 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
         firstTask: input.firstTask,
         skills: supervisorPromptSkills(input.policy.skills ?? {}),
         tools: Object.keys(input.policy.tools ?? {}).sort(),
-        chrome: input.policy.supervisor.chrome === true,
-        instructions: input.instructions,
+        chrome: input.policy.supervisor.chrome === true && providerId === 'claude',
+        instructions: instructions || undefined,
       }
     ),
     projectPath: null,
