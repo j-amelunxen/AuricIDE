@@ -12,6 +12,20 @@ shadow and stability window.
 | Goal satisfaction                | Separate frontend and SQLite examples                    | Versioned executable contract evaluated by both implementations with normalized blocker categories                                                                              | `verify:fast`                     | Existing tests remain                                                                 | No deletion until the contract has run through the agreed shadow window |
 | Native persistence               | No native desktop journey at baseline                    | Two-process macOS Tauri/WDIO durability journey persists and reloads a Requirement over real IPC/SQLite, verifies file I/O, and proves rollback on a forced foreign-key failure | `verify:native`, `verify:release` | New evidence; 20/100-run stability samples are outstanding                            | Blocks broad reliance until stability thresholds pass                   |
 
+## Obsolete contract correction, 2026-10-17
+
+The complete verification for the worktree merge fix found that
+`AgentContent.test.tsx` still expected a global “Skip permission prompts” toggle.
+That control is already absent in the unchanged baseline production component;
+CLAUDE.md's “No global permission switches” rule requires permission choices per
+launch. The existing component test is corrected to assert absence of global
+skip/auto-accept controls. This is a correction of an obsolete contract, not a
+migration to a weaker test layer or removal of a live confirmation gate. The
+active confirmation behavior remains covered by `useConfirm.test.tsx`, including
+Cancel, Escape, superseded questions and the new secondary affirmative action.
+Gate: `pnpm test:run`; the original test's full-suite failure is the baseline
+failure evidence. No production permission behavior was changed.
+
 ## Reversibility
 
 The only removed assertions in this pilot were presentation-coupled CSS class

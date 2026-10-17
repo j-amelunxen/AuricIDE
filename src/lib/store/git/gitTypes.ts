@@ -125,7 +125,8 @@ export interface GitSlice {
    */
   mergeAgentWorktree: (
     worktreePath: string,
-    commitMessage?: string
+    commitMessage?: string,
+    push?: boolean
   ) => Promise<WorktreeMergeResult>;
 }
 

@@ -23,26 +23,13 @@ describe('AgentContent — agent providers', () => {
     expect(screen.getByTestId('import-provider-button')).toBeInTheDocument();
   });
 
-  it('asks before skipping permission prompts and changes the setting only after confirmation', async () => {
-    const user = userEvent.setup();
+  it('leaves permission choices to each agent launch without a global bypass toggle', () => {
     render(<AgentContent />);
 
-    const toggle = screen.getByRole('checkbox', { name: /skip permission prompts/i });
-    expect(toggle).not.toBeChecked();
-
-    await user.click(toggle);
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toHaveTextContent(/skip permission prompts\?/i);
-    expect(toggle).not.toBeChecked();
-
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(toggle).not.toBeChecked();
-
-    await user.click(toggle);
-    await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Skip prompts' })
-    );
-    expect(toggle).toBeChecked();
+    expect(
+      screen.queryByRole('checkbox', { name: /skip permission prompts/i })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /auto.accept/i })).not.toBeInTheDocument();
   });
 
   it('persists the agent terminal font size', async () => {
