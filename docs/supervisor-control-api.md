@@ -305,7 +305,10 @@ type OutputChunk = {
 ```
 
 **`agents.send`** types `text` and, with `submit: true` (the default), presses
-Enter. An empty `text` with `submit: true` is a bare Enter. Headless agents
+Enter. An empty `text` with `submit: true` is a bare Enter. Text longer than
+32 bytes or with a line break is typed as one bracketed paste when the agent's
+terminal supports it, so long and multi-line messages arrive whole and are
+submitted; `bytesWritten` then counts the paste markers too. Headless agents
 (every job agent) have no input: `headless_no_stdin`.
 
 ```json

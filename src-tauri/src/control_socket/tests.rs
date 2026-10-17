@@ -249,6 +249,25 @@ fn send_input_writes_text_and_enter_and_reports_it_to_the_feed() {
 }
 
 #[test]
+fn a_multi_line_message_goes_in_as_one_bracketed_paste_when_the_tui_asked_for_it() {
+    let h = harness(vec![agent("agent-2", false)]);
+    h.buffers.append("agent-2", "\x1b[?2004h❯ ");
+    let text = "Bitte prüfe das.\nDann starte den kleinsten Schnitt.";
+    let response = call(
+        &h,
+        json!({ "id": 5, "method": "send_input", "params": { "agentId": "agent-2", "text": text } }),
+    );
+    let expected = format!("\x1b[200~{text}\x1b[201~\r");
+    assert_eq!(response["result"]["bytesWritten"], expected.len());
+    assert_eq!(
+        *h.backend.written.lock().unwrap(),
+        vec![("agent-2".to_string(), expected)]
+    );
+    // The feed shows what was said, not the markers.
+    assert_eq!(h.backend.input_events.lock().unwrap()[0].text, text);
+}
+
+#[test]
 fn a_bare_enter_nudge_is_written_but_not_recorded() {
     let h = harness(vec![agent("agent-2", false)]);
     let response = call(

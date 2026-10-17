@@ -9,7 +9,11 @@ import { ConsoleAgentCard } from './ConsoleAgentCard';
 
 vi.mock('@/lib/tauri/agents', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri/agents')>('@/lib/tauri/agents');
-  return { ...actual, sendToAgent: vi.fn(async () => undefined) };
+  return {
+    ...actual,
+    sendToAgent: vi.fn(async () => undefined),
+    sendMessageToAgent: vi.fn(async () => undefined),
+  };
 });
 
 afterEach(() => {
@@ -252,10 +256,10 @@ describe('ConsoleAgentCard inline permission answers', () => {
     } as Partial<ReturnType<typeof useStore.getState>>);
     render(<ConsoleAgentCard {...baseProps({ agent: waitingAgent() })} />);
 
-    const { sendToAgent } = await import('@/lib/tauri/agents');
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
     await user.click(screen.getByRole('button', { name: '1 Yes' }));
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-1', '1\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('agent-1', '1\r');
   });
 
   it('shows a Sent toast after answering', async () => {
@@ -277,11 +281,11 @@ describe('ConsoleAgentCard inline permission answers', () => {
     } as Partial<ReturnType<typeof useStore.getState>>);
     render(<ConsoleAgentCard {...baseProps({ agent: waitingAgent() })} />);
 
-    const { sendToAgent } = await import('@/lib/tauri/agents');
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
     const input = screen.getByPlaceholderText('Or send an instruction');
     await user.type(input, 'run the tests{Enter}');
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\r');
     expect(input).toHaveValue('');
   });
 
@@ -291,10 +295,10 @@ describe('ConsoleAgentCard inline permission answers', () => {
       <ConsoleAgentCard {...baseProps({ agent: agent({ lastActivityAt: NOW - 130_000 }) })} />
     );
 
-    const { sendToAgent } = await import('@/lib/tauri/agents');
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
     await user.click(screen.getByRole('button', { name: 'Send Enter' }));
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-1', '\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('agent-1', '\r');
   });
 
   it('offers no Send Enter button for a running, non-stalled agent', () => {

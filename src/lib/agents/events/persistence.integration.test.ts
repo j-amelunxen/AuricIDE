@@ -45,6 +45,7 @@ vi.mock('@/lib/tauri/agents', () => ({
   resumeInterruptedAgent: vi.fn(),
   discardInterruptedAgent: vi.fn(async () => undefined),
   sendToAgent: vi.fn(async () => undefined),
+  sendMessageToAgent: vi.fn(async () => undefined),
   listAgentPromptHistory: vi.fn(async () => []),
   recordAgentPromptHistory: vi.fn(async () => undefined),
 }));

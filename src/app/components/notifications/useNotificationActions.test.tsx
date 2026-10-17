@@ -51,6 +51,7 @@ vi.mock('@/lib/tauri/agents', () => ({
   }),
   discardInterruptedAgent: vi.fn(async () => undefined),
   sendToAgent: vi.fn(async () => undefined),
+  sendMessageToAgent: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/lib/tauri/fs', async (importOriginal) => {

@@ -5,7 +5,7 @@ import {
   listAgents,
   listInterruptedAgents,
   renameAgent,
-  sendToAgent,
+  sendMessageToAgent,
 } from '../tauri/agents';
 import {
   handleDiscardInterruptedAgent,
@@ -140,7 +140,7 @@ export const createAgentSlice: StateCreator<AgentSlice> = (set, get) => ({
   killRunningAgent: (agentId) => handleKillRunningAgent(agentId, get, set),
 
   sendAgentInput: async (agentId, text) => {
-    await sendToAgent(agentId, text);
+    await sendMessageToAgent(agentId, text);
     get().recordAgentSentMessage(agentId, text);
   },
 

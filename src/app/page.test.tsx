@@ -132,6 +132,7 @@ vi.mock('@/lib/tauri/agents', () => ({
   killAgentsForRepo: vi.fn().mockResolvedValue(0),
   listAgents: vi.fn().mockResolvedValue([]),
   sendToAgent: vi.fn().mockResolvedValue(undefined),
+  sendMessageToAgent: vi.fn().mockResolvedValue(undefined),
 }));
 
 const mockReadDirectory = vi.fn().mockResolvedValue([]);

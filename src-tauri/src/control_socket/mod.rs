@@ -483,10 +483,13 @@ impl Dispatcher {
         if agent.status != AgentStatus::Running {
             return Err(Self::not_running(&agent.id));
         }
-        let mut data = params.text.clone();
-        if params.enter {
-            data.push_str(ENTER);
-        }
+        // Long or multi-line text goes in as one bracketed paste, or the TUI
+        // swallows the Enter and cuts the text at its read boundaries.
+        let data = crate::agents::terminal_input::compose_message(
+            &params.text,
+            params.enter,
+            self.buffers.bracketed_paste(&agent.id),
+        );
         self.backend
             .write_input(&agent.id, &data)
             .map_err(|error| {

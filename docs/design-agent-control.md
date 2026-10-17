@@ -136,7 +136,21 @@ sends for the Enter key (fixture `enter`). The first draft used `\n`, copied
 from the console composer; the real run against Claude Code showed `\n` only
 inserts a line break in its input box and never submits, so the composer, the
 Enter nudge and the menu buttons were changed to the same `\r`. An empty `text`
-with `enter: true` is a bare Enter nudge. After writing, Rust emits the Tauri
+with `enter: true` is a bare Enter nudge.
+
+A message longer than 32 bytes, or with a line break, goes in as one
+bracketed paste (`ESC[200~` … `ESC[201~`, then the `\r`) whenever the
+agent's TUI has switched bracketed paste on (`ESC[?2004h`, followed from its
+raw output in `OutputBuffers`). Written as plain keystrokes, Claude Code takes
+such a burst for a paste of its own: the `\r` becomes part of the text and
+nothing is submitted, and a burst spanning several reads is cut into several
+pastes that lose characters at the seams. Measured in a real PTY against
+Claude Code 2.1.302: one line of 59 bytes plus `\r` submits, 119 bytes does
+not; unbracketed 3 kB lost words at every 1 kB read; bracketed, 8 kB arrived
+exact and submitted. Short answers stay keystrokes, because a menu reads `1`
+as a key and not as a paste. One function decides this for every sender:
+`agents::terminal_input::compose_message`, also behind the IDE's own
+composers (`agent_send_message`). After writing, Rust emits the Tauri
 event `agent-input-sent` `{ agentId, text }` so the feed shows the message
 like one typed in the UI (`agentSentMessages`); a bare nudge is not recorded,
 same as `sendAgentInput`.

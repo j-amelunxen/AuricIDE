@@ -98,6 +98,7 @@ vi.mock('../tauri/agents', () => ({
   })),
   discardInterruptedAgent: vi.fn(async () => undefined),
   sendToAgent: vi.fn(async () => undefined),
+  sendMessageToAgent: vi.fn(async () => undefined),
   listAgentPromptHistory: vi.fn(async () => [
     { id: 'h1', prompt: 'newest', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
     { id: 'h2', prompt: 'older', agentName: 'A', model: 'm', provider: 'claude', source: 'ui' },
@@ -2358,12 +2359,12 @@ describe('recordAgentSentMessage', () => {
   it('records input typed from outside the UI without writing to the PTY again', async () => {
     const store = createStore<AgentSlice>()(createAgentSlice);
     const agents = await import('../tauri/agents');
-    vi.mocked(agents.sendToAgent).mockClear();
+    vi.mocked(agents.sendMessageToAgent).mockClear();
 
     store.getState().recordAgentSentMessage('agent-1', 'from outside');
     await store.getState().sendAgentInput('agent-1', 'from the ui\n');
 
-    expect(agents.sendToAgent).toHaveBeenCalledTimes(1);
+    expect(agents.sendMessageToAgent).toHaveBeenCalledTimes(1);
     expect(store.getState().agentSentMessages['agent-1']).toEqual([
       expect.objectContaining({ text: 'from outside', seq: 0 }),
       expect.objectContaining({ text: 'from the ui', seq: 1 }),
@@ -2384,7 +2385,7 @@ describe('sendAgentInput', () => {
 
     await store.getState().sendAgentInput('agent-1', '1\n');
 
-    expect(agents.sendToAgent).toHaveBeenCalledWith('agent-1', '1\n');
+    expect(agents.sendMessageToAgent).toHaveBeenCalledWith('agent-1', '1\n');
   });
 
   it('does not decide the bytes itself — a free-text send goes through verbatim', async () => {
@@ -2393,7 +2394,7 @@ describe('sendAgentInput', () => {
 
     await store.getState().sendAgentInput('agent-1', 'run the tests\n');
 
-    expect(agents.sendToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\n');
+    expect(agents.sendMessageToAgent).toHaveBeenCalledWith('agent-1', 'run the tests\n');
   });
 
   it('records a sent message trimmed of trailing whitespace and newlines', async () => {

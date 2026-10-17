@@ -10,6 +10,30 @@ describe('agent IPC wrappers', () => {
     vi.clearAllMocks();
   });
 
+  describe('sendMessageToAgent', () => {
+    it('hands the text and the Enter separately to Rust, which decides how to type it', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      const { sendMessageToAgent } = await import('./agents');
+      await sendMessageToAgent('a1', 'line one\nline two\r');
+      expect(mockInvoke).toHaveBeenCalledWith('agent_send_message', {
+        agentId: 'a1',
+        text: 'line one\nline two',
+        enter: true,
+      });
+    });
+
+    it('sends text without a trailing Enter as text only', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      const { sendMessageToAgent } = await import('./agents');
+      await sendMessageToAgent('a1', 'draft');
+      expect(mockInvoke).toHaveBeenCalledWith('agent_send_message', {
+        agentId: 'a1',
+        text: 'draft',
+        enter: false,
+      });
+    });
+  });
+
   describe('spawnAgent', () => {
     it('sends the attribution fields to the backend untouched', async () => {
       mockInvoke.mockResolvedValueOnce({ id: 'a1' });

@@ -8,6 +8,7 @@ pub mod persistence;
 pub mod project_binding;
 pub mod run_results;
 pub mod shell_env;
+pub mod terminal_input;
 pub mod types;
 pub mod write_sandbox;
 

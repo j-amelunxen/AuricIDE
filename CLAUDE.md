@@ -409,6 +409,13 @@ it first), the reasoning ADR 0003.
 - **Enter is `\r`** (`TERMINAL_ENTER`, `src/lib/agents/terminalKeys.ts`). `\n`
   only adds a line in Claude Code's input box and never submits — every UI send
   path used it until the first real run showed it.
+- **A message is a bracketed paste, an answer is keystrokes**
+  (`agents/terminal_input.rs`). Text over 32 bytes or with a line break, sent
+  as plain keystrokes, is a burst Claude Code treats as its own paste: the
+  `\r` is swallowed (nothing submits) and text is lost where the burst spans
+  two reads. So `send_input` and the IDE composers (`agent_send_message`) wrap
+  it in `ESC[200~`…`ESC[201~` when the TUI asked for that (`ESC[?2004h`,
+  tracked in `OutputBuffers`). Raw terminal keystrokes stay on `shell_write`.
 - **`list_projects` explains each project**: `initialized` (spawn needs
   `.auric/project.db`), `runningAgents`, and a `description` — the one the
   user set on a starred tile ("Set description…" in Quick Access), else the

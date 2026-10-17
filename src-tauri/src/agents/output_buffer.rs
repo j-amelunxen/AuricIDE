@@ -13,6 +13,7 @@
 //! tail leaking into whichever read starts there. Offsets count bytes of the
 //! cleaned text.
 
+use super::terminal_input::BracketedPasteTracker;
 use super::types::AgentStatus;
 use crate::ansi::AnsiStripper;
 use std::collections::{HashMap, VecDeque};
@@ -45,6 +46,8 @@ struct Ring {
     total: u64,
     final_status: Option<AgentStatus>,
     stripper: AnsiStripper,
+    /// Read from the raw output, before cleaning removes the mode switches.
+    paste: BracketedPasteTracker,
 }
 
 impl Default for Ring {
@@ -54,6 +57,7 @@ impl Default for Ring {
             total: 0,
             final_status: None,
             stripper: AnsiStripper::console(),
+            paste: BracketedPasteTracker::default(),
         }
     }
 }
@@ -124,6 +128,7 @@ impl OutputBuffers {
         let Some(ring) = inner.rings.get_mut(agent_id) else {
             return;
         };
+        ring.paste.push(data);
         inner.scratch.clear();
         ring.stripper.push(data, &mut inner.scratch);
         ring.append(inner.scratch.as_bytes(), self.capacity);
@@ -144,6 +149,15 @@ impl OutputBuffers {
                 inner.rings.remove(&evicted);
             }
         }
+    }
+
+    /// Whether the agent's TUI has bracketed paste switched on right now
+    /// (`terminal_input::compose_message`).
+    pub fn bracketed_paste(&self, agent_id: &str) -> bool {
+        self.lock()
+            .rings
+            .get(agent_id)
+            .is_some_and(|ring| ring.paste.is_on())
     }
 
     pub fn knows(&self, agent_id: &str) -> bool {

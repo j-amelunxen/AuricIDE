@@ -7,7 +7,11 @@ import { FocusView } from './FocusView';
 
 vi.mock('@/lib/tauri/agents', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri/agents')>('@/lib/tauri/agents');
-  return { ...actual, sendToAgent: vi.fn(async () => undefined) };
+  return {
+    ...actual,
+    sendToAgent: vi.fn(async () => undefined),
+    sendMessageToAgent: vi.fn(async () => undefined),
+  };
 });
 
 // The embedded terminal is XtermTerminal itself (the same primitive
@@ -78,11 +82,11 @@ describe('FocusView layout', () => {
     const user = userEvent.setup();
     render(<FocusView {...baseProps()} />);
 
-    const { sendToAgent } = await import('@/lib/tauri/agents');
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
     const input = screen.getByPlaceholderText('Send instruction to this agent · Enter to send');
     await user.type(input, 'run the tests{Enter}');
 
-    expect(sendToAgent).toHaveBeenCalledWith('agent-focused', 'run the tests\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('agent-focused', 'run the tests\r');
     expect(input).toHaveValue('');
   });
 });

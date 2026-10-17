@@ -56,6 +56,7 @@ export type PermissionMode =
   'bypassPermissions' | 'acceptEdits' | 'plan' | 'auto' | 'default' | 'yolo';
 
 import type { UsageRunKind } from './agentUsage';
+import { TERMINAL_ENTER } from '../agents/terminalKeys';
 import { invoke } from './invoke';
 
 export interface AgentConfig {
@@ -226,4 +227,17 @@ export async function sendToAgent(agentId: string, message: string): Promise<voi
   // Wir nutzen hier denselben Mechanismus wie beim Terminal,
   // um Daten an den Stdin des Agenten-Prozesses zu senden.
   await invoke('shell_write', { id: `agent-${agentId}`, data: message });
+}
+
+/**
+ * A message typed into an agent, optionally ending in `TERMINAL_ENTER`. Rust
+ * (`agents/terminal_input.rs`) writes it the way the control socket does:
+ * long or multi-line text as one bracketed paste, so the TUI neither swallows
+ * the Enter nor cuts the text. Raw keystrokes from a terminal view stay on
+ * `sendToAgent`.
+ */
+export async function sendMessageToAgent(agentId: string, message: string): Promise<void> {
+  const enter = message.endsWith(TERMINAL_ENTER);
+  const text = enter ? message.slice(0, -TERMINAL_ENTER.length) : message;
+  await invoke('agent_send_message', { agentId, text, enter });
 }

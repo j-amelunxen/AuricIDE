@@ -10,7 +10,11 @@ import { useStore } from '@/lib/store';
 
 vi.mock('@/lib/tauri/agents', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri/agents')>('@/lib/tauri/agents');
-  return { ...actual, sendToAgent: vi.fn(async () => undefined) };
+  return {
+    ...actual,
+    sendToAgent: vi.fn(async () => undefined),
+    sendMessageToAgent: vi.fn(async () => undefined),
+  };
 });
 
 const t1 = new Date(2024, 0, 1, 14, 55, 0).getTime();
@@ -737,8 +741,8 @@ describe('ActivityFeed composer', () => {
 
   it('sends the composer text to the selected agent followed by Enter (\\r)', async () => {
     const user = userEvent.setup();
-    const { sendToAgent } = await import('@/lib/tauri/agents');
-    vi.mocked(sendToAgent).mockClear();
+    const { sendMessageToAgent } = await import('@/lib/tauri/agents');
+    vi.mocked(sendMessageToAgent).mockClear();
     setFeedState({ agentEvents });
     render(<ActivityFeed />);
 
@@ -747,7 +751,7 @@ describe('ActivityFeed composer', () => {
     await user.keyboard('{Enter}');
 
     // A TUI submits only on \r; \n would just add a line to its input box.
-    expect(sendToAgent).toHaveBeenCalledWith('a1', 'go on\r');
+    expect(sendMessageToAgent).toHaveBeenCalledWith('a1', 'go on\r');
     expect(screen.getByText('go on')).toBeInTheDocument();
   });
 

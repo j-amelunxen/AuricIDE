@@ -353,6 +353,7 @@ pub fn run() {
             unwatch_directory,
             shell_spawn,
             shell_write,
+            agents::terminal_input::agent_send_message,
             shell_resize,
             git_status,
             git_discover_repos,
