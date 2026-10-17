@@ -472,6 +472,59 @@ pub fn supervisor_runs_root(home: &Path) -> PathBuf {
         .fold(home.to_path_buf(), |path, part| path.join(part))
 }
 
+/// Pre-trusts folders for Claude Code in `~/.claude.json`. Claude Code checks
+/// `projects[canonical_path].hasTrustDialogAccepted` in this file to decide
+/// whether to display the interactive "Do you trust this workspace?" dialog.
+/// Pre-seeding it avoids prompting the user every time a fresh supervisor run
+/// folder is created.
+pub fn pre_trust_claude_workspace(home: &Path, paths: &[&Path]) -> Result<(), String> {
+    let config_path = home.join(".claude.json");
+    let mut root: Value = if config_path.is_file() {
+        let text = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Could not read claude config: {e}"))?;
+        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if !root.is_object() {
+        root = serde_json::json!({});
+    }
+
+    let map = root.as_object_mut().unwrap();
+    if !map.contains_key("projects") || !map["projects"].is_object() {
+        map.insert("projects".to_string(), serde_json::json!({}));
+    }
+    let projects = map.get_mut("projects").unwrap().as_object_mut().unwrap();
+
+    for path in paths {
+        let canonical = path
+            .canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .into_owned();
+        let raw = path.to_string_lossy().into_owned();
+
+        for key in [&canonical, &raw] {
+            if !projects.contains_key(key.as_str()) || !projects[key.as_str()].is_object() {
+                projects.insert((*key).clone(), serde_json::json!({}));
+            }
+            let entry = projects
+                .get_mut(key.as_str())
+                .unwrap()
+                .as_object_mut()
+                .unwrap();
+            entry.insert("hasTrustDialogAccepted".to_string(), Value::Bool(true));
+        }
+    }
+
+    let payload = serde_json::to_string_pretty(&root)
+        .map_err(|e| format!("Could not serialize claude config: {e}"))?;
+    std::fs::write(&config_path, payload)
+        .map_err(|e| format!("Could not write claude config: {e}"))?;
+    Ok(())
+}
+
 /// A new, empty working folder for one supervisor run, named by its start
 /// time. Two runs in the same second get `-2`, `-3`, …: `create_dir` fails on
 /// an existing folder, so a run never inherits another one's files.
@@ -486,7 +539,10 @@ pub fn new_supervisor_run_dir(home: &Path, started: &str) -> Result<PathBuf, Str
         };
         let dir = root.join(name);
         match std::fs::create_dir(&dir) {
-            Ok(()) => return Ok(dir),
+            Ok(()) => {
+                let _ = pre_trust_claude_workspace(home, &[&root, &dir]);
+                return Ok(dir);
+            }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(format!("Could not create the supervisor folder: {error}")),
         }
@@ -867,6 +923,32 @@ mod tests {
         assert_eq!(first, root.join("2026-10-16_185017"));
         assert_eq!(second, root.join("2026-10-16_185017-2"));
         assert!(first.is_dir() && second.is_dir());
+    }
+
+    #[test]
+    fn new_supervisor_run_dir_pre_trusts_workspace_in_claude_config() {
+        let home = tempfile::tempdir().unwrap();
+        let run_dir = new_supervisor_run_dir(home.path(), "2026-10-17_141112").unwrap();
+        let root = home.path().join(".auric").join("supervisors");
+        let claude_json = home.path().join(".claude.json");
+        assert!(claude_json.is_file());
+        let content: Value =
+            serde_json::from_str(&std::fs::read_to_string(claude_json).unwrap()).unwrap();
+        let projects = content.get("projects").and_then(Value::as_object).unwrap();
+        assert_eq!(
+            projects
+                .get(&run_dir.to_string_lossy().into_owned())
+                .and_then(|p| p.get("hasTrustDialogAccepted"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            projects
+                .get(&root.to_string_lossy().into_owned())
+                .and_then(|p| p.get("hasTrustDialogAccepted"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
     }
 
     fn skill_folder(root: &Path, name: &str) -> String {

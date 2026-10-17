@@ -199,7 +199,8 @@ fn bind_to_project_mcp(
 
 /// The provider a supervisor runs on in this version: its scope is enforced
 /// through Claude Code's `--allowedTools` and `--strict-mcp-config`.
-pub const SUPERVISOR_PROVIDER: &str = "claude";
+#[allow(dead_code)]
+pub const DEFAULT_SUPERVISOR_PROVIDER: &str = "claude";
 /// The supervisor's one MCP server, and the tool pattern pre-approved for it.
 pub const SUPERVISOR_MCP_SERVER: &str = "auric-supervisor";
 
@@ -219,14 +220,78 @@ pub fn supervisor_config(mut config: AgentConfig, cwd: &std::path::Path) -> Agen
     config
 }
 
+pub const SUPERVISOR_PROVIDERS: [&str; 2] = ["claude", "codex"];
+
 pub fn check_supervisor_provider(provider_id: &str) -> Result<(), String> {
-    if provider_id == SUPERVISOR_PROVIDER {
+    if SUPERVISOR_PROVIDERS.contains(&provider_id) {
         Ok(())
     } else {
         Err(format!(
-            "The supervisor runs on Claude Code in this version; '{provider_id}' cannot run it."
+            "The supervisor supports Claude Code and Codex in this version; '{provider_id}' cannot run it."
         ))
     }
+}
+
+/// Codex flags for a supervisor. Passes `-c` overrides for `auric-supervisor` and any project `pm` servers.
+pub fn supervisor_codex_arguments(
+    runtime: &std::path::Path,
+    socket: &std::path::Path,
+    pm: &[(String, String)],
+    pm_env: &std::collections::BTreeMap<String, String>,
+) -> Result<Vec<String>, String> {
+    let runtime_str =
+        serde_json::to_string(&runtime.to_string_lossy()).map_err(|e| e.to_string())?;
+    let socket_str = serde_json::to_string(&socket.to_string_lossy()).map_err(|e| e.to_string())?;
+    let sup_args =
+        format!("mcp_servers.{SUPERVISOR_MCP_SERVER}.args=[{runtime_str},\"--supervisor\"]");
+    let sup_env = format!(
+        "mcp_servers.{SUPERVISOR_MCP_SERVER}.env={{\"AURIC_CONTROL_SOCKET\"={socket_str}}}"
+    );
+    let mut arguments = vec![
+        "-c".to_string(),
+        crate::providers::shell_quote_argument(&format!(
+            "mcp_servers.{SUPERVISOR_MCP_SERVER}.command=\"node\""
+        )),
+        "-c".to_string(),
+        crate::providers::shell_quote_argument(&sup_args),
+        "-c".to_string(),
+        crate::providers::shell_quote_argument(&sup_env),
+        "-c".to_string(),
+        crate::providers::shell_quote_argument(&format!(
+            "mcp_servers.{SUPERVISOR_MCP_SERVER}.required=true"
+        )),
+        "-c".to_string(),
+        crate::providers::shell_quote_argument(&format!(
+            "mcp_servers.{SUPERVISOR_MCP_SERVER}.default_tools_approval_mode=\"approve\""
+        )),
+    ];
+    for (name, project_root) in pm {
+        let project_str = serde_json::to_string(project_root).map_err(|e| e.to_string())?;
+        let args =
+            format!("mcp_servers.{name}.args=[{runtime_str},\"--project-root\",{project_str}]");
+        arguments.push("-c".to_string());
+        arguments.push(crate::providers::shell_quote_argument(&format!(
+            "mcp_servers.{name}.command=\"node\""
+        )));
+        arguments.push("-c".to_string());
+        arguments.push(crate::providers::shell_quote_argument(&args));
+        arguments.push("-c".to_string());
+        arguments.push(crate::providers::shell_quote_argument(&format!(
+            "mcp_servers.{name}.required=true"
+        )));
+        arguments.push("-c".to_string());
+        arguments.push(crate::providers::shell_quote_argument(&format!(
+            "mcp_servers.{name}.default_tools_approval_mode=\"approve\""
+        )));
+        if !pm_env.is_empty() {
+            arguments.push("-c".to_string());
+            arguments.push(crate::providers::shell_quote_argument(&format!(
+                "mcp_servers.{name}.env={}",
+                crate::providers::toml_inline_table(pm_env)?
+            )));
+        }
+    }
+    Ok(arguments)
 }
 
 /// Claude Code flags for a supervisor (ADR 0004). `--tools` names the only
@@ -319,6 +384,7 @@ pub const SUPERVISOR_FILE_TOOLS: [&str; 7] = [
 fn bind_to_supervisor_mcp(
     spawn_cmd: crate::providers::SpawnCommand,
     app: &AppHandle,
+    provider_id: &str,
     cwd: Option<&str>,
 ) -> Result<(crate::providers::SpawnCommand, OwnedFile), String> {
     let runtime = crate::mcp::runtime_entrypoint(app)?;
@@ -346,13 +412,22 @@ fn bind_to_supervisor_mcp(
     let config_file = OwnedFile(crate::mcp::ensure_supervisor_mcp_config(
         &app_data, &runtime, &pm, &pm_env,
     )?);
-    let pm_names: Vec<String> = pm.into_iter().map(|(name, _)| name).collect();
-    let arguments = supervisor_claude_arguments(
-        &config_file.0.to_string_lossy(),
-        &skills,
-        &pm_names,
-        policy.supervisor.chrome,
-    );
+    let arguments = if provider_id == "codex" {
+        supervisor_codex_arguments(
+            &runtime,
+            &crate::control_socket::socket_path_in(&app_data),
+            &pm,
+            &pm_env,
+        )?
+    } else {
+        let pm_names: Vec<String> = pm.into_iter().map(|(name, _)| name).collect();
+        supervisor_claude_arguments(
+            &config_file.0.to_string_lossy(),
+            &skills,
+            &pm_names,
+            policy.supervisor.chrome,
+        )
+    };
     Ok((
         spawn_cmd.with_injection(crate::providers::SpawnInjection {
             arguments,
@@ -593,7 +668,8 @@ pub async fn spawn_agent_impl(
         usage_config.as_ref(),
     );
     if is_supervisor {
-        let (bound, config_file) = bind_to_supervisor_mcp(spawn_cmd, app, config.cwd.as_deref())?;
+        let (bound, config_file) =
+            bind_to_supervisor_mcp(spawn_cmd, app, provider_id, config.cwd.as_deref())?;
         spawn_cmd = bound;
         launch_file = Some(config_file);
     } else if let Some(binding) = project_binding.as_ref() {

@@ -32,6 +32,9 @@ export async function openSupervisor(
       hooks.onNothingVisible();
       return;
     }
+    if (result.kind === 'cancelled') {
+      return;
+    }
     if (result.kind === 'sent') {
       store.showToast(`Sent "${resolved?.label ?? 'skill'}" to the running supervisor`, 'success');
     }

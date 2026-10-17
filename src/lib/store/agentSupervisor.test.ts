@@ -25,13 +25,7 @@ vi.mock('../tauri/agents', () => ({
   recordAgentPromptHistory: vi.fn(async () => undefined),
 }));
 
-vi.mock('../tauri/providers', () => ({ listProviders: vi.fn(async () => [CLAUDE_FROM_REGISTRY]) }));
-vi.mock('../tauri/supervisorPolicy', () => ({ supervisorPolicyGet: vi.fn() }));
-vi.mock('../tauri/providerPolicy', () => ({
-  projectProviderPolicyGet: vi.fn(async () => ({ allow: null, deny: [] })),
-}));
-
-const { CLAUDE_FROM_REGISTRY } = vi.hoisted(() => ({
+const { CLAUDE_FROM_REGISTRY, CODEX_FROM_REGISTRY } = vi.hoisted(() => ({
   CLAUDE_FROM_REGISTRY: {
     id: 'claude',
     name: 'Claude Code',
@@ -40,6 +34,22 @@ const { CLAUDE_FROM_REGISTRY } = vi.hoisted(() => ({
     defaultModel: 'fable',
     defaultPermissionMode: 'default',
   },
+  CODEX_FROM_REGISTRY: {
+    id: 'codex',
+    name: 'Codex',
+    models: [{ value: 'luna', label: 'Luna', rank: 1 }],
+    permissionModes: [],
+    defaultModel: 'luna',
+    defaultPermissionMode: 'default',
+  },
+}));
+
+vi.mock('../tauri/providers', () => ({
+  listProviders: vi.fn(async () => [CLAUDE_FROM_REGISTRY, CODEX_FROM_REGISTRY]),
+}));
+vi.mock('../tauri/supervisorPolicy', () => ({ supervisorPolicyGet: vi.fn() }));
+vi.mock('../tauri/providerPolicy', () => ({
+  projectProviderPolicyGet: vi.fn(async () => ({ allow: null, deny: [] })),
 }));
 
 const CLAUDE: ProviderInfo = {
@@ -140,6 +150,50 @@ describe('spawnSupervisor', () => {
     });
     // Enter is \r: \n only adds a line in Claude Code's input box.
     expect(sendAgentInput).toHaveBeenCalledWith('sup-0', 'Ask for the build status\r');
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('prompts user for provider when multiple supervisor providers are candidate', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    policy.supervisor = {
+      provider: 'claude',
+      providers: ['claude', 'codex'],
+      model: null,
+      chrome: false,
+    };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+
+    const openSupervisorProviderChoice = vi.fn(async () => 'codex');
+    store.setState({ openSupervisorProviderChoice } as never);
+
+    const launch = await store.getState().spawnSupervisor();
+    expect(openSupervisorProviderChoice).toHaveBeenCalledWith([
+      { id: 'claude', name: 'Claude Code' },
+      { id: 'codex', name: 'Codex' },
+    ]);
+    expect(launch.kind).toBe('spawned');
+    const config = vi.mocked(spawnAgent).mock.calls[0][0];
+    expect(config.provider).toBe('codex');
+  });
+
+  it('cancels spawn when user cancels provider choice modal', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    policy.supervisor = {
+      provider: 'claude',
+      providers: ['claude', 'codex'],
+      model: null,
+      chrome: false,
+    };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+
+    const openSupervisorProviderChoice = vi.fn(async () => null);
+    store.setState({ openSupervisorProviderChoice } as never);
+
+    const launch = await store.getState().spawnSupervisor();
+    expect(openSupervisorProviderChoice).toHaveBeenCalled();
+    expect(launch).toEqual({ kind: 'cancelled' });
     expect(spawnAgent).not.toHaveBeenCalled();
   });
 });
