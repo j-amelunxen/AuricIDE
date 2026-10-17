@@ -29,6 +29,7 @@ pub(crate) fn record(job_id: &str, project: &str, created_at: u64) -> JobRecord 
         other_files: Vec::new(),
         error: None,
         cancel_requested: false,
+        cancel_reason: None,
     }
 }
 
@@ -250,4 +251,61 @@ fn leftovers_in_writable_paths_are_committed_and_the_rest_sorted() {
         status, "changed\n",
         "a leftover outside writes stays where it is"
     );
+}
+
+#[test]
+fn an_unreadable_register_is_moved_aside_not_overwritten() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = jobs_path_in(dir.path());
+    std::fs::write(&path, "{ not json").unwrap();
+    let jobs = Jobs::load(path.clone(), 500);
+    assert!(jobs.list(None, None, 10).is_empty());
+    let aside = path.with_extension("json.unreadable-500");
+    assert_eq!(std::fs::read_to_string(aside).unwrap(), "{ not json");
+    // The fresh register is a valid, empty file.
+    assert!(Jobs::load(path, 501).list(None, None, 10).is_empty());
+}
+
+#[test]
+fn the_file_keeps_every_counted_and_running_job_past_the_cap() {
+    let now = 10 * WINDOW_MS;
+    let mut all = Vec::new();
+    // Old finished jobs beyond the cap, then more counted jobs than the cap.
+    for n in 0..(KEEP_FINISHED_MAX + 10) {
+        let mut job = record(&format!("old-{n}"), "/a", now - 3 * WINDOW_MS + n as u64);
+        job.status = JobStatus::Finished;
+        all.push(job);
+    }
+    let mut running = record("still-running", "/a", now - 9 * WINDOW_MS);
+    running.status = JobStatus::Running;
+    all.push(running);
+    for n in 0..(KEEP_FINISHED_MAX + 5) {
+        let mut job = record(&format!("new-{n}"), "/a", now - 1000 + n as u64);
+        job.status = JobStatus::Finished;
+        all.push(job);
+    }
+    let kept = kept(&all, now);
+    let counted = kept.iter().filter(|job| in_window(job, now)).count();
+    assert_eq!(counted, KEEP_FINISHED_MAX + 5, "no counted job is dropped");
+    assert!(kept.iter().any(|job| job.job_id == "still-running"));
+    let older = kept
+        .iter()
+        .filter(|job| job.job_id.starts_with("old-"))
+        .count();
+    assert_eq!(older, KEEP_FINISHED_MAX);
+    assert!(
+        kept.iter().all(|job| job.job_id != "old-0"),
+        "the oldest finished jobs go first"
+    );
+}
+
+#[test]
+fn setting_the_clock_back_frees_no_slot() {
+    let jobs = Jobs::default();
+    let started = 10 * WINDOW_MS;
+    jobs.start(record("j1", "/a", started), started);
+    // The clock went back a week: the job is dated in the future, still counted.
+    assert_eq!(jobs.count_in_window("/a", started - 7 * WINDOW_MS), (1, 1));
+    assert_eq!(jobs.count_in_window("/a", started + WINDOW_MS - 1), (1, 1));
+    assert_eq!(jobs.count_in_window("/a", started + WINDOW_MS), (0, 0));
 }

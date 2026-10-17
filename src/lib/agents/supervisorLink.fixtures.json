@@ -7,6 +7,13 @@
   "pollMs": 250,
   "pingSeconds": 30,
   "maxMessageBytes": 1048576,
+  "limits": {
+    "$comment": "Per IDE process. Clients are processes of the same user, so these guard against a misbehaving client, not an attacker. Over a limit the answer is the error code busy with the limit as reason.",
+    "maxConnections": 16,
+    "maxPendingRequests": 64,
+    "handshakeTimeoutSeconds": 10,
+    "writeTimeoutSeconds": 10
+  },
   "methods": [
     "session.hello",
     "supervisors.spawn",
@@ -58,6 +65,7 @@
     "job_kind_not_allowed",
     "quota_exceeded",
     "unknown_job",
+    "busy",
     "internal"
   ],
   "messages": [
@@ -327,6 +335,39 @@
     "invalid": ["docs//x.json", "docs/a**/x.json"]
   },
   "maxDocumentBytes": 262144,
+  "maxIndexBytes": 4194304,
+  "revs": {
+    "$comment": "documents.get / documents.resolve rev: a commit id or a branch or tag name. Leading '-', revision expressions and anything git does not take as a ref name are invalid_params before git sees them.",
+    "maxLength": 255,
+    "valid": [
+      "HEAD",
+      "main",
+      "auric/proposal/system-1a2b3c4d",
+      "v1.2.0",
+      "3f2c9a1",
+      "refs/heads/main",
+      "release_2026-10"
+    ],
+    "invalid": [
+      "",
+      "-n",
+      "--output=/tmp/x",
+      "HEAD~1",
+      "HEAD^",
+      "main@{1}",
+      "@{-1}",
+      ":/fix",
+      "HEAD:docs/a.json",
+      "a..b",
+      "a b",
+      "x.lock",
+      "/main",
+      "main/",
+      ".hidden",
+      "a\\b",
+      "ma\u0000in"
+    ]
+  },
   "migration": {
     "$comment": "Version 1 of the policy file listed projects under scenes.projects. Each becomes a project with this one document type.",
     "v1DocumentType": {

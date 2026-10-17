@@ -33,6 +33,11 @@ pub const SEARCH_MAX_LIMIT: usize = 200;
 pub const SEARCH_MAX_DEPTH: usize = 8;
 /// Fixture `search.maxFilesPerProject`: documents read per project.
 pub const SEARCH_MAX_FILES_PER_PROJECT: usize = 2000;
+/// Fixture `revs.maxLength`.
+pub const MAX_REV_LENGTH: usize = 255;
+/// Fixture `maxIndexBytes`: an index names every document of a type, so it
+/// may be larger than one document. A larger one is ignored like a broken one.
+pub const MAX_INDEX_BYTES: usize = 4 * 1_048_576;
 /// Fixture `proposalBranchPrefix`.
 pub const PROPOSAL_BRANCH_PREFIX: &str = "auric/proposal/";
 
@@ -384,6 +389,14 @@ pub(super) fn read_contained(
     project: &Path,
     relative: &str,
 ) -> Result<Option<Vec<u8>>, DocumentError> {
+    read_contained_up_to(project, relative, MAX_DOCUMENT_BYTES)
+}
+
+fn read_contained_up_to(
+    project: &Path,
+    relative: &str,
+    max_bytes: usize,
+) -> Result<Option<Vec<u8>>, DocumentError> {
     let Ok(real) = project.join(relative).canonicalize() else {
         return Ok(None);
     };
@@ -396,23 +409,23 @@ pub(super) fn read_contained(
     if !metadata.is_file() {
         return Ok(None);
     }
-    if metadata.len() > MAX_DOCUMENT_BYTES as u64 {
-        return Err(too_large(relative, metadata.len()));
+    if metadata.len() > max_bytes as u64 {
+        return Err(too_large(relative, metadata.len(), max_bytes));
     }
     std::fs::read(&real).map(Some).map_err(internal)
 }
 
-fn too_large(what: &str, bytes: u64) -> DocumentError {
+fn too_large(what: &str, bytes: u64, max_bytes: usize) -> DocumentError {
     DocumentError::new(
         DocumentErrorCode::DocumentInvalid,
-        format!("{what} is {bytes} bytes, more than {MAX_DOCUMENT_BYTES}"),
+        format!("{what} is {bytes} bytes, more than {max_bytes}"),
     )
 }
 
 /// Size, JSON and object-ness, in that order.
 pub(super) fn parse_document(what: &str, bytes: &[u8]) -> Result<Value, DocumentError> {
     if bytes.len() > MAX_DOCUMENT_BYTES {
-        return Err(too_large(what, bytes.len() as u64));
+        return Err(too_large(what, bytes.len() as u64, MAX_DOCUMENT_BYTES));
     }
     let value: Value = serde_json::from_slice(bytes).map_err(|error| {
         DocumentError::new(
@@ -487,11 +500,38 @@ fn in_head(repo: &Repository, commit: Oid) -> bool {
     head.id() == commit || repo.graph_descendant_of(head.id(), commit).unwrap_or(false)
 }
 
+/// A `rev` is a commit id (full or abbreviated) or a branch or tag name, such
+/// as a proposal's or a job's branch. Nothing else reaches git: no leading
+/// `-` (read as an option by a git command line), no revision expressions
+/// (`HEAD~2`, `@{1}`, `:/text`, `a..b`), nothing git would not take as a ref
+/// name. Fixture `revs`.
+pub fn validate_rev(rev: &str) -> Result<(), DocumentError> {
+    let refused = |why: &str| DocumentError::invalid(format!("rev \"{rev}\" {why}"));
+    if rev.is_empty() || rev.len() > MAX_REV_LENGTH {
+        return Err(refused(&format!(
+            "must be 1 to {MAX_REV_LENGTH} characters"
+        )));
+    }
+    if rev.starts_with('-') {
+        return Err(refused("must not start with \"-\""));
+    }
+    let plain = rev
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
+    if !plain || !git2::Reference::is_valid_name(&format!("refs/heads/{rev}")) {
+        return Err(refused(
+            "is not a commit id, branch or tag name (revision expressions are not read)",
+        ));
+    }
+    Ok(())
+}
+
 /// The file's bytes at `rev`, the full commit id and whether `HEAD` holds
 /// that commit. A project nested inside a repository is read at its path
 /// within it. Only a regular blob counts: a symlink entry would hand back its
 /// target path as the "document".
 fn read_at_rev(root: &Path, id: &str, rev: &str) -> Result<(Vec<u8>, String, bool), DocumentError> {
+    validate_rev(rev)?;
     let not_a_repo = || {
         DocumentError::new(
             DocumentErrorCode::NotAGitRepo,
@@ -524,7 +564,7 @@ fn read_at_rev(root: &Path, id: &str, rev: &str) -> Result<(Vec<u8>, String, boo
     }
     let blob = repo.find_blob(entry.id()).map_err(internal)?;
     if blob.size() > MAX_DOCUMENT_BYTES {
-        return Err(too_large(id, blob.size() as u64));
+        return Err(too_large(id, blob.size() as u64, MAX_DOCUMENT_BYTES));
     }
     let merged = in_head(&repo, commit.id());
     Ok((blob.content().to_vec(), commit.id().to_string(), merged))
@@ -583,7 +623,7 @@ fn read_index(root: &Path, document_type: &DocumentType) -> HashMap<String, Inde
     let Some(spec) = &document_type.index else {
         return index;
     };
-    let Ok(Some(bytes)) = read_contained(root, &spec.path) else {
+    let Ok(Some(bytes)) = read_contained_up_to(root, &spec.path, MAX_INDEX_BYTES) else {
         return index;
     };
     let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
@@ -875,7 +915,11 @@ fn proposed_bytes(document: &Value) -> Result<Vec<u8>, DocumentError> {
     let mut text = serde_json::to_string_pretty(document).map_err(internal)?;
     text.push('\n');
     if text.len() > MAX_DOCUMENT_BYTES {
-        return Err(too_large("the proposed document", text.len() as u64));
+        return Err(too_large(
+            "the proposed document",
+            text.len() as u64,
+            MAX_DOCUMENT_BYTES,
+        ));
     }
     Ok(text.into_bytes())
 }

@@ -49,7 +49,7 @@ pub const EVENTS: [&str; 8] = [
 /// Every code the link may answer with. A code from elsewhere (the control
 /// dispatcher, the frontend) that is not in this list goes out as `internal`
 /// with the original code kept in the message.
-pub const ERROR_CODES: [&str; 22] = [
+pub const ERROR_CODES: [&str; 23] = [
     "invalid_request",
     "unsupported_version",
     "unknown_method",
@@ -71,6 +71,7 @@ pub const ERROR_CODES: [&str; 22] = [
     "job_kind_not_allowed",
     "quota_exceeded",
     "unknown_job",
+    "busy",
     "internal",
 ];
 

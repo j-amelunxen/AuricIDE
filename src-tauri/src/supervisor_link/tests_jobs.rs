@@ -317,3 +317,90 @@ fn cancel_stops_the_agent_and_the_job_ends_as_cancelled() {
     .unwrap_err();
     assert_eq!(unknown.code, "unknown_job");
 }
+
+#[test]
+fn a_cancel_is_repeated_while_the_agent_still_runs() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The first kill reaches an agent that is still starting and keeps running.
+    *s.h.backend.kill_leaves_agent.lock().unwrap() = true;
+    ask(
+        &s.h.link,
+        &json!({ "v": 1, "id": 2, "method": "jobs.cancel", "params": { "jobId": job_id } })
+            .to_string(),
+    )
+    .unwrap();
+    let kills = |s: &Setup| {
+        s.h.backend
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.method == "kill")
+            .count()
+    };
+    let before = kills(&s);
+    s.h.link.tick_jobs(jobs::now_ms());
+    assert_eq!(kills(&s), before + 1, "the tick kills again");
+    assert_eq!(
+        s.h.link.jobs().get(&job_id).unwrap().status,
+        JobStatus::Running
+    );
+
+    set_status(&s, AgentStatus::Idle);
+    s.h.link.tick_jobs(jobs::now_ms());
+    let job = s.h.link.jobs().get(&job_id).unwrap();
+    assert_eq!(job.error.unwrap().code, jobs::JobErrorCode::Cancelled);
+}
+
+#[test]
+fn a_job_whose_project_leaves_the_policy_is_stopped() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.h.host.policy.lock().unwrap().projects.clear();
+
+    s.h.link.tick_jobs(jobs::now_ms());
+    let kill = s.h.backend.requests.lock().unwrap().last().unwrap().clone();
+    assert_eq!(kill.method, "kill");
+    assert_eq!(kill.params["agentId"], "agent-7");
+
+    set_status(&s, AgentStatus::Idle);
+    s.h.link.tick_jobs(jobs::now_ms());
+    let job = s.h.link.jobs().get(&job_id).unwrap();
+    assert_eq!(job.status, JobStatus::Failed);
+    let error = job.error.unwrap();
+    assert_eq!(error.code, jobs::JobErrorCode::Cancelled);
+    assert!(
+        error.message.contains("no longer shared"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn a_job_whose_kind_leaves_the_policy_is_stopped() {
+    let s = setup(JobLimits::default());
+    let job_id = create(&s, Value::Null).unwrap()["jobId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for config in s.h.host.policy.lock().unwrap().projects.values_mut() {
+        config.job_kinds.clear();
+    }
+    s.h.link.tick_jobs(jobs::now_ms());
+    set_status(&s, AgentStatus::Idle);
+    s.h.link.tick_jobs(jobs::now_ms());
+    let error = s.h.link.jobs().get(&job_id).unwrap().error.unwrap();
+    assert_eq!(error.code, jobs::JobErrorCode::Cancelled);
+    assert!(
+        error.message.contains("no longer allowed"),
+        "{}",
+        error.message
+    );
+}
