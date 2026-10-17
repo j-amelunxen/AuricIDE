@@ -97,7 +97,22 @@ function fill(draft: Draft): GridCells | null {
 }
 
 /**
- * Puts an agent on a zone. An agent already shown moves there.
+ * The one other agent whose pane is exactly the zone, when the dragged agent is
+ * on screen too: a pane dropped onto another pane trades places with it.
+ */
+function swapPartner(cells: GridCells, agentId: string, zone: DropZone): string | null {
+  if (!cells.includes(agentId)) return null;
+  const target = ZONE_CELLS[zone];
+  const occupant = cells[target[0]];
+  if (occupant === agentId) return null;
+  const own = cellsOf([...cells], occupant);
+  const same = own.length === target.length && own.every((index) => target.includes(index));
+  return same ? occupant : null;
+}
+
+/**
+ * Puts an agent on a zone. An agent already shown moves there; dropped exactly
+ * onto another pane, the two swap.
  *
  * When the agent was alone on screen, the quadrants it leaves have no
  * neighbour to grow into — the grid would collapse back to one terminal and
@@ -110,6 +125,12 @@ export function placeAgent(
   zone: DropZone,
   spareIds: readonly string[] = []
 ): GridCells {
+  const partner = swapPartner(cells, agentId, zone);
+  if (partner) {
+    return cells.map((id) =>
+      id === agentId ? partner : id === partner ? agentId : id
+    ) as unknown as GridCells;
+  }
   let draft: Draft = cells.map((id) => (id === agentId ? null : id));
   for (const index of ZONE_CELLS[zone]) draft[index] = agentId;
   draft = shrinkToRectangles(draft);

@@ -56,6 +56,17 @@ describe('terminalGrid – placing a terminal', () => {
     expect(placeAgent(['b', 'a', 'c', 'd'], 'd', 'left')).toEqual(['d', 'a', 'd', 'a']);
   });
 
+  it('a pane dropped exactly onto another one swaps places with it', () => {
+    expect(placeAgent(['a', 'b', 'a', 'b'], 'a', 'right', ['c'])).toEqual(['b', 'a', 'b', 'a']);
+    expect(placeAgent(['a', 'b', 'c', 'd'], 'a', 'br')).toEqual(['d', 'b', 'c', 'a']);
+    // Shapes may differ: the half and the quarter trade places.
+    expect(placeAgent(['a', 'b', 'a', 'c'], 'a', 'tr')).toEqual(['b', 'a', 'b', 'c']);
+  });
+
+  it('a tab that is not on screen never swaps, it takes the place', () => {
+    expect(placeAgent(['a', 'b', 'a', 'b'], 'c', 'right')).toEqual(['a', 'c', 'a', 'c']);
+  });
+
   it('the terminal showing alone can take a half when a spare terminal fills the rest', () => {
     // Without a spare, `a` has no neighbour to hand the freed quadrants to and the
     // grid collapses back to one terminal: the drop looks like it did nothing.
