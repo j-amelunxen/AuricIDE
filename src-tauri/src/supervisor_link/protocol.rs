@@ -11,8 +11,12 @@ use std::collections::BTreeMap;
 pub const PROTOCOL: u64 = 1;
 pub const DEFAULT_SEARCH_LIMIT: u32 = 50;
 pub const MAX_SEARCH_LIMIT: u32 = 200;
+/// Fixture `jobs`.
+pub const MAX_PAYLOAD_BYTES: usize = 16_384;
+pub const DEFAULT_JOBS_LIMIT: u32 = 50;
+pub const MAX_JOBS_LIMIT: u32 = 200;
 
-pub const METHODS: [&str; 13] = [
+pub const METHODS: [&str; 16] = [
     "session.hello",
     "supervisors.spawn",
     "agents.list",
@@ -21,24 +25,31 @@ pub const METHODS: [&str; 13] = [
     "agents.kill",
     "events.subscribe",
     "events.unsubscribe",
-    "scenes.projects",
-    "scenes.search",
-    "scenes.get",
-    "scenes.resolve",
-    "scenes.propose",
+    "documents.projects",
+    "documents.search",
+    "documents.get",
+    "documents.resolve",
+    "documents.propose",
+    "jobs.create",
+    "jobs.list",
+    "jobs.cancel",
 ];
 
-pub const EVENTS: [&str; 4] = [
+pub const EVENTS: [&str; 8] = [
     "agent.added",
     "agent.updated",
     "agent.removed",
     "agent.output",
+    "job.started",
+    "job.progress",
+    "job.finished",
+    "job.failed",
 ];
 
 /// Every code the link may answer with. A code from elsewhere (the control
 /// dispatcher, the frontend) that is not in this list goes out as `internal`
 /// with the original code kept in the message.
-pub const ERROR_CODES: [&str; 18] = [
+pub const ERROR_CODES: [&str; 22] = [
     "invalid_request",
     "unsupported_version",
     "unknown_method",
@@ -51,11 +62,15 @@ pub const ERROR_CODES: [&str; 18] = [
     "provider_denied",
     "provider_unsupported",
     "frontend_unavailable",
-    "scene_not_visible",
-    "scene_not_found",
-    "scene_invalid",
-    "scene_conflict",
+    "document_not_visible",
+    "document_not_found",
+    "document_invalid",
+    "document_conflict",
     "not_a_git_repo",
+    "supervisor_denied",
+    "job_kind_not_allowed",
+    "quota_exceeded",
+    "unknown_job",
     "internal",
 ];
 
@@ -158,6 +173,9 @@ pub struct SubscribeParams {
     pub output: Option<bool>,
     #[serde(default)]
     pub since_offsets: Option<BTreeMap<String, u64>>,
+    /// Default `true`: `job.*` events for every job of the register.
+    #[serde(default)]
+    pub jobs: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -167,6 +185,8 @@ pub struct SearchParams {
     pub query: Option<String>,
     #[serde(default)]
     pub project: Option<String>,
+    #[serde(default, rename = "type")]
+    pub document_type: Option<String>,
     #[serde(default)]
     pub limit: Option<u32>,
 }
@@ -175,6 +195,8 @@ pub struct SearchParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GetParams {
     pub project: String,
+    #[serde(rename = "type")]
+    pub document_type: String,
     pub id: String,
     #[serde(default)]
     pub rev: Option<String>,
@@ -184,6 +206,8 @@ pub struct GetParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResolveParams {
     pub project: String,
+    #[serde(rename = "type")]
+    pub document_type: String,
     pub from: String,
     #[serde(rename = "ref")]
     pub reference: String,
@@ -195,27 +219,63 @@ pub struct ResolveParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProposeParams {
     pub project: String,
+    #[serde(rename = "type")]
+    pub document_type: String,
     pub id: String,
-    pub scene: Value,
-    /// Required, and `null` is a value: "this scene is new". A `Value` rather
-    /// than an `Option` because serde reads a missing `Option` as `None`, which
-    /// would turn a forgotten field into a blind overwrite check.
+    pub document: Value,
+    /// Required, and `null` is a value: "this document is new". A `Value`
+    /// rather than an `Option` because serde reads a missing `Option` as
+    /// `None`, which would turn a forgotten field into a blind overwrite check.
     pub base_hash: Value,
     #[serde(default)]
     pub message: Option<String>,
 }
 
 impl ProposeParams {
-    /// `Ok(None)` for a new scene, `Ok(Some(hash))` for an update.
+    /// `Ok(None)` for a new document, `Ok(Some(hash))` for an update.
     pub fn base(&self) -> Result<Option<&str>, LinkError> {
         match &self.base_hash {
             Value::Null => Ok(None),
             Value::String(hash) if !hash.is_empty() => Ok(Some(hash)),
             _ => Err(LinkError::invalid_params(
-                "scenes.propose: baseHash must be the scene's hash or null for a new scene",
+                "documents.propose: baseHash must be the document's hash or null for a new one",
             )),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateJobParams {
+    pub project: String,
+    pub kind: String,
+    /// Opaque to the IDE; handed to the agent as data. Required, `null` included.
+    pub payload: Value,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobStatus {
+    Running,
+    Finished,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListJobsParams {
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub status: Option<JobStatus>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct JobParams {
+    pub job_id: String,
 }
 
 fn default_true() -> bool {
@@ -232,11 +292,14 @@ pub enum LinkRequest {
     Kill(AgentParams),
     Subscribe(SubscribeParams),
     Unsubscribe,
-    SceneProjects,
-    SceneSearch(SearchParams),
-    SceneGet(GetParams),
-    SceneResolve(ResolveParams),
-    ScenePropose(ProposeParams),
+    DocumentProjects,
+    DocumentSearch(SearchParams),
+    DocumentGet(GetParams),
+    DocumentResolve(ResolveParams),
+    DocumentPropose(ProposeParams),
+    CreateJob(CreateJobParams),
+    ListJobs(ListJobsParams),
+    CancelJob(JobParams),
 }
 
 /// A message that could not be turned into a request, with the id to echo
@@ -303,6 +366,7 @@ pub fn parse_message(text: &str) -> Result<(Value, LinkRequest), Rejected> {
     Ok((id, request))
 }
 
+// code-gate: complexity-cyclomatic, complexity-function-length - one arm per contract method, each with its own range checks; the table reads best as one match
 fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
     let request = match method {
         "session.hello" => LinkRequest::Hello(params(method, raw)?),
@@ -327,29 +391,55 @@ fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
             params::<Empty>(method, raw)?;
             LinkRequest::Unsubscribe
         }
-        "scenes.projects" => {
+        "documents.projects" => {
             params::<Empty>(method, raw)?;
-            LinkRequest::SceneProjects
+            LinkRequest::DocumentProjects
         }
-        "scenes.search" => {
+        "documents.search" => {
             let search: SearchParams = params(method, raw)?;
             if search
                 .limit
                 .is_some_and(|limit| limit == 0 || limit > MAX_SEARCH_LIMIT)
             {
                 return Err(LinkError::invalid_params(format!(
-                    "scenes.search: limit is 1..{MAX_SEARCH_LIMIT}"
+                    "documents.search: limit is 1..{MAX_SEARCH_LIMIT}"
                 )));
             }
-            LinkRequest::SceneSearch(search)
+            LinkRequest::DocumentSearch(search)
         }
-        "scenes.get" => LinkRequest::SceneGet(params(method, raw)?),
-        "scenes.resolve" => LinkRequest::SceneResolve(params(method, raw)?),
-        "scenes.propose" => {
+        "documents.get" => LinkRequest::DocumentGet(params(method, raw)?),
+        "documents.resolve" => LinkRequest::DocumentResolve(params(method, raw)?),
+        "documents.propose" => {
             let propose: ProposeParams = params(method, raw)?;
             propose.base()?;
-            LinkRequest::ScenePropose(propose)
+            LinkRequest::DocumentPropose(propose)
         }
+        "jobs.create" => {
+            let create: CreateJobParams = params(method, raw)?;
+            let bytes = serde_json::to_vec(&create.payload).map_or(usize::MAX, |b| b.len());
+            if bytes > MAX_PAYLOAD_BYTES {
+                return Err(LinkError::invalid_params(format!(
+                    "jobs.create: payload is {bytes} bytes as JSON, at most {MAX_PAYLOAD_BYTES}"
+                )));
+            }
+            if create.kind.trim().is_empty() {
+                return Err(LinkError::invalid_params("jobs.create: kind is empty"));
+            }
+            LinkRequest::CreateJob(create)
+        }
+        "jobs.list" => {
+            let list: ListJobsParams = params(method, raw)?;
+            if list
+                .limit
+                .is_some_and(|limit| limit == 0 || limit > MAX_JOBS_LIMIT)
+            {
+                return Err(LinkError::invalid_params(format!(
+                    "jobs.list: limit is 1..{MAX_JOBS_LIMIT}"
+                )));
+            }
+            LinkRequest::ListJobs(list)
+        }
+        "jobs.cancel" => LinkRequest::CancelJob(params(method, raw)?),
         other => {
             return Err(LinkError::new(
                 "unknown_method",
@@ -413,6 +503,15 @@ mod tests {
             json!(DEFAULT_SEARCH_LIMIT)
         );
         assert_eq!(fixtures["search"]["maxLimit"], json!(MAX_SEARCH_LIMIT));
+        let jobs = &fixtures["jobs"];
+        assert_eq!(jobs["maxPayloadBytes"], json!(MAX_PAYLOAD_BYTES));
+        assert_eq!(jobs["listDefaultLimit"], json!(DEFAULT_JOBS_LIMIT));
+        assert_eq!(jobs["listMaxLimit"], json!(MAX_JOBS_LIMIT));
+        let statuses: Vec<Value> = [JobStatus::Running, JobStatus::Finished, JobStatus::Failed]
+            .iter()
+            .map(|status| serde_json::to_value(status).expect("a status serialises"))
+            .collect();
+        assert_eq!(jobs["statuses"], json!(statuses));
     }
 
     #[test]
@@ -435,11 +534,15 @@ mod tests {
         let minimal = |method: &str| match method {
             "agents.read" | "agents.kill" => json!({ "agentId": "agent-1" }),
             "agents.send" => json!({ "agentId": "agent-1", "text": "" }),
-            "scenes.get" => json!({ "project": "/p", "id": "docs/a" }),
-            "scenes.resolve" => json!({ "project": "/p", "from": "docs/a", "ref": "b" }),
-            "scenes.propose" => {
-                json!({ "project": "/p", "id": "docs/a", "scene": {}, "baseHash": null })
+            "documents.get" => json!({ "project": "/p", "type": "t", "id": "docs/a.json" }),
+            "documents.resolve" => {
+                json!({ "project": "/p", "type": "t", "from": "docs/a.json", "ref": "b" })
             }
+            "documents.propose" => json!({
+                "project": "/p", "type": "t", "id": "docs/a.json", "document": {}, "baseHash": null
+            }),
+            "jobs.create" => json!({ "project": "/p", "kind": "k", "payload": null }),
+            "jobs.cancel" => json!({ "jobId": "job-1" }),
             _ => json!({}),
         };
         for method in METHODS {
@@ -462,7 +565,7 @@ mod tests {
             LinkRequest::Send(SendParams { submit: true, .. })
         ));
         let rejected = parse_message(
-            r#"{"v":1,"id":1,"method":"scenes.propose","params":{"project":"/p","id":"docs/a","scene":{},"baseHash":42}}"#,
+            r#"{"v":1,"id":1,"method":"documents.propose","params":{"project":"/p","type":"t","id":"docs/a.json","document":{},"baseHash":42}}"#,
         )
         .expect_err("refused");
         assert_eq!(rejected.error.code, "invalid_params");

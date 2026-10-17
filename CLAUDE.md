@@ -502,20 +502,22 @@ ADR 0004.
   `setStarredProjectWheelSlots`, so no caller can forget it.
 - Real-app check: `node scripts/probe-supervisor.mjs`.
 
-### The supervisor link — a companion app talks to supervisors (`supervisor_link/`)
+### The supervisor link — the Supervisor Control API (`supervisor_link/`)
 
-A companion app holds one WebSocket to the IDE instead of a set of
+A client (any local app) holds one WebSocket to the IDE instead of a set of
 MCP tools: start a supervisor, see the supervisor tree and its consoles live,
-type and submit, stop agents, and read and propose 3D scenes. The contract is
-`docs/design-supervisor-link.md`, the machine-checkable half
-`src/lib/agents/supervisorLink.fixtures.json` — change it first.
+type and submit, stop agents, read and propose JSON documents, and run jobs in
+projects. The contract is `docs/design-supervisor-link.md`, the
+machine-checkable half `src/lib/agents/supervisorLink.fixtures.json` — change
+it first. AuricIDE knows no client, no document format and no job kind: all of
+that is per-project configuration.
 
 - **A narrower door, not a new one.** WebSocket (`tungstenite`, sync) over
   `<app_data_dir>/supervisor-link.sock`, 0600. Agent work goes through the
   control socket's `Dispatcher` as an external caller after `Link` narrowed it
-  to the **supervisor tree** (role supervisor, or `spawnedByAgentId` set).
-  Agents the human started are `unknown_agent`. Both sockets share one
-  dispatcher (`control_socket::dispatcher`).
+  to the **supervisor tree** (role supervisor, `spawnedByAgentId` set, or a
+  job's agent). Agents the human started are `unknown_agent`. Both sockets
+  share one dispatcher (`control_socket::dispatcher`).
 - **Every IDE agent is refused at the socket**, supervisors included: same
   PID walk as `control.sock`, then one `error` message and close 1008.
 - **`supervisors.spawn` is the tile's path**, not `spawn { role }`:
@@ -523,16 +525,30 @@ type and submit, stop agents, and read and propose 3D scenes. The contract is
   `spawnLinkedSupervisor` (launch prompt, instructions, policy; always a new
   supervisor, never the provider picker). Its codes pass through raw
   (`via_frontend_raw`).
-- **Events are polled, not hooked**: a per-connection loop diffs the tree and
-  the output buffers every 250 ms (`subscription.rs`). Requests run in order on
-  a worker thread, so a 30 s spawn does not hold events back; a subscription
-  takes effect when its response is sent.
-- **Scenes are files in the products** (`docs/**/*.scene.json`), visible only
-  for projects in `<app_data_dir>/supervisor-link.json` (Settings → Supervisor
-  → Companion link, Rust-owned, fails closed). The link never writes into a
-  working tree: `scenes.propose` commits on a new branch
-  `auric/scene-proposal/…` built from `HEAD` with git2, checked against
-  `baseHash`, and drops one inbox notification.
+- **Events are polled, not hooked**: a per-connection loop diffs the tree, the
+  output buffers and the job register every 250 ms (`subscription.rs`).
+  Requests run in order on a worker thread, so a 30 s spawn does not hold
+  events back; a subscription takes effect when its response is sent.
+- **Documents are files in the projects**, described per project as document
+  types (name, globs, optional index file, name/description fields, schema
+  path) in `<app_data_dir>/supervisor-link.json` (Settings → Supervisor →
+  Supervisor link, Rust-owned, version 2, fails closed; version 1's
+  `scenes.projects` migrates on read to one type `scene`). The content is
+  opaque JSON. The link never writes into a working tree:
+  `documents.propose` commits on a new branch `auric/proposal/…` built from
+  `HEAD` with git2, checked against `baseHash`, and drops one inbox
+  notification. `documents.get` with `rev` reads a branch and says
+  `merged: false` for a preview.
+- **Jobs are headless agents in a worktree, under the supervisor policy**
+  (`jobs.create { project, kind, payload }`, `job_runner.rs`,
+  `control_socket/link_spawn.rs`). Only kinds the project lists run; the agent
+  follows the kind's instructions file and may write only its `writes` globs.
+  Provider and model are the supervisor's rule (balancing `next`, smallest
+  ranked model), never the client's. The payload goes into the prompt fenced
+  and named as data. A 2 s tick follows each job to `job.finished`/`failed`,
+  committing leftovers in writable paths. A runaway counter (default 20 per
+  24 h, optional per project) answers `quota_exceeded`; the register
+  (`supervisor-link-jobs.json`) survives restarts.
 - Real-app check: `node scripts/probe-supervisor-link.mjs [--watch 20]`.
 
 ### The terminals in a window of their own

@@ -1,7 +1,9 @@
-//! Turns the supervisor tree and the agents' output buffers into the link's
-//! events. Pure: the caller hands in the tree and a way to read output, so the
-//! diffing is tested without a socket or an app.
+//! Turns the supervisor tree, the agents' output buffers and the job
+//! register into the link's events. Pure: the caller hands in the tree, a way
+//! to read output and the register, so the diffing is tested without a socket
+//! or an app.
 
+use super::jobs::Jobs;
 use super::protocol::SubscribeParams;
 use crate::control_socket::protocol::AgentSummary;
 use serde_json::{json, Value};
@@ -38,13 +40,15 @@ pub struct Subscription {
     known: BTreeMap<String, Fingerprint>,
     /// Per agent, the output offset the next `agent.output` starts at.
     offsets: BTreeMap<String, u64>,
+    /// `None`: no `job.*` events. Otherwise the last register event sent.
+    job_cursor: Option<u64>,
 }
 
 impl Subscription {
     /// The baseline is the tree as the subscribe response shows it: nothing in
     /// it is announced again, and output starts where it stands now unless the
     /// client named an offset to continue from.
-    pub fn start(params: &SubscribeParams, tree: &[AgentSummary]) -> Self {
+    pub fn start(params: &SubscribeParams, tree: &[AgentSummary], job_cursor: u64) -> Self {
         let mut subscription = Self {
             agent_ids: params
                 .agent_ids
@@ -53,6 +57,7 @@ impl Subscription {
             output: params.output.unwrap_or(true),
             known: BTreeMap::new(),
             offsets: BTreeMap::new(),
+            job_cursor: params.jobs.unwrap_or(true).then_some(job_cursor),
         };
         let since = params.since_offsets.clone().unwrap_or_default();
         for agent in tree {
@@ -67,6 +72,17 @@ impl Subscription {
             subscription.offsets.insert(id.clone(), from);
         }
         subscription
+    }
+
+    /// The register's events since the last call, when jobs are subscribed.
+    pub fn poll_jobs(&mut self, jobs: &Jobs) -> Vec<(&'static str, Value)> {
+        let Some(cursor) = self.job_cursor.as_mut() else {
+            return Vec::new();
+        };
+        jobs.events_after(cursor)
+            .into_iter()
+            .map(|event| (event.name, event.data))
+            .collect()
     }
 
     pub fn covers(&self, agent_id: &str) -> bool {

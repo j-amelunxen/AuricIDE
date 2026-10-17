@@ -131,9 +131,17 @@ function parseSpawnRequest(raw: unknown): SpawnRequest {
 
 const SUPERVISOR_PROVIDER = 'claude';
 
-/** A supervisor, or a supervisor's child: what Rust decided is what runs. */
+/**
+ * A supervisor, a supervisor's child, or a supervisor link job's agent
+ * (`runSource: "supervisor"` without a supervisor id, which only Rust sets):
+ * what Rust decided is what runs.
+ */
 function isVerbatimSpawn(request: SpawnRequest): boolean {
-  return Boolean(request.spawnedByAgentId) || request.role === 'supervisor';
+  return (
+    Boolean(request.spawnedByAgentId) ||
+    request.role === 'supervisor' ||
+    request.runSource === 'supervisor'
+  );
 }
 
 /**
@@ -143,8 +151,9 @@ function isVerbatimSpawn(request: SpawnRequest): boolean {
  * gap from whatever was last launched in that folder would run something the
  * policy never saw. A `null` permission mode stays the provider's own default.
  */
+// code-gate: complexity-cyclomatic - one `??` per launch field, each with the same "nothing filled in for a child" rule
 function verbatimSpawnConfig(request: SpawnRequest, providers: ProviderInfo[]): AgentConfig {
-  const child = Boolean(request.spawnedByAgentId);
+  const child = Boolean(request.spawnedByAgentId) || request.role !== 'supervisor';
   // A supervisor itself runs on Claude in v1 (ADR 0004), at that provider's
   // own default model unless the caller named one. A child gets nothing.
   const providerId = request.provider ?? (child ? null : SUPERVISOR_PROVIDER);
@@ -223,7 +232,9 @@ async function spawnFromControl(params: SpawnRequest, host: ControlHost) {
 }
 
 function starterName(params: SpawnRequest, host: ControlHost): string {
-  if (!params.spawnedByAgentId) return 'an MCP client';
+  if (!params.spawnedByAgentId) {
+    return params.runSource === 'supervisor' ? 'a supervisor link job' : 'an MCP client';
+  }
   const supervisor = host.agents.find((entry) => entry.id === params.spawnedByAgentId);
   return supervisor?.name ?? 'a supervisor';
 }
