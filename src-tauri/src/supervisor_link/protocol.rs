@@ -16,7 +16,7 @@ pub const MAX_PAYLOAD_BYTES: usize = 16_384;
 pub const DEFAULT_JOBS_LIMIT: u32 = 50;
 pub const MAX_JOBS_LIMIT: u32 = 200;
 
-pub const METHODS: [&str; 16] = [
+pub const METHODS: [&str; 17] = [
     "session.hello",
     "supervisors.spawn",
     "agents.list",
@@ -29,6 +29,7 @@ pub const METHODS: [&str; 16] = [
     "documents.search",
     "documents.get",
     "documents.resolve",
+    "documents.asset",
     "documents.propose",
     "jobs.create",
     "jobs.list",
@@ -203,6 +204,17 @@ pub struct GetParams {
     pub rev: Option<String>,
 }
 
+/// `documents.asset`: a file one of the project's document types lists under
+/// `assets`, from the working tree or a commit.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssetParams {
+    pub project: String,
+    pub path: String,
+    #[serde(default)]
+    pub rev: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResolveParams {
@@ -297,6 +309,7 @@ pub enum LinkRequest {
     DocumentSearch(SearchParams),
     DocumentGet(GetParams),
     DocumentResolve(ResolveParams),
+    DocumentAsset(AssetParams),
     DocumentPropose(ProposeParams),
     CreateJob(CreateJobParams),
     ListJobs(ListJobsParams),
@@ -330,9 +343,18 @@ pub fn parse_message(text: &str) -> Result<(Value, LinkRequest), Rejected> {
             "a message is a JSON object".into(),
         ));
     };
+    // An id that is neither a string nor a number is refused, not answered
+    // as `null`: the client could not match that answer to its request.
     let id = match envelope.remove("id") {
         Some(id @ (Value::String(_) | Value::Number(_))) => id,
-        _ => Value::Null,
+        None | Some(Value::Null) => Value::Null,
+        Some(_) => {
+            return Err(reject(
+                Value::Null,
+                "invalid_request",
+                "id must be a string or a number".into(),
+            ))
+        }
     };
     if envelope.get("v").and_then(Value::as_u64) != Some(PROTOCOL) {
         return Err(reject(
@@ -410,6 +432,7 @@ fn parse_request(method: &str, raw: Value) -> Result<LinkRequest, LinkError> {
         }
         "documents.get" => LinkRequest::DocumentGet(params(method, raw)?),
         "documents.resolve" => LinkRequest::DocumentResolve(params(method, raw)?),
+        "documents.asset" => LinkRequest::DocumentAsset(params(method, raw)?),
         "documents.propose" => {
             let propose: ProposeParams = params(method, raw)?;
             propose.base()?;
@@ -539,6 +562,7 @@ mod tests {
             "documents.resolve" => {
                 json!({ "project": "/p", "type": "t", "from": "docs/a.json", "ref": "b" })
             }
+            "documents.asset" => json!({ "project": "/p", "path": "assets/a.glb" }),
             "documents.propose" => json!({
                 "project": "/p", "type": "t", "id": "docs/a.json", "document": {}, "baseHash": null
             }),

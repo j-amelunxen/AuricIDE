@@ -27,6 +27,7 @@
     "documents.search",
     "documents.get",
     "documents.resolve",
+    "documents.asset",
     "documents.propose",
     "jobs.create",
     "jobs.list",
@@ -94,6 +95,24 @@
     {
       "name": "not JSON",
       "line": "hello",
+      "error": "invalid_request",
+      "id": null
+    },
+    {
+      "name": "an object id is refused, not answered as null",
+      "line": "{\"v\":1,\"id\":{\"n\":1},\"method\":\"agents.list\"}",
+      "error": "invalid_request",
+      "id": null
+    },
+    {
+      "name": "an array id is refused",
+      "line": "{\"v\":1,\"id\":[1],\"method\":\"agents.list\"}",
+      "error": "invalid_request",
+      "id": null
+    },
+    {
+      "name": "a boolean id is refused",
+      "line": "{\"v\":1,\"id\":true,\"method\":\"agents.list\"}",
       "error": "invalid_request",
       "id": null
     },
@@ -336,6 +355,12 @@
   },
   "maxDocumentBytes": 262144,
   "maxIndexBytes": 4194304,
+  "assets": {
+    "$comment": "documents.asset: read-only bytes of files a document type lists under `assets` (project-relative globs). The file and the path it resolves to must both match; size is capped per type by maxAssetBytes.",
+    "defaultMaxAssetBytes": 2097152,
+    "maxAssetBytes": 16777216,
+    "encoding": "base64"
+  },
   "revs": {
     "$comment": "documents.get / documents.resolve rev: a commit id or a branch or tag name. Leading '-', revision expressions and anything git does not take as a ref name are invalid_params before git sees them.",
     "maxLength": 255,
@@ -471,6 +496,47 @@
         ]
       },
       "mentions": "may write nothing"
+    },
+    {
+      "name": "an asset glob that leaves the project",
+      "config": {
+        "documentTypes": [
+          {
+            "name": "t",
+            "globs": ["a/*.json"],
+            "assets": ["../x/*.glb"]
+          }
+        ]
+      },
+      "mentions": "project-relative glob"
+    },
+    {
+      "name": "an asset cap above the maximum",
+      "config": {
+        "documentTypes": [
+          {
+            "name": "t",
+            "globs": ["a/*.json"],
+            "assets": ["a/*.glb"],
+            "maxAssetBytes": 16777217
+          }
+        ]
+      },
+      "mentions": "maxAssetBytes"
+    },
+    {
+      "name": "an asset cap of zero",
+      "config": {
+        "documentTypes": [
+          {
+            "name": "t",
+            "globs": ["a/*.json"],
+            "assets": ["a/*.glb"],
+            "maxAssetBytes": 0
+          }
+        ]
+      },
+      "mentions": "maxAssetBytes"
     }
   ],
   "jobs": {
@@ -520,7 +586,17 @@
         },
         "inWindow": 0,
         "inProject": 0,
-        "reason": "daily_limit"
+        "reason": "disabled"
+      },
+      {
+        "name": "a project limit of zero switches jobs off there",
+        "limits": {
+          "dailyLimit": 20,
+          "perProjectDailyLimit": 0
+        },
+        "inWindow": 0,
+        "inProject": 0,
+        "reason": "disabled"
       },
       {
         "name": "the project limit is reached first",

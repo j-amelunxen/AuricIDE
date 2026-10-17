@@ -12,6 +12,7 @@
 //! `jobs` and `policy` are the project half; none of them knows a document
 //! format or a job kind of its own.
 
+mod assets;
 mod documents;
 mod glob;
 pub mod jobs;
@@ -120,6 +121,9 @@ pub struct Link {
     /// Held from the quota check to the job's record, so two requests cannot
     /// both take the last slot.
     create_gate: Mutex<()>,
+    /// Agent id → when the tick first found a running job's agent gone from
+    /// the list with no end booked yet (`job_runner`, `VANISHED_GRACE_MS`).
+    vanished: Mutex<std::collections::HashMap<String, u64>>,
 }
 
 /// Whether an agent belongs to the supervisor tree: a supervisor, or an agent
@@ -166,6 +170,7 @@ impl Link {
             host,
             jobs,
             create_gate: Mutex::new(()),
+            vanished: Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -283,6 +288,12 @@ impl Link {
                 &params.document_type,
                 &params.from,
                 &params.reference,
+                params.rev.as_deref(),
+            )?),
+            LinkRequest::DocumentAsset(params) => to_value(assets::get(
+                &policy,
+                &params.project,
+                &params.path,
                 params.rev.as_deref(),
             )?),
             LinkRequest::DocumentPropose(params) => self.propose(&policy, &params),
@@ -534,6 +545,40 @@ fn close(socket: &mut WebSocket<UnixStream>, code: CloseCode, reason: &str) {
     let _ = socket.flush();
 }
 
+/// How long, and how much, the rest of an oversized message is read off
+/// after the 1009 close.
+const DRAIN_FOR: Duration = Duration::from_secs(2);
+const DRAIN_MAX_BYTES: usize = 8 * MAX_MESSAGE_BYTES;
+
+/// Closes with 1009 and then reads off what the client still sends. Over the
+/// limit the frame's payload is still unread in the socket, and closing a
+/// socket with unread data makes the kernel reset the connection: the client
+/// would see 1006 instead of our close frame. Shutting down our write side
+/// lets the client end the connection once it has read the close.
+fn close_oversized(socket: &mut WebSocket<UnixStream>) {
+    close(socket, CloseCode::Size, "message too large");
+    let stream = socket.get_mut();
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let _ = stream.set_read_timeout(Some(READ_SLICE));
+    let started = Instant::now();
+    let mut drained = 0;
+    let mut chunk = vec![0u8; 64 * 1024];
+    while started.elapsed() < DRAIN_FOR && drained < DRAIN_MAX_BYTES {
+        match std::io::Read::read(stream, &mut chunk) {
+            Ok(0) => return,
+            Ok(read) => drained += read,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => return,
+        }
+    }
+}
+
 /// Hands a request to the worker, or answers `busy` at once when its queue is
 /// full. `false`: the connection is over.
 fn queue(
@@ -639,7 +684,7 @@ fn handle_connection(stream: UnixStream, link: &Arc<Link>, limits: Limits, over_
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) => {}
             Err(tungstenite::Error::Capacity(_)) => {
-                close(&mut socket, CloseCode::Size, "message too large");
+                close_oversized(&mut socket);
                 return;
             }
             Err(_) => return,

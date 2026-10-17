@@ -13,6 +13,10 @@ export interface DocumentType {
   nameField?: string;
   descriptionField?: string;
   schema?: string;
+  /** Files the documents refer to (models, images), read-only via `documents.asset`. */
+  assets?: string[];
+  /** Largest asset handed out; Rust's default is 2 MiB, its maximum 16 MiB. */
+  maxAssetBytes?: number;
 }
 
 export interface JobKind {

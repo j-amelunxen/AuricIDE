@@ -31,6 +31,10 @@ const POLICY_VERSION: u32 = 2;
 pub const DEFAULT_DAILY_LIMIT: u32 = 20;
 pub const MAX_DAILY_LIMIT: u32 = 1000;
 
+/// Fixture `assets.defaultMaxAssetBytes` / `assets.maxAssetBytes`.
+pub const DEFAULT_MAX_ASSET_BYTES: u64 = 2 * 1_048_576;
+pub const MAX_ASSET_BYTES: u64 = 16 * 1_048_576;
+
 /// Where the documents of one type live and how a listing names them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -51,6 +55,20 @@ pub struct DocumentType {
     /// the IDE does not validate against it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
+    /// Project-relative globs of files the documents refer to (models,
+    /// images, textures). `documents.asset` reads them; nothing writes them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assets: Vec<String>,
+    /// The largest asset handed out, in bytes. Absent: `DEFAULT_MAX_ASSET_BYTES`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_asset_bytes: Option<u64>,
+}
+
+impl DocumentType {
+    /// The size cap of this type's assets.
+    pub fn asset_cap(&self) -> u64 {
+        self.max_asset_bytes.unwrap_or(DEFAULT_MAX_ASSET_BYTES)
+    }
 }
 
 /// An optional file that names and tags documents:
@@ -190,6 +208,8 @@ fn v1_document_type() -> DocumentType {
         name_field: Some("hud.title".to_string()),
         description_field: Some("hud.subtitle".to_string()),
         schema: None,
+        assets: Vec::new(),
+        max_asset_bytes: None,
     }
 }
 
@@ -237,8 +257,16 @@ fn check_project(path: &str, config: &ProjectConfig) -> Result<(), String> {
         if document_type.globs.is_empty() {
             return Err(format!("{owner} has no globs"));
         }
-        for pattern in &document_type.globs {
+        for pattern in document_type.globs.iter().chain(&document_type.assets) {
             check_glob(&owner, pattern)?;
+        }
+        if document_type
+            .max_asset_bytes
+            .is_some_and(|cap| cap == 0 || cap > MAX_ASSET_BYTES)
+        {
+            return Err(format!(
+                "{owner}: maxAssetBytes is 1 to {MAX_ASSET_BYTES} bytes"
+            ));
         }
         let files = document_type
             .index

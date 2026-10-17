@@ -86,10 +86,23 @@ Convention for clients: honour an `AURIC_LINK_SOCKET` environment variable as
 an override of the socket path (the probe script does). The development build
 and the installed app share the path; whichever starts first serves it.
 
-With Node.js and the [`ws`](https://www.npmjs.com/package/ws) package the URL
-is `ws+unix://<socket path>:/v1`. In Python, `websockets.unix_connect(path,
-"ws://localhost/v1")`. A browser cannot connect: there is no TCP port. A web
-UI talks to its own backend, and the backend holds the connection.
+With Node.js and the [`ws`](https://www.npmjs.com/package/ws) package, hand
+the unix socket over as the connection and use a plain URL for the handshake:
+
+```js
+import net from 'node:net';
+import WebSocket from 'ws';
+const ws = new WebSocket('ws://localhost/v1', {
+  createConnection: () => net.connect(socketPath),
+});
+```
+
+Do not put the path into a `ws+unix://<socket path>:/v1` URL: the default
+macOS path contains a space ("Application Support"), and `ws` turns it into
+`%20` and fails with `ENOENT`. In Python, `websockets.unix_connect(path,
+"ws://localhost/v1")` takes the path as its own argument and has no such
+problem. A browser cannot connect: there is no TCP port. A web UI talks to its
+own backend, and the backend holds the connection.
 
 ### Handshake and versioning
 
@@ -164,19 +177,20 @@ never content fetched from elsewhere.**
 
 **Limits.**
 
-| Limit                           | Value                                                | Over it                                                            |
-| ------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------ |
-| Inbound message                 | 1 MiB                                                | connection closed with code 1009                                   |
-| Open connections (all clients)  | 16                                                   | one `error` message `busy` (`too_many_connections`), close 1013    |
-| Requests waiting per connection | 64 (plus the one being answered)                     | that request answered `busy` (`too_many_pending_requests`) at once |
-| Handshake                       | 10 s from connect                                    | connection dropped                                                 |
-| Client not reading              | an outgoing message may wait 10 s                    | connection dropped                                                 |
-| Document                        | 256 KiB                                              | `document_invalid`                                                 |
-| Index file                      | 4 MiB                                                | the index is ignored, names fall back                              |
-| `jobs.create` payload           | 16 KiB as JSON                                       | `invalid_params`                                                   |
-| `agents.read` `tailBytes`       | 262144                                               | `invalid_params`                                                   |
-| `documents.search`              | 200 results, 8 folder levels, 2000 files per project | results capped                                                     |
-| Jobs                            | the [counter](#the-job-counter), default 20 per 24 h | `quota_exceeded`                                                   |
+| Limit                           | Value                                                   | Over it                                                            |
+| ------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------ |
+| Inbound message                 | 1 MiB                                                   | connection closed with code 1009 (after the rest is read off)      |
+| Open connections (all clients)  | 16                                                      | one `error` message `busy` (`too_many_connections`), close 1013    |
+| Requests waiting per connection | 64 (plus the one being answered)                        | that request answered `busy` (`too_many_pending_requests`) at once |
+| Handshake                       | 10 s from connect                                       | connection dropped                                                 |
+| Client not reading              | an outgoing message may wait 10 s                       | connection dropped                                                 |
+| Document                        | 256 KiB                                                 | `document_invalid`                                                 |
+| Index file                      | 4 MiB                                                   | the index is ignored, names fall back                              |
+| Asset (`documents.asset`)       | `maxAssetBytes` per type, default 2 MiB, at most 16 MiB | `document_invalid`                                                 |
+| `jobs.create` payload           | 16 KiB as JSON                                          | `invalid_params`                                                   |
+| `agents.read` `tailBytes`       | 262144                                                  | `invalid_params`                                                   |
+| `documents.search`              | 200 results, 8 folder levels, 2000 files per project    | results capped                                                     |
+| Jobs                            | the [counter](#the-job-counter), default 20 per 24 h    | `quota_exceeded`                                                   |
 
 These protect the IDE from a misbehaving client. They are not an access
 control: anything running as your user can do more than this socket allows.
@@ -186,7 +200,7 @@ control: anything running as your user can do more than this socket allows.
 ```ts
 type ClientMessage = {
   v: 1;
-  id: string | number; // echoed in the response
+  id: string | number; // echoed in the response; anything else is invalid_request
   method: string;
   params?: object; // omitted = {}
 };
@@ -227,6 +241,7 @@ type LinkError = { code: string; message: string; reason?: string };
 | `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                              | `{ documents: DocumentEntry[] }`        |
 | `documents.get`      | `{ project, type, id, rev?: string }`                                                              | `Document`                              |
 | `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                                       | `Document`                              |
+| `documents.asset`    | `{ project, path, rev?: string }`                                                                  | `Asset`                                 |
 | `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string }`              | `Proposal`                              |
 | `jobs.create`        | `{ project, kind, payload }` (`payload` required, `null` allowed)                                  | `JobStarted`                            |
 | `jobs.list`          | `{ project?: string, status?: 'running' \| 'finished' \| 'failed', limit?: number }`               | `{ jobs: Job[] }`                       |
@@ -301,7 +316,13 @@ type DocumentProject = {
   path: string;
   name: string;
   isGitRepo: boolean;
-  documentTypes: { name: string; globs: string[]; schema: string | null }[];
+  documentTypes: {
+    name: string;
+    globs: string[];
+    schema: string | null;
+    assets: string[]; // globs documents.asset reads; [] = none
+    maxAssetBytes: number;
+  }[];
   jobKinds: string[];
 };
 
@@ -325,6 +346,19 @@ type Document = {
   rev: string | null; // full commit id it was read at; null = working tree
   merged: boolean | null; // null without rev; false = not in HEAD yet
   document: object;
+};
+
+type Asset = {
+  project: string;
+  type: string; // the document type whose assets glob matched
+  path: string; // project-relative, as requested
+  rev: string | null; // as in Document
+  merged: boolean | null;
+  size: number; // bytes
+  sha256: string; // hex
+  hash: string; // git blob hash, comparable with Document.hash
+  encoding: 'base64';
+  data: string;
 };
 
 type Proposal = {
@@ -368,6 +402,30 @@ reads the first that exists.
 ← { "v": 1, "type": "response", "id": 3, "ok": true,
     "result": { "id": "docs/modules/auth.diagram.json", "rev": null, "merged": null, "document": { "…": "…" }, "…": "…" } }
 ```
+
+**`documents.asset`** reads a file a document refers to — a model, an image,
+a texture — as base64. It is read-only and opaque: AuricIDE never looks
+inside an asset. A path is readable when an `assets` glob of one of the
+project's document types matches it, under the same rules as
+`documents.get`: a project-relative path of plain segments (no `..`, no
+hidden names), with `rev` a commit id, branch or tag (only regular files
+count there, not symlinks). In the working tree the file a symlink points to
+must lie inside the project **and** match an `assets` glob itself; otherwise
+the answer is `document_not_found`. A path no `assets` glob names is
+`invalid_params`; one over the type's `maxAssetBytes` is `document_invalid`,
+refused before it is read.
+
+```json
+→ { "v": 1, "id": 5, "method": "documents.asset",
+    "params": { "project": "/home/me/src/example", "path": "scenes/assets/desk.glb" } }
+← { "v": 1, "type": "response", "id": 5, "ok": true,
+    "result": { "project": "/home/me/src/example", "type": "scene", "path": "scenes/assets/desk.glb",
+                "rev": null, "merged": null, "size": 48213, "sha256": "9f2c…", "hash": "e1a0…",
+                "encoding": "base64", "data": "Z2xURgIAAAA…" } }
+```
+
+To show a job's or a proposal's version of an asset, pass the same `rev` you
+read its documents with.
 
 **`documents.propose`** writes the full new content as a commit on a new
 branch built from `HEAD`. `baseHash` is required: the `hash` you read, or
@@ -420,7 +478,7 @@ type Job = {
 };
 
 type JobErrorCode =
-  | 'agent_failed' // the agent ended with an error
+  | 'agent_failed' // the agent exited with an error, or was stopped from outside (agents.kill, Stop)
   | 'no_changes' // it ended without changing a file it may write
   | 'document_invalid' // a document it wrote is no JSON object or too large
   | 'cancelled' // jobs.cancel, or its project or kind was withdrawn while it ran
@@ -526,14 +584,16 @@ object:
 
 **Document type**
 
-| Field              | Required | Meaning                                                                                          |
-| ------------------ | -------- | ------------------------------------------------------------------------------------------------ |
-| `name`             | yes      | `^[a-z0-9][a-z0-9._-]*$`, at most 64 characters, unique in the project                           |
-| `globs`            | yes      | project-relative globs; `*` and `?` within one segment, `**` as a whole segment                  |
-| `index`            | no       | a file `{ "<entriesKey>": [{ "id", "name", "description", "tags" }] }` that names documents      |
-| `nameField`        | no       | dotted path of a string in the document used as its name when the index has none                 |
-| `descriptionField` | no       | the same for the description                                                                     |
-| `schema`           | no       | project-relative path of a JSON schema, handed to clients and agents; AuricIDE does not check it |
+| Field              | Required | Meaning                                                                                                                                                      |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`             | yes      | `^[a-z0-9][a-z0-9._-]*$`, at most 64 characters, unique in the project                                                                                       |
+| `globs`            | yes      | project-relative globs; `*` and `?` within one segment, `**` as a whole segment                                                                              |
+| `index`            | no       | a file `{ "<entriesKey>": [{ "id", "name", "description", "tags" }] }` that names documents                                                                  |
+| `nameField`        | no       | dotted path of a string in the document used as its name when the index has none                                                                             |
+| `descriptionField` | no       | the same for the description                                                                                                                                 |
+| `schema`           | no       | project-relative path of a JSON schema, handed to clients and agents; AuricIDE does not check it                                                             |
+| `assets`           | no       | project-relative globs of files the documents refer to, readable with `documents.asset`; never written by the link and not part of a kind's default `writes` |
+| `maxAssetBytes`    | no       | the largest asset handed out, 1 to 16777216 bytes; default 2097152 (2 MiB)                                                                                   |
 
 A document is any file one of the globs matches whose content is a JSON object
 of at most 256 KiB. AuricIDE checks nothing else — **validate what you read
@@ -564,7 +624,9 @@ objects to a scene:
       "globs": ["scenes/**/*.scene.json"],
       "index": { "path": "scenes/index.json", "entriesKey": "scenes" },
       "nameField": "title",
-      "schema": "scenes/scene.schema.json"
+      "schema": "scenes/scene.schema.json",
+      "assets": ["scenes/assets/**/*.glb", "scenes/assets/**/*.png"],
+      "maxAssetBytes": 8388608
     }
   ],
   "jobKinds": [
@@ -579,7 +641,8 @@ objects to a scene:
 
 A client would then call `documents.search` with `"type": "scene"`, render
 what `documents.get` returns, follow links between scenes with
-`documents.resolve`, and ask for `jobs.create` with
+`documents.resolve`, load the models a scene names with `documents.asset`
+(for example `scenes/assets/desk.glb`), and ask for `jobs.create` with
 `{ "kind": "scene.extend", "payload": { "scene": "scenes/lobby.scene.json", "request": "add a reception desk" } }`.
 
 ## Previewing unmerged results
@@ -610,9 +673,12 @@ A guard against a client that starts jobs in a loop, not a budget:
 
 - at most `dailyLimit` jobs (default **20**) in any 24 hours across all
   projects, and optionally `perProjectDailyLimit` per project;
-- `0` switches jobs off; each value is at most 1000;
+- each value is at most 1000;
 - over it, `jobs.create` answers `quota_exceeded` with `reason`
-  `daily_limit` or `project_daily_limit` and says when the next slot frees up.
+  `daily_limit` or `project_daily_limit` and says when the next slot frees up;
+- `0` switches jobs off (for a project, if it is its `perProjectDailyLimit`):
+  `jobs.create` answers `quota_exceeded` with `reason` `disabled`, and no slot
+  ever frees up until the limit is raised.
 
 A job counts from the moment its agent is started, even if it fails later.
 Requests refused before that (unknown kind, no repository, policy) do not
@@ -628,31 +694,31 @@ back frees no slot, setting it forward by a day does.
 
 ## Error codes
 
-| code                     | meaning                                                                                |
-| ------------------------ | -------------------------------------------------------------------------------------- |
-| `invalid_request`        | not JSON, not a text frame, no `method`                                                |
-| `unsupported_version`    | `v` is not `1`                                                                         |
-| `unknown_method`         | no such method in this build                                                           |
-| `invalid_params`         | params missing, of the wrong type, unknown or out of range (also a bad `rev`)          |
-| `forbidden_agent_caller` | the connecting process runs inside an IDE agent                                        |
-| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed                          |
-| `agent_not_running`      | the agent is in the tree but not running                                               |
-| `headless_no_stdin`      | a headless agent cannot be typed into                                                  |
-| `supervisor_unavailable` | no project is open to supervisors yet (Settings → Supervisor)                          |
-| `provider_denied`        | the project's provider policy refused the spawn                                        |
-| `provider_unsupported`   | a supervisor cannot run on that provider                                               |
-| `frontend_unavailable`   | the IDE window did not answer within 30 s                                              |
-| `document_not_visible`   | the project is not shared with the link                                                |
-| `document_not_found`     | no such document (at that revision)                                                    |
-| `document_invalid`       | not a JSON object, or too large                                                        |
-| `document_conflict`      | `baseHash` does not match `HEAD`                                                       |
-| `not_a_git_repo`         | the project is not the root of a git repository, or has no commit                      |
-| `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule                   |
-| `job_kind_not_allowed`   | the project does not list that job kind                                                |
-| `quota_exceeded`         | the job counter is full; `reason` is `daily_limit` or `project_daily_limit`            |
-| `unknown_job`            | no such job                                                                            |
-| `busy`                   | a limit was reached; `reason` is `too_many_connections` or `too_many_pending_requests` |
-| `internal`               | anything else; the message says what                                                   |
+| code                     | meaning                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| `invalid_request`        | not JSON, not a text frame, no `method`, an `id` that is neither string nor number        |
+| `unsupported_version`    | `v` is not `1`                                                                            |
+| `unknown_method`         | no such method in this build                                                              |
+| `invalid_params`         | params missing, of the wrong type, unknown or out of range (also a bad `rev`)             |
+| `forbidden_agent_caller` | the connecting process runs inside an IDE agent                                           |
+| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed                             |
+| `agent_not_running`      | the agent is in the tree but not running                                                  |
+| `headless_no_stdin`      | a headless agent cannot be typed into                                                     |
+| `supervisor_unavailable` | no project is open to supervisors yet (Settings → Supervisor)                             |
+| `provider_denied`        | the project's provider policy refused the spawn                                           |
+| `provider_unsupported`   | a supervisor cannot run on that provider                                                  |
+| `frontend_unavailable`   | the IDE window did not answer within 30 s                                                 |
+| `document_not_visible`   | the project is not shared with the link                                                   |
+| `document_not_found`     | no such document (at that revision)                                                       |
+| `document_invalid`       | not a JSON object, or too large                                                           |
+| `document_conflict`      | `baseHash` does not match `HEAD`                                                          |
+| `not_a_git_repo`         | the project is not the root of a git repository, or has no commit                         |
+| `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule                      |
+| `job_kind_not_allowed`   | the project does not list that job kind                                                   |
+| `quota_exceeded`         | the job counter is full (`reason` `daily_limit`, `project_daily_limit`) or 0 (`disabled`) |
+| `unknown_job`            | no such job                                                                               |
+| `busy`                   | a limit was reached; `reason` is `too_many_connections` or `too_many_pending_requests`    |
+| `internal`               | anything else; the message says what                                                      |
 
 ## A minimal client
 
@@ -662,6 +728,7 @@ shared projects and prints events until you press Ctrl-C.
 ```js
 // supervisor-client.mjs — node supervisor-client.mjs
 import WebSocket from 'ws';
+import net from 'node:net';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
@@ -672,7 +739,9 @@ const dataDir =
 const socketPath =
   process.env.AURIC_LINK_SOCKET ?? join(dataDir, 'com.auricide.ide', 'supervisor-link.sock');
 
-const ws = new WebSocket(`ws+unix://${socketPath}:/v1`);
+// The socket is the connection; the URL only shapes the handshake. A
+// ws+unix:// URL would break on the space in "Application Support".
+const ws = new WebSocket('ws://localhost/v1', { createConnection: () => net.connect(socketPath) });
 const pending = new Map();
 let nextId = 1;
 
@@ -737,25 +806,27 @@ It honours `AURIC_LINK_SOCKET` and exits non-zero on a refused request.
 
 ## Troubleshooting
 
-| Symptom                                             | Cause and fix                                                                                                                                                               |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ENOENT` / `ECONNREFUSED` on connect                | AuricIDE is not running, or another build serves the socket. Check the path for your OS.                                                                                    |
-| The socket file never appears                       | AuricIDE prints `Supervisor link unavailable: …` to its standard error. Unix socket paths are limited to about 104 bytes on macOS; a very long home folder path exceeds it. |
-| HTTP 404 on the upgrade                             | The request path is not `/v1`.                                                                                                                                              |
-| `forbidden_agent_caller` and close 1008             | Your client runs inside an IDE agent (its terminal, a tool it started). Start it from a normal terminal.                                                                    |
-| `busy` / `too_many_connections`                     | Sixteen connections are open. Close idle clients; reuse one connection.                                                                                                     |
-| `busy` / `too_many_pending_requests`                | You sent more than 64 requests without waiting for answers. Wait for responses before sending more.                                                                         |
-| Close 1009                                          | A message was larger than 1 MiB.                                                                                                                                            |
-| `supervisor_unavailable`                            | No project is open to supervisors. Allow one in Settings → Supervisor.                                                                                                      |
-| `documents.projects` is empty                       | No project is shared in Settings → Supervisor → Supervisor link, or the settings file is broken (it then shares nothing).                                                   |
-| `document_not_visible`                              | The project path is not shared, or differs (use the path `documents.projects` returns).                                                                                     |
-| A file does not show up in `documents.search`       | Its path does not match a glob, has a hidden segment, is deeper than 8 levels below the glob's base, is over 256 KiB, or is not a JSON object.                              |
-| `invalid_params` for `rev`                          | Use a commit id, branch or tag name; expressions like `HEAD~1` are not read.                                                                                                |
-| `supervisor_denied`, `reason: "no_ranked_model"`    | No allowed model of the chosen provider has a size. Give the models a `rank` in the provider config.                                                                        |
-| `supervisor_denied`, `reason: "project_not_listed"` | The project is shared with the link but not open to supervisors.                                                                                                            |
-| `quota_exceeded`                                    | The counter is full. The message says when a slot frees up; raise it in the settings if that is intended.                                                                   |
-| A job fails with `no_changes`                       | The agent wrote nothing it may write. Check the instructions file and the kind's `writes`.                                                                                  |
-| A job fails with `interrupted`                      | AuricIDE quit while it ran. Its worktree and branch are still there; remove them when done (`git worktree remove`, `git branch -D`).                                        |
+| Symptom                                             | Cause and fix                                                                                                                                                                                           |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ENOENT` / `ECONNREFUSED` on connect                | AuricIDE is not running, or another build serves the socket. Check the path for your OS.                                                                                                                |
+| The socket file never appears                       | AuricIDE prints `Supervisor link unavailable: …` to its standard error. Unix socket paths are limited to about 104 bytes on macOS; a very long home folder path exceeds it.                             |
+| HTTP 404 on the upgrade                             | The request path is not `/v1`.                                                                                                                                                                          |
+| `forbidden_agent_caller` and close 1008             | Your client runs inside an IDE agent (its terminal, a tool it started). Start it from a normal terminal.                                                                                                |
+| `busy` / `too_many_connections`                     | Sixteen connections are open. Close idle clients; reuse one connection.                                                                                                                                 |
+| `busy` / `too_many_pending_requests`                | You sent more than 64 requests without waiting for answers. Wait for responses before sending more.                                                                                                     |
+| Close 1009                                          | A message was larger than 1 MiB.                                                                                                                                                                        |
+| `ENOENT` with `%20` in the path, from `ws+unix://`  | `ws` encodes the space in the socket path (macOS: "Application Support") and looks for a file that does not exist. Pass the socket through `createConnection` as shown under [Connecting](#connecting). |
+| `supervisor_unavailable`                            | No project is open to supervisors. Allow one in Settings → Supervisor.                                                                                                                                  |
+| `documents.projects` is empty                       | No project is shared in Settings → Supervisor → Supervisor link, or the settings file is broken (it then shares nothing).                                                                               |
+| `document_not_visible`                              | The project path is not shared, or differs (use the path `documents.projects` returns).                                                                                                                 |
+| A file does not show up in `documents.search`       | Its path does not match a glob, has a hidden segment, is deeper than 8 levels below the glob's base, is over 256 KiB, or is not a JSON object.                                                          |
+| `invalid_params` for `rev`                          | Use a commit id, branch or tag name; expressions like `HEAD~1` are not read.                                                                                                                            |
+| `supervisor_denied`, `reason: "no_ranked_model"`    | No allowed model of the chosen provider has a size. Give the models a `rank` in the provider config.                                                                                                    |
+| `supervisor_denied`, `reason: "project_not_listed"` | The project is shared with the link but not open to supervisors.                                                                                                                                        |
+| `quota_exceeded`                                    | The counter is full. The message says when a slot frees up; raise it in the settings if that is intended. With `reason: "disabled"` the limit is 0: jobs are off.                                       |
+| A job fails with `no_changes`                       | The agent wrote nothing it may write. Check the instructions file and the kind's `writes`.                                                                                                              |
+| A job fails with `agent_failed`                     | The agent exited with an error, or someone stopped it. What it committed is still on the job's branch (`commit`).                                                                                       |
+| A job fails with `interrupted`                      | AuricIDE quit while it ran. Its worktree and branch are still there; remove them when done (`git worktree remove`, `git branch -D`).                                                                    |
 
 ## Compatibility and stability
 

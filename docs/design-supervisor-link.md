@@ -59,17 +59,30 @@ client server ──WebSocket over unix socket──▶ Rust supervisor_link ─
 | Permissions | Mode 0600. Rust removes a stale file before binding.                                                          |
 | Protocol    | WebSocket (RFC 6455) over that socket. Request path `/v1`; any other path is answered with HTTP 404.          |
 | Frames      | Text frames, one JSON message per frame. Binary frames are refused (`invalid_request`).                       |
-| Max message | 1 MiB inbound. A larger one closes the connection with code 1009.                                             |
+| Max message | 1 MiB inbound. A larger one closes the connection with code 1009; the rest of it is read off first.           |
 | Keep-alive  | The server pings every 30 s. Standard clients answer automatically.                                           |
 | Limits      | Fixture `limits`; see "Limits" below.                                                                         |
 
-With Node's `ws` package:
+With Node's `ws` package, the socket is handed over as the connection and the
+URL only shapes the handshake:
 
 ```ts
+import net from 'node:net';
 import WebSocket from 'ws';
 const socket = `${process.env.HOME}/Library/Application Support/com.auricide.ide/supervisor-link.sock`;
-const ws = new WebSocket(`ws+unix://${socket}:/v1`);
+const ws = new WebSocket('ws://localhost/v1', { createConnection: () => net.connect(socket) });
 ```
+
+A `ws+unix://${socket}:/v1` URL does not work with that path: `ws` cannot
+dial a `ws+unix://` URL whose path holds a space, and the macOS default
+("Application Support") does.
+
+**Why 1009 needs a drain.** Over the limit the server stops after the frame
+header, so the payload is still unread in the socket. Closing a unix socket
+with unread data resets the connection, and the client then saw 1006 instead
+of the close frame now and then. The server therefore sends the close frame,
+shuts down its write side and reads off what the client still sends (at most
+2 s and 8 MiB) before it lets go.
 
 ### Limits
 
@@ -134,7 +147,7 @@ Every message carries `"v": 1`. A message with another `v` is answered with
 ```ts
 type ClientMessage = {
   v: 1;
-  id: string | number; // echoed in the response
+  id: string | number; // echoed in the response; any other JSON type is invalid_request (fixture `messages`)
   method: Method;
   params?: object; // omitted = {}
 };
@@ -175,6 +188,7 @@ type LinkError = { code: ErrorCode; message: string; reason?: string };
 | `documents.search`   | `{ query?: string, project?: string, type?: string, limit?: number }`                 | `{ documents: DocumentEntry[] }`  |
 | `documents.get`      | `{ project, type, id, rev?: string }`                                                 | `Document`                        |
 | `documents.resolve`  | `{ project, type, from, ref, rev?: string }`                                          | `Document`                        |
+| `documents.asset`    | `{ project, path, rev?: string }`                                                     | `Asset`                           |
 | `documents.propose`  | `{ project, type, id, document: object, baseHash: string \| null, message?: string }` | `Proposal`                        |
 | `jobs.create`        | `{ project, kind: string, payload: any }`                                             | `JobStarted`                      |
 | `jobs.list`          | `{ project?: string, status?: JobStatus, limit?: number }`                            | `{ jobs: Job[] }`                 |
@@ -427,6 +441,11 @@ types matches. Nothing else is read.
   (`.diagram.json` for `docs/**/*.diagram.json`).
 - **Hash:** the git blob hash of the file's bytes (`git hash-object`), so a
   client can compare it with git itself.
+- **Assets:** files a document refers to (a model, an image) that are no
+  JSON. A type lists them under `assets` (project-relative globs) with an
+  optional `maxAssetBytes` (default 2 MiB, at most 16 MiB; fixture `assets`).
+  `documents.asset` reads them; nothing in the link writes them, and they are
+  not part of a job kind's default `writes`.
 
 ### `documents.projects`
 
@@ -435,7 +454,13 @@ type DocumentProject = {
   path: string;
   name: string;
   isGitRepo: boolean;
-  documentTypes: { name: string; globs: string[]; schema: string | null }[];
+  documentTypes: {
+    name: string;
+    globs: string[];
+    schema: string | null;
+    assets: string[];
+    maxAssetBytes: number;
+  }[];
   jobKinds: string[];
 };
 ```
@@ -519,6 +544,42 @@ Candidates the type's globs do not match are dropped; the first that exists
 (at `rev`, or in the working tree) is read like `documents.get`. None exists:
 `document_not_found`. None is a document of the type, or `ref` is empty,
 absolute or climbs out of the project: `invalid_params`.
+
+### `documents.asset`
+
+`{ project, path, rev? }` → the bytes of one asset, base64:
+
+```ts
+type Asset = {
+  project: string;
+  type: string; // the first document type whose assets glob matches path
+  path: string;
+  rev: string | null; // full commit id; null = working tree
+  merged: boolean | null; // as documents.get
+  size: number;
+  sha256: string; // hex
+  hash: string; // git blob hash
+  encoding: 'base64';
+  data: string;
+};
+```
+
+The rules are `documents.get`'s, with one more for symlinks:
+
+- `path` follows the id grammar (fixture `documentIds`) and must match an
+  `assets` glob of the project; otherwise `invalid_params`.
+- Working tree: the file must resolve inside the project, and the path it
+  resolves to must itself be valid and match an `assets` glob. A symlink
+  `assets/x.glb → ../private/key` is therefore `document_not_found`, as is
+  one out of the project. Without the second check, one visible name would
+  open every file in the project.
+- With `rev` (same grammar as `documents.get`): only a regular blob at that
+  path counts; a committed symlink is `document_not_found`.
+- Larger than the type's `maxAssetBytes`: `document_invalid`, decided from
+  the file's metadata or the blob's size before anything is read.
+
+The answer can be up to about 1.4 times the cap as base64. The 1 MiB limit is
+on what a client sends, not on what it receives.
 
 ### `documents.propose`
 
@@ -646,10 +707,10 @@ type Job = {
   cancelRequested: boolean;
 };
 type JobErrorCode =
-  | 'agent_failed' // the agent ended with an error
+  | 'agent_failed' // the agent exited with an error, or was killed from outside
   | 'no_changes' // it ended without changing a file it may write
   | 'document_invalid' // a document it wrote is no JSON object or too large
-  | 'cancelled' // jobs.cancel
+  | 'cancelled' // jobs.cancel, or its project or kind was withdrawn
   | 'interrupted' // AuricIDE quit while it ran
   | 'internal';
 ```
@@ -660,6 +721,17 @@ type JobErrorCode =
 | `job.progress` | `{ jobId, project, kind, agentId, branch, changed: string[], elapsedMs }` | the set of changed paths changed |
 | `job.finished` | `{ job: Job }`                                                            | it ended with valid changes      |
 | `job.failed`   | `{ job: Job }` (`job.error` set)                                          | it ended otherwise               |
+
+**How the tick knows the agent failed.** A finished agent leaves the agent
+list at once, so the list cannot say how it ended. The tick reads what the IDE
+booked when the agent stopped: the run result (`agents/run_results.rs`; a
+non-zero exit is `status: error`, a kill has no exit code), else the status
+its output buffer was closed with. An exit with an error and a kill that was
+not `jobs.cancel` both end the job as `agent_failed`, even when the branch
+holds commits — the agent did not finish, and the commits stay on the branch
+for review. The manager drops a process from the list a moment before it
+books the exit; a tick in between waits, for at most 10 s
+(`VANISHED_GRACE_MS`), and then books an ordinary exit.
 
 `job.*` events go to every subscribed connection, whoever created the job.
 A headless agent prints nothing until it ends, so `job.progress` (from the
@@ -694,8 +766,10 @@ unknown id is `unknown_job`.
 
 Not a budget, a guard against a client that starts jobs in a loop: at most
 `jobs.dailyLimit` jobs (default **20**) in any 24 hours in all projects
-together, and optionally `jobs.perProjectDailyLimit` per project. `0` switches
-jobs off; each is at most 1000. The window uses the wall clock: a job dated
+together, and optionally `jobs.perProjectDailyLimit` per project. Each is at
+most 1000. `0` switches jobs off (all of them, or in that project): the answer
+is `quota_exceeded` with `reason` `disabled` and a message that says so, not
+when a slot frees up, because none will. The window uses the wall clock: a job dated
 after "now" (the clock was set back) counts as just started, so setting the
 clock back frees no slot; setting it forward by a day does. Over it, `jobs.create` answers
 `quota_exceeded` with `reason` `daily_limit` or `project_daily_limit` and a
@@ -727,7 +801,7 @@ run (`runSource: "supervisor"`).
 | `not_a_git_repo`         | the project has no git repository, or no commit to build a branch on               |
 | `supervisor_denied`      | the supervisor policy refused a job's agent; `reason` names the rule               |
 | `job_kind_not_allowed`   | the project does not list that job kind                                            |
-| `quota_exceeded`         | the job counter is full; `reason` is `daily_limit` or `project_daily_limit`        |
+| `quota_exceeded`         | the counter is full (`daily_limit`, `project_daily_limit`) or 0 (`disabled`)       |
 | `unknown_job`            | no such job                                                                        |
 | `busy`                   | a limit was reached; `reason` `too_many_connections` / `too_many_pending_requests` |
 | `internal`               | anything else; the message says what                                               |

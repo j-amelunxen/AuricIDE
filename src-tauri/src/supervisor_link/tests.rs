@@ -27,6 +27,7 @@ struct Harness {
     backend: Arc<FakeBackend>,
     buffers: Arc<OutputBuffers>,
     host: Arc<FakeHost>,
+    run_results: Arc<RunResults>,
     link: Arc<Link>,
 }
 
@@ -58,11 +59,12 @@ fn harness(agents: Vec<AgentInfo>) -> Harness {
     });
     pending.mark_ready();
     let buffers = Arc::new(OutputBuffers::default());
+    let run_results = Arc::new(RunResults::default());
     let dispatcher = Arc::new(Dispatcher::new(
         backend.clone(),
         buffers.clone(),
         pending,
-        Arc::new(RunResults::default()),
+        run_results.clone(),
         Duration::from_millis(200),
     ));
     let host = Arc::new(FakeHost::default());
@@ -71,6 +73,7 @@ fn harness(agents: Vec<AgentInfo>) -> Harness {
         backend,
         buffers,
         host,
+        run_results,
         link,
     }
 }
@@ -393,6 +396,31 @@ fn document_methods_see_no_project_without_a_policy() {
     assert!(h.host.notified.lock().unwrap().is_empty());
 }
 
+#[test]
+fn documents_asset_answers_over_the_link_and_projects_name_the_asset_globs() {
+    let p = crate::supervisor_link::test_support::Project::new();
+    p.write("docs/assets/m.bin", "model");
+    let h = harness(vec![]);
+    *h.host.policy.lock().unwrap() = p.policy();
+    let asset = ask(
+        &h.link,
+        &json!({ "v": 1, "id": 1, "method": "documents.asset",
+                 "params": { "project": p.path(), "path": "docs/assets/m.bin" } })
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(asset["data"], "bW9kZWw=");
+    assert_eq!(asset["encoding"], "base64");
+    assert_eq!(asset["size"], 5);
+    assert_eq!(asset["type"], "diagram");
+    assert_eq!(asset["rev"], Value::Null);
+
+    let projects = ask(&h.link, r#"{"v":1,"id":2,"method":"documents.projects"}"#).unwrap();
+    let listed = &projects["projects"][0]["documentTypes"][0];
+    assert_eq!(listed["assets"], json!(["docs/assets/**/*.bin"]));
+    assert_eq!(listed["maxAssetBytes"], 2 * 1_048_576);
+}
+
 #[path = "tests_jobs.rs"]
 mod jobs_flow;
 
@@ -596,6 +624,30 @@ mod socket {
         let path = serve_in(dir.path(), h.link.clone());
         let error = connect(&path, "ws://localhost/v2").unwrap_err();
         assert!(error.contains("404"), "{error}");
+    }
+
+    #[test]
+    fn a_message_over_the_limit_is_closed_with_1009_every_time() {
+        let h = harness(vec![]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = serve_in(dir.path(), h.link.clone());
+        // The rest of the frame is still unread when the server closes; that
+        // used to reset the connection now and then (1006 at the client).
+        for _ in 0..5 {
+            let mut socket = connect(&path, "ws://localhost/v1").unwrap();
+            let oversized = "x".repeat(MAX_MESSAGE_BYTES + 1);
+            socket
+                .send(Message::text(oversized))
+                .expect("the server reads the whole message off");
+            let code = loop {
+                match socket.read() {
+                    Ok(Message::Close(frame)) => break frame.map(|f| f.code),
+                    Ok(_) => {}
+                    Err(error) => panic!("no close frame: {error}"),
+                }
+            };
+            assert_eq!(code, Some(CloseCode::Size));
+        }
     }
 
     #[test]

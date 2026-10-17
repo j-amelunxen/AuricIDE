@@ -105,8 +105,16 @@ fn started_record(
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Ending {
     Exited,
+    /// A non-zero exit.
     Failed,
+    /// Stopped from outside (`agents.kill`, the Stop button), not by the job.
+    Killed,
 }
+
+/// How long a job's agent may be missing from the list with no end booked
+/// before the job is closed anyway. The manager drops a process from the list
+/// first and books its exit a moment later; a tick landing in between waits.
+pub(super) const VANISHED_GRACE_MS: u64 = 10_000;
 
 impl Link {
     /// Step 3: room under the counter, or `quota_exceeded` naming the limit.
@@ -266,25 +274,65 @@ impl Link {
         let policy = self.host.policy();
         let agents = self.dispatcher.summaries();
         for job in running {
-            let status = agents
+            let listed = agents
                 .iter()
                 .find(|agent| agent.info.id == job.agent_id)
                 .map(|agent| agent.info.status.clone());
-            match status {
-                Some(AgentStatus::Running | AgentStatus::Queued) => {
-                    if let Some(reason) = Self::withdrawn(&policy, &job) {
-                        self.request_cancel(&job, Some(reason));
-                    } else if job.cancel_requested {
-                        self.kill_agent(&job.agent_id);
-                    } else {
-                        self.job_progress(&job, now);
-                    }
+            if let Some(AgentStatus::Running | AgentStatus::Queued) = listed {
+                if let Some(reason) = Self::withdrawn(&policy, &job) {
+                    self.request_cancel(&job, Some(reason));
+                } else if job.cancel_requested {
+                    self.kill_agent(&job.agent_id);
+                } else {
+                    self.job_progress(&job, now);
                 }
-                Some(AgentStatus::Error) => self.finish_job(&job, Ending::Failed, now),
-                // Idle, or the card was cleared: the run is over.
-                _ => self.finish_job(&job, Ending::Exited, now),
+                continue;
+            }
+            let ending = self.ending_of(&job.agent_id).or(match listed {
+                Some(AgentStatus::Error) => Some(Ending::Failed),
+                Some(_) => Some(Ending::Exited),
+                None => None,
+            });
+            match ending {
+                Some(ending) => self.finish_job(&job, ending, now),
+                // How it ended does not matter for a cancelled job, and past
+                // the grace nothing will say any more (a result evicted, a
+                // card cleared long ago): booked as an ordinary exit.
+                None if job.cancel_requested
+                    || self.missing_for(&job.agent_id, now) >= VANISHED_GRACE_MS =>
+                {
+                    self.finish_job(&job, Ending::Exited, now)
+                }
+                None => {}
             }
         }
+    }
+
+    /// How a stopped agent ended, from what the IDE booked when it stopped:
+    /// the run result (no exit code is a kill), else the status its output
+    /// buffer was closed with. `None` while nothing is booked yet. The agent
+    /// list cannot answer this: a finished agent leaves it at once.
+    fn ending_of(&self, agent_id: &str) -> Option<Ending> {
+        if let Some(result) = self.dispatcher.run_result(agent_id) {
+            return Some(match (result.status, result.exit_code) {
+                (_, None) => Ending::Killed,
+                (AgentStatus::Error, Some(_)) => Ending::Failed,
+                _ => Ending::Exited,
+            });
+        }
+        match self.dispatcher.final_status(agent_id)? {
+            AgentStatus::Error => Some(Ending::Failed),
+            _ => Some(Ending::Exited),
+        }
+    }
+
+    /// For how long the tick has found `agent_id` gone with no end booked.
+    fn missing_for(&self, agent_id: &str, now: u64) -> u64 {
+        let mut vanished = self
+            .vanished
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        now.saturating_sub(*vanished.entry(agent_id.to_string()).or_insert(now))
     }
 
     fn job_progress(&self, job: &JobRecord, now: u64) {
@@ -349,6 +397,10 @@ impl Link {
     }
 
     fn finish_job(&self, job: &JobRecord, ending: Ending, now: u64) {
+        self.vanished
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&job.agent_id);
         let collected = self.collect_job(job);
         let error = match (&collected, job.cancel_requested, ending) {
             (_, true, _) => Some((
@@ -364,6 +416,10 @@ impl Link {
             (Ok(_), _, Ending::Failed) => Some((
                 JobErrorCode::AgentFailed,
                 "the agent ended with an error".to_string(),
+            )),
+            (Ok(_), _, Ending::Killed) => Some((
+                JobErrorCode::AgentFailed,
+                "the agent was stopped before it finished".to_string(),
             )),
             (Ok(found), _, Ending::Exited) if found.changed.is_empty() => Some((
                 JobErrorCode::NoChanges,

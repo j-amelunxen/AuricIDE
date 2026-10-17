@@ -104,6 +104,9 @@ pub struct DocumentTypeInfo {
     pub name: String,
     pub globs: Vec<String>,
     pub schema: Option<String>,
+    /// Globs `documents.asset` reads; empty when the type has no assets.
+    pub assets: Vec<String>,
+    pub max_asset_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -373,6 +376,8 @@ pub fn visible_projects(policy: &LinkPolicy) -> Vec<DocumentProject> {
                     name: t.name.clone(),
                     globs: t.globs.clone(),
                     schema: t.schema.clone(),
+                    assets: t.assets.clone(),
+                    max_asset_bytes: t.asset_cap(),
                 })
                 .collect(),
             job_kinds: config.job_kinds.iter().map(|k| k.kind.clone()).collect(),
@@ -397,10 +402,24 @@ fn read_contained_up_to(
     relative: &str,
     max_bytes: usize,
 ) -> Result<Option<Vec<u8>>, DocumentError> {
+    read_contained_where(project, relative, max_bytes, |_| true)
+}
+
+/// Like `read_contained`, and `None` too when `allowed` refuses the
+/// project-relative path the file really resolves to.
+pub(super) fn read_contained_where(
+    project: &Path,
+    relative: &str,
+    max_bytes: usize,
+    allowed: impl Fn(&str) -> bool,
+) -> Result<Option<Vec<u8>>, DocumentError> {
     let Ok(real) = project.join(relative).canonicalize() else {
         return Ok(None);
     };
-    if !real.starts_with(project) {
+    let Some(real_relative) = real.strip_prefix(project).ok().and_then(Path::to_str) else {
+        return Ok(None);
+    };
+    if !allowed(real_relative) {
         return Ok(None);
     }
     let Ok(metadata) = std::fs::metadata(&real) else {
@@ -449,7 +468,7 @@ pub(super) fn blob_hash(bytes: &[u8]) -> Result<String, DocumentError> {
         .map_err(internal)
 }
 
-fn not_found(id: &str, at: Option<&str>) -> DocumentError {
+pub(super) fn not_found(id: &str, at: Option<&str>) -> DocumentError {
     let message = match at {
         Some(rev) => format!("no document {id} at {rev}"),
         None => format!("no document {id}"),
@@ -474,7 +493,7 @@ pub fn get(
             (bytes, None, None)
         }
         Some(rev) => {
-            let (bytes, commit, merged) = read_at_rev(&root, id, rev)?;
+            let (bytes, commit, merged) = read_at_rev(&root, id, rev, MAX_DOCUMENT_BYTES)?;
             (bytes, Some(commit), Some(merged))
         }
     };
@@ -530,7 +549,12 @@ pub fn validate_rev(rev: &str) -> Result<(), DocumentError> {
 /// that commit. A project nested inside a repository is read at its path
 /// within it. Only a regular blob counts: a symlink entry would hand back its
 /// target path as the "document".
-fn read_at_rev(root: &Path, id: &str, rev: &str) -> Result<(Vec<u8>, String, bool), DocumentError> {
+pub(super) fn read_at_rev(
+    root: &Path,
+    id: &str,
+    rev: &str,
+    max_bytes: usize,
+) -> Result<(Vec<u8>, String, bool), DocumentError> {
     validate_rev(rev)?;
     let not_a_repo = || {
         DocumentError::new(
@@ -563,8 +587,8 @@ fn read_at_rev(root: &Path, id: &str, rev: &str) -> Result<(Vec<u8>, String, boo
         return Err(not_found(id, Some(rev)));
     }
     let blob = repo.find_blob(entry.id()).map_err(internal)?;
-    if blob.size() > MAX_DOCUMENT_BYTES {
-        return Err(too_large(id, blob.size() as u64, MAX_DOCUMENT_BYTES));
+    if blob.size() > max_bytes {
+        return Err(too_large(id, blob.size() as u64, max_bytes));
     }
     let merged = in_head(&repo, commit.id());
     Ok((blob.content().to_vec(), commit.id().to_string(), merged))
