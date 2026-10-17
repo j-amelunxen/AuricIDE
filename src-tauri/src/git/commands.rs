@@ -154,8 +154,14 @@ pub fn git_worktree_merge_into_default(
     repo_path: String,
     worktree_path: String,
     commit_message: Option<String>,
+    push: Option<bool>,
 ) -> Result<WorktreeMergeResult, String> {
-    git_worktree_merge_into_default_impl(&repo_path, &worktree_path, commit_message.as_deref())
+    git_worktree_merge_into_default_impl(
+        &repo_path,
+        &worktree_path,
+        commit_message.as_deref(),
+        push.unwrap_or(false),
+    )
 }
 
 #[tauri::command(async)]

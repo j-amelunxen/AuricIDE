@@ -67,6 +67,43 @@ Stored under the `ignored_repos` namespace with key `paths` in `<project>/.auric
    - If only one repository exists, targets that repository.
 2. Diff tabs are keyed by compound id `diffTabId(source, filePath, repoPath)`.
 
+### 4.4 Merge an agent worktree on close
+
+All agent close/dismiss surfaces use `endAgentThenOfferMerge` and the shared
+`offerWorktreeMerge` dialog. The default branch is resolved by the backend
+(`main`, otherwise `master`); its name appears in every action and outcome.
+
+- **Merge & push main** (or master): fetch origin first. A local default branch
+  behind or diverged from origin stops before merging; the worktree stays.
+  Otherwise commit uncommitted work first, merge locally, then push the explicit
+  `refs/heads/<default>:refs/heads/<default>` refspec to origin, without force.
+  The checked-out branch does not decide what is pushed. Server ref rejections
+  and transport errors both count as failures; no force retry is made.
+- **Merge locally**: commit leftover work, merge locally and remove the worktree.
+  No network operation is performed, and the toast explicitly says “not pushed”.
+- **Cancel** (including Escape): leave the worktree and branches untouched.
+
+A failed push preserves the local merge, worktree and local agent branch. The
+error names the push failure and states what was kept. A subsequent push choice
+can push an already-contained branch without creating another merge commit.
+After a successful push, delete an existing origin agent branch only if its
+fetched commits are contained in the default branch. The deletion also checks the remote tip advertised during push negotiation,
+so work added since the fetch is kept. Remote deletion errors do
+not undo the successful push and are reported separately. Local cleanup errors
+are returned with `cleanedUp: false` and a reason; the toast never claims the
+worktree was removed in that case. `merged: false` without conflicts is reported
+as “Already merged”, while conflicts open the existing merge panel.
+
+IPC: `git_worktree_merge_into_default(repoPath, worktreePath, commitMessage, push)`.
+Omitted `push` means local-only for compatibility. `WorktreeMergeResult` carries
+`merged`, `pushed`, `pushError`, `cleanedUp`, `cleanupError`, `remoteBranchError`,
+and `conflicts`, so a partial outcome is preserved through the store and UI.
+
+Supervisor follow-up: `remove_worktree` still reports a missing folder as
+“merged or removed”. Distinguishing human local/pushed merges requires retaining
+an outcome after cleanup and passing it to the control socket; no outcome is
+inferred from the folder's absence.
+
 ---
 
 ## 5. Dependencies

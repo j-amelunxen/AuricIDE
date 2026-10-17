@@ -10,10 +10,13 @@ export interface ConfirmRequest {
   /** Label on the destructive button. Name the act, not "OK". */
   confirmLabel?: string;
   variant?: ConfirmVariant;
+  /** An alternative affirmative action; Cancel and Escape still resolve false. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
 }
 
 export interface UseConfirmResult {
-  /** Resolves true only after the user confirms; false on cancel or Escape. */
+  /** Resolves true after either affirmative action; false on cancel or Escape. */
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   /** Render this in the component's tree — the dialog lives here. */
   confirmDialog: React.ReactNode;
@@ -66,6 +69,11 @@ export function useConfirm(): UseConfirmResult {
       message={request.message}
       confirmLabel={request.confirmLabel ?? 'Confirm'}
       variant={request.variant}
+      secondaryLabel={request.secondaryLabel}
+      onSecondary={() => {
+        request.onSecondary?.();
+        settle(true);
+      }}
       onConfirm={() => settle(true)}
       onCancel={cancel}
     />

@@ -303,13 +303,22 @@ export const createGitSlice: StateCreator<GitSlice> = (set, get) => {
 
     defaultBranchFor: async (repoPath) => gitDefaultBranch(repoPath),
 
-    mergeAgentWorktree: async (worktreePath, commitMessage) => {
+    mergeAgentWorktree: async (worktreePath, commitMessage, push = false) => {
       const tree = get().agentWorktrees.find((wt) => wt.path === worktreePath);
       const repoPath = tree?.sourceRepo ?? worktreePath;
-      const result = await mergeGitWorktreeIntoDefault(repoPath, worktreePath, commitMessage);
-      await get().refreshAgentWorktrees();
-      if (tree?.sourceRepo) {
-        await get().refreshRepoStatus(tree.sourceRepo);
+      const result = await mergeGitWorktreeIntoDefault(repoPath, worktreePath, commitMessage, push);
+      try {
+        await get().refreshAgentWorktrees();
+        if (tree?.sourceRepo) {
+          await get().refreshRepoStatus(tree.sourceRepo);
+        }
+      } catch (error) {
+        // Refresh is read-only bookkeeping: it must never replace a completed
+        // merge/push outcome with a misleading "Could not merge" error.
+        (get() as GitSlice & CommitHost).showToast?.(
+          `Could not refresh Git status after the merge: ${String(error)}`,
+          'error'
+        );
       }
       return result;
     },
