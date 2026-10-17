@@ -103,6 +103,10 @@ pub struct JobRecord {
     pub error: Option<JobError>,
     #[serde(default)]
     pub cancel_requested: bool,
+    /// Why the IDE itself cancelled the job (its project or kind left the
+    /// policy). Not on the wire: the job's `error.message` carries it.
+    #[serde(skip)]
+    pub cancel_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,10 +148,34 @@ fn read_file(path: &Path) -> Vec<JobRecord> {
         .unwrap_or_default()
 }
 
+/// The register as `load` finds it. A file that exists but does not parse is
+/// moved aside rather than overwritten, so the jobs it held can still be
+/// looked at; the counter starts empty.
+fn read_register(path: &Path, now: u64) -> Vec<JobRecord> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    if let Ok(file) = serde_json::from_str::<JobsFile>(&text) {
+        return file.jobs;
+    }
+    let aside = path.with_extension(format!("json.unreadable-{now}"));
+    match std::fs::rename(path, &aside) {
+        Ok(()) => eprintln!(
+            "Supervisor link: the job register could not be read; kept it as {} and started \
+             an empty one",
+            aside.display()
+        ),
+        Err(error) => eprintln!(
+            "Supervisor link: the job register could not be read nor moved aside: {error}"
+        ),
+    }
+    Vec::new()
+}
+
 impl Jobs {
     /// Loads the register; jobs that were running are failed as interrupted.
     pub fn load(path: PathBuf, now: u64) -> Self {
-        let mut jobs = read_file(&path);
+        let mut jobs = read_register(&path, now);
         for job in jobs
             .iter_mut()
             .filter(|job| job.status == JobStatus::Running)
@@ -182,20 +210,9 @@ impl Jobs {
         let Some(path) = &self.path else {
             return;
         };
-        let mut kept: Vec<JobRecord> = state
-            .jobs
-            .iter()
-            .filter(|job| {
-                job.status == JobStatus::Running
-                    || now.saturating_sub(job.created_at) <= KEEP_FINISHED_MS
-            })
-            .cloned()
-            .collect();
-        let excess = kept.len().saturating_sub(KEEP_FINISHED_MAX);
-        kept.drain(..excess);
         let file = JobsFile {
             version: 1,
-            jobs: kept,
+            jobs: kept(&state.jobs, now),
         };
         let written = serde_json::to_vec_pretty(&file)
             .map_err(|error| error.to_string())
@@ -312,6 +329,28 @@ impl Jobs {
     }
 }
 
+/// What the register file keeps: every running job and every job the counter
+/// still counts, whatever their number, then finished ones up to a week old
+/// and at most `KEEP_FINISHED_MAX` of them, newest first. Dropping a counted
+/// job would hand its slot back after a restart.
+fn kept(jobs: &[JobRecord], now: u64) -> Vec<JobRecord> {
+    let must_keep = |job: &JobRecord| job.status == JobStatus::Running || in_window(job, now);
+    let mut older = jobs
+        .iter()
+        .rev()
+        .filter(|job| !must_keep(job) && now.saturating_sub(job.created_at) <= KEEP_FINISHED_MS)
+        .take(KEEP_FINISHED_MAX)
+        .map(|job| job.job_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    jobs.iter()
+        .filter(|job| must_keep(job) || older.remove(job.job_id.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Whether the counter counts `job` at `now`. A job dated after `now` (the
+/// clock was set back) counts as just started, so setting the clock back
+/// never frees a slot.
 fn in_window(job: &JobRecord, now: u64) -> bool {
     now.saturating_sub(job.created_at) < WINDOW_MS
 }

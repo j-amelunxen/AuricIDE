@@ -81,6 +81,36 @@ fn version_one_migrates_to_its_one_document_type() {
 }
 
 #[test]
+fn the_migration_is_idempotent_and_a_save_makes_it_version_two() {
+    let app = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let listed = project.path().to_str().unwrap();
+    let path = policy_path_in(app.path());
+    std::fs::write(
+        &path,
+        format!(r#"{{ "version": 1, "scenes": {{ "projects": ["{listed}"] }} }}"#),
+    )
+    .unwrap();
+    // Reading does not write: a version-1 file reads the same every time.
+    let first = read_policy(app.path());
+    assert_eq!(read_policy(app.path()), first);
+    assert!(std::fs::read_to_string(&path)
+        .unwrap()
+        .contains("\"version\": 1"));
+
+    // Saving what was read writes version 2 with the same meaning, and saving
+    // that again changes nothing.
+    let stored = write_policy(app.path(), &first).unwrap();
+    assert_eq!(stored, first);
+    let once = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(read_policy(app.path()), first);
+    write_policy(app.path(), &read_policy(app.path())).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), once);
+    let on_disk: serde_json::Value = serde_json::from_str(&once).unwrap();
+    assert_eq!(on_disk["version"], 2);
+}
+
+#[test]
 fn a_missing_broken_or_foreign_file_shows_nothing() {
     let app = tempfile::tempdir().unwrap();
     assert_eq!(read_policy(app.path()), LinkPolicy::default());

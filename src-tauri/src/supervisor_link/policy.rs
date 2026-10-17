@@ -175,8 +175,10 @@ struct ScenesSectionV1 {
     projects: Vec<String>,
 }
 
-/// The document type a version-1 project had without naming it. Only the
-/// migration knows these values.
+/// The document type a version-1 project had without naming it. Version 1
+/// was written by an early build that knew exactly one document format; these
+/// values are that format, kept only so such a file keeps working. Nothing
+/// else in the link knows a document format, and version 2 never uses them.
 fn v1_document_type() -> DocumentType {
     DocumentType {
         name: "scene".to_string(),

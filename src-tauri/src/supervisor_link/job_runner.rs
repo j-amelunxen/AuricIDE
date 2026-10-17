@@ -97,6 +97,7 @@ fn started_record(
         other_files: Vec::new(),
         error: None,
         cancel_requested: false,
+        cancel_reason: None,
     }
 }
 
@@ -209,17 +210,50 @@ impl Link {
         if job.status != JobStatus::Running {
             return Ok(json!({ "jobId": job_id, "cancelled": false, "status": job.status }));
         }
-        self.jobs.update(job_id, jobs::now_ms(), |stored| {
+        self.request_cancel(&job, None);
+        Ok(json!({ "jobId": job_id, "cancelled": true, "status": "running" }))
+    }
+
+    /// Marks the job cancelled and stops its agent. The kill is repeated by
+    /// every tick while the agent still runs, so a cancel that lands while
+    /// the agent is still starting is not lost.
+    fn request_cancel(&self, job: &JobRecord, reason: Option<String>) {
+        self.jobs.update(&job.job_id, jobs::now_ms(), |stored| {
             stored.cancel_requested = true;
+            if stored.cancel_reason.is_none() {
+                stored.cancel_reason = reason;
+            }
             None
         });
+        self.kill_agent(&job.agent_id);
+    }
+
+    fn kill_agent(&self, agent_id: &str) {
         // An agent that already stopped is fine: the tick ends the job either way.
         let _ = self
             .dispatcher
             .dispatch_external(Request::Kill(AgentIdParams {
-                agent_id: job.agent_id,
+                agent_id: agent_id.to_string(),
             }));
-        Ok(json!({ "jobId": job_id, "cancelled": true, "status": "running" }))
+    }
+
+    /// Why a running job may not go on: its project is no longer shared or
+    /// no longer lists its kind. The link must not keep acting in a project
+    /// the human withdrew.
+    fn withdrawn(policy: &LinkPolicy, job: &JobRecord) -> Option<String> {
+        let Some((_, config)) = policy.project(&job.project) else {
+            return Some(format!(
+                "{} is no longer shared with the supervisor link; the job was stopped",
+                job.project
+            ));
+        };
+        if config.job_kind(&job.kind).is_none() {
+            return Some(format!(
+                "job kind \"{}\" is no longer allowed in {}; the job was stopped",
+                job.kind, job.project
+            ));
+        }
+        None
     }
 
     /// Looks at every running job once: progress while its agent runs, the
@@ -229,6 +263,7 @@ impl Link {
         if running.is_empty() {
             return;
         }
+        let policy = self.host.policy();
         let agents = self.dispatcher.summaries();
         for job in running {
             let status = agents
@@ -236,7 +271,15 @@ impl Link {
                 .find(|agent| agent.info.id == job.agent_id)
                 .map(|agent| agent.info.status.clone());
             match status {
-                Some(AgentStatus::Running | AgentStatus::Queued) => self.job_progress(&job, now),
+                Some(AgentStatus::Running | AgentStatus::Queued) => {
+                    if let Some(reason) = Self::withdrawn(&policy, &job) {
+                        self.request_cancel(&job, Some(reason));
+                    } else if job.cancel_requested {
+                        self.kill_agent(&job.agent_id);
+                    } else {
+                        self.job_progress(&job, now);
+                    }
+                }
                 Some(AgentStatus::Error) => self.finish_job(&job, Ending::Failed, now),
                 // Idle, or the card was cleared: the run is over.
                 _ => self.finish_job(&job, Ending::Exited, now),
@@ -310,7 +353,9 @@ impl Link {
         let error = match (&collected, job.cancel_requested, ending) {
             (_, true, _) => Some((
                 JobErrorCode::Cancelled,
-                "cancelled over the supervisor link".to_string(),
+                job.cancel_reason
+                    .clone()
+                    .unwrap_or_else(|| "cancelled over the supervisor link".to_string()),
             )),
             (Err(message), _, _) => Some((JobErrorCode::Internal, message.clone())),
             (Ok(found), _, _) if !found.invalid.is_empty() => {
