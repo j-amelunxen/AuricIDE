@@ -308,6 +308,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             control_socket::control_respond,
             control_socket::control_ready,
+            copy_supervisor_image_attachments,
             agents::run_results::agent_run_results_forget,
             menu_bar::menu_bar_sync,
             supervisor::supervisor_policy_get,

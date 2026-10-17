@@ -5,6 +5,7 @@ use crate::agent_persistence::AgentPersistenceState;
 use crate::agents::{self, AgentConfig, AgentInfo, AgentManagerState};
 use crate::memory_report;
 use crate::providers::{PromptTemplate, ProviderRegistryState};
+use crate::supervisor::attachments::copy_image_attachment;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Arc;
@@ -40,6 +41,39 @@ pub async fn list_agents(
     state: tauri::State<'_, AgentManagerState>,
 ) -> Result<Vec<AgentInfo>, String> {
     agents::list_agents_impl(&state).await
+}
+
+/// Copies human-provided image files into the running supervisor's restricted
+/// working directory. The agent id, not a caller-supplied folder, selects the
+/// destination so an ordinary agent cannot turn this into an arbitrary copy API.
+#[tauri::command]
+pub async fn copy_supervisor_image_attachments(
+    agent_id: String,
+    paths: Vec<String>,
+    state: tauri::State<'_, AgentManagerState>,
+) -> Result<Vec<String>, String> {
+    let run_dir = {
+        let manager = state.lock().await;
+        let process = manager
+            .agents
+            .get(&agent_id)
+            .ok_or("Supervisor is not running")?;
+        if process.info.role != agents::AgentRole::Supervisor {
+            return Err("Only the supervisor may receive restricted attachments".to_string());
+        }
+        process
+            .info
+            .repo_path
+            .clone()
+            .ok_or("The supervisor has no run folder")?
+    };
+    paths
+        .iter()
+        .map(|path| {
+            copy_image_attachment(std::path::Path::new(&run_dir), std::path::Path::new(path))
+        })
+        .map(|result| result.map(|path| path.to_string_lossy().into_owned()))
+        .collect()
 }
 
 #[tauri::command]
