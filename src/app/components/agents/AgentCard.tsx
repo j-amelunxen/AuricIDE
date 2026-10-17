@@ -176,7 +176,7 @@ export function AgentCard({
     <div
       onClick={() => onSelect?.(agent.id)}
       onContextMenu={onContextMenu && ((e) => onContextMenu(e, agent.id))}
-      className={`glass-card group relative flex flex-col gap-2 rounded-xl p-2.5 transition-all duration-500 cursor-pointer overflow-hidden ${cardGlowClass} ${
+      className={`glass-card group relative flex flex-col gap-2 rounded-xl p-2.5 transition-all duration-500 ${agent.headless ? 'cursor-default' : 'cursor-pointer'} overflow-hidden ${cardGlowClass} ${
         viewMode === 'terminal' ? 'min-h-[200px]' : ''
       } ${markerHex ? 'pl-4' : ''}`}
     >

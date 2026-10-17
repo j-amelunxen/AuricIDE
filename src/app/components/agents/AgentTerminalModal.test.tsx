@@ -606,6 +606,85 @@ describe('AgentTerminalModal', () => {
       expect(screen.getByTestId('agent-tab-agent-2')).toHaveTextContent(/waiting/i);
     });
 
+    describe('headless agents', () => {
+      const silent = makeAgent({
+        id: 'agent-5',
+        name: 'Planner',
+        status: 'running',
+        headless: true,
+      });
+      const silentToo = makeAgent({
+        id: 'agent-6',
+        name: 'Indexer',
+        status: 'running',
+        headless: true,
+      });
+      const silentDone = makeAgent({
+        id: 'agent-7',
+        name: 'Archiver',
+        status: 'idle',
+        headless: true,
+      });
+
+      it('gives them no tab', () => {
+        render(
+          <AgentTerminalModal
+            agent={working}
+            agents={[working, waiting, silent, silentDone]}
+            onClose={vi.fn()}
+          />
+        );
+        expect(screen.getAllByRole('tab')).toHaveLength(2);
+        expect(screen.queryByTestId('agent-tab-agent-5')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('agent-tab-agent-7')).not.toBeInTheDocument();
+      });
+
+      it('does not count them toward the layout presets', () => {
+        render(
+          <AgentTerminalModal
+            agent={working}
+            agents={[working, silent, silentToo]}
+            onClose={vi.fn()}
+          />
+        );
+        expect(screen.queryByRole('group', { name: 'Terminal layout' })).not.toBeInTheDocument();
+      });
+
+      it('does not give an arriving one a pane', () => {
+        useStore.setState({ terminalGridCells: null });
+        const { rerender } = render(
+          <AgentTerminalModal agent={working} agents={[working]} onClose={vi.fn()} />
+        );
+        rerender(
+          <AgentTerminalModal agent={working} agents={[working, silent]} onClose={vi.fn()} />
+        );
+        expect(useStore.getState().terminalGridCells).toBeNull();
+      });
+
+      it('counts the running ones in the header and names them on hover', () => {
+        render(
+          <AgentTerminalModal
+            agent={working}
+            agents={[working, silent, silentToo, silentDone]}
+            onClose={vi.fn()}
+          />
+        );
+        const marker = screen.getByTestId('headless-agents-marker');
+        expect(marker).toHaveTextContent('2 headless');
+        expect(marker).toHaveAccessibleName('2 headless agents running: Planner, Indexer');
+        expect(within(marker).getByRole('tooltip')).toHaveTextContent('Planner');
+        expect(within(marker).getByRole('tooltip')).toHaveTextContent('Indexer');
+        expect(within(marker).getByRole('tooltip')).not.toHaveTextContent('Archiver');
+      });
+
+      it('shows no marker while none is running', () => {
+        render(
+          <AgentTerminalModal agent={working} agents={[working, silentDone]} onClose={vi.fn()} />
+        );
+        expect(screen.queryByTestId('headless-agents-marker')).not.toBeInTheDocument();
+      });
+    });
+
     describe('grouped by project', () => {
       const here = makeAgent({ id: 'agent-1', name: 'Writer', repoPath: '/work/alpha' });
       const alsoHere = makeAgent({ id: 'agent-2', name: 'Reviewer', repoPath: '/work/alpha' });

@@ -22,12 +22,12 @@ const agent: AgentInfo = {
   startedAt: 1000,
 };
 
-function renderHandlers() {
+function renderHandlers(target: AgentInfo = agent) {
   const state = {
-    agents: [agent],
+    agents: [target],
     selectAgent: vi.fn(),
     setFullscreenAgent: vi.fn(),
-    resumeInterruptedAgent: vi.fn(async () => agent),
+    resumeInterruptedAgent: vi.fn(async () => target),
     notificationsUnreadCount: 0,
     rootPath: null,
   };
@@ -65,6 +65,17 @@ describe('selecting an agent while the terminals are detached', () => {
     // Still selected: that is what marks a finished agent as reviewed.
     expect(state.selectAgent).toHaveBeenCalledWith('a');
     expect(showAgentInWindow).toHaveBeenCalledWith('a');
+    expect(state.setFullscreenAgent).not.toHaveBeenCalled();
+  });
+
+  it('a headless agent is selected but opens no terminal anywhere', () => {
+    useStore.setState({ agentWindowOpen: true });
+    const { state, handlers } = renderHandlers({ ...agent, headless: true });
+
+    handlers.handleSelectAgent('a');
+
+    expect(state.selectAgent).toHaveBeenCalledWith('a');
+    expect(showAgentInWindow).not.toHaveBeenCalled();
     expect(state.setFullscreenAgent).not.toHaveBeenCalled();
   });
 

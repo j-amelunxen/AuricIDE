@@ -89,3 +89,30 @@ export function supervisorChildSummary(agents: AgentInfo[], supervisorId: string
   if (total === 0) return 'No children yet';
   return `${total} ${total === 1 ? 'child' : 'children'} · ${running} running`;
 }
+
+/**
+ * Whether an agent has a terminal worth opening. A headless run (`claude -p`)
+ * prints nothing until it ends, so its pane would only be an empty box that
+ * takes room from the agents a human actually types into.
+ */
+export function hasTerminal(agent: Pick<AgentInfo, 'headless'>): boolean {
+  return !agent.headless;
+}
+
+export interface TerminalSplit {
+  /** Agents that get a tab and may take a pane. */
+  withTerminal: AgentInfo[];
+  /** Headless agents still at work — counted in the header, never given a tab. */
+  headlessRunning: AgentInfo[];
+}
+
+/** Splits the fleet into what the terminal view shows and the headless runs it only counts. */
+export function splitTerminalAgents(agents: AgentInfo[]): TerminalSplit {
+  const withTerminal: AgentInfo[] = [];
+  const headlessRunning: AgentInfo[] = [];
+  for (const agent of agents) {
+    if (hasTerminal(agent)) withTerminal.push(agent);
+    else if (!isFinishedAgent(agent)) headlessRunning.push(agent);
+  }
+  return { withTerminal, headlessRunning };
+}
