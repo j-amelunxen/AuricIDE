@@ -96,6 +96,24 @@ describe('sortQuickAccessProjects', () => {
     ]);
   });
 
+  it('keeps a custom order, then adds tiles it does not know by when they were starred', () => {
+    const starred = [
+      { path: '/wt/old', name: 'old', starredAt: 1 },
+      { path: '/wt/new', name: 'new', starredAt: 9 },
+      { path: '/wt/mid', name: 'mid', starredAt: 5 },
+      { path: '/wt/kept', name: 'kept', starredAt: 3 },
+    ];
+    expect(
+      sortQuickAccessProjects(starred, 'custom', ['/wt/gone', '/wt/kept', '/wt/new']).map(
+        (p) => p.path
+      )
+    ).toEqual(['/wt/kept', '/wt/new', '/wt/old', '/wt/mid']);
+  });
+
+  it('accepts custom as a stored sort', () => {
+    expect(parseQuickAccessSort('custom')).toBe('custom');
+  });
+
   it('treats an unreadable stored sort as name order', () => {
     expect(parseQuickAccessSort(null)).toBe('name');
     expect(parseQuickAccessSort('nope')).toBe('name');

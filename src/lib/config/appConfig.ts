@@ -50,6 +50,7 @@ export const APP_CONFIG_KEYS = {
   agentLogRetentionDays: 'auric.agent-log.retention-days',
   inboxSort: 'auric.inbox.sort',
   quickAccessSort: 'auric.quick-access.sort',
+  quickAccessOrder: 'auric.quick-access.order',
   supervisorQuickAccess: 'auric.supervisor.quick-access',
   supervisorInstructions: 'auric.supervisor.instructions',
   supervisorMenuBar: 'auric.supervisor.menu-bar',
