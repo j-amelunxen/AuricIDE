@@ -120,6 +120,7 @@ fn describe_worktree(
         source_repo: source_repo.to_string_lossy().into_owned(),
         dirty,
         branch_ahead,
+        carried_over: Vec::new(),
     }
 }
 
@@ -167,7 +168,11 @@ pub fn git_worktree_add_impl(repo_path: &str, name: &str) -> Result<GitWorktree,
     repo.worktree(&id, &dest, Some(&opts))
         .map_err(|e| format!("could not add worktree: {e}"))?;
 
-    Ok(describe_worktree(&repo, &source, &id, &dest))
+    let carried_over = super::worktree_include::apply_worktree_carry_over(&repo, &source, &dest);
+    let mut described = describe_worktree(&repo, &source, &id, &dest);
+    described.carried_over = carried_over;
+
+    Ok(described)
 }
 
 pub fn git_worktree_list_impl(repo_path: &str) -> Result<Vec<GitWorktree>, String> {

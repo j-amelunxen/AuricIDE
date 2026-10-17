@@ -96,6 +96,8 @@ pub struct GitWorktree {
     pub dirty: bool,
     /// True when the worktree branch has commits the source HEAD does not.
     pub branch_ahead: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub carried_over: Vec<String>,
 }
 
 /// What `git_worktree_remove_unless_work_impl` did: removed, or kept because
