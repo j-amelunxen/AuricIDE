@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import fixtures from '../agents/supervisorLink.fixtures.json';
 import {
+  SUPPORTED_SUPERVISOR_PROVIDERS,
   supervisorProvidersOf,
   readSupervisorInstructions,
   readAllSupervisorInstructions,
@@ -11,6 +13,11 @@ import { emptySupervisorPolicy, type SupervisorPolicy } from './supervisorPolicy
 describe('supervisorProviders', () => {
   beforeEach(() => {
     removeAppPref(APP_CONFIG_KEYS.supervisorInstructions);
+  });
+
+  it('supports exactly the providers the Rust side and the link contract name', () => {
+    expect([...SUPPORTED_SUPERVISOR_PROVIDERS]).toEqual(fixtures.supervisorProviders);
+    expect(fixtures.errorCodes).toContain('provider_unsupported');
   });
 
   describe('supervisorProvidersOf', () => {

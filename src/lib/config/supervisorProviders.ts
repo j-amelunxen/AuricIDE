@@ -2,6 +2,13 @@ import { APP_CONFIG_KEYS, readAppPref, removeAppPref, writeAppPref } from './app
 import type { SupervisorPolicy } from './supervisorPolicy';
 
 /**
+ * The providers a supervisor can run on. Twin of `SUPERVISOR_PROVIDERS` in
+ * `agents/manager.rs` (which refuses the spawn); both are checked against
+ * `supervisorLink.fixtures.json`.
+ */
+export const SUPPORTED_SUPERVISOR_PROVIDERS: readonly string[] = ['claude', 'codex'];
+
+/**
  * Derives the active supervisor candidate provider IDs from the policy.
  * Defaults to `[policy.supervisor.provider]` or `['claude']` when absent.
  */

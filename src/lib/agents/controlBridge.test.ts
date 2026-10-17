@@ -504,3 +504,96 @@ describe('installControlBridge', () => {
     await vi.waitFor(() => expect(readyCalls()).toHaveLength(2));
   });
 });
+
+describe('control-request spawn_supervisor (supervisor link)', () => {
+  const spawned = agent('agent-7', { name: 'Supervisor', role: 'supervisor' });
+
+  it('starts a supervisor through the store and answers its id', async () => {
+    const spawnLinkedSupervisor = vi.fn(async () => ({ kind: 'spawned' as const, agent: spawned }));
+    const h = host({ spawnLinkedSupervisor });
+    await handleControlRequest(
+      {
+        reqId: 'l1',
+        method: 'spawn_supervisor',
+        params: { task: 'plan the export' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+
+    expect(spawnLinkedSupervisor).toHaveBeenCalledWith({ task: 'plan the export' });
+    expect(answered()[0].args).toEqual({ reqId: 'l1', ok: true, result: { agentId: 'agent-7' } });
+  });
+
+  it('answers supervisor_unavailable when the policy shows no project', async () => {
+    const h = host({
+      spawnLinkedSupervisor: vi.fn(async () => ({ kind: 'nothing-visible' as const })),
+    });
+    await handleControlRequest(
+      { reqId: 'l2', method: 'spawn_supervisor', params: {}, expiresAt: fresh() },
+      h
+    );
+
+    expect(answered()[0].args).toMatchObject({
+      ok: false,
+      error: { code: 'supervisor_unavailable' },
+    });
+  });
+
+  it('answers provider_unsupported for a listed provider the supervisor cannot run on', async () => {
+    const h = host({
+      spawnLinkedSupervisor: vi.fn(async () => ({
+        kind: 'provider-unsupported' as const,
+        provider: 'gemini',
+        supported: ['claude', 'codex'],
+      })),
+    });
+    await handleControlRequest(
+      {
+        reqId: 'l5',
+        method: 'spawn_supervisor',
+        params: { provider: 'gemini' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+
+    expect(answered()[0].args).toMatchObject({
+      reqId: 'l5',
+      ok: false,
+      error: { code: 'provider_unsupported' },
+    });
+    expect(String((answered()[0].args as { error: { message: string } }).error.message)).toContain(
+      'gemini'
+    );
+  });
+
+  it('refuses a provider the policy does not list, and unknown params', async () => {
+    const h = host({
+      spawnLinkedSupervisor: vi.fn(async () => ({
+        kind: 'provider-not-allowed' as const,
+        provider: 'codex',
+        allowed: ['claude'],
+      })),
+    });
+    await handleControlRequest(
+      {
+        reqId: 'l3',
+        method: 'spawn_supervisor',
+        params: { provider: 'codex' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+    await handleControlRequest(
+      { reqId: 'l4', method: 'spawn_supervisor', params: { role: 'worker' }, expiresAt: fresh() },
+      h
+    );
+
+    expect(answered().map(({ args }) => args)).toMatchObject([
+      { reqId: 'l3', ok: false, error: { code: 'invalid_params' } },
+      { reqId: 'l4', ok: false, error: { code: 'invalid_params' } },
+    ]);
+    expect(h.spawnLinkedSupervisor).toHaveBeenCalledTimes(1);
+  });
+});

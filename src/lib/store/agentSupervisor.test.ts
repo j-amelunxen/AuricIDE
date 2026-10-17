@@ -250,3 +250,81 @@ describe("clearing a supervisor card forgets its children's results", () => {
     expect(forgetSupervisorRunResults).toHaveBeenCalledWith('sup');
   });
 });
+
+describe('spawnLinkedSupervisor (supervisor link)', () => {
+  let store: StoreApi<StoreState>;
+
+  beforeEach(() => {
+    vi.mocked(spawnAgent).mockClear();
+    store = createStore<StoreState>()(
+      (...args) =>
+        ({
+          ...createAgentSlice(...(args as Parameters<typeof createAgentSlice>)),
+          providers: [CLAUDE],
+          starredProjects: [],
+          rootPath: null,
+        }) as unknown as StoreState
+    );
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+  });
+
+  it('starts a new supervisor with the task even while one is running', async () => {
+    store.setState({
+      agents: [
+        {
+          id: 'sup-0',
+          name: 'Supervisor',
+          model: 'sonnet',
+          provider: 'claude',
+          status: 'running',
+          startedAt: 1,
+          role: 'supervisor',
+        },
+      ],
+    });
+
+    const launch = await store.getState().spawnLinkedSupervisor({ task: 'plan the export' });
+
+    expect(launch.kind).toBe('spawned');
+    const config = vi.mocked(spawnAgent).mock.calls[0][0];
+    expect(config).toMatchObject({ role: 'supervisor', provider: 'claude', headless: false });
+    expect(config.task).toContain('plan the export');
+  });
+
+  it('refuses a provider the supervisor policy does not list', async () => {
+    const launch = await store.getState().spawnLinkedSupervisor({ provider: 'codex' });
+    expect(launch).toEqual({
+      kind: 'provider-not-allowed',
+      provider: 'codex',
+      allowed: ['claude'],
+    });
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('refuses a listed provider the supervisor cannot run on, without spawning', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    policy.supervisor.providers = ['claude', 'gemini'];
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+
+    const launch = await store.getState().spawnLinkedSupervisor({ provider: 'gemini' });
+
+    expect(launch).toEqual({
+      kind: 'provider-unsupported',
+      provider: 'gemini',
+      supported: ['claude', 'codex'],
+    });
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('starts nothing while the policy shows no project', async () => {
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({
+      policy: emptySupervisorPolicy(),
+      rejected: [],
+    });
+    expect(await store.getState().spawnLinkedSupervisor({})).toEqual({ kind: 'nothing-visible' });
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+});

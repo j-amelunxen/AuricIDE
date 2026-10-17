@@ -72,6 +72,19 @@ export interface SupervisorSkillLaunch {
   provider?: string;
 }
 
+/** `supervisors.spawn` over the supervisor link (`docs/design-supervisor-link.md`). */
+export interface LinkedSupervisorLaunch {
+  task?: string | null;
+  provider?: string | null;
+  model?: string | null;
+}
+
+export type LinkedSupervisorSpawn =
+  | { kind: 'spawned'; agent: AgentInfo }
+  | { kind: 'nothing-visible' }
+  | { kind: 'provider-not-allowed'; provider: string; allowed: string[] }
+  | { kind: 'provider-unsupported'; provider: string; supported: readonly string[] };
+
 export type SupervisorLaunch =
   | { kind: 'running'; agent: AgentInfo }
   /** A skill's prompt went to the running supervisor as a message. */
@@ -208,6 +221,8 @@ export interface AgentSlice {
    * first task of a new one, or a message to the one already running.
    */
   spawnSupervisor: (skill?: SupervisorSkillLaunch) => Promise<SupervisorLaunch>;
+  /** A new supervisor for the supervisor link: no picker, no reuse of a running one. */
+  spawnLinkedSupervisor: (launch: LinkedSupervisorLaunch) => Promise<LinkedSupervisorSpawn>;
   /** Re-spawns a failed agent with its original config and dismisses the failure. */
   retryFailedAgent: (agentId: string) => Promise<AgentInfo | null>;
   killRunningAgent: (agentId: string) => Promise<void>;

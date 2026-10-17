@@ -16,6 +16,18 @@ import {
   type ControlParams,
 } from './agentControl.contract';
 import { deriveAgentName } from './naming';
+import type { LinkedSupervisorLaunch, LinkedSupervisorSpawn } from '@/lib/store/agent/agentTypes';
+
+/** The control request the supervisor link sends for `supervisors.spawn`. */
+export const SPAWN_SUPERVISOR_METHOD = 'spawn_supervisor';
+
+const linkedSupervisorParams = z
+  .object({
+    task: z.string().nullish(),
+    provider: z.string().min(1).nullish(),
+    model: z.string().min(1).nullish(),
+  })
+  .strict();
 
 /**
  * The frontend end of the agent-control socket (`docs/design-agent-control.md`).
@@ -28,7 +40,8 @@ import { deriveAgentName } from './naming';
 
 export interface ControlRequestEvent {
   reqId: string;
-  method: 'spawn' | 'kill';
+  /** `spawn_supervisor` comes from the supervisor link, the rest from `control.sock`. */
+  method: 'spawn' | 'kill' | typeof SPAWN_SUPERVISOR_METHOD;
   params: unknown;
   /** Ms since epoch: when Rust stops waiting and answers `frontend_unavailable`. */
   expiresAt: number;
@@ -45,6 +58,7 @@ export interface ControlHost {
   providers: ProviderInfo[];
   killRunningAgent: (agentId: string) => Promise<void>;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
+  spawnLinkedSupervisor?: (launch: LinkedSupervisorLaunch) => Promise<LinkedSupervisorSpawn>;
   recordAgentSentMessage: (agentId: string, text: string) => void;
   showToast?: (message: string, variant?: 'info' | 'success' | 'error') => number;
 }
@@ -214,6 +228,56 @@ function starterName(params: SpawnRequest, host: ControlHost): string {
   return supervisor?.name ?? 'a supervisor';
 }
 
+/**
+ * `supervisors.spawn` over the supervisor link (`docs/design-supervisor-link.md`).
+ * The codes are the link's own; Rust passes them on unchanged.
+ */
+async function spawnSupervisorFromLink(raw: unknown, host: ControlHost) {
+  const parsed = linkedSupervisorParams.safeParse(raw ?? {});
+  if (!parsed.success) {
+    throw new ControlError(
+      'invalid_params',
+      `supervisors.spawn: ${parsed.error.issues[0].message}`
+    );
+  }
+  if (!host.spawnLinkedSupervisor) {
+    throw new ControlError('internal', 'this window cannot start supervisors');
+  }
+  const outcome = await host.spawnLinkedSupervisor(parsed.data);
+  if (outcome.kind === 'nothing-visible') {
+    throw new LinkSpawnRefusal(
+      'supervisor_unavailable',
+      'the supervisor policy allows no project yet; allow one in Settings → Supervisor'
+    );
+  }
+  if (outcome.kind === 'provider-not-allowed') {
+    throw new ControlError(
+      'invalid_params',
+      `provider '${outcome.provider}' is not one the supervisor policy lists ` +
+        `(${outcome.allowed.join(', ') || 'none'})`
+    );
+  }
+  if (outcome.kind === 'provider-unsupported') {
+    throw new LinkSpawnRefusal(
+      'provider_unsupported',
+      `the supervisor cannot run on '${outcome.provider}' in this version ` +
+        `(supported: ${outcome.supported.join(', ')})`
+    );
+  }
+  host.showToast?.(`${outcome.agent.name} started over the supervisor link`, 'success');
+  return { agentId: outcome.agent.id };
+}
+
+/** A refusal with a code only the supervisor link knows. */
+class LinkSpawnRefusal extends Error {
+  constructor(
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
 async function respond(
   reqId: string,
   outcome: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string } }
@@ -225,6 +289,15 @@ async function respond(
     // backend at all; either way nobody is left to tell.
     console.warn(`[control] could not answer ${reqId}: ${String(error)}`);
   }
+}
+
+function answerControlRequest(event: ControlRequestEvent, host: ControlHost) {
+  if (event.method === SPAWN_SUPERVISOR_METHOD) {
+    return spawnSupervisorFromLink(event.params, host);
+  }
+  return event.method === 'kill'
+    ? killFromControl(parseControlParams('kill', event.params), host)
+    : spawnFromControl(parseSpawnRequest(event.params), host);
 }
 
 export async function handleControlRequest(
@@ -242,14 +315,11 @@ export async function handleControlRequest(
     return;
   }
   try {
-    const result =
-      event.method === 'kill'
-        ? await killFromControl(parseControlParams('kill', event.params), host)
-        : await spawnFromControl(parseSpawnRequest(event.params), host);
+    const result = await answerControlRequest(event, host);
     await respond(event.reqId, { ok: true, result });
   } catch (error) {
     const failure =
-      error instanceof ControlError
+      error instanceof ControlError || error instanceof LinkSpawnRefusal
         ? { code: error.code, message: error.message }
         : { code: 'internal', message: error instanceof Error ? error.message : String(error) };
     await respond(event.reqId, { ok: false, error: failure });
