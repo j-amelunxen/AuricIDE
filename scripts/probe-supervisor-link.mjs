@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Real-lane probe for the supervisor link (docs/design-supervisor-link.md):
 // connects to the running AuricIDE's supervisor-link.sock exactly as a
-// companion app would and prints what it answers. The Rust tests drive the
+// client of the Supervisor Control API would and prints what it answers. The Rust tests drive the
 // link against a fake backend; only this checks it against the real app.
 //
-//   node scripts/probe-supervisor-link.mjs                 hello, agents.list, scenes.projects
+//   node scripts/probe-supervisor-link.mjs                 hello, agents.list, documents.projects, jobs.list
 //   node scripts/probe-supervisor-link.mjs --watch 20      ...then print events for 20 s
 //   node scripts/probe-supervisor-link.mjs --spawn "<task>"  start a supervisor first
 //   node scripts/probe-supervisor-link.mjs --search "<query>"
@@ -134,9 +134,10 @@ async function run() {
         }
       : listed
   );
-  report('scenes.projects', await request('scenes.projects'));
+  report('documents.projects', await request('documents.projects'));
+  report('jobs.list', await request('jobs.list', { limit: 10 }));
   if (searchQuery !== null) {
-    report('scenes.search', await request('scenes.search', { query: searchQuery }));
+    report('documents.search', await request('documents.search', { query: searchQuery }));
   }
   if (watchSeconds > 0) {
     report('events.subscribe', await request('events.subscribe'));
