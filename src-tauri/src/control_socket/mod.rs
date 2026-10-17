@@ -393,6 +393,17 @@ impl Dispatcher {
             .collect()
     }
 
+    /// The result booked for a finished agent, while it is still kept. Its
+    /// `exitCode` is `None` when the agent was killed.
+    pub(crate) fn run_result(&self, agent_id: &str) -> Option<RunResult> {
+        self.run_results.get(agent_id)
+    }
+
+    /// The status a finished agent's output buffer was closed with.
+    pub(crate) fn final_status(&self, agent_id: &str) -> Option<AgentStatus> {
+        self.buffers.read(agent_id, 0, None)?.final_status
+    }
+
     fn find_agent(&self, agent_id: &str) -> Option<AgentInfo> {
         self.backend.agents().into_iter().find(|a| a.id == agent_id)
     }

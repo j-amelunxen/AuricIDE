@@ -22,6 +22,8 @@ pub fn diagram_type() -> DocumentType {
         name_field: Some("meta.title".into()),
         description_field: Some("meta.subtitle".into()),
         schema: Some("docs/diagram.schema.json".into()),
+        assets: vec!["docs/assets/**/*.bin".into()],
+        max_asset_bytes: None,
     }
 }
 

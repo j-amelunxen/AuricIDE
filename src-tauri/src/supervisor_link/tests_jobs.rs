@@ -404,3 +404,146 @@ fn a_job_whose_kind_leaves_the_policy_is_stopped() {
         error.message
     );
 }
+
+fn book_end(s: &Setup, status: AgentStatus, exit_code: Option<i32>) {
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|agent| agent.id != "agent-7");
+    s.h.run_results.record(
+        crate::agents::run_results::RunResult::from_finish(
+            "agent-7",
+            status,
+            exit_code,
+            None,
+            || None,
+            jobs::now_ms(),
+        ),
+        None,
+    );
+}
+
+fn job_error(s: &Setup) -> Option<jobs::JobError> {
+    s.h.link.jobs().list(None, None, 1)[0].error.clone()
+}
+
+#[test]
+fn an_agent_that_exits_with_an_error_fails_the_job_as_agent_failed() {
+    let s = setup(JobLimits::default());
+    create(&s, Value::Null).unwrap();
+    // A crashed agent leaves the list at once; only its booked result remains.
+    book_end(&s, AgentStatus::Error, Some(1));
+    s.h.link.tick_jobs(jobs::now_ms());
+    let error = job_error(&s).expect("the job failed");
+    assert_eq!(error.code, jobs::JobErrorCode::AgentFailed);
+}
+
+#[test]
+fn work_committed_before_a_crash_does_not_make_the_job_finished() {
+    let s = setup(JobLimits::default());
+    create(&s, Value::Null).unwrap();
+    std::fs::write(s.worktree.join("docs/auth.diagram.json"), r#"{"nodes":[]}"#).unwrap();
+    book_end(&s, AgentStatus::Error, Some(1));
+    s.h.link.tick_jobs(jobs::now_ms());
+    let job = &s.h.link.jobs().list(None, None, 1)[0];
+    assert_eq!(job.status, JobStatus::Failed);
+    assert_eq!(
+        job.error.as_ref().unwrap().code,
+        jobs::JobErrorCode::AgentFailed
+    );
+    assert!(job.commit.is_some(), "the branch still names what was done");
+}
+
+#[test]
+fn an_agent_killed_from_outside_fails_the_job_as_agent_failed() {
+    let s = setup(JobLimits::default());
+    create(&s, Value::Null).unwrap();
+    // agents.kill or the Stop button: a result with no exit code.
+    book_end(&s, AgentStatus::Idle, None);
+    s.h.link.tick_jobs(jobs::now_ms());
+    let error = job_error(&s).expect("the job failed");
+    assert_eq!(error.code, jobs::JobErrorCode::AgentFailed);
+    assert!(error.message.contains("stopped"), "{}", error.message);
+}
+
+#[test]
+fn a_clean_exit_with_nothing_written_is_still_no_changes() {
+    let s = setup(JobLimits::default());
+    create(&s, Value::Null).unwrap();
+    book_end(&s, AgentStatus::Idle, Some(0));
+    s.h.link.tick_jobs(jobs::now_ms());
+    assert_eq!(job_error(&s).unwrap().code, jobs::JobErrorCode::NoChanges);
+}
+
+#[test]
+fn an_agent_gone_before_its_end_is_booked_is_waited_for() {
+    let s = setup(JobLimits::default());
+    create(&s, Value::Null).unwrap();
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|agent| agent.id != "agent-7");
+    let now = jobs::now_ms();
+    s.h.link.tick_jobs(now);
+    assert_eq!(
+        s.h.link.jobs().list(None, None, 1)[0].status,
+        JobStatus::Running,
+        "the exit is booked a moment after the agent leaves the list"
+    );
+
+    // The end lands before the next tick and decides.
+    s.h.run_results.record(
+        crate::agents::run_results::RunResult::from_finish(
+            "agent-7",
+            AgentStatus::Error,
+            Some(1),
+            None,
+            || None,
+            now,
+        ),
+        None,
+    );
+    s.h.link.tick_jobs(now + 2_000);
+    assert_eq!(job_error(&s).unwrap().code, jobs::JobErrorCode::AgentFailed);
+}
+
+#[test]
+fn an_agent_gone_for_good_with_no_end_booked_closes_after_the_grace() {
+    let s = setup(JobLimits::default());
+    create(&s, Value::Null).unwrap();
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|agent| agent.id != "agent-7");
+    let now = jobs::now_ms();
+    s.h.link.tick_jobs(now);
+    s.h.link
+        .tick_jobs(now + crate::supervisor_link::job_runner::VANISHED_GRACE_MS - 1);
+    assert_eq!(
+        s.h.link.jobs().list(None, None, 1)[0].status,
+        JobStatus::Running
+    );
+    s.h.link
+        .tick_jobs(now + crate::supervisor_link::job_runner::VANISHED_GRACE_MS);
+    assert_eq!(job_error(&s).unwrap().code, jobs::JobErrorCode::NoChanges);
+}
+
+#[test]
+fn a_zero_daily_limit_refuses_with_the_reason_disabled() {
+    let s = setup(JobLimits {
+        daily_limit: 0,
+        per_project_daily_limit: None,
+    });
+    let refused = create(&s, Value::Null).unwrap_err();
+    assert_eq!(refused.code, "quota_exceeded");
+    assert_eq!(refused.reason.as_deref(), Some("disabled"));
+    assert!(
+        refused.message.contains("switched off"),
+        "{}",
+        refused.message
+    );
+    assert!(s.h.backend.requests.lock().unwrap().is_empty(), "no spawn");
+}

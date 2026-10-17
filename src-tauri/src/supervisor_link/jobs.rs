@@ -362,13 +362,17 @@ fn count_in_window(jobs: &[JobRecord], project: &str, now: u64) -> (u32, u32) {
     (all, here)
 }
 
-/// Whether one more job may start. `Err` names the limit that is reached:
+/// Whether one more job may start. `Err` names why not: `disabled` when a
+/// limit that applies is 0 (jobs are switched off, nothing frees up), else
 /// `daily_limit` or `project_daily_limit` (fixture `jobs.quota`).
 pub fn check_quota(
     limits: &JobLimits,
     in_window: u32,
     in_project: u32,
 ) -> Result<(), &'static str> {
+    if limits.daily_limit == 0 || limits.per_project_daily_limit == Some(0) {
+        return Err("disabled");
+    }
     if in_window >= limits.daily_limit {
         return Err("daily_limit");
     }
@@ -434,6 +438,17 @@ pub fn quota_message(
     project: &str,
     now: u64,
 ) -> String {
+    if reason == "disabled" {
+        let place = if limits.daily_limit == 0 {
+            "in all projects: the daily limit is 0".to_string()
+        } else {
+            format!("in {project}: its daily limit is 0")
+        };
+        return format!(
+            "jobs are switched off {place} (Settings → Supervisor → Supervisor link); \
+             no job starts until the limit is raised"
+        );
+    }
     let state = register.lock();
     let (limit, scope) = match reason {
         "project_daily_limit" => (limits.per_project_daily_limit.unwrap_or(0), Some(project)),

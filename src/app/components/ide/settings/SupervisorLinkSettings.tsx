@@ -129,8 +129,9 @@ function ProjectRow({ name, path, entry, usedToday, onSave }: ProjectRowProps) {
           <p id={`${id}-hint`} className="text-[10px] text-foreground-muted">
             Globs and paths are relative to the project. A client may only start the job kinds
             listed here; the agent follows the kind&apos;s instructions file and may only write the
-            kind&apos;s <code>writes</code> (default: the document globs). Jobs here in the last 24
-            hours: <span className="tabular-nums">{usedToday}</span>.
+            kind&apos;s <code>writes</code> (default: the document globs). A type&apos;s{' '}
+            <code>assets</code> globs name files clients may read but never write. Jobs here in the
+            last 24 hours: <span className="tabular-nums">{usedToday}</span>.
           </p>
           {error && (
             <p role="alert" className="text-[11px] text-red-400">

@@ -95,6 +95,29 @@ fn the_window_counts_the_last_24_hours_per_project_and_in_all() {
 }
 
 #[test]
+fn a_limit_of_zero_says_jobs_are_off_not_when_a_slot_frees_up() {
+    let jobs = Jobs::default();
+    let off = JobLimits {
+        daily_limit: 0,
+        per_project_daily_limit: None,
+    };
+    assert_eq!(check_quota(&off, 0, 0), Err("disabled"));
+    let message = quota_message("disabled", &off, &jobs, "/a", 1);
+    assert!(
+        message.contains("switched off in all projects"),
+        "{message}"
+    );
+    assert!(!message.contains("frees up"), "{message}");
+
+    let off_here = JobLimits {
+        daily_limit: 20,
+        per_project_daily_limit: Some(0),
+    };
+    let message = quota_message("disabled", &off_here, &jobs, "/a", 1);
+    assert!(message.contains("switched off in /a"), "{message}");
+}
+
+#[test]
 fn events_go_out_once_after_the_cursor() {
     let jobs = Jobs::default();
     let mut cursor = jobs.cursor();
