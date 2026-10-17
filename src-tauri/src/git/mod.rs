@@ -11,6 +11,7 @@ pub mod operation_step;
 pub mod staging;
 pub mod status;
 pub mod types;
+pub mod worktree_include;
 pub mod worktrees;
 
 // Re-export commands for lib.rs and tauri handler
@@ -27,6 +28,7 @@ pub use operation_step::*;
 pub use staging::*;
 pub use status::*;
 pub use types::*;
+pub use worktree_include::*;
 pub use worktrees::*;
 
 #[cfg(test)]

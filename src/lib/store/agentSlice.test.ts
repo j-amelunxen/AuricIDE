@@ -658,6 +658,37 @@ describe('agentSlice', () => {
     expect(spawnAgent).not.toHaveBeenCalled();
   });
 
+  it('reports carried over files in the agent log when spawning in a worktree', async () => {
+    const { addGitWorktree } = await import('../tauri/git');
+    vi.mocked(addGitWorktree).mockResolvedValueOnce({
+      path: '/repo.auric-wt/writer-ab12',
+      name: 'writer-ab12',
+      branch: 'auric/writer-ab12',
+      sourceRepo: '/repo',
+      isAuric: true,
+      dirty: false,
+      branchAhead: false,
+      carriedOver: ['.env (copied)', '.codegraph (copied)', 'node_modules (symlinked)'],
+    });
+
+    const agent = await store.getState().spawnNewAgent({
+      name: 'Writer',
+      model: 'claude-opus-4-6',
+      task: 'Write docs',
+      cwd: '/repo',
+      useWorktree: true,
+    });
+
+    const logs = store.getState().agentLogs[agent.id] ?? [];
+    expect(
+      logs.some((line) =>
+        line.includes(
+          '[worktree] Carried over from main checkout: .env (copied), .codegraph (copied), node_modules (symlinked)'
+        )
+      )
+    ).toBe(true);
+  });
+
   it('refuses to retry an agent that is not in error', async () => {
     const { spawnAgent } = await import('../tauri/agents');
     await store.getState().spawnNewAgent({

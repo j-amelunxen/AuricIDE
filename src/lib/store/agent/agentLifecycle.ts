@@ -54,6 +54,7 @@ export async function handleSpawnNewAgent(
   set: (fn: ((s: AgentSlice) => Partial<AgentSlice>) | Partial<AgentSlice>) => void
 ): Promise<AgentInfo> {
   let spawnConfig = config;
+  let worktreeCarriedOver: string[] | undefined;
   if (config.useWorktree) {
     const repo = config.worktreeRepoPath || config.cwd;
     const toast = get() as AgentSlice & {
@@ -68,6 +69,7 @@ export async function handleSpawnNewAgent(
     try {
       const { addGitWorktree } = await import('@/lib/tauri/git');
       const worktree = await addGitWorktree(repo, config.name);
+      worktreeCarriedOver = worktree.carriedOver;
       const { useWorktree: _flag, worktreeRepoPath: _source, ...rest } = config;
       spawnConfig = {
         ...rest,
@@ -95,6 +97,12 @@ export async function handleSpawnNewAgent(
     }
   }
   const agent = await registering(() => spawnAgent(spawnConfig));
+  if (worktreeCarriedOver && worktreeCarriedOver.length > 0) {
+    get().appendAgentLog(
+      agent.id,
+      `[worktree] Carried over from main checkout: ${worktreeCarriedOver.join(', ')}\n`
+    );
+  }
   const name = uniqueAgentName(
     agent.name,
     get().agents.map((a) => a.name)
