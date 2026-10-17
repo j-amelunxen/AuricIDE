@@ -1,11 +1,12 @@
 import { stripAnsi } from '../terminal/ansi';
+import fixtures from './awaitingInput.fixtures.json';
 
 /**
  * How many trailing meaningful lines a prompt may sit in before it no longer
  * counts as "waiting on you". A menu the user already answered scrolls out of
  * this window as the agent's next output arrives.
  */
-const SCANNED_LINES = 5;
+const SCANNED_LINES = fixtures.scannedLines;
 
 /** How many trailing chunks to look at — same reasoning as in activity.ts. */
 const SCANNED_CHUNKS = 12;
@@ -14,15 +15,11 @@ const SCANNED_CHUNKS = 12;
  * Patterns that mean "the process stopped to ask a human something".
  * Deliberately explicit: agents narrate questions in prose all the time, so a
  * bare question mark must never count. A missed prompt still surfaces later
- * through the stall escalation; a false one would cry wolf.
+ * through the stall escalation; a false one would cry wolf. The list lives in
+ * `awaitingInput.fixtures.json`, because Rust reads the same one to wake a
+ * supervisor whose child is waiting (`agents/awaiting_input.rs`).
  */
-export const PROMPT_PATTERNS: RegExp[] = [
-  /\?\s*[([](?:y(?:es)?\s*\/\s*no?)[)\]]/i, // "? (y/n)", "? [Y/n]", "? (yes/no)"
-  /\bdo you want to\b.*\?/i, // Claude/Codex-style permission questions
-  /^❯?\s*\d+\.\s+(yes|no)\b/i, // "❯ 1. Yes" selection menus
-  /\bpress enter\b/i,
-  /\bwaiting for (?:your )?input\b/i,
-];
+export const PROMPT_PATTERNS: RegExp[] = fixtures.patterns.map((source) => new RegExp(source, 'i'));
 
 /**
  * The trailing chunks of an agent's raw output, reduced to clean, non-blank

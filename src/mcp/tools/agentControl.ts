@@ -118,7 +118,12 @@ export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
       '{ done: true, result: { status "idle" | "error", exitCode, answer, isError, source, ' +
       "finishedAt, costUsd } }. answer is the CLI's own final text when source is " +
       '"cli_result" (headless Claude), otherwise the last 8 KiB of the cleaned console ' +
-      '("console_tail"). waitSeconds 0 only looks.' +
+      '("console_tail"). waitSeconds 0 only looks. With untilInput: true it also returns, ' +
+      'still running, as soon as an interactive agent waits on an answer — a prompt or ' +
+      `permission menu in its console, or ${CONTROL_LIMITS.inputQuietSeconds} s of silence ` +
+      'after a turn — with waitingForInput: true. Read its output, then answer or hand the ' +
+      'question on. Pass the outputBytes you already read as sinceOffset, so a question you ' +
+      'have seen does not wake the next call again.' +
       scopeNote,
     parameters: z.object({
       agentId: agentIdParam,
@@ -128,9 +133,39 @@ export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
         .nonnegative()
         .optional()
         .describe(`Seconds to wait, at most ${CONTROL_LIMITS.maxAwaitSeconds}`),
+      untilInput: z
+        .boolean()
+        .optional()
+        .describe('Also return when the agent waits on an answer (interactive agents only)'),
+      sinceOffset: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe('With untilInput: only output after this offset can wake the call'),
     }),
     execute: async (args: ControlParamsInput<'await_result'>) =>
       runControl(call, 'await_result', args),
+  };
+}
+
+/** `send_agent_input`, the same for the control and the supervisor server. */
+export function sendAgentInputTool(call: ControlCaller, scopeNote = '') {
+  return {
+    name: 'send_agent_input',
+    description:
+      "Type into a running agent's console, exactly like the composer in the IDE: the text " +
+      "followed by Enter (unless enter is false). This can answer the agent's questions and " +
+      'permission prompts — "1", "y" or a menu choice approves whatever the prompt asks, so ' +
+      'read the output first. Empty text with enter true is a bare Enter nudge. Headless ' +
+      'agents do not read input and refuse it.' +
+      scopeNote,
+    parameters: z.object({
+      agentId: agentIdParam,
+      text: z.string().describe('What to type; may be empty for a bare Enter'),
+      enter: z.boolean().optional().describe('Press Enter after the text (default true)'),
+    }),
+    execute: async (args: ControlParamsInput<'send_input'>) => runControl(call, 'send_input', args),
   };
 }
 
@@ -151,21 +186,7 @@ export function registerAgentControlTools(
 
   server.addTool(readAgentOutputTool(call));
 
-  server.addTool({
-    name: 'send_agent_input',
-    description:
-      "Type into a running agent's console, exactly like the composer in the IDE: the text " +
-      "followed by Enter (unless enter is false). This can answer the agent's questions and " +
-      'permission prompts — "1", "y" or a menu choice approves whatever the prompt asks, so ' +
-      'read the output first. Empty text with enter true is a bare Enter nudge. Headless ' +
-      'agents do not read input and refuse it.',
-    parameters: z.object({
-      agentId: agentIdParam,
-      text: z.string().describe('What to type; may be empty for a bare Enter'),
-      enter: z.boolean().optional().describe('Press Enter after the text (default true)'),
-    }),
-    execute: async (args) => runControl(call, 'send_input', args),
-  });
+  server.addTool(sendAgentInputTool(call));
 
   server.addTool({
     name: 'kill_agent',

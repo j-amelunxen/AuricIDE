@@ -1103,7 +1103,8 @@ fn await_result_ends_its_wait_with_the_live_status() {
     );
     assert_eq!(
         response["result"],
-        json!({ "done": false, "agentId": "agent-child", "status": "running", "outputBytes": 7 })
+        json!({ "done": false, "agentId": "agent-child", "status": "running", "outputBytes": 7,
+                "waitingForInput": false })
     );
     let unknown = call(
         &s.h,
@@ -1298,7 +1299,7 @@ fn a_supervisor_is_admitted_over_a_real_socket_in_its_scope() {
         &mut reader,
         r#"{"id":2,"method":"send_input","params":{"agentId":"agent-child","text":"y"}}"#,
     );
-    assert_eq!(error_code(&typed), "outside_supervisor_scope");
+    assert_eq!(typed["result"]["bytesWritten"], 2, "{typed}");
 }
 
 /// A finished child of `agent-sup` whose working directory is a real Auric
@@ -1382,4 +1383,108 @@ fn a_supervisor_spawn_in_a_worktree_reaches_the_frontend_as_asked() {
     assert_eq!(response["ok"], true, "{response}");
     let requests = s.h.backend.requests.lock().unwrap();
     assert_eq!(requests[0].params["worktree"], true);
+}
+
+#[test]
+fn a_supervisor_types_into_its_own_child_and_nowhere_else() {
+    let s = supervised_scope();
+    let typed = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 5, "method": "send_input",
+                "params": { "agentId": "agent-child", "text": "1" } }),
+    );
+    assert_eq!(typed["result"]["bytesWritten"], 2, "{typed}");
+    for foreign in ["agent-human", "agent-other", "agent-sup", "agent-ghost"] {
+        let refused = call_as(
+            &s.h,
+            &s.supervisor,
+            json!({ "id": 5, "method": "send_input",
+                    "params": { "agentId": foreign, "text": "1" } }),
+        );
+        assert_eq!(error_code(&refused), "unknown_agent", "{foreign}");
+    }
+    assert_eq!(
+        *s.h.backend.written.lock().unwrap(),
+        vec![("agent-child".to_string(), "1\r".to_string())]
+    );
+}
+
+fn await_until_input(s: &Scope, extra: Value) -> Value {
+    let mut params = json!({ "agentId": "agent-child", "waitSeconds": 5, "untilInput": true });
+    for (key, value) in extra.as_object().unwrap() {
+        params[key] = value.clone();
+    }
+    call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 21, "method": "await_result", "params": params }),
+    )
+}
+
+#[test]
+fn await_until_input_wakes_on_a_prompt_in_the_console() {
+    let s = supervised_scope();
+    s.h.buffers.append(
+        "agent-child",
+        "git ls-files\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n",
+    );
+    let started = Instant::now();
+    let response = await_until_input(&s, json!({}));
+    assert!(started.elapsed() < Duration::from_secs(2), "woken at once");
+    assert_eq!(response["result"]["done"], false, "{response}");
+    assert_eq!(response["result"]["waitingForInput"], true, "{response}");
+}
+
+#[test]
+fn await_until_input_does_not_wake_again_for_a_question_already_seen() {
+    let s = supervised_scope();
+    s.h.buffers.append("agent-child", "Continue? (y/n)\n");
+    let seen = s.h.buffers.total_bytes("agent-child");
+    let response = await_until_input(&s, json!({ "waitSeconds": 1, "sinceOffset": seen }));
+    assert_eq!(response["result"]["waitingForInput"], false, "{response}");
+}
+
+#[test]
+fn await_until_input_wakes_when_the_console_goes_quiet() {
+    let mut s = supervised_scope();
+    s.h.dispatcher.set_input_quiet(Duration::from_millis(600));
+    s.h.buffers.append(
+        "agent-child",
+        "Soll ich den Scope erweitern oder nur den Bug fixen?\n",
+    );
+    let started = Instant::now();
+    let response = await_until_input(&s, json!({}));
+    let waited = started.elapsed();
+    assert!(waited >= Duration::from_millis(600), "{waited:?}");
+    assert!(waited < Duration::from_secs(4), "{waited:?}");
+    assert_eq!(response["result"]["waitingForInput"], true, "{response}");
+}
+
+#[test]
+fn await_until_input_ignores_a_headless_child_and_still_returns_its_result() {
+    let s = supervised_scope();
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|agent| agent.id == "agent-child")
+        .unwrap()
+        .headless = true;
+    s.h.buffers.append("agent-child", "Continue? (y/n)\n");
+    let response = await_until_input(&s, json!({ "waitSeconds": 0 }));
+    assert_eq!(response["result"]["waitingForInput"], false, "{response}");
+    s.h.run_results.record(
+        RunResult::from_finish(
+            "agent-child",
+            AgentStatus::Idle,
+            Some(0),
+            None,
+            || Some("ANSWER: ok".into()),
+            1,
+        ),
+        Some("agent-sup".into()),
+    );
+    assert_eq!(await_until_input(&s, json!({}))["result"]["done"], true);
 }

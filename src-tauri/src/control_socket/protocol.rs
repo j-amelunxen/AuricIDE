@@ -11,6 +11,10 @@ pub const DEFAULT_TAIL_BYTES: u64 = 16 * 1024;
 pub const MAX_TAIL_BYTES: u64 = 256 * 1024;
 pub const DEFAULT_AWAIT_SECONDS: u64 = 60;
 pub const MAX_AWAIT_SECONDS: u64 = 120;
+/// How long an interactive agent's console must stay silent before
+/// `await_result` with `untilInput` reads it as waiting on an answer. An
+/// agent that ends its turn on a question in prose prints nothing more.
+pub const INPUT_QUIET_SECONDS: u64 = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -125,6 +129,14 @@ pub struct AwaitResultParams {
     /// Always `Some` after parsing: defaulted and clamped there.
     #[serde(default)]
     pub wait_seconds: Option<u64>,
+    /// Also return, unfinished, once the agent waits on an answer: a prompt
+    /// in its console tail, or `INPUT_QUIET_SECONDS` of silence.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub until_input: bool,
+    /// With `until_input`: only output past this offset can wake the call, so
+    /// a question already seen does not wake it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since_offset: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -358,6 +370,9 @@ pub struct AwaitPending {
     pub agent_id: String,
     pub status: AgentStatus,
     pub output_bytes: u64,
+    /// Set only by a call with `until_input` that ended because the agent
+    /// waits on an answer.
+    pub waiting_for_input: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -375,12 +390,18 @@ pub enum AwaitOutcome {
 }
 
 impl AwaitOutcome {
-    pub fn pending(agent_id: &str, status: AgentStatus, output_bytes: u64) -> Self {
+    pub fn pending(
+        agent_id: &str,
+        status: AgentStatus,
+        output_bytes: u64,
+        waiting_for_input: bool,
+    ) -> Self {
         Self::Pending(AwaitPending {
             done: false,
             agent_id: agent_id.to_string(),
             status,
             output_bytes,
+            waiting_for_input,
         })
     }
 
@@ -522,6 +543,7 @@ pub(crate) mod tests {
         assert_eq!(limits["maxTailBytes"], MAX_TAIL_BYTES);
         assert_eq!(limits["defaultAwaitSeconds"], DEFAULT_AWAIT_SECONDS);
         assert_eq!(limits["maxAwaitSeconds"], MAX_AWAIT_SECONDS);
+        assert_eq!(limits["inputQuietSeconds"], INPUT_QUIET_SECONDS);
     }
 
     #[test]
@@ -810,7 +832,17 @@ pub(crate) mod tests {
         let ours: Vec<(&str, Value)> = vec![
             (
                 "await_result while the agent still runs",
-                ok_response(&json!(18), AwaitOutcome::pending("agent-5", AgentStatus::Running, 2048)),
+                ok_response(
+                    &json!(18),
+                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 2048, false),
+                ),
+            ),
+            (
+                "await_result returns early: the agent waits for input",
+                ok_response(
+                    &json!(21),
+                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 4096, true),
+                ),
             ),
             (
                 "await_result for an agent that failed, answer from the console tail",
@@ -841,12 +873,12 @@ pub(crate) mod tests {
                 ),
             ),
             (
-                "send_input from a supervisor",
+                "send_input from a supervisor to an agent it did not start",
                 error_response(
                     &json!(5),
                     &ControlError::new(
-                        ErrorCode::OutsideSupervisorScope,
-                        "A supervisor cannot type into agents. Ask the human to answer in agent-5's window.",
+                        ErrorCode::UnknownAgent,
+                        "no agent with id agent-5 is running or recently finished",
                     ),
                 ),
             ),

@@ -57,6 +57,8 @@ export const CONTROL_LIMITS = {
   maxAwaitSeconds: 120,
   /** How much longer than `waitSeconds` the client waits before it reports `timeout`. */
   awaitClientGraceSeconds: 5,
+  /** Silence after which `await_result` with `untilInput` reads an agent as waiting. */
+  inputQuietSeconds: 20,
 } as const;
 
 /**
@@ -172,13 +174,25 @@ const PARAMS = {
       role: p.role === 'supervisor' ? ('supervisor' as const) : null,
       worktree: p.worktree ?? null,
     })),
-  await_result: z.object({ agentId, waitSeconds: offset.nullish() }).transform((p) => ({
-    agentId: p.agentId,
-    waitSeconds: Math.min(
-      p.waitSeconds ?? CONTROL_LIMITS.defaultAwaitSeconds,
-      CONTROL_LIMITS.maxAwaitSeconds
-    ),
-  })),
+  await_result: z
+    .object({
+      agentId,
+      waitSeconds: offset.nullish(),
+      untilInput: z.boolean().nullish(),
+      sinceOffset: offset.nullish(),
+    })
+    .transform((p) => ({
+      agentId: p.agentId,
+      waitSeconds: Math.min(
+        p.waitSeconds ?? CONTROL_LIMITS.defaultAwaitSeconds,
+        CONTROL_LIMITS.maxAwaitSeconds
+      ),
+      // Left out when unset, as Rust serialises them, so older requests read the same.
+      ...(p.untilInput ? { untilInput: true } : {}),
+      ...(p.sinceOffset !== null && p.sinceOffset !== undefined
+        ? { sinceOffset: p.sinceOffset }
+        : {}),
+    })),
   remove_worktree: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
 } satisfies Record<ControlMethod, z.ZodType>;
 
@@ -377,6 +391,8 @@ const RESULTS = {
       agentId: z.string(),
       status: agentStatus,
       outputBytes: offset,
+      /** Only `untilInput` sets it; an IDE from before it existed sends nothing. */
+      waitingForInput: z.boolean().default(false),
     }),
     z.object({ done: z.literal(true), result: runResult }),
   ]),

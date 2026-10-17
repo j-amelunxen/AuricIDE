@@ -32,6 +32,7 @@
     "defaultAwaitSeconds": 60,
     "maxAwaitSeconds": 120,
     "awaitClientGraceSeconds": 5,
+    "inputQuietSeconds": 20,
     "runResultsKept": 200,
     "consoleTailAnswerBytes": 8192
   },
@@ -277,6 +278,20 @@
       }
     },
     {
+      "name": "await_result until the agent waits for input, after an offset",
+      "raw": "{\"id\":21,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\",\"untilInput\":true,\"sinceOffset\":2048}}",
+      "expected": {
+        "id": 21,
+        "method": "await_result",
+        "params": {
+          "agentId": "agent-5",
+          "waitSeconds": 60,
+          "untilInput": true,
+          "sinceOffset": 2048
+        }
+      }
+    },
+    {
       "name": "not JSON",
       "raw": "{ nope",
       "expectedError": {
@@ -369,6 +384,14 @@
       "raw": "{\"id\":23,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\",\"waitSeconds\":-1}}",
       "expectedError": {
         "id": 23,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "await_result with negative sinceOffset",
+      "raw": "{\"id\":24,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\",\"untilInput\":true,\"sinceOffset\":-1}}",
+      "expectedError": {
+        "id": 24,
         "code": "invalid_params"
       }
     }
@@ -838,7 +861,23 @@
           "done": false,
           "agentId": "agent-5",
           "status": "running",
-          "outputBytes": 2048
+          "outputBytes": 2048,
+          "waitingForInput": false
+        }
+      }
+    },
+    {
+      "name": "await_result returns early: the agent waits for input",
+      "method": "await_result",
+      "raw": {
+        "id": 21,
+        "ok": true,
+        "result": {
+          "done": false,
+          "agentId": "agent-5",
+          "status": "running",
+          "outputBytes": 4096,
+          "waitingForInput": true
         }
       }
     },
@@ -989,18 +1028,6 @@
       }
     },
     {
-      "name": "send_input from a supervisor",
-      "method": "send_input",
-      "raw": {
-        "id": 5,
-        "ok": false,
-        "error": {
-          "code": "outside_supervisor_scope",
-          "message": "A supervisor cannot type into agents. Ask the human to answer in agent-5's window."
-        }
-      }
-    },
-    {
       "name": "remove_worktree keeps a worktree with work in it",
       "method": "remove_worktree",
       "raw": {
@@ -1014,6 +1041,18 @@
           "removed": false,
           "dirty": false,
           "branchAhead": true
+        }
+      }
+    },
+    {
+      "name": "send_input from a supervisor to an agent it did not start",
+      "method": "send_input",
+      "raw": {
+        "id": 5,
+        "ok": false,
+        "error": {
+          "code": "unknown_agent",
+          "message": "no agent with id agent-5 is running or recently finished"
         }
       }
     }
@@ -1047,13 +1086,11 @@
           "list_agents",
           "read_output",
           "await_result",
+          "send_input",
           "spawn",
           "kill",
           "remove_worktree"
         ],
-        "refusedMethods": {
-          "send_input": "outside_supervisor_scope"
-        },
         "scope": "own_children",
         "outsideScope": "unknown_agent",
         "refusedParams": {
@@ -1068,7 +1105,8 @@
           "spawnedByAgentId": "<the supervisor's agent id>",
           "runSource": "supervisor"
         },
-        "worktrees": "spawn may pass worktree: true; remove_worktree removes an own child's worktree only when it holds no uncommitted change and no unmerged commit, otherwise answers removed: false and leaves it for a person. No path and no force are accepted: the folder is the child's own working directory."
+        "worktrees": "spawn may pass worktree: true; remove_worktree removes an own child's worktree only when it holds no uncommitted change and no unmerged commit, otherwise answers removed: false and leaves it for a person. No path and no force are accepted: the folder is the child's own working directory.",
+        "typing": "send_input reaches its own interactive children only, like read_output and kill. It can answer a child's question or permission prompt, so the launch prompt tells the supervisor which ones it may answer and which go to the human. A headless child still refuses it (headless_no_stdin)."
       },
       "worker": {
         "methods": [],
@@ -1160,11 +1198,25 @@
         "expected": "ok_own_children_only"
       },
       {
-        "name": "supervisor cannot type, not even into its own child",
+        "name": "supervisor types into its own child",
         "caller": "supervisor",
         "method": "send_input",
         "target": "own_child",
-        "expected": "outside_supervisor_scope"
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor cannot type into an agent the human started",
+        "caller": "supervisor",
+        "method": "send_input",
+        "target": "unrelated_agent",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "supervisor cannot type into another supervisor's child",
+        "caller": "supervisor",
+        "method": "send_input",
+        "target": "other_supervisors_child",
+        "expected": "unknown_agent"
       },
       {
         "name": "supervisor cannot pass role",

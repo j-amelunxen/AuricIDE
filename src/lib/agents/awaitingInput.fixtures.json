@@ -1,0 +1,54 @@
+{
+  "_comment": [
+    "When an agent's console counts as waiting on an answer. The frontend (awaitingInput.ts) reads it",
+    "for the attention model, Rust (agents/awaiting_input.rs) for a supervisor's await_result with",
+    "untilInput. Both compile these patterns, case-insensitive, and test the last scannedLines clean lines:",
+    "\\r normalised to \\n, ANSI removed, whitespace collapsed, trimmed, lines without a letter or digit",
+    "dropped. A bare question mark never counts: agents narrate questions in prose all the time."
+  ],
+  "scannedLines": 5,
+  "patterns": [
+    "\\?\\s*[(\\[](?:y(?:es)?\\s*/\\s*no?)[)\\]]",
+    "\\bdo you want to\\b.*\\?",
+    "^❯?\\s*\\d+\\.\\s+(yes|no)\\b",
+    "\\bpress enter\\b",
+    "\\bwaiting for (?:your )?input\\b"
+  ],
+  "cases": [
+    { "name": "y/n prompt", "text": "Overwrite file? (y/n)", "expected": true },
+    { "name": "Y/n in brackets", "text": "Continue? [Y/n]", "expected": true },
+    {
+      "name": "permission question with a menu",
+      "text": "Bash command\n  git ls-files\nDo you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently",
+      "expected": true
+    },
+    { "name": "menu line alone", "text": "❯ 1. Yes", "expected": true },
+    { "name": "press enter", "text": "Press Enter to continue", "expected": true },
+    { "name": "waiting for your input", "text": "waiting for your input", "expected": true },
+    {
+      "name": "ANSI and carriage returns are cleaned before matching",
+      "text": "\u001b[1mDo you want to\u001b[0m create notes.md?\r\n",
+      "expected": true
+    },
+    {
+      "name": "a question in prose does not count",
+      "text": "Should I also update the docs? I will continue with the parser first.",
+      "expected": false
+    },
+    {
+      "name": "plain work output",
+      "text": "Reading src/parser.ts\nRan 3 tests",
+      "expected": false
+    },
+    {
+      "name": "a prompt that scrolled out of the last lines no longer counts",
+      "text": "Continue? (y/n)\nyes\nApplying patch\nRan 1 shell command\nReading break.ts\nRan 3 tests\nAll green",
+      "expected": false
+    },
+    {
+      "name": "lines without a letter or digit do not push a prompt out",
+      "text": "Do you want to proceed?\n────\n│\n \n────\n╰──╯",
+      "expected": true
+    }
+  ]
+}

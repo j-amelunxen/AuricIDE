@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { detectAwaitingInput } from './awaitingInput';
+import fixtures from './awaitingInput.fixtures.json';
 
 describe('detectAwaitingInput', () => {
   it('sees a y/n question', () => {
@@ -56,5 +57,11 @@ describe('detectAwaitingInput', () => {
 
   it('returns false for an empty tail', () => {
     expect(detectAwaitingInput([])).toBe(false);
+  });
+});
+
+describe('awaitingInput.fixtures.json (shared with Rust)', () => {
+  it.each(fixtures.cases)('$name', ({ text, expected }) => {
+    expect(detectAwaitingInput([text])).toBe(expected);
   });
 });

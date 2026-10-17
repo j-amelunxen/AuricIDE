@@ -430,11 +430,13 @@ ADR 0004.
   the matched agent and its role; a supervisor is admitted with its own scope,
   a worker still gets `forbidden_agent_caller`. A walk that cannot finish
   (unreadable parent, a loop) is refused too, never treated as external.
-- **Its scope is its own children.** List, read, await and kill only what it
-  spawned; `send_input` is refused (`outside_supervisor_scope`), so a question
-  from a child goes to the human. Children keep running when the supervisor is
-  killed; their results (`agents/run_results.rs`) stay until its card is
-  cleared.
+- **Its scope is its own children.** List, read, await, kill and type into
+  only what it spawned. `await_result` with `untilInput` wakes it when a child
+  waits on a question (`awaitingInput.fixtures.json`, shared with the attention
+  model); the launch prompt says which questions it answers itself and which go
+  to the human, whose answer it then types in (ADR 0004, amendment
+  2026-10-17). Children keep running when the supervisor is killed; their
+  results (`agents/run_results.rs`) stay until its card is cleared.
 - **The supervisor itself has a shell only through approved skills or tools.** Rust
   forces its launch: a fresh cwd `~/.auric/supervisors/<start time>/`, file
   tools + `Skill` under `--restricted` (they reach only that folder), one MCP

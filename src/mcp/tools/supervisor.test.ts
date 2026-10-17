@@ -14,6 +14,7 @@ const TOOL_METHODS: Record<string, string> = {
   list_my_agents: 'list_agents',
   read_agent_output: 'read_output',
   await_agent_result: 'await_result',
+  send_agent_input: 'send_input',
   kill_agent: 'kill',
   remove_worktree: 'remove_worktree',
 };
@@ -43,14 +44,6 @@ describe('supervisor tools', () => {
     const tools = capture(vi.fn() as unknown as ControlCaller);
     expect([...tools.keys()].sort()).toEqual(Object.keys(TOOL_METHODS).sort());
     expect(Object.values(TOOL_METHODS).sort()).toEqual([...scope.methods].sort());
-  });
-
-  it('offer no way to type into an agent', () => {
-    const tools = capture(vi.fn() as unknown as ControlCaller);
-    for (const refused of Object.keys(scope.refusedMethods)) {
-      expect(Object.values(TOOL_METHODS)).not.toContain(refused);
-    }
-    expect(tools.has('send_agent_input')).toBe(false);
   });
 
   it('map each tool onto its socket method', async () => {

@@ -26,6 +26,7 @@ describe('agent control contract', () => {
   it('uses the limits the fixtures name', () => {
     expect(CONTROL_LIMITS.defaultTailBytes).toBe(fixtures.limits.defaultTailBytes);
     expect(CONTROL_LIMITS.maxTailBytes).toBe(fixtures.limits.maxTailBytes);
+    expect(CONTROL_LIMITS.inputQuietSeconds).toBe(fixtures.limits.inputQuietSeconds);
     expect(CONTROL_LIMITS.frontendTimeoutMs).toBe(fixtures.limits.frontendTimeoutMs);
     expect(CONTROL_LIMITS.defaultAwaitSeconds).toBe(fixtures.limits.defaultAwaitSeconds);
     expect(CONTROL_LIMITS.maxAwaitSeconds).toBe(fixtures.limits.maxAwaitSeconds);

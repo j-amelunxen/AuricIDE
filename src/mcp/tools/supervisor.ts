@@ -7,6 +7,7 @@ import {
   readAgentOutputTool,
   removeWorktreeTool,
   runControl,
+  sendAgentInputTool,
   worktreeParam,
   type ControlCaller,
 } from './agentControl';
@@ -16,7 +17,7 @@ import {
  * (`docs/design-agent-control.md`, "Supervisor scope"; ADR 0004). They run
  * inside the one IDE agent the control socket admits, and the socket — not
  * this file — enforces the scope: own children only, the supervisor policy on
- * every spawn, no typing. The descriptions say what is refused so an
+ * every spawn. The descriptions say what is refused so an
  * orchestrating model plans around it instead of discovering it.
  */
 
@@ -75,16 +76,25 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
     execute: async () => runControl(call, 'list_agents', {}),
   });
 
+  server.addTool(readAgentOutputTool(call, OWN_CHILDREN));
+
   server.addTool(
-    readAgentOutputTool(
+    awaitAgentResultTool(
       call,
       OWN_CHILDREN +
-        ' You cannot type into an agent: when one waits on a question, tell the human which ' +
-        "agent's window to answer in."
+        ' For an interactive agent, always pass untilInput: true, so you hear about its ' +
+        'questions instead of the human having to relay them.'
     )
   );
 
-  server.addTool(awaitAgentResultTool(call, OWN_CHILDREN));
+  server.addTool(
+    sendAgentInputTool(
+      call,
+      OWN_CHILDREN +
+        ' Answer only what your instructions let you decide yourself; every other question ' +
+        'goes to the human first, and you type their answer in for them.'
+    )
+  );
 
   server.addTool({
     name: 'kill_agent',

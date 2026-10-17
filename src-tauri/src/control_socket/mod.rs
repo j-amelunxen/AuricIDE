@@ -17,6 +17,7 @@ pub mod projects;
 pub mod protocol;
 mod supervised;
 
+use crate::agents::awaiting_input::awaits_input;
 use crate::agents::output_buffer::OutputBuffers;
 use crate::agents::run_results::{RunResult, RunResults, CONSOLE_TAIL_ANSWER_BYTES};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
@@ -44,6 +45,37 @@ pub const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// What a terminal sends for the Enter key. `\n` only inserts a line break in
 /// Claude Code's input box and never submits.
 pub const ENTER: &str = "\r";
+
+/// How often `await_result` with `untilInput` looks at the console again.
+const INPUT_POLL: Duration = Duration::from_millis(500);
+/// How much of the console tail is searched for a prompt.
+const INPUT_TAIL_BYTES: u64 = 4096;
+
+/// When an agent's console last grew, as one `await_result` call saw it.
+struct QuietClock {
+    bytes: u64,
+    since: Instant,
+}
+
+impl QuietClock {
+    fn new(bytes: u64) -> Self {
+        Self {
+            bytes,
+            since: Instant::now(),
+        }
+    }
+
+    fn observe(&mut self, bytes: u64) {
+        if bytes != self.bytes {
+            self.bytes = bytes;
+            self.since = Instant::now();
+        }
+    }
+
+    fn silent_for(&self) -> Duration {
+        self.since.elapsed()
+    }
+}
 
 /// A request line longer than this is refused and the connection closed. The
 /// largest legitimate one is a spawn prompt; a megabyte leaves ample room.
@@ -208,6 +240,8 @@ pub struct Dispatcher {
     /// cleared the agent's card. In memory only: a worktree left over from
     /// before a restart stays in the Git panel's worktree list for a person.
     worktrees: Mutex<HashMap<String, String>>,
+    /// `INPUT_QUIET_SECONDS`, shorter in tests.
+    input_quiet: Duration,
 }
 
 pub(crate) type Outcome = Result<Value, ControlError>;
@@ -234,6 +268,7 @@ impl Dispatcher {
             frontend_timeout,
             supervisor_spawn_gate: Mutex::new(()),
             worktrees: Mutex::new(HashMap::new()),
+            input_quiet: Duration::from_secs(INPUT_QUIET_SECONDS),
         }
     }
 
@@ -498,7 +533,29 @@ impl Dispatcher {
             return Err(Self::unknown(agent_id));
         }
         let wait = Duration::from_secs(params.wait_seconds.unwrap_or(DEFAULT_AWAIT_SECONDS));
-        if let Some(result) = self.run_results.wait_for(agent_id, Instant::now() + wait) {
+        let deadline = Instant::now() + wait;
+        // Headless agents read no input, so there is nothing to wake for.
+        let watch_input = params.until_input && live.as_ref().is_some_and(|agent| !agent.headless);
+        let mut waiting_for_input = false;
+        if watch_input {
+            let mut quiet = QuietClock::new(self.buffers.total_bytes(agent_id));
+            loop {
+                if self.input_awaited(agent_id, params.since_offset, &mut quiet) {
+                    waiting_for_input = true;
+                    break;
+                }
+                let now = Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                if let Some(result) = self
+                    .run_results
+                    .wait_for(agent_id, deadline.min(now + INPUT_POLL))
+                {
+                    return to_value(AwaitOutcome::done(result));
+                }
+            }
+        } else if let Some(result) = self.run_results.wait_for(agent_id, deadline) {
             return to_value(AwaitOutcome::done(result));
         }
         let status = self
@@ -508,7 +565,41 @@ impl Dispatcher {
             agent_id,
             status,
             self.buffers.total_bytes(agent_id),
+            waiting_for_input,
         ))
+    }
+
+    /// Whether a running agent now waits on an answer it printed past
+    /// `since_offset`: a prompt in its console tail, or a console that has
+    /// been silent for `input_quiet`. Output up to `since_offset` was
+    /// already seen by the caller and wakes nothing.
+    fn input_awaited(
+        &self,
+        agent_id: &str,
+        since_offset: Option<u64>,
+        quiet: &mut QuietClock,
+    ) -> bool {
+        if !self
+            .find_agent(agent_id)
+            .is_some_and(|agent| agent.status == AgentStatus::Running)
+        {
+            return false;
+        }
+        let total = self.buffers.total_bytes(agent_id);
+        quiet.observe(total);
+        if total <= since_offset.unwrap_or(0) {
+            return false;
+        }
+        let prompt = self
+            .buffers
+            .read(agent_id, INPUT_TAIL_BYTES, None)
+            .is_some_and(|slice| awaits_input(&slice.text));
+        prompt || quiet.silent_for() >= self.input_quiet
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_input_quiet(&mut self, input_quiet: Duration) {
+        self.input_quiet = input_quiet;
     }
 
     /// A finished agent whose result is no longer kept (or predates the

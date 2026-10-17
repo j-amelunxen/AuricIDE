@@ -108,7 +108,8 @@ Four facts shaped the decision:
 
 - One IDE agent can now start other agents without a click. What it can start
   is bounded by the policy file and by the project's provider policy. Its
-  children cannot type into anything, and it cannot type into them.
+  children cannot type into anything. (It could not type into them either,
+  until the amendment of 2026-10-17 below.)
 - The policy file is protected by file mode only: 0600, owned by the user.
   The supervisor itself cannot write it (it has no file or shell tools), but
   any other process of the same user can, including any agent that has a
@@ -197,3 +198,32 @@ Checked against Claude Code 2.1.301: under `--restricted` the `Skill` tool
 lists the built-in skills plus the `--plugin-dir` skills and none from
 `~/.claude/skills` or the cwd's `.claude/skills`; the supervisor MCP tools load
 with the new tool set.
+
+## Amendment 2026-10-17: a supervisor types into its own children
+
+v1 refused `send_input` to a supervisor even for its own children. In use that
+put the human in the middle of every exchange: a child stopped on a question or
+a permission prompt ("may I run `git ls-files`?"), the supervisor asked the
+human to answer in the child's window, and every correction the supervisor
+wanted to pass on had to be copied over by hand.
+
+- **`send_input` now reaches the supervisor's own children** through the same
+  `ensure_child` check as `read_output` and `kill`. Any other id stays
+  `unknown_agent`; a headless child still refuses input.
+- **`await_result` can wake on a question** (`untilInput`, `sinceOffset`):
+  a prompt in the console tail or 20 s of silence ends the wait with
+  `waitingForInput: true`. The prompt patterns moved into
+  `awaitingInput.fixtures.json`, so Rust and the attention model read one list.
+- **Who answers is a rule in the launch prompt**, not in Rust: read-only
+  commands, the project's tests, lint and build and edits inside the child's
+  folder the supervisor answers; destructive, outward-facing or costly actions,
+  scope changes and design choices go to the human in the supervisor's own
+  conversation, and the supervisor types the answer in.
+
+What this gives up: "no agent answers another agent's prompt" no longer holds
+for a supervisor and its children. The bound that remains is the child's
+permission mode, which the policy still names and which may never be one that
+runs unattended, and the scope, which still ends at the supervisor's own
+children. A supervisor that ignores its instructions can now approve whatever
+its children ask within that mode; that is the price of not routing every
+question through the human, taken on purpose.

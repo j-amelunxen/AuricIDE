@@ -4,9 +4,10 @@
 //!
 //! A supervisor sees and touches only the agents it started. Any other id is
 //! `unknown_agent`, the same answer as an id that does not exist, so it learns
-//! nothing from probing. It may not type at all, may not name a role or a
-//! permission mode, and every spawn passes the supervisor policy here before
-//! it reaches the frontend.
+//! nothing from probing. It may type into its own interactive children (to
+//! answer their questions), may not name a role or a permission mode, and
+//! every spawn passes the supervisor policy here before it reaches the
+//! frontend.
 
 use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
@@ -42,13 +43,10 @@ impl Dispatcher {
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.remove_worktree(params)
             }
-            Request::SendInput(params) => Err(ControlError::new(
-                ErrorCode::OutsideSupervisorScope,
-                format!(
-                    "A supervisor cannot type into agents. Ask the human to answer in {}'s window.",
-                    params.agent_id
-                ),
-            )),
+            Request::SendInput(params) => {
+                self.ensure_child(supervisor, &params.agent_id)?;
+                self.send_input(params)
+            }
             Request::Spawn(params) => self.supervised_spawn(supervisor, params),
             Request::ListProjects(_) => self.supervised_projects(supervisor),
         }

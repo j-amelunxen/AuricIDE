@@ -424,20 +424,26 @@ fn guard_ids_that_are_not_my_children_answer_exactly_like_ids_that_do_not_exist(
     assert_eq!(ids, vec!["agent-child"]);
 }
 
+/// Typing can answer a permission prompt, so it reaches exactly the agents
+/// the supervisor started; every other id looks like one that does not exist.
 #[test]
-fn guard_a_supervisor_cannot_type_even_into_its_own_child() {
+fn guard_a_supervisor_types_only_into_its_own_child() {
     let r = rig(2, Duration::from_millis(50));
     for text in ["y", "", "\u{1b}[B"] {
-        let response = ask(
+        let own = ask(
             &r,
             &r.supervisor,
             json!({ "id": 1, "method": "send_input",
                     "params": { "agentId": "agent-child", "text": text } }),
         );
-        assert_eq!(
-            response["error"]["code"], "outside_supervisor_scope",
-            "{response}"
+        assert_eq!(own["ok"], true, "{own}");
+        let foreign = ask(
+            &r,
+            &r.supervisor,
+            json!({ "id": 1, "method": "send_input",
+                    "params": { "agentId": "agent-human", "text": text } }),
         );
+        assert_eq!(foreign["error"]["code"], "unknown_agent", "{foreign}");
     }
 }
 

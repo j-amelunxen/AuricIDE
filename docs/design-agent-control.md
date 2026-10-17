@@ -68,7 +68,7 @@ All field names are camelCase on the wire.
 | `kill`            | `{ agentId }`                                                                                                                     | `{ agentId, killed: true }`         |
 | `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", worktree?: boolean }` | `{ agentId }`                       |
 | `list_projects`   | —                                                                                                                                 | `{ projects: ProjectEntry[] }`      |
-| `await_result`    | `{ agentId, waitSeconds?: number (default 60, max 120) }`                                                                         | `AwaitResult`                       |
+| `await_result`    | `{ agentId, waitSeconds?: number (default 60, max 120), untilInput?: boolean, sinceOffset?: number }`                             | `AwaitResult`                       |
 | `remove_worktree` | `{ agentId }`                                                                                                                     | `WorktreeRemoval`                   |
 
 `role` and `await_result` belong to the supervisor scope and are described
@@ -290,16 +290,25 @@ start another supervisor.
 | `await_result`    | its own children only                                                                         |
 | `kill`            | its own children only                                                                         |
 | `remove_worktree` | its own children only                                                                         |
-| `send_input`      | refused, `outside_supervisor_scope`                                                           |
+| `send_input`      | its own children only                                                                         |
 
 - **Own children only.** Any other agent id, including the supervisor's own,
   an agent the human started and another supervisor's child, is answered with
   `unknown_agent`, the same as an id that does not exist. A supervisor learns
   nothing from an id outside its scope, not even whether it exists.
-- **No typing, in v1.** `send_input` is refused even for its own children.
-  Typing into a console can answer a permission prompt, which is the reason
-  agents were kept off the socket in the first place. When a child waits on a
-  question, the supervisor tells the human which window to answer in.
+- **Typing reaches its own children only.** Typing into a console can answer
+  a permission prompt, which is the reason agents were kept off the socket in
+  the first place. v1 refused `send_input` outright, and the human ended up
+  copying every question and every correction between the supervisor's window
+  and the child's. Now a supervisor types into its own interactive children
+  (headless ones still answer `headless_no_stdin`), and the launch prompt
+  (`supervisorLaunchPrompt.ts`, "Working with your agents") draws the line:
+  read-only commands, the project's tests, lint and build, and edits in the
+  child's own folder it answers itself; anything destructive, outward-facing,
+  costly, a change of scope or a design choice goes to the human first, in the
+  supervisor's own conversation, and the supervisor types the answer in. That
+  line is an instruction to a model, not a check in Rust: what a child may do
+  at all is still decided by the permission mode the policy gives it.
 - **Refused parameters.** `role` on a supervisor's `spawn` is `invalid_params`:
   the field does not exist for that caller. `permissionMode` is
   `outside_supervisor_scope`: the policy names the mode, the supervisor does
@@ -373,8 +382,8 @@ cleared.
 Waits up to `waitSeconds` for the agent to finish, then answers:
 
 ```
-{ done: false, agentId, status, outputBytes }      // still running when the wait ended
-{ done: true, result: RunResult }                  // finished, now or earlier
+{ done: false, agentId, status, outputBytes, waitingForInput }  // still running when the wait ended
+{ done: true, result: RunResult }                               // finished, now or earlier
 ```
 
 `RunResult` = `{ agentId, status: "idle" | "error", exitCode: number | null,
@@ -390,6 +399,16 @@ finishedAt, costUsd: number | null }`.
   while the socket waits for the next request line.
 - The client allows `waitSeconds + 5` s before it reports `timeout`.
 - External callers may await any agent; a supervisor only its children.
+- `untilInput: true` also ends the wait, unfinished, once an interactive agent
+  waits on an answer: its last clean console lines show a prompt
+  (`awaitingInput.fixtures.json`, the same patterns the attention model uses,
+  read by `agents/awaiting_input.rs` and `awaitingInput.ts`), or its console
+  has been silent for `inputQuietSeconds` (**20**) — an agent that ends its turn
+  on a question in prose prints nothing more. Then `waitingForInput` is `true`.
+  Only output past `sinceOffset` can wake the call, so a caller that passes
+  the `outputBytes` it last read is not woken twice for the same question. A
+  headless agent never wakes it. The silence check counts from the start of
+  the call, so a console that was already quiet takes those 20 s to report.
 
 ### Worktrees
 
@@ -431,6 +450,7 @@ stays in the Git panel's worktree list for a person.
 | `list_my_agents`     | `list_agents`     |
 | `read_agent_output`  | `read_output`     |
 | `await_agent_result` | `await_result`    |
+| `send_agent_input`   | `send_input`      |
 | `kill_agent`         | `kill`            |
 | `remove_worktree`    | `remove_worktree` |
 
@@ -445,7 +465,7 @@ stays in the Git panel's worktree list for a person.
 - `supervisor_denied`: the supervisor policy refuses this spawn. The error
   body carries `reason`, a stable key from `supervisorPolicy.fixtures.json`.
 - `outside_supervisor_scope`: a supervisor asked for something its scope never
-  includes (`send_input`, a `permissionMode` of its own).
+  includes (a `permissionMode` of its own).
 
 The client adds three of its own: `app_not_running` when the socket does not
 exist or refuses the connection, `timeout` when no answer arrives in time, and

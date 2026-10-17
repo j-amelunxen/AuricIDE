@@ -36,7 +36,7 @@ function capture(call: ControlCaller): Map<string, CapturedTool> {
 }
 
 describe('the supervisor tool surface', () => {
-  it('has no tool that types, and no tool that names a role or permission mode', () => {
+  it('types only through send_agent_input, and no tool names a role or permission mode', () => {
     const tools = capture(vi.fn() as unknown as ControlCaller);
     expect([...tools.keys()].sort()).toEqual([
       'await_agent_result',
@@ -45,6 +45,7 @@ describe('the supervisor tool surface', () => {
       'list_projects',
       'read_agent_output',
       'remove_worktree',
+      'send_agent_input',
       'spawn_agent',
     ]);
     const spawn = tools.get('spawn_agent')!.parameters;
