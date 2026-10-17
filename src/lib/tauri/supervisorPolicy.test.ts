@@ -5,7 +5,11 @@ vi.mock('./invoke', () => ({ invoke: (...args: unknown[]) => mockInvoke(...args)
 
 import fixtures from '../config/supervisorPolicy.fixtures.json';
 import type { SupervisorPolicy } from '../config/supervisorPolicy';
-import { supervisorPolicyGet, supervisorPolicySet } from './supervisorPolicy';
+import {
+  supervisorPolicyGet,
+  supervisorPolicySet,
+  supervisorResolveTool,
+} from './supervisorPolicy';
 
 describe('supervisor policy Tauri API', () => {
   beforeEach(() => mockInvoke.mockReset());
@@ -29,5 +33,12 @@ describe('supervisor policy Tauri API', () => {
 
     expect(mockInvoke).toHaveBeenCalledOnce();
     expect(mockInvoke).toHaveBeenCalledWith('supervisor_policy_set', { policy });
+  });
+
+  it('asks Rust where a tool lives, by name', async () => {
+    mockInvoke.mockResolvedValue('/opt/homebrew/bin/umi');
+
+    await expect(supervisorResolveTool('umi')).resolves.toBe('/opt/homebrew/bin/umi');
+    expect(mockInvoke).toHaveBeenCalledWith('supervisor_resolve_tool', { name: 'umi' });
   });
 });

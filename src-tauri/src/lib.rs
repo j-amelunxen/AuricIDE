@@ -312,6 +312,7 @@ pub fn run() {
             menu_bar::menu_bar_sync,
             supervisor::supervisor_policy_get,
             supervisor::supervisor_policy_set,
+            supervisor::supervisor_resolve_tool,
             provider_policy::project_provider_policy_get,
             agent_window::open_agent_window,
             agent_window::focus_agent_window,

@@ -108,6 +108,7 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
       {
         firstTask: input.firstTask,
         skills: supervisorPromptSkills(input.policy.skills ?? {}),
+        tools: Object.keys(input.policy.tools ?? {}).sort(),
         chrome: input.policy.supervisor.chrome === true,
         instructions: input.instructions,
       }

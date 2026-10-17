@@ -118,6 +118,21 @@ describe('supervisorSpawnConfig', () => {
     expect(config?.task).toMatch(/they win\.[^#]*\n\nAlways answer in German\.$/);
   });
 
+  it('tells the supervisor which CLI tools the policy approves', () => {
+    const policy = policyWith({
+      '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },
+    });
+    policy.tools = { umi: { dirs: [] } };
+    const config = supervisorSpawnConfig({
+      policy,
+      providers: [CLAUDE],
+      projectPolicies: {},
+      descriptions: {},
+    });
+    expect(config?.task).toContain('## Tools');
+    expect(config?.task).toContain('`umi`');
+  });
+
   it('leaves out a provider that would run without asking', () => {
     const agy: ProviderInfo = {
       id: 'agy',

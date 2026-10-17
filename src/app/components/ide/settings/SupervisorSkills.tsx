@@ -33,7 +33,7 @@ export function invalidBashPatterns(skills: Record<string, SupervisorSkillPolicy
 }
 
 /** What Rust accepts as an extra folder; a blank line is dropped there, not refused. */
-function isExtraDir(dir: string): boolean {
+export function isExtraDir(dir: string): boolean {
   const trimmed = dir.trim();
   return !trimmed || (trimmed.startsWith('/') && trimmed !== '/' && isBashPattern(trimmed));
 }

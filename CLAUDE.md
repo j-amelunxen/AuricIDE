@@ -435,14 +435,16 @@ ADR 0004.
   from a child goes to the human. Children keep running when the supervisor is
   killed; their results (`agents/run_results.rs`) stay until its card is
   cleared.
-- **The supervisor itself has a shell only through approved skills.** Rust
+- **The supervisor itself has a shell only through approved skills or tools.** Rust
   forces its launch: a fresh cwd `~/.auric/supervisors/<start time>/`, file
   tools + `Skill` under `--restricted` (they reach only that folder), one MCP
   server, `--permission-mode dontAsk` (unlisted is refused, never asked).
   Settings → Supervisor → Skills approves skill folders and the `Bash(...)`
   patterns each may run; Rust links them into a per-run `--plugin-dir` under
   `<app_data_dir>/supervisor-skills/`, and `Bash` exists only while one of them
-  declares a pattern; a skill's `dirs` become `--add-dir`. Every permitted,
+  declares a pattern; a skill's `dirs` become `--add-dir`. Settings → Supervisor
+  → Tools approves single CLI tools, by name or absolute path, each as
+  `Bash(<tool>)` and `Bash(<tool> *)` (`policy.tools`, `apply_tool_grants`). Every permitted,
   initialised project adds an `auric-pm-<folder>` server (fixture
   `pmServerNames`, no `AURIC_AGENT_CWD`, so spawning stays with the policy),
   which is why `ToolSearch` is in its tool set. Claude in Chrome is the
@@ -465,8 +467,6 @@ ADR 0004.
   rules and before a skill's first task. It steers; it grants nothing, so it
   stays out of `supervisor-policy.json` and Rust never reads it. A running
   supervisor keeps the text it started with.
-- **Model size is a `rank`** on `info.models` entries in
-  `dynamic-providers/*.json` (higher is bigger). The launch prompt
 - **A child may get a worktree, and the supervisor cleans it up.**
   `spawn { worktree: true }` runs the child on its own branch and folder (the
   bridge also tells it to commit there). `remove_worktree` removes it only
@@ -474,6 +474,8 @@ ADR 0004.
   answers `removed: false` and the work is handed to the human. The
   supervisor never merges and never forces; its prompt makes the cleanup its
   duty (`docs/design-agent-control.md`, "Worktrees").
+- **Model size is a `rank`** on `info.models` entries in
+  `dynamic-providers/*.json` (higher is bigger). The launch prompt
   (`supervisorLaunchPrompt.ts`) asks for the smallest fitting one; unranked
   models are never picked by default.
 - **Its tile is a Quick Access tile.** Hover or hold opens a skill wheel,

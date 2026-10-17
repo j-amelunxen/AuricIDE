@@ -91,6 +91,17 @@ pub struct SkillRules {
     pub dirs: Vec<String>,
 }
 
+/// A CLI tool the supervisor may run, keyed by a bare command name (found on
+/// PATH) or by the absolute path of its binary. It becomes `Bash(<tool>)` and
+/// `Bash(<tool> *)` (`tool_patterns`). `dirs` are folders besides the run
+/// folder its file tools may read and write (the tool's data).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRules {
+    #[serde(default)]
+    pub dirs: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisorPolicy {
@@ -100,6 +111,8 @@ pub struct SupervisorPolicy {
     pub projects: BTreeMap<String, ProjectRules>,
     #[serde(default)]
     pub skills: BTreeMap<String, SkillRules>,
+    #[serde(default)]
+    pub tools: BTreeMap<String, ToolRules>,
 }
 
 impl Default for SupervisorPolicy {
@@ -111,6 +124,7 @@ impl Default for SupervisorPolicy {
             max_running_children: DEFAULT_MAX_RUNNING_CHILDREN,
             projects: BTreeMap::new(),
             skills: BTreeMap::new(),
+            tools: BTreeMap::new(),
         }
     }
 }
@@ -134,6 +148,9 @@ pub struct RejectedEntry {
     /// The skill key as written, for an entry under `skills`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skill: Option<String>,
+    /// The tool key as written, for an entry under `tools`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
     pub reason: ParseReason,
 }
 
@@ -149,6 +166,7 @@ fn refused(reason: ParseReason) -> ParsedPolicy {
         rejected: vec![RejectedEntry {
             project: None,
             skill: None,
+            tool: None,
             reason,
         }],
     }
@@ -182,6 +200,12 @@ pub fn parse(raw: Option<&str>) -> ParsedPolicy {
         Some(_) => return refused(ParseReason::Malformed),
     };
 
+    let tools = match source.get("tools") {
+        None | Some(Value::Null) => Map::new(),
+        Some(Value::Object(tools)) => tools.clone(),
+        Some(_) => return refused(ParseReason::Malformed),
+    };
+
     let mut policy = SupervisorPolicy {
         supervisor: parse_supervisor(source.get("supervisor")),
         max_running_children: source
@@ -197,6 +221,7 @@ pub fn parse(raw: Option<&str>) -> ParsedPolicy {
             Err(reason) => rejected.push(RejectedEntry {
                 project: Some(key.clone()),
                 skill: None,
+                tool: None,
                 reason,
             }),
         }
@@ -207,6 +232,18 @@ pub fn parse(raw: Option<&str>) -> ParsedPolicy {
             Err(reason) => rejected.push(RejectedEntry {
                 project: None,
                 skill: Some(key.clone()),
+                tool: None,
+                reason,
+            }),
+        }
+    }
+    for (key, entry) in &tools {
+        match parse_tool(key, entry) {
+            Ok((name, rules)) => insert_tool(&mut policy.tools, name, rules),
+            Err(reason) => rejected.push(RejectedEntry {
+                project: None,
+                skill: None,
+                tool: Some(key.clone()),
                 reason,
             }),
         }
@@ -235,11 +272,23 @@ fn parse_skill(key: &str, entry: &Value) -> Result<(String, SkillRules), ParseRe
         }
         patterns.push(pattern.to_string());
     }
-    let mut dirs: Vec<String> = Vec::new();
-    let listed = match source.get("dirs") {
+    let dirs = parse_dirs(source.get("dirs"))?;
+    Ok((
+        normalize_project_path(key),
+        SkillRules {
+            bash: patterns,
+            dirs,
+        },
+    ))
+}
+
+/// Extra folders: absolute, not the root, trimmed and without repeats.
+fn parse_dirs(value: Option<&Value>) -> Result<Vec<String>, ParseReason> {
+    let listed = match value {
         None | Some(Value::Null) => Vec::new(),
         Some(value) => string_list(value)?,
     };
+    let mut dirs: Vec<String> = Vec::new();
     for dir in listed.iter().map(|dir| dir.trim()) {
         if dir.is_empty() {
             continue;
@@ -255,13 +304,71 @@ fn parse_skill(key: &str, entry: &Value) -> Result<(String, SkillRules), ParseRe
             dirs.push(dir);
         }
     }
+    Ok(dirs)
+}
+
+/// A tool key is a bare command name or the absolute path of a binary
+/// (fixture `toolRules`). `.` alone would be `Bash(. *)`, the `source`
+/// builtin, hence a name needs a letter or digit; `*` in a path would widen
+/// the rule. `None`: the key is fine; otherwise why it is refused.
+pub fn tool_key_problem(key: &str) -> Option<ParseReason> {
+    let bare = !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'));
+    if bare {
+        return (!key.chars().any(|c| c.is_ascii_alphanumeric()))
+            .then_some(ParseReason::InvalidEntry);
+    }
+    if !key.starts_with('/') {
+        return Some(if key.contains('/') {
+            ParseReason::PathNotAbsolute
+        } else {
+            ParseReason::InvalidEntry
+        });
+    }
+    // U+FEFF is whitespace to JavaScript's `\s` but not to Rust; both sides refuse it.
+    let unsafe_path = !is_bash_pattern(key)
+        || key
+            .chars()
+            .any(|c| c.is_whitespace() || c == '\u{feff}' || c == '*');
+    (unsafe_path || normalize_project_path(key) == "/").then_some(ParseReason::InvalidEntry)
+}
+
+fn parse_tool(key: &str, entry: &Value) -> Result<(String, ToolRules), ParseReason> {
+    if let Some(reason) = tool_key_problem(key) {
+        return Err(reason);
+    }
+    let Value::Object(source) = entry else {
+        return Err(ParseReason::InvalidEntry);
+    };
+    let name = if key.starts_with('/') {
+        normalize_project_path(key)
+    } else {
+        key.to_string()
+    };
     Ok((
-        normalize_project_path(key),
-        SkillRules {
-            bash: patterns,
-            dirs,
+        name,
+        ToolRules {
+            dirs: parse_dirs(source.get("dirs"))?,
         },
     ))
+}
+
+/// The two Claude Code Bash patterns a tool is allowed under.
+pub fn tool_patterns(tool: &str) -> [String; 2] {
+    [tool.to_string(), format!("{tool} *")]
+}
+
+/// Two spellings of one tool keep only the folders both allow.
+pub fn insert_tool(tools: &mut BTreeMap<String, ToolRules>, name: String, rules: ToolRules) {
+    let merged = match tools.remove(&name) {
+        Some(existing) => ToolRules {
+            dirs: intersect(&existing.dirs, &rules.dirs),
+        },
+        None => rules,
+    };
+    tools.insert(name, merged);
 }
 
 /// A pattern becomes `Bash(<pattern>)`: a bracket would end the rule early and

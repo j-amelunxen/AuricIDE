@@ -251,6 +251,22 @@ those patterns are allowed. A skill's `dirs` (its workspace) are passed as
 is safe unattended: a process such a command detaches is external to the PID
 walk (see ADR 0004).
 
+**Approved tools** are the `tools` block: a CLI tool, keyed by a bare command
+name (`umi`, found by the shell's PATH) or by the absolute path of its binary,
+with optional `dirs` (passed as `--add-dir`, like a skill's). Each tool becomes
+exactly two rules, `Bash(<tool>)` and `Bash(<tool> *)`, so only a command that
+starts with that tool is allowed; Claude Code judges each part of a chained
+command (`&&`, `|`) on its own. `Bash` joins `--tools` as soon as one tool is
+approved. A key that is neither shape, or holds whitespace, brackets, quotes,
+`*` or a control character, is refused alone (`invalid_entry`, or
+`path_not_absolute` for a relative path) and listed as
+`{ project: null, tool, reason }`; a bare name needs a letter or digit, because
+`.` would be the `source` builtin. A path whose binary is gone at launch is
+left out. Tool keys are not canonicalised: the rule is matched against the
+command text, not a file identity. Settings warns about tools that run any code
+they are given (`unrestrictedTools` in the fixtures: shells, interpreters,
+`env`, `xargs`, `sudo`), but does not block them; that is the user's call.
+
 Supervisors are started by the Supervisor tile in Quick Access, or by an
 external caller with `spawn { role: "supervisor" }`. A supervisor cannot
 start another supervisor.
@@ -367,24 +383,6 @@ finishedAt, costUsd: number | null }`.
 - The client allows `waitSeconds + 5` s before it reports `timeout`.
 - External callers may await any agent; a supervisor only its children.
 
-### Tools (`auric-mcp --supervisor`)
-
-| tool                 | socket method     |
-| -------------------- | ----------------- |
-| `list_projects`      | `list_projects`   |
-| `spawn_agent`        | `spawn`           |
-| `list_my_agents`     | `list_agents`     |
-| `read_agent_output`  | `read_output`     |
-| `await_agent_result` | `await_result`    |
-| `kill_agent`         | `kill`            |
-| `remove_worktree`    | `remove_worktree` |
-
-## Error codes
-
-`invalid_request`, `unknown_method`, `invalid_params`, `unknown_agent`,
-`agent_not_running`, `headless_no_stdin`, `provider_denied`,
-`frontend_unavailable`, `forbidden_agent_caller`, `supervisor_denied`,
-
 ### Worktrees
 
 `spawn` with `worktree: true` runs the agent in a git worktree of its own:
@@ -415,6 +413,24 @@ the result, hand over on `removed: false`, and sweep its finished children
 before it ends. The socket's spawn note lives in memory only, so a worktree
 from before an app restart is found through the agent list or not at all; it
 stays in the Git panel's worktree list for a person.
+
+### Tools (`auric-mcp --supervisor`)
+
+| tool                 | socket method     |
+| -------------------- | ----------------- |
+| `list_projects`      | `list_projects`   |
+| `spawn_agent`        | `spawn`           |
+| `list_my_agents`     | `list_agents`     |
+| `read_agent_output`  | `read_output`     |
+| `await_agent_result` | `await_result`    |
+| `kill_agent`         | `kill`            |
+| `remove_worktree`    | `remove_worktree` |
+
+## Error codes
+
+`invalid_request`, `unknown_method`, `invalid_params`, `unknown_agent`,
+`agent_not_running`, `headless_no_stdin`, `provider_denied`,
+`frontend_unavailable`, `forbidden_agent_caller`, `supervisor_denied`,
 
 `outside_supervisor_scope`, `internal`.
 

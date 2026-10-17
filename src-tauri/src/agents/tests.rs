@@ -971,6 +971,24 @@ fn an_approved_skill_brings_its_plugin_and_exactly_its_shell_commands() {
 }
 
 #[test]
+fn an_approved_tool_alone_gives_bash_and_exactly_its_two_rules() {
+    let mut plugin = crate::supervisor::SkillPlugin::default();
+    let tools = std::collections::BTreeMap::from([(
+        "umi".to_string(),
+        crate::supervisor::policy::ToolRules::default(),
+    )]);
+    crate::supervisor::apply_tool_grants(&mut plugin, &tools);
+    let args = supervisor_claude_arguments("/c.json", &plugin, &[], false);
+    let joined = args.join(" ");
+    assert!(joined.contains("--tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\""));
+    assert!(
+        !joined.contains("--plugin-dir"),
+        "a tool is not a skill: {joined}"
+    );
+    assert!(joined.contains("\"Bash(umi)\" \"Bash(umi *)\" --no-chrome"));
+}
+
+#[test]
 fn the_supervisor_flags_land_behind_the_executable_and_before_the_task() {
     let config: crate::providers::ProviderConfig = serde_json::from_str(
         r#"{
