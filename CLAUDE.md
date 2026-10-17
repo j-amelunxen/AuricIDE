@@ -544,7 +544,10 @@ that is per-project configuration.
   `documents.propose` commits on a new branch `auric/proposal/…` built from
   `HEAD` with git2, checked against `baseHash`, and drops one inbox
   notification. `documents.get` with `rev` reads a branch and says
-  `merged: false` for a preview.
+  `merged: false` for a preview. Binary files a document refers to are a
+  type's `assets` globs, read-only through `documents.asset` (`assets.rs`,
+  base64, `maxAssetBytes` default 2 MiB); the path a symlink resolves to must
+  match an asset glob too, or one visible name would open any file.
 - **Jobs are headless agents in a worktree, under the supervisor policy**
   (`jobs.create { project, kind, payload }`, `job_runner.rs`,
   `control_socket/link_spawn.rs`). Only kinds the project lists run; the agent
@@ -552,9 +555,12 @@ that is per-project configuration.
   Provider and model are the supervisor's rule (balancing `next`, smallest
   ranked model), never the client's. The payload goes into the prompt fenced
   and named as data. A 2 s tick follows each job to `job.finished`/`failed`,
-  committing leftovers in writable paths. A runaway counter (default 20 per
-  24 h, optional per project) answers `quota_exceeded`; the register
-  (`supervisor-link-jobs.json`) survives restarts.
+  committing leftovers in writable paths. How the agent ended comes from the
+  booked run result, not the agent list (a finished agent leaves it at once):
+  an error exit or an outside kill is `agent_failed`. A runaway counter
+  (default 20 per 24 h, optional per project; 0 is `reason: disabled`)
+  answers `quota_exceeded`; the register (`supervisor-link-jobs.json`)
+  survives restarts.
 - Real-app check: `node scripts/probe-supervisor-link.mjs [--watch 20]`.
 
 ### The terminals in a window of their own
