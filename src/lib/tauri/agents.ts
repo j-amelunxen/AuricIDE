@@ -227,3 +227,11 @@ export async function sendToAgent(agentId: string, message: string): Promise<voi
   // um Daten an den Stdin des Agenten-Prozesses zu senden.
   await invoke('shell_write', { id: `agent-${agentId}`, data: message });
 }
+
+/** Copies images into a supervisor's restricted run directory before sending their paths. */
+export async function copySupervisorImageAttachments(
+  agentId: string,
+  paths: string[]
+): Promise<string[]> {
+  return await invoke<string[]>('copy_supervisor_image_attachments', { agentId, paths });
+}
