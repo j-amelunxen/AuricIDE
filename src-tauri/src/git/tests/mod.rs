@@ -198,4 +198,5 @@ mod merge_tests;
 mod operation_step_tests;
 mod staging_tests;
 mod status_tests;
+mod worktree_include_tests;
 mod worktree_tests;
