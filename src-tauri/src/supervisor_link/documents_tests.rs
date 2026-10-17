@@ -21,6 +21,8 @@ fn get_wt(p: &Project, id: &str) -> Result<Document, DocumentError> {
 fn constants_match_the_fixtures() {
     let fixtures = fixtures();
     assert_eq!(fixtures["maxDocumentBytes"], json!(MAX_DOCUMENT_BYTES));
+    assert_eq!(fixtures["maxIndexBytes"], json!(MAX_INDEX_BYTES));
+    assert_eq!(fixtures["revs"]["maxLength"], json!(MAX_REV_LENGTH));
     assert_eq!(fixtures["search"]["maxLimit"], json!(SEARCH_MAX_LIMIT));
     assert_eq!(fixtures["search"]["maxDepth"], json!(SEARCH_MAX_DEPTH));
     assert_eq!(
@@ -45,6 +47,56 @@ fn document_ids_follow_the_fixtures() {
         let id = id.as_str().unwrap();
         assert!(validate_id(&document_type, id).is_err(), "{id}");
     }
+}
+
+#[test]
+fn revs_follow_the_fixtures() {
+    let fixtures = fixtures();
+    for rev in fixtures["revs"]["valid"].as_array().unwrap() {
+        let rev = rev.as_str().unwrap();
+        assert!(validate_rev(rev).is_ok(), "{rev} should be a valid rev");
+    }
+    for rev in fixtures["revs"]["invalid"].as_array().unwrap() {
+        let rev = rev.as_str().unwrap();
+        assert_eq!(code(validate_rev(rev)), "invalid_params", "{rev:?}");
+    }
+    assert_eq!(
+        code(validate_rev(&"a".repeat(MAX_REV_LENGTH + 1))),
+        "invalid_params"
+    );
+}
+
+#[test]
+fn a_rev_that_looks_like_an_option_or_expression_never_reaches_git() {
+    let p = Project::new();
+    let repo = p.init_repo();
+    let id = "docs/system.diagram.json";
+    p.write(id, r#"{"v":1}"#);
+    p.commit_all(&repo, "first");
+    p.write(id, r#"{"v":2}"#);
+    p.commit_all(&repo, "second");
+    for rev in ["HEAD~1", "--all", ":/first", "HEAD@{1}"] {
+        let refused = get(&p.policy(), p.path(), "diagram", id, Some(rev));
+        assert_eq!(code(refused), "invalid_params", "{rev}");
+        let refused = resolve(&p.policy(), p.path(), "diagram", id, "system", Some(rev));
+        assert_eq!(code(refused), "invalid_params", "{rev}");
+    }
+}
+
+#[test]
+fn an_index_larger_than_a_document_is_still_read() {
+    let p = search_fixture();
+    let mut entries = vec![json!({
+        "id": "docs/architecture/system.diagram.json", "name": "From a big index"
+    })];
+    let filler = "x".repeat(200);
+    entries.extend((0..2000).map(|n| json!({ "id": format!("docs/n{n}"), "description": filler })));
+    let index = serde_json::to_string(&json!({ "documents": entries })).unwrap();
+    assert!(index.len() > MAX_DOCUMENT_BYTES && index.len() < MAX_INDEX_BYTES);
+    p.write("docs/diagrams.index.json", &index);
+    let hits = search(&p.policy(), Some("big index"), None, None, 50).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].name, "From a big index");
 }
 
 #[test]

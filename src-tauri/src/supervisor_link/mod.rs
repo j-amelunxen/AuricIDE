@@ -39,6 +39,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -56,6 +57,29 @@ pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const JOB_TICK: Duration = Duration::from_secs(2);
 /// How long one read waits before the loop turns to answers and events.
 const READ_SLICE: Duration = Duration::from_millis(50);
+
+/// What one link process lets its clients hold at once (fixture `limits`).
+/// Every client is a process of the same user, so these are not an access
+/// control; they keep one misbehaving client from pinning threads or memory.
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    /// Open connections. One more is answered with `busy` and closed.
+    pub max_connections: usize,
+    /// Requests read but not yet answered, per connection, beyond the one
+    /// being worked on. One more is answered with `busy` at once.
+    pub max_pending_requests: usize,
+    /// From connect to a finished WebSocket handshake.
+    pub handshake_timeout: Duration,
+    /// How long one outgoing message may wait for a client that does not read.
+    pub write_timeout: Duration,
+}
+
+pub const LIMITS: Limits = Limits {
+    max_connections: 16,
+    max_pending_requests: 64,
+    handshake_timeout: Duration::from_secs(10),
+    write_timeout: Duration::from_secs(10),
+};
 
 /// What the link needs from the running app beyond the dispatcher. Over Tauri
 /// state in `TauriHost`, by a fake in the tests.
@@ -438,13 +462,32 @@ pub fn socket_path_in(app_data_dir: &Path) -> PathBuf {
 
 /// Accept connections until the listener fails, one thread per connection.
 pub fn serve(listener: UnixListener, link: Arc<Link>) {
+    serve_with(listener, link, LIMITS);
+}
+
+/// Decrements the open-connection count when a connection ends, however it ends.
+struct Open(Arc<AtomicUsize>);
+
+impl Drop for Open {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub fn serve_with(listener: UnixListener, link: Arc<Link>, limits: Limits) {
+    let open = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
         let Ok(stream) = stream else {
             std::thread::sleep(Duration::from_millis(100));
             continue;
         };
         let link = link.clone();
-        std::thread::spawn(move || handle_connection(stream, &link));
+        let over = open.fetch_add(1, Ordering::SeqCst) >= limits.max_connections;
+        let guard = Open(open.clone());
+        std::thread::spawn(move || {
+            let _guard = guard;
+            handle_connection(stream, &link, limits, over);
+        });
     }
 }
 
@@ -466,7 +509,13 @@ fn check_path(
     Err(refusal)
 }
 
-fn handshake(stream: UnixStream) -> Option<WebSocket<UnixStream>> {
+/// A client that connects and never finishes the handshake gives up its
+/// thread after `timeout`; so does one that stops reading our answers.
+fn handshake(stream: UnixStream, limits: &Limits) -> Option<WebSocket<UnixStream>> {
+    stream
+        .set_read_timeout(Some(limits.handshake_timeout))
+        .ok()?;
+    stream.set_write_timeout(Some(limits.write_timeout)).ok()?;
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE_BYTES))
         .max_frame_size(Some(MAX_MESSAGE_BYTES));
@@ -485,11 +534,37 @@ fn close(socket: &mut WebSocket<UnixStream>, code: CloseCode, reason: &str) {
     let _ = socket.flush();
 }
 
+/// Hands a request to the worker, or answers `busy` at once when its queue is
+/// full. `false`: the connection is over.
+fn queue(
+    requests: &mpsc::SyncSender<Result<(Value, LinkRequest), Rejected>>,
+    message: Result<(Value, LinkRequest), Rejected>,
+    socket: &mut WebSocket<UnixStream>,
+) -> bool {
+    match requests.try_send(message) {
+        Ok(()) => true,
+        Err(mpsc::TrySendError::Full(message)) => {
+            let id = match message {
+                Ok((id, _)) => id,
+                Err(rejected) => rejected.id,
+            };
+            let mut busy = LinkError::new(
+                "busy",
+                "too many requests are waiting for an answer on this connection; \
+                 wait for answers before sending more",
+            );
+            busy.reason = Some("too_many_pending_requests".to_string());
+            send(socket, &response_error(&id, &busy))
+        }
+        Err(mpsc::TrySendError::Disconnected(_)) => false,
+    }
+}
+
 // code-gate: complexity-cyclomatic, complexity-function-length - the connection's one loop (read, answer, events, ping); its branches are WebSocket frame kinds
-fn handle_connection(stream: UnixStream, link: &Arc<Link>) {
+fn handle_connection(stream: UnixStream, link: &Arc<Link>, limits: Limits, over_limit: bool) {
     // The peer is checked on the raw socket, before anything it sends is read.
     let admitted = link.admit(&stream);
-    let Some(mut socket) = handshake(stream) else {
+    let Some(mut socket) = handshake(stream, &limits) else {
         return;
     };
     if let Err(error) = admitted {
@@ -497,13 +572,28 @@ fn handle_connection(stream: UnixStream, link: &Arc<Link>) {
         close(&mut socket, CloseCode::Policy, "forbidden_agent_caller");
         return;
     }
+    if over_limit {
+        let mut busy = LinkError::new(
+            "busy",
+            format!(
+                "the supervisor link already has {} open connections",
+                limits.max_connections
+            ),
+        );
+        busy.reason = Some("too_many_connections".to_string());
+        send(&mut socket, &fatal(&busy));
+        close(&mut socket, CloseCode::Again, "busy");
+        return;
+    }
     if socket.get_ref().set_read_timeout(Some(READ_SLICE)).is_err() {
         return;
     }
 
     // Requests run on a worker of their own, in order, so a spawn that waits
-    // for the IDE window does not hold the events back.
-    let (request_tx, request_rx) = mpsc::channel::<Result<(Value, LinkRequest), Rejected>>();
+    // for the IDE window does not hold the events back. The queue is bounded:
+    // a client that sends faster than it is answered gets `busy`, not memory.
+    let (request_tx, request_rx) =
+        mpsc::sync_channel::<Result<(Value, LinkRequest), Rejected>>(limits.max_pending_requests);
     let (reply_tx, reply_rx) = mpsc::channel::<(Value, Reply)>();
     let worker_link = link.clone();
     std::thread::spawn(move || {
@@ -525,7 +615,7 @@ fn handle_connection(stream: UnixStream, link: &Arc<Link>) {
     loop {
         match socket.read() {
             Ok(Message::Text(text)) => {
-                if request_tx.send(parse_message(text.as_str())).is_err() {
+                if !queue(&request_tx, parse_message(text.as_str()), &mut socket) {
                     return;
                 }
             }
@@ -534,7 +624,7 @@ fn handle_connection(stream: UnixStream, link: &Arc<Link>) {
                     id: Value::Null,
                     error: LinkError::new("invalid_request", "binary frames are not read"),
                 };
-                if request_tx.send(Err(refused)).is_err() {
+                if !queue(&request_tx, Err(refused), &mut socket) {
                     return;
                 }
             }

@@ -410,6 +410,120 @@ mod socket {
         path
     }
 
+    fn serve_limited(dir: &Path, link: Arc<Link>, limits: Limits) -> PathBuf {
+        let path = socket_path_in(dir);
+        let listener = crate::control_socket::bind(&path).unwrap();
+        std::thread::spawn(move || serve_with(listener, link, limits));
+        path
+    }
+
+    fn tight(max_connections: usize, max_pending_requests: usize) -> Limits {
+        Limits {
+            max_connections,
+            max_pending_requests,
+            handshake_timeout: Duration::from_millis(300),
+            write_timeout: Duration::from_secs(2),
+        }
+    }
+
+    #[test]
+    fn the_limits_match_the_contract() {
+        let fixtures: Value = serde_json::from_str(include_str!(
+            "../../../src/lib/agents/supervisorLink.fixtures.json"
+        ))
+        .unwrap();
+        let limits = &fixtures["limits"];
+        assert_eq!(limits["maxConnections"], json!(LIMITS.max_connections));
+        assert_eq!(
+            limits["maxPendingRequests"],
+            json!(LIMITS.max_pending_requests)
+        );
+        assert_eq!(
+            limits["handshakeTimeoutSeconds"],
+            json!(LIMITS.handshake_timeout.as_secs())
+        );
+        assert_eq!(
+            limits["writeTimeoutSeconds"],
+            json!(LIMITS.write_timeout.as_secs())
+        );
+    }
+
+    #[test]
+    fn a_connection_over_the_limit_is_told_busy_and_closed() {
+        let h = harness(vec![]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = serve_limited(dir.path(), h.link.clone(), tight(1, 8));
+        let mut first = connect(&path, "ws://localhost/v1").unwrap();
+        send_json(
+            &mut first,
+            json!({ "v": 1, "id": 1, "method": "session.hello" }),
+        );
+        assert_eq!(next(&mut first)["ok"], true);
+
+        let mut second = connect(&path, "ws://localhost/v1").unwrap();
+        let refused = next(&mut second);
+        assert_eq!(refused["type"], "error");
+        assert_eq!(refused["error"]["code"], "busy");
+        assert_eq!(refused["error"]["reason"], "too_many_connections");
+
+        // The slot is given back when the first client leaves.
+        first.close(None).unwrap();
+        let _ = first.read();
+        drop(first);
+        std::thread::sleep(Duration::from_millis(200));
+        let mut third = connect(&path, "ws://localhost/v1").unwrap();
+        send_json(
+            &mut third,
+            json!({ "v": 1, "id": 3, "method": "session.hello" }),
+        );
+        assert_eq!(next(&mut third)["ok"], true);
+    }
+
+    #[test]
+    fn a_client_that_never_finishes_the_handshake_gives_its_slot_back() {
+        let h = harness(vec![]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = serve_limited(dir.path(), h.link.clone(), tight(1, 8));
+        let silent = UnixStream::connect(&path).unwrap();
+        // Past the handshake timeout the silent connection is dropped.
+        std::thread::sleep(Duration::from_millis(600));
+        let mut socket = connect(&path, "ws://localhost/v1").unwrap();
+        send_json(
+            &mut socket,
+            json!({ "v": 1, "id": 1, "method": "session.hello" }),
+        );
+        assert_eq!(next(&mut socket)["ok"], true);
+        drop(silent);
+    }
+
+    #[test]
+    fn requests_past_the_queue_are_answered_busy_at_once() {
+        let h = harness(fleet());
+        let dir = tempfile::tempdir().unwrap();
+        let path = serve_limited(dir.path(), h.link.clone(), tight(4, 1));
+        let mut socket = connect(&path, "ws://localhost/v1").unwrap();
+        // A spawn nobody answers holds the worker for the frontend timeout.
+        for id in 0..5 {
+            send_json(
+                &mut socket,
+                json!({ "v": 1, "id": id, "method": "supervisors.spawn" }),
+            );
+        }
+        let answers: Vec<Value> = (0..5).map(|_| next(&mut socket)).collect();
+        let busy = answers
+            .iter()
+            .filter(|answer| answer["error"]["code"] == "busy")
+            .count();
+        assert!(busy >= 1, "{answers:?}");
+        for answer in answers.iter().filter(|a| a["error"]["code"] == "busy") {
+            assert_eq!(answer["type"], "response");
+            assert_eq!(answer["error"]["reason"], "too_many_pending_requests");
+        }
+        let mut ids: Vec<i64> = answers.iter().map(|a| a["id"].as_i64().unwrap()).collect();
+        ids.sort();
+        assert_eq!(ids, vec![0, 1, 2, 3, 4], "every request is answered once");
+    }
+
     fn connect(path: &Path, uri: &str) -> Result<WebSocket<UnixStream>, String> {
         let stream = UnixStream::connect(path).map_err(|e| e.to_string())?;
         stream
