@@ -20,6 +20,7 @@ import { openSkillSpawnDialog } from '@/lib/quickAccess/launchSkill';
 import { launchScheduledConductor } from '@/lib/conductor/scheduledRun';
 import { buildScheduledRunDeps } from '@/lib/conductor/scheduledRunDeps';
 import { isDir } from '@/lib/tauri/fs';
+import { supervisorLinkProposalDecide } from '@/lib/tauri/supervisorLink';
 import {
   parseNotificationActions,
   type Notification,
@@ -50,7 +51,11 @@ const isKnownCommandId = (id: string) => KNOWN_COMMAND_IDS.has(id);
 function repoPathsFromNotifications(notifications: Notification[]): string[] {
   const paths = new Set<string>();
   for (const notification of notifications) {
-    for (const action of parseNotificationActions(notification.actions, isKnownCommandId)) {
+    for (const action of parseNotificationActions(
+      notification.actions,
+      isKnownCommandId,
+      notification
+    )) {
       if (
         (action.kind === 'run-skill' ||
           action.kind === 'run-combo' ||
@@ -63,6 +68,22 @@ function repoPathsFromNotifications(notifications: Notification[]): string[] {
     }
   }
   return [...paths];
+}
+
+/** The toast for an action whose effect failed after the decision was stamped. */
+function actionFailureMessage(error: unknown, label: string): string {
+  if (!(error instanceof NotificationActionError)) return `"${label}" could not run`;
+  switch (error.code) {
+    case 'missing-project':
+      return 'Project folder not found';
+    case 'empty-combo':
+      return 'Combo has no valid steps';
+    // Rust's own sentence (expired, unknown, policy changed since).
+    case 'policy-proposal':
+      return error.message;
+    default:
+      return `"${label}" could not run`;
+  }
 }
 
 /**
@@ -99,7 +120,9 @@ export function useNotificationActions({
   const parseActions = useCallback(
     (notification: Notification): PresentedAction[] =>
       presentNotificationActions(
-        parseNotificationActions(notification.actions, isKnownCommandId),
+        // The row goes along: whether it may carry a policy-proposal button
+        // depends on who raised it, and this is where every surface asks.
+        parseNotificationActions(notification.actions, isKnownCommandId, notification),
         starredProjects,
         repoDirStatus,
         rootPath
@@ -210,6 +233,20 @@ export function useNotificationActions({
               }
               await launchScheduledConductor(input, buildScheduledRunDeps(onOpenProject));
             },
+            decidePolicyProposal: async (proposalId, decision) => {
+              try {
+                const outcome = await supervisorLinkProposalDecide(proposalId, decision);
+                store.showToast(
+                  outcome === 'applied' ? 'Link policy change applied' : 'Proposal discarded',
+                  'success'
+                );
+              } catch (reason) {
+                // Rust's sentence (expired, unknown, policy changed since) is
+                // the message; there is nothing more specific to say.
+                const message = reason instanceof Error ? reason.message : String(reason);
+                throw new NotificationActionError(message, 'policy-proposal');
+              }
+            },
           },
           {
             fallbackCwd: useStore.getState().rootPath ?? undefined,
@@ -229,12 +266,7 @@ export function useNotificationActions({
         }
         // The decision stands; only the effect failed. Say so rather than
         // leaving the click looking like it did nothing.
-        const message =
-          error instanceof NotificationActionError && error.code === 'missing-project'
-            ? 'Project folder not found'
-            : error instanceof NotificationActionError && error.code === 'empty-combo'
-              ? 'Combo has no valid steps'
-              : `"${action.label}" could not run`;
+        const message = actionFailureMessage(error, action.label);
         store.showToast(message, 'error');
       }
     },

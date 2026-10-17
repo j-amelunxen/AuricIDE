@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import linkFixtures from '@/lib/agents/supervisorLink.fixtures.json';
 import type { PermissionMode } from '@/lib/tauri/agents';
 
 /**
@@ -160,7 +161,38 @@ export type NotificationAction =
       launch?: ConductorLaunch;
     }
   | { id: string; label: string; kind: 'open'; target: NotificationOpenTarget }
-  | { id: string; label: string; kind: 'command'; commandId: string };
+  | { id: string; label: string; kind: 'command'; commandId: string }
+  | {
+      id: string;
+      label: string;
+      /**
+       * Apply or discard a supervisor link policy proposal. Honoured only on
+       * the row Rust raises for it (`honoursPolicyProposals`): a button that
+       * rewrites what the link may see must never be one a model can write.
+       */
+      kind: 'policy-proposal';
+      proposalId: string;
+      decision: PolicyProposalDecision;
+    };
+
+export type PolicyProposalDecision = 'apply' | 'discard';
+
+/**
+ * The origin Rust stamps on a policy proposal's notification
+ * (`supervisorLink.fixtures.json`, `proposals.notificationOrigin`).
+ */
+export const POLICY_PROPOSAL_ORIGIN: string = linkFixtures.proposals.notificationOrigin;
+
+/**
+ * Whether a row may carry Apply/Discard for a policy proposal: only the
+ * `system` row with the link policy's origin. An agent can write any origin
+ * it likes, but not the `system` source.
+ */
+export function honoursPolicyProposals(
+  from: Pick<Notification, 'source' | 'origin'> | undefined
+): boolean {
+  return from?.source === 'system' && from.origin === POLICY_PROPOSAL_ORIGIN;
+}
 
 /**
  * How a configured launch starts.
@@ -274,6 +306,12 @@ export const notificationActionSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ ...identity, kind: z.literal('open'), target: openTargetSchema }),
   z.object({ ...identity, kind: z.literal('command'), commandId: nonEmpty }),
+  z.object({
+    ...identity,
+    kind: z.literal('policy-proposal'),
+    proposalId: nonEmpty,
+    decision: z.enum(['apply', 'discard']),
+  }),
 ]);
 
 /** Accepts the parsed array or the raw TEXT the column stores. */
@@ -298,10 +336,16 @@ function toArray(raw: unknown): unknown[] {
  * `isKnownCommandId` gates the `command` variant against the command manifest,
  * so an unrecognised id never reaches a button — it is rejected here rather
  * than failing at click time, when the user has already committed to it.
+ *
+ * `from` is the row the actions sit on. A `policy-proposal` button survives
+ * only when it is the link policy's own system row; without `from` it is
+ * dropped, so a caller that does not say where the actions came from can
+ * never hand one out.
  */
 export function parseNotificationActions(
   raw: unknown,
-  isKnownCommandId: (commandId: string) => boolean
+  isKnownCommandId: (commandId: string) => boolean,
+  from?: Pick<Notification, 'source' | 'origin'>
 ): NotificationAction[] {
   const seen = new Set<string>();
   const actions: NotificationAction[] = [];
@@ -312,6 +356,7 @@ export function parseNotificationActions(
 
     const action = result.data as NotificationAction;
     if (action.kind === 'command' && !isKnownCommandId(action.commandId)) continue;
+    if (action.kind === 'policy-proposal' && !honoursPolicyProposals(from)) continue;
     // A repeated id would make the recorded answer ambiguous, and that answer
     // is exactly what a waiting agent reads back. First one wins.
     if (seen.has(action.id)) continue;

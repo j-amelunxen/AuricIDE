@@ -8,7 +8,7 @@ import {
   type NotificationActionContext,
   type NotificationActionDeps,
 } from './execute';
-import type { NotificationAction } from './types';
+import { POLICY_PROPOSAL_ORIGIN, type NotificationAction } from './types';
 
 function makeDeps(): NotificationActionDeps {
   return {
@@ -22,6 +22,7 @@ function makeDeps(): NotificationActionDeps {
     openAgent: vi.fn(),
     runCommand: vi.fn(),
     startConductorRun: vi.fn(async () => undefined),
+    decidePolicyProposal: vi.fn(async () => undefined),
   };
 }
 
@@ -897,5 +898,54 @@ describe('executeNotificationAction', () => {
 
     expect(deps.startSkillCombo).not.toHaveBeenCalled();
     expect(deps.spawnAgent).not.toHaveBeenCalled();
+  });
+});
+
+describe('policy-proposal', () => {
+  const apply: Extract<NotificationAction, { kind: 'policy-proposal' }> = {
+    id: 'apply',
+    label: 'Apply',
+    kind: 'policy-proposal',
+    proposalId: 'p-1',
+    decision: 'apply',
+  };
+  const fromLink: NotificationActionContext = { trust: 'user', origin: POLICY_PROPOSAL_ORIGIN };
+
+  it('decides the proposal it names, and nothing else', async () => {
+    const deps = makeDeps();
+    await executeNotificationAction(apply, deps, fromLink);
+    expect(deps.decidePolicyProposal).toHaveBeenCalledWith('p-1', 'apply');
+    for (const fn of Object.values(unusedDeps(deps))) {
+      if (fn !== deps.decidePolicyProposal) expect(fn).not.toHaveBeenCalled();
+    }
+
+    await executeNotificationAction(
+      { ...apply, id: 'discard', decision: 'discard' },
+      deps,
+      fromLink
+    );
+    expect(deps.decidePolicyProposal).toHaveBeenLastCalledWith('p-1', 'discard');
+  });
+
+  it.each([
+    ['a foreign row', { trust: 'foreign', origin: POLICY_PROPOSAL_ORIGIN }],
+    ['another origin', { trust: 'user', origin: 'schedule' }],
+    ['no context at all', {}],
+  ] as const)('refuses on %s even if the parser let it through', async (_name, context) => {
+    const deps = makeDeps();
+    await expect(executeNotificationAction(apply, deps, context)).rejects.toThrow(
+      /policy proposal/i
+    );
+    expect(deps.decidePolicyProposal).not.toHaveBeenCalled();
+  });
+
+  it('passes Rust’s refusal on as the error', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.decidePolicyProposal).mockRejectedValueOnce(
+      new NotificationActionError('The proposal has expired', 'policy-proposal')
+    );
+    await expect(executeNotificationAction(apply, deps, fromLink)).rejects.toThrow(
+      'The proposal has expired'
+    );
   });
 });
