@@ -41,10 +41,9 @@ Configuration in AuricIDE is governed by one architectural question: _“Would t
   - Empty or absent project value falls back to the **global machine credential**.
   - A blank string in project settings deletes the override row; it never means "deliberately no key".
 
-### Ephemeral Safety Switches (Deliberately Not Persisted)
+### No Global Permission Switches
 
-- `dangerouslyIgnorePermissions` and `autoAcceptEdits` are never saved to disk.
-- Both reset to `false` on every application restart and whenever a different project is opened.
+- There are no application-wide "auto-accept edits" / "skip permission prompts" settings. The permission mode is chosen per launch.
 
 ### Provider Policy (`src/lib/config/providerPolicy.ts` & `src-tauri/src/provider_policy.rs`)
 

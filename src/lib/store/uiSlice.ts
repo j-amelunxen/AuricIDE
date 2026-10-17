@@ -16,10 +16,6 @@ export const MAX_TERMINAL_LOGS = 10_000;
 /**
  * The agent settings that belong to the project rather than the machine — they
  * describe this codebase's conventions, not a preference of yours.
- *
- * `dangerouslyIgnorePermissions` and `autoAcceptEdits` are missing on purpose.
- * Both stay session state: a switch that grants an agent free rein, silently
- * restored days later, is one nobody remembers leaving on.
  */
 export const PROJECT_SCOPED_AGENT_SETTINGS = [
   'agenticCommit',
@@ -29,8 +25,6 @@ export const PROJECT_SCOPED_AGENT_SETTINGS = [
 ] as const satisfies readonly (keyof AgentSettings)[];
 
 export interface AgentSettings {
-  dangerouslyIgnorePermissions: boolean;
-  autoAcceptEdits: boolean;
   agenticCommit: boolean;
   agenticCommitPrompt: string;
   branchTicketPattern: string;
@@ -161,8 +155,6 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   commandCenterOpen: false,
   commandCenterProject: undefined,
   agentSettings: {
-    dangerouslyIgnorePermissions: false,
-    autoAcceptEdits: false,
     agenticCommit: PROJECT_CONFIG_DEFAULTS.agenticCommit,
     agenticCommitPrompt: PROJECT_CONFIG_DEFAULTS.agenticCommitPrompt,
     branchTicketPattern: PROJECT_CONFIG_DEFAULTS.branchTicketPattern,
@@ -225,8 +217,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
     }));
 
     // Persist the ones that describe this codebase — how its branches name
-    // tickets, how its commits get written. The two safety switches are
-    // deliberately absent: see PROJECT_SCOPED_AGENT_SETTINGS.
+    // tickets, how its commits get written.
     const rootPath = (get() as { rootPath?: string | null }).rootPath;
     if (!rootPath) return;
     for (const key of PROJECT_SCOPED_AGENT_SETTINGS) {
@@ -247,10 +238,6 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
         agenticCommitPrompt: stored.agenticCommitPrompt,
         branchTicketPattern: stored.branchTicketPattern,
         commitProviderId: stored.commitProviderId || undefined,
-        // Opening a project is not a reason to carry elevated permissions
-        // from the last one into it.
-        dangerouslyIgnorePermissions: false,
-        autoAcceptEdits: false,
       },
       // Live in another slice but are loaded here, so one read of the project
       // config restores everything it holds.

@@ -270,8 +270,6 @@ describe('useIDEHandlers', () => {
     ],
     defaultProvider: { id: 'claude', name: 'Claude', defaultModel: 'sonnet' },
     agentSettings: {
-      dangerouslyIgnorePermissions: false,
-      autoAcceptEdits: false,
       agenticCommit: false,
       agenticCommitPrompt: 'commit and push. Prefix: {ticket}:',
       branchTicketPattern: '([A-Z]+-\\d+)',
@@ -314,8 +312,6 @@ describe('useIDEHandlers', () => {
     mockState.repoStates = {};
     mockGetBacklinksFor.mockImplementation(() => []);
     mockState.agentSettings = {
-      dangerouslyIgnorePermissions: false,
-      autoAcceptEdits: false,
       agenticCommit: false,
       agenticCommitPrompt: 'commit and push. Prefix: {ticket}:',
       branchTicketPattern: '([A-Z]+-\\d+)',

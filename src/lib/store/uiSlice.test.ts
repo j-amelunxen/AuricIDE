@@ -122,8 +122,6 @@ describe('uiSlice – agenticCommit settings', () => {
   });
 
   it('preserves other settings when updating agentic fields', () => {
-    expect(store.current.agentSettings.autoAcceptEdits).toBe(false);
-    expect(store.current.agentSettings.dangerouslyIgnorePermissions).toBe(false);
     expect(store.current.agentSettings.agenticCommit).toBe(true);
   });
 });
@@ -134,8 +132,6 @@ describe('uiSlice – updateAgentSettings integration', () => {
     useStore.getState().updateAgentSettings({
       agenticCommit: true,
       agenticCommitPrompt: DEFAULT_PROMPT,
-      autoAcceptEdits: false,
-      dangerouslyIgnorePermissions: false,
       branchTicketPattern: '([A-Z]+-\\d+)',
     });
   });
@@ -151,7 +147,7 @@ describe('uiSlice – updateAgentSettings integration', () => {
 
     expect(after.agenticCommit).toBe(false);
     expect(after.agenticCommitPrompt).toBe(DEFAULT_PROMPT);
-    expect(after.autoAcceptEdits).toBe(initial.autoAcceptEdits);
+    expect(after.branchTicketPattern).toBe(initial.branchTicketPattern);
   });
 
   it('updates prompt while preserving toggle', () => {
@@ -399,16 +395,6 @@ describe('uiSlice – agent settings that belong to the project', () => {
     );
   });
 
-  it('does not persist the safety switches', async () => {
-    // Bypass-permissions restored days later is a switch nobody remembers
-    // leaving on. It stays session state, deliberately.
-    useStore.getState().updateAgentSettings({ dangerouslyIgnorePermissions: true });
-
-    expect(useStore.getState().agentSettings.dangerouslyIgnorePermissions).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(setProjectConfigValue).not.toHaveBeenCalled();
-  });
-
   it('keeps working without a project open', async () => {
     useStore.setState({ rootPath: null });
 
@@ -436,22 +422,6 @@ describe('uiSlice – agent settings that belong to the project', () => {
       branchTicketPattern: 'BAR-\\d+',
       commitProviderId: 'opencode',
     });
-  });
-
-  it('leaves the safety switches off when a project is opened', async () => {
-    useStore.setState({
-      agentSettings: {
-        ...useStore.getState().agentSettings,
-        dangerouslyIgnorePermissions: true,
-        autoAcceptEdits: true,
-      },
-    });
-
-    await useStore.getState().loadProjectAgentSettings('/tmp/other');
-
-    // Switching projects is not a reason to carry elevated permissions along.
-    expect(useStore.getState().agentSettings.dangerouslyIgnorePermissions).toBe(false);
-    expect(useStore.getState().agentSettings.autoAcceptEdits).toBe(false);
   });
 });
 

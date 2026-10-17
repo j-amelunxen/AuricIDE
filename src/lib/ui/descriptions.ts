@@ -32,9 +32,6 @@ export const GUIDANCE = {
       'This folder contains git repositories in subfolders. Choose which one the agent should check out into a worktree.',
   },
   settings: {
-    autoAcceptEdits: 'If enabled, the agent will apply file changes without asking for permission.',
-    dangerouslyIgnorePermissions:
-      'Skips permission prompts. The agent can run commands and access files without asking. Use only for work you trust.',
     agenticCommit:
       'Use an AI agent to write the commit. Push is a separate click — Commit stays local, Commit & Push publishes.',
     deepNlp:

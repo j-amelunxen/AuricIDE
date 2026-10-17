@@ -90,11 +90,6 @@ export const AGENT_LOG_MAX_ROWS = 200_000;
  * read and written by the modules that already model them (the theme catalog,
  * the skill-source rules, the spawn defaults); those go through `readAppPref` /
  * `writeAppPref` so every application-wide write still passes one door.
- *
- * Not here on purpose: `dangerouslyIgnorePermissions` and `autoAcceptEdits`.
- * Both stay session state. Persisting a switch that grants an agent free rein
- * and then quietly restoring it days later is the kind of setting a user does
- * not remember leaving on — so it starts off every launch, deliberately.
  */
 export interface AppConfig {
   enableDeepNlp: boolean;
