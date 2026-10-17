@@ -210,7 +210,7 @@ pub struct Dispatcher {
     worktrees: Mutex<HashMap<String, String>>,
 }
 
-type Outcome = Result<Value, ControlError>;
+pub(crate) type Outcome = Result<Value, ControlError>;
 
 fn to_value(result: impl Serialize) -> Outcome {
     serde_json::to_value(result).map_err(|error| {
@@ -314,7 +314,9 @@ impl Dispatcher {
         self.dispatch_supervised(agent_id, request)
     }
 
-    fn dispatch_external(&self, request: Request) -> Outcome {
+    /// Answers `request` with every right an external caller has. The
+    /// supervisor link calls this only after its own, narrower scope check.
+    pub(crate) fn dispatch_external(&self, request: Request) -> Outcome {
         match request {
             Request::ListAgents(_) => self.list_agents(|_| true),
             Request::ReadOutput(params) => self.read_output(params),
@@ -335,16 +337,23 @@ impl Dispatcher {
 
     fn list_agents(&self, keep: impl Fn(&AgentInfo) -> bool) -> Outcome {
         let agents = self
-            .backend
+            .summaries()
+            .into_iter()
+            .filter(|summary| keep(&summary.info))
+            .collect();
+        to_value(ListAgentsResult { agents })
+    }
+
+    /// Every agent the IDE lists, with its running output offset.
+    pub(crate) fn summaries(&self) -> Vec<AgentSummary> {
+        self.backend
             .agents()
             .into_iter()
-            .filter(|info| keep(info))
             .map(|info| AgentSummary {
                 output_bytes: self.buffers.total_bytes(&info.id),
                 info,
             })
-            .collect();
-        to_value(ListAgentsResult { agents })
+            .collect()
     }
 
     fn find_agent(&self, agent_id: &str) -> Option<AgentInfo> {
@@ -640,6 +649,17 @@ impl Dispatcher {
 
     /// Emit `control-request` and wait for `control_respond`.
     fn via_frontend(&self, method: &str, params: Value) -> Outcome {
+        frontend_outcome(method, self.via_frontend_raw(method, params)?)
+    }
+
+    /// Hands `method` to the frontend and returns its answer as given, for a
+    /// caller with error codes of its own (the supervisor link). Only the
+    /// transport failures are mapped here.
+    pub(crate) fn via_frontend_raw(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<FrontendReply, ControlError> {
         let deadline = Instant::now() + self.frontend_timeout;
         let unanswered = || {
             ControlError::new(
@@ -685,7 +705,7 @@ impl Dispatcher {
                 }
             }
         };
-        frontend_outcome(method, reply)
+        Ok(reply)
     }
 }
 
@@ -934,7 +954,7 @@ pub fn socket_path_in(app_data_dir: &Path) -> PathBuf {
 /// Bind and serve on a background thread. A socket that cannot be bound is
 /// logged and the IDE opens without it: external control is an extra, not
 /// something the editor depends on.
-pub fn start(app: &tauri::AppHandle) {
+pub fn start(app: &tauri::AppHandle, dispatcher: Arc<Dispatcher>) {
     use tauri::Manager;
     let Ok(dir) = app.path().app_data_dir() else {
         eprintln!("Control socket: no app data directory");
@@ -948,6 +968,14 @@ pub fn start(app: &tauri::AppHandle) {
             return;
         }
     };
+    std::thread::spawn(move || serve(listener, dispatcher, CONNECTION_IDLE_TIMEOUT));
+}
+
+/// The one dispatcher of the running app. The control socket and the
+/// supervisor link share it, so a supervisor's spawn gate and the worktrees
+/// this app started are one set whichever door a request came through.
+pub fn dispatcher(app: &tauri::AppHandle) -> Arc<Dispatcher> {
+    use tauri::Manager;
     let buffers = app
         .state::<crate::agents::output_buffer::OutputBuffersState>()
         .inner()
@@ -958,14 +986,13 @@ pub fn start(app: &tauri::AppHandle) {
         .inner()
         .clone();
     let backend = Arc::new(TauriBackend { app: app.clone() });
-    let dispatcher = Arc::new(Dispatcher::new(
+    Arc::new(Dispatcher::new(
         backend,
         buffers,
         pending,
         run_results,
         FRONTEND_TIMEOUT,
-    ));
-    std::thread::spawn(move || serve(listener, dispatcher, CONNECTION_IDLE_TIMEOUT));
+    ))
 }
 
 /// The frontend's answer to a `control-request`. Returns `false` when the
@@ -989,7 +1016,7 @@ pub fn control_ready(pending: tauri::State<'_, PendingRequestsState>) {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 mod supervisor_attack_tests;

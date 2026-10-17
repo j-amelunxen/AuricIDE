@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { normalizeProjectDescription } from '@/lib/quickAccess/description';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
+import { SupervisorLinkSettings } from './SupervisorLinkSettings';
 import { SupervisorMenuBarSettings } from './SupervisorMenuBarSettings';
 import { SupervisorHeader } from './SupervisorHeader';
 import { SupervisorInstructionsEditor } from './SupervisorInstructionsEditor';
@@ -233,6 +234,8 @@ export function SupervisorContent() {
       />
 
       <SupervisorMenuBarSettings />
+
+      <SupervisorLinkSettings />
     </div>
   );
 }

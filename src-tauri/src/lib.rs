@@ -32,6 +32,7 @@ mod recent_creations;
 mod recent_projects;
 mod schedules;
 mod supervisor;
+mod supervisor_link;
 mod themes;
 mod ui_watchdog;
 mod usage_limits;
@@ -286,8 +287,11 @@ pub fn run() {
 
             // External agent control (`docs/design-agent-control.md`). Last,
             // so every state a request can touch is managed before the first
-            // connection is accepted.
-            control_socket::start(app.handle());
+            // connection is accepted. The supervisor link
+            // (`docs/design-supervisor-link.md`) shares its dispatcher.
+            let dispatcher = control_socket::dispatcher(app.handle());
+            control_socket::start(app.handle(), dispatcher.clone());
+            supervisor_link::start(app.handle(), dispatcher);
             Ok(())
         })
         .manage(DatabaseState {
@@ -313,6 +317,8 @@ pub fn run() {
             menu_bar::menu_bar_sync,
             supervisor::supervisor_policy_get,
             supervisor::supervisor_policy_set,
+            supervisor_link::policy::supervisor_link_policy_get,
+            supervisor_link::policy::supervisor_link_policy_set,
             supervisor::supervisor_resolve_tool,
             provider_policy::project_provider_policy_get,
             agent_window::open_agent_window,
