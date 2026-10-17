@@ -6,7 +6,12 @@ import { runKindFor } from '@/lib/agents/spawnTargets';
 import { loadSpawnDefaults, type SpawnPreset } from '@/lib/agents/spawnDefaults';
 import type { QuickAccessCombo } from '@/lib/store/starredProjectsSlice';
 import type { NotificationTrust } from './trust';
-import type { NotificationAction, NotificationOpenTarget } from './types';
+import {
+  POLICY_PROPOSAL_ORIGIN,
+  type NotificationAction,
+  type NotificationOpenTarget,
+  type PolicyProposalDecision,
+} from './types';
 
 /**
  * The operations a notification may set off, as functions the caller supplies.
@@ -47,12 +52,18 @@ export interface NotificationActionDeps {
     mode: 'direct' | 'dialog';
     origin?: string;
   }) => Promise<void>;
+  /**
+   * Applies or discards a supervisor link policy proposal. A refusal (expired,
+   * unknown, policy changed since) rejects with a `policy-proposal` error whose
+   * message is the sentence to show.
+   */
+  decidePolicyProposal: (proposalId: string, decision: PolicyProposalDecision) => Promise<void>;
 }
 
 export class NotificationActionError extends Error {
   constructor(
     message: string,
-    readonly code: 'missing-project' | 'empty-combo' | 'provider-model'
+    readonly code: 'missing-project' | 'empty-combo' | 'provider-model' | 'policy-proposal'
   ) {
     super(message);
   }
@@ -357,6 +368,25 @@ function openTarget(target: NotificationOpenTarget, deps: NotificationActionDeps
 }
 
 /**
+ * Applies or discards a link policy proposal. The parser already drops this
+ * kind on any other row; checked again here so a caller that skipped the
+ * parser cannot rewrite what the link may see.
+ */
+async function decidePolicyProposal(
+  action: Extract<NotificationAction, { kind: 'policy-proposal' }>,
+  deps: NotificationActionDeps,
+  context: NotificationActionContext
+): Promise<void> {
+  if (context.trust !== 'user' || context.origin !== POLICY_PROPOSAL_ORIGIN) {
+    throw new NotificationActionError(
+      'This policy proposal button did not come from the IDE',
+      'policy-proposal'
+    );
+  }
+  await deps.decidePolicyProposal(action.proposalId, action.decision);
+}
+
+/**
  * Carries out one action.
  *
  * Recording the answer is *not* done here: every action on a question settles
@@ -364,6 +394,7 @@ function openTarget(target: NotificationOpenTarget, deps: NotificationActionDeps
  * call. An `answer` action therefore has no side effect of its own — its whole
  * purpose is to be recorded, which is what a waiting agent reads back.
  */
+// code-gate: complexity-cyclomatic - one switch case per action kind of a closed union; each case is a single dispatch
 export async function executeNotificationAction(
   action: NotificationAction,
   deps: NotificationActionDeps,
@@ -380,6 +411,9 @@ export async function executeNotificationAction(
       return;
     case 'command':
       deps.runCommand(action.commandId);
+      return;
+    case 'policy-proposal':
+      await decidePolicyProposal(action, deps, context);
       return;
     case 'run-skill': {
       if (!(await deps.projectDirExists(action.repoPath))) {

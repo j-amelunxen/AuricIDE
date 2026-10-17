@@ -547,3 +547,51 @@ fn a_zero_daily_limit_refuses_with_the_reason_disabled() {
     );
     assert!(s.h.backend.requests.lock().unwrap().is_empty(), "no spawn");
 }
+
+#[test]
+fn a_global_kind_puts_its_instructions_into_the_prompt_without_the_path() {
+    let s = setup(JobLimits::default());
+    let app = tempfile::tempdir().unwrap();
+    let dir = app.path().join("job-kinds");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("draw.md"), "Draw it the shared way.\n").unwrap();
+    {
+        let mut policy = s.h.host.policy.lock().unwrap();
+        policy.job_kinds_dir = Some(dir.clone());
+        let config = policy.projects.values_mut().next().unwrap();
+        config.job_kinds[0].instructions = Some("docs/agents/missing.md".into());
+        config.job_kinds[0].global_instructions = Some("draw.md".into());
+    }
+    create(&s, json!({ "focus": "auth" })).unwrap();
+    let request = s.h.backend.requests.lock().unwrap()[0].clone();
+    let prompt = request.params["prompt"].as_str().unwrap().to_string();
+    assert!(prompt.contains("Draw it the shared way."), "{prompt}");
+    assert!(
+        !prompt.contains(dir.to_str().unwrap()),
+        "no global path in the prompt"
+    );
+    let text = prompt.find("Draw it the shared way.").unwrap();
+    let payload = prompt.find("\"focus\": \"auth\"").unwrap();
+    assert!(text < payload, "the instructions come before the payload");
+}
+
+#[test]
+fn a_project_limit_of_zero_switches_jobs_off_there_only() {
+    let s = setup(JobLimits::default());
+    let project = s.p.path().to_string();
+    s.h.host
+        .policy
+        .lock()
+        .unwrap()
+        .project_daily_limits
+        .insert(project, 0);
+    let refused = create(&s, Value::Null).unwrap_err();
+    assert_eq!(refused.code, "quota_exceeded");
+    assert_eq!(refused.reason.as_deref(), Some("disabled"));
+    assert!(
+        refused.message.contains("its daily limit is 0"),
+        "{}",
+        refused.message
+    );
+    assert!(s.h.backend.requests.lock().unwrap().is_empty(), "no spawn");
+}

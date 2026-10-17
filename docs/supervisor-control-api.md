@@ -28,6 +28,7 @@ document is and which jobs exist is configuration you write per project.
 - [Methods](#methods)
 - [Events](#events)
 - [Document types and job kinds](#document-types-and-job-kinds)
+- [Policy proposals](#policy-proposals)
 - [Previewing unmerged results](#previewing-unmerged-results)
 - [The job counter](#the-job-counter)
 - [Error codes](#error-codes)
@@ -59,15 +60,20 @@ Three settings decide what it gets:
    job's agent) may work in, with which providers and models. A job needs its
    project open to supervisors here, and a provider with at least one model
    that has a size (`rank`).
-2. **Settings → Supervisor → Supervisor link** — per starred project: whether
-   the client may see it, its **document types** and its **job kinds** (a JSON
-   object, see [below](#document-types-and-job-kinds)). Projects appear here
-   once you star them in Quick Access.
+2. **Settings → Supervisor → Supervisor link** — the **global defaults**
+   (document types and job kinds defined once, see
+   [below](#document-types-and-job-kinds)), and per starred project whether the
+   client may see it and how it differs from the defaults. A shared project
+   with nothing of its own inherits every default, so sharing a new project is
+   one switch. Projects appear here once you star them in Quick Access.
 3. **Settings → Supervisor → Supervisor link → Jobs per 24 h** — the
    [counter](#the-job-counter). `0` switches jobs off.
 
-The settings are stored in `<app_data_dir>/supervisor-link.json` (mode 0600).
-A missing or broken file means **nothing is shared**, never everything.
+The settings are stored in `<app_data_dir>/supervisor-link.json` (mode 0600,
+version 3). A missing or broken file means **nothing is shared**, never
+everything. Files of versions 1 and 2 are read as they are and written as
+version 3 on the next save. A supervisor cannot change the file; it can only
+[propose](#policy-proposals) a change that you apply with one click.
 
 ## Connecting
 
@@ -322,8 +328,10 @@ type DocumentProject = {
     schema: string | null;
     assets: string[]; // globs documents.asset reads; [] = none
     maxAssetBytes: number;
+    origin: 'global' | 'project' | 'override'; // where the type comes from
   }[];
   jobKinds: string[];
+  jobKindOrigins: Record<string, 'global' | 'project' | 'override'>;
 };
 
 type DocumentEntry = {
@@ -557,30 +565,67 @@ Jobs keep running while no client is connected.
 
 ## Document types and job kinds
 
-Per shared project, Settings → Supervisor → Supervisor link holds one JSON
-object:
+Document types and job kinds are defined **once, globally**, in Settings →
+Supervisor → Supervisor link → Global defaults. Every shared project inherits
+them. A project only lists what is different about it. This example defines a
+`scene` document type and a `scene.draw` job kind for every project:
 
 ```json
 {
   "documentTypes": [
     {
-      "name": "diagram",
-      "globs": ["docs/**/*.diagram.json"],
-      "index": { "path": "docs/diagrams.index.json", "entriesKey": "documents" },
-      "nameField": "meta.title",
-      "descriptionField": "meta.subtitle",
-      "schema": "docs/diagram.schema.json"
+      "name": "scene",
+      "globs": ["docs/**/*.scene.json"],
+      "index": { "path": "docs/scenes.index.json", "entriesKey": "scenes" },
+      "nameField": "hud.title",
+      "descriptionField": "hud.subtitle",
+      "schema": "docs/scene.schema.json"
     }
   ],
   "jobKinds": [
     {
-      "kind": "diagram.draw",
-      "instructions": "docs/agents/draw-diagram.md",
-      "writes": ["docs/**/*.diagram.json", "docs/diagrams.index.json"]
+      "kind": "scene.draw",
+      "instructions": "docs/agents/draw-scene.md",
+      "globalInstructions": "scene.draw.md",
+      "writes": ["docs/**/*.scene.json", "docs/scenes.index.json"]
     }
   ]
 }
 ```
+
+With that in place, sharing a project is a switch: its entry is empty and it
+gets `scene` and `scene.draw`. A project that has its own
+`docs/agents/draw-scene.md` uses that file; all others use the global
+`<app_data_dir>/job-kinds/scene.draw.md`.
+
+**A project's entry** says how the project differs. Every field is optional:
+
+```json
+{
+  "inherit": true,
+  "disabledDocumentTypes": [],
+  "disabledJobKinds": ["scene.draw"],
+  "documentTypes": [{ "name": "scene", "globs": ["scenes/**/*.scene.json"] }],
+  "jobKinds": [],
+  "dailyLimit": 5
+}
+```
+
+| Field                   | Meaning                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `documentTypes`         | own types; one with the name of a global type **replaces** it (override), a new name extends         |
+| `jobKinds`              | the same for job kinds                                                                               |
+| `disabledDocumentTypes` | names of global types this project does not take over                                                |
+| `disabledJobKinds`      | names of global kinds this project does not take over                                                |
+| `inherit`               | `false`: none of the global defaults apply here; default `true`                                      |
+| `dailyLimit`            | this project's own job limit, in place of the shared per-project limit ([counter](#the-job-counter)) |
+
+An override replaces the whole definition, not single fields. The settings
+show every shared project's **effective** configuration with where each type
+and kind comes from (`global`, `project`, `override`); `documents.projects`
+reports the same as `origin` and `jobKindOrigins`. A project whose merged
+configuration breaks a rule (for example a kind left with nothing to write) is
+refused on save and, in a hand-edited file, not shared at all.
 
 **Document type**
 
@@ -601,20 +646,38 @@ before you render it.**
 
 **Job kind**
 
-| Field          | Required | Meaning                                                                                  |
-| -------------- | -------- | ---------------------------------------------------------------------------------------- |
-| `kind`         | yes      | same rule as a type name                                                                 |
-| `instructions` | yes      | project-relative file the agent reads first; it defines the work and the payload's shape |
-| `writes`       | no       | globs the agent may write; empty means the globs of every document type                  |
+| Field                | Required     | Meaning                                                                                                      |
+| -------------------- | ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `kind`               | yes          | same rule as a type name                                                                                     |
+| `instructions`       | one of these | project-relative file the agent reads first; it defines the work and the payload's shape                     |
+| `globalInstructions` | one of these | a file outside every project: a name under `<app_data_dir>/job-kinds/`, or an absolute path you set yourself |
+| `writes`             | no           | globs the agent may write; empty means the globs of every (effective) document type                          |
 
-The instructions file is versioned with the project, so the people who own the
-repository decide what a kind does, not the client.
+**Which instructions a job gets.** When the project has the `instructions`
+file, that file wins and the agent reads it in its worktree; it is versioned
+with the project, so the people who own the repository decide what a kind
+does, not the client. Otherwise AuricIDE reads the `globalInstructions` file
+itself and puts its text into the job's prompt. A global file:
+
+- is read by AuricIDE only. No `documents.*` method can reach it, and an error
+  a client sees never names its path;
+- must be a regular UTF-8 file of at most 64 KiB;
+- when given as a name under `job-kinds/`, must resolve inside that folder: a
+  symlink pointing elsewhere is refused;
+- can be an absolute path anywhere only when you type it into the settings. A
+  supervisor's [proposal](#policy-proposals) may only name a file under
+  `job-kinds/`.
+
+If neither file can be read, `jobs.create` answers `invalid_params` and no job
+starts.
 
 ### Example: a 3D scene as a document type
 
-Nothing in AuricIDE is specific to diagrams. A project that stores 3D scenes
-as JSON might share them like this, with a job kind that lets an agent add
-objects to a scene:
+Nothing in AuricIDE is specific to diagrams or scenes. A single project that
+stores 3D scenes as JSON, with models and textures beside them, might carry
+its own definition like this (as its project entry, or as global defaults if
+every project is laid out the same way), with a job kind that lets an agent
+add objects to a scene:
 
 ```json
 {
@@ -645,6 +708,65 @@ what `documents.get` returns, follow links between scenes with
 (for example `scenes/assets/desk.glb`), and ask for `jobs.create` with
 `{ "kind": "scene.extend", "payload": { "scene": "scenes/lobby.scene.json", "request": "add a reception desk" } }`.
 
+## Policy proposals
+
+A client cannot change the settings, and neither can a supervisor. A
+supervisor can **propose** a change, and you apply it with one click. This is
+how a client that needs, say, a new job kind gets it without anybody editing
+JSON by hand: it tells its supervisor (with `agents.send`), the supervisor
+proposes, you decide.
+
+The supervisor has two tools for this on its MCP server (`auric-supervisor`):
+
+| Tool                  | What it does                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `link_policy_get`     | the stored settings, the effective configuration per project with origins, and its proposals still pending |
+| `link_policy_propose` | `{ reason, changes }`: checks the change against the current settings and stores it as a pending proposal  |
+
+A change is one of: `share_project`, `set_default_document_type`,
+`set_default_job_kind`, `set_project_document_type`, `set_project_job_kind`,
+`set_project_inherit`, `set_daily_limit`, `set_per_project_daily_limit`,
+`set_project_daily_limit`. There is no removal; taking something away is
+yours to do in the settings. Example:
+
+```json
+{
+  "reason": "The web client draws scenes; this project should offer it like the others.",
+  "changes": [
+    { "op": "share_project", "project": "/home/me/src/example" },
+    {
+      "op": "set_default_job_kind",
+      "jobKind": { "kind": "scene.draw", "globalInstructions": "scene.draw.md" }
+    }
+  ]
+}
+```
+
+What happens then:
+
+1. The change is checked with every rule a save from the settings meets. A
+   refused change is `invalid_params` naming the change and the rule; nothing
+   is stored. A change that would leave the settings as they are is refused
+   too.
+2. The proposal is stored (`<app_data_dir>/supervisor-link-proposals.json`,
+   mode 0600) and the inbox shows a notification with the reason, a readable
+   diff (`+` added, `~` changed old → new) and two buttons: **Apply** and
+   **Discard**. Pending proposals are also listed in Settings → Supervisor →
+   Supervisor link.
+3. **Nothing changes until you press Apply** in the IDE. Applying is a command
+   of the IDE window; neither socket has a method that applies or discards, so
+   no supervisor, agent or client can approve its own proposal.
+4. A proposal expires after **24 hours**. It is applied only onto the settings
+   it was made against: if you changed them in between, Apply withdraws it
+   unapplied and says so.
+5. Every outcome (`applied`, `discarded`, `expired`, `outdated`) is appended to
+   `<app_data_dir>/supervisor-link-policy-audit.jsonl` (mode 0600) with who
+   proposed it, the reason, the diff and the time.
+
+At most 20 proposals wait at once, each with at most 20 changes and a reason
+of at most 500 characters. Over the Supervisor Control API itself
+(`supervisor-link.sock`) none of this exists: a client asks its supervisor.
+
 ## Previewing unmerged results
 
 A proposal and a finished job both leave their result on a branch. To show it
@@ -672,11 +794,13 @@ For a job, use the branch from `JobStarted.branch` or the commit from the
 A guard against a client that starts jobs in a loop, not a budget:
 
 - at most `dailyLimit` jobs (default **20**) in any 24 hours across all
-  projects, and optionally `perProjectDailyLimit` per project;
+  projects, and optionally `perProjectDailyLimit` per project; a project's
+  own `dailyLimit` (in its entry) replaces `perProjectDailyLimit` for it;
 - each value is at most 1000;
 - over it, `jobs.create` answers `quota_exceeded` with `reason`
   `daily_limit` or `project_daily_limit` and says when the next slot frees up;
-- `0` switches jobs off (for a project, if it is its `perProjectDailyLimit`):
+- `0` switches jobs off (for a project, if it is the limit that applies to
+  it):
   `jobs.create` answers `quota_exceeded` with `reason` `disabled`, and no slot
   ever frees up until the limit is raised.
 

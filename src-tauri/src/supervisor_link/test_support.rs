@@ -30,7 +30,8 @@ pub fn diagram_type() -> DocumentType {
 pub fn draw_kind() -> JobKind {
     JobKind {
         kind: "diagram.draw".into(),
-        instructions: "docs/agents/draw.md".into(),
+        instructions: Some("docs/agents/draw.md".into()),
+        global_instructions: None,
         writes: Vec::new(),
     }
 }

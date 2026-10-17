@@ -254,6 +254,19 @@ const CLEANUP_RULES = [
     'you started (its repoPath contains `.auric-wt`).',
 ].join('\n');
 
+/**
+ * The supervisor link policy is the human's: a supervisor may only propose a
+ * change, and the human applies it with one click (`link_policy_propose`).
+ */
+const LINK_POLICY_RULES = [
+  "- **The supervisor link settings are the human's.** When a client of the Supervisor " +
+    'Control API needs a project shared, a document type or job kind, or another job limit, ' +
+    'read link_policy_get, then call link_policy_propose once with the smallest change and a ' +
+    'one-sentence reason. Nothing changes until the human presses Apply in the IDE.',
+  '- **Do not wait for the decision** and do not propose the same change again: tell the human ' +
+    'what you proposed (the diff) and carry on with what you can do without it.',
+].join('\n');
+
 const REPORT =
   'Report per agent: id, project, model, its result (the ANSWER line, or why there is none) ' +
   'and, if it ran in a worktree, whether that was removed or waits for the human. Keep the ' +
@@ -315,6 +328,8 @@ export function buildSupervisorLaunchPrompt(
     CHILD_RULES,
     '## Cleaning up',
     CLEANUP_RULES,
+    '## Supervisor link settings',
+    LINK_POLICY_RULES,
     '## Reporting',
     REPORT,
     ...(instructions?.trim()

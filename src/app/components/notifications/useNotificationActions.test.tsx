@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStore } from '@/lib/store';
-import type { Notification } from '@/lib/notifications/types';
+import { POLICY_PROPOSAL_ORIGIN, type Notification } from '@/lib/notifications/types';
 import type { StarredProject } from '@/lib/store/starredProjectsSlice';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { NotificationRow } from './NotificationRow';
@@ -30,6 +30,12 @@ const spawnAgentMock = vi.fn(async (config: { name: string; model: string; task:
 }));
 
 const isDirMock = vi.fn(async (path: string) => path === '/repo/alpha');
+
+const proposalDecideMock = vi.fn(async (_id: string, _decision: string) => 'applied');
+
+vi.mock('@/lib/tauri/supervisorLink', () => ({
+  supervisorLinkProposalDecide: (id: string, decision: string) => proposalDecideMock(id, decision),
+}));
 
 vi.mock('@/lib/tauri/agents', () => ({
   spawnAgent: (config: unknown) => spawnAgentMock(config as never),
@@ -675,5 +681,65 @@ describe('useNotificationActions — an MCP launch request', () => {
     await waitFor(() =>
       expect(useStore.getState().notifications[0]?.answer).toMatch(/^failed:.*not installed/)
     );
+  });
+});
+
+describe('useNotificationActions — a supervisor link policy proposal', () => {
+  const proposalActions = [
+    { id: 'apply', label: 'Apply', kind: 'policy-proposal', proposalId: 'p-1', decision: 'apply' },
+    {
+      id: 'discard',
+      label: 'Discard',
+      kind: 'policy-proposal',
+      proposalId: 'p-1',
+      decision: 'discard',
+    },
+  ];
+  const proposal = (overrides: Partial<Notification> = {}) =>
+    makeNotification({
+      kind: 'ask',
+      projectPath: null,
+      origin: POLICY_PROPOSAL_ORIGIN,
+      title: 'A supervisor proposes a change to the link policy',
+      actions: proposalActions,
+      ...overrides,
+    });
+
+  it('Apply decides the proposal and settles the question', async () => {
+    const user = userEvent.setup();
+    const notification = proposal();
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<Harness notifications={[notification]} />);
+    expect(screen.getByTestId(`notification-action-${notification.uid}-discard`)).toBeEnabled();
+    await user.click(screen.getByTestId(`notification-action-${notification.uid}-apply`));
+
+    await waitFor(() => expect(proposalDecideMock).toHaveBeenCalledWith('p-1', 'apply'));
+    await waitFor(() => expect(useStore.getState().notifications[0]?.answer).toBe('apply'));
+  });
+
+  it('shows Rust’s refusal instead of a generic failure', async () => {
+    const user = userEvent.setup();
+    proposalDecideMock.mockRejectedValueOnce(new Error('The proposal has expired'));
+    const notification = proposal();
+    useStore.setState({ notifications: [notification] } as never);
+
+    render(<Harness notifications={[notification]} />);
+    await user.click(screen.getByTestId(`notification-action-${notification.uid}-apply`));
+
+    await waitFor(() =>
+      expect(useStore.getState().toasts.map((t) => t.message)).toContain('The proposal has expired')
+    );
+  });
+
+  it.each([
+    ['an agent', { source: 'agent' as const }],
+    ['an MCP server', { source: 'mcp' as const }],
+    ['a system row with another origin', { origin: 'Weekly changelog' }],
+  ])('renders no button on a row written by %s', (_who, overrides) => {
+    const notification = proposal(overrides);
+    render(<Harness notifications={[notification]} />);
+    expect(screen.queryByTestId(`notification-action-${notification.uid}-apply`)).toBeNull();
+    expect(screen.queryByTestId(`notification-action-${notification.uid}-discard`)).toBeNull();
   });
 });

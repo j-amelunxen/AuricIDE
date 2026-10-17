@@ -662,3 +662,22 @@ mod socket {
         assert_eq!(refused["id"], Value::Null);
     }
 }
+
+/// The link is a client's door: it may neither read the policy through the
+/// supervisor's methods nor propose or decide a change to it.
+#[test]
+fn the_link_has_no_method_that_proposes_or_decides_a_policy_change() {
+    let h = harness(Vec::new());
+    for method in [
+        "link_policy_get",
+        "link_policy_propose",
+        "link_policy_apply",
+        "policy.propose",
+        "policy.apply",
+        "proposals.decide",
+    ] {
+        let line = json!({ "v": 1, "id": 1, "method": method, "params": {} }).to_string();
+        let error = ask(&h.link, &line).unwrap_err();
+        assert_eq!(error.code, "unknown_method", "{method}");
+    }
+}

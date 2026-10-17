@@ -18,11 +18,11 @@
 use git2::{ErrorCode, FileMode, ObjectType, Oid, Repository};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use super::glob;
-use super::policy::{is_relative_file, DocumentType, LinkPolicy, ProjectConfig};
+use super::policy::{is_relative_file, DocumentType, LinkPolicy, Origin, ProjectConfig};
 use crate::supervisor::canonical_project_path;
 
 /// Fixture `maxDocumentBytes`.
@@ -107,6 +107,9 @@ pub struct DocumentTypeInfo {
     /// Globs `documents.asset` reads; empty when the type has no assets.
     pub assets: Vec<String>,
     pub max_asset_bytes: u64,
+    /// `global` (inherited), `project` (its own) or `override` (its own in
+    /// place of a global one).
+    pub origin: Origin,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -117,6 +120,8 @@ pub struct DocumentProject {
     pub is_git_repo: bool,
     pub document_types: Vec<DocumentTypeInfo>,
     pub job_kinds: Vec<String>,
+    /// Where each job kind came from, as `DocumentTypeInfo::origin`.
+    pub job_kind_origins: BTreeMap<String, Origin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -355,14 +360,27 @@ pub(super) fn open_root_repo(project: &Path) -> Result<Repository, DocumentError
     Ok(repo)
 }
 
+/// A policy built without origins (tests, an older caller) reads as the
+/// project's own configuration.
+fn origin_of(origins: &BTreeMap<String, Origin>, name: &str) -> Origin {
+    origins.get(name).copied().unwrap_or(Origin::Project)
+}
+
 /// Listed projects whose folder exists, named after the folder.
 pub fn visible_projects(policy: &LinkPolicy) -> Vec<DocumentProject> {
     policy
         .projects
         .iter()
-        .map(|(listed, config)| (PathBuf::from(canonical_project_path(listed)), config))
-        .filter(|(path, _)| path.is_dir())
-        .map(|(path, config)| DocumentProject {
+        .map(|(listed, config)| {
+            let origins = policy.origins.get(listed).cloned().unwrap_or_default();
+            (
+                PathBuf::from(canonical_project_path(listed)),
+                config,
+                origins,
+            )
+        })
+        .filter(|(path, _, _)| path.is_dir())
+        .map(|(path, config, origins)| DocumentProject {
             name: path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -378,9 +396,15 @@ pub fn visible_projects(policy: &LinkPolicy) -> Vec<DocumentProject> {
                     schema: t.schema.clone(),
                     assets: t.assets.clone(),
                     max_asset_bytes: t.asset_cap(),
+                    origin: origin_of(&origins.document_types, &t.name),
                 })
                 .collect(),
             job_kinds: config.job_kinds.iter().map(|k| k.kind.clone()).collect(),
+            job_kind_origins: config
+                .job_kinds
+                .iter()
+                .map(|k| (k.kind.clone(), origin_of(&origins.job_kinds, &k.kind)))
+                .collect(),
         })
         .collect()
 }

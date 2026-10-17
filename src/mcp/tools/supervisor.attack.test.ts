@@ -41,6 +41,8 @@ describe('the supervisor tool surface', () => {
     expect([...tools.keys()].sort()).toEqual([
       'await_agent_result',
       'kill_agent',
+      'link_policy_get',
+      'link_policy_propose',
       'list_my_agents',
       'list_projects',
       'read_agent_output',

@@ -292,6 +292,32 @@
       }
     },
     {
+      "name": "link_policy_get",
+      "raw": "{\"id\":30,\"method\":\"link_policy_get\"}",
+      "expected": {
+        "id": 30,
+        "method": "link_policy_get",
+        "params": {}
+      }
+    },
+    {
+      "name": "link_policy_propose with one change",
+      "raw": "{\"id\":31,\"method\":\"link_policy_propose\",\"params\":{\"reason\":\"Share it\",\"changes\":[{\"op\":\"share_project\",\"project\":\"/tmp/example-project\"}]}}",
+      "expected": {
+        "id": 31,
+        "method": "link_policy_propose",
+        "params": {
+          "reason": "Share it",
+          "changes": [
+            {
+              "op": "share_project",
+              "project": "/tmp/example-project"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "not JSON",
       "raw": "{ nope",
       "expectedError": {
@@ -393,6 +419,30 @@
       "expectedError": {
         "id": 24,
         "code": "invalid_params"
+      }
+    },
+    {
+      "name": "link_policy_propose without changes",
+      "raw": "{\"id\":32,\"method\":\"link_policy_propose\",\"params\":{\"reason\":\"x\",\"changes\":[]}}",
+      "expectedError": {
+        "id": 32,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "link_policy_propose with an unknown op",
+      "raw": "{\"id\":33,\"method\":\"link_policy_propose\",\"params\":{\"reason\":\"x\",\"changes\":[{\"op\":\"remove_project\",\"project\":\"/x\"}]}}",
+      "expectedError": {
+        "id": 33,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "no socket method applies a proposal",
+      "raw": "{\"id\":34,\"method\":\"link_policy_apply\",\"params\":{\"proposalId\":\"lp-1\"}}",
+      "expectedError": {
+        "id": 34,
+        "code": "unknown_method"
       }
     }
   ],
@@ -527,6 +577,95 @@
         "removed": true,
         "dirty": false,
         "branchAhead": false
+      }
+    },
+    "link_policy_get": {
+      "id": 30,
+      "ok": true,
+      "result": {
+        "stored": {
+          "defaults": {
+            "documentTypes": [
+              {
+                "name": "scene",
+                "globs": ["docs/**/*.scene.json"]
+              }
+            ],
+            "jobKinds": [
+              {
+                "kind": "scene.draw",
+                "globalInstructions": "scene.draw.md",
+                "writes": []
+              }
+            ]
+          },
+          "projects": {
+            "/tmp/example-project": {
+              "documentTypes": [],
+              "jobKinds": []
+            }
+          },
+          "jobs": {
+            "dailyLimit": 20,
+            "perProjectDailyLimit": null
+          }
+        },
+        "effective": {
+          "projects": {
+            "/tmp/example-project": {
+              "documentTypes": [
+                {
+                  "name": "scene",
+                  "globs": ["docs/**/*.scene.json"]
+                }
+              ],
+              "jobKinds": [
+                {
+                  "kind": "scene.draw",
+                  "globalInstructions": "scene.draw.md",
+                  "writes": []
+                }
+              ]
+            }
+          },
+          "origins": {
+            "/tmp/example-project": {
+              "documentTypes": {
+                "scene": "global"
+              },
+              "jobKinds": {
+                "scene.draw": "global"
+              }
+            }
+          },
+          "projectDailyLimits": {},
+          "jobs": {
+            "dailyLimit": 20,
+            "perProjectDailyLimit": null
+          }
+        },
+        "pending": [
+          {
+            "id": "lp-0123456789ab",
+            "reason": "Share the docs project",
+            "diff": [
+              "+ projects[\"/tmp/other-project\"]: shared with the link, inherits the global defaults"
+            ],
+            "expiresAt": 1790086400000
+          }
+        ]
+      }
+    },
+    "link_policy_propose": {
+      "id": 31,
+      "ok": true,
+      "result": {
+        "proposalId": "lp-0123456789ab",
+        "status": "pending",
+        "expiresAt": 1790086400000,
+        "diff": [
+          "+ projects[\"/tmp/example-project\"]: shared with the link, inherits the global defaults"
+        ]
       }
     },
     "error": {
@@ -1078,7 +1217,11 @@
           "remove_worktree"
         ],
         "scope": "all_agents",
-        "mayPass": ["role", "permissionMode"]
+        "mayPass": ["role", "permissionMode"],
+        "refused": {
+          "link_policy_get": "outside_supervisor_scope",
+          "link_policy_propose": "outside_supervisor_scope"
+        }
       },
       "supervisor": {
         "methods": [
@@ -1089,7 +1232,9 @@
           "send_input",
           "spawn",
           "kill",
-          "remove_worktree"
+          "remove_worktree",
+          "link_policy_get",
+          "link_policy_propose"
         ],
         "scope": "own_children",
         "outsideScope": "unknown_agent",
@@ -1106,7 +1251,8 @@
           "runSource": "supervisor"
         },
         "worktrees": "spawn may pass worktree: true; remove_worktree removes an own child's worktree only when it holds no uncommitted change and no unmerged commit, otherwise answers removed: false and leaves it for a person. No path and no force are accepted: the folder is the child's own working directory.",
-        "typing": "send_input reaches its own interactive children only, like read_output and kill. It can answer a child's question or permission prompt, so the launch prompt tells the supervisor which ones it may answer and which go to the human. A headless child still refuses it (headless_no_stdin)."
+        "typing": "send_input reaches its own interactive children only, like read_output and kill. It can answer a child's question or permission prompt, so the launch prompt tells the supervisor which ones it may answer and which go to the human. A headless child still refuses it (headless_no_stdin).",
+        "linkPolicy": "link_policy_get reads the supervisor link policy (stored, effective with origins, pending proposals). link_policy_propose stores a pending proposal and raises an inbox ask with Apply and Discard; nothing changes until a person presses Apply in the IDE. No socket method decides a proposal. External callers, and so the supervisor link socket, are refused both (supervisorLink.fixtures.json, proposals)."
       },
       "worker": {
         "methods": [],
@@ -1304,6 +1450,30 @@
           "headless": true,
           "worktree": true
         },
+        "expected": "ok"
+      },
+      {
+        "name": "external caller may not read the link policy",
+        "caller": "external",
+        "method": "link_policy_get",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "external caller may not propose a link policy change",
+        "caller": "external",
+        "method": "link_policy_propose",
+        "expected": "outside_supervisor_scope"
+      },
+      {
+        "name": "supervisor reads the link policy",
+        "caller": "supervisor",
+        "method": "link_policy_get",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor proposes a link policy change",
+        "caller": "supervisor",
+        "method": "link_policy_propose",
         "expected": "ok"
       }
     ]

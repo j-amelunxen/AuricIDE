@@ -362,30 +362,36 @@ was lost). `lastActivityAt` and `outputBytes` alone do not raise
 ## Who sees what
 
 `<app_data_dir>/supervisor-link.json`, written by Rust at mode 0600 and edited
-in Settings → Supervisor → Supervisor link:
+in Settings → Supervisor → Supervisor link (version 3):
 
 ```json
 {
-  "version": 2,
+  "version": 3,
+  "defaults": {
+    "documentTypes": [
+      {
+        "name": "scene",
+        "globs": ["docs/**/*.scene.json"],
+        "index": { "path": "docs/scenes.index.json", "entriesKey": "scenes" },
+        "nameField": "hud.title",
+        "schema": "docs/scene.schema.json"
+      }
+    ],
+    "jobKinds": [
+      {
+        "kind": "scene.draw",
+        "instructions": "docs/agents/draw-scene.md",
+        "globalInstructions": "scene.draw.md",
+        "writes": ["docs/**/*.scene.json", "docs/scenes.index.json"]
+      }
+    ]
+  },
   "projects": {
-    "/Users/me/src/example-product": {
-      "documentTypes": [
-        {
-          "name": "diagram",
-          "globs": ["docs/**/*.diagram.json"],
-          "index": { "path": "docs/diagrams.index.json", "entriesKey": "documents" },
-          "nameField": "meta.title",
-          "descriptionField": "meta.subtitle",
-          "schema": "docs/diagram.schema.json"
-        }
-      ],
-      "jobKinds": [
-        {
-          "kind": "diagram.draw",
-          "instructions": "docs/agents/draw-diagram.md",
-          "writes": ["docs/**/*.diagram.json", "docs/diagrams.index.json"]
-        }
-      ]
+    "/Users/me/src/example-product": {},
+    "/Users/me/src/example-docs": {
+      "disabledJobKinds": ["scene.draw"],
+      "documentTypes": [{ "name": "scene", "globs": ["scenes/**/*.scene.json"] }],
+      "dailyLimit": 5
     }
   },
   "jobs": { "dailyLimit": 20, "perProjectDailyLimit": null }
@@ -394,28 +400,94 @@ in Settings → Supervisor → Supervisor link:
 
 - **A project not listed does not exist for the link**: `documents.search`
   skips it and every other document or job method answers
-  `document_not_visible`. A project listed without document types or job
-  kinds is visible but offers nothing.
+  `document_not_visible`. A listed project with nothing effective is visible
+  but offers nothing.
+- **Global defaults, project differences.** `defaults` is defined once; every
+  listed project inherits it. A project entry lists only how it differs
+  (fixture `resolution`): a type or kind whose name the defaults have
+  **replaces** that one as a whole (origin `override`), a new name extends
+  them (`project`), untouched defaults stay (`global`);
+  `disabledDocumentTypes` / `disabledJobKinds` drop single defaults and
+  `inherit: false` drops all of them. `dailyLimit` replaces
+  `jobs.perProjectDailyLimit` for that project. The link acts on the merged,
+  **effective** configuration (`policy::resolve`); `documents.projects` and
+  the settings show it with origins. Why defaults are not copied into each
+  project: a person who has to edit every project by hand stops sharing
+  projects, and copies drift.
 - **It fails closed.** A missing or broken file, or an unknown `version`,
   means no project is visible. A project entry that does not validate is
-  dropped on read, so a hand edit cannot half-open a project. Paths are
-  compared canonically (symlinks resolved).
+  dropped on read, so a hand edit cannot half-open a project; defaults that
+  do not validate are dropped as a whole (projects then inherit nothing, which
+  shows less, never more). A project whose merged configuration breaks a rule
+  is refused on save and not visible when read. Paths are compared
+  canonically (symlinks resolved).
 - **Validation** (on write, and again on read): project paths absolute; type
   and kind names `^[a-z0-9][a-z0-9._-]*$`, at most 64 characters, unique per
-  project; globs and file paths project-relative (no leading `/`, no `.` or
-  `..` segment, no `\\`); a type has at least one glob; a kind may write
-  something (its own `writes`, else every document type's globs). The
-  fixture `policyRejects` lists the refusals.
+  list; globs and file paths project-relative (no leading `/`, no `.` or `..`
+  segment, no `\\`); a type has at least one glob; a kind names
+  `instructions` (project-relative) or `globalInstructions` (a file under
+  `<app_data_dir>/job-kinds/`, or a clean absolute path) or both, and may
+  write something in every project it ends up in (its own `writes`, else
+  every effective document type's globs). The fixture `policyRejects` lists
+  the refusals.
 - **Globs** know `*` and `?` within one path segment and `**` as a whole
   segment for any number of them, nothing else (fixture `globs`).
-- **Migration from version 1.** The first draft knew exactly one document
-  format and stored `{ "version": 1, "scenes": { "projects": [..] } }`. Each
-  listed project is read as a project with exactly one document type carrying
-  the places and names that draft had fixed (fixture
-  `migration.v1DocumentType`) and no job kinds. These are the only
-  format-specific values in the link, and only the version-1 reader uses
-  them. Reading never writes; the next save writes version 2, and saving that
-  again changes nothing.
+- **Migration.** Version 2 (`projects` only, no `defaults`) reads unchanged:
+  each entry is a version-3 entry, and with no defaults there is nothing to
+  inherit, so the meaning is the same (fixture `migration.v2Example`). A
+  version-2 file that names `defaults` is not version 2 and reads as nothing.
+  The first draft (version 1) knew exactly one document format and stored
+  `{ "version": 1, "scenes": { "projects": [..] } }`. Each listed project is
+  read as a project with exactly one document type carrying the places and
+  names that draft had fixed (fixture `migration.v1DocumentType`) and no job
+  kinds. These are the only format-specific values in the link, and only the
+  version-1 reader uses them. Reading never writes; the next save writes
+  version 3, and saving that again changes nothing.
+
+### Policy proposals
+
+The settings are the human's. A supervisor may ask for a change and the
+human applies it with one click; no one else can ask, and no one but the
+human can decide. Contract: fixture `proposals` in
+`supervisorLink.fixtures.json`, plus `callerScope` in
+`agentControl.fixtures.json`.
+
+- **Who may ask.** Two control-socket methods, `link_policy_get` and
+  `link_policy_propose`, offered as tools of the supervisor's MCP server.
+  Only a supervisor caller (identified by the peer-PID walk) is answered.
+  External callers get `outside_supervisor_scope`; the link socket dispatches
+  as an external caller after its own narrowing and has no such methods in
+  its vocabulary anyway, so a client of the Supervisor Control API can
+  neither read the policy that way nor propose.
+- **What may be asked.** A list of structured changes (`proposals.ops`):
+  share a project, set a global or project document type or job kind (a
+  same name replaces), set a project's inheritance, set a limit. No removal.
+  The changes are applied in order onto the current policy and the result
+  must pass `check_stored`, the same check a save from the settings passes.
+  Stricter for proposals: `globalInstructions` may only be a file under
+  `job-kinds/` — an absolute path anywhere on the machine is something only a
+  person types in, because the IDE reads that file into an agent's prompt.
+  Projects must be existing folders.
+- **What happens.** The proposal is stored in
+  `<app_data_dir>/supervisor-link-proposals.json` (0600) with the reason, the
+  proposer (agent id and name), a line diff of stored before and after, and
+  the SHA-256 of the stored policy it was made against. An inbox notification
+  (source `system`, origin `supervisor-link-policy`, kind `ask`, expiring with
+  the proposal) shows the reason and the diff and carries two
+  `policy-proposal` actions, Apply and Discard. The frontend renders that
+  action kind only on a notification with exactly that source and origin;
+  the MCP `notify` vocabulary does not know it, so an agent cannot forge the
+  button.
+- **Deciding** is the Tauri command `supervisor_link_proposal_decide`, which
+  only the IDE's own window can call. Apply re-checks that the stored policy
+  still hashes to the proposal's base; if the human changed the settings in
+  between, the proposal is withdrawn as `outdated` rather than applied onto
+  something its diff did not show. Proposals expire after 24 hours. At most
+  20 wait at once.
+- **Audit.** Every outcome (`applied`, `discarded`, `expired`, `outdated`) is
+  one JSON line in `<app_data_dir>/supervisor-link-policy-audit.jsonl` (0600,
+  append-only) with the whole proposal and the time. The settings show the
+  newest ones.
 
 ## Documents
 
@@ -640,8 +712,9 @@ In this order, the first that fails is the answer:
 
 1. The project is listed (`document_not_visible`) and the kind is one of its
    `jobKinds` (`job_kind_not_allowed`, naming the allowed ones).
-2. The kind's `instructions` file exists in the working tree, and the project
-   is the root of a git repository with a commit (`invalid_params`,
+2. The kind has usable instructions — its `instructions` file in the working
+   tree, else its `globalInstructions` file (see below) — and the project is
+   the root of a git repository with a commit (`invalid_params`,
    `not_a_git_repo`).
 3. The counter has room (`quota_exceeded`, see below).
 4. The supervisor policy allows it (`supervisor_denied`, `reason` = the rule):
@@ -661,8 +734,18 @@ tree, so `agents.read` and the `agent.*` events show its console. Nothing
 before step 4 counts against the counter; from step 4 on the job counts, even
 when it fails later.
 
+**Global instructions.** A kind defined once for every project can keep its
+instructions outside the projects: `globalInstructions` names a file under
+`<app_data_dir>/job-kinds/` (or an absolute path the human typed in). The
+project's own `instructions` file wins when the project has it. A global file
+is read by the IDE, never by a `documents.*` method, must be a regular UTF-8
+file of at most 64 KiB, and a name under `job-kinds/` must resolve inside that
+folder after symlinks (fixture `globalInstructions`). Its text goes into the
+prompt inside its own random fence; no answer to a client names its path.
+
 What the agent is told, in this order: the job id and kind; that the kind's
-instructions file in the repository describes the work; the IDE's rules (write
+instructions file in the repository describes the work (or the global
+instructions' text, fenced); the IDE's rules (write
 only paths matching the kind's `writes`, stay inside the repository, no
 secrets or network, commit on its branch with `<kind>: <jobId>`); then the
 payload, pretty-printed between `<<<PAYLOAD-<12 hex>` and `PAYLOAD-<12 hex>>>>`
@@ -766,8 +849,8 @@ unknown id is `unknown_job`.
 
 Not a budget, a guard against a client that starts jobs in a loop: at most
 `jobs.dailyLimit` jobs (default **20**) in any 24 hours in all projects
-together, and optionally `jobs.perProjectDailyLimit` per project. Each is at
-most 1000. `0` switches jobs off (all of them, or in that project): the answer
+together, and optionally `jobs.perProjectDailyLimit` per project, which a
+project's own `dailyLimit` replaces for it. Each is at most 1000. `0` switches jobs off (all of them, or in that project): the answer
 is `quota_exceeded` with `reason` `disabled` and a message that says so, not
 when a slot frees up, because none will. The window uses the wall clock: a job dated
 after "now" (the clock was set back) counts as just started, so setting the
@@ -908,6 +991,9 @@ A refusal:
   schema, so a client must validate what it reads before rendering it.
 
 ## Deliberately open in v1
+
+- Proposals cannot remove anything (unshare a project, delete a type); the
+  human does that in the settings. The audit log is not rotated.
 
 - No in-IDE accept/reject dialog for proposals or job branches; the Git panel
   is the review. Job worktrees stay until the branch is merged or removed.

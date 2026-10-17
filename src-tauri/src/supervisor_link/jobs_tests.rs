@@ -166,7 +166,7 @@ fn the_prompt_fences_the_payload_as_data_after_the_rules() {
     let text = prompt(
         "job-1",
         "diagram.draw",
-        "docs/agents/draw.md",
+        &Instructions::ProjectFile("docs/agents/draw.md".into()),
         &["docs/**/*.json".into()],
         &payload,
     );
@@ -186,7 +186,7 @@ fn the_prompt_fences_the_payload_as_data_after_the_rules() {
     let again = prompt(
         "job-1",
         "diagram.draw",
-        "docs/agents/draw.md",
+        &Instructions::ProjectFile("docs/agents/draw.md".into()),
         &[],
         &payload,
     );

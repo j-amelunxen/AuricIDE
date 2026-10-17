@@ -150,9 +150,20 @@ pub enum Request {
     ListProjects(EmptyParams),
     AwaitResult(AwaitResultParams),
     RemoveWorktree(AgentIdParams),
+    LinkPolicyGet(EmptyParams),
+    LinkPolicyPropose(LinkPolicyProposeParams),
 }
 
-const METHODS: [&str; 8] = [
+/// `link_policy_propose`: structured changes to the supervisor link policy
+/// and why. Supervisor callers only; it stores a proposal a person decides.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LinkPolicyProposeParams {
+    pub reason: String,
+    pub changes: Vec<crate::supervisor_link::proposals::PolicyChange>,
+}
+
+const METHODS: [&str; 10] = [
     "list_agents",
     "read_output",
     "send_input",
@@ -161,6 +172,8 @@ const METHODS: [&str; 8] = [
     "list_projects",
     "await_result",
     "remove_worktree",
+    "link_policy_get",
+    "link_policy_propose",
 ];
 
 /// A request line that could not be turned into a `Request`. `id` is echoed
@@ -254,6 +267,11 @@ fn normalise(request: Request) -> Result<Request, String> {
         }
         Request::Kill(params) | Request::RemoveWorktree(params) if blank(&params.agent_id) => {
             Err("agentId must not be empty".into())
+        }
+        Request::LinkPolicyPropose(params)
+            if blank(&params.reason) || params.changes.is_empty() =>
+        {
+            Err("reason and at least one change are required".into())
         }
         Request::Spawn(params) if blank(&params.project_path) || blank(&params.prompt) => {
             Err("projectPath and prompt must not be empty".into())
@@ -580,6 +598,51 @@ pub(crate) mod tests {
         }
     }
 
+    /// The `link_policy_get` fixture: a global `scene` type and
+    /// `scene.draw` kind, one project inheriting both, one pending proposal.
+    fn sample_link_policy() -> super::super::link_policy::LinkPolicyGetResult {
+        use crate::supervisor_link::policy::*;
+        let scene = DocumentType {
+            name: "scene".into(),
+            globs: vec!["docs/**/*.scene.json".into()],
+            index: None,
+            name_field: None,
+            description_field: None,
+            schema: None,
+            assets: Vec::new(),
+            max_asset_bytes: None,
+        };
+        let draw = JobKind {
+            kind: "scene.draw".into(),
+            instructions: None,
+            global_instructions: Some("scene.draw.md".into()),
+            writes: Vec::new(),
+        };
+        let project = "/tmp/example-project".to_string();
+        let stored = StoredPolicy {
+            defaults: LinkDefaults {
+                document_types: vec![scene],
+                job_kinds: vec![draw],
+            },
+            projects: [(project, ProjectEntry::default())].into(),
+            jobs: JobLimits::default(),
+        };
+        super::super::link_policy::LinkPolicyGetResult {
+            effective: resolve(&stored, None).into(),
+            stored,
+            pending: vec![super::super::link_policy::PendingProposal {
+                id: "lp-0123456789ab".into(),
+                reason: "Share the docs project".into(),
+                diff: vec![
+                    "+ projects[\"/tmp/other-project\"]: shared with the link, inherits the \
+                     global defaults"
+                        .into(),
+                ],
+                expires_at: 1_790_086_400_000,
+            }],
+        }
+    }
+
     pub(crate) fn sample_worktree_removal(removed: bool, ahead: bool) -> RemoveWorktreeResult {
         RemoveWorktreeResult {
             agent_id: "agent-5".into(),
@@ -725,6 +788,26 @@ pub(crate) mod tests {
             (
                 "remove_worktree",
                 ok_response(&json!(25), sample_worktree_removal(true, false)),
+            ),
+            (
+                "link_policy_get",
+                ok_response(&json!(30), sample_link_policy()),
+            ),
+            (
+                "link_policy_propose",
+                ok_response(
+                    &json!(31),
+                    super::super::link_policy::LinkPolicyProposeResult {
+                        proposal_id: "lp-0123456789ab".into(),
+                        status: "pending",
+                        expires_at: 1_790_086_400_000,
+                        diff: vec![
+                            "+ projects[\"/tmp/example-project\"]: shared with the link, \
+                             inherits the global defaults"
+                                .into(),
+                        ],
+                    },
+                ),
             ),
             (
                 "error",

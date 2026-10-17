@@ -281,7 +281,7 @@
     "maxFilesPerProject": 2000
   },
   "proposalBranchPrefix": "auric/proposal/",
-  "policyVersion": 2,
+  "policyVersion": 3,
   "documentIds": {
     "$comment": "Ids against the test type diagram (globs docs/**/*.diagram.json).",
     "valid": [
@@ -394,7 +394,7 @@
     ]
   },
   "migration": {
-    "$comment": "Version 1 of the policy file listed projects under scenes.projects. Each becomes a project with this one document type.",
+    "$comment": "Version 1 listed projects under scenes.projects; each becomes a project with v1DocumentType as its one document type. Version 2 had no defaults: its project entries read unchanged as version-3 entries (v2Example), which mean the same because there is nothing to inherit. Reading never writes; the next save writes version 3.",
     "v1DocumentType": {
       "name": "scene",
       "globs": ["docs/**/*.scene.json"],
@@ -404,6 +404,59 @@
       },
       "nameField": "hud.title",
       "descriptionField": "hud.subtitle"
+    },
+    "v2Example": {
+      "file": {
+        "version": 2,
+        "projects": {
+          "/nonexistent/example-project": {
+            "documentTypes": [
+              {
+                "name": "diagram",
+                "globs": ["docs/**/*.diagram.json"]
+              }
+            ],
+            "jobKinds": [
+              {
+                "kind": "diagram.draw",
+                "instructions": "docs/agents/draw.md"
+              }
+            ]
+          }
+        },
+        "jobs": {
+          "dailyLimit": 5,
+          "perProjectDailyLimit": 2
+        }
+      },
+      "stored": {
+        "version": 3,
+        "defaults": {
+          "documentTypes": [],
+          "jobKinds": []
+        },
+        "projects": {
+          "/nonexistent/example-project": {
+            "documentTypes": [
+              {
+                "name": "diagram",
+                "globs": ["docs/**/*.diagram.json"]
+              }
+            ],
+            "jobKinds": [
+              {
+                "kind": "diagram.draw",
+                "instructions": "docs/agents/draw.md",
+                "writes": []
+              }
+            ]
+          }
+        },
+        "jobs": {
+          "dailyLimit": 5,
+          "perProjectDailyLimit": 2
+        }
+      }
     }
   },
   "policyRejects": [
@@ -616,6 +669,216 @@
         },
         "inWindow": 12,
         "inProject": 4
+      }
+    ]
+  },
+  "resolution": {
+    "$comment": "How a project's effective configuration is built from the global defaults and its entry. Same name in the entry: override. New name: project. Untouched default: global. inherit false drops every default; disabled… drops single ones. A project whose merged configuration breaks a rule (a kind with nothing to write) is not visible.",
+    "defaults": {
+      "documentTypes": [
+        {
+          "name": "scene",
+          "globs": ["docs/**/*.scene.json"]
+        },
+        {
+          "name": "note",
+          "globs": ["notes/*.json"]
+        }
+      ],
+      "jobKinds": [
+        {
+          "kind": "scene.draw",
+          "globalInstructions": "scene.draw.md"
+        },
+        {
+          "kind": "note.tidy",
+          "instructions": "docs/agents/tidy.md",
+          "writes": ["notes/*.json"]
+        }
+      ]
+    },
+    "cases": [
+      {
+        "name": "an empty entry inherits everything",
+        "entry": {},
+        "documentTypes": {
+          "scene": "global",
+          "note": "global"
+        },
+        "jobKinds": {
+          "scene.draw": "global",
+          "note.tidy": "global"
+        }
+      },
+      {
+        "name": "same name overrides, new name extends",
+        "entry": {
+          "documentTypes": [
+            {
+              "name": "scene",
+              "globs": ["scenes/*.json"]
+            },
+            {
+              "name": "diagram",
+              "globs": ["docs/*.diagram.json"]
+            }
+          ],
+          "jobKinds": [
+            {
+              "kind": "scene.draw",
+              "instructions": "docs/agents/draw.md"
+            }
+          ]
+        },
+        "documentTypes": {
+          "scene": "override",
+          "note": "global",
+          "diagram": "project"
+        },
+        "jobKinds": {
+          "scene.draw": "override",
+          "note.tidy": "global"
+        }
+      },
+      {
+        "name": "disabled names are left out",
+        "entry": {
+          "disabledDocumentTypes": ["note"],
+          "disabledJobKinds": ["note.tidy"]
+        },
+        "documentTypes": {
+          "scene": "global"
+        },
+        "jobKinds": {
+          "scene.draw": "global"
+        }
+      },
+      {
+        "name": "inherit false takes nothing over",
+        "entry": {
+          "inherit": false,
+          "documentTypes": [
+            {
+              "name": "own",
+              "globs": ["own/*.json"]
+            }
+          ]
+        },
+        "documentTypes": {
+          "own": "project"
+        },
+        "jobKinds": {}
+      },
+      {
+        "name": "a kind left with nothing to write hides the project",
+        "entry": {
+          "inherit": false,
+          "jobKinds": [
+            {
+              "kind": "lonely",
+              "instructions": "a.md"
+            }
+          ]
+        },
+        "visible": false
+      }
+    ]
+  },
+  "globalInstructions": {
+    "$comment": "A job kind names instructions (project-relative; wins when the project has the file), globalInstructions (an absolute path, or a file under <app_data_dir>/<dirName>/), or both. The IDE reads a global file itself and puts its text into the prompt; documents.* never serves it and no client error names its path. A name under dirName must resolve inside it (no symlink escape); the file is regular, UTF-8 and at most maxBytes. A proposal may only use the dirName form.",
+    "dirName": "job-kinds",
+    "maxBytes": 65536
+  },
+  "proposals": {
+    "$comment": "link_policy_propose (control socket, supervisor callers only) stores a pending proposal and raises an inbox ask with Apply and Discard. Only the IDE's Tauri command decides; no socket method does, and external callers (the link socket included) get outside_supervisor_scope for both link_policy methods. Apply writes only onto the policy the proposal was made against (else outdated). Every outcome is one line in the audit log.",
+    "fileName": "supervisor-link-proposals.json",
+    "auditFileName": "supervisor-link-policy-audit.jsonl",
+    "expiryHours": 24,
+    "maxPending": 20,
+    "maxChanges": 20,
+    "maxReasonChars": 500,
+    "notificationOrigin": "supervisor-link-policy",
+    "actionKind": "policy-proposal",
+    "decisions": ["apply", "discard"],
+    "outcomes": ["applied", "discarded", "expired", "outdated"],
+    "ops": [
+      "share_project",
+      "set_default_document_type",
+      "set_default_job_kind",
+      "set_project_document_type",
+      "set_project_job_kind",
+      "set_project_inherit",
+      "set_daily_limit",
+      "set_per_project_daily_limit",
+      "set_project_daily_limit"
+    ],
+    "rejects": [
+      {
+        "name": "an absolute global instructions path",
+        "changes": [
+          {
+            "op": "set_default_job_kind",
+            "jobKind": {
+              "kind": "x.run",
+              "globalInstructions": "/etc/hosts",
+              "writes": ["x/*.json"]
+            }
+          }
+        ],
+        "mentions": "absolute path"
+      },
+      {
+        "name": "a glob that leaves the project",
+        "changes": [
+          {
+            "op": "set_default_document_type",
+            "documentType": {
+              "name": "t",
+              "globs": ["../x/*.json"]
+            }
+          }
+        ],
+        "mentions": "project-relative glob"
+      },
+      {
+        "name": "a limit above the maximum",
+        "changes": [
+          {
+            "op": "set_daily_limit",
+            "dailyLimit": 100000
+          }
+        ],
+        "mentions": "at most"
+      },
+      {
+        "name": "a project that is no folder",
+        "changes": [
+          {
+            "op": "share_project",
+            "project": "/nonexistent/example-project"
+          }
+        ],
+        "mentions": "not an existing absolute folder"
+      },
+      {
+        "name": "a relative project path",
+        "changes": [
+          {
+            "op": "share_project",
+            "project": "projects/example"
+          }
+        ],
+        "mentions": "not an existing absolute folder"
+      },
+      {
+        "name": "a change that changes nothing",
+        "changes": [
+          {
+            "op": "set_daily_limit",
+            "dailyLimit": 20
+          }
+        ],
+        "mentions": "as it is"
       }
     ]
   }

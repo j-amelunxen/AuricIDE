@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isAnsweredNotification, parseNotificationActions, type NotificationAction } from './types';
+import linkFixtures from '@/lib/agents/supervisorLink.fixtures.json';
+import {
+  isAnsweredNotification,
+  parseNotificationActions,
+  POLICY_PROPOSAL_ORIGIN,
+  type NotificationAction,
+} from './types';
 
 /**
  * Actions arrive from outside the app — an MCP agent, a scheduled reminder,
@@ -439,5 +445,52 @@ describe('isAnsweredNotification', () => {
   // navigation — it never enters the answered state.
   it('is false for an info notification', () => {
     expect(isAnsweredNotification({ kind: 'info', answeredAt: null })).toBe(false);
+  });
+});
+
+describe('policy-proposal actions', () => {
+  const apply = {
+    id: 'apply',
+    label: 'Apply',
+    kind: 'policy-proposal',
+    proposalId: 'p-1',
+    decision: 'apply',
+  };
+  const discard = { ...apply, id: 'discard', label: 'Discard', decision: 'discard' };
+  const fromLink = { source: 'system' as const, origin: POLICY_PROPOSAL_ORIGIN };
+
+  it('names the origin the fixture names', () => {
+    expect(POLICY_PROPOSAL_ORIGIN).toBe(linkFixtures.proposals.notificationOrigin);
+    expect(linkFixtures.proposals.actionKind).toBe('policy-proposal');
+    expect(linkFixtures.proposals.decisions).toEqual(['apply', 'discard']);
+  });
+
+  it('are honoured on the system notification the link policy raises', () => {
+    expect(parseNotificationActions([apply, discard], isKnownCommand, fromLink)).toEqual([
+      apply,
+      discard,
+    ]);
+  });
+
+  it('are dropped when the parser is not told who wrote the row', () => {
+    expect(parse([apply, answer])).toEqual([answer]);
+  });
+
+  it.each([
+    ['an agent', { source: 'agent' as const, origin: POLICY_PROPOSAL_ORIGIN }],
+    ['an MCP server', { source: 'mcp' as const, origin: POLICY_PROPOSAL_ORIGIN }],
+    ['the UI', { source: 'ui' as const, origin: POLICY_PROPOSAL_ORIGIN }],
+    ['another system origin', { source: 'system' as const, origin: 'schedule' }],
+    ['a system row without origin', { source: 'system' as const, origin: null }],
+  ])('are dropped on a notification from %s', (_who, from) => {
+    expect(parseNotificationActions([apply, answer], isKnownCommand, from)).toEqual([answer]);
+  });
+
+  it('drop a decision outside apply and discard, or an empty proposal id', () => {
+    const bad = [
+      { ...apply, decision: 'force' },
+      { ...apply, id: 'x', proposalId: '  ' },
+    ];
+    expect(parseNotificationActions(bad, isKnownCommand, fromLink)).toEqual([]);
   });
 });

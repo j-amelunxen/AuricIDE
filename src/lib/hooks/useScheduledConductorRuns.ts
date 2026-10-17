@@ -383,6 +383,8 @@ async function startAgentFromNotification(
         openAgent: () => undefined,
         runCommand: () => undefined,
         startConductorRun: async () => undefined,
+        // Never by itself: a policy proposal is decided by a click only.
+        decidePolicyProposal: async () => undefined,
       },
       {
         fallbackCwd: store.rootPath ?? undefined,

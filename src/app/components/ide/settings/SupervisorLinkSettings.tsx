@@ -1,36 +1,65 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
 import { SettingsToggle } from '@/app/components/ui/settings/SettingsToggle';
 import { useStore } from '@/lib/store';
 import { normalizeProjectPath } from '@/lib/config/supervisorPolicy';
 import {
   supervisorLinkJobsUsage,
+  supervisorLinkPolicyEffective,
   supervisorLinkPolicyGet,
   supervisorLinkPolicySet,
+  supervisorLinkProposalDecide,
+  supervisorLinkProposals,
+  type EffectiveLinkPolicy,
   type JobLimits,
   type JobsUsage,
-  type LinkProjectConfig,
-  type SupervisorLinkPolicy,
+  type LinkDefaults,
+  type LinkProjectEntry,
+  type PolicyProposals,
+  type ProposalDecision,
+  type StoredLinkPolicy,
 } from '@/lib/tauri/supervisorLink';
 import { NUMBER_CLASS } from './SupervisorProjectRow';
+import { EffectiveProject } from './SupervisorLinkEffective';
+import { ProposalsBlock } from './SupervisorLinkProposals';
 
-const EMPTY_CONFIG: LinkProjectConfig = { documentTypes: [], jobKinds: [] };
+/** Shared, inheriting every global default. */
+const EMPTY_ENTRY: LinkProjectEntry = { documentTypes: [], jobKinds: [] };
 
-const CONFIG_EXAMPLE = JSON.stringify(
+const DEFAULTS_EXAMPLE = JSON.stringify(
   {
-    documentTypes: [
-      { name: 'diagram', globs: ['docs/**/*.diagram.json'], nameField: 'meta.title' },
-    ],
-    jobKinds: [{ kind: 'diagram.draw', instructions: 'docs/agents/draw.md' }],
+    documentTypes: [{ name: 'scene', globs: ['docs/**/*.scene.json'], nameField: 'hud.title' }],
+    jobKinds: [{ kind: 'scene.draw', globalInstructions: 'scene.draw.md' }],
   },
   null,
   2
 );
 
+const ENTRY_EXAMPLE = JSON.stringify(
+  {
+    disabledJobKinds: ['scene.draw'],
+    documentTypes: [{ name: 'diagram', globs: ['docs/**/*.diagram.json'] }],
+    jobKinds: [{ kind: 'diagram.draw', instructions: 'docs/agents/draw.md' }],
+    dailyLimit: 5,
+  },
+  null,
+  2
+);
+
+const TEXTAREA_CLASS =
+  'w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-[11px] text-foreground placeholder:text-foreground-muted/50 focus:border-primary focus:outline-none';
+
+const SAVE_CLASS =
+  'rounded-md border border-white/10 px-2.5 py-1 text-xs text-foreground hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50';
+
+function reasonText(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
 /** The policy's entry for a starred path, which Rust stores canonically. */
-function entryFor(policy: SupervisorLinkPolicy, path: string): [string, LinkProjectConfig] | null {
+function entryFor(policy: StoredLinkPolicy, path: string): [string, LinkProjectEntry] | null {
   const wanted = normalizeProjectPath(path);
   const found = Object.entries(policy.projects).find(
     ([listed]) => normalizeProjectPath(listed) === wanted
@@ -38,7 +67,7 @@ function entryFor(policy: SupervisorLinkPolicy, path: string): [string, LinkProj
   return found ?? null;
 }
 
-function withoutProject(policy: SupervisorLinkPolicy, path: string): SupervisorLinkPolicy {
+function withoutProject(policy: StoredLinkPolicy, path: string): StoredLinkPolicy {
   const wanted = normalizeProjectPath(path);
   const projects = Object.fromEntries(
     Object.entries(policy.projects).filter(([listed]) => normalizeProjectPath(listed) !== wanted)
@@ -46,54 +75,172 @@ function withoutProject(policy: SupervisorLinkPolicy, path: string): SupervisorL
   return { ...policy, projects };
 }
 
-function formatConfig(config: LinkProjectConfig): string {
-  const empty = config.documentTypes.length === 0 && config.jobKinds.length === 0;
-  return empty ? '' : JSON.stringify(config, null, 2);
+/** Empty text for an object that only holds empty lists, JSON otherwise. */
+function formatJson(value: { documentTypes: unknown[]; jobKinds: unknown[] }): string {
+  const { documentTypes, jobKinds, ...rest } = value;
+  const empty =
+    documentTypes.length === 0 && jobKinds.length === 0 && Object.keys(rest).length === 0;
+  return empty ? '' : JSON.stringify(value, null, 2);
 }
 
-/** The configuration in `text`, or why it is none. Rust checks the rest on save. */
-function parseConfig(text: string): { config: LinkProjectConfig } | { error: string } {
-  if (text.trim() === '') return { config: EMPTY_CONFIG };
+/**
+ * The object in `text` with both lists present, or why it is none. Lenient on
+ * purpose: Rust validates the rest on save and names the offending entry.
+ */
+function parseLists<T extends { documentTypes: unknown[]; jobKinds: unknown[] }>(
+  text: string,
+  empty: T
+): { value: T } | { error: string } {
+  if (text.trim() === '') return { value: empty };
   try {
     const value: unknown = JSON.parse(text);
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
       return { error: 'The configuration is a JSON object with documentTypes and jobKinds.' };
     }
-    const raw = value as Partial<LinkProjectConfig>;
+    const raw = value as Partial<T>;
     return {
-      config: { ...raw, documentTypes: raw.documentTypes ?? [], jobKinds: raw.jobKinds ?? [] },
+      value: { ...raw, documentTypes: raw.documentTypes ?? [], jobKinds: raw.jobKinds ?? [] } as T,
     };
   } catch (reason) {
-    return { error: `Not JSON: ${reason instanceof Error ? reason.message : String(reason)}` };
+    return { error: `Not JSON: ${reasonText(reason)}` };
   }
+}
+
+interface JsonEditorProps<T extends { documentTypes: unknown[]; jobKinds: unknown[] }> {
+  label: string;
+  stored: T;
+  empty: T;
+  example: string;
+  testId: string;
+  saveTestId: string;
+  hint: React.ReactNode;
+  onSave: (value: T) => Promise<string | null>;
+}
+
+/**
+ * A JSON textarea with Save. The parent keys it by what is stored, so a save
+ * Rust kept starts it afresh from what Rust read back.
+ */
+function JsonEditor<T extends { documentTypes: unknown[]; jobKinds: unknown[] }>({
+  label,
+  stored,
+  empty,
+  example,
+  testId,
+  saveTestId,
+  hint,
+  onSave,
+}: JsonEditorProps<T>) {
+  const id = useId();
+  const storedText = formatJson(stored);
+  const [text, setText] = useState(storedText);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    const parsed = parseLists(text, empty);
+    if ('error' in parsed) {
+      setError(parsed.error);
+      return;
+    }
+    setError(await onSave(parsed.value));
+  };
+
+  return (
+    <div className="space-y-1">
+      <label
+        htmlFor={id}
+        className="block text-[10px] font-semibold tracking-wide text-foreground-muted"
+      >
+        {label}
+      </label>
+      <textarea
+        id={id}
+        data-testid={testId}
+        aria-describedby={`${id}-hint`}
+        aria-invalid={error !== null}
+        value={text}
+        rows={6}
+        spellCheck={false}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={example}
+        className={TEXTAREA_CLASS}
+      />
+      <p id={`${id}-hint`} className="text-[10px] text-foreground-muted">
+        {hint}
+      </p>
+      {error && (
+        <p role="alert" className="text-[11px] text-red-400">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={text === storedText}
+        title={text === storedText ? 'Nothing changed' : undefined}
+        data-testid={saveTestId}
+        className={SAVE_CLASS}
+      >
+        Save
+      </button>
+    </div>
+  );
+}
+
+/** What every shared project inherits unless its own entry says otherwise. */
+function GlobalDefaults({
+  defaults,
+  onSave,
+}: {
+  defaults: LinkDefaults;
+  onSave: (defaults: LinkDefaults) => Promise<string | null>;
+}) {
+  return (
+    <div className="space-y-1.5 rounded-lg border border-white/10 p-3">
+      <p className="text-xs font-semibold text-foreground">Global defaults</p>
+      <JsonEditor
+        key={JSON.stringify(defaults)}
+        label="Global defaults: document types and job kinds (JSON)"
+        stored={defaults}
+        empty={{ documentTypes: [], jobKinds: [] }}
+        example={DEFAULTS_EXAMPLE}
+        testId="supervisor-link-defaults"
+        saveTestId="supervisor-link-defaults-save"
+        onSave={onSave}
+        hint={
+          <>
+            Every shared project inherits these. Globs and <code>instructions</code> are relative to
+            each project; <code>globalInstructions</code> is an absolute path or a file name in the
+            app data folder&apos;s <code>job-kinds/</code>. The IDE reads that file itself and puts
+            it into the job prompt; it is never served to clients.
+          </>
+        }
+      />
+    </div>
+  );
 }
 
 interface ProjectRowProps {
   name: string;
   path: string;
-  entry: [string, LinkProjectConfig] | null;
+  entry: [string, LinkProjectEntry] | null;
   usedToday: number;
-  onSave: (config: LinkProjectConfig | null) => Promise<string | null>;
+  effective: EffectiveLinkPolicy | null;
+  effectiveFailure: string | null;
+  onSave: (entry: LinkProjectEntry | null) => Promise<string | null>;
 }
 
-/**
- * One starred project: shared or not, and what it offers when shared. The
- * parent keys it by what is stored, so a save Rust kept starts it afresh.
- */
-function ProjectRow({ name, path, entry, usedToday, onSave }: ProjectRowProps) {
-  const id = useId();
-  const stored = entry ? formatConfig(entry[1]) : '';
-  const [text, setText] = useState(stored);
-  const [error, setError] = useState<string | null>(null);
-
-  const save = async () => {
-    const parsed = parseConfig(text);
-    if ('error' in parsed) {
-      setError(parsed.error);
-      return;
-    }
-    setError(await onSave(parsed.config));
-  };
+/** One starred project: shared or not, its own entry, and what it effectively offers. */
+function ProjectRow({
+  name,
+  path,
+  entry,
+  usedToday,
+  effective,
+  effectiveFailure,
+  onSave,
+}: ProjectRowProps) {
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   return (
     <div className="space-y-2">
@@ -102,52 +249,45 @@ function ProjectRow({ name, path, entry, usedToday, onSave }: ProjectRowProps) {
         description={path}
         checked={entry !== null}
         onChange={(on) =>
-          void onSave(on ? EMPTY_CONFIG : null).then((refused) => setError(refused))
+          void onSave(on ? EMPTY_ENTRY : null).then((refused) => setToggleError(refused))
         }
         testId={`supervisor-link-project-${name}`}
       />
+      {toggleError && (
+        <p role="alert" className="pl-4 text-[11px] text-red-400">
+          {toggleError}
+        </p>
+      )}
       {entry && (
-        <div className="space-y-1 pl-4">
-          <label
-            htmlFor={id}
-            className="block text-[10px] font-semibold tracking-wide text-foreground-muted"
-          >
-            Document types and job kinds (JSON)
-          </label>
-          <textarea
-            id={id}
-            data-testid={`supervisor-link-config-${name}`}
-            aria-describedby={`${id}-hint`}
-            aria-invalid={error !== null}
-            value={text}
-            rows={6}
-            spellCheck={false}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={CONFIG_EXAMPLE}
-            className="w-full resize-y rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-[11px] text-foreground placeholder:text-foreground-muted/50 focus:border-primary focus:outline-none"
+        <div className="space-y-2 pl-4">
+          <JsonEditor
+            key={JSON.stringify(entry)}
+            label="This project's entry (JSON)"
+            stored={entry[1]}
+            empty={EMPTY_ENTRY}
+            example={ENTRY_EXAMPLE}
+            testId={`supervisor-link-config-${name}`}
+            saveTestId={`supervisor-link-save-${name}`}
+            onSave={onSave}
+            hint={
+              <>
+                Empty: every global default, nothing else. A document type or job kind with a
+                default&apos;s name overrides it, a new name adds one. <code>inherit: false</code>{' '}
+                drops all defaults, <code>disabledDocumentTypes</code> and{' '}
+                <code>disabledJobKinds</code> drop single ones, <code>dailyLimit</code> sets this
+                project&apos;s jobs per 24 h. The agent may only write a kind&apos;s{' '}
+                <code>writes</code> (default: the document globs); <code>assets</code> globs are
+                read-only. Jobs here in the last 24 hours:{' '}
+                <span className="tabular-nums">{usedToday}</span>.
+              </>
+            }
           />
-          <p id={`${id}-hint`} className="text-[10px] text-foreground-muted">
-            Globs and paths are relative to the project. A client may only start the job kinds
-            listed here; the agent follows the kind&apos;s instructions file and may only write the
-            kind&apos;s <code>writes</code> (default: the document globs). A type&apos;s{' '}
-            <code>assets</code> globs name files clients may read but never write. Jobs here in the
-            last 24 hours: <span className="tabular-nums">{usedToday}</span>.
-          </p>
-          {error && (
-            <p role="alert" className="text-[11px] text-red-400">
-              {error}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={text === stored}
-            title={text === stored ? 'Nothing changed' : undefined}
-            data-testid={`supervisor-link-save-${name}`}
-            className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-foreground hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Save
-          </button>
+          <EffectiveProject
+            name={name}
+            path={path}
+            effective={effective}
+            failure={effectiveFailure}
+          />
         </div>
       )}
     </div>
@@ -240,45 +380,81 @@ function JobCounter({
  * The supervisor link (`docs/design-supervisor-link.md`): a client of the
  * Supervisor Control API talks to supervisors over a local socket, reads and
  * proposes JSON documents and starts jobs in the projects shared here. What a
- * document or a job is, each project says for itself; every change arrives
- * as a branch for review.
+ * document or a job is comes from the global defaults, overridden or extended
+ * per project; every change arrives as a branch for review. A supervisor may
+ * propose a change to these settings, which a person applies or discards.
  */
 export function SupervisorLinkSettings() {
   const starredProjects = useStore((s) => s.starredProjects);
   const showToast = useStore((s) => s.showToast);
-  const [policy, setPolicy] = useState<SupervisorLinkPolicy | null>(null);
+  const [policy, setPolicy] = useState<StoredLinkPolicy | null>(null);
+  const [effective, setEffective] = useState<EffectiveLinkPolicy | null>(null);
+  const [effectiveFailure, setEffectiveFailure] = useState<string | null>(null);
+  const [proposals, setProposals] = useState<PolicyProposals | null>(null);
   const [usage, setUsage] = useState<JobsUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const alive = useRef(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    supervisorLinkPolicyGet()
-      .then((loaded) => !cancelled && setPolicy(loaded))
-      .catch((reason: unknown) => !cancelled && setError(String(reason)));
-    supervisorLinkJobsUsage()
-      .then((loaded) => !cancelled && setUsage(loaded))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+  const applyEffective = useCallback((loaded: EffectiveLinkPolicy) => {
+    if (!alive.current) return;
+    setEffective(loaded);
+    setEffectiveFailure(null);
   }, []);
 
+  const failEffective = useCallback((reason: unknown) => {
+    if (alive.current) setEffectiveFailure(reasonText(reason));
+  }, []);
+
+  const applyProposals = useCallback((loaded: PolicyProposals) => {
+    if (alive.current) setProposals(loaded);
+  }, []);
+
+  const applyPolicy = useCallback((loaded: StoredLinkPolicy) => {
+    if (alive.current) setPolicy(loaded);
+  }, []);
+
+  const failPolicy = useCallback((reason: unknown) => {
+    if (alive.current) setError(reasonText(reason));
+  }, []);
+
+  /** Reads the merged configuration again, after anything that may change it. */
+  const reloadEffective = () => supervisorLinkPolicyEffective().then(applyEffective, failEffective);
+
+  // A failed proposals read leaves the block as it was; the settings still work.
+  const reloadProposals = () => supervisorLinkProposals().then(applyProposals, () => {});
+
+  useEffect(() => {
+    alive.current = true;
+    supervisorLinkPolicyGet().then(applyPolicy, failPolicy);
+    supervisorLinkPolicyEffective().then(applyEffective, failEffective);
+    supervisorLinkProposals().then(applyProposals, () => {});
+    supervisorLinkJobsUsage()
+      .then((loaded) => alive.current && setUsage(loaded))
+      .catch(() => {});
+    return () => {
+      alive.current = false;
+    };
+  }, [applyPolicy, failPolicy, applyEffective, failEffective, applyProposals]);
+
   /** Stores `next`; answers Rust's refusal, or null when it was stored. */
-  const store = async (next: SupervisorLinkPolicy): Promise<string | null> => {
+  const store = async (next: StoredLinkPolicy): Promise<string | null> => {
     try {
       setPolicy(await supervisorLinkPolicySet(next));
-      return null;
     } catch (reason) {
-      return String(reason);
+      return reasonText(reason);
     }
+    void reloadEffective();
+    return null;
   };
 
-  const saveProject = (path: string) => async (config: LinkProjectConfig | null) => {
+  const saveDefaults = async (defaults: LinkDefaults) =>
+    policy ? await store({ ...policy, defaults }) : null;
+
+  const saveProject = (path: string) => async (entry: LinkProjectEntry | null) => {
     if (!policy) return null;
     const rest = withoutProject(policy, path);
-    const existing = entryFor(policy, path);
-    const key = existing?.[0] ?? path;
-    return await store(config ? { ...rest, projects: { ...rest.projects, [key]: config } } : rest);
+    const key = entryFor(policy, path)?.[0] ?? path;
+    return await store(entry ? { ...rest, projects: { ...rest.projects, [key]: entry } } : rest);
   };
 
   const saveLimits = (limits: JobLimits) => {
@@ -286,6 +462,23 @@ export function SupervisorLinkSettings() {
     void store({ ...policy, jobs: limits }).then(
       (refused) => refused && showToast(`Could not save the job limit: ${refused}`, 'error')
     );
+  };
+
+  /** Applies or discards; answers Rust's refusal. Everything is read again either way. */
+  const decide = async (proposalId: string, decision: ProposalDecision) => {
+    let refused: string | null = null;
+    try {
+      await supervisorLinkProposalDecide(proposalId, decision);
+      showToast(decision === 'apply' ? 'Proposal applied' : 'Proposal discarded', 'success');
+    } catch (reason) {
+      refused = reasonText(reason);
+    }
+    await Promise.all([
+      supervisorLinkPolicyGet().then(applyPolicy, failPolicy),
+      reloadEffective(),
+      reloadProposals(),
+    ]);
+    return refused;
   };
 
   const used = (path: string) => {
@@ -300,8 +493,8 @@ export function SupervisorLinkSettings() {
       <p className="text-xs leading-relaxed text-foreground-muted">
         A client of the Supervisor Control API can start and talk to supervisors and their agents
         over a local socket. It sees nothing you started in the IDE. In the projects you share below
-        it may read the JSON documents you describe and start the job kinds you list. Every change
-        it proposes and every job result arrives as a branch you merge or delete.
+        it may read the JSON documents described for them and start the job kinds they offer. Every
+        change it proposes and every job result arrives as a branch you merge or delete.
       </p>
       {error ? (
         <p role="alert" className="text-xs text-red-400">
@@ -312,6 +505,7 @@ export function SupervisorLinkSettings() {
       ) : (
         <>
           <JobCounter limits={policy.jobs} usage={usage} onSave={saveLimits} />
+          <GlobalDefaults defaults={policy.defaults} onSave={saveDefaults} />
           {starredProjects.length === 0 ? (
             <p className="text-xs text-foreground-muted">
               Star a project in Quick Access to share it with the link.
@@ -320,16 +514,19 @@ export function SupervisorLinkSettings() {
             <div className="space-y-3">
               {starredProjects.map((project) => (
                 <ProjectRow
-                  key={`${project.path}:${JSON.stringify(entryFor(policy, project.path))}`}
+                  key={project.path}
                   name={project.name}
                   path={project.path}
                   entry={entryFor(policy, project.path)}
                   usedToday={used(project.path)}
+                  effective={effective}
+                  effectiveFailure={effectiveFailure}
                   onSave={saveProject(project.path)}
                 />
               ))}
             </div>
           )}
+          <ProposalsBlock proposals={proposals} onDecide={decide} />
         </>
       )}
     </SettingsSection>
