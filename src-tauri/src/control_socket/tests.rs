@@ -23,6 +23,10 @@ pub(crate) struct FakeBackend {
     pub(crate) offered: Mutex<BTreeMap<String, Vec<ModelOption>>>,
     pub(crate) modes: Mutex<BTreeMap<String, crate::supervisor::policy::ProviderModes>>,
     pub(crate) project_policies: Mutex<HashMap<String, ProviderPolicy>>,
+    /// Where `link_policy_*` keeps the link policy; `None` like an app
+    /// without a data directory.
+    pub(crate) app_data: Mutex<Option<PathBuf>>,
+    pub(crate) notified: Mutex<Vec<crate::notifications::NotificationInput>>,
     /// Finished runs per provider, the same for every project.
     pub(crate) recent_runs: Mutex<BTreeMap<String, u32>>,
 }
@@ -62,6 +66,14 @@ impl ControlBackend for FakeBackend {
             .get(&project_root.to_string_lossy().into_owned())
             .cloned()
             .unwrap_or_default()
+    }
+
+    fn app_data_dir(&self) -> Option<PathBuf> {
+        self.app_data.lock().unwrap().clone()
+    }
+
+    fn notify(&self, input: crate::notifications::NotificationInput) {
+        self.notified.lock().unwrap().push(input);
     }
 
     fn write_input(&self, agent_id: &str, data: &str) -> Result<(), String> {
@@ -875,6 +887,8 @@ fn every_caller_scope_case_in_the_contract_holds() {
     assert!(!cases.is_empty());
     for case in cases {
         let s = supervised_scope();
+        let app = tempfile::tempdir().unwrap();
+        *s.h.backend.app_data.lock().unwrap() = Some(app.path().to_path_buf());
         let name = case["name"].as_str().unwrap();
         let expected = case["expected"].as_str().unwrap();
         let admitted = match case["caller"].as_str().unwrap() {
@@ -906,7 +920,11 @@ fn every_caller_scope_case_in_the_contract_holds() {
             "spawn" => json!({ "projectPath": s.path, "prompt": "x" }),
             "send_input" => json!({ "agentId": target, "text": "hi" }),
             "await_result" => json!({ "agentId": target, "waitSeconds": 0 }),
-            "list_agents" | "list_projects" => json!({}),
+            "list_agents" | "list_projects" | "link_policy_get" => json!({}),
+            "link_policy_propose" => json!({
+                "reason": "x",
+                "changes": [{ "op": "set_daily_limit", "dailyLimit": 7 }],
+            }),
             _ => json!({ "agentId": target }),
         };
         if let Some(extra) = case.get("params").and_then(Value::as_object) {
@@ -1487,4 +1505,103 @@ fn await_until_input_ignores_a_headless_child_and_still_returns_its_result() {
         Some("agent-sup".into()),
     );
     assert_eq!(await_until_input(&s, json!({}))["result"]["done"], true);
+}
+
+mod link_policy {
+    use super::*;
+    use crate::supervisor_link::policy::{policy_path_in, read_stored};
+    use crate::supervisor_link::proposals::{ProposalStore, NOTIFICATION_ORIGIN};
+
+    fn propose(s: &Scope, caller: &Caller, project: &str) -> Value {
+        call_as(
+            &s.h,
+            caller,
+            json!({ "id": 1, "method": "link_policy_propose", "params": {
+                "reason": "The docs project should see the global defaults",
+                "changes": [{ "op": "share_project", "project": project }],
+            }}),
+        )
+    }
+
+    #[test]
+    fn a_supervisor_proposes_and_nothing_changes_until_the_ide_decides() {
+        let s = supervised_scope();
+        let app = tempfile::tempdir().unwrap();
+        *s.h.backend.app_data.lock().unwrap() = Some(app.path().to_path_buf());
+        let supervisor =
+            s.h.dispatcher
+                .admit_peer(Some(999), below(Some(SUPERVISOR_PID)))
+                .unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let response = propose(&s, &supervisor, project.path().to_str().unwrap());
+        assert_eq!(response["ok"], true, "{response}");
+        let id = response["result"]["proposalId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(response["result"]["status"], "pending");
+
+        assert!(!policy_path_in(app.path()).exists(), "no policy written");
+        let notified = s.h.backend.notified.lock().unwrap().clone();
+        assert_eq!(notified.len(), 1);
+        assert_eq!(notified[0].origin.as_deref(), Some(NOTIFICATION_ORIGIN));
+        assert_eq!(notified[0].source, "system");
+
+        // What the supervisor reads back: still nothing shared, one pending.
+        let read = call_as(
+            &s.h,
+            &supervisor,
+            json!({ "id": 2, "method": "link_policy_get" }),
+        );
+        assert_eq!(read["result"]["stored"]["projects"], json!({}));
+        assert_eq!(read["result"]["pending"][0]["id"], id.as_str());
+
+        // Only the IDE's decision applies it.
+        ProposalStore::new(app.path())
+            .decide(&id, true, crate::supervisor_link::jobs::now_ms())
+            .unwrap();
+        assert_eq!(read_stored(app.path()).projects.len(), 1);
+    }
+
+    #[test]
+    fn an_external_caller_can_neither_read_nor_propose() {
+        let s = supervised_scope();
+        let app = tempfile::tempdir().unwrap();
+        *s.h.backend.app_data.lock().unwrap() = Some(app.path().to_path_buf());
+        let external = s.h.dispatcher.admit_peer(Some(999), below(None)).unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let response = propose(&s, &external, project.path().to_str().unwrap());
+        assert_eq!(error_code(&response), "outside_supervisor_scope");
+        assert!(s.h.backend.notified.lock().unwrap().is_empty());
+        assert!(ProposalStore::new(app.path()).pending(0).is_empty());
+    }
+
+    #[test]
+    fn an_invalid_change_is_refused_and_nothing_is_raised() {
+        let s = supervised_scope();
+        let app = tempfile::tempdir().unwrap();
+        *s.h.backend.app_data.lock().unwrap() = Some(app.path().to_path_buf());
+        let supervisor =
+            s.h.dispatcher
+                .admit_peer(Some(999), below(Some(SUPERVISOR_PID)))
+                .unwrap();
+        let response = propose(&s, &supervisor, "/nonexistent/example-project");
+        assert_eq!(error_code(&response), "invalid_params");
+        assert!(s.h.backend.notified.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn without_an_app_directory_the_answer_is_internal() {
+        let s = supervised_scope();
+        let supervisor =
+            s.h.dispatcher
+                .admit_peer(Some(999), below(Some(SUPERVISOR_PID)))
+                .unwrap();
+        let read = call_as(
+            &s.h,
+            &supervisor,
+            json!({ "id": 2, "method": "link_policy_get" }),
+        );
+        assert_eq!(error_code(&read), "internal");
+    }
 }

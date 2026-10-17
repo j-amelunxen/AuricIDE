@@ -13,6 +13,7 @@
 //! sandbox would not stop one — it leaves reads and network open.
 
 pub mod caller;
+mod link_policy;
 mod link_spawn;
 pub mod projects;
 pub mod protocol;
@@ -109,6 +110,13 @@ pub trait ControlBackend: Send + Sync {
     /// Finished runs per provider id in the project at `project_root` that
     /// started at or after `since` (RFC 3339), from its `pm_agent_usage`.
     fn recent_runs(&self, project_root: &Path, since: &str) -> BTreeMap<String, u32>;
+    /// The app data directory, where the supervisor link policy and its
+    /// proposals live. `None`: `link_policy_*` answers `internal`.
+    fn app_data_dir(&self) -> Option<PathBuf> {
+        None
+    }
+    /// Drops a notification into the inbox (a policy proposal).
+    fn notify(&self, _input: crate::notifications::NotificationInput) {}
 }
 
 /// Who sent a request, as the kernel's peer PID says (`Dispatcher::admit`).
@@ -369,6 +377,9 @@ impl Dispatcher {
             }),
             Request::AwaitResult(params) => self.await_result(params),
             Request::RemoveWorktree(params) => self.remove_worktree(params),
+            Request::LinkPolicyGet(_) | Request::LinkPolicyPropose(_) => {
+                Err(link_policy::supervisors_only())
+            }
         }
     }
 
@@ -1010,6 +1021,27 @@ impl ControlBackend for TauriBackend {
         self.app
             .emit(CONTROL_REQUEST_EVENT, event)
             .map_err(|error| error.to_string())
+    }
+
+    fn app_data_dir(&self) -> Option<PathBuf> {
+        use tauri::Manager;
+        self.app.path().app_data_dir().ok()
+    }
+
+    fn notify(&self, input: crate::notifications::NotificationInput) {
+        use tauri::Manager;
+        let Some(state) = self
+            .app
+            .try_state::<crate::notifications::NotificationsState>()
+        else {
+            return;
+        };
+        let Ok(mut conn) = state.conn.lock() else {
+            return;
+        };
+        if let Err(error) = crate::notifications::dispatch_impl(&mut conn, &input) {
+            eprintln!("Control socket: could not record a notification: {error}");
+        }
     }
 
     fn projects(&self) -> Vec<ProjectEntry> {

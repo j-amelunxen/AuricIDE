@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FastMCP, UserError } from 'fastmcp';
 import type { z } from 'zod';
 import fixtures from '../../lib/agents/agentControl.fixtures.json';
+import linkFixtures from '../../lib/agents/supervisorLink.fixtures.json';
 import { ControlError } from '../../lib/agents/agentControl.contract';
 import { createSupervisorServer } from '../server';
 import type { ControlCaller } from './agentControl';
@@ -17,6 +18,8 @@ const TOOL_METHODS: Record<string, string> = {
   send_agent_input: 'send_input',
   kill_agent: 'kill',
   remove_worktree: 'remove_worktree',
+  link_policy_get: 'link_policy_get',
+  link_policy_propose: 'link_policy_propose',
 };
 
 const scope = fixtures.callerScope.callers.supervisor;
@@ -96,5 +99,37 @@ describe('supervisor tools', () => {
     });
     createSupervisorServer();
     expect(names.sort()).toEqual(Object.keys(TOOL_METHODS).sort());
+  });
+
+  it('link_policy_propose offers exactly the ops the link contract knows', () => {
+    const propose = capture(vi.fn() as unknown as ControlCaller).get('link_policy_propose')!;
+    const changes = (propose.parameters.shape as Record<string, z.ZodType>).changes;
+    const ops = linkFixtures.proposals.ops.map((op) => ({ op }));
+    // Each op is accepted by the discriminator (its own fields may still be missing).
+    for (const { op } of ops) {
+      const result = changes.safeParse([{ op }]);
+      const issues = result.success ? [] : result.error.issues;
+      expect(
+        issues.some((issue) => issue.code === 'invalid_union'),
+        op
+      ).toBe(false);
+    }
+    expect(changes.safeParse([{ op: 'remove_project', project: '/p' }]).success).toBe(false);
+  });
+
+  it('link_policy_propose forwards the parsed changes to the socket', async () => {
+    const call = vi.fn(async () => ({})) as unknown as ControlCaller;
+    const propose = capture(call).get('link_policy_propose')!;
+    const args = propose.parameters.parse({
+      reason: 'Scenes in every project',
+      changes: [
+        {
+          op: 'set_default_job_kind',
+          jobKind: { kind: 'scene.draw', globalInstructions: 'scene.draw.md' },
+        },
+      ],
+    });
+    await propose.execute(args);
+    expect(vi.mocked(call).mock.lastCall).toEqual(['link_policy_propose', args]);
   });
 });

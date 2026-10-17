@@ -15,8 +15,10 @@
 mod assets;
 mod documents;
 mod glob;
+mod instructions;
 pub mod jobs;
 pub mod policy;
+pub mod proposals;
 pub mod protocol;
 mod subscription;
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import fixtures from './agentControl.fixtures.json';
 import policyFixtures from '../config/supervisorPolicy.fixtures.json';
+import linkFixtures from './supervisorLink.fixtures.json';
 
 /**
  * The agent-control socket protocol, TypeScript half (`docs/design-agent-control.md`).
@@ -22,6 +23,8 @@ export const CONTROL_METHODS = [
   'list_projects',
   'await_result',
   'remove_worktree',
+  'link_policy_get',
+  'link_policy_propose',
 ] as const;
 export type ControlMethod = (typeof CONTROL_METHODS)[number];
 
@@ -125,6 +128,9 @@ const optionalText = z.string().nullish();
 
 const noParams = z.object({}).transform(() => ({}));
 
+/** The changes `link_policy_propose` knows (`supervisorLink.fixtures.json`, `proposals.ops`). */
+export const LINK_POLICY_OPS = linkFixtures.proposals.ops as [string, ...string[]];
+
 const PARAMS = {
   list_agents: noParams,
   list_projects: noParams,
@@ -194,6 +200,18 @@ const PARAMS = {
         : {}),
     })),
   remove_worktree: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
+  link_policy_get: noParams,
+  /**
+   * Only the op is checked here; Rust checks every field against the policy
+   * rules and answers `invalid_params` naming the change that broke one.
+   */
+  link_policy_propose: z.object({
+    reason: z.string().trim().min(1, 'reason must not be empty'),
+    changes: z
+      .array(z.object({ op: z.enum(LINK_POLICY_OPS) }).passthrough())
+      .min(1, 'changes must hold at least one change')
+      .max(linkFixtures.proposals.maxChanges),
+  }),
 } satisfies Record<ControlMethod, z.ZodType>;
 
 type ControlParamsSchemas = typeof PARAMS;
@@ -356,6 +374,9 @@ const runResult = z.object({
   costUsd: z.number().nullable(),
 });
 
+const linkJobLimits = z.object({ dailyLimit: offset, perProjectDailyLimit: offset.nullable() });
+const linkOrigin = z.enum(['global', 'project', 'override']);
+
 const RESULTS = {
   list_agents: z.object({ agents: z.array(agentSummary) }),
   read_output: z.object({
@@ -396,6 +417,35 @@ const RESULTS = {
     }),
     z.object({ done: z.literal(true), result: runResult }),
   ]),
+  link_policy_get: z.object({
+    stored: z.object({
+      defaults: z.object({ documentTypes: z.array(z.unknown()), jobKinds: z.array(z.unknown()) }),
+      projects: z.record(z.string(), z.unknown()),
+      jobs: linkJobLimits,
+    }),
+    effective: z.object({
+      projects: z.record(z.string(), z.unknown()),
+      origins: z.record(
+        z.string(),
+        z.object({
+          documentTypes: z.record(z.string(), linkOrigin),
+          jobKinds: z.record(z.string(), linkOrigin),
+        })
+      ),
+      projectDailyLimits: z.record(z.string(), offset),
+      jobs: linkJobLimits,
+    }),
+    pending: z.array(
+      z.object({ id: z.string(), reason: z.string(), diff: z.array(z.string()), expiresAt: offset })
+    ),
+  }),
+  /** `pending` always: proposing applies nothing; a person decides in the IDE. */
+  link_policy_propose: z.object({
+    proposalId: z.string(),
+    status: z.literal('pending'),
+    expiresAt: offset,
+    diff: z.array(z.string()),
+  }),
   /** `removed: false` is an answer: the worktree holds work and stays for a person. */
   remove_worktree: z.object({
     agentId: z.string(),

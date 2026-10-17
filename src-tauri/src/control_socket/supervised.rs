@@ -49,6 +49,8 @@ impl Dispatcher {
             }
             Request::Spawn(params) => self.supervised_spawn(supervisor, params),
             Request::ListProjects(_) => self.supervised_projects(supervisor),
+            Request::LinkPolicyGet(_) => self.link_policy_get(),
+            Request::LinkPolicyPropose(params) => self.link_policy_propose(supervisor, params),
         }
     }
 

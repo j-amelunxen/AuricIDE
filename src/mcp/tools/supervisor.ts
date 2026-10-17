@@ -105,4 +105,105 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
   });
 
   server.addTool(removeWorktreeTool(call, OWN_CHILDREN));
+  registerLinkPolicyTools(server, call);
 }
+
+/**
+ * How a supervisor reads the supervisor link policy and asks for a change
+ * (`docs/design-supervisor-link.md`, "Policy proposals"). Proposing changes
+ * nothing; the human applies it in the IDE.
+ */
+function registerLinkPolicyTools(server: FastMCP, call: ControlCaller): void {
+  server.addTool({
+    name: 'link_policy_get',
+    description:
+      'Read the Supervisor Control API ("supervisor link") policy: which projects a client ' +
+      'of the link may see, their document types and job kinds, and the job limits. stored ' +
+      'is the file as the human edits it: defaults { documentTypes, jobKinds } every shared ' +
+      'project inherits, projects { path: entry } with what each one changes (own types or ' +
+      'kinds, a same name overrides; inherit false; disabledDocumentTypes / ' +
+      'disabledJobKinds; dailyLimit), jobs { dailyLimit, perProjectDailyLimit }. effective is ' +
+      'what the link acts on per project, with origins (global | project | override). ' +
+      'pending lists your proposals still waiting for the human. Read it before proposing.',
+    parameters: z.object({}),
+    execute: async () => runControl(call, 'link_policy_get', {}),
+  });
+
+  server.addTool({
+    name: 'link_policy_propose',
+    description:
+      'Propose a change to the supervisor link policy. Nothing changes: the human gets an ' +
+      'inbox notification with the diff and Apply / Discard, and only their Apply in the IDE ' +
+      'writes it. Proposals expire after 24 hours and are dropped if the policy changes ' +
+      'first. There is no removal; ask the human for that. globalInstructions of a job kind ' +
+      "may only be a file name under the IDE's job-kinds folder, never an absolute path. " +
+      'A refused change is invalid_params naming the change and the rule. Returns ' +
+      '{ proposalId, status: "pending", expiresAt, diff }. Report the diff to the human and ' +
+      'do not wait for the decision or propose the same change again.',
+    parameters: z.object({
+      reason: z
+        .string()
+        .describe('One or two sentences for the human: why this change, for which task'),
+      changes: z.array(policyChange).min(1).describe('Applied in order onto the current policy'),
+    }),
+    execute: async (args) => runControl(call, 'link_policy_propose', args),
+  });
+}
+
+const projectPath = z.string().describe('Absolute path of an existing project folder');
+
+const documentType = z
+  .object({
+    name: z.string().describe('Lowercase, e.g. "scene"; a same name replaces'),
+    globs: z.array(z.string()).describe('Project-relative globs of the documents'),
+    index: z.object({ path: z.string(), entriesKey: z.string().optional() }).optional(),
+    nameField: z.string().optional(),
+    descriptionField: z.string().optional(),
+    schema: z.string().optional(),
+    assets: z.array(z.string()).optional(),
+    maxAssetBytes: z.number().int().positive().optional(),
+  })
+  .strict();
+
+const jobKind = z
+  .object({
+    kind: z.string().describe('Lowercase, e.g. "scene.draw"; a same name replaces'),
+    instructions: z
+      .string()
+      .optional()
+      .describe('Project-relative instructions file; wins when the project has it'),
+    globalInstructions: z
+      .string()
+      .optional()
+      .describe('File name under the IDE job-kinds folder, used where the project has none'),
+    writes: z.array(z.string()).optional().describe('Globs the job may write; default: documents'),
+  })
+  .strict();
+
+const limit = z.number().int().nonnegative();
+
+/** One change; the ops are `proposals.ops` in `supervisorLink.fixtures.json`. */
+const policyChange = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('share_project'), project: projectPath }),
+  z.object({ op: z.literal('set_default_document_type'), documentType }),
+  z.object({ op: z.literal('set_default_job_kind'), jobKind }),
+  z.object({ op: z.literal('set_project_document_type'), project: projectPath, documentType }),
+  z.object({ op: z.literal('set_project_job_kind'), project: projectPath, jobKind }),
+  z.object({
+    op: z.literal('set_project_inherit'),
+    project: projectPath,
+    inherit: z.boolean(),
+    disabledDocumentTypes: z.array(z.string()).optional(),
+    disabledJobKinds: z.array(z.string()).optional(),
+  }),
+  z.object({ op: z.literal('set_daily_limit'), dailyLimit: limit }),
+  z.object({
+    op: z.literal('set_per_project_daily_limit'),
+    perProjectDailyLimit: limit.nullable(),
+  }),
+  z.object({
+    op: z.literal('set_project_daily_limit'),
+    project: projectPath,
+    dailyLimit: limit.nullable(),
+  }),
+]);

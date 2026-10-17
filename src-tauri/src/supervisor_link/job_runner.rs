@@ -1,9 +1,10 @@
 //! `jobs.create`, `jobs.cancel` and the tick that follows running jobs to
 //! their end (`docs/design-supervisor-link.md`, "Jobs").
 
-use super::documents::{self, head_commit, open_root_repo, read_contained, visible_project};
+use super::documents::{self, head_commit, open_root_repo, visible_project};
+use super::instructions::{self, Instructions};
 use super::jobs::{self, check_quota, quota_message, Collected, JobError, JobErrorCode, JobRecord};
-use super::policy::{is_relative_file, JobKind, LinkPolicy};
+use super::policy::{JobKind, LinkPolicy};
 use super::protocol::{CreateJobParams, JobStatus, LinkError};
 use super::{notification, short, to_value, Link};
 use crate::agents::AgentStatus;
@@ -23,13 +24,20 @@ fn new_job_id() -> String {
     format!("job-{hex}")
 }
 
+/// What steps 1 and 2 of `jobs.create` settled.
+struct CheckedKind {
+    /// The project's canonical path.
+    project: String,
+    kind: JobKind,
+    instructions: Instructions,
+    /// What the kind may write.
+    writes: Vec<String>,
+}
+
 /// Steps 1 and 2 of `jobs.create`: a visible project, a kind it lists, the
-/// kind's instructions file, a repository with a commit. Answers the
-/// project's canonical path, the kind and what the kind may write.
-fn checked_kind(
-    policy: &LinkPolicy,
-    params: &CreateJobParams,
-) -> Result<(String, JobKind, Vec<String>), LinkError> {
+/// kind's instructions (the project's file, else the global one), a
+/// repository with a commit.
+fn checked_kind(policy: &LinkPolicy, params: &CreateJobParams) -> Result<CheckedKind, LinkError> {
     let (root, config) = visible_project(policy, &params.project)?;
     let project = documents::path_string(&root);
     let Some(kind) = config.job_kind(&params.kind) else {
@@ -47,18 +55,19 @@ fn checked_kind(
             ),
         ));
     };
-    if !is_relative_file(&kind.instructions) || read_contained(&root, &kind.instructions)?.is_none()
-    {
-        return Err(LinkError::invalid_params(format!(
-            "the instructions of job kind \"{}\" ({}) are not a file in {project}",
-            kind.kind, kind.instructions
-        )));
-    }
+    let instructions =
+        instructions::resolve(kind, &root, &project, policy.job_kinds_dir.as_deref())
+            .map_err(|unusable| LinkError::invalid_params(unusable.0))?;
     let repo = open_root_repo(&root)?;
     head_commit(&repo, &root)?;
     drop(repo);
     let writes = config.writes_of(kind);
-    Ok((project, kind.clone(), writes))
+    Ok(CheckedKind {
+        project,
+        kind: kind.clone(),
+        instructions,
+        writes,
+    })
 }
 
 /// A running job's record right after its agent started. Branch, worktree
@@ -120,10 +129,11 @@ impl Link {
     /// Step 3: room under the counter, or `quota_exceeded` naming the limit.
     fn check_room(&self, policy: &LinkPolicy, project: &str, now: u64) -> Result<(), LinkError> {
         let (in_window, in_project) = self.jobs.count_in_window(project, now);
-        if let Err(reason) = check_quota(&policy.jobs, in_window, in_project) {
+        let limits = policy.limits_for(project);
+        if let Err(reason) = check_quota(&limits, in_window, in_project) {
             let mut error = LinkError::new(
                 "quota_exceeded",
-                quota_message(reason, &policy.jobs, &self.jobs, project, now),
+                quota_message(reason, &limits, &self.jobs, project, now),
             );
             error.reason = Some(reason.to_string());
             return Err(error);
@@ -141,7 +151,12 @@ impl Link {
         policy: &LinkPolicy,
         params: CreateJobParams,
     ) -> Result<Value, LinkError> {
-        let (project, kind, writes) = checked_kind(policy, &params)?;
+        let CheckedKind {
+            project,
+            kind,
+            instructions,
+            writes,
+        } = checked_kind(policy, &params)?;
         let _creating = self
             .create_gate
             .lock()
@@ -150,13 +165,7 @@ impl Link {
         self.check_room(policy, &project, now)?;
 
         let job_id = new_job_id();
-        let prompt = jobs::prompt(
-            &job_id,
-            &kind.kind,
-            &kind.instructions,
-            &writes,
-            &params.payload,
-        );
+        let prompt = jobs::prompt(&job_id, &kind.kind, &instructions, &writes, &params.payload);
         let link_agents: BTreeSet<String> = self.jobs.agent_ids().into_iter().collect();
         let spawned = self
             .dispatcher
