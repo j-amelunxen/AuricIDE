@@ -112,9 +112,11 @@ export function supervisorPromptSkills(
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function describeSkills(skills: SupervisorPromptSkill[]): string {
+function describeSkills(skills: SupervisorPromptSkill[], hasTools: boolean): string {
   if (skills.length === 0) {
-    return 'No skill is approved for you, and you have no shell. Settings → Supervisor approves skills.';
+    return hasTools
+      ? 'No skill is approved for you. Settings → Supervisor approves skills.'
+      : 'No skill is approved for you, and you have no shell. Settings → Supervisor approves skills.';
   }
   const lines = skills.map((skill) =>
     skill.bash.length > 0
@@ -126,6 +128,15 @@ function describeSkills(skills: SupervisorPromptSkill[]): string {
     'A shell command outside these patterns is refused. A skill that needs one is work for an ' +
       'agent you start.',
   ].join('\n');
+}
+
+/** The CLI tools Settings → Supervisor approves: the only commands the shell accepts. */
+function describeTools(tools: string[]): string {
+  return (
+    `You may run these CLI tools, with any arguments: ${tools.map((tool) => `\`${tool}\``).join(', ')}. ` +
+    'A shell command that starts with anything else is refused, and so is a chained command ' +
+    '(`&&`, `|`, `;`) with one disallowed part. A job that needs more is work for an agent you start.'
+  );
 }
 
 function describeModel(model: SupervisorPromptModel): string {
@@ -228,6 +239,8 @@ export interface SupervisorPromptOptions {
   /** A skill's prompt, handed over as the first task. */
   firstTask?: string;
   skills?: SupervisorPromptSkill[];
+  /** CLI tools approved in Settings → Supervisor, by name or absolute path. */
+  tools?: string[];
   /** Claude in Chrome is switched on (Settings → Supervisor). */
   chrome?: boolean;
   /** The human's standing instructions (Settings → Supervisor → Instructions). */
@@ -247,7 +260,7 @@ const INSTRUCTIONS_PREAMBLE =
  */
 export function buildSupervisorLaunchPrompt(
   projects: SupervisorPromptProject[],
-  { firstTask, skills = [], chrome = false, instructions }: SupervisorPromptOptions = {}
+  { firstTask, skills = [], tools = [], chrome = false, instructions }: SupervisorPromptOptions = {}
 ): string {
   const projectSection =
     projects.length > 0
@@ -261,7 +274,8 @@ export function buildSupervisorLaunchPrompt(
       'the running counts and the allowed models can change.',
     projectSection,
     '## Skills',
-    describeSkills(skills),
+    describeSkills(skills, tools.length > 0),
+    ...(tools.length > 0 ? ['## Tools', describeTools(tools)] : []),
     ...(chrome
       ? [
           '## Browser',

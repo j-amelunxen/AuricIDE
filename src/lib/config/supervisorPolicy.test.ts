@@ -6,6 +6,9 @@ import {
   checkSupervisorSpawn,
   defaultSupervisorProjectPolicy,
   emptySupervisorPolicy,
+  isUnrestrictedTool,
+  toolKeyProblem,
+  toolPatterns,
   effectivePermissionMode,
   permissionModesOf,
   pmServerNames,
@@ -195,5 +198,32 @@ describe('supervisor policy — fixture coverage', () => {
       }
     );
     expect(decision).toEqual({ ok: true, permissionMode: null });
+  });
+});
+
+describe('supervisor tools', () => {
+  it('allows a tool exactly as itself and as its first word', () => {
+    expect(toolPatterns('umi')).toEqual(['umi', 'umi *']);
+    expect(toolPatterns('/opt/bin/umi')).toEqual(['/opt/bin/umi', '/opt/bin/umi *']);
+  });
+
+  it('judges a key as the parse does', () => {
+    expect(toolKeyProblem('umi')).toBeNull();
+    expect(toolKeyProblem('/opt/bin/umi')).toBeNull();
+    expect(toolKeyProblem('umi extra')).toBe('invalid_entry');
+    expect(toolKeyProblem('bin/umi')).toBe('path_not_absolute');
+    expect(toolKeyProblem('/')).toBe('invalid_entry');
+    expect(toolKeyProblem('.')).toBe('invalid_entry');
+  });
+
+  it('flags interpreters and shells by name or by path, and nothing else', () => {
+    for (const tool of fixtures.unrestrictedTools)
+      expect(isUnrestrictedTool(tool), tool).toBe(true);
+    expect(isUnrestrictedTool('/usr/bin/python3')).toBe(true);
+    expect(isUnrestrictedTool('umi')).toBe(false);
+  });
+
+  it('starts without tools', () => {
+    expect(emptySupervisorPolicy().tools).toEqual({});
   });
 });

@@ -46,6 +46,16 @@ export interface SupervisorSkillPolicy {
   dirs: string[];
 }
 
+/**
+ * A CLI tool the supervisor may run, keyed by a bare command name (found on
+ * PATH) or by the absolute path of its binary. Each becomes `Bash(<tool>)`
+ * and `Bash(<tool> *)` (`toolPatterns`); nothing else gets a shell.
+ */
+export interface SupervisorToolPolicy {
+  /** Folders besides the run folder its file tools may use (the tool's data). */
+  dirs: string[];
+}
+
 export interface SupervisorPolicy {
   version: 1;
   /** `chrome`: Claude in Chrome, the user's own logged-in browser; off unless switched on. */
@@ -53,6 +63,7 @@ export interface SupervisorPolicy {
   maxRunningChildren: number;
   projects: Record<string, SupervisorProjectPolicy>;
   skills: Record<string, SupervisorSkillPolicy>;
+  tools: Record<string, SupervisorToolPolicy>;
 }
 
 export type SupervisorParseReason =
@@ -68,6 +79,8 @@ export interface SupervisorPolicyRejection {
   project: string | null;
   /** The skill key as written, for an entry under `skills`. */
   skill?: string;
+  /** The tool key as written, for an entry under `tools`. */
+  tool?: string;
   reason: SupervisorParseReason;
 }
 
@@ -103,6 +116,12 @@ export const SUPERVISOR_DENIED_REASON_TEXT = fixtures.reasons.checkSpawn as Reco
 const DEFAULTS = fixtures.defaults;
 const CHECK_ORDER = fixtures.checkOrder as SupervisorDeniedReason[];
 const REJECTED_PERMISSION_MODES: readonly string[] = fixtures.rejectedPermissionModes;
+const UNRESTRICTED_TOOLS: readonly string[] = fixtures.unrestrictedTools;
+
+/** Tools that run any code they are given, so allowing one allows everything (Settings warns). */
+export function isUnrestrictedTool(tool: string): boolean {
+  return UNRESTRICTED_TOOLS.includes(tool.split('/').pop() ?? tool);
+}
 
 export function emptySupervisorPolicy(): SupervisorPolicy {
   return {
@@ -111,6 +130,7 @@ export function emptySupervisorPolicy(): SupervisorPolicy {
     maxRunningChildren: DEFAULTS.maxRunningChildren,
     projects: {},
     skills: {},
+    tools: {},
   };
 }
 
@@ -198,19 +218,68 @@ function parseSkillEntry(value: unknown): SupervisorSkillPolicy {
     if (!isBashPattern(pattern)) throw new InvalidEntry('invalid_entry');
     bash.push(pattern);
   }
-  const rawDirs = value.dirs ?? [];
-  if (!Array.isArray(rawDirs) || !rawDirs.every((entry) => typeof entry === 'string')) {
+  return { bash, dirs: parseDirs(value.dirs) };
+}
+
+/** Extra folders: absolute, not the root, trimmed and without repeats. */
+function parseDirs(value: unknown): string[] {
+  const raw = value ?? [];
+  if (!Array.isArray(raw) || !raw.every((entry) => typeof entry === 'string')) {
     throw new InvalidEntry('invalid_entry');
   }
   const dirs: string[] = [];
-  for (const raw of (rawDirs as string[]).map((entry) => entry.trim())) {
-    if (!raw) continue;
-    if (!raw.startsWith('/') || !isBashPattern(raw)) throw new InvalidEntry('invalid_entry');
-    const dir = normalizeProjectPath(raw);
+  for (const listed of (raw as string[]).map((entry) => entry.trim())) {
+    if (!listed) continue;
+    if (!listed.startsWith('/') || !isBashPattern(listed)) throw new InvalidEntry('invalid_entry');
+    const dir = normalizeProjectPath(listed);
     if (dir === '/') throw new InvalidEntry('invalid_entry');
     if (!dirs.includes(dir)) dirs.push(dir);
   }
-  return { bash, dirs };
+  return dirs;
+}
+
+const BARE_TOOL_NAME = /^[A-Za-z0-9._+-]+$/;
+
+/**
+ * A tool key is a bare command name or the absolute path of a binary
+ * (fixture `toolRules`). `.` alone would be `Bash(. *)`, the `source` builtin,
+ * hence a name needs a letter or digit; `*` in a path would widen the rule.
+ * `null`: the key is fine; otherwise the reason it is refused.
+ */
+export function toolKeyProblem(key: string): SupervisorParseReason | null {
+  if (BARE_TOOL_NAME.test(key)) return /[A-Za-z0-9]/.test(key) ? null : 'invalid_entry';
+  if (!key.startsWith('/')) return key.includes('/') ? 'path_not_absolute' : 'invalid_entry';
+  const unsafe = !isBashPattern(key) || /[\s*]/.test(key);
+  return unsafe || normalizeProjectPath(key) === '/' ? 'invalid_entry' : null;
+}
+
+/** The two Claude Code Bash patterns a tool is allowed under. */
+export function toolPatterns(tool: string): [string, string] {
+  return [tool, `${tool} *`];
+}
+
+function parseTools(
+  tools: Record<string, unknown>,
+  policy: SupervisorPolicy,
+  rejected: SupervisorPolicyRejection[]
+): void {
+  for (const key of Object.keys(tools).sort()) {
+    try {
+      const problem = toolKeyProblem(key);
+      if (problem) throw new InvalidEntry(problem);
+      const entry = tools[key];
+      if (!isObject(entry)) throw new InvalidEntry('invalid_entry');
+      const dirs = parseDirs(entry.dirs);
+      const name = key.startsWith('/') ? normalizeProjectPath(key) : key;
+      const earlier = policy.tools[name];
+      policy.tools[name] = {
+        dirs: earlier ? earlier.dirs.filter((dir) => dirs.includes(dir)) : dirs,
+      };
+    } catch (error) {
+      if (!(error instanceof InvalidEntry)) throw error;
+      rejected.push({ project: null, tool: key, reason: error.reason });
+    }
+  }
 }
 
 function parseSkills(
@@ -429,6 +498,9 @@ export function parseSupervisorPolicy(raw: string | null | undefined): ParsedSup
   if (parsed.skills !== undefined && parsed.skills !== null && !isObject(parsed.skills)) {
     return refuse('malformed');
   }
+  if (parsed.tools !== undefined && parsed.tools !== null && !isObject(parsed.tools)) {
+    return refuse('malformed');
+  }
   const projects = isObject(parsed.projects) ? parsed.projects : {};
   for (const [key, value] of Object.entries(projects)) {
     if (!key.startsWith('/')) {
@@ -446,6 +518,7 @@ export function parseSupervisorPolicy(raw: string | null | undefined): ParsedSup
     }
   }
   parseSkills(isObject(parsed.skills) ? parsed.skills : {}, policy, rejected);
+  parseTools(isObject(parsed.tools) ? parsed.tools : {}, policy, rejected);
   return { policy, rejected };
 }
 

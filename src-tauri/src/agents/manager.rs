@@ -232,7 +232,7 @@ pub fn check_supervisor_provider(provider_id: &str) -> Result<(), String> {
 /// Claude Code flags for a supervisor (ADR 0004). `--tools` names the only
 /// built-in tools it has: the file tools, `Skill`, `ToolSearch` (many MCP
 /// tools load deferred, and without it they are out of reach), and `Bash`
-/// only when an approved skill declares a command. Each permitted project's
+/// only when an approved skill or tool declares a command. Each permitted project's
 /// `auric-pm` server (`pm_servers`) is pre-approved like its own tools, and so
 /// is Claude in Chrome when the policy switches it on (`chrome`). `--restricted` confines the file tools
 /// to the working directory (the run folder), ignores the user's, project's
@@ -331,7 +331,8 @@ fn bind_to_supervisor_mcp(
         .and_then(|name| name.to_str())
         .ok_or_else(|| "The supervisor has no run folder.".to_string())?;
     let policy = crate::supervisor::current_policy(&app_data);
-    let skills = crate::supervisor::build_skill_plugin(&app_data, run_name, &policy.skills)?;
+    let mut skills = crate::supervisor::build_skill_plugin(&app_data, run_name, &policy.skills)?;
+    crate::supervisor::apply_tool_grants(&mut skills, &policy.tools);
     let pm = crate::supervisor::supervisor_pm_servers(&policy);
     // No AURIC_AGENT_CWD: `request_agent_launch` stays refused, so every agent
     // a supervisor starts goes through `spawn_agent` and the policy.

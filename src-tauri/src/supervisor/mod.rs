@@ -348,13 +348,14 @@ pub fn validate_for_write(mut value: Value) -> Result<SupervisorPolicy, String> 
             .project
             .as_deref()
             .or(entry.skill.as_deref())
+            .or(entry.tool.as_deref())
             .unwrap_or("the file");
         return Err(match entry.reason {
             ParseReason::BypassPermissions => {
                 format!("bypassPermissions is never allowed for a supervisor's agents ({project}).")
             }
             ParseReason::PathNotAbsolute => {
-                format!("Project and skill paths must be absolute ({project}).")
+                format!("Project, skill and tool paths must be absolute ({project}).")
             }
             ParseReason::UnsupportedVersion => {
                 format!("This build only writes supervisor policy version {POLICY_VERSION}.")
@@ -561,6 +562,29 @@ pub fn build_skill_plugin(
     Ok(plugin)
 }
 
+/// Adds the approved tools to a run: each as `Bash(<tool>)` and
+/// `Bash(<tool> *)`, plus the folders it works in that exist. A tool given by
+/// absolute path whose binary is gone is left out rather than failing the
+/// launch, like a skill folder that vanished; a bare name is looked up by
+/// Claude Code's shell at run time, so there is nothing to check here.
+pub fn apply_tool_grants(plugin: &mut SkillPlugin, tools: &BTreeMap<String, policy::ToolRules>) {
+    for (tool, rules) in tools {
+        if tool.starts_with('/') && !Path::new(tool).is_file() {
+            continue;
+        }
+        for pattern in policy::tool_patterns(tool) {
+            if !plugin.bash.contains(&pattern) {
+                plugin.bash.push(pattern);
+            }
+        }
+        for dir in &rules.dirs {
+            if Path::new(dir).is_dir() && !plugin.dirs.contains(dir) {
+                plugin.dirs.push(dir.clone());
+            }
+        }
+    }
+}
+
 #[cfg(unix)]
 fn link_dir(source: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(source, link)
@@ -596,6 +620,16 @@ fn prune_skill_plugins(root: &Path) {
 #[tauri::command]
 pub fn supervisor_policy_get(app: tauri::AppHandle) -> Result<ParsedPolicy, String> {
     Ok(read_policy_file(&policy_path_in(&app_data_dir(&app)?)))
+}
+
+/// Where a tool Settings lists would run from (login-shell PATH, as the
+/// supervisor's shell will find it), for display only: the policy gate never
+/// reads this. `None`: not found.
+#[tauri::command]
+pub async fn supervisor_resolve_tool(name: String) -> Option<String> {
+    crate::video_import::preflight::resolve_executable(&name)
+        .await
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 /// Validates and saves; answers with the file as it now reads.
@@ -893,6 +927,54 @@ mod tests {
         let link = dir.join("skills").join("review");
         assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from(&review));
         assert!(!dir.join("skills").join("gone").exists());
+    }
+
+    #[test]
+    fn an_approved_tool_is_allowed_as_itself_and_with_arguments_only() {
+        let work = tempfile::tempdir().unwrap();
+        let binary = work.path().join("mytool");
+        std::fs::write(&binary, "").unwrap();
+        let binary = binary.to_string_lossy().into_owned();
+        let tools = BTreeMap::from([
+            (
+                "umi".to_string(),
+                policy::ToolRules {
+                    dirs: vec![
+                        work.path().to_string_lossy().into_owned(),
+                        "/abs/not-there".into(),
+                    ],
+                },
+            ),
+            (binary.clone(), policy::ToolRules::default()),
+            ("/abs/gone/tool".to_string(), policy::ToolRules::default()),
+        ]);
+        let mut plugin = SkillPlugin {
+            bash: vec!["umi".into()],
+            ..SkillPlugin::default()
+        };
+        apply_tool_grants(&mut plugin, &tools);
+        assert_eq!(
+            plugin.bash,
+            vec![
+                "umi".to_string(),
+                binary.clone(),
+                format!("{binary} *"),
+                "umi *".to_string()
+            ],
+            "a missing binary brings no shell, a repeat is not added twice"
+        );
+        assert_eq!(
+            plugin.dirs,
+            vec![work.path().to_string_lossy().into_owned()],
+            "a folder that does not exist is not handed out"
+        );
+    }
+
+    #[test]
+    fn no_approved_tool_leaves_the_plugin_as_it_was() {
+        let mut plugin = SkillPlugin::default();
+        apply_tool_grants(&mut plugin, &BTreeMap::new());
+        assert_eq!(plugin, SkillPlugin::default());
     }
 
     #[test]

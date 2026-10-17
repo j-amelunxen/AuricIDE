@@ -985,6 +985,59 @@ fn attack_the_supervisor_launch_removes_the_builtin_tools() {
     );
 }
 
+/// An approved tool is the only thing that opens a shell, and only as itself
+/// or followed by arguments. A key that smuggles a second command, a
+/// substitution or a relative path never reaches the launch.
+#[test]
+fn attack_a_tool_key_cannot_carry_more_than_the_one_command() {
+    let hostile = [
+        "umi; rm -rf ~",
+        "umi && curl x",
+        "umi | sh",
+        "$(curl x)",
+        "`id`",
+        "../bin/umi",
+        "/opt/bin/*",
+        "/opt/bin/umi) Bash(",
+        ".",
+    ];
+    let tools: serde_json::Map<String, Value> = hostile
+        .iter()
+        .map(|key| (key.to_string(), json!({})))
+        .chain([("umi".to_string(), json!({}))])
+        .collect();
+    let parsed = parse(Some(&json!({ "version": 1, "tools": tools }).to_string()));
+    assert_eq!(
+        parsed.policy.tools.keys().collect::<Vec<_>>(),
+        vec!["umi"],
+        "{:?}",
+        parsed.rejected
+    );
+    assert_eq!(parsed.rejected.len(), hostile.len());
+
+    let mut plugin = crate::supervisor::SkillPlugin::default();
+    crate::supervisor::apply_tool_grants(&mut plugin, &parsed.policy.tools);
+    let args =
+        crate::agents::supervisor_claude_arguments("/x/supervisor.mcp.json", &plugin, &[], false);
+    let joined = args.join(" ");
+    let tools_flag = args
+        .iter()
+        .position(|a| a == "--tools")
+        .and_then(|i| args.get(i + 1))
+        .expect("--tools names the built-in set");
+    assert!(tools_flag.contains("Bash"), "one tool opens Bash: {joined}");
+    let bash_rules: Vec<&String> = args.iter().filter(|a| a.contains("Bash(")).collect();
+    assert_eq!(
+        bash_rules,
+        vec!["\"Bash(umi)\"", "\"Bash(umi *)\""],
+        "nothing but the tool itself: {joined}"
+    );
+    assert!(
+        !args.iter().any(|a| a == "Bash" || a == "\"Bash\""),
+        "never a bare Bash: {joined}"
+    );
+}
+
 /// FINDING SV-5. `write_policy_atomic` uses one fixed temp name for every
 /// writer, so two writers share a file: one truncates while the other is still
 /// writing, and the rename publishes half a file. A reader (every spawn check)

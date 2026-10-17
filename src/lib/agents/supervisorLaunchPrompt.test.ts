@@ -172,6 +172,16 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(text.indexOf('## Skills')).toBeLessThan(text.indexOf('## Starting an agent'));
   });
 
+  it('lists approved tools, and stops saying there is no shell once one exists', () => {
+    expect(prompt).not.toContain('## Tools');
+    const text = buildSupervisorLaunchPrompt(projects, { tools: ['umi', '/opt/bin/mytool'] });
+    expect(text).toContain('## Tools');
+    expect(text).toContain('`umi`, `/opt/bin/mytool`');
+    expect(text).toContain('No skill is approved for you.');
+    expect(text).not.toContain('you have no shell');
+    expect(text.indexOf('## Tools')).toBeLessThan(text.indexOf('## Starting an agent'));
+  });
+
   it('ends with the first task when a skill started it', () => {
     const text = buildSupervisorLaunchPrompt(projects, {
       firstTask: '  Ask every project for its status  ',

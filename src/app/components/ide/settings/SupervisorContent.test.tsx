@@ -9,13 +9,19 @@ import { useStore } from '@/lib/store';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 import { SupervisorContent } from './SupervisorContent';
 
-const { supervisorPolicyGet, supervisorPolicySet, projectProviderPolicyGet, listProviders } =
-  vi.hoisted(() => ({
-    listProviders: vi.fn(),
-    supervisorPolicyGet: vi.fn(),
-    supervisorPolicySet: vi.fn(async (policy: unknown) => ({ policy, rejected: [] })),
-    projectProviderPolicyGet: vi.fn(),
-  }));
+const {
+  supervisorPolicyGet,
+  supervisorPolicySet,
+  supervisorResolveTool,
+  projectProviderPolicyGet,
+  listProviders,
+} = vi.hoisted(() => ({
+  supervisorResolveTool: vi.fn(async () => '/opt/homebrew/bin/umi'),
+  listProviders: vi.fn(),
+  supervisorPolicyGet: vi.fn(),
+  supervisorPolicySet: vi.fn(async (policy: unknown) => ({ policy, rejected: [] })),
+  projectProviderPolicyGet: vi.fn(),
+}));
 
 const PROVIDERS: ProviderInfo[] = [
   {
@@ -44,7 +50,11 @@ const PROVIDERS: ProviderInfo[] = [
   },
 ];
 
-vi.mock('@/lib/tauri/supervisorPolicy', () => ({ supervisorPolicyGet, supervisorPolicySet }));
+vi.mock('@/lib/tauri/supervisorPolicy', () => ({
+  supervisorPolicyGet,
+  supervisorPolicySet,
+  supervisorResolveTool,
+}));
 vi.mock('@/lib/tauri/providers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/tauri/providers')>()),
   listProviders,
@@ -282,6 +292,36 @@ describe('SupervisorContent', () => {
     fireEvent.click(screen.getByTestId('supervisor-save'));
     await waitFor(() => expect(screen.getByTestId('supervisor-max-children')).toHaveValue(9));
     expect(screen.getByTestId('supervisor-save')).toBeDisabled();
+  });
+
+  it('saves an allowed tool with the policy, and blocks Save on a folder Rust would refuse', async () => {
+    await renderLoaded();
+    fireEvent.change(screen.getByTestId('supervisor-tool-name'), { target: { value: 'umi' } });
+    fireEvent.click(screen.getByTestId('supervisor-tool-add'));
+    const folders = await screen.findByLabelText(/Extra folders/);
+    fireEvent.change(folders, { target: { value: 'relative' } });
+    expect(screen.getByTestId('supervisor-save')).toBeDisabled();
+    expect(screen.getByTestId('supervisor-save')).toHaveAttribute(
+      'title',
+      'Fix the entry marked under Tools'
+    );
+
+    fireEvent.change(folders, { target: { value: '/abs/data' } });
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
+    expect(supervisorPolicySet).toHaveBeenCalledWith({
+      ...emptySupervisorPolicy(),
+      tools: { umi: { dirs: ['/abs/data'] } },
+    });
+  });
+
+  it('names a rejected tool entry by its key', async () => {
+    supervisorPolicyGet.mockResolvedValue({
+      policy: policy(),
+      rejected: [{ project: null, tool: 'umi; rm', reason: 'invalid_entry' }],
+    });
+    await renderLoaded();
+    expect(screen.getByTestId('supervisor-rejected')).toHaveTextContent('umi; rm');
   });
 
   it('shows what the stored file had rejected', async () => {

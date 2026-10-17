@@ -25,3 +25,11 @@ export async function supervisorPolicySet(
 ): Promise<SupervisorPolicyState> {
   return await invoke<SupervisorPolicyState>('supervisor_policy_set', { policy });
 }
+
+/**
+ * Where the login shell's PATH finds a tool (an absolute path: whether the
+ * file exists), or `null`. For display only; the policy gate never reads it.
+ */
+export async function supervisorResolveTool(name: string): Promise<string | null> {
+  return await invoke<string | null>('supervisor_resolve_tool', { name });
+}

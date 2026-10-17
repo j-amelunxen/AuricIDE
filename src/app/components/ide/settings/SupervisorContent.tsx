@@ -33,6 +33,7 @@ import {
   skillFolderOf,
   type SupervisorSkillCandidate,
 } from './SupervisorSkills';
+import { SupervisorTools, invalidToolEntries } from './SupervisorTools';
 import {
   NUMBER_CLASS,
   SELECT_CLASS,
@@ -134,12 +135,15 @@ export function SupervisorContent() {
   // that can never run.
   const blockers = unattendedBlockers(draft, loaded.providers, loaded.projectPolicies);
   const badPatterns = invalidBashPatterns(draft.skills);
+  const badToolEntries = invalidToolEntries(draft.tools);
   const blockedReason =
     blockers.length > 0
       ? `Pick a permission mode for ${blockers.length === 1 ? '1 provider' : `${blockers.length} providers`} that would run without asking`
       : badPatterns.length > 0
         ? 'Fix the entry marked under Skills'
-        : null;
+        : badToolEntries.length > 0
+          ? 'Fix the entry marked under Tools'
+          : null;
   const claude = loaded.providers.find((p) => p.id === draft.supervisor.provider);
 
   const save = async () => {
@@ -209,6 +213,8 @@ export function SupervisorContent() {
         onChange={(skills) => setDraft({ ...draft, skills })}
       />
 
+      <SupervisorTools tools={draft.tools} onChange={(tools) => setDraft({ ...draft, tools })} />
+
       <SupervisorInstructions value={instructions} onChange={setInstructions} />
 
       <SaveBar
@@ -267,8 +273,10 @@ function RejectedNotice({ rejected }: { rejected: SupervisorPolicyRejection[] })
       <p className="font-semibold">Parts of the saved file were ignored:</p>
       <ul className="list-disc space-y-0.5 pl-4 text-foreground-muted">
         {rejected.map((entry, index) => (
-          <li key={`${entry.project ?? entry.skill ?? 'file'}-${index}`}>
-            {(entry.project ?? entry.skill) ? `${entry.project ?? entry.skill}: ` : ''}
+          <li key={`${entry.project ?? entry.skill ?? entry.tool ?? 'file'}-${index}`}>
+            {(entry.project ?? entry.skill ?? entry.tool)
+              ? `${entry.project ?? entry.skill ?? entry.tool}: `
+              : ''}
             {SUPERVISOR_PARSE_REASONS[entry.reason] ?? entry.reason}
           </li>
         ))}

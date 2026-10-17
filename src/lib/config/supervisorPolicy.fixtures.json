@@ -81,6 +81,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -104,6 +105,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -127,6 +129,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -150,6 +153,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -187,6 +191,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -215,6 +220,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -247,6 +253,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -275,6 +282,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -303,6 +311,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -333,6 +342,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -361,6 +371,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -389,6 +400,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -422,6 +434,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -455,6 +468,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -478,6 +492,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -511,6 +526,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -544,6 +560,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -562,6 +579,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -585,6 +603,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -620,6 +639,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -648,6 +668,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -671,6 +692,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -706,6 +728,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -734,6 +757,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -752,6 +776,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {
             "/abs/skills/review": {
               "bash": ["/abs/skills/review/scripts/*"],
@@ -775,6 +800,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {
             "/abs/skills/notes": {
               "bash": [],
@@ -798,6 +824,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {
             "/abs/skills/ok": {
               "bash": ["ls"],
@@ -837,6 +864,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {
             "/abs/skills/rec": {
               "bash": ["b *"],
@@ -860,6 +888,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -883,6 +912,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {
             "/abs/skills/rec": {
               "bash": [],
@@ -906,6 +936,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -935,6 +966,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -953,6 +985,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -985,6 +1018,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -1003,6 +1037,7 @@
           },
           "maxRunningChildren": 4,
           "projects": {},
+          "tools": {},
           "skills": {}
         },
         "rejected": [
@@ -1052,6 +1087,7 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
@@ -1083,9 +1119,236 @@
               "maxRunning": 2
             }
           },
+          "tools": {},
           "skills": {}
         },
         "rejected": []
+      }
+    },
+    {
+      "name": "an approved tool is kept by bare name or by absolute path, extra folders cleaned",
+      "raw": "{\"version\": 1, \"tools\": {\"umi\": {}, \"/opt/tools/bin/mytool/\": {\"dirs\": [\"/abs/data/\", \"/abs/data\", \" \"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {},
+          "tools": {
+            "umi": {
+              "dirs": []
+            },
+            "/opt/tools/bin/mytool": {
+              "dirs": ["/abs/data"]
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a tool key that could carry more than one command is refused one by one",
+      "raw": "{\"version\": 1, \"tools\": {\"umi; rm -rf ~\": {}, \"umi && x\": {}, \"$(x)\": {}, \"a b\": {}, \"\": {}, \".\": {}, \"/\": {}, \"/opt/with space/x\": {}, \"/opt/bad)\": {}, \"/opt/bin/*\": {}, \"ok-tool\": {}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {},
+          "tools": {
+            "ok-tool": {
+              "dirs": []
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": null,
+            "tool": "",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "$(x)",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": ".",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "/",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "/opt/bad)",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "/opt/bin/*",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "/opt/with space/x",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "a b",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "umi && x",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "umi; rm -rf ~",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a relative tool path is refused as not absolute",
+      "raw": "{\"version\": 1, \"tools\": {\"../bin/x\": {}, \"bin/x\": {}, \"umi/\": {}, \"umi\": {}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {},
+          "tools": {
+            "umi": {
+              "dirs": []
+            }
+          }
+        },
+        "rejected": [
+          {
+            "project": null,
+            "tool": "../bin/x",
+            "reason": "path_not_absolute"
+          },
+          {
+            "project": null,
+            "tool": "bin/x",
+            "reason": "path_not_absolute"
+          },
+          {
+            "project": null,
+            "tool": "umi/",
+            "reason": "path_not_absolute"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a tool entry that is not an object, or has a bad extra folder, is refused",
+      "raw": "{\"version\": 1, \"tools\": {\"/abs/bin/a\": \"yes\", \"/abs/bin/b\": {\"dirs\": [\"work\"]}, \"/abs/bin/c\": {\"dirs\": \"x\"}, \"/abs/bin/d\": {\"dirs\": [\"/\"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "tool": "/abs/bin/a",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "/abs/bin/b",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "/abs/bin/c",
+            "reason": "invalid_entry"
+          },
+          {
+            "project": null,
+            "tool": "/abs/bin/d",
+            "reason": "invalid_entry"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two spellings of one tool path keep only the folders both allow",
+      "raw": "{\"version\": 1, \"tools\": {\"/abs/bin/t\": {\"dirs\": [\"/abs/a\", \"/abs/b\"]}, \"/abs/bin/t/\": {\"dirs\": [\"/abs/b\"]}}}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {},
+          "tools": {
+            "/abs/bin/t": {
+              "dirs": ["/abs/b"]
+            }
+          }
+        },
+        "rejected": []
+      }
+    },
+    {
+      "name": "a tools block that is not an object refuses the file",
+      "raw": "{\"version\": 1, \"tools\": [\"umi\"]}",
+      "expected": {
+        "policy": {
+          "version": 1,
+          "supervisor": {
+            "provider": "claude",
+            "model": null,
+            "chrome": false
+          },
+          "maxRunningChildren": 4,
+          "projects": {},
+          "skills": {},
+          "tools": {}
+        },
+        "rejected": [
+          {
+            "project": null,
+            "reason": "malformed"
+          }
+        ]
       }
     }
   ],
@@ -3461,6 +3724,35 @@
     "dirs are folders besides the run folder the file tools may use (passed as --add-dir). Each must be absolute, not the root, and free of the characters a pattern may not hold; otherwise the skill entry is invalid_entry. Trailing slashes are dropped, repeats removed.",
     "Two keys that name one folder keep only the patterns both allow.",
     "Rejected skill entries are listed as { project: null, skill: <key as written>, reason }."
+  ],
+  "toolRules": [
+    "A tool entry is keyed by a bare command name (letters, digits and . _ + -, with at least one letter or digit) or by the absolute path of its binary; a path loses its trailing slashes.",
+    "Each tool becomes two rules, Bash(<tool>) and Bash(<tool> *): only commands that start with exactly that tool. Claude Code checks each part of a chained command on its own.",
+    "A key that is neither a bare name nor an absolute path without whitespace, brackets, quotes, backticks, backslashes, control characters or * (or is /) refuses that entry (invalid_entry); a relative path containing / is path_not_absolute.",
+    "dirs work as for skills: extra folders for the file tools (--add-dir), absolute, not the root; otherwise the entry is invalid_entry.",
+    "Two keys that name one tool keep only the folders both allow. Bash is in the supervisor's tool set as soon as one tool is approved.",
+    "An absolute path whose file is gone at launch is left out, as a missing skill folder is.",
+    "Rejected tool entries are listed as { project: null, tool: <key as written>, reason }."
+  ],
+  "unrestrictedTools": [
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "python",
+    "python3",
+    "node",
+    "deno",
+    "bun",
+    "npx",
+    "pnpm",
+    "npm",
+    "env",
+    "xargs",
+    "ruby",
+    "perl",
+    "osascript",
+    "sudo"
   ],
   "pmServerNames": [
     {
