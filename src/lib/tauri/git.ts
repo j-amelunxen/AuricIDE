@@ -204,6 +204,7 @@ export interface GitWorktree {
   isAuric: boolean;
   dirty: boolean;
   branchAhead: boolean;
+  carriedOver?: string[];
 }
 
 export async function addGitWorktree(repoPath: string, name: string): Promise<GitWorktree> {

@@ -104,6 +104,32 @@ Supervisor follow-up: `remove_worktree` still reports a missing folder as
 an outcome after cleanup and passing it to the control socket; no outcome is
 inferred from the folder's absence.
 
+### 4.5 Agent Worktree Carry Over (Included Files)
+
+When an agent worktree is created (`git_worktree_add_impl`), git-ignored local configuration, environment variables, code graph index databases, and dependencies are carried over from the main checkout so that agents operating inside isolated worktrees have the necessary environment:
+
+1. **Configuration Precedence**:
+   - `<project>/.auric/worktree-include`
+   - `<project>/.worktreeinclude` (standard Claude Code compatibility)
+   - Built-in defaults if neither file exists:
+     - `.env` (`copy`)
+     - `.env.local` (`copy`)
+     - `.env.*` (`copy`)
+     - `.codegraph` (`copy`, copying index databases and skipping `.sock` and `*.pid` runtime files)
+     - `node_modules` (`symlink`)
+
+2. **File Syntax & Modes**:
+   - Gitignore-style patterns (supports `#` comments, wildcards `*`, and `?`).
+   - `copy: <pattern>`: recursively copies files or directories. Edits in the worktree remain isolated and never modify the main checkout.
+   - `symlink: <pattern>`: creates a filesystem symlink to the main checkout. Used for heavy dependencies where copying is too slow.
+   - Plain `<pattern>` lines default to `copy` for compatibility with `.worktreeinclude`.
+
+3. **Invariants & Logging**:
+   - Only untracked, git-ignored entries are carried over (`repo.is_path_ignored`). Tracked files already present in HEAD are skipped.
+   - Missing entries are skipped silently.
+   - Carried-over entries are returned in `GitWorktree.carriedOver` and reported in the agent's startup log:
+     `[worktree] Carried over from main checkout: <entry> (<mode>), ...`
+
 ---
 
 ## 5. Dependencies
@@ -115,8 +141,11 @@ inferred from the folder's absence.
 
 ## 6. Relevant Source Paths
 
-- `src-tauri/src/git.rs` — Comprehensive Git implementation using `git2-rs` (libgit2).
+- `src-tauri/src/git/` — Git implementations using `git2-rs` (libgit2).
+- `src-tauri/src/git/worktree_include.rs` — Worktree include pattern parsing and carry-over logic.
+- `src-tauri/src/git/worktrees.rs` — Worktree creation, listing, removal, and merge operations.
 - `src-tauri/src/ignored_repos.rs` — Rust backend ignored repository filtering.
 - `src/lib/config/ignoredRepos.ts` — Frontend ignored repository configuration.
 - `src/lib/store/gitSlice.ts` — Zustand store managing per-repo states, staging, and active repo.
+- `src/lib/store/agent/agentLifecycle.ts` — Spawning agents with worktrees and recording carry-over output.
 - `src/app/components/git/` — Git Changes panel and history viewer components.
