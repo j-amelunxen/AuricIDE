@@ -1,0 +1,334 @@
+{
+  "formatVersion": 1,
+  "id": "system.conductor",
+  "title": "AuricIDE conductor loop",
+  "description": "The conductor: conductorSlice starts and halts runs, conductorTick decides each step (spawn ticket agents, goal and planning agents, close finished sub-goals, hand human stations over, review, end on blockers). The scheduled-run gate and the judge backend live in src/lib/conductor.",
+  "nodes": [
+    {
+      "id": "slice",
+      "label": "Conductor slice",
+      "preset": "core",
+      "group": "entry",
+      "level": 0,
+      "weight": 0.8,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "499"
+        }
+      ],
+      "position": [-2.15, 0, 0]
+    },
+    {
+      "id": "scheduledRun",
+      "label": "Scheduled run gate",
+      "preset": "sphere",
+      "group": "entry",
+      "level": 0,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "2"
+        }
+      ],
+      "position": [2.15, 0, 0]
+    },
+    {
+      "id": "tick",
+      "label": "Conductor tick",
+      "preset": "core",
+      "group": "loop",
+      "level": 1,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "561"
+        }
+      ],
+      "position": [0, -5.8, 0]
+    },
+    {
+      "id": "goalAgents",
+      "label": "Goal agents",
+      "preset": "rings",
+      "group": "loop",
+      "level": 2,
+      "weight": 0.6,
+      "position": [-7.7, -11.4, 0]
+    },
+    {
+      "id": "goalSweep",
+      "label": "Goal sweep",
+      "preset": "rings",
+      "group": "loop",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-11.8, -11.4, 0]
+    },
+    {
+      "id": "stationGoals",
+      "label": "Station goals",
+      "preset": "rings",
+      "group": "loop",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-3.6, -11.4, 0]
+    },
+    {
+      "id": "humanStations",
+      "label": "Human stations",
+      "preset": "box",
+      "group": "loop",
+      "level": 2,
+      "weight": 0.4,
+      "position": [0.3, -11.4, 0]
+    },
+    {
+      "id": "review",
+      "label": "Review",
+      "preset": "rings",
+      "group": "loop",
+      "level": 2,
+      "weight": 0.5,
+      "position": [4.2, -11.4, 0]
+    },
+    {
+      "id": "runBlockers",
+      "label": "Run blockers",
+      "preset": "box",
+      "group": "loop",
+      "level": 2,
+      "weight": 0.4,
+      "position": [8.1, -11.4, 0]
+    },
+    {
+      "id": "spawnFailure",
+      "label": "Spawn failure",
+      "preset": "box",
+      "group": "loop",
+      "level": 2,
+      "weight": 0.3,
+      "position": [11.8, -11.4, 0]
+    },
+    {
+      "id": "helpers",
+      "label": "Helpers and types",
+      "preset": "box",
+      "group": "support",
+      "level": 3,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "3"
+        }
+      ],
+      "position": [-1.9, -16.4, 0]
+    },
+    {
+      "id": "judge",
+      "label": "Judge backend",
+      "preset": "box",
+      "group": "support",
+      "level": 3,
+      "weight": 0.4,
+      "position": [1.9, -16.4, 0]
+    },
+    {
+      "id": "goalsStore",
+      "label": "Goals slice",
+      "preset": "stack",
+      "group": "outside",
+      "level": 4,
+      "weight": 0.3,
+      "position": [-3.6, -21.1, 0]
+    },
+    {
+      "id": "agentStore",
+      "label": "Agent slice",
+      "preset": "stack",
+      "group": "outside",
+      "level": 4,
+      "weight": 0.3,
+      "position": [0, -21.1, 0]
+    },
+    {
+      "id": "ipc",
+      "label": "IPC wrappers",
+      "preset": "box",
+      "group": "outside",
+      "level": 4,
+      "weight": 0.3,
+      "position": [3.6, -21.1, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "slice",
+      "to": "tick",
+      "kind": "dependency"
+    },
+    {
+      "from": "slice",
+      "to": "review",
+      "kind": "dependency"
+    },
+    {
+      "from": "slice",
+      "to": "helpers",
+      "kind": "dependency"
+    },
+    {
+      "from": "slice",
+      "to": "agentStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "slice",
+      "to": "goalsStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "slice",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "scheduledRun",
+      "to": "slice",
+      "kind": "dependency",
+      "label": "startConductor"
+    },
+    {
+      "from": "tick",
+      "to": "goalAgents",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "goalSweep",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "humanStations",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "review",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "runBlockers",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "spawnFailure",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "stationGoals",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "helpers",
+      "kind": "dependency"
+    },
+    {
+      "from": "tick",
+      "to": "goalsStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "goalAgents",
+      "to": "helpers",
+      "kind": "dependency"
+    },
+    {
+      "from": "goalAgents",
+      "to": "spawnFailure",
+      "kind": "dependency"
+    },
+    {
+      "from": "goalSweep",
+      "to": "goalsStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "humanStations",
+      "to": "goalsStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "stationGoals",
+      "to": "goalsStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "stationGoals",
+      "to": "helpers",
+      "kind": "dependency"
+    },
+    {
+      "from": "review",
+      "to": "judge",
+      "kind": "dependency"
+    },
+    {
+      "from": "review",
+      "to": "helpers",
+      "kind": "dependency"
+    },
+    {
+      "from": "runBlockers",
+      "to": "goalAgents",
+      "kind": "dependency"
+    },
+    {
+      "from": "runBlockers",
+      "to": "goalsStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "helpers",
+      "to": "stationGoals",
+      "kind": "dependency"
+    },
+    {
+      "from": "helpers",
+      "to": "agentStore",
+      "kind": "dependency"
+    },
+    {
+      "from": "helpers",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "judge",
+      "to": "ipc",
+      "kind": "dependency"
+    }
+  ],
+  "tour": [
+    "slice",
+    "tick",
+    "goalAgents",
+    "goalSweep",
+    "humanStations",
+    "review",
+    "scheduledRun",
+    "goalsStore"
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

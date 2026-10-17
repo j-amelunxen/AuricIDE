@@ -1,0 +1,385 @@
+{
+  "formatVersion": 1,
+  "id": "system.control-socket",
+  "title": "Control socket",
+  "description": "NDJSON control socket (src-tauri/src/control_socket): admits callers by PID walk, answers list/read/type in Rust, hands spawn and kill to the frontend bridge, scopes supervisors to their children, and checks supervisor policy (src-tauri/src/supervisor).",
+  "nodes": [
+    {
+      "id": "dispatcher",
+      "label": "mod.rs (Dispatcher)",
+      "preset": "core",
+      "group": "socket",
+      "level": 1,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "1161"
+        }
+      ],
+      "position": [3.65, -5.6, 0]
+    },
+    {
+      "id": "protocol",
+      "label": "protocol.rs",
+      "preset": "stack",
+      "group": "socket",
+      "level": 3,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "983"
+        }
+      ],
+      "position": [3.65, -16.5, 0]
+    },
+    {
+      "id": "caller",
+      "label": "caller.rs",
+      "preset": "sphere",
+      "group": "socket",
+      "level": 2,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "280"
+        }
+      ],
+      "position": [-9.35, -11.2, 0]
+    },
+    {
+      "id": "projects",
+      "label": "projects.rs",
+      "preset": "box",
+      "group": "socket",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "462"
+        }
+      ],
+      "position": [-5.45, -11.2, 0]
+    },
+    {
+      "id": "supervised",
+      "label": "supervised.rs",
+      "preset": "rings",
+      "group": "supervisor scope",
+      "level": 2,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "277"
+        }
+      ],
+      "position": [1.55, -11.2, 0]
+    },
+    {
+      "id": "linkSpawn",
+      "label": "link_spawn.rs",
+      "preset": "box",
+      "group": "supervisor scope",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "200"
+        }
+      ],
+      "position": [5.55, -11.2, 0]
+    },
+    {
+      "id": "linkPolicy",
+      "label": "link_policy.rs",
+      "preset": "box",
+      "group": "supervisor scope",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "138"
+        }
+      ],
+      "position": [9.35, -11.2, 0]
+    },
+    {
+      "id": "supervisorMod",
+      "label": "supervisor/mod.rs",
+      "preset": "rings",
+      "group": "policy",
+      "level": 3,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "1113"
+        }
+      ],
+      "position": [-3.65, -16.5, 0]
+    },
+    {
+      "id": "supervisorPolicy",
+      "label": "supervisor/policy.rs",
+      "preset": "cylinder",
+      "group": "policy",
+      "level": 4,
+      "weight": 0.7,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "1330"
+        }
+      ],
+      "position": [3.5, -21.9, 0]
+    },
+    {
+      "id": "bridge",
+      "label": "controlBridge.ts",
+      "preset": "rings",
+      "group": "frontend",
+      "level": 0,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "374"
+        }
+      ],
+      "position": [-3.45, 0, 0]
+    },
+    {
+      "id": "contract",
+      "label": "agentControl.contract.ts",
+      "preset": "box",
+      "group": "frontend",
+      "level": 1,
+      "weight": 0.3,
+      "position": [-3.65, -5.6, 0]
+    },
+    {
+      "id": "agents",
+      "label": "Agent manager",
+      "preset": "core",
+      "group": "neighbours",
+      "level": 4,
+      "weight": 0.3,
+      "position": [-3.5, -21.9, 0]
+    },
+    {
+      "id": "supervisorLink",
+      "label": "Supervisor link",
+      "preset": "box",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [3.45, 0, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "dispatcher",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "dispatcher",
+      "to": "caller",
+      "kind": "calls",
+      "label": "PID walk"
+    },
+    {
+      "from": "dispatcher",
+      "to": "supervised",
+      "kind": "calls",
+      "label": "supervisor scope"
+    },
+    {
+      "from": "dispatcher",
+      "to": "projects",
+      "kind": "calls",
+      "label": "list_projects"
+    },
+    {
+      "from": "dispatcher",
+      "to": "linkPolicy",
+      "kind": "calls"
+    },
+    {
+      "from": "dispatcher",
+      "to": "linkSpawn",
+      "kind": "dependency"
+    },
+    {
+      "from": "dispatcher",
+      "to": "supervisorMod",
+      "kind": "calls",
+      "label": "current policy"
+    },
+    {
+      "from": "dispatcher",
+      "to": "supervisorPolicy",
+      "kind": "dependency"
+    },
+    {
+      "from": "dispatcher",
+      "to": "agents",
+      "kind": "dataflow",
+      "label": "console, results, input"
+    },
+    {
+      "from": "dispatcher",
+      "to": "bridge",
+      "kind": "event",
+      "label": "control-request"
+    },
+    {
+      "from": "bridge",
+      "to": "dispatcher",
+      "kind": "calls",
+      "label": "control_respond"
+    },
+    {
+      "from": "bridge",
+      "to": "contract",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervised",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervised",
+      "to": "projects",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervised",
+      "to": "supervisorMod",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervised",
+      "to": "agents",
+      "kind": "dependency"
+    },
+    {
+      "from": "linkSpawn",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "linkSpawn",
+      "to": "supervised",
+      "kind": "dependency"
+    },
+    {
+      "from": "linkSpawn",
+      "to": "supervisorMod",
+      "kind": "dependency"
+    },
+    {
+      "from": "linkSpawn",
+      "to": "agents",
+      "kind": "dependency"
+    },
+    {
+      "from": "linkPolicy",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "linkPolicy",
+      "to": "supervisorLink",
+      "kind": "dependency"
+    },
+    {
+      "from": "projects",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "protocol",
+      "to": "supervisorPolicy",
+      "kind": "dependency"
+    },
+    {
+      "from": "protocol",
+      "to": "supervisorLink",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisorMod",
+      "to": "supervisorPolicy",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisorMod",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisorMod",
+      "to": "agents",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisorLink",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "supervisorLink",
+      "to": "linkSpawn",
+      "kind": "calls",
+      "label": "job spawn"
+    }
+  ],
+  "tour": [
+    "dispatcher",
+    "caller",
+    "supervised",
+    "bridge",
+    "protocol",
+    "supervisorMod",
+    "supervisorPolicy",
+    "agents"
+  ],
+  "annotations": [
+    {
+      "id": "facts",
+      "preset": "hud-panel",
+      "text": "Control socket in numbers",
+      "rows": [
+        {
+          "label": "control_socket modules (non-test)",
+          "value": "7"
+        },
+        {
+          "label": "supervisor modules",
+          "value": "3"
+        },
+        {
+          "label": "bridge listeners before ready",
+          "value": "2"
+        },
+        {
+          "label": "supervisor/attachments.rs",
+          "value": "not drawn (inbox only)"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

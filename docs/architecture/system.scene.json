@@ -1,0 +1,466 @@
+{
+  "formatVersion": 1,
+  "id": "system",
+  "title": "AuricIDE system",
+  "description": "Tauri v2 desktop IDE: a Next.js frontend talks to a Rust backend over IPC. The backend runs AI agent CLIs in PTYs, serves an MCP server for project management, and opens two local sockets for outside control.",
+  "nodes": [
+    {
+      "id": "ui",
+      "label": "Next.js UI",
+      "preset": "rings",
+      "group": "frontend",
+      "level": 0,
+      "weight": 0.8,
+      "metrics": [
+        {
+          "label": "files in src/app",
+          "value": "396"
+        }
+      ],
+      "position": [-3.55, 0, 0],
+      "detail": "./ui.scene.json"
+    },
+    {
+      "id": "outside",
+      "label": "Outside clients",
+      "preset": "sphere",
+      "group": "external",
+      "level": 0,
+      "weight": 0.3,
+      "position": [3.55, 0, 0]
+    },
+    {
+      "id": "store",
+      "label": "Zustand store",
+      "preset": "stack",
+      "params": {
+        "layers": 4
+      },
+      "group": "frontend",
+      "level": 1,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "slices",
+          "value": "35"
+        }
+      ],
+      "position": [-4.2, -5.5, 0],
+      "detail": "./store.scene.json"
+    },
+    {
+      "id": "conductor",
+      "label": "Conductor loop",
+      "preset": "rings",
+      "group": "frontend",
+      "level": 1,
+      "weight": 0.6,
+      "position": [0.1, -5.5, 0],
+      "detail": "./conductor.scene.json"
+    },
+    {
+      "id": "ipc",
+      "label": "IPC wrappers",
+      "preset": "box",
+      "group": "frontend",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "wrapper files",
+          "value": "46"
+        }
+      ],
+      "position": [4.2, -5.5, 0]
+    },
+    {
+      "id": "backend",
+      "label": "Rust backend (commands)",
+      "preset": "core",
+      "group": "backend",
+      "level": 2,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "rust files",
+          "value": "175"
+        }
+      ],
+      "position": [3.75, -11.2, 0],
+      "detail": "./backend.scene.json"
+    },
+    {
+      "id": "agents",
+      "label": "Agent manager",
+      "preset": "core",
+      "group": "fleet",
+      "level": 3,
+      "weight": 0.9,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "rust files",
+          "value": "15"
+        }
+      ],
+      "position": [-8.9, -17.1, 0],
+      "detail": "./agents.scene.json"
+    },
+    {
+      "id": "controlSocket",
+      "label": "Control socket",
+      "preset": "rings",
+      "group": "fleet",
+      "level": 3,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "rust files",
+          "value": "8"
+        }
+      ],
+      "position": [-13.4, -17.1, 0],
+      "detail": "./control-socket.scene.json"
+    },
+    {
+      "id": "supervisorLink",
+      "label": "Supervisor link",
+      "preset": "rings",
+      "group": "fleet",
+      "level": 2,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "rust files",
+          "value": "14"
+        }
+      ],
+      "position": [-3.75, -11.2, 0],
+      "detail": "./supervisor-link.scene.json"
+    },
+    {
+      "id": "supervisor",
+      "label": "Supervisor policy",
+      "preset": "box",
+      "group": "fleet",
+      "level": 4,
+      "weight": 0.4,
+      "position": [-6.95, -22.7, 0]
+    },
+    {
+      "id": "notify",
+      "label": "Notifications, schedules, inbox",
+      "preset": "rings",
+      "group": "backend",
+      "level": 3,
+      "weight": 0.5,
+      "position": [-1.5, -17.1, 0],
+      "detail": "./notify.scene.json"
+    },
+    {
+      "id": "git",
+      "label": "Git (git2)",
+      "preset": "rings",
+      "group": "backend",
+      "level": 3,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "rust files",
+          "value": "15"
+        }
+      ],
+      "position": [2.5, -17.1, 0],
+      "detail": "./git.scene.json"
+    },
+    {
+      "id": "usage",
+      "label": "Usage and cost",
+      "preset": "rings",
+      "group": "backend",
+      "level": 4,
+      "weight": 0.4,
+      "position": [-0.15, -22.7, 0],
+      "detail": "./usage.scene.json"
+    },
+    {
+      "id": "videoImport",
+      "label": "Video import",
+      "preset": "box",
+      "group": "backend",
+      "level": 3,
+      "weight": 0.3,
+      "position": [6.3, -17.1, 0]
+    },
+    {
+      "id": "mcp",
+      "label": "MCP server (auric-pm)",
+      "preset": "exploded-stack",
+      "group": "mcp",
+      "level": 3,
+      "weight": 0.8,
+      "metrics": [
+        {
+          "label": "tool files",
+          "value": "25"
+        }
+      ],
+      "position": [13.4, -17.1, 0],
+      "detail": "./mcp.scene.json"
+    },
+    {
+      "id": "projectDb",
+      "label": "Project DB (.auric)",
+      "preset": "cylinder",
+      "group": "storage",
+      "level": 5,
+      "weight": 0.7,
+      "position": [2.1, -28.1, 0]
+    },
+    {
+      "id": "appData",
+      "label": "App data stores",
+      "preset": "cylinder",
+      "group": "storage",
+      "level": 5,
+      "weight": 0.5,
+      "position": [-2.1, -28.1, 0]
+    },
+    {
+      "id": "agentClis",
+      "label": "Agent CLIs",
+      "preset": "particle-shell",
+      "group": "external",
+      "level": 4,
+      "weight": 0.7,
+      "position": [6.95, -22.7, 0]
+    },
+    {
+      "id": "llmApis",
+      "label": "LLM HTTP APIs",
+      "preset": "box",
+      "group": "external",
+      "level": 6,
+      "weight": 0.3,
+      "position": [-1.75, -33.1, 0]
+    },
+    {
+      "id": "machineTools",
+      "label": "ffmpeg, uv, parakeet",
+      "preset": "box",
+      "group": "external",
+      "level": 6,
+      "weight": 0.2,
+      "position": [1.75, -33.1, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "ui",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "conductor",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "conductor",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "store",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "ipc",
+      "to": "backend",
+      "kind": "calls",
+      "label": "invoke"
+    },
+    {
+      "from": "backend",
+      "to": "ui",
+      "kind": "event",
+      "label": "Tauri events"
+    },
+    {
+      "from": "backend",
+      "to": "agents",
+      "kind": "calls"
+    },
+    {
+      "from": "backend",
+      "to": "git",
+      "kind": "calls"
+    },
+    {
+      "from": "backend",
+      "to": "notify",
+      "kind": "calls"
+    },
+    {
+      "from": "backend",
+      "to": "usage",
+      "kind": "calls"
+    },
+    {
+      "from": "backend",
+      "to": "videoImport",
+      "kind": "calls"
+    },
+    {
+      "from": "backend",
+      "to": "mcp",
+      "kind": "calls",
+      "label": "spawns"
+    },
+    {
+      "from": "backend",
+      "to": "projectDb",
+      "kind": "dataflow",
+      "label": "rusqlite"
+    },
+    {
+      "from": "backend",
+      "to": "llmApis",
+      "kind": "calls",
+      "label": "reqwest"
+    },
+    {
+      "from": "agents",
+      "to": "agentClis",
+      "kind": "calls",
+      "label": "PTY spawn"
+    },
+    {
+      "from": "agents",
+      "to": "usage",
+      "kind": "dataflow",
+      "label": "books runs"
+    },
+    {
+      "from": "agentClis",
+      "to": "mcp",
+      "kind": "calls",
+      "label": "MCP stdio"
+    },
+    {
+      "from": "agentClis",
+      "to": "usage",
+      "kind": "dataflow",
+      "label": "transcripts"
+    },
+    {
+      "from": "usage",
+      "to": "projectDb",
+      "kind": "dataflow"
+    },
+    {
+      "from": "mcp",
+      "to": "projectDb",
+      "kind": "dataflow",
+      "label": "better-sqlite3"
+    },
+    {
+      "from": "mcp",
+      "to": "appData",
+      "kind": "dataflow",
+      "label": "notifications"
+    },
+    {
+      "from": "mcp",
+      "to": "controlSocket",
+      "kind": "calls",
+      "label": "--control"
+    },
+    {
+      "from": "outside",
+      "to": "mcp",
+      "kind": "calls",
+      "label": "auric-mcp"
+    },
+    {
+      "from": "outside",
+      "to": "supervisorLink",
+      "kind": "calls",
+      "label": "WebSocket"
+    },
+    {
+      "from": "supervisorLink",
+      "to": "controlSocket",
+      "kind": "dependency",
+      "label": "dispatcher"
+    },
+    {
+      "from": "controlSocket",
+      "to": "agents",
+      "kind": "calls"
+    },
+    {
+      "from": "controlSocket",
+      "to": "supervisor",
+      "kind": "dependency"
+    },
+    {
+      "from": "controlSocket",
+      "to": "ui",
+      "kind": "event",
+      "label": "control-request"
+    },
+    {
+      "from": "supervisor",
+      "to": "appData",
+      "kind": "dataflow"
+    },
+    {
+      "from": "notify",
+      "to": "appData",
+      "kind": "dataflow"
+    },
+    {
+      "from": "notify",
+      "to": "projectDb",
+      "kind": "dataflow",
+      "label": "inbox tickets"
+    },
+    {
+      "from": "videoImport",
+      "to": "machineTools",
+      "kind": "calls"
+    }
+  ],
+  "tour": ["ui", "store", "backend", "agents", "agentClis", "mcp", "controlSocket", "projectDb"],
+  "annotations": [
+    {
+      "id": "facts",
+      "text": "AuricIDE at a glance",
+      "preset": "hud-panel",
+      "rows": [
+        {
+          "label": "store slices",
+          "value": "35"
+        },
+        {
+          "label": "IPC wrapper files",
+          "value": "46"
+        },
+        {
+          "label": "rust files",
+          "value": "175"
+        },
+        {
+          "label": "MCP tool files",
+          "value": "25"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

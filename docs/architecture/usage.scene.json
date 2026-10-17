@@ -1,0 +1,326 @@
+{
+  "formatVersion": 1,
+  "id": "system.usage",
+  "title": "Usage and cost",
+  "description": "Three usage features: cc_usage reports what agent CLIs consumed from their transcripts, agent_usage books each agent run with tokens and cost per ticket and goal, usage_limits tracks how full each CLI quota window is right now. agent_usage reuses the cc_usage price list and scanner.",
+  "nodes": [
+    {
+      "id": "ccMod",
+      "label": "cc_usage/mod.rs",
+      "preset": "rings",
+      "group": "cc_usage",
+      "level": 1,
+      "weight": 0.6,
+      "position": [-2, -5.1, 0]
+    },
+    {
+      "id": "manifest",
+      "label": "manifest.rs (plugins)",
+      "preset": "box",
+      "group": "cc_usage",
+      "level": 3,
+      "weight": 0.5,
+      "position": [5.8, -15.9, 0]
+    },
+    {
+      "id": "pricing",
+      "label": "pricing.rs",
+      "preset": "core",
+      "group": "cc_usage",
+      "level": 3,
+      "weight": 0.8,
+      "accent": true,
+      "position": [1.5, -15.9, 0]
+    },
+    {
+      "id": "scan",
+      "label": "scan.rs (transcripts)",
+      "preset": "rings",
+      "group": "cc_usage",
+      "level": 2,
+      "weight": 0.6,
+      "position": [-6.15, -10.5, 0]
+    },
+    {
+      "id": "report",
+      "label": "report/",
+      "preset": "stack",
+      "group": "cc_usage",
+      "level": 2,
+      "weight": 0.5,
+      "params": {
+        "layers": 2
+      },
+      "position": [-2.05, -10.5, 0]
+    },
+    {
+      "id": "auCapture",
+      "label": "agent_usage/capture.rs",
+      "preset": "core",
+      "group": "agent_usage",
+      "level": 1,
+      "weight": 0.8,
+      "accent": true,
+      "position": [9.2, -5.1, 0]
+    },
+    {
+      "id": "auParse",
+      "label": "claude.rs + codex.rs",
+      "preset": "rings",
+      "group": "agent_usage",
+      "level": 2,
+      "weight": 0.6,
+      "position": [5.05, -10.5, 0]
+    },
+    {
+      "id": "auRecord",
+      "label": "record.rs",
+      "preset": "box",
+      "group": "agent_usage",
+      "level": 2,
+      "weight": 0.5,
+      "position": [9.15, -10.5, 0]
+    },
+    {
+      "id": "auStore",
+      "label": "store.rs (pm_agent_usage)",
+      "preset": "cylinder",
+      "group": "agent_usage",
+      "level": 2,
+      "weight": 0.6,
+      "position": [13.25, -10.5, 0]
+    },
+    {
+      "id": "auReprice",
+      "label": "reprice.rs",
+      "preset": "box",
+      "group": "agent_usage",
+      "level": 1,
+      "weight": 0.4,
+      "position": [5, -5.1, 0]
+    },
+    {
+      "id": "ulMod",
+      "label": "usage_limits/mod.rs",
+      "preset": "rings",
+      "group": "usage_limits",
+      "level": 1,
+      "weight": 0.6,
+      "position": [-9.2, -5.1, 0]
+    },
+    {
+      "id": "ulReaders",
+      "label": "claude.rs + codex.rs",
+      "preset": "box",
+      "group": "usage_limits",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-13.25, -10.5, 0]
+    },
+    {
+      "id": "ulContract",
+      "label": "contract, store, history",
+      "preset": "cylinder",
+      "group": "usage_limits",
+      "level": 3,
+      "weight": 0.5,
+      "position": [-5.8, -15.9, 0]
+    },
+    {
+      "id": "backend",
+      "label": "Backend lib.rs",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [-1.8, 0, 0]
+    },
+    {
+      "id": "agents",
+      "label": "Agent manager",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [1.8, 0, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "backend",
+      "to": "ccMod",
+      "kind": "calls",
+      "label": "cc_usage_report"
+    },
+    {
+      "from": "backend",
+      "to": "ulMod",
+      "kind": "calls",
+      "label": "runner, commands"
+    },
+    {
+      "from": "backend",
+      "to": "auStore",
+      "kind": "calls",
+      "label": "agent_usage_load"
+    },
+    {
+      "from": "backend",
+      "to": "auReprice",
+      "kind": "calls",
+      "label": "agent_usage_reprice"
+    },
+    {
+      "from": "ccMod",
+      "to": "manifest",
+      "kind": "dependency"
+    },
+    {
+      "from": "ccMod",
+      "to": "scan",
+      "kind": "calls"
+    },
+    {
+      "from": "ccMod",
+      "to": "report",
+      "kind": "calls"
+    },
+    {
+      "from": "pricing",
+      "to": "manifest",
+      "kind": "dependency"
+    },
+    {
+      "from": "scan",
+      "to": "pricing",
+      "kind": "dependency"
+    },
+    {
+      "from": "report",
+      "to": "manifest",
+      "kind": "dependency"
+    },
+    {
+      "from": "report",
+      "to": "pricing",
+      "kind": "dependency"
+    },
+    {
+      "from": "report",
+      "to": "scan",
+      "kind": "dependency"
+    },
+    {
+      "from": "auParse",
+      "to": "pricing",
+      "kind": "dependency"
+    },
+    {
+      "from": "auParse",
+      "to": "scan",
+      "kind": "dependency"
+    },
+    {
+      "from": "auRecord",
+      "to": "auParse",
+      "kind": "dependency"
+    },
+    {
+      "from": "auRecord",
+      "to": "pricing",
+      "kind": "dependency"
+    },
+    {
+      "from": "auRecord",
+      "to": "manifest",
+      "kind": "dependency"
+    },
+    {
+      "from": "auStore",
+      "to": "auRecord",
+      "kind": "dependency"
+    },
+    {
+      "from": "auReprice",
+      "to": "auParse",
+      "kind": "dependency"
+    },
+    {
+      "from": "auReprice",
+      "to": "auRecord",
+      "kind": "dependency"
+    },
+    {
+      "from": "auCapture",
+      "to": "auParse",
+      "kind": "calls"
+    },
+    {
+      "from": "auCapture",
+      "to": "auRecord",
+      "kind": "calls"
+    },
+    {
+      "from": "auCapture",
+      "to": "auStore",
+      "kind": "dataflow",
+      "label": "books run"
+    },
+    {
+      "from": "agents",
+      "to": "auCapture",
+      "kind": "calls"
+    },
+    {
+      "from": "agents",
+      "to": "auParse",
+      "kind": "dependency",
+      "label": "CliResult"
+    },
+    {
+      "from": "ulMod",
+      "to": "ulReaders",
+      "kind": "calls"
+    },
+    {
+      "from": "ulMod",
+      "to": "ulContract",
+      "kind": "dependency"
+    },
+    {
+      "from": "ulReaders",
+      "to": "ulContract",
+      "kind": "dataflow",
+      "label": "snapshots"
+    }
+  ],
+  "tour": ["ccMod", "scan", "pricing", "report", "auCapture", "auStore", "ulMod", "ulReaders"],
+  "annotations": [
+    {
+      "id": "facts",
+      "preset": "hud-panel",
+      "text": "Usage and cost",
+      "rows": [
+        {
+          "label": "cc_usage source files",
+          "value": "7"
+        },
+        {
+          "label": "agent_usage source files",
+          "value": "9"
+        },
+        {
+          "label": "usage_limits source files",
+          "value": "6"
+        },
+        {
+          "label": "compiled-in plugin",
+          "value": "claude-code"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

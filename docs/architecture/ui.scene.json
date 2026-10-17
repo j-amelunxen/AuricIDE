@@ -1,0 +1,377 @@
+{
+  "formatVersion": 1,
+  "id": "system.ui",
+  "title": "AuricIDE UI (Next.js)",
+  "description": "The Next.js frontend in src/app: the main page and its three hooks, the IDE shell that mounts panels and overlays, the tab viewers with the CodeMirror editor, and the feature areas for agents, PM, git and notifications. All of it reads and writes the Zustand store and reaches Rust through the IPC wrappers.",
+  "nodes": [
+    {
+      "id": "page",
+      "label": "Main page",
+      "preset": "sphere",
+      "group": "entry",
+      "level": 0,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "6"
+        }
+      ],
+      "position": [-2.05, 0, 0]
+    },
+    {
+      "id": "agentWindow",
+      "label": "Agent window route",
+      "preset": "sphere",
+      "group": "entry",
+      "level": 0,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "1"
+        }
+      ],
+      "position": [2.05, 0, 0]
+    },
+    {
+      "id": "hooks",
+      "label": "IDE hooks",
+      "preset": "box",
+      "group": "shell",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "3"
+        }
+      ],
+      "position": [-2.25, -5.6, 0]
+    },
+    {
+      "id": "shell",
+      "label": "IDE shell",
+      "preset": "core",
+      "group": "shell",
+      "level": 1,
+      "weight": 0.9,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "53"
+        }
+      ],
+      "position": [2.25, -5.6, 0]
+    },
+    {
+      "id": "viewers",
+      "label": "Tab viewers",
+      "preset": "stack",
+      "group": "editing",
+      "level": 2,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "37"
+        }
+      ],
+      "position": [-6, -11.3, 0]
+    },
+    {
+      "id": "cmEditor",
+      "label": "CodeMirror setup",
+      "preset": "rings",
+      "group": "editing",
+      "level": 3,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "29"
+        }
+      ],
+      "position": [0, -16.7, 0]
+    },
+    {
+      "id": "canvases",
+      "label": "Canvas views",
+      "preset": "rings",
+      "group": "editing",
+      "level": 2,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "27"
+        }
+      ],
+      "position": [-14, -11.3, 0]
+    },
+    {
+      "id": "explorer",
+      "label": "Explorer and outline",
+      "preset": "box",
+      "group": "editing",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "12"
+        }
+      ],
+      "position": [-10.1, -11.3, 0]
+    },
+    {
+      "id": "gitUi",
+      "label": "Git panels",
+      "preset": "rings",
+      "group": "features",
+      "level": 2,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "34"
+        }
+      ],
+      "position": [1.2, -11.3, 0]
+    },
+    {
+      "id": "agentsUi",
+      "label": "Agent fleet UI",
+      "preset": "rings",
+      "group": "features",
+      "level": 2,
+      "weight": 0.8,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "76"
+        }
+      ],
+      "position": [5.5, -11.3, 0]
+    },
+    {
+      "id": "pmUi",
+      "label": "PM and goals UI",
+      "preset": "rings",
+      "group": "features",
+      "level": 2,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "88"
+        }
+      ],
+      "position": [9.9, -11.3, 0]
+    },
+    {
+      "id": "notifyUi",
+      "label": "Notifications and inbox",
+      "preset": "rings",
+      "group": "features",
+      "level": 2,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "34"
+        }
+      ],
+      "position": [14, -11.3, 0]
+    },
+    {
+      "id": "store",
+      "label": "Zustand store",
+      "preset": "stack",
+      "group": "outside",
+      "level": 4,
+      "weight": 0.3,
+      "detail": "./store.scene.json",
+      "position": [-3.55, -21.6, 0]
+    },
+    {
+      "id": "ipc",
+      "label": "IPC wrappers",
+      "preset": "box",
+      "group": "outside",
+      "level": 4,
+      "weight": 0.3,
+      "position": [0.05, -21.6, 0]
+    },
+    {
+      "id": "conductor",
+      "label": "Conductor (scheduled runs)",
+      "preset": "box",
+      "group": "outside",
+      "level": 4,
+      "weight": 0.2,
+      "detail": "./conductor.scene.json",
+      "position": [3.55, -21.6, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "page",
+      "to": "hooks",
+      "kind": "dependency"
+    },
+    {
+      "from": "page",
+      "to": "shell",
+      "kind": "dependency"
+    },
+    {
+      "from": "page",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "hooks",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "hooks",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "agentsUi",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "canvases",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "explorer",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "gitUi",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "notifyUi",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "pmUi",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "viewers",
+      "kind": "dependency"
+    },
+    {
+      "from": "shell",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "viewers",
+      "to": "cmEditor",
+      "kind": "dependency"
+    },
+    {
+      "from": "gitUi",
+      "to": "viewers",
+      "kind": "dependency",
+      "label": "diff viewer"
+    },
+    {
+      "from": "notifyUi",
+      "to": "agentsUi",
+      "kind": "dependency"
+    },
+    {
+      "from": "notifyUi",
+      "to": "conductor",
+      "kind": "dependency",
+      "label": "scheduled run"
+    },
+    {
+      "from": "agentWindow",
+      "to": "agentsUi",
+      "kind": "dependency"
+    },
+    {
+      "from": "agentWindow",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "agentWindow",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "agentsUi",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "agentsUi",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "pmUi",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "pmUi",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "gitUi",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "gitUi",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "notifyUi",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "cmEditor",
+      "to": "store",
+      "kind": "dependency"
+    },
+    {
+      "from": "canvases",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "viewers",
+      "to": "store",
+      "kind": "dependency"
+    }
+  ],
+  "tour": ["page", "hooks", "shell", "viewers", "cmEditor", "agentsUi", "pmUi", "store"],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

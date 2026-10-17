@@ -1,0 +1,329 @@
+{
+  "formatVersion": 1,
+  "id": "system.mcp",
+  "title": "MCP server (auric-pm)",
+  "description": "Inside src/mcp: the FastMCP server, its CLI modes, database access, control-socket client, the config bridge and the tool files grouped by domain.",
+  "nodes": [
+    {
+      "id": "server",
+      "label": "server.ts",
+      "preset": "core",
+      "group": "entry",
+      "level": 0,
+      "weight": 1,
+      "accent": true,
+      "position": [-2.2, 0, 0]
+    },
+    {
+      "id": "cli",
+      "label": "cli.ts",
+      "preset": "box",
+      "group": "entry",
+      "level": 1,
+      "weight": 0.5,
+      "position": [-12.3, -5.8, 0]
+    },
+    {
+      "id": "configBridge",
+      "label": "configBridge.ts",
+      "preset": "sphere",
+      "group": "entry",
+      "level": 0,
+      "weight": 0.4,
+      "position": [2.2, 0, 0]
+    },
+    {
+      "id": "toolsPm",
+      "label": "PM tools",
+      "preset": "rings",
+      "group": "tools",
+      "level": 1,
+      "weight": 0.8,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "11"
+        }
+      ],
+      "position": [-5, -5.8, 0]
+    },
+    {
+      "id": "toolsGoals",
+      "label": "Goal tools",
+      "preset": "rings",
+      "group": "tools",
+      "level": 1,
+      "weight": 0.8,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "6"
+        }
+      ],
+      "position": [-0.4, -5.8, 0]
+    },
+    {
+      "id": "toolsNotify",
+      "label": "Notify and launch tools",
+      "preset": "rings",
+      "group": "tools",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "2"
+        }
+      ],
+      "position": [4, -5.8, 0]
+    },
+    {
+      "id": "toolsAgents",
+      "label": "Agent control tools",
+      "preset": "rings",
+      "group": "tools",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "3"
+        }
+      ],
+      "position": [8.2, -5.8, 0]
+    },
+    {
+      "id": "toolsKnowledge",
+      "label": "Knowledge and canvas tools",
+      "preset": "rings",
+      "group": "tools",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "3"
+        }
+      ],
+      "position": [12.3, -5.8, 0]
+    },
+    {
+      "id": "stationEvidence",
+      "label": "stationEvidence.ts",
+      "preset": "box",
+      "group": "infra",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-1.9, -11.3, 0]
+    },
+    {
+      "id": "db",
+      "label": "db.ts",
+      "preset": "stack",
+      "group": "infra",
+      "level": 2,
+      "weight": 0.7,
+      "position": [-6.1, -11.3, 0]
+    },
+    {
+      "id": "notificationsDb",
+      "label": "notificationsDb.ts",
+      "preset": "stack",
+      "group": "infra",
+      "level": 2,
+      "weight": 0.5,
+      "position": [2.1, -11.3, 0]
+    },
+    {
+      "id": "controlClient",
+      "label": "controlClient.ts",
+      "preset": "box",
+      "group": "infra",
+      "level": 2,
+      "weight": 0.5,
+      "position": [6.1, -11.3, 0]
+    },
+    {
+      "id": "projectDb",
+      "label": "Project DB (.auric)",
+      "preset": "cylinder",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.3,
+      "position": [-3.5, -16.3, 0]
+    },
+    {
+      "id": "appData",
+      "label": "Notifications DB",
+      "preset": "cylinder",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.2,
+      "position": [0, -16.3, 0]
+    },
+    {
+      "id": "controlSocket",
+      "label": "Control socket",
+      "preset": "box",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.3,
+      "position": [3.5, -16.3, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "configBridge",
+      "to": "server",
+      "kind": "calls",
+      "label": "spawns"
+    },
+    {
+      "from": "server",
+      "to": "cli",
+      "kind": "dependency"
+    },
+    {
+      "from": "server",
+      "to": "toolsPm",
+      "kind": "dependency",
+      "label": "registers"
+    },
+    {
+      "from": "server",
+      "to": "toolsGoals",
+      "kind": "dependency",
+      "label": "registers"
+    },
+    {
+      "from": "server",
+      "to": "toolsNotify",
+      "kind": "dependency",
+      "label": "registers"
+    },
+    {
+      "from": "server",
+      "to": "toolsAgents",
+      "kind": "dependency",
+      "label": "registers"
+    },
+    {
+      "from": "server",
+      "to": "toolsKnowledge",
+      "kind": "dependency",
+      "label": "registers"
+    },
+    {
+      "from": "server",
+      "to": "db",
+      "kind": "calls",
+      "label": "openDatabase"
+    },
+    {
+      "from": "server",
+      "to": "notificationsDb",
+      "kind": "calls",
+      "label": "openNotificationsDb"
+    },
+    {
+      "from": "toolsGoals",
+      "to": "toolsPm",
+      "kind": "dependency",
+      "label": "tickets, history, resolve"
+    },
+    {
+      "from": "toolsGoals",
+      "to": "stationEvidence",
+      "kind": "calls"
+    },
+    {
+      "from": "toolsGoals",
+      "to": "notificationsDb",
+      "kind": "dependency"
+    },
+    {
+      "from": "toolsNotify",
+      "to": "notificationsDb",
+      "kind": "dependency"
+    },
+    {
+      "from": "toolsNotify",
+      "to": "toolsGoals",
+      "kind": "dependency",
+      "label": "goalsDb, goalLaunch"
+    },
+    {
+      "from": "toolsNotify",
+      "to": "toolsPm",
+      "kind": "dependency",
+      "label": "resolve"
+    },
+    {
+      "from": "toolsAgents",
+      "to": "controlClient",
+      "kind": "calls"
+    },
+    {
+      "from": "toolsAgents",
+      "to": "toolsPm",
+      "kind": "dependency",
+      "label": "resolve"
+    },
+    {
+      "from": "controlClient",
+      "to": "controlSocket",
+      "kind": "calls",
+      "label": "NDJSON"
+    },
+    {
+      "from": "db",
+      "to": "projectDb",
+      "kind": "dataflow",
+      "label": "better-sqlite3"
+    },
+    {
+      "from": "notificationsDb",
+      "to": "appData",
+      "kind": "dataflow",
+      "label": "better-sqlite3"
+    }
+  ],
+  "tour": ["server", "cli", "toolsPm", "toolsGoals", "stationEvidence", "db", "controlClient"],
+  "annotations": [
+    {
+      "id": "toolFiles",
+      "preset": "hud-panel",
+      "text": "Tool files by domain",
+      "rows": [
+        {
+          "label": "Tool files total",
+          "value": "25"
+        },
+        {
+          "label": "PM",
+          "value": "11 files"
+        },
+        {
+          "label": "Goals and stations",
+          "value": "6 files"
+        },
+        {
+          "label": "Notify and launch",
+          "value": "2 files"
+        },
+        {
+          "label": "Agent control, usage",
+          "value": "3 files"
+        },
+        {
+          "label": "Knowledge, canvas",
+          "value": "3 files"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

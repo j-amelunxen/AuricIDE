@@ -1,0 +1,360 @@
+{
+  "formatVersion": 1,
+  "id": "system.store",
+  "title": "AuricIDE Zustand store",
+  "description": "src/lib/store: one Zustand store combined in index.ts from 35 slices, grouped here by concern. Slices persist through the IPC wrappers and use domain logic from other src/lib folders.",
+  "nodes": [
+    {
+      "id": "index",
+      "label": "Store root",
+      "preset": "core",
+      "group": "core",
+      "level": 0,
+      "weight": 0.9,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "1"
+        }
+      ],
+      "position": [0, 0, 0]
+    },
+    {
+      "id": "infra",
+      "label": "Store helpers",
+      "preset": "box",
+      "group": "core",
+      "level": 2,
+      "weight": 0.3,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "5"
+        }
+      ],
+      "position": [0, -10.8, 0]
+    },
+    {
+      "id": "pm",
+      "label": "PM and requirements",
+      "preset": "stack",
+      "group": "work",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "3"
+        }
+      ],
+      "position": [6.95, -5.7, -2.3]
+    },
+    {
+      "id": "goals",
+      "label": "Goals",
+      "preset": "rings",
+      "group": "work",
+      "level": 1,
+      "weight": 0.8,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "5"
+        }
+      ],
+      "position": [11.35, -5.7, -2.3]
+    },
+    {
+      "id": "conductor",
+      "label": "Conductor",
+      "preset": "rings",
+      "group": "work",
+      "level": 1,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "12"
+        }
+      ],
+      "detail": "./conductor.scene.json",
+      "position": [-9.3, -5.7, 2.3]
+    },
+    {
+      "id": "agents",
+      "label": "Agents",
+      "preset": "rings",
+      "group": "fleet",
+      "level": 1,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "10"
+        }
+      ],
+      "position": [-0.35, -5.7, -2.3]
+    },
+    {
+      "id": "git",
+      "label": "Git, merge, review",
+      "preset": "rings",
+      "group": "workspace",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "6"
+        }
+      ],
+      "position": [-2.1, -5.7, 2.3]
+    },
+    {
+      "id": "workspace",
+      "label": "Files, tabs, projects",
+      "preset": "box",
+      "group": "workspace",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "5"
+        }
+      ],
+      "position": [1.9, -5.7, 2.3]
+    },
+    {
+      "id": "canvas",
+      "label": "Canvas state",
+      "preset": "box",
+      "group": "workspace",
+      "level": 1,
+      "weight": 0.3,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "4"
+        }
+      ],
+      "position": [5.7, -5.7, 2.3]
+    },
+    {
+      "id": "indexes",
+      "label": "Indexes",
+      "preset": "box",
+      "group": "workspace",
+      "level": 1,
+      "weight": 0.3,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "3"
+        }
+      ],
+      "position": [9.3, -5.7, 2.3]
+    },
+    {
+      "id": "notify",
+      "label": "Notifications and inbox",
+      "preset": "rings",
+      "group": "app",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "4"
+        }
+      ],
+      "position": [-11.35, -5.7, -2.3]
+    },
+    {
+      "id": "uiState",
+      "label": "UI state",
+      "preset": "box",
+      "group": "app",
+      "level": 1,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "source files",
+          "value": "7"
+        }
+      ],
+      "position": [-7.45, -5.7, -2.3]
+    },
+    {
+      "id": "ipc",
+      "label": "IPC wrappers",
+      "preset": "box",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.3,
+      "position": [-1.8, -15.4, 0]
+    },
+    {
+      "id": "domain",
+      "label": "Domain libs",
+      "preset": "sphere",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.3,
+      "position": [1.8, -15.4, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "index",
+      "to": "pm",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "goals",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "conductor",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "agents",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "git",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "workspace",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "canvas",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "indexes",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "notify",
+      "kind": "contains"
+    },
+    {
+      "from": "index",
+      "to": "uiState",
+      "kind": "contains"
+    },
+    {
+      "from": "conductor",
+      "to": "goals",
+      "kind": "dependency"
+    },
+    {
+      "from": "conductor",
+      "to": "agents",
+      "kind": "dependency"
+    },
+    {
+      "from": "agents",
+      "to": "goals",
+      "kind": "dependency"
+    },
+    {
+      "from": "goals",
+      "to": "notify",
+      "kind": "dependency"
+    },
+    {
+      "from": "agents",
+      "to": "workspace",
+      "kind": "dependency"
+    },
+    {
+      "from": "pm",
+      "to": "infra",
+      "kind": "dependency"
+    },
+    {
+      "from": "goals",
+      "to": "infra",
+      "kind": "dependency"
+    },
+    {
+      "from": "git",
+      "to": "infra",
+      "kind": "dependency"
+    },
+    {
+      "from": "agents",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "conductor",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "goals",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "git",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "pm",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "canvas",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "workspace",
+      "to": "ipc",
+      "kind": "dependency"
+    },
+    {
+      "from": "agents",
+      "to": "domain",
+      "kind": "dependency"
+    },
+    {
+      "from": "conductor",
+      "to": "domain",
+      "kind": "dependency"
+    },
+    {
+      "from": "git",
+      "to": "domain",
+      "kind": "dependency"
+    },
+    {
+      "from": "goals",
+      "to": "domain",
+      "kind": "dependency"
+    }
+  ],
+  "tour": ["index", "pm", "goals", "conductor", "agents", "git", "notify"],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

@@ -1,0 +1,417 @@
+{
+  "formatVersion": 1,
+  "id": "system.backend",
+  "title": "Rust backend (commands)",
+  "description": "Inside the Tauri backend: lib.rs builds the app, manages state and registers every IPC command; the command files dispatch to the database, provider registry, MCP launcher, integrations and desktop-shell modules. Agents, notifications, git, usage and the sockets have their own scenes.",
+  "nodes": [
+    {
+      "id": "lib",
+      "label": "lib.rs (setup + handlers)",
+      "preset": "core",
+      "group": "entry",
+      "level": 0,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "handler entries",
+          "value": "195"
+        },
+        {
+          "label": "modules declared",
+          "value": "40"
+        }
+      ],
+      "position": [0, 0, 0]
+    },
+    {
+      "id": "appCmds",
+      "label": "app_commands.rs",
+      "preset": "rings",
+      "group": "commands",
+      "level": 1,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "commands",
+          "value": "42"
+        }
+      ],
+      "position": [2.15, -5.7, 0]
+    },
+    {
+      "id": "dbCmds",
+      "label": "db_commands.rs",
+      "preset": "rings",
+      "group": "commands",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "commands",
+          "value": "26"
+        }
+      ],
+      "position": [-2.15, -5.7, 0]
+    },
+    {
+      "id": "agentCmds",
+      "label": "agent + terminal commands",
+      "preset": "rings",
+      "group": "commands",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "commands",
+          "value": "16"
+        }
+      ],
+      "position": [-6.25, -5.7, 0]
+    },
+    {
+      "id": "otherCmds",
+      "label": "fs, watcher, inbox commands",
+      "preset": "rings",
+      "group": "commands",
+      "level": 1,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "commands",
+          "value": "30"
+        }
+      ],
+      "position": [6.25, -5.7, 0]
+    },
+    {
+      "id": "database",
+      "label": "database/ (project SQLite)",
+      "preset": "stack",
+      "group": "services",
+      "level": 2,
+      "weight": 0.9,
+      "params": {
+        "layers": 4
+      },
+      "accent": true,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "13"
+        }
+      ],
+      "position": [-9.1, -11.3, 0]
+    },
+    {
+      "id": "providers",
+      "label": "providers/ + provider policy",
+      "preset": "rings",
+      "group": "services",
+      "level": 2,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "6"
+        }
+      ],
+      "position": [-13.6, -11.3, 0]
+    },
+    {
+      "id": "mcpRs",
+      "label": "mcp.rs (MCP launcher)",
+      "preset": "box",
+      "group": "services",
+      "level": 2,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "1256"
+        }
+      ],
+      "position": [-4.7, -11.3, 0]
+    },
+    {
+      "id": "missions",
+      "label": "missions/",
+      "preset": "box",
+      "group": "services",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "4"
+        }
+      ],
+      "position": [-0.8, -11.3, 0]
+    },
+    {
+      "id": "llmInt",
+      "label": "llm.rs + excalidraw/",
+      "preset": "box",
+      "group": "integrations",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "3"
+        }
+      ],
+      "position": [13.6, -11.3, 0]
+    },
+    {
+      "id": "delivery",
+      "label": "delivery/ (push)",
+      "preset": "box",
+      "group": "integrations",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "files",
+          "value": "6"
+        }
+      ],
+      "position": [9.8, -11.3, 0]
+    },
+    {
+      "id": "appConfig",
+      "label": "app_config.rs (credentials)",
+      "preset": "cylinder",
+      "group": "integrations",
+      "level": 3,
+      "weight": 0.5,
+      "position": [5.2, -16.7, 0]
+    },
+    {
+      "id": "shellUtils",
+      "label": "Desktop shell + prefs",
+      "preset": "box",
+      "group": "services",
+      "level": 2,
+      "weight": 0.4,
+      "position": [3, -11.3, 0]
+    },
+    {
+      "id": "agents",
+      "label": "Agent manager",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 3,
+      "weight": 0.3,
+      "position": [-5.2, -16.7, 0]
+    },
+    {
+      "id": "notify",
+      "label": "Notifications, inbox",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 3,
+      "weight": 0.3,
+      "position": [-1.6, -16.7, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "lib",
+      "to": "appCmds",
+      "kind": "calls",
+      "label": "registers"
+    },
+    {
+      "from": "lib",
+      "to": "dbCmds",
+      "kind": "calls",
+      "label": "registers"
+    },
+    {
+      "from": "lib",
+      "to": "agentCmds",
+      "kind": "calls",
+      "label": "registers"
+    },
+    {
+      "from": "lib",
+      "to": "otherCmds",
+      "kind": "calls",
+      "label": "registers"
+    },
+    {
+      "from": "lib",
+      "to": "database",
+      "kind": "dependency",
+      "label": "DatabaseState"
+    },
+    {
+      "from": "lib",
+      "to": "providers",
+      "kind": "dependency",
+      "label": "registry"
+    },
+    {
+      "from": "lib",
+      "to": "mcpRs",
+      "kind": "dependency",
+      "label": "McpServerState"
+    },
+    {
+      "from": "lib",
+      "to": "delivery",
+      "kind": "calls",
+      "label": "starts worker"
+    },
+    {
+      "from": "lib",
+      "to": "shellUtils",
+      "kind": "calls",
+      "label": "menu, prefs, watchdog"
+    },
+    {
+      "from": "appCmds",
+      "to": "providers",
+      "kind": "calls"
+    },
+    {
+      "from": "appCmds",
+      "to": "llmInt",
+      "kind": "calls",
+      "label": "llm_call, excalidraw"
+    },
+    {
+      "from": "appCmds",
+      "to": "mcpRs",
+      "kind": "calls",
+      "label": "start/stop"
+    },
+    {
+      "from": "appCmds",
+      "to": "notify",
+      "kind": "calls",
+      "label": "notifications, schedules"
+    },
+    {
+      "from": "appCmds",
+      "to": "missions",
+      "kind": "calls"
+    },
+    {
+      "from": "appCmds",
+      "to": "appConfig",
+      "kind": "calls"
+    },
+    {
+      "from": "appCmds",
+      "to": "agents",
+      "kind": "calls"
+    },
+    {
+      "from": "dbCmds",
+      "to": "database",
+      "kind": "calls"
+    },
+    {
+      "from": "dbCmds",
+      "to": "notify",
+      "kind": "calls",
+      "label": "pm overview"
+    },
+    {
+      "from": "agentCmds",
+      "to": "agents",
+      "kind": "calls"
+    },
+    {
+      "from": "agentCmds",
+      "to": "providers",
+      "kind": "calls"
+    },
+    {
+      "from": "agentCmds",
+      "to": "notify",
+      "kind": "calls"
+    },
+    {
+      "from": "otherCmds",
+      "to": "notify",
+      "kind": "calls",
+      "label": "inbox"
+    },
+    {
+      "from": "otherCmds",
+      "to": "shellUtils",
+      "kind": "calls",
+      "label": "recent creations"
+    },
+    {
+      "from": "database",
+      "to": "providers",
+      "kind": "dependency"
+    },
+    {
+      "from": "providers",
+      "to": "agents",
+      "kind": "dependency"
+    },
+    {
+      "from": "mcpRs",
+      "to": "providers",
+      "kind": "dependency"
+    },
+    {
+      "from": "llmInt",
+      "to": "appConfig",
+      "kind": "dependency",
+      "label": "keys"
+    },
+    {
+      "from": "delivery",
+      "to": "appConfig",
+      "kind": "dependency"
+    },
+    {
+      "from": "delivery",
+      "to": "notify",
+      "kind": "dataflow",
+      "label": "notifications"
+    },
+    {
+      "from": "missions",
+      "to": "notify",
+      "kind": "calls",
+      "label": "schedules"
+    }
+  ],
+  "tour": ["lib", "appCmds", "dbCmds", "database", "providers", "mcpRs", "llmInt", "shellUtils"],
+  "annotations": [
+    {
+      "id": "facts",
+      "preset": "hud-panel",
+      "text": "Rust backend (commands)",
+      "rows": [
+        {
+          "label": "rust modules in lib.rs",
+          "value": "40"
+        },
+        {
+          "label": "IPC handler entries",
+          "value": "195"
+        },
+        {
+          "label": "command files",
+          "value": "8"
+        },
+        {
+          "label": "lib.rs lines",
+          "value": "624"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

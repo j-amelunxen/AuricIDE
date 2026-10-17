@@ -1,0 +1,407 @@
+{
+  "formatVersion": 1,
+  "id": "system.agents",
+  "title": "Agent manager",
+  "description": "Rust module src-tauri/src/agents: spawns agent CLIs in PTYs (manager.rs), prepares the launch (project binding, write sandbox, launch folder, MCP guard), buffers and cleans console output, types input into terminals, and books launches, exits and run results.",
+  "nodes": [
+    {
+      "id": "manager",
+      "label": "manager.rs",
+      "preset": "core",
+      "group": "core",
+      "level": 0,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "1514"
+        }
+      ],
+      "position": [-3.65, 0, 0]
+    },
+    {
+      "id": "types",
+      "label": "types.rs",
+      "preset": "box",
+      "group": "core",
+      "level": 3,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "255"
+        }
+      ],
+      "position": [0, -16.2, 0]
+    },
+    {
+      "id": "projectBinding",
+      "label": "project_binding.rs",
+      "preset": "box",
+      "group": "launch setup",
+      "level": 1,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "87"
+        }
+      ],
+      "position": [-5.8, -5.7, 0]
+    },
+    {
+      "id": "writeSandbox",
+      "label": "write_sandbox.rs",
+      "preset": "stack",
+      "group": "launch setup",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "197"
+        }
+      ],
+      "position": [-1.9, -5.7, 0]
+    },
+    {
+      "id": "launchDir",
+      "label": "launch_dir.rs",
+      "preset": "box",
+      "group": "launch setup",
+      "level": 1,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "329"
+        }
+      ],
+      "position": [2, -5.7, 0]
+    },
+    {
+      "id": "mcpGuard",
+      "label": "claude_mcp_guard.rs",
+      "preset": "box",
+      "group": "launch setup",
+      "level": 1,
+      "weight": 0.3,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "151"
+        }
+      ],
+      "position": [5.7, -5.7, 0]
+    },
+    {
+      "id": "launchRuns",
+      "label": "launch_runs.rs",
+      "preset": "rings",
+      "group": "bookkeeping",
+      "level": 2,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "526"
+        }
+      ],
+      "position": [-10.85, -11, 0]
+    },
+    {
+      "id": "persistence",
+      "label": "persistence.rs",
+      "preset": "cylinder",
+      "group": "bookkeeping",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "123"
+        }
+      ],
+      "position": [-12.7, -5.7, 0]
+    },
+    {
+      "id": "runResults",
+      "label": "run_results.rs",
+      "preset": "rings",
+      "group": "bookkeeping",
+      "level": 2,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "323"
+        }
+      ],
+      "position": [-6.65, -11, 0]
+    },
+    {
+      "id": "outputBuffer",
+      "label": "output_buffer.rs",
+      "preset": "stack",
+      "group": "terminal",
+      "level": 1,
+      "weight": 0.7,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "365"
+        }
+      ],
+      "position": [12.7, -5.7, 0]
+    },
+    {
+      "id": "terminalInput",
+      "label": "terminal_input.rs",
+      "preset": "box",
+      "group": "terminal",
+      "level": 2,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "175"
+        }
+      ],
+      "position": [10.85, -11, 0]
+    },
+    {
+      "id": "awaitingInput",
+      "label": "awaiting_input.rs",
+      "preset": "sphere",
+      "group": "terminal",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "89"
+        }
+      ],
+      "position": [6.95, -11, 0]
+    },
+    {
+      "id": "controlSocket",
+      "label": "Control socket",
+      "preset": "rings",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [3.65, 0, 0]
+    },
+    {
+      "id": "agentUsage",
+      "label": "Agent usage capture",
+      "preset": "box",
+      "group": "neighbours",
+      "level": 4,
+      "weight": 0.3,
+      "position": [0, -21.1, 0]
+    },
+    {
+      "id": "providers",
+      "label": "Provider registry",
+      "preset": "box",
+      "group": "neighbours",
+      "level": 2,
+      "weight": 0.3,
+      "position": [0.25, -11, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "manager",
+      "to": "projectBinding",
+      "kind": "dependency"
+    },
+    {
+      "from": "manager",
+      "to": "writeSandbox",
+      "kind": "dependency"
+    },
+    {
+      "from": "manager",
+      "to": "launchDir",
+      "kind": "dependency"
+    },
+    {
+      "from": "manager",
+      "to": "mcpGuard",
+      "kind": "dependency"
+    },
+    {
+      "from": "manager",
+      "to": "launchRuns",
+      "kind": "calls",
+      "label": "launch, exit"
+    },
+    {
+      "from": "manager",
+      "to": "persistence",
+      "kind": "dependency"
+    },
+    {
+      "from": "manager",
+      "to": "runResults",
+      "kind": "calls",
+      "label": "book result"
+    },
+    {
+      "from": "manager",
+      "to": "outputBuffer",
+      "kind": "dataflow",
+      "label": "PTY output"
+    },
+    {
+      "from": "manager",
+      "to": "types",
+      "kind": "dependency"
+    },
+    {
+      "from": "manager",
+      "to": "agentUsage",
+      "kind": "calls",
+      "label": "session id, capture"
+    },
+    {
+      "from": "manager",
+      "to": "providers",
+      "kind": "dependency"
+    },
+    {
+      "from": "manager",
+      "to": "controlSocket",
+      "kind": "dependency",
+      "label": "socket path"
+    },
+    {
+      "from": "launchRuns",
+      "to": "types",
+      "kind": "dependency"
+    },
+    {
+      "from": "persistence",
+      "to": "launchRuns",
+      "kind": "dependency"
+    },
+    {
+      "from": "persistence",
+      "to": "types",
+      "kind": "dependency"
+    },
+    {
+      "from": "outputBuffer",
+      "to": "terminalInput",
+      "kind": "dependency"
+    },
+    {
+      "from": "outputBuffer",
+      "to": "types",
+      "kind": "dependency"
+    },
+    {
+      "from": "terminalInput",
+      "to": "outputBuffer",
+      "kind": "dependency",
+      "label": "paste mode"
+    },
+    {
+      "from": "terminalInput",
+      "to": "controlSocket",
+      "kind": "dependency",
+      "label": "ENTER"
+    },
+    {
+      "from": "runResults",
+      "to": "types",
+      "kind": "dependency"
+    },
+    {
+      "from": "runResults",
+      "to": "agentUsage",
+      "kind": "dependency"
+    },
+    {
+      "from": "types",
+      "to": "agentUsage",
+      "kind": "dependency"
+    },
+    {
+      "from": "projectBinding",
+      "to": "providers",
+      "kind": "dependency"
+    },
+    {
+      "from": "writeSandbox",
+      "to": "providers",
+      "kind": "dependency"
+    },
+    {
+      "from": "controlSocket",
+      "to": "outputBuffer",
+      "kind": "dataflow",
+      "label": "read console"
+    },
+    {
+      "from": "controlSocket",
+      "to": "runResults",
+      "kind": "dataflow",
+      "label": "await result"
+    },
+    {
+      "from": "controlSocket",
+      "to": "awaitingInput",
+      "kind": "calls"
+    },
+    {
+      "from": "controlSocket",
+      "to": "terminalInput",
+      "kind": "calls",
+      "label": "compose message"
+    }
+  ],
+  "tour": [
+    "manager",
+    "projectBinding",
+    "writeSandbox",
+    "outputBuffer",
+    "terminalInput",
+    "launchRuns",
+    "runResults",
+    "controlSocket"
+  ],
+  "annotations": [
+    {
+      "id": "facts",
+      "preset": "hud-panel",
+      "text": "agents/ in numbers",
+      "rows": [
+        {
+          "label": "modules (non-test)",
+          "value": "13"
+        },
+        {
+          "label": "manager.rs lines",
+          "value": "1514"
+        },
+        {
+          "label": "providers refs in manager",
+          "value": "31"
+        },
+        {
+          "label": "shell_env.rs",
+          "value": "not drawn (119 lines)"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

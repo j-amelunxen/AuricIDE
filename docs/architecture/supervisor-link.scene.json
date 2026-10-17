@@ -1,0 +1,395 @@
+{
+  "formatVersion": 1,
+  "id": "system.supervisor-link",
+  "title": "Supervisor link",
+  "description": "Inside src-tauri/src/supervisor_link: the WebSocket server for the Supervisor Control API, its documents, jobs, subscriptions, policy and policy proposals, and the IDE parts it reaches.",
+  "nodes": [
+    {
+      "id": "server",
+      "label": "Link server (mod.rs)",
+      "preset": "core",
+      "group": "entry",
+      "level": 0,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "791"
+        }
+      ],
+      "position": [0, 0, 0]
+    },
+    {
+      "id": "protocol",
+      "label": "Protocol",
+      "preset": "rings",
+      "group": "entry",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "605"
+        }
+      ],
+      "position": [-8.1, -5.8, 0]
+    },
+    {
+      "id": "subscription",
+      "label": "Subscription",
+      "preset": "rings",
+      "group": "entry",
+      "level": 1,
+      "weight": 0.5,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "161"
+        }
+      ],
+      "position": [-4, -5.8, 0]
+    },
+    {
+      "id": "documents",
+      "label": "Documents",
+      "preset": "rings",
+      "group": "documents",
+      "level": 1,
+      "weight": 0.8,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "1068"
+        }
+      ],
+      "position": [-15.5, -5.8, 0]
+    },
+    {
+      "id": "assets",
+      "label": "Assets",
+      "preset": "rings",
+      "group": "documents",
+      "level": 1,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "121"
+        }
+      ],
+      "position": [-19.7, -5.8, 0]
+    },
+    {
+      "id": "glob",
+      "label": "Glob",
+      "preset": "box",
+      "group": "documents",
+      "level": 2,
+      "weight": 0.3,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "102"
+        }
+      ],
+      "position": [3.35, -11, 0]
+    },
+    {
+      "id": "jobs",
+      "label": "Jobs",
+      "preset": "rings",
+      "group": "jobs",
+      "level": 1,
+      "weight": 0.8,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "733"
+        }
+      ],
+      "position": [7.7, -5.8, 0]
+    },
+    {
+      "id": "jobRunner",
+      "label": "Job runner",
+      "preset": "rings",
+      "group": "jobs",
+      "level": 1,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "498"
+        }
+      ],
+      "position": [3.2, -5.8, 0]
+    },
+    {
+      "id": "instructions",
+      "label": "Instructions",
+      "preset": "box",
+      "group": "jobs",
+      "level": 2,
+      "weight": 0.4,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "103"
+        }
+      ],
+      "position": [-3.35, -11, 0]
+    },
+    {
+      "id": "policy",
+      "label": "Link policy",
+      "preset": "stack",
+      "group": "policy",
+      "level": 1,
+      "weight": 0.8,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "873"
+        }
+      ],
+      "position": [15.3, -5.8, 0]
+    },
+    {
+      "id": "proposals",
+      "label": "Proposals",
+      "preset": "rings",
+      "group": "policy",
+      "level": 1,
+      "weight": 0.6,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "698"
+        }
+      ],
+      "position": [19.7, -5.8, 0]
+    },
+    {
+      "id": "controlSocket",
+      "label": "Control socket",
+      "preset": "box",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.3,
+      "position": [-3.45, -15.7, 0]
+    },
+    {
+      "id": "notifications",
+      "label": "Notifications",
+      "preset": "box",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.2,
+      "position": [0.05, -15.7, 0]
+    },
+    {
+      "id": "repos",
+      "label": "Project git repos",
+      "preset": "sphere",
+      "group": "outside",
+      "level": 3,
+      "weight": 0.2,
+      "position": [3.45, -15.7, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "server",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "server",
+      "to": "subscription",
+      "kind": "dependency"
+    },
+    {
+      "from": "server",
+      "to": "documents",
+      "kind": "calls"
+    },
+    {
+      "from": "server",
+      "to": "assets",
+      "kind": "calls"
+    },
+    {
+      "from": "server",
+      "to": "jobs",
+      "kind": "calls"
+    },
+    {
+      "from": "server",
+      "to": "jobRunner",
+      "kind": "contains"
+    },
+    {
+      "from": "server",
+      "to": "policy",
+      "kind": "calls",
+      "label": "read_policy"
+    },
+    {
+      "from": "server",
+      "to": "controlSocket",
+      "kind": "calls",
+      "label": "dispatcher"
+    },
+    {
+      "from": "server",
+      "to": "notifications",
+      "kind": "calls",
+      "label": "dispatch"
+    },
+    {
+      "from": "policy",
+      "to": "glob",
+      "kind": "dependency"
+    },
+    {
+      "from": "policy",
+      "to": "jobs",
+      "kind": "dependency",
+      "label": "usage"
+    },
+    {
+      "from": "instructions",
+      "to": "documents",
+      "kind": "dependency",
+      "label": "read_contained"
+    },
+    {
+      "from": "protocol",
+      "to": "controlSocket",
+      "kind": "dependency",
+      "label": "protocol types"
+    },
+    {
+      "from": "documents",
+      "to": "glob",
+      "kind": "dependency"
+    },
+    {
+      "from": "documents",
+      "to": "policy",
+      "kind": "dependency"
+    },
+    {
+      "from": "documents",
+      "to": "repos",
+      "kind": "dataflow",
+      "label": "git2"
+    },
+    {
+      "from": "subscription",
+      "to": "protocol",
+      "kind": "dependency"
+    },
+    {
+      "from": "subscription",
+      "to": "jobs",
+      "kind": "dataflow",
+      "label": "job events"
+    },
+    {
+      "from": "proposals",
+      "to": "policy",
+      "kind": "dependency"
+    },
+    {
+      "from": "proposals",
+      "to": "notifications",
+      "kind": "calls",
+      "label": "inbox ask"
+    },
+    {
+      "from": "controlSocket",
+      "to": "proposals",
+      "kind": "calls",
+      "label": "link_policy_propose"
+    },
+    {
+      "from": "jobRunner",
+      "to": "documents",
+      "kind": "dependency"
+    },
+    {
+      "from": "jobRunner",
+      "to": "instructions",
+      "kind": "dependency"
+    },
+    {
+      "from": "jobRunner",
+      "to": "jobs",
+      "kind": "dataflow"
+    },
+    {
+      "from": "jobRunner",
+      "to": "policy",
+      "kind": "dependency"
+    },
+    {
+      "from": "jobRunner",
+      "to": "controlSocket",
+      "kind": "calls",
+      "label": "spawn, kill"
+    },
+    {
+      "from": "assets",
+      "to": "documents",
+      "kind": "dependency"
+    },
+    {
+      "from": "assets",
+      "to": "policy",
+      "kind": "dependency"
+    },
+    {
+      "from": "jobs",
+      "to": "documents",
+      "kind": "dependency"
+    },
+    {
+      "from": "jobs",
+      "to": "repos",
+      "kind": "dataflow",
+      "label": "git2"
+    }
+  ],
+  "tour": ["server", "protocol", "documents", "jobs", "jobRunner", "policy", "proposals"],
+  "annotations": [
+    {
+      "id": "facts",
+      "preset": "hud-panel",
+      "text": "Supervisor link facts",
+      "rows": [
+        {
+          "label": "Source files (no tests)",
+          "value": "11"
+        },
+        {
+          "label": "Lines (no tests)",
+          "value": "5753"
+        },
+        {
+          "label": "Socket",
+          "value": "supervisor-link.sock"
+        },
+        {
+          "label": "JSON stores",
+          "value": "policy, jobs, proposals"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

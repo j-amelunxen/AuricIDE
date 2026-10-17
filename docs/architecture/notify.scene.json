@@ -1,0 +1,318 @@
+{
+  "formatVersion": 1,
+  "id": "system.notify",
+  "title": "Notifications, schedules, inbox",
+  "description": "Three app-level stores in the Rust backend: the cross-project notification log with its file watcher, recurring schedules kept in the same database, and the GTD inbox whose items can be assigned to a project as real tickets.",
+  "nodes": [
+    {
+      "id": "notifOps",
+      "label": "operations.rs",
+      "preset": "core",
+      "group": "notifications",
+      "level": 1,
+      "weight": 0.9,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "868"
+        }
+      ],
+      "position": [13.45, -5.2, 0]
+    },
+    {
+      "id": "notifSchema",
+      "label": "schema.rs (notifications.db)",
+      "preset": "cylinder",
+      "group": "notifications",
+      "level": 2,
+      "weight": 0.7,
+      "position": [5.15, -10.8, 0]
+    },
+    {
+      "id": "notifTypes",
+      "label": "types.rs",
+      "preset": "box",
+      "group": "notifications",
+      "level": 2,
+      "weight": 0.3,
+      "position": [12.95, -10.8, 0]
+    },
+    {
+      "id": "watch",
+      "label": "watch.rs",
+      "preset": "rings",
+      "group": "notifications",
+      "level": 1,
+      "weight": 0.5,
+      "position": [9.05, -5.2, 0]
+    },
+    {
+      "id": "coalesce",
+      "label": "coalesce.rs",
+      "preset": "box",
+      "group": "notifications",
+      "level": 2,
+      "weight": 0.4,
+      "position": [9.25, -10.8, 0]
+    },
+    {
+      "id": "schedDb",
+      "label": "schedules/database.rs",
+      "preset": "rings",
+      "group": "schedules",
+      "level": 1,
+      "weight": 0.7,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "374"
+        }
+      ],
+      "position": [1.85, -5.2, 0]
+    },
+    {
+      "id": "schedEngine",
+      "label": "schedules/engine.rs",
+      "preset": "box",
+      "group": "schedules",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-2.05, -10.8, 0]
+    },
+    {
+      "id": "inboxItems",
+      "label": "inbox/items.rs",
+      "preset": "rings",
+      "group": "inbox",
+      "level": 1,
+      "weight": 0.6,
+      "position": [-13.45, -5.2, 0]
+    },
+    {
+      "id": "inboxAssign",
+      "label": "inbox/assignment.rs",
+      "preset": "rings",
+      "group": "inbox",
+      "level": 1,
+      "weight": 0.6,
+      "position": [-9.25, -5.2, 0]
+    },
+    {
+      "id": "inboxAttach",
+      "label": "inbox/attachments.rs",
+      "preset": "box",
+      "group": "inbox",
+      "level": 2,
+      "weight": 0.4,
+      "position": [-12.95, -10.8, 0]
+    },
+    {
+      "id": "inboxOverview",
+      "label": "inbox/overview.rs",
+      "preset": "box",
+      "group": "inbox",
+      "level": 1,
+      "weight": 0.4,
+      "position": [-5.25, -5.2, 0]
+    },
+    {
+      "id": "inboxSchema",
+      "label": "inbox/schema.rs (inbox.db)",
+      "preset": "cylinder",
+      "group": "inbox",
+      "level": 2,
+      "weight": 0.5,
+      "position": [-9.05, -10.8, 0]
+    },
+    {
+      "id": "backend",
+      "label": "Backend lib.rs + commands",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [-1.8, 0, 0]
+    },
+    {
+      "id": "agents",
+      "label": "Agent manager",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [1.8, 0, 0]
+    },
+    {
+      "id": "projectDb",
+      "label": "Project DB (.auric)",
+      "preset": "cylinder",
+      "group": "neighbours",
+      "level": 3,
+      "weight": 0.3,
+      "position": [0, -15.8, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "backend",
+      "to": "notifOps",
+      "kind": "calls",
+      "label": "notifications_*"
+    },
+    {
+      "from": "backend",
+      "to": "schedDb",
+      "kind": "calls",
+      "label": "schedules_*, run_due"
+    },
+    {
+      "from": "backend",
+      "to": "watch",
+      "kind": "calls",
+      "label": "watch_inbox"
+    },
+    {
+      "from": "backend",
+      "to": "inboxItems",
+      "kind": "calls",
+      "label": "inbox_*"
+    },
+    {
+      "from": "backend",
+      "to": "inboxAssign",
+      "kind": "calls",
+      "label": "assign"
+    },
+    {
+      "from": "backend",
+      "to": "inboxOverview",
+      "kind": "calls",
+      "label": "pm overview"
+    },
+    {
+      "from": "watch",
+      "to": "coalesce",
+      "kind": "dependency"
+    },
+    {
+      "from": "watch",
+      "to": "notifSchema",
+      "kind": "dependency",
+      "label": "init_db"
+    },
+    {
+      "from": "watch",
+      "to": "backend",
+      "kind": "event",
+      "label": "on change"
+    },
+    {
+      "from": "notifOps",
+      "to": "notifSchema",
+      "kind": "dependency",
+      "label": "uid"
+    },
+    {
+      "from": "notifOps",
+      "to": "notifTypes",
+      "kind": "dependency"
+    },
+    {
+      "from": "notifSchema",
+      "to": "schedDb",
+      "kind": "calls",
+      "label": "migrations"
+    },
+    {
+      "from": "schedDb",
+      "to": "schedEngine",
+      "kind": "calls",
+      "label": "due occurrences"
+    },
+    {
+      "from": "schedDb",
+      "to": "notifOps",
+      "kind": "calls",
+      "label": "dispatch"
+    },
+    {
+      "from": "inboxItems",
+      "to": "inboxAttach",
+      "kind": "dependency"
+    },
+    {
+      "from": "inboxAttach",
+      "to": "inboxItems",
+      "kind": "dependency"
+    },
+    {
+      "from": "inboxAssign",
+      "to": "inboxItems",
+      "kind": "dependency"
+    },
+    {
+      "from": "inboxAssign",
+      "to": "inboxAttach",
+      "kind": "calls",
+      "label": "copy media"
+    },
+    {
+      "from": "inboxAssign",
+      "to": "projectDb",
+      "kind": "dataflow",
+      "label": "ticket"
+    },
+    {
+      "from": "inboxOverview",
+      "to": "projectDb",
+      "kind": "dataflow",
+      "label": "read-only"
+    },
+    {
+      "from": "agents",
+      "to": "notifOps",
+      "kind": "calls",
+      "label": "launch runs"
+    }
+  ],
+  "tour": [
+    "notifOps",
+    "notifSchema",
+    "watch",
+    "schedDb",
+    "schedEngine",
+    "inboxItems",
+    "inboxAssign",
+    "inboxOverview"
+  ],
+  "annotations": [
+    {
+      "id": "facts",
+      "preset": "hud-panel",
+      "text": "Notifications, schedules, inbox",
+      "rows": [
+        {
+          "label": "notification commands",
+          "value": "13"
+        },
+        {
+          "label": "schedule commands",
+          "value": "5"
+        },
+        {
+          "label": "inbox commands",
+          "value": "11"
+        },
+        {
+          "label": "source files",
+          "value": "17"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}

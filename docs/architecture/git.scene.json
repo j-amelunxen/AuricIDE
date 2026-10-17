@@ -1,0 +1,313 @@
+{
+  "formatVersion": 1,
+  "id": "system.git",
+  "title": "Git (git2)",
+  "description": "All git behaviour of the backend, built on git2-rs: commands.rs exposes the IPC commands and dispatches to status, diff, staging, merge, worktree, log and blame modules. Agents and the control socket call the worktree functions directly.",
+  "nodes": [
+    {
+      "id": "commands",
+      "label": "commands.rs",
+      "preset": "core",
+      "group": "api",
+      "level": 0,
+      "weight": 1,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "commands",
+          "value": "33"
+        }
+      ],
+      "position": [7.25, 0, 0]
+    },
+    {
+      "id": "status",
+      "label": "status.rs",
+      "preset": "rings",
+      "group": "read",
+      "level": 1,
+      "weight": 0.6,
+      "position": [-4.1, -5.8, 0]
+    },
+    {
+      "id": "discovery",
+      "label": "discovery.rs",
+      "preset": "rings",
+      "group": "read",
+      "level": 2,
+      "weight": 0.6,
+      "position": [-2.15, -11.2, 0]
+    },
+    {
+      "id": "diff",
+      "label": "diff.rs",
+      "preset": "rings",
+      "group": "read",
+      "level": 2,
+      "weight": 0.6,
+      "position": [2.05, -11.2, 0]
+    },
+    {
+      "id": "log",
+      "label": "log.rs",
+      "preset": "box",
+      "group": "read",
+      "level": 1,
+      "weight": 0.4,
+      "position": [-8.1, -5.8, 0]
+    },
+    {
+      "id": "blame",
+      "label": "blame.rs",
+      "preset": "box",
+      "group": "read",
+      "level": 1,
+      "weight": 0.3,
+      "position": [-0.2, -5.8, 0]
+    },
+    {
+      "id": "staging",
+      "label": "staging.rs",
+      "preset": "rings",
+      "group": "write",
+      "level": 1,
+      "weight": 0.6,
+      "position": [6.7, -5.8, 0]
+    },
+    {
+      "id": "discard",
+      "label": "discard.rs",
+      "preset": "box",
+      "group": "write",
+      "level": 1,
+      "weight": 0.3,
+      "position": [15.2, -5.8, 0]
+    },
+    {
+      "id": "merge",
+      "label": "merge.rs",
+      "preset": "core",
+      "group": "write",
+      "level": 1,
+      "weight": 0.8,
+      "accent": true,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "1060"
+        }
+      ],
+      "position": [11.1, -5.8, 0]
+    },
+    {
+      "id": "operationStep",
+      "label": "operation_step.rs",
+      "preset": "box",
+      "group": "write",
+      "level": 2,
+      "weight": 0.5,
+      "position": [9.15, -11.2, 0]
+    },
+    {
+      "id": "worktrees",
+      "label": "worktrees.rs",
+      "preset": "rings",
+      "group": "worktrees",
+      "level": 1,
+      "weight": 0.7,
+      "metrics": [
+        {
+          "label": "lines",
+          "value": "693"
+        }
+      ],
+      "position": [-15.2, -5.8, 0]
+    },
+    {
+      "id": "worktreeInclude",
+      "label": "worktree_include.rs",
+      "preset": "box",
+      "group": "worktrees",
+      "level": 2,
+      "weight": 0.4,
+      "position": [-9.15, -11.2, 0]
+    },
+    {
+      "id": "backend",
+      "label": "Backend lib.rs",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [-0.05, 0, 0]
+    },
+    {
+      "id": "agents",
+      "label": "Agent manager",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [-7.25, 0, 0]
+    },
+    {
+      "id": "controlSocket",
+      "label": "Control socket",
+      "preset": "sphere",
+      "group": "neighbours",
+      "level": 0,
+      "weight": 0.3,
+      "position": [-3.65, 0, 0]
+    }
+  ],
+  "edges": [
+    {
+      "from": "backend",
+      "to": "commands",
+      "kind": "calls",
+      "label": "registers"
+    },
+    {
+      "from": "commands",
+      "to": "status",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "discovery",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "diff",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "log",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "blame",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "staging",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "discard",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "merge",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "operationStep",
+      "kind": "calls"
+    },
+    {
+      "from": "commands",
+      "to": "worktrees",
+      "kind": "calls"
+    },
+    {
+      "from": "status",
+      "to": "discovery",
+      "kind": "dependency"
+    },
+    {
+      "from": "merge",
+      "to": "diff",
+      "kind": "dependency"
+    },
+    {
+      "from": "merge",
+      "to": "operationStep",
+      "kind": "dependency"
+    },
+    {
+      "from": "operationStep",
+      "to": "merge",
+      "kind": "dependency"
+    },
+    {
+      "from": "staging",
+      "to": "merge",
+      "kind": "dependency",
+      "label": "operation name"
+    },
+    {
+      "from": "worktrees",
+      "to": "discovery",
+      "kind": "dependency"
+    },
+    {
+      "from": "worktrees",
+      "to": "merge",
+      "kind": "dependency"
+    },
+    {
+      "from": "worktrees",
+      "to": "staging",
+      "kind": "dependency"
+    },
+    {
+      "from": "worktrees",
+      "to": "status",
+      "kind": "dependency"
+    },
+    {
+      "from": "worktrees",
+      "to": "worktreeInclude",
+      "kind": "dependency"
+    },
+    {
+      "from": "agents",
+      "to": "worktrees",
+      "kind": "calls",
+      "label": "worktree add"
+    },
+    {
+      "from": "controlSocket",
+      "to": "worktrees",
+      "kind": "calls",
+      "label": "remove unless work"
+    }
+  ],
+  "tour": ["commands", "status", "discovery", "diff", "staging", "merge", "worktrees"],
+  "annotations": [
+    {
+      "id": "facts",
+      "preset": "hud-panel",
+      "text": "Git (git2)",
+      "rows": [
+        {
+          "label": "source files",
+          "value": "14"
+        },
+        {
+          "label": "IPC commands",
+          "value": "33"
+        },
+        {
+          "label": "unit tests",
+          "value": "182"
+        },
+        {
+          "label": "library",
+          "value": "git2"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "algorithm": "layered"
+  }
+}
