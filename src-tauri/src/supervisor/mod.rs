@@ -7,6 +7,7 @@
 //! check (no cache, so a change in Settings applies to the next spawn), writes
 //! it atomically at mode 0600, and canonicalises project paths.
 
+pub mod attachments;
 pub mod policy;
 
 use crate::agents::{AgentConfig, AgentInfo, AgentRole, AgentStatus};

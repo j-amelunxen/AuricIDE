@@ -27,6 +27,47 @@ export function buildPathInsert(paths: string[]): string {
   return paths.map(shellQuotePath).join(' ') + ' ';
 }
 
+const ABSOLUTE_IMAGE_PATH =
+  /(?:'([^']+\.(?:png|jpe?g|gif|webp|heic))'|"([^"]+\.(?:png|jpe?g|gif|webp|heic))"|(\/[\S]+\.(?:png|jpe?g|gif|webp|heic)))/giu;
+
+/** Finds quoted (space-safe) and plain absolute image paths in terminal input. */
+export function absoluteImagePaths(text: string): string[] {
+  return [...text.matchAll(ABSOLUTE_IMAGE_PATH)].map((match) => match[1] ?? match[2] ?? match[3]);
+}
+
+/** Replaces image paths with their copies, preserving the rest of a human's message. */
+export async function rewriteSupervisorImagePaths(agentId: string, text: string): Promise<string> {
+  const sources = absoluteImagePaths(text);
+  if (sources.length === 0) return text;
+  const copies = await copySupervisorImagePaths(agentId, sources);
+  let index = 0;
+  return text.replace(ABSOLUTE_IMAGE_PATH, () => shellQuotePath(copies[index++]));
+}
+
+/** Copies paths through the backend only for the restricted supervisor terminal. */
+export async function copySupervisorImagePaths(
+  agentId: string,
+  paths: string[]
+): Promise<string[]> {
+  return await invoke<string[]>('copy_supervisor_image_attachments', { agentId, paths });
+}
+
+/**
+ * Turns a dropped/pasted image path into a path Claude can read from its
+ * restricted run folder. The callback makes the existing toast system optional
+ * for callers outside the main terminal.
+ */
+export async function insertSupervisorImages(
+  agentId: string,
+  paths: string[],
+  sendText: (text: string) => void,
+  onCopied?: (count: number) => void
+): Promise<void> {
+  const copied = await copySupervisorImagePaths(agentId, paths);
+  sendText(buildPathInsert(copied));
+  onCopied?.(copied.length);
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -74,6 +115,18 @@ export function attachImagePaste(
   sendText: (text: string) => void
 ): () => void {
   return attachSavedImagePaste(container, (paths) => sendText(buildPathInsert(paths)));
+}
+
+/** Like `attachImagePaste`, but makes raw clipboard screenshots durable inside a supervisor run. */
+export function attachSupervisorImagePaste(
+  container: HTMLElement,
+  agentId: string,
+  sendText: (text: string) => void,
+  onCopied?: (count: number) => void
+): () => void {
+  return attachSavedImagePaste(container, (paths) => {
+    void insertSupervisorImages(agentId, paths, sendText, onCopied);
+  });
 }
 
 interface DragDropPosition {
@@ -156,6 +209,28 @@ export function attachFileDrop(
   return attachPathDrop(
     container,
     (paths) => sendText(buildPathInsert(paths)),
+    onDragState,
+    onInsert
+  );
+}
+
+/** Drops keep their normal terminal behavior, except image paths are copied for a supervisor. */
+export function attachSupervisorFileDrop(
+  container: HTMLElement,
+  agentId: string,
+  sendText: (text: string) => void,
+  onDragState?: (inside: boolean) => void,
+  onInsert?: () => void,
+  onCopied?: (count: number) => void
+): () => void {
+  return attachPathDrop(
+    container,
+    (paths) => {
+      void insertSupervisorImages(agentId, paths, sendText, onCopied).catch(() => {
+        // Non-images retain the old behavior; backend failures do not swallow a drop.
+        sendText(buildPathInsert(paths));
+      });
+    },
     onDragState,
     onInsert
   );

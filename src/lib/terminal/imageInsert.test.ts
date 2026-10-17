@@ -32,6 +32,9 @@ import {
   attachFileDrop,
   attachPathDrop,
   attachSavedImagePaste,
+  insertSupervisorImages,
+  absoluteImagePaths,
+  rewriteSupervisorImagePaths,
 } from './imageInsert';
 
 function makeImageFile(name = 'shot.png', type = 'image/png'): File {
@@ -170,6 +173,47 @@ describe('attachImagePaste', () => {
     });
     expect(sendText).not.toHaveBeenCalled();
     detach();
+  });
+});
+
+describe('insertSupervisorImages', () => {
+  it('replaces a source image path with the copied supervisor attachment path', async () => {
+    mockInvoke.mockResolvedValue([
+      '/Users/j/.auric/supervisors/run/attachments/Bildschirmfoto ä.png',
+    ]);
+    const sendText = vi.fn();
+    const copied = vi.fn();
+
+    await insertSupervisorImages(
+      'supervisor-1',
+      ['/var/folders/g6/temp/Bildschirmfoto ä.png'],
+      sendText,
+      copied
+    );
+
+    expect(mockInvoke).toHaveBeenCalledWith('copy_supervisor_image_attachments', {
+      agentId: 'supervisor-1',
+      paths: ['/var/folders/g6/temp/Bildschirmfoto ä.png'],
+    });
+    expect(sendText).toHaveBeenCalledWith(
+      "'/Users/j/.auric/supervisors/run/attachments/Bildschirmfoto ä.png' "
+    );
+    expect(copied).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('supervisor path rewriting', () => {
+  it('finds quoted macOS paths with spaces and umlauts', () => {
+    expect(absoluteImagePaths("please inspect '/var/folders/g6/a/Bildschirmfoto ä.png'")).toEqual([
+      '/var/folders/g6/a/Bildschirmfoto ä.png',
+    ]);
+  });
+
+  it('replaces paths in a typed message with its copied attachment', async () => {
+    mockInvoke.mockResolvedValue(['/Users/j/.auric/supervisors/run/attachments/shot.png']);
+    await expect(
+      rewriteSupervisorImagePaths('sup', 'read /private/tmp/shot.png please')
+    ).resolves.toBe('read /Users/j/.auric/supervisors/run/attachments/shot.png please');
   });
 });
 

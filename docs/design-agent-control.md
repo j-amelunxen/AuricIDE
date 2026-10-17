@@ -240,6 +240,14 @@ tool, a shell only through an approved skill, and Claude in Chrome only when
 Settings → Supervisor switches it on (`supervisor.chrome`; `--chrome`, else
 `--no-chrome`).
 
+**Image attachments** entered in the supervisor terminal are made durable before
+they reach Claude. Dropped image files, image clipboard data, and absolute PNG,
+JPG/JPEG, GIF, WEBP or HEIC paths in a submitted terminal line are copied (never
+moved) to `<run>/attachments/`; their message path is rewritten to that copy.
+The backend limits each image to 25 MB and disambiguates duplicate filenames.
+This keeps transient macOS screenshot paths usable under Claude's restricted
+file-tool scope. The terminal shows the normal success toast after a copy.
+
 **Approved skills** are the `skills` block of the policy: a skill folder (the
 one holding `SKILL.md`) and the `Bash(...)` patterns it may run. Rust links the
 approved folders into a per-run plugin under
