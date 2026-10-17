@@ -16,7 +16,7 @@ import { useNow } from '@/lib/hooks/useNow';
 import { useAltHeld } from '@/lib/hooks/useAltHeld';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
-import { isFinishedAgent } from '@/lib/agents/fleet';
+import { isFinishedAgent, splitTerminalAgents } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel } from '@/lib/agents/state';
 import { groupAgentTabs } from '@/lib/agents/tabGroups';
 import {
@@ -49,7 +49,10 @@ type HeaderProps = HTMLAttributes<HTMLDivElement> & {
 
 interface AgentTerminalWorkspaceProps {
   agent: AgentInfo;
-  /** All active agents — when provided, the workspace shows a tab per agent for fast switching. */
+  /**
+   * All active agents — when provided, the workspace shows a tab per agent for
+   * fast switching. Headless ones get no tab; the header only counts them.
+   */
   agents?: AgentInfo[];
   onSwitchAgent?: (agent: AgentInfo) => void;
   /** The last tab was closed, or the shell's close control was used. */
@@ -238,6 +241,37 @@ function LayoutPresets({
 }
 
 /**
+ * How many headless agents are still at work, and which. They have no terminal
+ * to show, so this is all the view says about them; the names are a hover away.
+ */
+function HeadlessMarker({ agents }: { agents: AgentInfo[] }) {
+  const names = agents.map((a) => a.name).join(', ');
+  return (
+    <span
+      data-testid="headless-agents-marker"
+      tabIndex={0}
+      aria-label={`${agents.length} headless ${agents.length === 1 ? 'agent' : 'agents'} running: ${names}`}
+      className="group/headless relative flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-[10px] text-foreground-muted outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60"
+    >
+      <AuricIcon name="visibility_off" aria-hidden="true" className="text-sm" />
+      <span aria-hidden="true" className="tabular-nums">
+        {agents.length} headless
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-full z-10 mt-1.5 hidden min-w-[10rem] max-w-xs flex-col gap-0.5 rounded-lg border border-white/10 bg-[#0b0b18] px-2.5 py-2 text-[11px] text-foreground shadow-xl group-hover/headless:flex group-focus-visible/headless:flex"
+      >
+        {agents.map((a) => (
+          <span key={a.id} className="truncate">
+            {a.name}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/**
  * The agent terminals without a shell around them: header, tab strip and the
  * terminal grid. It fills whatever contains it and reads nothing that belongs
  * to a project — ending an agent, saving a screen and the error line all come
@@ -245,7 +279,7 @@ function LayoutPresets({
  */
 export function AgentTerminalWorkspace({
   agent,
-  agents,
+  agents: allAgents,
   onSwitchAgent,
   onClose,
   onSelectionSpawn,
@@ -259,6 +293,14 @@ export function AgentTerminalWorkspace({
   titleId,
   headerProps,
 }: AgentTerminalWorkspaceProps) {
+  // Headless agents leave the view entirely: no tab, no pane, no part in the
+  // layout presets or the auto-arrange of new arrivals.
+  const terminalSplit = useMemo(
+    () => (allAgents ? splitTerminalAgents(allAgents) : null),
+    [allAgents]
+  );
+  const agents = terminalSplit?.withTerminal;
+  const headlessRunning = terminalSplit?.headlessRunning ?? [];
   const terminals = useRef(new Map<string, AgentXtermHandle>());
   const registerTerminal = useCallback((agentId: string, handle: AgentXtermHandle | null) => {
     if (handle) terminals.current.set(agentId, handle);
@@ -392,6 +434,7 @@ export function AgentTerminalWorkspace({
         </div>
 
         <div className="flex items-center gap-2">
+          {headlessRunning.length > 0 && <HeadlessMarker agents={headlessRunning} />}
           {(agents?.length ?? 0) > 1 && (
             <LayoutPresets
               agentCount={agents?.length ?? 0}

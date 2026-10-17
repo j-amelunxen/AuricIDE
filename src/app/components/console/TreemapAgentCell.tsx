@@ -10,6 +10,7 @@ import {
 } from '@/lib/agents/consoleState';
 import { describeRightNow } from '@/lib/agents/consoleActivity';
 import { formatAgentDuration } from '@/lib/agents/duration';
+import { hasTerminal } from '@/lib/agents/fleet';
 import { agentColorHex, type AgentColor } from '@/lib/agents/colors';
 import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
@@ -212,7 +213,7 @@ export const TreemapAgentCell = memo(function TreemapAgentCell({
             Focus
           </button>
         )}
-        {roomy && (
+        {roomy && hasTerminal(agent) && (
           <button
             type="button"
             onClick={() => onOpenTerminal(agent.id)}

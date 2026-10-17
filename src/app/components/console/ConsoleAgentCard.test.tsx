@@ -83,7 +83,12 @@ describe('ConsoleAgentCard phase labels', () => {
 });
 
 describe('ConsoleAgentCard actions', () => {
-  it('always offers Open terminal and calls back with the agent id', async () => {
+  it('offers no terminal for a headless agent — it has none to show', () => {
+    render(<ConsoleAgentCard {...baseProps({ agent: agent({ headless: true }) })} />);
+    expect(screen.queryByRole('button', { name: 'Open terminal' })).not.toBeInTheDocument();
+  });
+
+  it('offers Open terminal and calls back with the agent id', async () => {
     const user = userEvent.setup();
     const onOpenTerminal = vi.fn();
     render(<ConsoleAgentCard {...baseProps({ onOpenTerminal })} />);

@@ -9,6 +9,7 @@ import { filesTouched } from '@/lib/agents/events/footprint';
 import type { HeartbeatSample } from '@/lib/agents/events/heartbeat';
 import { formatAgentDuration } from '@/lib/agents/duration';
 import { isAgentLive } from '@/lib/agents/liveness';
+import { hasTerminal } from '@/lib/agents/fleet';
 import { agentColorHex, type AgentColor } from '@/lib/agents/colors';
 import { useNow } from '@/lib/hooks/useNow';
 import { useConfirm } from '@/lib/hooks/useConfirm';
@@ -280,13 +281,15 @@ export function ConsoleAgentCard({
             Focus
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => onOpenTerminal(agent.id)}
-          className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-foreground-muted transition-colors hover:border-primary/50 hover:text-foreground"
-        >
-          Open terminal
-        </button>
+        {hasTerminal(agent) && (
+          <button
+            type="button"
+            onClick={() => onOpenTerminal(agent.id)}
+            className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-foreground-muted transition-colors hover:border-primary/50 hover:text-foreground"
+          >
+            Open terminal
+          </button>
+        )}
         {state === 'stalled' && (
           <button
             type="button"

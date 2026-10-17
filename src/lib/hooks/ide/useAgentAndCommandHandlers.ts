@@ -20,6 +20,7 @@ import {
   type NewProjectOptions,
 } from '@/lib/project/newProject';
 import { showAgentInWindow } from '@/lib/agents/agentWindowHost';
+import { hasTerminal } from '@/lib/agents/fleet';
 import { repoForGlobalGitAction } from './useGitActionHandlers';
 import type { IDEState } from './liveIDEState';
 
@@ -110,9 +111,11 @@ export function useAgentAndCommandHandlers({
    * Detached means one place: with the agent window open it comes forward on
    * this agent and no second set of terminals opens here. If that window
    * turns out to be gone, the modal opens as if it had never been there.
+   * A headless agent has no terminal to show: its card selects, nothing opens.
    */
   const showAgentTerminal = useCallback(
     (agent: AgentInfo) => {
+      if (!hasTerminal(agent)) return;
       if (!useStore.getState().agentWindowOpen) {
         state.setFullscreenAgent(agent);
         return;
