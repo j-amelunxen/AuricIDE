@@ -82,7 +82,8 @@ export interface LinkedSupervisorLaunch {
 export type LinkedSupervisorSpawn =
   | { kind: 'spawned'; agent: AgentInfo }
   | { kind: 'nothing-visible' }
-  | { kind: 'provider-not-allowed'; provider: string; allowed: string[] };
+  | { kind: 'provider-not-allowed'; provider: string; allowed: string[] }
+  | { kind: 'provider-unsupported'; provider: string; supported: readonly string[] };
 
 export type SupervisorLaunch =
   | { kind: 'running'; agent: AgentInfo }

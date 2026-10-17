@@ -12,7 +12,10 @@ import {
   readSupervisorInstructions,
   supervisorSpawnConfig,
 } from '@/lib/agents/supervisorLaunch';
-import { supervisorProvidersOf } from '@/lib/config/supervisorProviders';
+import {
+  SUPPORTED_SUPERVISOR_PROVIDERS,
+  supervisorProvidersOf,
+} from '@/lib/config/supervisorProviders';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import {
@@ -281,6 +284,11 @@ export async function handleSpawnLinkedSupervisor(
   const provider = launch.provider ?? allowed[0];
   if (!provider || !allowed.includes(provider)) {
     return { kind: 'provider-not-allowed', provider: provider ?? '', allowed };
+  }
+  // The policy may list a provider the supervisor cannot run on; Rust refuses
+  // that spawn with plain text, which would reach the link as `internal`.
+  if (!SUPPORTED_SUPERVISOR_PROVIDERS.includes(provider)) {
+    return { kind: 'provider-unsupported', provider, supported: SUPPORTED_SUPERVISOR_PROVIDERS };
   }
   const providers = await listProviders().catch(() => host.providers ?? []);
   const config = await supervisorConfigFor(host, policy, providers, {

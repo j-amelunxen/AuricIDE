@@ -23,6 +23,7 @@
     "scenes.propose"
   ],
   "events": ["agent.added", "agent.updated", "agent.removed", "agent.output"],
+  "supervisorProviders": ["claude", "codex"],
   "errorCodes": [
     "invalid_request",
     "unsupported_version",
@@ -34,6 +35,7 @@
     "headless_no_stdin",
     "supervisor_unavailable",
     "provider_denied",
+    "provider_unsupported",
     "frontend_unavailable",
     "scene_not_visible",
     "scene_not_found",

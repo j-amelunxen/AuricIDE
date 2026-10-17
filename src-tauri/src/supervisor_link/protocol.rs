@@ -38,7 +38,7 @@ pub const EVENTS: [&str; 4] = [
 /// Every code the link may answer with. A code from elsewhere (the control
 /// dispatcher, the frontend) that is not in this list goes out as `internal`
 /// with the original code kept in the message.
-pub const ERROR_CODES: [&str; 17] = [
+pub const ERROR_CODES: [&str; 18] = [
     "invalid_request",
     "unsupported_version",
     "unknown_method",
@@ -49,6 +49,7 @@ pub const ERROR_CODES: [&str; 17] = [
     "headless_no_stdin",
     "supervisor_unavailable",
     "provider_denied",
+    "provider_unsupported",
     "frontend_unavailable",
     "scene_not_visible",
     "scene_not_found",
@@ -403,6 +404,10 @@ mod tests {
         assert_eq!(strings(&fixtures["methods"]), METHODS.to_vec());
         assert_eq!(strings(&fixtures["events"]), EVENTS.to_vec());
         assert_eq!(strings(&fixtures["errorCodes"]), ERROR_CODES.to_vec());
+        assert_eq!(
+            strings(&fixtures["supervisorProviders"]),
+            crate::agents::manager::SUPERVISOR_PROVIDERS.to_vec()
+        );
         assert_eq!(
             fixtures["search"]["defaultLimit"],
             json!(DEFAULT_SEARCH_LIMIT)

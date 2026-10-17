@@ -257,6 +257,13 @@ async function spawnSupervisorFromLink(raw: unknown, host: ControlHost) {
         `(${outcome.allowed.join(', ') || 'none'})`
     );
   }
+  if (outcome.kind === 'provider-unsupported') {
+    throw new LinkSpawnRefusal(
+      'provider_unsupported',
+      `the supervisor cannot run on '${outcome.provider}' in this version ` +
+        `(supported: ${outcome.supported.join(', ')})`
+    );
+  }
   host.showToast?.(`${outcome.agent.name} started over the supervisor link`, 'success');
   return { agentId: outcome.agent.id };
 }

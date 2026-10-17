@@ -540,6 +540,34 @@ describe('control-request spawn_supervisor (supervisor link)', () => {
     });
   });
 
+  it('answers provider_unsupported for a listed provider the supervisor cannot run on', async () => {
+    const h = host({
+      spawnLinkedSupervisor: vi.fn(async () => ({
+        kind: 'provider-unsupported' as const,
+        provider: 'gemini',
+        supported: ['claude', 'codex'],
+      })),
+    });
+    await handleControlRequest(
+      {
+        reqId: 'l5',
+        method: 'spawn_supervisor',
+        params: { provider: 'gemini' },
+        expiresAt: fresh(),
+      },
+      h
+    );
+
+    expect(answered()[0].args).toMatchObject({
+      reqId: 'l5',
+      ok: false,
+      error: { code: 'provider_unsupported' },
+    });
+    expect(String((answered()[0].args as { error: { message: string } }).error.message)).toContain(
+      'gemini'
+    );
+  });
+
   it('refuses a provider the policy does not list, and unknown params', async () => {
     const h = host({
       spawnLinkedSupervisor: vi.fn(async () => ({

@@ -113,6 +113,35 @@ fn an_agent_outside_the_tree_is_unknown_to_every_method() {
     assert!(h.backend.requests.lock().unwrap().is_empty());
 }
 
+/// The card leaves the list when an agent is killed (`agent.removed`), and its
+/// console buffer carries no lineage, so the link cannot tell a finished tree
+/// member from a finished agent of the human's. Both answer `unknown_agent`;
+/// `agent_not_running` would confirm that a human's agent id exists.
+#[test]
+fn a_removed_agent_is_unknown_whoever_started_it() {
+    let h = harness(fleet());
+    h.buffers.append("agent-2", "done\n");
+    h.buffers.append("agent-3", "done\n");
+    h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|agent| agent.id == "agent-1");
+    for id in ["agent-2", "agent-3"] {
+        for method in [
+            format!(
+                r#"{{"v":1,"id":1,"method":"agents.send","params":{{"agentId":"{id}","text":"y"}}}}"#
+            ),
+            format!(r#"{{"v":1,"id":1,"method":"agents.read","params":{{"agentId":"{id}"}}}}"#),
+            format!(r#"{{"v":1,"id":1,"method":"agents.kill","params":{{"agentId":"{id}"}}}}"#),
+        ] {
+            let error = ask(&h.link, &method).expect_err(&method);
+            assert_eq!(error.code, "unknown_agent", "{method}");
+        }
+    }
+    assert!(h.backend.written.lock().unwrap().is_empty());
+}
+
 #[test]
 fn typing_reaches_a_supervisor_and_its_children_with_enter_only_on_submit() {
     let h = harness(fleet());
@@ -193,6 +222,26 @@ fn a_supervisor_spawn_is_handed_to_the_frontend_and_its_codes_pass_through() {
     });
     let refused = ask(&h.link, r#"{"v":1,"id":2,"method":"supervisors.spawn"}"#).unwrap_err();
     assert_eq!(refused.code, "supervisor_unavailable");
+}
+
+#[test]
+fn a_provider_the_supervisor_cannot_run_on_keeps_its_own_code() {
+    let h = harness(fleet());
+    *h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: false,
+        result: None,
+        error: Some(FrontendError {
+            code: "provider_unsupported".into(),
+            message: "the supervisor cannot run on 'gemini' in this version".into(),
+        }),
+    });
+    let refused = ask(
+        &h.link,
+        r#"{"v":1,"id":1,"method":"supervisors.spawn","params":{"provider":"gemini"}}"#,
+    )
+    .unwrap_err();
+    assert_eq!(refused.code, "provider_unsupported");
+    assert!(refused.message.contains("gemini"));
 }
 
 #[test]

@@ -303,6 +303,22 @@ describe('spawnLinkedSupervisor (supervisor link)', () => {
     expect(spawnAgent).not.toHaveBeenCalled();
   });
 
+  it('refuses a listed provider the supervisor cannot run on, without spawning', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    policy.supervisor.providers = ['claude', 'gemini'];
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+
+    const launch = await store.getState().spawnLinkedSupervisor({ provider: 'gemini' });
+
+    expect(launch).toEqual({
+      kind: 'provider-unsupported',
+      provider: 'gemini',
+      supported: ['claude', 'codex'],
+    });
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
   it('starts nothing while the policy shows no project', async () => {
     vi.mocked(supervisorPolicyGet).mockResolvedValue({
       policy: emptySupervisorPolicy(),

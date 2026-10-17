@@ -75,10 +75,18 @@ after the handshake as one `error` message, then a close with code 1008:
   "type": "error",
   "error": {
     "code": "forbidden_agent_caller",
-    "message": "process 4711 runs inside an IDE agent; agents may not use the supervisor link"
+    "message": "agent-2 is an IDE agent; agents may not use the supervisor link"
   }
 }
 ```
+
+The `code` is fixed; the `message` is for people and names the cause. It
+reads `<agentId> is an IDE agent; …` when the nearest agent in the parent
+chain is a supervisor, `process <pid> runs inside an IDE agent; agents may not
+use the supervisor link` for any other agent, and `the connecting process could
+not be identified` or `the ancestry of process <pid> could not be traced to
+launchd; it is refused like an agent` when the walk cannot finish. Match on
+`code`, never on the text.
 
 No token. The socket's mode keeps other users out; the parent walk keeps
 agents out. What is left open is what ADR 0003 already names for
@@ -188,6 +196,16 @@ is not in it. Every method that takes an `agentId` answers an id outside the
 tree with `unknown_agent`, exactly like an id that does not exist: the
 companion learns nothing about agents it may not touch.
 
+This holds after `agents.kill` too. A killed agent's card leaves the tree
+(`agent.removed`), and the console buffer that outlives it records no lineage,
+so the link cannot tell a finished member of the tree from a finished agent the
+human started. `agents.send`, `agents.read` and `agents.kill` on a removed id
+therefore answer `unknown_agent`, not `agent_not_running`: the latter would
+confirm that an id from outside the tree once existed. `agent_not_running` is
+for an agent that is still in the tree but not running (for example `idle` or
+`error`). A client that gets `unknown_agent` after it killed an agent itself
+should read it as "gone", and it also has the `agent.removed` event.
+
 ### `supervisors.spawn`
 
 Starts a **new** supervisor, built exactly like one from the Supervisor tile in
@@ -203,6 +221,8 @@ one. To talk to a running one, use `agents.send`.
 Errors: `supervisor_unavailable` when the policy shows the supervisor no
 project yet (the human has to allow one in Settings → Supervisor first),
 `invalid_params` for a provider the policy does not list,
+`provider_unsupported` for a provider the policy lists but the supervisor
+cannot run on (v1: `claude` and `codex`),
 `frontend_unavailable` when the IDE window did not answer within 30 s.
 
 ### `agents.read`
@@ -236,7 +256,8 @@ a worker's permission prompt, which is why the tree ends where the human's own
 agents begin.
 
 Refused with `headless_no_stdin` for a headless agent, `agent_not_running`
-when it is not running.
+when it is in the tree but not running. A killed agent is no longer in the
+tree and answers `unknown_agent` (see "The supervisor tree").
 
 ### `agents.kill`
 
@@ -428,11 +449,12 @@ Accept/Reject. The branch is reviewed in the Git panel today.
 | `unknown_method`         | no such method in this build                                           |
 | `invalid_params`         | params missing, of the wrong type, unknown, or out of range            |
 | `forbidden_agent_caller` | the connecting process runs inside an IDE agent                        |
-| `unknown_agent`          | no such agent, or not in the supervisor tree                           |
-| `agent_not_running`      | the agent exists but is not running                                    |
+| `unknown_agent`          | no such agent, not in the supervisor tree, or already removed          |
+| `agent_not_running`      | the agent is in the tree but not running                               |
 | `headless_no_stdin`      | a headless agent cannot be typed into                                  |
 | `supervisor_unavailable` | the supervisor policy shows a supervisor no project yet                |
 | `provider_denied`        | the provider policy refused the spawn                                  |
+| `provider_unsupported`   | the supervisor cannot run on that provider (v1: `claude`, `codex`)     |
 | `frontend_unavailable`   | the IDE window did not answer within 30 s                              |
 | `scene_not_visible`      | the project is not in the link's scene policy                          |
 | `scene_not_found`        | no such scene (at that revision)                                       |
@@ -475,6 +497,22 @@ Load a scene, drill into a module, propose a change:
 → { "v": 1, "id": 3, "method": "scenes.propose", "params": { "project": "/Users/me/src/example-product", "id": "docs/architecture/modules/auth", "baseHash": "9e07aa…", "scene": { "nodes": [ … ] }, "message": "Mark the token cache as the hot spot" } }
 ← { "v": 1, "type": "response", "id": 3, "ok": true, "result": { "branch": "auric/scene-proposal/auth-3fa1c2d9", "commit": "c0ffee…", "base": "abc123…", "created": false, "hash": "71d2e4…", "project": "…", "id": "docs/architecture/modules/auth" } }
 ```
+
+## Security notes
+
+- **`currentTask` of a supervisor is its full launch prompt.** `agents.list`,
+  `events.subscribe` and `agent.added` / `agent.updated` pass the `AgentSummary`
+  fields through unchanged, so for a supervisor `currentTask` holds the
+  generated launch prompt, including the human's standing instructions from
+  Settings → Supervisor and the list of allowed projects. This is a conscious
+  decision, not an oversight: a connected companion is the human's own tool,
+  already trusted to type into the tree and to start supervisors, and the
+  prompt is what explains to it what a supervisor was told to do. Do not put
+  secrets into the standing instructions. If that stops being acceptable, the
+  fix is to redact `currentTask` for `role: 'supervisor'` in `LinkAgent`, a
+  breaking change to this contract.
+- Who may connect is decided by the socket's mode (`0600`) and the parent walk
+  (see "Who may connect"), not by a token.
 
 ## Deliberately open in v1
 
