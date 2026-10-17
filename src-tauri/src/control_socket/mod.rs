@@ -13,9 +13,11 @@
 //! sandbox would not stop one — it leaves reads and network open.
 
 pub mod caller;
+mod link_spawn;
 pub mod projects;
 pub mod protocol;
 mod supervised;
+pub(crate) use link_spawn::LinkSpawn;
 
 use crate::agents::output_buffer::OutputBuffers;
 use crate::agents::run_results::{RunResult, RunResults, CONSOLE_TAIL_ANSWER_BYTES};

@@ -374,18 +374,27 @@ fn since_offsets_continue_where_a_client_left_off() {
 }
 
 #[test]
-fn scene_methods_see_no_project_without_a_policy() {
+fn document_methods_see_no_project_without_a_policy() {
     let h = harness(vec![]);
-    let projects = ask(&h.link, r#"{"v":1,"id":1,"method":"scenes.projects"}"#).unwrap();
+    let projects = ask(&h.link, r#"{"v":1,"id":1,"method":"documents.projects"}"#).unwrap();
     assert_eq!(projects, json!({ "projects": [] }));
     let refused = ask(
         &h.link,
-        r#"{"v":1,"id":1,"method":"scenes.get","params":{"project":"/tmp","id":"docs/a"}}"#,
+        r#"{"v":1,"id":1,"method":"documents.get","params":{"project":"/tmp","type":"t","id":"docs/a.json"}}"#,
     )
     .unwrap_err();
-    assert_eq!(refused.code, "scene_not_visible");
+    assert_eq!(refused.code, "document_not_visible");
+    let job = ask(
+        &h.link,
+        r#"{"v":1,"id":1,"method":"jobs.create","params":{"project":"/tmp","kind":"k","payload":null}}"#,
+    )
+    .unwrap_err();
+    assert_eq!(job.code, "document_not_visible");
     assert!(h.host.notified.lock().unwrap().is_empty());
 }
+
+#[path = "tests_jobs.rs"]
+mod jobs_flow;
 
 // ------------------------------------------------------- over a real socket
 

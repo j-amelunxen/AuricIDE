@@ -268,6 +268,28 @@ describe('control-request spawn for a supervisor', () => {
     expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
   });
 
+  it("runs a supervisor link job's agent verbatim too, though no supervisor started it", async () => {
+    const h = host();
+    const job = { ...child, spawnedByAgentId: null, worktree: true };
+    await handleControlRequest(
+      { reqId: 's8', method: 'spawn', params: job, expiresAt: fresh() },
+      h
+    );
+
+    const config = vi.mocked(h.spawnNewAgent).mock.calls[0][0];
+    expect(config).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-6-luna',
+      headless: true,
+      role: 'worker',
+      runSource: 'supervisor',
+      spawnedByAgentId: null,
+      useWorktree: true,
+    });
+    expect(config.permissionMode).toBeUndefined();
+    expect(loadSpawnDefaultsMock).not.toHaveBeenCalled();
+  });
+
   it('starts a child in a worktree and tells it to commit there', async () => {
     const h = host();
     await handleControlRequest(

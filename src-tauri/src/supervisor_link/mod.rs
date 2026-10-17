@@ -1,19 +1,26 @@
 //! The supervisor link: a WebSocket over a unix socket through which a
-//! companion app starts, watches and talks to supervisors, and reads
-//! and proposes scenes (`docs/design-supervisor-link.md`).
+//! client of the Supervisor Control API starts, watches and talks to
+//! supervisors, reads and proposes documents, and runs jobs in projects
+//! (`docs/design-supervisor-link.md`).
 //!
 //! Layout: `protocol` is the wire format, `Link` answers one request inside
-//! the link's scope, `Subscription` turns the agent list and output buffers
-//! into events, `serve` runs the socket. Agent work goes through the control
-//! socket's `Dispatcher` as an external caller, after `Link` has narrowed it
-//! to the supervisor tree, so the link never has a right `control.sock` does
-//! not already give the same process. `scenes` and `policy` are the scene half.
+//! the link's scope, `Subscription` turns the agent list, the output buffers
+//! and the job register into events, `serve` runs the socket. Agent work goes
+//! through the control socket's `Dispatcher` as an external caller, after
+//! `Link` has narrowed it to the supervisor tree, so the link never has a
+//! right `control.sock` does not already give the same process. `documents`,
+//! `jobs` and `policy` are the project half; none of them knows a document
+//! format or a job kind of its own.
 
+mod documents;
+mod glob;
+pub mod jobs;
 pub mod policy;
 pub mod protocol;
-pub mod scenes;
 mod subscription;
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
 
@@ -24,14 +31,16 @@ use crate::control_socket::protocol::{
 };
 use crate::control_socket::{Caller, Dispatcher};
 use crate::notifications::NotificationInput;
+use documents::{DocumentError, ProposeRequest};
+use jobs::Jobs;
 use policy::LinkPolicy;
 use protocol::*;
-use scenes::SceneError;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 pub use subscription::Subscription;
 use tungstenite::protocol::frame::coding::CloseCode;
@@ -43,15 +52,17 @@ pub const REQUEST_PATH: &str = "/v1";
 pub const POLL: Duration = Duration::from_millis(250);
 pub const PING_EVERY: Duration = Duration::from_secs(30);
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+/// Fixture `jobs.tickMs`: how often running jobs are looked at.
+pub const JOB_TICK: Duration = Duration::from_secs(2);
 /// How long one read waits before the loop turns to answers and events.
 const READ_SLICE: Duration = Duration::from_millis(50);
 
 /// What the link needs from the running app beyond the dispatcher. Over Tauri
 /// state in `TauriHost`, by a fake in the tests.
 pub trait LinkHost: Send + Sync {
-    /// The scene policy as the file says now. Missing or broken: nothing visible.
+    /// The link policy as the file says now. Missing or broken: nothing visible.
     fn policy(&self) -> LinkPolicy;
-    /// Drops a notification into the inbox (a scene proposal was made).
+    /// Drops a notification into the inbox (a proposal, a job that ended).
     fn notify(&self, input: NotificationInput);
 }
 
@@ -81,12 +92,17 @@ impl Reply {
 pub struct Link {
     dispatcher: Arc<Dispatcher>,
     host: Arc<dyn LinkHost>,
+    jobs: Arc<Jobs>,
+    /// Held from the quota check to the job's record, so two requests cannot
+    /// both take the last slot.
+    create_gate: Mutex<()>,
 }
 
 /// Whether an agent belongs to the supervisor tree: a supervisor, or an agent
 /// a supervisor started. Only a supervisor's spawn sets `spawnedByAgentId`, so
 /// that field alone is the second half; it also keeps a child in the tree
-/// after its supervisor's card was cleared.
+/// after its supervisor's card was cleared. A job's agent joins through the
+/// register (`Link::tree`).
 pub fn in_tree(agent: &AgentSummary) -> bool {
     agent.info.role == crate::agents::AgentRole::Supervisor
         || agent.info.spawned_by_agent_id.is_some()
@@ -97,28 +113,54 @@ fn to_value(result: impl serde::Serialize) -> Result<Value, LinkError> {
         .map_err(|error| LinkError::new("internal", format!("could not serialise: {error}")))
 }
 
-impl From<SceneError> for LinkError {
-    fn from(error: SceneError) -> Self {
+impl From<DocumentError> for LinkError {
+    fn from(error: DocumentError) -> Self {
         LinkError::new(error.code.as_str(), error.message)
     }
 }
 
+fn project_name(project: &str) -> Option<String> {
+    Path::new(project)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+}
+
 impl Link {
+    /// A link whose job register lives in memory only.
+    #[cfg(test)]
     pub fn new(dispatcher: Arc<Dispatcher>, host: Arc<dyn LinkHost>) -> Self {
-        Self { dispatcher, host }
+        Self::with_jobs(dispatcher, host, Arc::new(Jobs::default()))
     }
 
-    /// The supervisor tree as the IDE lists it now.
+    pub fn with_jobs(
+        dispatcher: Arc<Dispatcher>,
+        host: Arc<dyn LinkHost>,
+        jobs: Arc<Jobs>,
+    ) -> Self {
+        Self {
+            dispatcher,
+            host,
+            jobs,
+            create_gate: Mutex::new(()),
+        }
+    }
+
+    pub fn jobs(&self) -> &Jobs {
+        &self.jobs
+    }
+
+    /// The supervisor tree as the IDE lists it now, job agents included.
     pub fn tree(&self) -> Vec<AgentSummary> {
+        let job_agents: BTreeSet<String> = self.jobs.agent_ids().into_iter().collect();
         self.dispatcher
             .summaries()
             .into_iter()
-            .filter(in_tree)
+            .filter(|agent| in_tree(agent) || job_agents.contains(&agent.info.id))
             .collect()
     }
 
     /// Refuses an id outside the tree exactly like one that does not exist,
-    /// so the companion learns nothing about agents it may not touch.
+    /// so the client learns nothing about agents it may not touch.
     fn ensure_in_tree(&self, agent_id: &str) -> Result<(), LinkError> {
         if self.tree().iter().any(|agent| agent.info.id == agent_id) {
             return Ok(());
@@ -178,37 +220,61 @@ impl Link {
                     agent_id: params.agent_id,
                 }))
             }
-            LinkRequest::SceneProjects => {
-                to_value(json!({ "projects": scenes::visible_projects(&self.host.policy()) }))
-            }
-            LinkRequest::SceneSearch(params) => {
-                let limit = params.limit.unwrap_or(DEFAULT_SEARCH_LIMIT) as usize;
-                let found = scenes::search(
-                    &self.host.policy(),
-                    params.query.as_deref(),
-                    params.project.as_deref(),
-                    limit,
-                )?;
-                to_value(json!({ "scenes": found }))
-            }
-            LinkRequest::SceneGet(params) => to_value(scenes::get(
-                &self.host.policy(),
-                &params.project,
-                &params.id,
-                params.rev.as_deref(),
-            )?),
-            LinkRequest::SceneResolve(params) => to_value(scenes::resolve(
-                &self.host.policy(),
-                &params.project,
-                &params.from,
-                &params.reference,
-                params.rev.as_deref(),
-            )?),
-            LinkRequest::ScenePropose(params) => self.propose(params),
             LinkRequest::Subscribe(_) | LinkRequest::Unsubscribe => Err(LinkError::new(
                 "internal",
                 "subscriptions are handled by Link::handle",
             )),
+            other => self.answer_project(other),
+        }
+    }
+
+    /// Documents and jobs: the methods that work on projects.
+    fn answer_project(&self, request: LinkRequest) -> Result<Value, LinkError> {
+        let policy = self.host.policy();
+        match request {
+            LinkRequest::DocumentProjects => {
+                to_value(json!({ "projects": documents::visible_projects(&policy) }))
+            }
+            LinkRequest::DocumentSearch(params) => {
+                let limit = params.limit.unwrap_or(DEFAULT_SEARCH_LIMIT) as usize;
+                let found = documents::search(
+                    &policy,
+                    params.query.as_deref(),
+                    params.project.as_deref(),
+                    params.document_type.as_deref(),
+                    limit,
+                )?;
+                to_value(json!({ "documents": found }))
+            }
+            LinkRequest::DocumentGet(params) => to_value(documents::get(
+                &policy,
+                &params.project,
+                &params.document_type,
+                &params.id,
+                params.rev.as_deref(),
+            )?),
+            LinkRequest::DocumentResolve(params) => to_value(documents::resolve(
+                &policy,
+                &params.project,
+                &params.document_type,
+                &params.from,
+                &params.reference,
+                params.rev.as_deref(),
+            )?),
+            LinkRequest::DocumentPropose(params) => self.propose(&policy, &params),
+            LinkRequest::CreateJob(params) => self.create_job(&policy, params),
+            LinkRequest::ListJobs(params) => {
+                let limit = params.limit.unwrap_or(DEFAULT_JOBS_LIMIT) as usize;
+                let project = params
+                    .project
+                    .as_deref()
+                    .map(crate::supervisor::canonical_project_path);
+                to_value(
+                    json!({ "jobs": self.jobs.list(project.as_deref(), params.status, limit) }),
+                )
+            }
+            LinkRequest::CancelJob(params) => self.cancel_job(&params.job_id),
+            _ => Err(LinkError::new("internal", "not a project method")),
         }
     }
 
@@ -241,15 +307,17 @@ impl Link {
         Ok(json!({ "agentId": agent_id }))
     }
 
-    fn propose(&self, params: ProposeParams) -> Result<Value, LinkError> {
-        let base = params.base()?;
-        let proposal = scenes::propose(
-            &self.host.policy(),
-            &params.project,
-            &params.id,
-            &params.scene,
-            base,
-            params.message.as_deref(),
+    fn propose(&self, policy: &LinkPolicy, params: &ProposeParams) -> Result<Value, LinkError> {
+        let proposal = documents::propose(
+            policy,
+            &ProposeRequest {
+                project: &params.project,
+                type_name: &params.document_type,
+                id: &params.id,
+                document: &params.document,
+                base_hash: params.base()?,
+                message: params.message.as_deref(),
+            },
         )?;
         self.host.notify(proposal_notification(&proposal));
         to_value(proposal)
@@ -268,7 +336,7 @@ impl Link {
                 )));
             }
         }
-        let subscription = Subscription::start(&params, &tree);
+        let subscription = Subscription::start(&params, &tree, self.jobs.cursor());
         let agents: Vec<&AgentSummary> = tree
             .iter()
             .filter(|agent| subscription.covers(&agent.info.id))
@@ -315,41 +383,51 @@ impl Link {
     }
 }
 
+mod job_runner;
+
 /// The control-request method the frontend answers for `supervisors.spawn`.
 pub const SPAWN_SUPERVISOR_METHOD: &str = "spawn_supervisor";
 
-fn proposal_notification(proposal: &scenes::Proposal) -> NotificationInput {
-    let project_name = Path::new(&proposal.project)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned());
-    let verb = if proposal.created {
-        "new scene"
-    } else {
-        "change to"
-    };
+fn notification(project: &str, title: String, body: String) -> NotificationInput {
     NotificationInput {
         uid: None,
-        project_path: Some(proposal.project.clone()),
-        project_name,
-        // Not the user's own words: a companion app wrote it.
+        project_path: Some(project.to_string()),
+        project_name: project_name(project),
+        // Not the user's own words: a client of the link caused it.
         source: "mcp".to_string(),
         origin: Some("supervisor-link".to_string()),
         kind: Some("info".to_string()),
         severity: Some("info".to_string()),
-        title: format!("Scene proposal: {verb} {}", proposal.id),
-        body: Some(format!(
-            "Proposed over the supervisor link as branch {} (commit {}). \
-             Nothing in your working tree changed. Review the branch in the Git panel, \
-             then merge it or delete it.",
-            proposal.branch,
-            &proposal.commit[..proposal.commit.len().min(12)],
-        )),
+        title,
+        body: Some(body),
         actions: None,
         dedupe_key: None,
         ref_kind: None,
         ref_id: None,
         expires_at: None,
     }
+}
+
+fn short(commit: &str) -> &str {
+    &commit[..commit.len().min(12)]
+}
+
+fn proposal_notification(proposal: &documents::Proposal) -> NotificationInput {
+    let verb = if proposal.created { "new" } else { "change to" };
+    notification(
+        &proposal.project,
+        format!(
+            "Proposal: {verb} {} {}",
+            proposal.document_type, proposal.id
+        ),
+        format!(
+            "Proposed over the supervisor link as branch {} (commit {}). \
+             Nothing in your working tree changed. Review the branch in the Git panel, \
+             then merge it or delete it.",
+            proposal.branch,
+            short(&proposal.commit),
+        ),
+    )
 }
 
 // ---------------------------------------------------------------- transport
@@ -407,6 +485,7 @@ fn close(socket: &mut WebSocket<UnixStream>, code: CloseCode, reason: &str) {
     let _ = socket.flush();
 }
 
+// code-gate: complexity-cyclomatic, complexity-function-length - the connection's one loop (read, answer, events, ping); its branches are WebSocket frame kinds
 fn handle_connection(stream: UnixStream, link: &Arc<Link>) {
     // The peer is checked on the raw socket, before anything it sends is read.
     let admitted = link.admit(&stream);
@@ -495,7 +574,9 @@ fn handle_connection(stream: UnixStream, link: &Arc<Link>) {
             last_poll = Instant::now();
             if let Some(active) = subscription.as_mut() {
                 let tree = link.tree();
-                for (name, data) in active.poll(&tree, |id, since| link.output_since(id, since)) {
+                let mut events = active.poll(&tree, |id, since| link.output_since(id, since));
+                events.extend(active.poll_jobs(link.jobs()));
+                for (name, data) in events {
                     seq += 1;
                     if !send(&mut socket, &event(seq, name, data)) {
                         return;
@@ -537,13 +618,14 @@ impl LinkHost for TauriHost {
             return;
         };
         if let Err(error) = crate::notifications::dispatch_impl(&mut conn, &input) {
-            eprintln!("Supervisor link: could not record the proposal notification: {error}");
+            eprintln!("Supervisor link: could not record a notification: {error}");
         }
     }
 }
 
-/// Bind and serve on a background thread. Like the control socket, a socket
-/// that cannot be bound is logged and the IDE opens without it.
+/// Bind and serve on a background thread, and look at running jobs on
+/// another. Like the control socket, a socket that cannot be bound is logged
+/// and the IDE opens without it.
 pub fn start(app: &tauri::AppHandle, dispatcher: Arc<Dispatcher>) {
     use tauri::Manager;
     let Ok(dir) = app.path().app_data_dir() else {
@@ -557,10 +639,16 @@ pub fn start(app: &tauri::AppHandle, dispatcher: Arc<Dispatcher>) {
             return;
         }
     };
+    let jobs = Arc::new(Jobs::load(jobs::jobs_path_in(&dir), jobs::now_ms()));
     let host = Arc::new(TauriHost {
         app: app.clone(),
         app_data: dir,
     });
-    let link = Arc::new(Link::new(dispatcher, host));
+    let link = Arc::new(Link::with_jobs(dispatcher, host, jobs));
+    let ticker = link.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(JOB_TICK);
+        ticker.tick_jobs(jobs::now_ms());
+    });
     std::thread::spawn(move || serve(listener, link));
 }

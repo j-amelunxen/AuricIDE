@@ -12,8 +12,8 @@ use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
 use crate::supervisor::policy::{
-    balancing, check_spawn, normalize_provider_id, visible_projects, SpawnRequest,
-    BALANCING_WINDOW_DAYS,
+    balancing, check_spawn, normalize_provider_id, visible_projects, Balancing, SpawnRequest,
+    VisibleProject, BALANCING_WINDOW_DAYS,
 };
 use crate::supervisor::{
     canonical_project_path, live_runs_by_provider, model_names, running_children,
@@ -169,8 +169,7 @@ impl Dispatcher {
         let agents = self.backend.agents();
         let running = running_children(&agents, supervisor);
         let listed = self.backend.projects();
-        let since = (chrono::Utc::now() - chrono::Duration::days(BALANCING_WINDOW_DAYS.into()))
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let since = balancing_since();
         let projects = visible
             .into_iter()
             .map(|project| {
@@ -179,20 +178,7 @@ impl Dispatcher {
                     .find(|entry| canonical_project_path(&entry.path) == project.path)
                     .cloned()
                     .unwrap_or_else(|| unlisted_entry(&project.path, &agents));
-                // Only worth a database read where the project balances at all.
-                let balanced = project
-                    .providers
-                    .iter()
-                    .any(|provider| provider.weight.unwrap_or(0) > 0);
-                let balancing = balanced
-                    .then(|| {
-                        let mut runs = self.backend.recent_runs(Path::new(&project.path), &since);
-                        for (id, live) in live_runs_by_provider(&agents, &project.path) {
-                            *runs.entry(id).or_default() += live;
-                        }
-                        balancing(&project.providers, &runs)
-                    })
-                    .flatten();
+                let balancing = self.project_balancing(&project, &agents, &since);
                 let providers = project
                     .providers
                     .into_iter()
@@ -217,6 +203,37 @@ impl Dispatcher {
             })
             .collect();
         to_value(ListProjectsResult { projects })
+    }
+}
+
+/// The start of the load-balancing window, as `recent_runs` takes it.
+pub(super) fn balancing_since() -> String {
+    (chrono::Utc::now() - chrono::Duration::days(BALANCING_WINDOW_DAYS.into()))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+impl Dispatcher {
+    /// The project's load balancing over the window starting `since`, live
+    /// runs included. Only worth a database read where the project balances
+    /// at all.
+    pub(super) fn project_balancing(
+        &self,
+        project: &VisibleProject,
+        agents: &[AgentInfo],
+        since: &str,
+    ) -> Option<Balancing> {
+        let balanced = project
+            .providers
+            .iter()
+            .any(|provider| provider.weight.unwrap_or(0) > 0);
+        if !balanced {
+            return None;
+        }
+        let mut runs = self.backend.recent_runs(Path::new(&project.path), since);
+        for (id, live) in live_runs_by_provider(agents, &project.path) {
+            *runs.entry(id).or_default() += live;
+        }
+        balancing(&project.providers, &runs)
     }
 }
 

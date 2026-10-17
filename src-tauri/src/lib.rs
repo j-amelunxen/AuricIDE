@@ -52,6 +52,7 @@ use tauri::{Emitter, Manager};
 compile_error!("the e2e-webdriver feature must never be linked into a release artifact");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// code-gate: complexity-cyclomatic, complexity-function-length - the Tauri builder chain; one line per command and plugin, pre-existing shape
 pub fn run() {
     let builder = tauri::Builder::default()
         // The plugin's default level is Trace, which made `notify` log every
@@ -319,6 +320,7 @@ pub fn run() {
             supervisor::supervisor_policy_set,
             supervisor_link::policy::supervisor_link_policy_get,
             supervisor_link::policy::supervisor_link_policy_set,
+            supervisor_link::policy::supervisor_link_jobs_usage,
             supervisor::supervisor_resolve_tool,
             provider_policy::project_provider_policy_get,
             agent_window::open_agent_window,
