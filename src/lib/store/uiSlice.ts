@@ -77,12 +77,18 @@ export interface UISlice {
   agentConsoleOpen: boolean;
   /** Full-area overlay for the inbox and every schedule, grouped by project. */
   commandCenterOpen: boolean;
-  /**
-   * Which group the center is showing. Three states, and they mean different
+  /** Which group the center is showing. Three states, and they mean different
    * things: `undefined` is every project at once, `null` is the app itself
    * (rows that belong to no project), a string is that one project.
    */
   commandCenterProject: string | null | undefined;
+  supervisorProviderChoice:
+    import('@/app/components/cockpit/SupervisorProviderModal').SupervisorProviderChoice | null;
+
+  openSupervisorProviderChoice: (
+    candidates: import('@/app/components/cockpit/SupervisorProviderModal').SupervisorCandidateInfo[]
+  ) => Promise<string | null>;
+  closeSupervisorProviderChoice: () => void;
 
   setImportSpecDialogOpen: (open: boolean) => void;
   setVideoImportDialogOpen: (open: boolean) => void;
@@ -154,6 +160,7 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   agentConsoleOpen: false,
   commandCenterOpen: false,
   commandCenterProject: undefined,
+  supervisorProviderChoice: null,
   agentSettings: {
     agenticCommit: PROJECT_CONFIG_DEFAULTS.agenticCommit,
     agenticCommitPrompt: PROJECT_CONFIG_DEFAULTS.agenticCommitPrompt,
@@ -288,4 +295,25 @@ export const createUISlice: StateCreator<UISlice> = (set, get) => ({
   closeCommandCenter: () => set({ commandCenterOpen: false }),
 
   selectCommandCenterProject: (projectPath) => set({ commandCenterProject: projectPath }),
+
+  openSupervisorProviderChoice: (candidates) =>
+    new Promise((resolve) => {
+      set({
+        supervisorProviderChoice: {
+          candidates,
+          resolve: (providerId) => {
+            set({ supervisorProviderChoice: null });
+            resolve(providerId);
+          },
+        },
+      });
+    }),
+
+  closeSupervisorProviderChoice: () => {
+    const current = get().supervisorProviderChoice;
+    if (current) {
+      current.resolve(null);
+    }
+    set({ supervisorProviderChoice: null });
+  },
 });

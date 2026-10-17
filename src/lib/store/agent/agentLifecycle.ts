@@ -12,6 +12,7 @@ import {
   readSupervisorInstructions,
   supervisorSpawnConfig,
 } from '@/lib/agents/supervisorLaunch';
+import { supervisorProvidersOf } from '@/lib/config/supervisorProviders';
 import { prependTicketSkills } from '@/lib/pm/ticketSkills';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import {
@@ -197,23 +198,48 @@ export async function handleSpawnSupervisor(
   const host = get() as AgentSlice & {
     providers?: ProviderInfo[];
     starredProjects?: StarredProject[];
+    openSupervisorProviderChoice?: (
+      candidates: { id: string; name: string }[]
+    ) => Promise<string | null>;
   };
+
+  const candidates = supervisorProvidersOf(policy);
+  const providers = await listProviders().catch(() => host.providers ?? []);
+
+  let chosenProvider = skill?.provider;
+  if (!chosenProvider) {
+    if (candidates.length <= 1) {
+      chosenProvider = candidates[0];
+    } else if (host.openSupervisorProviderChoice) {
+      const candidateDetails = candidates.map((id) => {
+        const found = providers.find((p) => p.id === id);
+        return { id, name: found?.name ?? id };
+      });
+      const selected = await host.openSupervisorProviderChoice(candidateDetails);
+      if (!selected) {
+        return { kind: 'cancelled' };
+      }
+      chosenProvider = selected;
+    } else {
+      chosenProvider = candidates[0];
+    }
+  }
+
   const allowedPaths = Object.entries(policy.projects)
     .filter(([, entry]) => entry.allowed)
     .map(([path]) => path);
-  // Fetched, not read from the store: the store's list is narrowed to the open
-  // project's policy, and the supervisor works across projects.
-  const providers = await listProviders().catch(() => host.providers ?? []);
+
   const config = supervisorSpawnConfig({
     policy,
     providers,
+    provider: chosenProvider,
     projectPolicies: await readProjectProviderPolicies(allowedPaths),
     descriptions: Object.fromEntries(
       (host.starredProjects ?? []).map((project) => [project.path, project.description ?? null])
     ),
     firstTask: task || undefined,
     model: skill?.model,
-    instructions: readSupervisorInstructions(),
+    instructions: readSupervisorInstructions(chosenProvider),
   });
   if (!config) return { kind: 'nothing-visible' };
   return { kind: 'spawned', agent: await get().spawnNewAgent(config) };

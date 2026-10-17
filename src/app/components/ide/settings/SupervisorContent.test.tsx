@@ -252,6 +252,73 @@ describe('SupervisorContent', () => {
     await waitFor(() => expect(localStorage.getItem('auric.supervisor.instructions')).toBeNull());
   });
 
+  it('allows selecting multiple candidate providers and saves them in policy', async () => {
+    await renderLoaded();
+    const claudeCheckbox = screen.getByTestId('supervisor-provider-candidate-claude');
+    const codexCheckbox = screen.getByTestId('supervisor-provider-candidate-codex');
+
+    expect(claudeCheckbox).toBeChecked();
+    expect(claudeCheckbox).toBeDisabled(); // Cannot uncheck the only selected provider
+    expect(codexCheckbox).not.toBeChecked();
+
+    fireEvent.click(codexCheckbox);
+    expect(codexCheckbox).toBeChecked();
+    expect(claudeCheckbox).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
+    const saved = supervisorPolicySet.mock.calls[0][0] as SupervisorPolicy;
+    expect(saved.supervisor.providers).toEqual(['claude', 'codex']);
+  });
+
+  it('supports provider-specific instructions tabs when multiple providers are active', async () => {
+    supervisorPolicyGet.mockResolvedValue({
+      policy: {
+        ...policy(),
+        supervisor: {
+          provider: 'claude',
+          providers: ['claude', 'codex'],
+          model: null,
+          chrome: false,
+        },
+      },
+      rejected: [],
+    });
+    localStorage.setItem(
+      'auric.supervisor.instructions',
+      JSON.stringify({ claude: 'Claude instructions' })
+    );
+
+    await renderLoaded();
+
+    // Verify both tabs are visible
+    const claudeTab = screen.getByTestId('supervisor-instructions-tab-claude');
+    const codexTab = screen.getByTestId('supervisor-instructions-tab-codex');
+    expect(claudeTab).toBeInTheDocument();
+    expect(codexTab).toBeInTheDocument();
+
+    // Claude instructions are initially loaded
+    const textarea = screen.getByTestId('supervisor-instructions') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Claude instructions');
+
+    // Switch to Codex tab and enter Codex instructions
+    fireEvent.click(codexTab);
+    expect(textarea.value).toBe('');
+    fireEvent.change(textarea, { target: { value: 'Codex instructions' } });
+
+    // Save and verify stored preference is updated map
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => {
+      const stored = localStorage.getItem('auric.supervisor.instructions');
+      expect(stored).not.toBeNull();
+      const parsed = JSON.parse(stored!);
+      expect(parsed).toEqual({
+        claude: 'Claude instructions',
+        codex: 'Codex instructions',
+      });
+    });
+  });
+
   it('sets a load-balancing share per provider and states the split it makes', async () => {
     projectProviderPolicyGet.mockResolvedValue({ allow: null, deny: [] });
     await renderLoaded();
