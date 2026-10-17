@@ -44,6 +44,7 @@ describe('the supervisor tool surface', () => {
       'list_my_agents',
       'list_projects',
       'read_agent_output',
+      'remove_worktree',
       'spawn_agent',
     ]);
     const spawn = tools.get('spawn_agent')!.parameters;

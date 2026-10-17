@@ -14,6 +14,7 @@ const CONTROL_TOOLS = [
   'list_agents',
   'list_projects',
   'read_agent_output',
+  'remove_worktree',
   'send_agent_input',
   'spawn_agent',
 ];

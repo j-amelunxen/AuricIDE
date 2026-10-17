@@ -158,6 +158,27 @@ function verbatimSpawnConfig(request: SpawnRequest, providers: ProviderInfo[]): 
   };
 }
 
+/**
+ * Appended to the task of an agent started in a worktree. Said by the IDE, not
+ * left to whoever asked for the spawn: uncommitted work cannot be told apart
+ * from leftovers, and `remove_worktree` keeps a worktree that holds any, so a
+ * child that never commits leaves its caller nothing to clean up or hand over.
+ */
+export const WORKTREE_CHILD_NOTE =
+  'You work in a git worktree of your own, on its own branch. Commit all your work on that ' +
+  'branch before you finish. Do not merge it and do not remove the worktree: whoever started ' +
+  'you takes care of that.';
+
+function inWorktree(config: AgentConfig, worktree: boolean | null): AgentConfig {
+  if (!worktree) return config;
+  return {
+    ...config,
+    task: `${config.task}\n\n${WORKTREE_CHILD_NOTE}`,
+    historyPrompt: config.historyPrompt ?? config.task,
+    useWorktree: true,
+  };
+}
+
 function spawnFailureCode(message: string): ControlErrorCode {
   return SPAWN_REFUSALS.find(({ pattern }) => message.includes(pattern))?.code ?? 'internal';
 }
@@ -169,9 +190,12 @@ async function spawnFromControl(params: SpawnRequest, host: ControlHost) {
       `projectPath is not an existing directory: ${params.projectPath}`
     );
   }
-  const config = isVerbatimSpawn(params)
-    ? verbatimSpawnConfig(params, host.providers)
-    : spawnConfigFor(params, host.providers);
+  const config = inWorktree(
+    isVerbatimSpawn(params)
+      ? verbatimSpawnConfig(params, host.providers)
+      : spawnConfigFor(params, host.providers),
+    params.worktree
+  );
   let spawned: AgentInfo;
   try {
     spawned = await host.spawnNewAgent(config);

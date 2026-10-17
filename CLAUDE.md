@@ -467,6 +467,13 @@ ADR 0004.
   supervisor keeps the text it started with.
 - **Model size is a `rank`** on `info.models` entries in
   `dynamic-providers/*.json` (higher is bigger). The launch prompt
+- **A child may get a worktree, and the supervisor cleans it up.**
+  `spawn { worktree: true }` runs the child on its own branch and folder (the
+  bridge also tells it to commit there). `remove_worktree` removes it only
+  when it holds no uncommitted change and no unmerged commit; otherwise it
+  answers `removed: false` and the work is handed to the human. The
+  supervisor never merges and never forces; its prompt makes the cleanup its
+  duty (`docs/design-agent-control.md`, "Worktrees").
   (`supervisorLaunchPrompt.ts`) asks for the smallest fitting one; unranked
   models are never picked by default.
 - **Its tile is a Quick Access tile.** Hover or hold opens a skill wheel,

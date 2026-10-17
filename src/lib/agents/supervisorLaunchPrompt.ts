@@ -186,6 +186,10 @@ const SPAWN_RULES = [
   '- **Model: the smallest allowed one that fits.** Trivial → small, normal work → medium, ' +
     'hard reasoning or architecture → large. Use the largest only with a stated reason. Never ' +
     'pick a model of unknown size unless nothing else is allowed.',
+  '- **Worktree: for code changes, not for questions.** Pass `worktree: true` when the agent ' +
+    'changes code in a repository where the human or another agent may work at the same time; ' +
+    'it then works on its own branch in its own folder. Leave it out for questions, checks and ' +
+    'anything that changes no files.',
   '- A refused spawn (supervisor_denied, provider_denied) is an answer: report it with its ' +
     'reason. Never switch provider or model to get around it.',
 ].join('\n');
@@ -198,9 +202,26 @@ const CHILD_RULES = [
     "agent's window to answer in (its name and id), then carry on.",
 ].join('\n');
 
+/**
+ * Every worktree a supervisor starts is its own to clean up, or worktrees pile
+ * up beside the project. `remove_worktree` removes only what holds no work; the
+ * rest is handed to the human, never merged or forced by the supervisor.
+ */
+const CLEANUP_RULES = [
+  "- **Every worktree you start is yours to clean up.** Once you have read an agent's result, " +
+    'call remove_worktree for it. A worktree you leave behind is litter the human has to find.',
+  '- **removed: false is a handover, not an error.** The worktree holds work (dirty or ' +
+    'branchAhead). Do not retry, do not merge, do not ask another agent to delete it. Tell the ' +
+    'human the project, branch, path and what the work is, and that it waits for a merge in ' +
+    "the IDE's Git panel; where the project has an auric-pm server, also record it with notify.",
+  '- **Before you end,** call list_my_agents and clean up the worktree of every finished agent ' +
+    'you started (its repoPath contains `.auric-wt`).',
+].join('\n');
+
 const REPORT =
-  'Report per agent: id, project, model, and its result (the ANSWER line, or why there is ' +
-  'none). Keep the human informed; do not invent results you have not read.';
+  'Report per agent: id, project, model, its result (the ANSWER line, or why there is none) ' +
+  'and, if it ran in a worktree, whether that was removed or waits for the human. Keep the ' +
+  'human informed; do not invent results you have not read.';
 
 /** What a launch adds to the generated prompt; every part is optional. */
 export interface SupervisorPromptOptions {
@@ -253,6 +274,8 @@ export function buildSupervisorLaunchPrompt(
     SPAWN_RULES,
     '## Working with your agents',
     CHILD_RULES,
+    '## Cleaning up',
+    CLEANUP_RULES,
     '## Reporting',
     REPORT,
     ...(instructions?.trim()

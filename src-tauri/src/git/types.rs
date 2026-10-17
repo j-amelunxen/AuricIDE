@@ -98,6 +98,19 @@ pub struct GitWorktree {
     pub branch_ahead: bool,
 }
 
+/// What `git_worktree_remove_unless_work_impl` did: removed, or kept because
+/// it holds uncommitted changes (`dirty`) or unmerged commits (`branch_ahead`).
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeRemoval {
+    pub path: String,
+    pub branch: Option<String>,
+    pub source_repo: String,
+    pub removed: bool,
+    pub dirty: bool,
+    pub branch_ahead: bool,
+}
+
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeMergeResult {

@@ -156,7 +156,8 @@
           "permissionMode": null,
           "headless": null,
           "name": null,
-          "role": null
+          "role": null,
+          "worktree": null
         }
       }
     },
@@ -168,6 +169,36 @@
         "method": "kill",
         "params": {
           "agentId": "agent-3"
+        }
+      }
+    },
+    {
+      "name": "spawn in a worktree of its own",
+      "raw": "{\"id\":24,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"fix the parser\",\"worktree\":true}}",
+      "expected": {
+        "id": 24,
+        "method": "spawn",
+        "params": {
+          "projectPath": "/tmp/example-project",
+          "prompt": "fix the parser",
+          "provider": null,
+          "model": null,
+          "permissionMode": null,
+          "headless": null,
+          "name": null,
+          "role": null,
+          "worktree": true
+        }
+      }
+    },
+    {
+      "name": "remove_worktree",
+      "raw": "{\"id\":25,\"method\":\"remove_worktree\",\"params\":{\"agentId\":\"agent-5\"}}",
+      "expected": {
+        "id": 25,
+        "method": "remove_worktree",
+        "params": {
+          "agentId": "agent-5"
         }
       }
     },
@@ -185,7 +216,8 @@
           "permissionMode": null,
           "headless": null,
           "name": null,
-          "role": "supervisor"
+          "role": "supervisor",
+          "worktree": null
         }
       }
     },
@@ -203,7 +235,8 @@
           "permissionMode": null,
           "headless": null,
           "name": null,
-          "role": null
+          "role": null,
+          "worktree": null
         }
       }
     },
@@ -320,6 +353,14 @@
       "raw": "{\"id\":22,\"method\":\"await_result\",\"params\":{}}",
       "expectedError": {
         "id": 22,
+        "code": "invalid_params"
+      }
+    },
+    {
+      "name": "remove_worktree without agentId",
+      "raw": "{\"id\":26,\"method\":\"remove_worktree\",\"params\":{}}",
+      "expectedError": {
+        "id": 26,
         "code": "invalid_params"
       }
     },
@@ -450,6 +491,19 @@
           "finishedAt": 1790000060000,
           "costUsd": 0.0123
         }
+      }
+    },
+    "remove_worktree": {
+      "id": 25,
+      "ok": true,
+      "result": {
+        "agentId": "agent-5",
+        "path": "/tmp/example-project.auric-wt/fix-the-parser-1a2b3c4d",
+        "branch": "auric/fix-the-parser-1a2b3c4d",
+        "sourceRepo": "/tmp/example-project",
+        "removed": true,
+        "dirty": false,
+        "branchAhead": false
       }
     },
     "error": {
@@ -945,6 +999,23 @@
           "message": "A supervisor cannot type into agents. Ask the human to answer in agent-5's window."
         }
       }
+    },
+    {
+      "name": "remove_worktree keeps a worktree with work in it",
+      "method": "remove_worktree",
+      "raw": {
+        "id": 25,
+        "ok": true,
+        "result": {
+          "agentId": "agent-5",
+          "path": "/tmp/example-project.auric-wt/fix-the-parser-1a2b3c4d",
+          "branch": "auric/fix-the-parser-1a2b3c4d",
+          "sourceRepo": "/tmp/example-project",
+          "removed": false,
+          "dirty": false,
+          "branchAhead": true
+        }
+      }
     }
   ],
   "callerScope": {
@@ -964,13 +1035,22 @@
           "kill",
           "spawn",
           "list_projects",
-          "await_result"
+          "await_result",
+          "remove_worktree"
         ],
         "scope": "all_agents",
         "mayPass": ["role", "permissionMode"]
       },
       "supervisor": {
-        "methods": ["list_projects", "list_agents", "read_output", "await_result", "spawn", "kill"],
+        "methods": [
+          "list_projects",
+          "list_agents",
+          "read_output",
+          "await_result",
+          "spawn",
+          "kill",
+          "remove_worktree"
+        ],
         "refusedMethods": {
           "send_input": "outside_supervisor_scope"
         },
@@ -987,7 +1067,8 @@
           "role": "worker",
           "spawnedByAgentId": "<the supervisor's agent id>",
           "runSource": "supervisor"
-        }
+        },
+        "worktrees": "spawn may pass worktree: true; remove_worktree removes an own child's worktree only when it holds no uncommitted change and no unmerged commit, otherwise answers removed: false and leaves it for a person. No path and no force are accepted: the folder is the child's own working directory."
       },
       "worker": {
         "methods": [],
@@ -1138,6 +1219,39 @@
         "caller": "external",
         "method": "await_result",
         "target": "child_of_killed_supervisor",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor cannot remove another supervisor's child's worktree",
+        "caller": "supervisor",
+        "method": "remove_worktree",
+        "target": "other_supervisors_child",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "supervisor cannot remove the worktree of an agent the human started",
+        "caller": "supervisor",
+        "method": "remove_worktree",
+        "target": "unrelated_agent",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "a worktree is not removed under a running agent",
+        "caller": "supervisor",
+        "method": "remove_worktree",
+        "target": "own_child",
+        "expected": "invalid_params"
+      },
+      {
+        "name": "supervisor may start its child in a worktree",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "provider": "claude",
+          "model": "haiku",
+          "headless": true,
+          "worktree": true
+        },
         "expected": "ok"
       }
     ]

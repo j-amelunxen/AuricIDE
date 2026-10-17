@@ -111,6 +111,11 @@ pub struct SpawnParams {
     /// supervisor caller may not, and `role` alone no longer says so.
     #[serde(skip)]
     pub role_passed: bool,
+    /// Run the agent in a git worktree of its own, created by the frontend
+    /// (`AgentConfig.useWorktree`). Whoever asked for it removes it again
+    /// with `remove_worktree`.
+    #[serde(default)]
+    pub worktree: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -132,9 +137,10 @@ pub enum Request {
     Spawn(SpawnParams),
     ListProjects(EmptyParams),
     AwaitResult(AwaitResultParams),
+    RemoveWorktree(AgentIdParams),
 }
 
-const METHODS: [&str; 7] = [
+const METHODS: [&str; 8] = [
     "list_agents",
     "read_output",
     "send_input",
@@ -142,6 +148,7 @@ const METHODS: [&str; 7] = [
     "spawn",
     "list_projects",
     "await_result",
+    "remove_worktree",
 ];
 
 /// A request line that could not be turned into a `Request`. `id` is echoed
@@ -233,7 +240,9 @@ fn normalise(request: Request) -> Result<Request, String> {
             }
             Ok(Request::SendInput(params))
         }
-        Request::Kill(params) if blank(&params.agent_id) => Err("agentId must not be empty".into()),
+        Request::Kill(params) | Request::RemoveWorktree(params) if blank(&params.agent_id) => {
+            Err("agentId must not be empty".into())
+        }
         Request::Spawn(params) if blank(&params.project_path) || blank(&params.prompt) => {
             Err("projectPath and prompt must not be empty".into())
         }
@@ -305,6 +314,17 @@ pub struct SendInputResult {
 pub struct KillResult {
     pub agent_id: String,
     pub killed: bool,
+}
+
+/// What `remove_worktree` did with an agent's worktree. `removed: false` is
+/// an answer, not a failure: the worktree holds uncommitted changes (`dirty`)
+/// or commits its source does not have (`branchAhead`), and stays for a person.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveWorktreeResult {
+    pub agent_id: String,
+    #[serde(flatten)]
+    pub worktree: crate::git::WorktreeRemoval,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -538,6 +558,20 @@ pub(crate) mod tests {
         }
     }
 
+    pub(crate) fn sample_worktree_removal(removed: bool, ahead: bool) -> RemoveWorktreeResult {
+        RemoveWorktreeResult {
+            agent_id: "agent-5".into(),
+            worktree: crate::git::WorktreeRemoval {
+                path: "/tmp/example-project.auric-wt/fix-the-parser-1a2b3c4d".into(),
+                branch: Some("auric/fix-the-parser-1a2b3c4d".into()),
+                source_repo: "/tmp/example-project".into(),
+                removed,
+                dirty: false,
+                branch_ahead: ahead,
+            },
+        }
+    }
+
     pub(crate) fn sample_run_result() -> RunResult {
         RunResult {
             agent_id: "agent-5".into(),
@@ -665,6 +699,10 @@ pub(crate) mod tests {
             (
                 "await_result",
                 ok_response(&json!(18), AwaitOutcome::done(sample_run_result())),
+            ),
+            (
+                "remove_worktree",
+                ok_response(&json!(25), sample_worktree_removal(true, false)),
             ),
             (
                 "error",
@@ -811,6 +849,10 @@ pub(crate) mod tests {
                         "A supervisor cannot type into agents. Ask the human to answer in agent-5's window.",
                     ),
                 ),
+            ),
+            (
+                "remove_worktree keeps a worktree with work in it",
+                ok_response(&json!(25), sample_worktree_removal(false, true)),
             ),
         ];
         let cases = fixtures["additionalResponses"].as_array().unwrap();

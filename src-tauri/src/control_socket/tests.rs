@@ -360,7 +360,7 @@ fn spawn_forwards_all_params_and_returns_the_new_agent_id() {
         json!({
             "projectPath": project, "prompt": "run the tests", "provider": null,
             "model": null, "permissionMode": null, "headless": null, "name": null,
-            "role": null
+            "role": null, "worktree": null
         })
     );
 }
@@ -957,7 +957,7 @@ fn a_supervisor_spawn_reaches_the_frontend_with_what_rust_decided() {
             "projectPath": s.path, "prompt": "reply PONG", "provider": "codex",
             "model": "gpt-6-luna", "permissionMode": "acceptEdits", "headless": true,
             "name": "Ping", "role": "worker", "spawnedByAgentId": "agent-sup",
-            "runSource": "supervisor"
+            "runSource": "supervisor", "worktree": null
         })
     );
 }
@@ -1298,4 +1298,87 @@ fn a_supervisor_is_admitted_over_a_real_socket_in_its_scope() {
         r#"{"id":2,"method":"send_input","params":{"agentId":"agent-child","text":"y"}}"#,
     );
     assert_eq!(error_code(&typed), "outside_supervisor_scope");
+}
+
+/// A finished child of `agent-sup` whose working directory is a real Auric
+/// worktree of a real repository, so `remove_worktree` acts on git itself.
+fn finished_child_in_worktree(s: &Scope, repo: &tempfile::TempDir) -> crate::git::GitWorktree {
+    let path = crate::git::tests::committed_repo(repo);
+    let worktree = crate::git::git_worktree_add_impl(&path, "child").unwrap();
+    let mut child = agent_in("agent-wt", Some("agent-sup"), &s.path, AgentStatus::Idle);
+    child.repo_path = Some(worktree.path.clone());
+    s.h.backend.agents.lock().unwrap().push(child);
+    worktree
+}
+
+fn remove_worktree_of(s: &Scope, agent_id: &str) -> Value {
+    call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 25, "method": "remove_worktree", "params": { "agentId": agent_id } }),
+    )
+}
+
+#[test]
+fn a_supervisor_removes_its_finished_child_s_untouched_worktree() {
+    let s = supervised_scope();
+    let repo = tempfile::TempDir::new().unwrap();
+    let worktree = finished_child_in_worktree(&s, &repo);
+
+    let response = remove_worktree_of(&s, "agent-wt");
+    assert_eq!(response["result"]["removed"], true, "{response}");
+    assert_eq!(response["result"]["agentId"], "agent-wt");
+    assert_eq!(response["result"]["branch"], json!(worktree.branch));
+    assert!(!Path::new(&worktree.path).exists());
+}
+
+#[test]
+fn a_worktree_with_work_in_it_stays_for_a_person() {
+    let s = supervised_scope();
+    let repo = tempfile::TempDir::new().unwrap();
+    let worktree = finished_child_in_worktree(&s, &repo);
+    crate::git::tests::commit_in(&worktree.path, "b.txt", "from agent", "agent work");
+
+    let response = remove_worktree_of(&s, "agent-wt");
+    assert_eq!(response["ok"], true, "{response}");
+    assert_eq!(response["result"]["removed"], false);
+    assert_eq!(response["result"]["branchAhead"], true);
+    assert!(Path::new(&worktree.path).exists());
+
+    std::fs::write(Path::new(&worktree.path).join("c.txt"), "uncommitted").unwrap();
+    let response = remove_worktree_of(&s, "agent-wt");
+    assert_eq!(response["result"]["removed"], false);
+    assert_eq!(response["result"]["dirty"], true);
+    assert!(Path::new(&worktree.path).exists());
+}
+
+#[test]
+fn remove_worktree_refuses_an_agent_that_ran_in_the_project_itself() {
+    let s = supervised_scope();
+    let mut child = agent_in("agent-plain", Some("agent-sup"), &s.path, AgentStatus::Idle);
+    child.repo_path = Some(s.path.clone());
+    s.h.backend.agents.lock().unwrap().push(child);
+
+    let response = remove_worktree_of(&s, "agent-plain");
+    assert_eq!(error_code(&response), "invalid_params");
+    assert!(
+        Path::new(&s.path).join(".auric").is_dir(),
+        "the project stays"
+    );
+}
+
+#[test]
+fn a_supervisor_spawn_in_a_worktree_reaches_the_frontend_as_asked() {
+    let s = supervised_scope();
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 7, "method": "spawn", "params": {
+            "projectPath": s.path, "prompt": "fix it",
+            "provider": "claude", "model": "haiku", "headless": true, "worktree": true
+        } }),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    let requests = s.h.backend.requests.lock().unwrap();
+    assert_eq!(requests[0].params["worktree"], true);
 }
