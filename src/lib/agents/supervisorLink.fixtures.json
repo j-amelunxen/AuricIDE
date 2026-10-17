@@ -1,0 +1,170 @@
+{
+  "$comment": "Machine-checkable half of docs/design-supervisor-link.md. Rust reads it in supervisor_link tests. Change this first.",
+  "protocol": 1,
+  "socketFileName": "supervisor-link.sock",
+  "policyFileName": "supervisor-link.json",
+  "path": "/v1",
+  "pollMs": 250,
+  "pingSeconds": 30,
+  "maxMessageBytes": 1048576,
+  "methods": [
+    "session.hello",
+    "supervisors.spawn",
+    "agents.list",
+    "agents.read",
+    "agents.send",
+    "agents.kill",
+    "events.subscribe",
+    "events.unsubscribe",
+    "scenes.projects",
+    "scenes.search",
+    "scenes.get",
+    "scenes.resolve",
+    "scenes.propose"
+  ],
+  "events": ["agent.added", "agent.updated", "agent.removed", "agent.output"],
+  "errorCodes": [
+    "invalid_request",
+    "unsupported_version",
+    "unknown_method",
+    "invalid_params",
+    "forbidden_agent_caller",
+    "unknown_agent",
+    "agent_not_running",
+    "headless_no_stdin",
+    "supervisor_unavailable",
+    "provider_denied",
+    "frontend_unavailable",
+    "scene_not_visible",
+    "scene_not_found",
+    "scene_invalid",
+    "scene_conflict",
+    "not_a_git_repo",
+    "internal"
+  ],
+  "messages": [
+    {
+      "name": "a valid request without params",
+      "line": "{\"v\":1,\"id\":\"a\",\"method\":\"agents.list\"}",
+      "accepted": true
+    },
+    {
+      "name": "a numeric id is echoed",
+      "line": "{\"v\":1,\"id\":7,\"method\":\"session.hello\",\"params\":{\"client\":\"companion\"}}",
+      "accepted": true
+    },
+    {
+      "name": "another version",
+      "line": "{\"v\":2,\"id\":\"a\",\"method\":\"agents.list\"}",
+      "error": "unsupported_version",
+      "id": "a"
+    },
+    {
+      "name": "no version at all",
+      "line": "{\"id\":\"a\",\"method\":\"agents.list\"}",
+      "error": "unsupported_version",
+      "id": "a"
+    },
+    { "name": "not JSON", "line": "hello", "error": "invalid_request", "id": null },
+    {
+      "name": "no method",
+      "line": "{\"v\":1,\"id\":3}",
+      "error": "invalid_request",
+      "id": 3
+    },
+    {
+      "name": "an unknown method",
+      "line": "{\"v\":1,\"id\":3,\"method\":\"files.read\",\"params\":{}}",
+      "error": "unknown_method",
+      "id": 3
+    },
+    {
+      "name": "a control.sock method name is not a link method",
+      "line": "{\"v\":1,\"id\":3,\"method\":\"spawn\",\"params\":{}}",
+      "error": "unknown_method",
+      "id": 3
+    },
+    {
+      "name": "an unknown param",
+      "line": "{\"v\":1,\"id\":4,\"method\":\"agents.send\",\"params\":{\"agentId\":\"agent-1\",\"text\":\"hi\",\"enter\":true}}",
+      "error": "invalid_params",
+      "id": 4
+    },
+    {
+      "name": "a missing param",
+      "line": "{\"v\":1,\"id\":5,\"method\":\"agents.kill\",\"params\":{}}",
+      "error": "invalid_params",
+      "id": 5
+    },
+    {
+      "name": "propose without baseHash",
+      "line": "{\"v\":1,\"id\":6,\"method\":\"scenes.propose\",\"params\":{\"project\":\"/p\",\"id\":\"docs/a\",\"scene\":{}}}",
+      "error": "invalid_params",
+      "id": 6
+    },
+    {
+      "name": "propose for a new scene",
+      "line": "{\"v\":1,\"id\":6,\"method\":\"scenes.propose\",\"params\":{\"project\":\"/p\",\"id\":\"docs/a\",\"scene\":{},\"baseHash\":null}}",
+      "accepted": true
+    },
+    {
+      "name": "tailBytes out of range",
+      "line": "{\"v\":1,\"id\":8,\"method\":\"agents.read\",\"params\":{\"agentId\":\"agent-1\",\"tailBytes\":999999999}}",
+      "error": "invalid_params",
+      "id": 8
+    }
+  ],
+  "sceneIds": {
+    "valid": [
+      "docs/system",
+      "docs/architecture/system",
+      "docs/architecture/modules/auth-v2",
+      "docs/a.b/c_d"
+    ],
+    "invalid": [
+      "",
+      "docs",
+      "docs/",
+      "src/system",
+      "/docs/system",
+      "docs/../secret",
+      "docs/./system",
+      "docs//system",
+      "docs/.hidden",
+      "docs/system.scene.json",
+      "docs/a\\b"
+    ]
+  },
+  "resolve": [
+    {
+      "from": "docs/architecture/system",
+      "ref": "modules/auth",
+      "id": "docs/architecture/modules/auth"
+    },
+    {
+      "from": "docs/architecture/system",
+      "ref": "./modules/auth",
+      "id": "docs/architecture/modules/auth"
+    },
+    { "from": "docs/architecture/system", "ref": "../overview", "id": "docs/overview" },
+    { "from": "docs/architecture/system", "ref": "docs/other/thing", "id": "docs/other/thing" },
+    {
+      "from": "docs/architecture/system",
+      "ref": "modules/auth.scene.json",
+      "id": "docs/architecture/modules/auth"
+    },
+    { "from": "docs/system", "ref": "sub", "id": "docs/sub" },
+    { "from": "docs/architecture/system", "ref": "../../outside", "error": "invalid_params" },
+    { "from": "docs/system", "ref": "../x", "error": "invalid_params" },
+    { "from": "docs/system", "ref": "", "error": "invalid_params" },
+    { "from": "docs/system", "ref": "/etc/passwd", "error": "invalid_params" }
+  ],
+  "search": {
+    "defaultLimit": 50,
+    "maxLimit": 200,
+    "maxDepth": 8,
+    "maxFilesPerProject": 2000
+  },
+  "maxSceneBytes": 262144,
+  "proposalBranchPrefix": "auric/scene-proposal/"
+}

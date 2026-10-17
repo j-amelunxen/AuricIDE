@@ -4,26 +4,27 @@ use crate::agents::run_results::RunResult;
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
 
+/// Shared with the supervisor link's tests, which drive the same dispatcher.
 #[derive(Default)]
-struct FakeBackend {
-    agents: Mutex<Vec<AgentInfo>>,
-    written: Mutex<Vec<(String, String)>>,
-    input_events: Mutex<Vec<AgentInputSentEvent>>,
-    requests: Mutex<Vec<ControlRequestEvent>>,
+pub(crate) struct FakeBackend {
+    pub(crate) agents: Mutex<Vec<AgentInfo>>,
+    pub(crate) written: Mutex<Vec<(String, String)>>,
+    pub(crate) input_events: Mutex<Vec<AgentInputSentEvent>>,
+    pub(crate) requests: Mutex<Vec<ControlRequestEvent>>,
     /// When set, every control request is answered with this, as the
     /// frontend would through `control_respond`.
-    reply: Mutex<Option<FrontendReply>>,
-    pending: Arc<PendingRequests>,
-    projects: Mutex<Vec<ProjectEntry>>,
+    pub(crate) reply: Mutex<Option<FrontendReply>>,
+    pub(crate) pending: Arc<PendingRequests>,
+    pub(crate) projects: Mutex<Vec<ProjectEntry>>,
     /// A frontend that answers a kill with ok but does not actually kill.
-    kill_leaves_agent: Mutex<bool>,
-    agent_pids: Mutex<HashMap<u32, (String, AgentRole)>>,
-    policy: Mutex<SupervisorPolicy>,
-    offered: Mutex<BTreeMap<String, Vec<ModelOption>>>,
-    modes: Mutex<BTreeMap<String, crate::supervisor::policy::ProviderModes>>,
-    project_policies: Mutex<HashMap<String, ProviderPolicy>>,
+    pub(crate) kill_leaves_agent: Mutex<bool>,
+    pub(crate) agent_pids: Mutex<HashMap<u32, (String, AgentRole)>>,
+    pub(crate) policy: Mutex<SupervisorPolicy>,
+    pub(crate) offered: Mutex<BTreeMap<String, Vec<ModelOption>>>,
+    pub(crate) modes: Mutex<BTreeMap<String, crate::supervisor::policy::ProviderModes>>,
+    pub(crate) project_policies: Mutex<HashMap<String, ProviderPolicy>>,
     /// Finished runs per provider, the same for every project.
-    recent_runs: Mutex<BTreeMap<String, u32>>,
+    pub(crate) recent_runs: Mutex<BTreeMap<String, u32>>,
 }
 
 impl ControlBackend for FakeBackend {

@@ -44,6 +44,8 @@ import {
   MAX_FINISHED_AGENTS,
   UNGROUPED_REPO_KEY,
   type AgentSlice,
+  type LinkedSupervisorLaunch,
+  type LinkedSupervisorSpawn,
   type SupervisorLaunch,
   type SupervisorSkillLaunch,
 } from './agentTypes';
@@ -225,21 +227,66 @@ export async function handleSpawnSupervisor(
     }
   }
 
+  const config = await supervisorConfigFor(host, policy, providers, {
+    provider: chosenProvider,
+    task,
+    model: skill?.model,
+  });
+  if (!config) return { kind: 'nothing-visible' };
+  return { kind: 'spawned', agent: await get().spawnNewAgent(config) };
+}
+
+type SupervisorHost = AgentSlice & { starredProjects?: StarredProject[] };
+
+/**
+ * The launch config every supervisor gets, whoever asked for it: the policy's
+ * projects, the human's standing instructions, the first task. `null` when
+ * the policy shows it no project.
+ */
+async function supervisorConfigFor(
+  host: SupervisorHost,
+  policy: Awaited<ReturnType<typeof supervisorPolicyGet>>['policy'],
+  providers: ProviderInfo[],
+  launch: { provider: string | undefined; task: string; model: string | undefined }
+): Promise<AgentConfig | null> {
   const allowedPaths = Object.entries(policy.projects)
     .filter(([, entry]) => entry.allowed)
     .map(([path]) => path);
-
-  const config = supervisorSpawnConfig({
+  return supervisorSpawnConfig({
     policy,
     providers,
-    provider: chosenProvider,
+    provider: launch.provider,
     projectPolicies: await readProjectProviderPolicies(allowedPaths),
     descriptions: Object.fromEntries(
       (host.starredProjects ?? []).map((project) => [project.path, project.description ?? null])
     ),
-    firstTask: task || undefined,
-    model: skill?.model,
-    instructions: readSupervisorInstructions(chosenProvider),
+    firstTask: launch.task || undefined,
+    model: launch.model,
+    instructions: readSupervisorInstructions(launch.provider),
+  });
+}
+
+/**
+ * A supervisor asked for over the supervisor link
+ * (`docs/design-supervisor-link.md`): always a new one, never the provider
+ * picker, and only on a provider the policy lists for supervisors.
+ */
+export async function handleSpawnLinkedSupervisor(
+  get: () => AgentSlice,
+  launch: LinkedSupervisorLaunch
+): Promise<LinkedSupervisorSpawn> {
+  const { policy } = await supervisorPolicyGet();
+  const host = get() as SupervisorHost & { providers?: ProviderInfo[] };
+  const allowed = supervisorProvidersOf(policy);
+  const provider = launch.provider ?? allowed[0];
+  if (!provider || !allowed.includes(provider)) {
+    return { kind: 'provider-not-allowed', provider: provider ?? '', allowed };
+  }
+  const providers = await listProviders().catch(() => host.providers ?? []);
+  const config = await supervisorConfigFor(host, policy, providers, {
+    provider,
+    task: launch.task?.trim() ?? '',
+    model: launch.model ?? undefined,
   });
   if (!config) return { kind: 'nothing-visible' };
   return { kind: 'spawned', agent: await get().spawnNewAgent(config) };
