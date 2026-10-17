@@ -138,3 +138,37 @@ describe('useConfirm', () => {
     expect(await screen.findByRole('heading', { name: 'Second' })).toBeInTheDocument();
   });
 });
+
+it('offers a secondary action separately from cancel and confirmation', async () => {
+  const secondary = vi.fn();
+  const answer = vi.fn();
+  function Choice() {
+    const { confirm, confirmDialog } = useConfirm();
+    return (
+      <>
+        <button
+          onClick={async () =>
+            answer(
+              await confirm({
+                title: 'Merge?',
+                message: 'Choose where it lands.',
+                confirmLabel: 'Merge & push main',
+                secondaryLabel: 'Merge locally',
+                onSecondary: secondary,
+              })
+            )
+          }
+        >
+          Choose
+        </button>
+        {confirmDialog}
+      </>
+    );
+  }
+  render(<Choice />);
+  fireEvent.click(screen.getByRole('button', { name: 'Choose' }));
+  expect(answer).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button', { name: 'Merge locally' }));
+  await waitFor(() => expect(answer).toHaveBeenCalledWith(true));
+  expect(secondary).toHaveBeenCalledOnce();
+});

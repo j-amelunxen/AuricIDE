@@ -1070,15 +1070,27 @@ describe('gitSlice', () => {
       store.setState({ agentWorktrees: [tree], repos: [repoRoot] });
       vi.mocked(listGitWorktrees).mockResolvedValueOnce([]);
 
-      const result = await store.getState().mergeAgentWorktree(tree.path, 'Agent work: Writer');
+      const result = await store
+        .getState()
+        .mergeAgentWorktree(tree.path, 'Agent work: Writer', true);
 
       expect(mergeGitWorktreeIntoDefault).toHaveBeenCalledWith(
         '/w',
         tree.path,
-        'Agent work: Writer'
+        'Agent work: Writer',
+        true
       );
       expect(result.cleanedUp).toBe(true);
       expect(store.getState().agentWorktrees).toEqual([]);
+    });
+
+    it('preserves the merge result when the following status refresh fails', async () => {
+      const { getGitStatus } = await import('../tauri/git');
+      store.setState({ agentWorktrees: [tree], repos: [repoRoot] });
+      vi.mocked(getGitStatus).mockRejectedValueOnce(new Error('status unavailable'));
+      await expect(store.getState().mergeAgentWorktree(tree.path)).resolves.toEqual(
+        expect.objectContaining({ merged: true, cleanedUp: true })
+      );
     });
 
     it('mergeAgentWorktree still runs when the list has not caught up', async () => {
@@ -1087,7 +1099,12 @@ describe('gitSlice', () => {
 
       await store.getState().mergeAgentWorktree(tree.path);
 
-      expect(mergeGitWorktreeIntoDefault).toHaveBeenCalledWith(tree.path, tree.path, undefined);
+      expect(mergeGitWorktreeIntoDefault).toHaveBeenCalledWith(
+        tree.path,
+        tree.path,
+        undefined,
+        false
+      );
     });
   });
 

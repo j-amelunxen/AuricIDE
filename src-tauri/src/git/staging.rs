@@ -114,6 +114,28 @@ pub fn git_push_impl(repo_path: &str) -> Result<(), String> {
         .find_remote("origin")
         .map_err(|_| "No 'origin' remote configured for this repository".to_string())?;
 
+    let callbacks = remote_callbacks();
+
+    let mut options = git2::PushOptions::new();
+    options.remote_callbacks(callbacks);
+    let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
+    remote
+        .push(&[&refspec], Some(&mut options))
+        .map_err(|e| format!("Push failed: {}", e))?;
+
+    // Best-effort: the push itself succeeded, a missing upstream note is a
+    // cosmetic follow-up, not a failure.
+    if let Ok(mut branch) = repo.find_branch(&branch_name, git2::BranchType::Local) {
+        if branch.upstream().is_err() {
+            let _ = branch.set_upstream(Some(&format!("origin/{branch_name}")));
+        }
+    }
+
+    Ok(())
+}
+
+/// Shared authentication for origin fetches and explicit-ref pushes.
+pub(super) fn remote_callbacks() -> git2::RemoteCallbacks<'static> {
     // git2 re-asks the callback after every failed credential, which loops
     // forever if we keep proposing the same one — bail after a few tries
     // with a message that names the fix instead of hanging the UI.
@@ -155,20 +177,5 @@ pub fn git_push_impl(repo_path: &str) -> Result<(), String> {
         git2::Cred::default()
     });
 
-    let mut options = git2::PushOptions::new();
-    options.remote_callbacks(callbacks);
-    let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
-    remote
-        .push(&[&refspec], Some(&mut options))
-        .map_err(|e| format!("Push failed: {}", e))?;
-
-    // Best-effort: the push itself succeeded, a missing upstream note is a
-    // cosmetic follow-up, not a failure.
-    if let Ok(mut branch) = repo.find_branch(&branch_name, git2::BranchType::Local) {
-        if branch.upstream().is_err() {
-            let _ = branch.set_upstream(Some(&format!("origin/{branch_name}")));
-        }
-    }
-
-    Ok(())
+    callbacks
 }

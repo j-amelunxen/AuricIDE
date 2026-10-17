@@ -220,23 +220,32 @@ describe('git IPC wrappers', () => {
     expect(mockInvoke).toHaveBeenCalledWith('git_default_branch', { repoPath: '/tmp/repo' });
   });
 
-  it('mergeGitWorktreeIntoDefault invokes git_worktree_merge_into_default', async () => {
-    const result = {
-      defaultBranch: 'main',
-      merged: true,
-      fastForward: true,
-      cleanedUp: true,
-      oid: 'abc',
-    };
-    mockInvoke.mockResolvedValueOnce(result);
-    const { mergeGitWorktreeIntoDefault } = await import('./git');
-    await expect(
-      mergeGitWorktreeIntoDefault('/tmp/repo', '/tmp/repo.auric-wt/fix', 'Agent work: Writer')
-    ).resolves.toEqual(result);
-    expect(mockInvoke).toHaveBeenCalledWith('git_worktree_merge_into_default', {
-      repoPath: '/tmp/repo',
-      worktreePath: '/tmp/repo.auric-wt/fix',
-      commitMessage: 'Agent work: Writer',
-    });
-  });
+  it.each([undefined, false, true])(
+    'mergeGitWorktreeIntoDefault forwards push=%s',
+    async (push) => {
+      const result = {
+        defaultBranch: 'main',
+        merged: true,
+        fastForward: true,
+        cleanedUp: true,
+        oid: 'abc',
+      };
+      mockInvoke.mockResolvedValueOnce(result);
+      const { mergeGitWorktreeIntoDefault } = await import('./git');
+      await expect(
+        mergeGitWorktreeIntoDefault(
+          '/tmp/repo',
+          '/tmp/repo.auric-wt/fix',
+          'Agent work: Writer',
+          push
+        )
+      ).resolves.toEqual(result);
+      expect(mockInvoke).toHaveBeenCalledWith('git_worktree_merge_into_default', {
+        repoPath: '/tmp/repo',
+        worktreePath: '/tmp/repo.auric-wt/fix',
+        commitMessage: 'Agent work: Writer',
+        push: push ?? false,
+      });
+    }
+  );
 });

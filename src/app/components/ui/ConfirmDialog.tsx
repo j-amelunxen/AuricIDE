@@ -10,6 +10,8 @@ interface ConfirmDialogProps {
   message: string;
   confirmLabel: string;
   variant?: ConfirmVariant;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -28,6 +30,8 @@ export function ConfirmDialog({
   message,
   confirmLabel,
   variant = 'destroy',
+  secondaryLabel,
+  onSecondary,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -61,19 +65,24 @@ export function ConfirmDialog({
           e.stopPropagation();
           if (e.key === 'Escape') onCancel();
         }}
-        className="bg-background-secondary border border-border-dark rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-3"
+        className={`bg-background-secondary border border-border-dark rounded-lg shadow-2xl ${secondaryLabel ? 'w-[30rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto' : 'w-80'} p-5 flex flex-col gap-3`}
       >
         <h2 id="confirm-dialog-title" className="text-sm font-semibold text-foreground">
           {title}
         </h2>
-        <p className="text-sm text-foreground-muted">{message}</p>
-        <div className="flex justify-end gap-2 pt-1">
+        <p className="text-sm text-foreground-muted whitespace-pre-line">{message}</p>
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
           <button
             onClick={onCancel}
             className="px-3 py-1.5 text-sm rounded border border-border-dark text-foreground-muted hover:bg-white/5 transition-colors"
           >
             Cancel
           </button>
+          {secondaryLabel && (
+            <button onClick={onSecondary} className={CONFIRM_BUTTON_CLASS.discard}>
+              {secondaryLabel}
+            </button>
+          )}
           <button onClick={onConfirm} className={CONFIRM_BUTTON_CLASS[variant]}>
             {confirmLabel}
           </button>
