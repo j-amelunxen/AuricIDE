@@ -1506,4 +1506,124 @@ describe('QuickAccess', () => {
       ]);
     });
   });
+
+  describe('grid order', () => {
+    const dataTransfer = () => {
+      const data = new Map<string, string>();
+      return {
+        setData: (type: string, value: string) => data.set(type, value),
+        getData: (type: string) => data.get(type) ?? '',
+        effectAllowed: 'all',
+        dropEffect: 'none',
+      };
+    };
+    const gridIds = () =>
+      within(screen.getByTestId('quick-access-row'))
+        .getAllByTestId(/^quick-access-tile-/)
+        .map((tile) => tile.getAttribute('data-testid'));
+    const dropOn = (target: HTMLElement, transfer: object, clientX: number) => {
+      // jsdom has no layout: give the target a box and the event a point in it.
+      target.getBoundingClientRect = () => ({ left: 100, width: 80 }) as DOMRect;
+      const drop = createEvent.drop(target, { dataTransfer: transfer });
+      Object.defineProperty(drop, 'clientX', { value: clientX });
+      fireEvent(target, drop);
+    };
+
+    beforeEach(() => {
+      localStorage.removeItem(APP_CONFIG_KEYS.quickAccessOrder);
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1 },
+          { path: '/a/blog', name: 'blog', starredAt: 2 },
+          { path: '/a/crm', name: 'crm', starredAt: 3 },
+        ],
+      });
+    });
+
+    it('moves a tile by dropping it on the left half of another, and switches to custom order', () => {
+      render(<QuickAccess currentPath={null} />);
+      const transfer = dataTransfer();
+      fireEvent.dragStart(screen.getByTestId('quick-access-item-/a/crm'), {
+        dataTransfer: transfer,
+      });
+      dropOn(screen.getByTestId('quick-access-item-/a/apps'), transfer, 110);
+
+      expect(gridIds()).toEqual([
+        'quick-access-tile-/a/crm',
+        'quick-access-tile-/a/apps',
+        'quick-access-tile-/a/blog',
+      ]);
+      expect(screen.getByTestId('quick-access-row')).toHaveAttribute('data-sort', 'custom');
+      expect(localStorage.getItem(APP_CONFIG_KEYS.quickAccessSort)).toBe('custom');
+    });
+
+    it('drops after a tile on its right half', () => {
+      render(<QuickAccess currentPath={null} />);
+      const transfer = dataTransfer();
+      fireEvent.dragStart(screen.getByTestId('quick-access-item-/a/apps'), {
+        dataTransfer: transfer,
+      });
+      dropOn(screen.getByTestId('quick-access-item-/a/crm'), transfer, 170);
+
+      expect(gridIds()).toEqual([
+        'quick-access-tile-/a/blog',
+        'quick-access-tile-/a/crm',
+        'quick-access-tile-/a/apps',
+      ]);
+    });
+
+    it('keeps the order after a remount', () => {
+      const { unmount } = render(<QuickAccess currentPath={null} />);
+      const transfer = dataTransfer();
+      fireEvent.dragStart(screen.getByTestId('quick-access-item-/a/crm'), {
+        dataTransfer: transfer,
+      });
+      dropOn(screen.getByTestId('quick-access-item-/a/apps'), transfer, 110);
+      unmount();
+
+      render(<QuickAccess currentPath={null} />);
+      expect(gridIds()[0]).toBe('quick-access-tile-/a/crm');
+    });
+
+    it('moves a tile one place with the context menu, without a mouse drag', () => {
+      render(<QuickAccess currentPath={null} />);
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/blog'));
+      fireEvent.click(screen.getByText('Move left'));
+      expect(gridIds()).toEqual([
+        'quick-access-tile-/a/blog',
+        'quick-access-tile-/a/apps',
+        'quick-access-tile-/a/crm',
+      ]);
+
+      fireEvent.contextMenu(screen.getByTestId('quick-access-tile-/a/blog'));
+      expect(screen.queryByText('Move left')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('Move right'));
+      expect(gridIds()[1]).toBe('quick-access-tile-/a/blog');
+    });
+
+    it('takes a docked tile out of the dock and places it where it was dropped', () => {
+      useStore.setState({
+        starredProjects: [
+          { path: '/a/apps', name: 'apps', starredAt: 1, dockIndex: 0 },
+          { path: '/a/blog', name: 'blog', starredAt: 2 },
+          { path: '/a/crm', name: 'crm', starredAt: 3 },
+        ],
+      });
+      render(<QuickAccess currentPath={null} />);
+      const transfer = dataTransfer();
+      fireEvent.dragStart(screen.getByTestId('quick-access-item-/a/apps'), {
+        dataTransfer: transfer,
+      });
+      dropOn(screen.getByTestId('quick-access-item-/a/crm'), transfer, 110);
+
+      expect(gridIds()).toEqual([
+        'quick-access-tile-/a/blog',
+        'quick-access-tile-/a/apps',
+        'quick-access-tile-/a/crm',
+      ]);
+      expect(
+        useStore.getState().starredProjects.find((p) => p.path === '/a/apps')?.dockIndex
+      ).toBeUndefined();
+    });
+  });
 });

@@ -9,7 +9,7 @@ import type { ProjectBadge, StarredProject } from '@/lib/tauri/starredProjects';
  */
 export const BADGE_MAX_CHARS = 6;
 
-export const QUICK_ACCESS_SORTS = ['name', 'badge'] as const;
+export const QUICK_ACCESS_SORTS = ['name', 'badge', 'custom'] as const;
 export type QuickAccessSort = (typeof QUICK_ACCESS_SORTS)[number];
 
 /** Blue first: red reads as an alarm next to the dirty dot and the remove ×. */
@@ -106,7 +106,7 @@ export function usedBadges(
 }
 
 export function parseQuickAccessSort(raw: string | null): QuickAccessSort {
-  return raw === 'badge' ? 'badge' : 'name';
+  return raw === 'badge' || raw === 'custom' ? raw : 'name';
 }
 
 function byNameThenPath(
@@ -123,14 +123,24 @@ function byNameThenPath(
  * the tile out from under a remembered position. `badge` groups marked tiles
  * by the text (case-insensitive) and leaves unmarked ones after them, still
  * by name. Equal names break on the path, so three checkouts of one repo
- * stay in a stable order.
+ * stay in a stable order. `custom` follows the list the user dragged into
+ * (`gridOrder.ts`); tiles it does not list come after it, oldest star first.
  */
-export function sortQuickAccessProjects<T extends Pick<StarredProject, 'name' | 'path' | 'badge'>>(
-  projects: readonly T[],
-  mode: QuickAccessSort
-): T[] {
+export function sortQuickAccessProjects<
+  T extends Pick<StarredProject, 'name' | 'path' | 'badge'> & { starredAt?: number },
+>(projects: readonly T[], mode: QuickAccessSort, customOrder: readonly string[] = []): T[] {
   const copy = [...projects];
+  const place = new Map(customOrder.map((path, index) => [path, index]));
   copy.sort((a, b) => {
+    if (mode === 'custom') {
+      const aPlace = place.get(a.path);
+      const bPlace = place.get(b.path);
+      if (aPlace !== undefined && bPlace !== undefined) return aPlace - bPlace;
+      if (aPlace !== undefined) return -1;
+      if (bPlace !== undefined) return 1;
+      const byAge = (a.starredAt ?? 0) - (b.starredAt ?? 0);
+      return byAge !== 0 ? byAge : byNameThenPath(a, b);
+    }
     if (mode === 'badge') {
       const aText = normalizeProjectBadge(a.badge)?.text ?? null;
       const bText = normalizeProjectBadge(b.badge)?.text ?? null;

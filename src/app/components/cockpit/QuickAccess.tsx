@@ -16,6 +16,8 @@ import {
 } from '@/lib/store/starredProjectsSlice';
 import { comboMenuLabel } from '@/lib/quickAccess/combo';
 import { DOCK_DRAG_MIME, dockPlaceNextTo, splitDock } from '@/lib/quickAccess/dock';
+import { moveGridTile, parseGridOrder, serializeGridOrder } from '@/lib/quickAccess/gridOrder';
+import type { ListDropPlace } from '@/lib/pm/customOrder';
 import type { StarredProject } from '@/lib/tauri/starredProjects';
 import { menuSkillEntries } from '@/lib/quickAccess/menuSkills';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
@@ -93,6 +95,9 @@ export function QuickAccess({
     setSort(next);
     writeAppPref(APP_CONFIG_KEYS.quickAccessSort, next);
   };
+  const [gridOrder, setGridOrder] = useState<string[]>(() =>
+    parseGridOrder(readAppPref(APP_CONFIG_KEYS.quickAccessOrder))
+  );
 
   // Resolved from the store rather than captured, so the dialog keeps editing
   // the live record if it changes underneath.
@@ -151,6 +156,37 @@ export function QuickAccess({
         };
   };
 
+  const { dock, rest } = splitDock(starredProjects);
+  const sortedProjects = sortQuickAccessProjects(rest, sort, gridOrder);
+
+  /** The keyboard-and-menu way to do what dragging a grid tile does, one place at a time. */
+  const contextMenuMoveOptions = (): ContextMenuOption[] => {
+    const paths = sortedProjects.map((project) => project.path);
+    const index = paths.indexOf(contextMenu?.path ?? '');
+    if (index === -1) return [];
+    const neighbour = (offset: -1 | 1) => paths[index + offset];
+    return [
+      ...(index > 0
+        ? [
+            {
+              label: 'Move left',
+              icon: 'arrow_back',
+              action: () => placeInGrid(paths[index], neighbour(-1), 'before'),
+            },
+          ]
+        : []),
+      ...(index < paths.length - 1
+        ? [
+            {
+              label: 'Move right',
+              icon: 'arrow_forward',
+              action: () => placeInGrid(paths[index], neighbour(1), 'after'),
+            },
+          ]
+        : []),
+    ];
+  };
+
   const menuOptions: ContextMenuOption[] = contextMenu
     ? [
         ...(shownCombos.length > 0
@@ -206,11 +242,12 @@ export function QuickAccess({
           icon: 'edit_note',
           action: () => setDescriptionPath(contextMenu.path),
         },
+        ...contextMenuMoveOptions(),
         contextMenuDockOption(),
         {
-          label: sort === 'badge' ? 'Sort projects by name' : 'Sort projects by badge',
+          label: sort === 'name' ? 'Sort projects by badge' : 'Sort projects by name',
           icon: 'filter_list',
-          action: () => chooseSort(sort === 'badge' ? 'name' : 'badge'),
+          action: () => chooseSort(sort === 'name' ? 'badge' : 'name'),
         },
         { type: 'separator' },
         {
@@ -221,8 +258,6 @@ export function QuickAccess({
       ]
     : [];
 
-  const { dock, rest } = splitDock(starredProjects);
-  const sortedProjects = sortQuickAccessProjects(rest, sort);
   const dirtyByProject = useProjectDirty(
     [...sortedProjects, ...dock].map((project) => project.path)
   );
@@ -233,6 +268,24 @@ export function QuickAccess({
     return path || dragPath;
   };
 
+  /**
+   * Starts from the order on screen, so the first drag changes only the one
+   * tile that moved, whatever sort was showing. A tile that came out of the
+   * dock leaves it.
+   */
+  const placeInGrid = (dragged: string, target: string, side: ListDropPlace) => {
+    const order = moveGridTile(
+      sortedProjects.map((project) => project.path),
+      dragged,
+      target,
+      side
+    );
+    setGridOrder(order);
+    writeAppPref(APP_CONFIG_KEYS.quickAccessOrder, serializeGridOrder(order));
+    chooseSort('custom');
+    if (dockPaths.includes(dragged)) setStarredProjectDock(dragged, null);
+  };
+
   const tileProps = (project: StarredProject, inDock: boolean): ProjectTileProps['drag'] => ({
     onDragStart: (event) => {
       event.dataTransfer.setData(DOCK_DRAG_MIME, project.path);
@@ -240,24 +293,24 @@ export function QuickAccess({
       setDragPath(project.path);
     },
     onDragEnd: () => setDragPath(null),
-    ...(inDock
-      ? {
-          onDragOver: (event: React.DragEvent) => {
-            event.preventDefault();
-            event.dataTransfer.dropEffect = 'move';
-          },
-          onDrop: (event: React.DragEvent) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const dragged = dragPathOf(event);
-            setDragPath(null);
-            if (!dragged || dragged === project.path) return;
-            const rect = event.currentTarget.getBoundingClientRect();
-            const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-            setStarredProjectDock(dragged, dockPlaceNextTo(dockPaths, dragged, project.path, side));
-          },
-        }
-      : {}),
+    onDragOver: (event: React.DragEvent) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    },
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const dragged = dragPathOf(event);
+      setDragPath(null);
+      if (!dragged || dragged === project.path) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      if (inDock) {
+        setStarredProjectDock(dragged, dockPlaceNextTo(dockPaths, dragged, project.path, side));
+      } else {
+        placeInGrid(dragged, project.path, side);
+      }
+    },
   });
 
   /** One wheel open at a time, across project tiles and the supervisor tile. */
@@ -352,6 +405,7 @@ export function QuickAccess({
               [
                 ['name', 'Name'],
                 ['badge', 'Badge'],
+                ['custom', 'Custom'],
               ] as const
             ).map(([option, label]) => {
               const selected = option === sort;
