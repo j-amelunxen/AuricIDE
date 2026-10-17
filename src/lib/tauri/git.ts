@@ -235,20 +235,28 @@ export interface WorktreeMergeResult {
   oid: string | null;
   /** Paths left conflicted; empty unless the merge stopped in the main work tree. */
   conflicts: string[];
+  /** Absent with older backends; never infer a push from a successful merge. */
+  pushed?: boolean;
+  pushError?: string | null;
+  cleanupError?: string | null;
+  remoteBranchError?: string | null;
 }
 
 /**
  * Commit leftover worktree changes if needed, merge into main/master, then
- * remove the worktree. The backend picks the default branch.
+ * optionally push that exact branch to origin, then remove the worktree.
+ * A failed push keeps the local merge and worktree. The backend picks the branch.
  */
 export async function mergeGitWorktreeIntoDefault(
   repoPath: string,
   worktreePath: string,
-  commitMessage?: string
+  commitMessage?: string,
+  push = false
 ): Promise<WorktreeMergeResult> {
   return await invoke<WorktreeMergeResult>('git_worktree_merge_into_default', {
     repoPath,
     worktreePath,
     commitMessage: commitMessage ?? null,
+    push,
   });
 }

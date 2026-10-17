@@ -49,7 +49,8 @@ describe('offerWorktreeMerge', () => {
     expect(main.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Merge into main?',
-        confirmLabel: 'Merge',
+        confirmLabel: 'Merge & push main',
+        secondaryLabel: 'Merge locally',
       })
     );
 
@@ -87,10 +88,11 @@ describe('offerWorktreeMerge', () => {
     await offerWorktreeMerge(input);
     expect(input.mergeAgentWorktree).toHaveBeenCalledWith(
       tree.path,
-      'Cache the repo discovery walk'
+      'Cache the repo discovery walk',
+      true
     );
     expect(input.showToast).toHaveBeenCalledWith(
-      'Merged into main and removed the worktree.',
+      'Merged locally into main (not pushed). Worktree removed.',
       'success'
     );
   });
@@ -106,7 +108,8 @@ describe('offerWorktreeMerge', () => {
     );
     expect(input.mergeAgentWorktree).toHaveBeenCalledWith(
       tree.path,
-      'Cache the repo discovery walk'
+      'Cache the repo discovery walk',
+      true
     );
   });
 
@@ -123,9 +126,9 @@ describe('offerWorktreeMerge', () => {
       }),
     });
     await offerWorktreeMerge(input);
-    expect(input.mergeAgentWorktree).toHaveBeenCalledWith(tree.path, 'Agent work: Writer');
+    expect(input.mergeAgentWorktree).toHaveBeenCalledWith(tree.path, 'Agent work: Writer', true);
     expect(input.showToast).toHaveBeenCalledWith(
-      'Merged into main and removed the worktree.',
+      'Merged locally into main (not pushed). Worktree removed.',
       'success'
     );
   });
@@ -208,5 +211,48 @@ describe('offerWorktreeMerge', () => {
       'Merge stopped on 1 conflicting file. Resolve it in the merge panel.',
       'info'
     );
+  });
+});
+
+describe('worktree merge outcomes', () => {
+  it('selects local-only through the secondary action', async () => {
+    const input = deps({
+      confirm: vi.fn(async (request) => {
+        request.onSecondary?.();
+        return true;
+      }),
+    });
+    await offerWorktreeMerge(input);
+    expect(input.mergeAgentWorktree).toHaveBeenCalledWith(tree.path, expect.any(String), false);
+  });
+
+  it.each([
+    [{ pushed: true }, 'Merged into main and pushed to origin. Worktree removed.', 'success'],
+    [{ merged: false }, 'Already merged into main (not pushed). Worktree removed.', 'info'],
+    [
+      { merged: false, pushed: true },
+      'Already merged into main; pushed to origin. Worktree removed.',
+      'info',
+    ],
+    [
+      { cleanedUp: false, cleanupError: 'locked' },
+      'Merged locally into main (not pushed). Could not remove the worktree: locked.',
+      'error',
+    ],
+    [
+      { cleanedUp: false, pushError: 'rejected' },
+      'Merged locally into main, but push to origin failed: rejected. Local merge and worktree kept.',
+      'error',
+    ],
+    [
+      { pushed: true, remoteBranchError: 'denied' },
+      'Merged into main and pushed to origin. Worktree removed. Could not delete the remote agent branch: denied.',
+      'error',
+    ],
+  ])('reports the actual outcome %j', async (extra, message, variant) => {
+    const base = await deps().mergeAgentWorktree(tree.path);
+    const input = deps({ mergeAgentWorktree: vi.fn(async () => ({ ...base, ...extra })) });
+    await offerWorktreeMerge(input);
+    expect(input.showToast).toHaveBeenCalledWith(message, variant);
   });
 });

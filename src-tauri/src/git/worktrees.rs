@@ -431,6 +431,10 @@ fn conflicted_worktree_merge(
         default_branch: default_branch.to_string(),
         merged: false,
         fast_forward: false,
+        pushed: false,
+        push_error: None,
+        cleanup_error: None,
+        remote_branch_error: None,
         cleaned_up: false,
         oid: None,
         conflicts,
@@ -442,12 +446,18 @@ pub fn git_worktree_merge_into_default_impl(
     repo_path: &str,
     worktree_path: &str,
     commit_message: Option<&str>,
+    push: bool,
 ) -> Result<WorktreeMergeResult, String> {
     let target = Path::new(worktree_path);
     if !path_is_auric_worktree(target) {
         return Err("only Auric-managed worktrees can be merged here".to_string());
     }
 
+    let (repo, _) = open_main_repo(repo_path)?;
+    let default_branch = resolve_default_branch(&repo)?;
+    if push {
+        fetch_before_worktree_merge(&repo, &default_branch)?;
+    }
     let message = commit_message.unwrap_or("Auric worktree");
     commit_worktree_if_dirty(worktree_path, message)?;
 
@@ -455,8 +465,6 @@ pub fn git_worktree_merge_into_default_impl(
         .filter(|b| branch_is_auric(Some(b)))
         .ok_or_else(|| "worktree is not on an auric/ branch".to_string())?;
 
-    let (repo, _) = open_main_repo(repo_path)?;
-    let default_branch = resolve_default_branch(&repo)?;
     let ours_id = branch_commit_id(&repo, &default_branch)?;
     let theirs_id = branch_commit_id(&repo, &theirs_branch)?;
     let on_default = head_is_branch(&repo, &default_branch);
@@ -466,15 +474,25 @@ pub fn git_worktree_merge_into_default_impl(
             .graph_descendant_of(ours_id, theirs_id)
             .unwrap_or(false);
     if already_contains {
-        git_worktree_remove_impl(repo_path, worktree_path, true)?;
-        return Ok(WorktreeMergeResult {
-            default_branch,
-            merged: false,
-            fast_forward: false,
-            cleaned_up: true,
-            oid: Some(ours_id.to_string()),
-            conflicts: Vec::new(),
-        });
+        return Ok(finish_worktree_merge(
+            &repo,
+            repo_path,
+            worktree_path,
+            &theirs_branch,
+            push,
+            WorktreeMergeResult {
+                default_branch,
+                merged: false,
+                fast_forward: false,
+                cleaned_up: false,
+                pushed: false,
+                push_error: None,
+                cleanup_error: None,
+                remote_branch_error: None,
+                oid: Some(ours_id.to_string()),
+                conflicts: Vec::new(),
+            },
+        ));
     }
 
     if on_default {
@@ -514,15 +532,149 @@ pub fn git_worktree_merge_into_default_impl(
         }
     };
 
-    let cleaned_up = git_worktree_remove_impl(repo_path, worktree_path, true).is_ok();
-    Ok(WorktreeMergeResult {
-        default_branch,
-        merged: true,
-        fast_forward: can_ff,
-        cleaned_up,
-        oid: Some(oid.to_string()),
-        conflicts: Vec::new(),
-    })
+    Ok(finish_worktree_merge(
+        &repo,
+        repo_path,
+        worktree_path,
+        &theirs_branch,
+        push,
+        WorktreeMergeResult {
+            default_branch,
+            merged: true,
+            fast_forward: can_ff,
+            cleaned_up: false,
+            pushed: false,
+            push_error: None,
+            cleanup_error: None,
+            remote_branch_error: None,
+            oid: Some(oid.to_string()),
+            conflicts: Vec::new(),
+        },
+    ))
+}
+
+/// Refresh remote heads even if the user's fetch refspec is narrower. A local
+/// default branch behind or diverged from origin must be reconciled explicitly.
+fn fetch_before_worktree_merge(repo: &Repository, branch: &str) -> Result<(), String> {
+    let mut remote = repo
+        .find_remote("origin")
+        .map_err(|e| format!("Could not fetch origin: {e}"))?;
+    let mut options = git2::FetchOptions::new();
+    options.remote_callbacks(super::staging::remote_callbacks());
+    options.prune(git2::FetchPrune::On);
+    remote
+        .fetch(
+            &["+refs/heads/*:refs/remotes/origin/*"],
+            Some(&mut options),
+            None,
+        )
+        .map_err(|e| format!("Could not fetch origin: {e}"))?;
+    let remote_id = match repo.refname_to_id(&format!("refs/remotes/origin/{branch}")) {
+        Ok(oid) => oid,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let local_id = branch_commit_id(repo, branch)?;
+    if local_id != remote_id
+        && !repo
+            .graph_descendant_of(local_id, remote_id)
+            .map_err(|e| e.to_string())?
+    {
+        return Err(format!("Local {branch} is behind or diverged from origin/{branch}. Update it before merging. Worktree kept."));
+    }
+    Ok(())
+}
+
+/// libgit2 can return Ok while the server rejects an individual ref. Capture
+/// that status as well as transport errors, and never retry with force.
+fn push_worktree_ref(
+    repo: &Repository,
+    refspec: &str,
+    delete_if_merged: Option<git2::Oid>,
+) -> Result<(), String> {
+    let mut remote = repo.find_remote("origin").map_err(|e| e.to_string())?;
+    let mut rejected = None;
+    let mut callbacks = super::staging::remote_callbacks();
+    callbacks.push_update_reference(|reference, status| {
+        if let Some(reason) = status {
+            rejected = Some(format!("{reference}: {reason}"));
+        }
+        Ok(())
+    });
+    callbacks.push_negotiation(|updates| {
+        if let Some(merged) = delete_if_merged {
+            // src is the remote's currently advertised tip, not the earlier
+            // fetched tracking ref. Do not delete work added since the fetch.
+            for update in updates {
+                let current = update.src();
+                if !current.is_zero()
+                    && current != merged
+                    && !repo.graph_descendant_of(merged, current).unwrap_or(false)
+                {
+                    return Err(git2::Error::from_str(
+                        "remote agent branch has unmerged commits; remote branch kept",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    });
+    let mut options = git2::PushOptions::new();
+    options.remote_callbacks(callbacks);
+    remote
+        .push(&[refspec], Some(&mut options))
+        .map_err(|e| e.to_string())?;
+    drop(options);
+    rejected.map_or(Ok(()), Err)
+}
+
+fn finish_worktree_merge(
+    repo: &Repository,
+    repo_path: &str,
+    worktree_path: &str,
+    agent_branch: &str,
+    push: bool,
+    mut result: WorktreeMergeResult,
+) -> WorktreeMergeResult {
+    if push {
+        let reference = format!("refs/heads/{}", result.default_branch);
+        if let Err(error) = push_worktree_ref(repo, &format!("{reference}:{reference}"), None) {
+            result.push_error = Some(error);
+            return result;
+        }
+        result.pushed = true;
+        result.remote_branch_error =
+            delete_merged_remote_branch(repo, agent_branch, &result.default_branch).err();
+    }
+    match git_worktree_remove_impl(repo_path, worktree_path, true) {
+        Ok(()) => result.cleaned_up = true,
+        Err(error) => result.cleanup_error = Some(error),
+    }
+    result
+}
+
+fn delete_merged_remote_branch(
+    repo: &Repository,
+    branch: &str,
+    default: &str,
+) -> Result<(), String> {
+    match repo.refname_to_id(&format!("refs/remotes/origin/{branch}")) {
+        Ok(oid) => {
+            let merged = branch_commit_id(repo, default)?;
+            if oid != merged
+                && !repo
+                    .graph_descendant_of(merged, oid)
+                    .map_err(|e| e.to_string())?
+            {
+                return Err(format!(
+                    "origin/{branch} has unmerged commits; remote branch kept"
+                ));
+            }
+            push_worktree_ref(repo, &format!(":refs/heads/{branch}"), Some(merged))
+        }
+        Err(error) if error.code() == git2::ErrorCode::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {

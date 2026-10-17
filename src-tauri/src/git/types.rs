@@ -117,6 +117,10 @@ pub struct WorktreeMergeResult {
     pub default_branch: String,
     pub merged: bool,
     pub fast_forward: bool,
+    pub pushed: bool,
+    pub push_error: Option<String>,
+    pub cleanup_error: Option<String>,
+    pub remote_branch_error: Option<String>,
     pub cleaned_up: bool,
     pub oid: Option<String>,
     /// Paths left conflicted when the merge stopped in the main work tree.

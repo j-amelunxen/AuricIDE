@@ -14,7 +14,8 @@ export interface OfferWorktreeMergeInput {
   defaultBranchFor: (repoPath: string) => Promise<string>;
   mergeAgentWorktree: (
     worktreePath: string,
-    commitMessage?: string
+    commitMessage?: string,
+    push?: boolean
   ) => Promise<WorktreeMergeResult>;
   /**
    * The subject line for whatever the agent left uncommitted. Written from the
@@ -38,7 +39,7 @@ function conflictToast(count: number): string {
 
 /**
  * After a worktree agent stops: ask whether to merge into main/master.
- * Yes commits leftover work, merges, then removes the worktree. No leaves it.
+ * Either affirmative action commits leftover work and merges. Cancel leaves it.
  */
 export async function offerWorktreeMerge(input: OfferWorktreeMergeInput): Promise<void> {
   const agent = input.agent;
@@ -56,12 +57,23 @@ export async function offerWorktreeMerge(input: OfferWorktreeMergeInput): Promis
   }
 
   const branch = tree?.branch ?? 'this worktree';
+  let push = true;
   const go = await input.confirm({
     title: `Merge into ${defaultBranch}?`,
-    message: tree?.dirty
-      ? `Uncommitted work in ${branch} will be committed, then merged into ${defaultBranch}. The worktree is removed afterwards.`
-      : `Merge ${branch} into ${defaultBranch}? After a successful merge the worktree is removed.`,
-    confirmLabel: 'Merge',
+    message: [
+      `Merge ${branch} into ${defaultBranch}.`,
+      tree?.dirty ? 'Uncommitted work will be committed first.' : '',
+      `Merge & push ${defaultBranch} merges locally, then pushes ${defaultBranch} to origin. After a successful push, the remote agent branch is deleted if it exists.`,
+      `Merge locally updates local ${defaultBranch} only. Nothing is pushed.`,
+      'The worktree is removed after success. If pushing fails, the local merge and worktree are kept.',
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    confirmLabel: `Merge & push ${defaultBranch}`,
+    secondaryLabel: 'Merge locally',
+    onSecondary: () => {
+      push = false;
+    },
     variant: 'elevate',
   });
   if (!go) return;
@@ -74,7 +86,7 @@ export async function offerWorktreeMerge(input: OfferWorktreeMergeInput): Promis
   }
 
   try {
-    const result = await input.mergeAgentWorktree(path, commitMessage);
+    const result = await input.mergeAgentWorktree(path, commitMessage, push);
     // `?? []`: a backend from before the merge panel leaves the field off.
     const conflicts = result.conflicts ?? [];
     if (conflicts.length > 0) {
@@ -82,9 +94,39 @@ export async function offerWorktreeMerge(input: OfferWorktreeMergeInput): Promis
       input.showToast(conflictToast(conflicts.length), 'info');
       return;
     }
-    input.showToast(`Merged into ${result.defaultBranch} and removed the worktree.`, 'success');
+    reportMergeResult(result, input.showToast);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     input.showToast(`Could not merge: ${detail}`, 'error');
   }
+}
+
+function reportMergeResult(
+  result: WorktreeMergeResult,
+  showToast: OfferWorktreeMergeInput['showToast']
+): void {
+  const branch = result.defaultBranch;
+  const action = result.merged ? 'Merged' : 'Already merged';
+  if (result.pushError) {
+    showToast(
+      `${action} locally into ${branch}, but push to origin failed: ${result.pushError}. Local merge and worktree kept.`,
+      'error'
+    );
+    return;
+  }
+  let message = result.pushed
+    ? result.merged
+      ? `Merged into ${branch} and pushed to origin.`
+      : `Already merged into ${branch}; pushed to origin.`
+    : `${action} ${result.merged ? 'locally ' : ''}into ${branch} (not pushed).`;
+  message += result.cleanedUp
+    ? ' Worktree removed.'
+    : ` Could not remove the worktree: ${result.cleanupError ?? 'cleanup failed'}.`;
+  if (result.remoteBranchError) {
+    message += ` Could not delete the remote agent branch: ${result.remoteBranchError}.`;
+  }
+  showToast(
+    message,
+    !result.cleanedUp || result.remoteBranchError ? 'error' : result.merged ? 'success' : 'info'
+  );
 }
