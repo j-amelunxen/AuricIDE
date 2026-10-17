@@ -129,10 +129,10 @@ up only where the application store has nothing, and otherwise stays put as an
 override. The marker `project_config/credentialsMigratedV1` keeps it to one run —
 but only after a clean pass, so a failed write is retried rather than stranded.
 
-**Not persisted, deliberately:** `dangerouslyIgnorePermissions` and
-`autoAcceptEdits`. A switch that lets an agent edit and run without asking,
-restored days later, is one nobody remembers leaving on. Both start off every
-launch and reset again when a project is opened.
+**No global permission switches.** How freely an agent may act is decided per
+launch (the spawn dialog's permission mode, narrowed by the provider and
+supervisor policies). The former "Auto-Accept Edits" / "Skip Permission Prompts"
+settings never reached a launch and were removed.
 
 ### The provider policy
 

@@ -20,16 +20,11 @@ import { SkillDiscoveryContent } from './SkillDiscoveryContent';
 
 /**
  * Agent settings that belong to the installation: which provider CLIs exist on
- * this machine, and how freely agents may act in this session.
- *
- * The two switches below are deliberately not persisted. A setting that lets an
- * agent edit and run without asking, silently restored days later, is one
- * nobody remembers leaving on — so both start off every launch. How this
- * project wants its commits written lives under Project → Agent &amp; Commits.
+ * this machine. How freely an agent may act is chosen per launch (the spawn
+ * dialog's permission mode); how this project wants its commits written lives
+ * under Project → Agent &amp; Commits.
  */
 export function AgentContent() {
-  const agentSettings = useStore((s) => s.agentSettings);
-  const updateAgentSettings = useStore((s) => s.updateAgentSettings);
   const providers = useStore((s) => s.providers);
   const setProviders = useStore((s) => s.setProviders);
   const showToast = useStore((s) => s.showToast);
@@ -113,22 +108,6 @@ export function AgentContent() {
     setTerminalFontSize(fontSize);
   };
 
-  const handlePermissionPromptChange = async (checked: boolean) => {
-    if (!checked) {
-      updateAgentSettings({ dangerouslyIgnorePermissions: false });
-      return;
-    }
-
-    const approved = await confirm({
-      title: 'Skip permission prompts?',
-      message:
-        'New agents in this session can run commands and access files without asking. This resets when you restart AuricIDE. Enable it only for work you trust.',
-      confirmLabel: 'Skip prompts',
-      variant: 'destroy',
-    });
-    if (approved) updateAgentSettings({ dangerouslyIgnorePermissions: true });
-  };
-
   const handleImportProvider = async () => {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
@@ -149,29 +128,6 @@ export function AgentContent() {
 
   return (
     <div className="space-y-8">
-      <SettingsSection title="Agent Deployment" icon="robot_2">
-        <p className="text-xs text-foreground-muted leading-relaxed">
-          Choose whether agents ask before making edits or running commands.
-        </p>
-
-        <SettingsToggle
-          label="Auto-Accept Edits"
-          description="Skip manual confirmation for file changes"
-          tooltip={GUIDANCE.settings.autoAcceptEdits}
-          checked={agentSettings.autoAcceptEdits}
-          onChange={(checked) => updateAgentSettings({ autoAcceptEdits: checked })}
-        />
-
-        <SettingsToggle
-          label="Skip Permission Prompts"
-          description="Let agents run commands and access files without confirmation"
-          tooltip={GUIDANCE.settings.dangerouslyIgnorePermissions}
-          checked={agentSettings.dangerouslyIgnorePermissions}
-          onChange={(checked) => void handlePermissionPromptChange(checked)}
-          danger
-        />
-      </SettingsSection>
-
       <SettingsSection title="CLI Quota" icon="speed">
         <p className="text-xs text-foreground-muted leading-relaxed">
           Show remaining Claude Code and Codex usage in the status bar. Enabling this adds a
