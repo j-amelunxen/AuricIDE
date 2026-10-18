@@ -206,7 +206,8 @@ const SPAWN_RULES = [
 ].join('\n');
 
 const WAIT_RULES =
-  'After spawning, schedule a later check with a background timer: Bash `sleep N`, ' +
+  'For headless children, end your turn and wait for the IDE finish pingback. ' +
+  'For interactive children or as a fallback, schedule a check with a background timer: Bash `sleep N`, ' +
   '`run_in_background: true`, then end your turn; its completion wakes you. ' +
   'On waking, call await_agent_result with `waitSeconds: 0`. Done or waiting for input: act; ' +
   'otherwise set a new timer and end your turn. Never loop on blocking awaits or foreground ' +

@@ -1853,3 +1853,21 @@ fn supervisor_listing_keeps_a_finished_answer_preview_after_the_live_agent_is_go
     assert_eq!(live["status"], "running");
     assert!(live.get("finishedAt").is_none());
 }
+
+#[test]
+fn zero_wait_input_checks_remember_silence_between_calls() {
+    let mut s = supervised_scope();
+    s.h.dispatcher.set_input_quiet(Duration::from_millis(100));
+    s.h.buffers
+        .append("agent-child", "A plain prose turn has ended.\n");
+    let check = || await_until_input(&s, json!({ "waitSeconds": 0 }));
+    assert_eq!(check()["result"]["waitingForInput"], false);
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(check()["result"]["waitingForInput"], true);
+    let seen = s.h.buffers.total_bytes("agent-child");
+    let response = await_until_input(&s, json!({ "waitSeconds": 0, "sinceOffset": seen }));
+    assert_eq!(response["result"]["waitingForInput"], false);
+    s.h.buffers
+        .append("agent-child", "The next turn is working.\n");
+    assert_eq!(check()["result"]["waitingForInput"], false);
+}

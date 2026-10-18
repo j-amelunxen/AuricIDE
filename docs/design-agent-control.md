@@ -448,17 +448,21 @@ then clear it with dismiss_agent. This notice comes from the IDE, not from the h
 ### `await_result`
 
 **Look, do not loop waiting.** Default waitSeconds is 0; the socket clamps it
-at 15 seconds. After spawning, the supervisor ends its turn. For a later check
+at 15 seconds. For headless children, the supervisor ends its turn and waits
+for the existing IDE finish pingback. For interactive children or as a fallback,
 it runs Bash `sleep N` with `run_in_background: true`, ends its turn, and on the
 completion notification calls `await_agent_result` with `waitSeconds: 0`.
 If neither done nor waiting for input, it starts another background timer.
 Interactive checks also use `untilInput: true` and the last read `outputBytes`
-as `sinceOffset`. The supervisor's restricted Claude launch always exposes
+as `sinceOffset`. Silence is measured since the last cleaned console output,
+across checks, so `waitSeconds: 0` can detect a turn that has gone quiet.
+The supervisor's restricted Claude launch always exposes
 Bash with `Bash(sleep *)`; other commands still need explicit skill/tool grants.
 
-The existing finish subscriber observes process exits, not interactive input
-pauses. Follow-up ticket `88d571fd` records the missing event path, delivery
-failure handling, and the design for per-turn input notifications. The older
+The existing finish subscriber sends process exits directly into the supervisor
+session; it does not observe interactive input pauses. Follow-up ticket
+`88d571fd` records the missing event path, delivery failure handling, and the
+design for per-turn input notifications. The older
 headless notification targets the human inbox and excludes supervisor children;
 it was never a message into the supervisor session.
 

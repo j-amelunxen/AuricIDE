@@ -95,6 +95,10 @@ describe('buildSupervisorLaunchPrompt', () => {
 
   it('keeps the human reachable while children work', () => {
     expect(prompt).toContain('## Nie blockierend warten');
+    expect(prompt).toContain(
+      'For headless children, end your turn and wait for the IDE finish pingback.'
+    );
+    expect(prompt).toContain('For interactive children or as a fallback');
     expect(prompt).toContain('run_in_background: true');
     expect(prompt).toContain('waitSeconds: 0');
     expect(prompt).toContain('end your turn');

@@ -18,6 +18,7 @@ use super::types::AgentStatus;
 use crate::ansi::AnsiStripper;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub const BUFFER_BYTES_PER_AGENT: usize = 256 * 1024;
 pub const FINISHED_AGENTS_KEPT: usize = 20;
@@ -44,6 +45,7 @@ struct Ring {
     bytes: VecDeque<u8>,
     /// Cleaned bytes since the agent started, evicted ones included.
     total: u64,
+    last_output: Option<Instant>,
     final_status: Option<AgentStatus>,
     stripper: AnsiStripper,
     /// Read from the raw output, before cleaning removes the mode switches.
@@ -55,6 +57,7 @@ impl Default for Ring {
         Self {
             bytes: VecDeque::new(),
             total: 0,
+            last_output: None,
             final_status: None,
             stripper: AnsiStripper::console(),
             paste: BracketedPasteTracker::default(),
@@ -68,6 +71,9 @@ impl Ring {
     }
 
     fn append(&mut self, data: &[u8], capacity: usize) {
+        if !data.is_empty() {
+            self.last_output = Some(Instant::now());
+        }
         self.total += data.len() as u64;
         // Only the tail of an oversized chunk can survive; copying the rest
         // just to evict it again would be wasted work on the output hot path.
@@ -167,6 +173,15 @@ impl OutputBuffers {
     /// The agent's running byte offset; 0 for an agent that printed nothing.
     pub fn total_bytes(&self, agent_id: &str) -> u64 {
         self.lock().rings.get(agent_id).map_or(0, |ring| ring.total)
+    }
+
+    /// Time since cleaned output last grew, preserved across non-blocking checks.
+    pub fn silent_for(&self, agent_id: &str) -> Option<Duration> {
+        self.lock()
+            .rings
+            .get(agent_id)?
+            .last_output
+            .map(|at| at.elapsed())
     }
 
     /// Read from `since_offset` when given, otherwise the last `tail_bytes`.
