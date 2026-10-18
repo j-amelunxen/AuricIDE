@@ -133,9 +133,12 @@ export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
   return {
     name: 'await_agent_result',
     description:
-      `Wait up to waitSeconds (default ${CONTROL_LIMITS.defaultAwaitSeconds}, max ` +
+      'Look briefly, do not loop waiting. Wait up to waitSeconds ' +
+      `(default ${CONTROL_LIMITS.defaultAwaitSeconds}, max ` +
       `${CONTROL_LIMITS.maxAwaitSeconds}) for an agent to finish. Still running when the wait ` +
-      'ends: { done: false, status, outputBytes } — call it again. Finished (now or earlier): ' +
+      'ends: { done: false, status, outputBytes } — end your turn. Supervisors wait for the ' +
+      'IDE finish pingback for headless children; use a background timer for interactive ' +
+      'children or as a fallback. Finished (now or earlier): ' +
       '{ done: true, result: { status "idle" | "error", exitCode, answer, isError, source, ' +
       "finishedAt, costUsd } }. answer is the CLI's own final text when source is " +
       '"cli_result" (headless Claude), otherwise the last 8 KiB of the cleaned console ' +

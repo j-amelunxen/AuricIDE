@@ -911,7 +911,7 @@ fn a_supervisor_runs_interactive_unbound_in_a_fresh_run_folder_in_default_mode()
 }
 
 #[test]
-fn a_supervisor_without_skills_has_file_tools_and_no_shell() {
+fn a_supervisor_without_skills_has_file_tools_and_only_the_timer_shell_grant() {
     assert!(check_supervisor_provider("claude").is_ok());
     assert!(check_supervisor_provider("codex").is_ok());
     assert!(check_supervisor_provider("unsupported")
@@ -929,7 +929,7 @@ fn a_supervisor_without_skills_has_file_tools_and_no_shell() {
             "\"/data/agent-bindings/sup \\$1.mcp.json\"",
             "--strict-mcp-config",
             "--tools",
-            "\"Read,Write,Edit,Glob,Grep,Skill,ToolSearch\"",
+            "\"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\"",
             "--restricted",
             "--allowedTools",
             "\"mcp__auric-supervisor__*\"",
@@ -940,6 +940,7 @@ fn a_supervisor_without_skills_has_file_tools_and_no_shell() {
             "Grep",
             "Skill",
             "ToolSearch",
+            "\"Bash(sleep *)\"",
             "--no-chrome",
             "--permission-mode",
             "dontAsk",
@@ -1029,9 +1030,9 @@ fn the_supervisor_flags_land_behind_the_executable_and_before_the_task() {
     assert_eq!(
         cmd.command,
         "claude --mcp-config \"/c.json\" --strict-mcp-config \
-         --tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch\" --restricted \
+         --tools \"Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash\" --restricted \
          --allowedTools \"mcp__auric-supervisor__*\" Read Write Edit Glob Grep Skill ToolSearch \
-         --no-chrome --permission-mode dontAsk --model opus \"plan the week\""
+         \"Bash(sleep *)\" --no-chrome --permission-mode dontAsk --model opus \"plan the week\""
     );
 }
 

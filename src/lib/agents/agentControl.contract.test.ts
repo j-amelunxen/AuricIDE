@@ -93,6 +93,14 @@ describe('agent control contract', () => {
       });
     }
 
+    it('preserves finished supervisor children and their result metadata', () => {
+      const live = fixtures.responses.list_agents.result.agents[0];
+      const agents = [{ ...live, status: 'done', finishedAt: 42, answerPreview: 'ANSWER: done' }];
+      expect(
+        parseControlResponse('list_agents', { id: 1, ok: true, result: { agents } }, 1)
+      ).toEqual({ ok: true, result: { agents } });
+    });
+
     it('accepts the error fixture', () => {
       expect(parseControlResponse('send_input', error, 5)).toEqual({
         ok: false,

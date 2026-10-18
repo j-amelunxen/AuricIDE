@@ -983,10 +983,18 @@ fn attack_the_supervisor_launch_removes_the_builtin_tools() {
         .position(|a| a == "--tools")
         .and_then(|i| args.get(i + 1))
         .expect("--tools names the built-in set");
-    assert!(
-        !tools.contains("Bash"),
-        "Bash without an approved skill: {joined}"
+    assert!(tools.contains("Bash"), "the background timer needs Bash");
+    let bash_rules: Vec<&str> = args
+        .iter()
+        .filter(|a| a.contains("Bash("))
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        bash_rules,
+        vec!["\"Bash(sleep *)\""],
+        "only the timer: {joined}"
     );
+    assert!(!args.iter().any(|a| a == "Bash" || a == "\"Bash\""));
     assert!(
         joined.contains("dontAsk"),
         "an unlisted tool must be refused, not asked: {joined}"
@@ -1037,8 +1045,8 @@ fn attack_a_tool_key_cannot_carry_more_than_the_one_command() {
     let bash_rules: Vec<&String> = args.iter().filter(|a| a.contains("Bash(")).collect();
     assert_eq!(
         bash_rules,
-        vec!["\"Bash(umi)\"", "\"Bash(umi *)\""],
-        "nothing but the tool itself: {joined}"
+        vec!["\"Bash(sleep *)\"", "\"Bash(umi)\"", "\"Bash(umi *)\""],
+        "nothing but the timer and the tool itself: {joined}"
     );
     assert!(
         !args.iter().any(|a| a == "Bash" || a == "\"Bash\""),

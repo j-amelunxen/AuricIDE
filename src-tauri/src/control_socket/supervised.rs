@@ -82,7 +82,26 @@ impl Dispatcher {
             })
             .collect();
         let agents = live.into_iter().chain(finished).collect();
-        to_value(ListAgentsResult { agents })
+        let mut listed = to_value(ListAgentsResult { agents })?;
+        // Project only this supervisor's listing; the shared AgentInfo and
+        // await_result keep their existing idle/error status contract.
+        for agent in listed["agents"].as_array_mut().into_iter().flatten() {
+            let Some(result) = agent["id"].as_str().and_then(|id| self.run_results.get(id)) else {
+                continue;
+            };
+            agent["status"] = serde_json::json!(if result.is_error { "error" } else { "done" });
+            agent["finishedAt"] = result.finished_at.into();
+            let preview = result.answer.as_deref().and_then(|answer| {
+                answer
+                    .lines()
+                    .rev()
+                    .map(str::trim)
+                    .find(|line| line.starts_with("ANSWER:"))
+                    .map(|line| line.chars().take(300).collect::<String>())
+            });
+            agent["answerPreview"] = serde_json::json!(preview);
+        }
+        Ok(listed)
     }
 
     /// `Ok` only for an agent `supervisor` started, live or finished.

@@ -58,8 +58,8 @@ export const CONTROL_LIMITS = {
   defaultTailBytes: 16384,
   maxTailBytes: 262144,
   frontendTimeoutMs: 30000,
-  defaultAwaitSeconds: 60,
-  maxAwaitSeconds: 120,
+  defaultAwaitSeconds: 0,
+  maxAwaitSeconds: 15,
   /** How much longer than `waitSeconds` the client waits before it reports `timeout`. */
   awaitClientGraceSeconds: 5,
   /** Silence after which `await_result` with `untilInput` reads an agent as waiting. */
@@ -331,7 +331,9 @@ const agentSummary = z.object({
   name: z.string(),
   model: z.string(),
   provider: z.string(),
-  status: agentStatus,
+  status: z.enum(['running', 'idle', 'queued', 'error', 'done']),
+  finishedAt: z.number().optional(),
+  answerPreview: z.string().nullable().optional(),
   currentTask: z.string().nullable(),
   startedAt: z.number(),
   lastActivityAt: z.number().nullable(),

@@ -56,32 +56,6 @@ const INPUT_POLL: Duration = Duration::from_millis(500);
 /// How much of the console tail is searched for a prompt.
 const INPUT_TAIL_BYTES: u64 = 4096;
 
-/// When an agent's console last grew, as one `await_result` call saw it.
-struct QuietClock {
-    bytes: u64,
-    since: Instant,
-}
-
-impl QuietClock {
-    fn new(bytes: u64) -> Self {
-        Self {
-            bytes,
-            since: Instant::now(),
-        }
-    }
-
-    fn observe(&mut self, bytes: u64) {
-        if bytes != self.bytes {
-            self.bytes = bytes;
-            self.since = Instant::now();
-        }
-    }
-
-    fn silent_for(&self) -> Duration {
-        self.since.elapsed()
-    }
-}
-
 /// A request line longer than this is refused and the connection closed. The
 /// largest legitimate one is a spawn prompt; a megabyte leaves ample room.
 const MAX_LINE_BYTES: u64 = 1024 * 1024;
@@ -611,9 +585,8 @@ impl Dispatcher {
         let watch_input = params.until_input && live.as_ref().is_some_and(|agent| !agent.headless);
         let mut waiting_for_input = false;
         if watch_input {
-            let mut quiet = QuietClock::new(self.buffers.total_bytes(agent_id));
             loop {
-                if self.input_awaited(agent_id, params.since_offset, &mut quiet) {
+                if self.input_awaited(agent_id, params.since_offset) {
                     waiting_for_input = true;
                     break;
                 }
@@ -646,12 +619,7 @@ impl Dispatcher {
     /// `since_offset`: a prompt in its console tail, or a console that has
     /// been silent for `input_quiet`. Output up to `since_offset` was
     /// already seen by the caller and wakes nothing.
-    fn input_awaited(
-        &self,
-        agent_id: &str,
-        since_offset: Option<u64>,
-        quiet: &mut QuietClock,
-    ) -> bool {
+    fn input_awaited(&self, agent_id: &str, since_offset: Option<u64>) -> bool {
         if !self
             .find_agent(agent_id)
             .is_some_and(|agent| agent.status == AgentStatus::Running)
@@ -659,7 +627,6 @@ impl Dispatcher {
             return false;
         }
         let total = self.buffers.total_bytes(agent_id);
-        quiet.observe(total);
         if total <= since_offset.unwrap_or(0) {
             return false;
         }
@@ -667,7 +634,11 @@ impl Dispatcher {
             .buffers
             .read(agent_id, INPUT_TAIL_BYTES, None)
             .is_some_and(|slice| awaits_input(&slice.text));
-        prompt || quiet.silent_for() >= self.input_quiet
+        prompt
+            || self
+                .buffers
+                .silent_for(agent_id)
+                .is_some_and(|quiet| quiet >= self.input_quiet)
     }
 
     #[cfg(test)]

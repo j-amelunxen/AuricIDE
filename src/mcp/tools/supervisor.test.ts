@@ -59,6 +59,15 @@ describe('supervisor tools', () => {
     }
   });
 
+  it('keeps spawn and await guidance consistent with finish pingbacks', () => {
+    const tools = capture(vi.fn() as unknown as ControlCaller);
+    for (const name of ['spawn_agent', 'await_agent_result']) {
+      const description = tools.get(name)!.description;
+      expect(description).toContain('finish pingback');
+      expect(description).not.toMatch(/loop on await_agent_result|repeat on done false/);
+    }
+  });
+
   it('spawn_agent requires only headless, takes a model reason, and neither role nor mode', () => {
     const spawn = capture(vi.fn() as unknown as ControlCaller).get('spawn_agent')!;
     const shape = spawn.parameters.shape as Record<string, z.ZodType>;

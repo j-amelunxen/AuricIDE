@@ -444,14 +444,14 @@ ADR 0004.
   to the human, whose answer it then types in (ADR 0004, amendment
   2026-10-17). Children keep running when the supervisor is killed; their
   results (`agents/run_results.rs`) stay until its card is cleared.
-- **The supervisor itself has a shell only through approved skills or tools.** Rust
+- **The supervisor itself has a shell for timers and approved skills or tools.** Rust
   forces its launch: a fresh cwd `~/.auric/supervisors/<start time>/`, file
   tools + `Skill` under `--restricted` (they reach only that folder), one MCP
   server, `--permission-mode dontAsk` (unlisted is refused, never asked).
   Settings → Supervisor → Skills approves skill folders and the `Bash(...)`
   patterns each may run; Rust links them into a per-run `--plugin-dir` under
-  `<app_data_dir>/supervisor-skills/`, and `Bash` exists only while one of them
-  declares a pattern; a skill's `dirs` become `--add-dir`. Settings → Supervisor
+  `<app_data_dir>/supervisor-skills/`, and the timer grant `Bash(sleep *)` is always present; other shell commands
+  need an approved pattern; a skill's `dirs` become `--add-dir`. Settings → Supervisor
   → Tools approves single CLI tools, by name or absolute path, each as
   `Bash(<tool>)` and `Bash(<tool> *)` (`policy.tools`, `apply_tool_grants`). Every permitted,
   initialised project adds an `auric-pm-<folder>` server (fixture

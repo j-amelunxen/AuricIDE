@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 
 pub const DEFAULT_TAIL_BYTES: u64 = 16 * 1024;
 pub const MAX_TAIL_BYTES: u64 = 256 * 1024;
-pub const DEFAULT_AWAIT_SECONDS: u64 = 60;
-pub const MAX_AWAIT_SECONDS: u64 = 120;
+pub const DEFAULT_AWAIT_SECONDS: u64 = 0;
+pub const MAX_AWAIT_SECONDS: u64 = 15;
 /// How long an interactive agent's console must stay silent before
 /// `await_result` with `untilInput` reads it as waiting on an answer. An
 /// agent that ends its turn on a question in prose prints nothing more.

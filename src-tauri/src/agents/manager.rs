@@ -297,7 +297,8 @@ pub fn supervisor_codex_arguments(
 /// Claude Code flags for a supervisor (ADR 0004). `--tools` names the only
 /// built-in tools it has: the file tools, `Skill`, `ToolSearch` (many MCP
 /// tools load deferred, and without it they are out of reach), and `Bash`
-/// only when an approved skill or tool declares a command. Each permitted project's
+/// for background sleep timers. Other shell commands require an approved skill
+/// or tool pattern. Each permitted project's
 /// `auric-pm` server (`pm_servers`) is pre-approved like its own tools, and so
 /// is Claude in Chrome when the policy switches it on (`chrome`). `--restricted` confines the file tools
 /// to the working directory (the run folder), ignores the user's, project's
@@ -320,11 +321,8 @@ pub fn supervisor_claude_arguments(
             crate::providers::shell_escape_double_quoted(value)
         )
     };
-    let shell = !skills.bash.is_empty();
     let mut tools = SUPERVISOR_FILE_TOOLS.to_vec();
-    if shell {
-        tools.push("Bash");
-    }
+    tools.push("Bash");
     let mut arguments = vec![
         "--mcp-config".to_string(),
         quoted(mcp_config_path),
@@ -352,6 +350,8 @@ pub fn supervisor_claude_arguments(
         arguments.push(quoted(&format!("mcp__{CHROME_MCP_SERVER}__*")));
     }
     arguments.extend(SUPERVISOR_FILE_TOOLS.iter().map(|tool| tool.to_string()));
+    // run_in_background changes delivery, not the command permission rule.
+    arguments.push(quoted("Bash(sleep *)"));
     arguments.extend(
         skills
             .bash

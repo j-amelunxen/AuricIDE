@@ -170,7 +170,7 @@ const PROMPT = [
   'You are being probed. Follow these steps exactly, using only your auric-supervisor tools.',
   `1. Call list_projects with project ${project}. Note the claude models it allows there ("all" means every claude entry of the catalog) and their rank in the catalog.`,
   `2. Call spawn_agent once: projectPath ${project}, provider claude, headless true, model = the allowed claude model with the SMALLEST rank, prompt "Reply with exactly: ANSWER: PONG".`,
-  '3. Call await_agent_result on the returned agentId until done is true (repeat on done false).',
+  '3. End your turn and wait for the IDE finish pingback, then call await_agent_result on the returned agentId with waitSeconds: 0 to read its result.',
   '4. Print one line that starts with RESULT= followed directly by the text after "ANSWER:" in the child\'s answer.',
   `5. Call spawn_agent exactly once more: projectPath ${project}, provider claude, headless true, model "no-such-model-xyz", prompt "x". It must be refused. Do not retry, do not change model or provider, do not start anything else.`,
   '6. Print one line that starts with DENIED= followed directly by the reason key of the refusal (the word in brackets after supervisor_denied, such as model_not_allowed).',
