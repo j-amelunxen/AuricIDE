@@ -70,6 +70,8 @@ interface TerminalGridProps {
   activeId: string;
   /** Names for the pane headers. An agent missing here is headed by its id. */
   agents: AgentInfo[];
+  /** Project name per agent, printed before its name. An agent missing here gets none. */
+  projects?: Record<string, string>;
   areaRef: RefObject<HTMLDivElement | null>;
   drag: TabGridDrag | null;
   onFocusPane: (agentId: string) => void;
@@ -99,6 +101,7 @@ export function TerminalGrid({
   cells,
   activeId,
   agents,
+  projects,
   areaRef,
   drag,
   onFocusPane,
@@ -124,6 +127,7 @@ export function TerminalGrid({
           const paneAgent = agents.find((a) => a.id === pane.agentId);
           const accent = accents?.[pane.agentId];
           const name = paneAgent?.name ?? pane.agentId;
+          const project = projects?.[pane.agentId];
           const endLabel =
             paneAgent && isFinishedAgent(paneAgent) ? `Dismiss ${name}` : `Stop ${name}`;
           return (
@@ -163,6 +167,22 @@ export function TerminalGrid({
                     onDragPane ? 'cursor-grab active:cursor-grabbing' : ''
                   }`}
                 >
+                  {/* Agents started alike share a name; the project tells them apart.
+                      It is context, so it reads quieter and gives way only after the name. */}
+                  {project && (
+                    <span
+                      data-testid={`terminal-pane-project-${pane.agentId}`}
+                      title={paneAgent?.repoPath}
+                      className="min-w-0 max-w-[40%] flex-shrink truncate text-[10px] font-bold uppercase tracking-wider text-foreground-muted/60"
+                    >
+                      {project}
+                    </span>
+                  )}
+                  {project && (
+                    <span aria-hidden="true" className="flex-shrink-0 text-[10px] text-white/20">
+                      ›
+                    </span>
+                  )}
                   <span
                     style={accent && isActive ? { color: accent } : undefined}
                     className={`min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-wider ${

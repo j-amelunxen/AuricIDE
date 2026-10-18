@@ -272,6 +272,60 @@ describe('AgentTerminalModal – terminals side by side', () => {
     expect(screen.getByTestId('terminal-pane-a')).toHaveAttribute('data-maximized', 'false');
   });
 
+  it('choosing another tab while a pane is maximized brings the split back', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal();
+    fireEvent.doubleClick(screen.getByTestId('terminal-pane-bar-b'));
+
+    const tab = screen.getByTestId('agent-tab-a');
+    fireEvent.mouseDown(tab, { button: 0 });
+    fireEvent.mouseUp(window);
+    fireEvent.click(tab);
+
+    expect(screen.getByTestId('terminal-pane-b')).toHaveAttribute('data-maximized', 'false');
+    expect(screen.getByTestId('terminal-pane-a')).toHaveAttribute('data-active', 'true');
+  });
+
+  it('a press anywhere outside the maximized pane brings the split back', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal();
+    fireEvent.doubleClick(screen.getByTestId('terminal-pane-bar-b'));
+
+    fireEvent.mouseDown(screen.getByTestId('terminal-grid'));
+    expect(screen.getByTestId('terminal-pane-b')).toHaveAttribute('data-maximized', 'false');
+  });
+
+  it('pressing inside the maximized pane or on its own tab keeps it maximized', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal();
+    fireEvent.doubleClick(screen.getByTestId('terminal-pane-bar-b'));
+
+    fireEvent.mouseDown(screen.getByTestId('xterm-b'));
+    const ownTab = screen.getByTestId('agent-tab-b');
+    fireEvent.mouseDown(ownTab, { button: 0 });
+    fireEvent.mouseUp(window);
+    fireEvent.click(ownTab);
+
+    expect(screen.getByTestId('terminal-pane-b')).toHaveAttribute('data-maximized', 'true');
+  });
+
+  it('a pane bar names the project the agent runs in', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal([
+      { ...AGENTS[0], repoPath: '/work/alpha-app' },
+      { ...AGENTS[1], repoPath: '/work/beta-site' },
+    ]);
+    expect(screen.getByTestId('terminal-pane-project-a')).toHaveTextContent('alpha-app');
+    expect(screen.getByTestId('terminal-pane-project-b')).toHaveTextContent('beta-site');
+    expect(screen.getByTestId('terminal-pane-bar-a')).toHaveTextContent('Alpha');
+  });
+
+  it('a pane bar for an agent without a project shows only its name', () => {
+    useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
+    renderModal([AGENTS[0], AGENTS[1]]);
+    expect(screen.queryByTestId('terminal-pane-project-a')).toBeNull();
+  });
+
   it('a maximized pane taken out of the split leaves nothing maximized behind', () => {
     useStore.setState({ terminalGridCells: ['a', 'b', 'a', 'b'] });
     renderModal();

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type HTMLAttributes,
+  type MouseEvent,
   type ReactNode,
 } from 'react';
 import type { AgentInfo } from '@/lib/tauri/agents';
@@ -326,6 +327,19 @@ export function AgentTerminalWorkspace({
     maximizedPick && isSplit(grid.cells) && grid.cells.includes(maximizedPick)
       ? maximizedPick
       : null;
+  const tabStripRef = useRef<HTMLDivElement>(null);
+  // A maximized pane is a closer look, not a mode: pressing anywhere else
+  // (another pane underneath, the header, the grid's gutter) ends it. The tab
+  // strip decides per tab instead, so the maximized agent's own tab keeps it.
+  const leaveMaximizeOutside = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (!maximizedId || !(event.target instanceof Element)) return;
+      if (event.target.closest('[data-maximized="true"]')) return;
+      if (tabStripRef.current?.contains(event.target)) return;
+      setMaximizedPick(null);
+    },
+    [maximizedId]
+  );
   const { show } = grid;
   const toggleMaximize = useCallback(
     (agentId: string) => {
@@ -348,6 +362,15 @@ export function AgentTerminalWorkspace({
   // Grouping reorders the strip, so "the tab beside this one" has to be read
   // off the strip — the raw list would send the user to another project.
   const tabOrder = useMemo(() => tabGroups.flatMap((group) => group.agents), [tabGroups]);
+  // The same name the strip prints above a group, so a pane and its tab agree.
+  const projectLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const group of tabGroups) {
+      if (group.repoPath === null) continue;
+      for (const a of group.agents) labels[a.id] = group.label;
+    }
+    return labels;
+  }, [tabGroups]);
 
   const splitView = isSplit(grid.cells);
   const markers = useStore((s) => s.agentColors);
@@ -415,7 +438,10 @@ export function AgentTerminalWorkspace({
   const isLive = isAgentLive(agent, now);
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
+    <div
+      onMouseDownCapture={leaveMaximizeOutside}
+      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
+    >
       {/* Header */}
       <div
         {...headerProps}
@@ -500,6 +526,7 @@ export function AgentTerminalWorkspace({
           grouped per project so a fleet spanning repositories reads as one. */}
       {agents && agents.length > 0 && (
         <div
+          ref={tabStripRef}
           role="tablist"
           aria-label="Active agents"
           className="flex items-center gap-1 px-3 py-1.5 border-b border-white/10 bg-black/40 overflow-x-auto no-scrollbar flex-shrink-0"
@@ -537,7 +564,9 @@ export function AgentTerminalWorkspace({
                     isActive={isActive}
                     now={now}
                     onSelect={() => {
-                      if (!tabDrag.consumeClick()) grid.show(a.id);
+                      if (tabDrag.consumeClick()) return;
+                      if (maximizedId && a.id !== maximizedId) setMaximizedPick(null);
+                      grid.show(a.id);
                     }}
                     onDragStart={
                       (agents?.length ?? 0) > 1 ? (event) => tabDrag.begin(a.id, event) : undefined
@@ -559,6 +588,7 @@ export function AgentTerminalWorkspace({
         cells={grid.cells}
         activeId={agent.id}
         agents={agents ?? [agent]}
+        projects={projectLabels}
         areaRef={areaRef}
         drag={tabDrag.drag}
         onFocusPane={grid.show}
