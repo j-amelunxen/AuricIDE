@@ -7,7 +7,7 @@ import {
 } from '@/lib/config/supervisorPolicy';
 import { useStore } from '@/lib/store';
 import type { ProviderInfo } from '@/lib/tauri/providers';
-import { SupervisorContent } from './SupervisorContent';
+import { SupervisorContent, type SupervisorSection } from './SupervisorContent';
 
 const {
   supervisorPolicyGet,
@@ -68,8 +68,8 @@ function policy(projects: SupervisorPolicy['projects'] = {}): SupervisorPolicy {
   return { ...emptySupervisorPolicy(), projects };
 }
 
-async function renderLoaded() {
-  render(<SupervisorContent />);
+async function renderLoaded(section: SupervisorSection = 'general') {
+  render(<SupervisorContent section={section} />);
   await screen.findByTestId('supervisor-save');
 }
 
@@ -127,7 +127,7 @@ describe('SupervisorContent', () => {
   });
 
   it('orders models by size and labels each one', async () => {
-    await renderLoaded();
+    await renderLoaded('projects');
     fireEvent.click(screen.getByTestId(`supervisor-allowed-${OPEN}`));
     const group = screen.getByRole('group', { name: 'Claude Code models' });
     expect(Array.from(group.querySelectorAll('label')).map((l) => l.textContent)).toEqual([
@@ -389,6 +389,39 @@ describe('SupervisorContent', () => {
     });
     await renderLoaded();
     expect(screen.getByTestId('supervisor-rejected')).toHaveTextContent('umi; rm');
+  });
+
+  it('shows only the section picked in the navigation', async () => {
+    render(<SupervisorContent section="tools" />);
+    await screen.findByTestId('supervisor-save');
+    expect(screen.getByTestId('supervisor-section-tools')).toBeVisible();
+    expect(screen.getByTestId('supervisor-section-projects')).not.toBeVisible();
+    expect(screen.getByTestId('supervisor-section-general')).not.toBeVisible();
+  });
+
+  it('keeps unsaved edits while moving between sections, and saves them together', async () => {
+    const { rerender } = render(<SupervisorContent section="general" />);
+    await screen.findByTestId('supervisor-save');
+    fireEvent.change(screen.getByTestId('supervisor-max-children'), { target: { value: '4' } });
+
+    rerender(<SupervisorContent section="projects" />);
+    fireEvent.click(screen.getByTestId(`supervisor-allowed-${OPEN}`));
+    rerender(<SupervisorContent section="link" />);
+
+    // Visible on a page whose own switches apply at once, because edits are waiting.
+    expect(screen.getByTestId('supervisor-save')).toBeVisible();
+    expect(screen.getByTestId('supervisor-save-hint')).toHaveTextContent('Unsaved changes');
+    fireEvent.click(screen.getByTestId('supervisor-save'));
+    await waitFor(() => expect(supervisorPolicySet).toHaveBeenCalledTimes(1));
+    const saved = supervisorPolicySet.mock.calls[0][0] as SupervisorPolicy;
+    expect(saved.maxRunningChildren).toBe(4);
+    expect(saved.projects[OPEN].allowed).toBe(true);
+  });
+
+  it('leaves the save bar off the pages that save on their own while nothing waits', async () => {
+    render(<SupervisorContent section="menu-bar" />);
+    await screen.findByTestId('supervisor-section-menu-bar');
+    expect(screen.queryByTestId('supervisor-save')).toBeNull();
   });
 
   it('shows what the stored file had rejected', async () => {

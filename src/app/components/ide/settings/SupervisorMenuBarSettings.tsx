@@ -13,7 +13,7 @@ import {
  * The supervisor outside the window: an icon in the macOS menu bar that lists
  * its Quick Access skills, and their shortcuts working from any app. Both
  * apply at once — they are switches on this machine, not part of the policy
- * the Save button below the projects writes.
+ * the supervisor save bar writes.
  */
 export function SupervisorMenuBarSettings() {
   const [prefs, setPrefs] = useState<MenuBarPrefs>(readMenuBarPrefs);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useStore } from '@/lib/store';
 import { normalizeProjectDescription } from '@/lib/quickAccess/description';
 import { SettingsSection } from '@/app/components/ui/settings/SettingsSection';
@@ -48,6 +48,25 @@ interface Loaded {
   skillCandidates: SupervisorSkillCandidate[];
 }
 
+/**
+ * The pages of Settings → Supervisor, in navigation order. One long page buried
+ * the Save button between sections that save on their own.
+ */
+export const SUPERVISOR_SECTIONS = [
+  { id: 'general', label: 'General' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'skills', label: 'Skills' },
+  { id: 'tools', label: 'Tools' },
+  { id: 'instructions', label: 'Instructions' },
+  { id: 'menu-bar', label: 'Menu bar' },
+  { id: 'link', label: 'Supervisor link' },
+] as const;
+
+export type SupervisorSection = (typeof SUPERVISOR_SECTIONS)[number]['id'];
+
+/** These apply each change at once and are not part of what the save bar writes. */
+const SELF_SAVING_SECTIONS: ReadonlySet<SupervisorSection> = new Set(['menu-bar', 'link']);
+
 /** User-level skills only: a project's skills belong to that project's agents. */
 async function readSkillCandidates(projectPath: string | undefined) {
   if (!projectPath) return [];
@@ -69,9 +88,12 @@ async function readSkillCandidates(projectPath: string | undefined) {
  * widens what an agent may do on its own, and a half-made edit should not be
  * in force while the next box is still being ticked. Rust validates the file
  * again before it writes it, and reads it on every spawn.
+ *
+ * Every section stays mounted and only the picked one is shown, so moving
+ * between pages keeps every unsaved edit, the link's own drafts included.
  */
 // code-gate: complexity-function-length - one save flow over policy, instructions and descriptions; the sections are already components
-export function SupervisorContent() {
+export function SupervisorContent({ section }: { section: SupervisorSection }) {
   const starredProjects = useStore((s) => s.starredProjects);
   const showToast = useStore((s) => s.showToast);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -138,7 +160,7 @@ export function SupervisorContent() {
   const badToolEntries = invalidToolEntries(draft.tools);
   const blockedReason =
     blockers.length > 0
-      ? `Pick a permission mode for ${blockers.length === 1 ? '1 provider' : `${blockers.length} providers`} that would run without asking`
+      ? `Pick a permission mode under Projects for ${blockers.length === 1 ? '1 provider' : `${blockers.length} providers`} that would run without asking`
       : badPatterns.length > 0
         ? 'Fix the entry marked under Skills'
         : badToolEntries.length > 0
@@ -167,75 +189,100 @@ export function SupervisorContent() {
     }
   };
 
+  const page = (id: SupervisorSection, children: ReactNode) => (
+    <div data-testid={`supervisor-section-${id}`} hidden={section !== id} className="space-y-8">
+      {children}
+    </div>
+  );
+
   return (
     <div className="space-y-8">
-      <p className="text-xs leading-relaxed text-foreground-muted">
-        The Supervisor tile in Quick Access starts an agent that hands work to other agents in the
-        projects you allow here. It never types into them and cannot go past these limits.
-      </p>
-
-      <RejectedNotice rejected={loaded.rejected} />
-
-      <SupervisorHeader draft={draft} providers={loaded.providers} onChange={setDraft} />
-
-      <SettingsSection title="Projects" icon="star">
-        {starredProjects.length === 0 ? (
-          <p className="text-xs text-foreground-muted">
-            Star a project in Quick Access to offer it to the supervisor.
+      {page(
+        'general',
+        <>
+          <p className="text-xs leading-relaxed text-foreground-muted">
+            The Supervisor tile in Quick Access starts an agent that hands work to other agents in
+            the projects you allow here. It never types into them and cannot go past these limits.
           </p>
-        ) : (
-          <div className="space-y-2">
-            {starredProjects.map((project) => (
-              <SupervisorProjectRow
-                key={project.path}
-                project={project}
-                entry={draft.projects[normalizeProjectPath(project.path)]}
-                providers={loaded.providers}
-                projectPolicy={loaded.projectPolicies[project.path]}
-                description={descriptions.value(project.path)}
-                onDescriptionChange={(text) => descriptions.edit(project.path, text)}
-                onAllowedChange={(allowed) =>
-                  setDraft(setProjectAllowed(draft, project.path, allowed))
-                }
-                onChange={(entry) =>
-                  setDraft(updateSupervisorProject(draft, project.path, () => entry))
-                }
-              />
-            ))}
-          </div>
-        )}
-      </SettingsSection>
+          <RejectedNotice rejected={loaded.rejected} />
+          <SupervisorHeader draft={draft} providers={loaded.providers} onChange={setDraft} />
+        </>
+      )}
 
-      <SupervisorSkills
-        skills={draft.skills}
-        candidates={loaded.skillCandidates}
-        onChange={(skills) => setDraft({ ...draft, skills })}
-      />
+      {page(
+        'projects',
+        <SettingsSection title="Projects" icon="star">
+          {starredProjects.length === 0 ? (
+            <p className="text-xs text-foreground-muted">
+              Star a project in Quick Access to offer it to the supervisor.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {starredProjects.map((project) => (
+                <SupervisorProjectRow
+                  key={project.path}
+                  project={project}
+                  entry={draft.projects[normalizeProjectPath(project.path)]}
+                  providers={loaded.providers}
+                  projectPolicy={loaded.projectPolicies[project.path]}
+                  description={descriptions.value(project.path)}
+                  onDescriptionChange={(text) => descriptions.edit(project.path, text)}
+                  onAllowedChange={(allowed) =>
+                    setDraft(setProjectAllowed(draft, project.path, allowed))
+                  }
+                  onChange={(entry) =>
+                    setDraft(updateSupervisorProject(draft, project.path, () => entry))
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </SettingsSection>
+      )}
 
-      <SupervisorTools tools={draft.tools} onChange={(tools) => setDraft({ ...draft, tools })} />
+      {page(
+        'skills',
+        <SupervisorSkills
+          skills={draft.skills}
+          candidates={loaded.skillCandidates}
+          onChange={(skills) => setDraft({ ...draft, skills })}
+        />
+      )}
 
-      <SupervisorInstructionsEditor
-        candidates={supervisorProvidersOf(draft)}
-        providers={loaded.providers}
-        instructions={instructions}
-        onChange={setInstructions}
-      />
+      {page(
+        'tools',
+        <SupervisorTools tools={draft.tools} onChange={(tools) => setDraft({ ...draft, tools })} />
+      )}
 
-      <SaveBar
-        saving={saving}
-        dirty={dirty}
-        blockedReason={blockedReason}
-        onSave={() => void save()}
-        onDiscard={() => {
-          setDraft(loaded.saved);
-          setInstructions(savedInstructions);
-          descriptions.discard();
-        }}
-      />
+      {page(
+        'instructions',
+        <SupervisorInstructionsEditor
+          candidates={supervisorProvidersOf(draft)}
+          providers={loaded.providers}
+          instructions={instructions}
+          onChange={setInstructions}
+        />
+      )}
 
-      <SupervisorMenuBarSettings />
+      {page('menu-bar', <SupervisorMenuBarSettings />)}
 
-      <SupervisorLinkSettings />
+      {page('link', <SupervisorLinkSettings />)}
+
+      {/* Edits made on one page are still waiting while another is shown, so the
+          bar stays in view wherever they are, and also on a self-saving page then. */}
+      {(dirty || !SELF_SAVING_SECTIONS.has(section)) && (
+        <SaveBar
+          saving={saving}
+          dirty={dirty}
+          blockedReason={blockedReason}
+          onSave={() => void save()}
+          onDiscard={() => {
+            setDraft(loaded.saved);
+            setInstructions(savedInstructions);
+            descriptions.discard();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -303,7 +350,7 @@ interface SaveBarProps {
 
 function SaveBar({ saving, dirty, blockedReason, onSave, onDiscard }: SaveBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="sticky bottom-[-1.5rem] z-10 -mx-6 -mb-6 flex flex-wrap items-center gap-3 border-t border-white/10 bg-surface px-6 py-3">
       <button
         type="button"
         data-testid="supervisor-save"

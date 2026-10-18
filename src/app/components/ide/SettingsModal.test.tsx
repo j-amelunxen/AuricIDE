@@ -62,13 +62,14 @@ describe('SettingsModal – Close Behaviors', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('calls onClose when backdrop is clicked', async () => {
+  // Several pages hold unsaved drafts; a stray click beside the dialog must not discard them.
+  it('stays open when the backdrop is clicked', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<SettingsModal isOpen={true} onClose={onClose} />);
 
     await user.click(screen.getByTestId('settings-modal-backdrop'));
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('names the icon-only close button Close', () => {
@@ -150,6 +151,38 @@ describe('SettingsModal – Grouped nav', () => {
     expect(screen.queryByTestId('settings-nav-agent')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings-nav-llm')).toBeInTheDocument();
     expect(screen.queryByText('Editor')).not.toBeInTheDocument();
+  });
+
+  it('opens Supervisor on its first page and lists its pages beneath it', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+    expect(screen.queryByTestId('settings-nav-supervisor-tools')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('settings-nav-supervisor'));
+
+    expect(screen.getByTestId('settings-nav-supervisor-general')).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    await user.click(screen.getByTestId('settings-nav-supervisor-tools'));
+    expect(screen.getByTestId('settings-nav-supervisor-tools')).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(screen.getByTestId('settings-nav-supervisor-general')).not.toHaveAttribute(
+      'aria-current'
+    );
+  });
+
+  it('finds a supervisor page by its own name', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal isOpen={true} onClose={() => {}} />);
+
+    await user.type(screen.getByTestId('settings-search'), 'menu bar');
+
+    expect(screen.getByTestId('settings-nav-supervisor')).toBeInTheDocument();
+    expect(screen.getByTestId('settings-nav-supervisor-menu-bar')).toBeInTheDocument();
+    expect(screen.queryByTestId('settings-nav-supervisor-tools')).not.toBeInTheDocument();
   });
 
   it('shows empty copy when search matches nothing', async () => {

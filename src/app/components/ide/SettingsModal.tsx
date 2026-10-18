@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useDialogA11y } from '@/lib/hooks/useDialogA11y';
 import { useOverlayLayer } from '@/lib/overlays/useOverlayLayer';
@@ -22,7 +22,11 @@ import { ExcalidrawContent } from './settings/ExcalidrawContent';
 import { VideoImportContent } from './settings/VideoImportContent';
 import { PushoverContent } from './settings/PushoverContent';
 import { AuricSkillsContent } from './settings/AuricSkillsContent';
-import { SupervisorContent } from './settings/SupervisorContent';
+import {
+  SUPERVISOR_SECTIONS,
+  SupervisorContent,
+  type SupervisorSection,
+} from './settings/SupervisorContent';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 
@@ -78,6 +82,8 @@ interface SettingsNavItem {
   id: SettingsCategory;
   icon: string;
   label: string;
+  /** Pages of this category, listed beneath it while it is open or a search finds them. */
+  pages?: readonly { id: SupervisorSection; label: string }[];
 }
 
 interface SettingsNavGroup {
@@ -95,7 +101,12 @@ const SETTINGS_GROUPS: SettingsNavGroup[] = [
     items: [
       { id: 'agent', icon: 'robot_2', label: 'Agent' },
       { id: 'skills', icon: 'auto_awesome', label: 'Skills' },
-      { id: 'supervisor', icon: 'account_tree', label: 'Supervisor' },
+      {
+        id: 'supervisor',
+        icon: 'account_tree',
+        label: 'Supervisor',
+        pages: SUPERVISOR_SECTIONS,
+      },
     ],
   },
   {
@@ -165,21 +176,38 @@ function SettingsDialog({
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>(
     initialCategory ?? 'agent'
   );
+  const [supervisorSection, setSupervisorSection] = useState<SupervisorSection>('general');
   const [search, setSearch] = useState('');
+  const contentRef = useRef<HTMLDivElement>(null);
   const dialogRef = useDialogA11y<HTMLDivElement>();
   const rootPath = useStore((s) => s.rootPath);
 
   useOverlayLayer({ id: 'settings', kind: 'tool', active: true, onEscape: onClose });
 
+  const query = search.trim().toLowerCase();
   const visibleGroups = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const matches = (label: string) => label.toLowerCase().includes(query);
     return SETTINGS_GROUPS.map((group) => ({
       ...group,
       items: query
-        ? group.items.filter((item) => item.label.toLowerCase().includes(query))
+        ? group.items.flatMap((item) => {
+            const pages = item.pages?.filter((page) => matches(page.label));
+            if (matches(item.label)) return [item];
+            return pages?.length ? [{ ...item, pages }] : [];
+          })
         : group.items,
     })).filter((group) => group.items.length > 0);
-  }, [search]);
+  }, [query]);
+
+  // A new page starts at its top, not wherever the previous one was scrolled to.
+  useEffect(() => {
+    contentRef.current?.scrollTo?.({ top: 0 });
+  }, [activeCategory, supervisorSection]);
+
+  const openPage = (category: SettingsCategory, page?: SupervisorSection) => {
+    setActiveCategory(category);
+    if (category === 'supervisor') setSupervisorSection(page ?? 'general');
+  };
 
   // code-gate: complexity-cyclomatic - one case per settings section, a lookup with nothing to branch on
   const renderContent = () => {
@@ -189,7 +217,7 @@ function SettingsDialog({
       case 'skills':
         return <AuricSkillsContent />;
       case 'supervisor':
-        return <SupervisorContent />;
+        return <SupervisorContent section={supervisorSection} />;
       case 'credentials':
         return <CredentialsContent />;
       case 'providers':
@@ -229,8 +257,9 @@ function SettingsDialog({
     <div
       data-testid="settings-modal-backdrop"
       className="fixed inset-0 z-[var(--z-tool)] flex items-center justify-center bg-black/80 backdrop-blur-sm"
-      onClick={onClose}
     >
+      {/* No close on a click beside the dialog: several pages hold unsaved
+          drafts, and a stray click took all of them. Esc and × still close. */}
       <div
         ref={dialogRef}
         role="dialog"
@@ -238,7 +267,6 @@ function SettingsDialog({
         aria-labelledby="settings-modal-title"
         data-testid="settings-modal"
         className="glass-card w-[900px] max-w-[95vw] h-[78vh] overflow-hidden rounded-xl border border-white/10 bg-surface shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 flex-shrink-0">
@@ -303,22 +331,33 @@ function SettingsDialog({
                             const isActive = activeCategory === cat.id;
                             const isJudge = cat.id === 'judge';
                             return (
-                              <div key={cat.id} className="flex items-center">
-                                <button
-                                  data-testid={`settings-nav-${cat.id}`}
-                                  onClick={() => setActiveCategory(cat.id)}
-                                  title={isJudge ? JUDGE_HINT : undefined}
-                                  className={`min-w-0 flex-1 flex items-center gap-3 px-4 py-2.5 text-xs transition-colors border-l-2 ${
-                                    isActive
-                                      ? 'border-primary text-primary-light bg-primary/5'
-                                      : 'border-transparent text-foreground-muted hover:text-foreground hover:bg-white/5'
-                                  }`}
-                                >
-                                  <AuricIcon name={cat.icon} className="text-sm" />
-                                  {cat.label}
-                                </button>
-                                {isJudge && <InfoTooltip description={JUDGE_HINT} />}
-                              </div>
+                              <Fragment key={cat.id}>
+                                <div className="flex items-center">
+                                  <button
+                                    data-testid={`settings-nav-${cat.id}`}
+                                    aria-expanded={cat.pages ? isActive || !!query : undefined}
+                                    onClick={() => openPage(cat.id)}
+                                    title={isJudge ? JUDGE_HINT : undefined}
+                                    className={`min-w-0 flex-1 flex items-center gap-3 px-4 py-2.5 text-xs transition-colors border-l-2 ${
+                                      isActive
+                                        ? 'border-primary text-primary-light bg-primary/5'
+                                        : 'border-transparent text-foreground-muted hover:text-foreground hover:bg-white/5'
+                                    }`}
+                                  >
+                                    <AuricIcon name={cat.icon} className="text-sm" />
+                                    {cat.label}
+                                  </button>
+                                  {isJudge && <InfoTooltip description={JUDGE_HINT} />}
+                                </div>
+                                {cat.pages && (isActive || query) && (
+                                  <SubPageNav
+                                    category={cat.id}
+                                    pages={cat.pages}
+                                    current={isActive ? supervisorSection : null}
+                                    onOpen={(page) => openPage(cat.id, page)}
+                                  />
+                                )}
+                              </Fragment>
                             );
                           })}
                         </div>
@@ -331,10 +370,45 @@ function SettingsDialog({
           </div>
 
           {/* Right Content */}
-          <div className="flex-1 overflow-y-auto p-6">{renderContent()}</div>
+          <div ref={contentRef} className="flex-1 overflow-y-auto p-6">
+            {renderContent()}
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+interface SubPageNavProps {
+  category: SettingsCategory;
+  pages: readonly { id: SupervisorSection; label: string }[];
+  current: SupervisorSection | null;
+  onOpen: (page: SupervisorSection) => void;
+}
+
+function SubPageNav({ category, pages, current, onOpen }: SubPageNavProps) {
+  return (
+    <ul className="mb-1">
+      {pages.map((page) => {
+        const isCurrent = page.id === current;
+        return (
+          <li key={page.id}>
+            <button
+              data-testid={`settings-nav-${category}-${page.id}`}
+              aria-current={isCurrent ? 'page' : undefined}
+              onClick={() => onOpen(page.id)}
+              className={`w-full py-1.5 pl-11 pr-4 text-left text-[11px] transition-colors ${
+                isCurrent
+                  ? 'text-primary-light'
+                  : 'text-foreground-muted hover:text-foreground hover:bg-white/5'
+              }`}
+            >
+              {page.label}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
