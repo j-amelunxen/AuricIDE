@@ -530,7 +530,9 @@
             "headless": false,
             "outputBytes": 5120,
             "role": "worker",
-            "spawnedByAgentId": null
+            "spawnedByAgentId": null,
+            "idleForMs": null,
+            "stalledSinceMs": null
           }
         ]
       }
@@ -1071,7 +1073,9 @@
           "agentId": "agent-5",
           "status": "running",
           "outputBytes": 2048,
-          "waitingForInput": false
+          "waitingForInput": false,
+          "idleForMs": null,
+          "stalledSinceMs": null
         }
       }
     },
@@ -1086,7 +1090,9 @@
           "agentId": "agent-5",
           "status": "running",
           "outputBytes": 4096,
-          "waitingForInput": true
+          "waitingForInput": true,
+          "idleForMs": null,
+          "stalledSinceMs": null
         }
       }
     },
@@ -1135,7 +1141,9 @@
               "headless": true,
               "outputBytes": 2048,
               "role": "worker",
-              "spawnedByAgentId": "agent-sup"
+              "spawnedByAgentId": "agent-sup",
+              "idleForMs": null,
+              "stalledSinceMs": null
             }
           ]
         }

@@ -335,6 +335,8 @@ pub struct AgentSummary {
     #[serde(flatten)]
     pub info: AgentInfo,
     pub output_bytes: u64,
+    #[serde(flatten)]
+    pub stall: super::stall_watchdog::StallMetrics,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -418,6 +420,8 @@ pub struct AwaitPending {
     pub agent_id: String,
     pub status: AgentStatus,
     pub output_bytes: u64,
+    #[serde(flatten)]
+    pub stall: super::stall_watchdog::StallMetrics,
     /// Set only by a call with `until_input` that ended because the agent
     /// waits on an answer.
     pub waiting_for_input: bool,
@@ -443,6 +447,7 @@ impl AwaitOutcome {
         status: AgentStatus,
         output_bytes: u64,
         waiting_for_input: bool,
+        stall: super::stall_watchdog::StallMetrics,
     ) -> Self {
         Self::Pending(AwaitPending {
             done: false,
@@ -450,6 +455,7 @@ impl AwaitOutcome {
             status,
             output_bytes,
             waiting_for_input,
+            stall,
         })
     }
 
@@ -752,6 +758,7 @@ pub(crate) mod tests {
                         agents: vec![AgentSummary {
                             info: sample_agent(),
                             output_bytes: 5120,
+                            stall: Default::default(),
                         }],
                     },
                 ),
@@ -1022,14 +1029,14 @@ pub(crate) mod tests {
                 "await_result while the agent still runs",
                 ok_response(
                     &json!(18),
-                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 2048, false),
+                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 2048, false, Default::default()),
                 ),
             ),
             (
                 "await_result returns early: the agent waits for input",
                 ok_response(
                     &json!(21),
-                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 4096, true),
+                    AwaitOutcome::pending("agent-5", AgentStatus::Running, 4096, true, Default::default()),
                 ),
             ),
             (
@@ -1041,7 +1048,7 @@ pub(crate) mod tests {
                 ok_response(
                     &json!(1),
                     ListAgentsResult {
-                        agents: vec![AgentSummary { info: child, output_bytes: 2048 }],
+                        agents: vec![AgentSummary { info: child, output_bytes: 2048, stall: Default::default() }],
                     },
                 ),
             ),

@@ -147,7 +147,9 @@ export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
       `permission menu in its console, or ${CONTROL_LIMITS.inputQuietSeconds} s of silence ` +
       'after a turn — with waitingForInput: true. Read its output, then answer or hand the ' +
       'question on. Pass the outputBytes you already read as sinceOffset, so a question you ' +
-      'have seen does not wake the next call again.' +
+      'have seen does not wake the next call again. Pending responses also carry nullable ' +
+      'idleForMs (observed inactivity) and stalledSinceMs (stall onset, Unix ms). These ignore ' +
+      'known redraw noise and local running tools; the IDE handles the single stall nudge.' +
       scopeNote,
     parameters: z.object({
       agentId: agentIdParam,

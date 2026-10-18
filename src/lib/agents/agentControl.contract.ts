@@ -343,6 +343,8 @@ const agentSummary = z.object({
   spawnedByGoalId: z.string().nullable(),
   headless: z.boolean(),
   outputBytes: offset,
+  idleForMs: offset.nullable().optional(),
+  stalledSinceMs: offset.nullable().optional(),
   role: z.enum(AGENT_ROLES),
   spawnedByAgentId: z.string().nullable(),
 });
@@ -440,6 +442,8 @@ const RESULTS = {
       agentId: z.string(),
       status: agentStatus,
       outputBytes: offset,
+      idleForMs: offset.nullable().optional(),
+      stalledSinceMs: offset.nullable().optional(),
       /** Only `untilInput` sets it; an IDE from before it existed sends nothing. */
       waitingForInput: z.boolean().default(false),
     }),

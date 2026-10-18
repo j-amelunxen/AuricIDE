@@ -394,6 +394,12 @@ export function buildSupervisorLaunchPrompt(
     SPAWN_RULES,
     '## Nie blockierend warten',
     WAIT_RULES,
+    '## Stalled agents',
+    'At each check compare outputBytes and activity with the last check. After 15 minutes ' +
+      '(or the configured interval) unchanged, without waiting for input or a running tool, ' +
+      'the IDE nudges an interactive child once; never duplicate that nudge. For headless ' +
+      'children read the output and decide. If still unchanged after another interval, ' +
+      'escalate to the human; never repeat nudges or block on waits.',
     '## Working with your agents',
     CHILD_RULES,
     '## Cleaning up',

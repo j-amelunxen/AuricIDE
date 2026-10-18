@@ -9,6 +9,7 @@ use std::io::{BufRead, BufReader, Write};
 pub(crate) struct FakeBackend {
     pub(crate) agents: Mutex<Vec<AgentInfo>>,
     pub(crate) written: Mutex<Vec<(String, String)>>,
+    pub(crate) fail_input: Mutex<HashSet<String>>,
     pub(crate) input_events: Mutex<Vec<AgentInputSentEvent>>,
     pub(crate) requests: Mutex<Vec<ControlRequestEvent>>,
     /// When set, every control request is answered with this, as the
@@ -91,6 +92,9 @@ impl ControlBackend for FakeBackend {
             .lock()
             .unwrap()
             .push((agent_id.to_string(), data.to_string()));
+        if self.fail_input.lock().unwrap().contains(agent_id) {
+            return Err("injected PTY write failure".into());
+        }
         Ok(())
     }
 
@@ -1199,7 +1203,7 @@ fn await_result_ends_its_wait_with_the_live_status() {
     assert_eq!(
         response["result"],
         json!({ "done": false, "agentId": "agent-child", "status": "running", "outputBytes": 7,
-                "waitingForInput": false })
+                "waitingForInput": false, "idleForMs": null, "stalledSinceMs": null })
     );
     let unknown = call(
         &s.h,
@@ -2081,4 +2085,304 @@ fn zero_wait_input_checks_remember_silence_between_calls() {
     s.h.buffers
         .append("agent-child", "The next turn is working.\n");
     assert_eq!(check()["result"]["waitingForInput"], false);
+}
+
+#[test]
+fn watchdog_nudges_once_escalates_and_exposes_metrics() {
+    let s = watchdog_scope();
+    let t = Instant::now();
+    let timeout = Duration::from_secs(900);
+    s.h.dispatcher
+        .watchdog_tick_at(t, 1000, timeout, &HashSet::new());
+    s.h.dispatcher.watchdog_tick_at(
+        t + timeout - Duration::from_millis(1),
+        900999,
+        timeout,
+        &HashSet::new(),
+    );
+    assert!(s.h.backend.written.lock().unwrap().is_empty());
+    s.h.dispatcher
+        .watchdog_tick_at(t + timeout, 901000, timeout, &HashSet::new());
+    let written = s.h.backend.written.lock().unwrap().clone();
+    assert_eq!(
+        written.iter().filter(|(id, _)| id == "agent-child").count(),
+        1
+    );
+    assert!(written
+        .iter()
+        .any(|(id, text)| id == "agent-sup" && text.contains("Stalled")));
+    assert!(!written
+        .iter()
+        .any(|(id, _)| id == "agent-other" || id == "agent-human"));
+    let listed = call_as(&s.h, &s.supervisor, json!({"id":1,"method":"list_agents"}));
+    let child = listed["result"]["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "agent-child")
+        .unwrap();
+    assert!(child["idleForMs"].is_number());
+    assert_eq!(child["stalledSinceMs"], 901000);
+    let pending = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({"id":2,"method":"await_result",
+        "params":{"agentId":"agent-child"}}),
+    );
+    assert_eq!(pending["result"]["stalledSinceMs"], 901000);
+    for n in [2, 3, 4] {
+        s.h.dispatcher.watchdog_tick_at(
+            t + timeout * n,
+            1000 + 900000 * u64::from(n),
+            timeout,
+            &HashSet::new(),
+        );
+    }
+    assert_eq!(
+        s.h.backend
+            .written
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(id, _)| id == "agent-child")
+            .count(),
+        1
+    );
+    assert_eq!(s.h.backend.notified.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn watchdog_headless_never_gets_input_and_recovers_on_progress() {
+    let s = watchdog_scope();
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|a| a.id == "agent-child")
+        .unwrap()
+        .headless = true;
+    let t = Instant::now();
+    let n = Duration::from_secs(900);
+    s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+    s.h.dispatcher
+        .watchdog_tick_at(t + n, 900000, n, &HashSet::new());
+    assert!(!s
+        .h
+        .backend
+        .written
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(id, _)| id == "agent-child"));
+    assert!(s
+        .h
+        .backend
+        .written
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(id, text)| id == "agent-sup" && text.contains("headless")));
+    s.h.buffers
+        .append("agent-child", "Tests finished successfully\n");
+    s.h.dispatcher
+        .watchdog_tick_at(t + n + Duration::from_secs(1), 901000, n, &HashSet::new());
+    assert!(s
+        .h
+        .dispatcher
+        .stall_metrics("agent-child")
+        .stalled_since_ms
+        .is_none());
+    assert!(s.h.backend.notified.lock().unwrap().is_empty());
+}
+
+#[test]
+fn watchdog_excludes_questions_commands_stopped_and_drafts() {
+    let s = watchdog_scope();
+    let t = Instant::now();
+    let n = Duration::from_secs(900);
+    s.h.buffers.append("agent-child", "Continue? (y/n)\n");
+    s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+    s.h.dispatcher
+        .watchdog_tick_at(t + n * 2, 1800000, n, &HashSet::new());
+    assert!(s.h.backend.written.lock().unwrap().is_empty());
+    // A running silent command keeps resetting the inactivity clock.
+    s.h.buffers.append(
+        "agent-child",
+        "\nWorking\nWorking\nWorking\nWorking\nWorking\nWorking\nWorking\nWorking\nWorking\n",
+    );
+    let busy = HashSet::from(["agent-child".to_string()]);
+    s.h.dispatcher
+        .watchdog_tick_at(t + n * 3, 2700000, n, &busy);
+    s.h.dispatcher
+        .watchdog_tick_at(t + n * 4, 3600000, n, &busy);
+    assert!(s.h.backend.written.lock().unwrap().is_empty());
+    s.h.backend
+        .drafting
+        .lock()
+        .unwrap()
+        .push("agent-child".into());
+    s.h.dispatcher
+        .watchdog_tick_at(t + n * 5, 4500000, n, &HashSet::new());
+    assert!(s.h.backend.written.lock().unwrap().is_empty());
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|a| a.id == "agent-child")
+        .unwrap()
+        .status = AgentStatus::Idle;
+    s.h.dispatcher
+        .watchdog_tick_at(t + n * 7, 6300000, n, &HashSet::new());
+    assert!(s.h.backend.written.lock().unwrap().is_empty());
+}
+
+#[test]
+fn watchdog_noise_does_not_postpone_the_nudge_or_escalation() {
+    let s = watchdog_scope();
+    let t = Instant::now();
+    let n = Duration::from_secs(900);
+    s.h.buffers.append("agent-child", "Reading files\nPlan\n");
+    s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+    for frame in 1..=2 {
+        s.h.buffers.append(
+            "agent-child",
+            "\x1b[2J\x1b[HReading files\nPlan\n⠋ Working (120s)\r⠙ Working (121s)\r",
+        );
+        s.h.dispatcher.watchdog_tick_at(
+            t + n * frame,
+            900000 * u64::from(frame),
+            n,
+            &HashSet::new(),
+        );
+    }
+    assert_eq!(s.h.backend.input_events.lock().unwrap().len(), 1);
+    assert_eq!(s.h.backend.notified.lock().unwrap().len(), 1);
+    s.h.buffers.append("agent-child", "A new result\n");
+    s.h.dispatcher
+        .watchdog_tick_at(t + n * 3, 2700000, n, &HashSet::new());
+    s.h.dispatcher
+        .watchdog_tick_at(t + n * 4, 3600000, n, &HashSet::new());
+    assert_eq!(
+        s.h.backend.input_events.lock().unwrap().len(),
+        1,
+        "recovery never renews the nudge budget"
+    );
+}
+
+#[test]
+fn watchdog_defers_supervisor_drafts_and_retries_only_pingbacks() {
+    let s = watchdog_scope();
+    let t = Instant::now();
+    let n = Duration::from_secs(900);
+    s.h.backend
+        .drafting
+        .lock()
+        .unwrap()
+        .push("agent-sup".into());
+    s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+    s.h.dispatcher
+        .watchdog_tick_at(t + n, 900000, n, &HashSet::new());
+    assert_eq!(
+        s.h.backend.written.lock().unwrap().len(),
+        1,
+        "only the child's nudge"
+    );
+    s.h.backend.drafting.lock().unwrap().clear();
+    s.h.dispatcher
+        .watchdog_tick_at(t + n + Duration::from_secs(5), 905000, n, &HashSet::new());
+    assert_eq!(s.h.backend.written.lock().unwrap().len(), 2);
+    s.h.dispatcher
+        .watchdog_tick_at(t + n + Duration::from_secs(10), 910000, n, &HashSet::new());
+    assert_eq!(s.h.backend.written.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn watchdog_failed_nudge_is_not_retried_and_pingback_failure_reaches_the_inbox() {
+    let s = watchdog_scope();
+    let t = Instant::now();
+    let n = Duration::from_secs(900);
+    *s.h.backend.fail_input.lock().unwrap() =
+        HashSet::from(["agent-child".into(), "agent-sup".into()]);
+    s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+    for seconds in [900, 905, 910, 915] {
+        s.h.dispatcher.watchdog_tick_at(
+            t + Duration::from_secs(seconds),
+            seconds * 1000,
+            n,
+            &HashSet::new(),
+        );
+    }
+    let written = s.h.backend.written.lock().unwrap();
+    assert_eq!(
+        written.iter().filter(|(id, _)| id == "agent-child").count(),
+        1
+    );
+    assert_eq!(
+        written.iter().filter(|(id, _)| id == "agent-sup").count(),
+        3
+    );
+    assert_eq!(s.h.backend.notified.lock().unwrap().len(), 1);
+}
+
+fn watchdog_scope() -> Scope {
+    let s = supervised_scope();
+    s.h.backend
+        .agents
+        .lock()
+        .unwrap()
+        .retain(|a| a.id != "agent-other");
+    s
+}
+
+#[test]
+fn watchdog_routes_each_stall_to_its_owner_and_orphans_reach_the_human() {
+    let s = watchdog_scope();
+    let second = AgentInfo {
+        id: "agent-sup-2".into(),
+        role: AgentRole::Supervisor,
+        ..sample_agent()
+    };
+    s.h.backend.agents.lock().unwrap().extend([
+        second,
+        agent_in(
+            "agent-second",
+            Some("agent-sup-2"),
+            &s.path,
+            AgentStatus::Running,
+        ),
+        agent_in(
+            "agent-orphan-live",
+            Some("agent-dead"),
+            &s.path,
+            AgentStatus::Running,
+        ),
+    ]);
+    let t = Instant::now();
+    let n = Duration::from_secs(900);
+    s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+    for seconds in [900, 905, 910] {
+        s.h.dispatcher.watchdog_tick_at(
+            t + Duration::from_secs(seconds),
+            seconds * 1000,
+            n,
+            &HashSet::new(),
+        );
+    }
+    let written = s.h.backend.written.lock().unwrap();
+    assert!(written
+        .iter()
+        .any(|(id, text)| id == "agent-sup-2" && text.contains("agent-second")));
+    assert!(!written
+        .iter()
+        .any(|(id, text)| id == "agent-sup" && text.contains("agent-second")));
+    assert!(s
+        .h
+        .backend
+        .notified
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|n| n.ref_id.as_deref() == Some("agent-orphan-live")));
 }
