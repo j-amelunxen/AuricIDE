@@ -10,6 +10,7 @@ import { registerAgentControlTools, type ControlCaller } from './agentControl';
 
 const CONTROL_TOOLS = [
   'await_agent_result',
+  'dismiss_agent',
   'kill_agent',
   'list_agents',
   'list_projects',

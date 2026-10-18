@@ -15,6 +15,7 @@ import {
   type ControlErrorCode,
   type ControlParams,
 } from './agentControl.contract';
+import { isFinishedAgent } from './fleet';
 import { deriveAgentName } from './naming';
 import type { LinkedSupervisorLaunch, LinkedSupervisorSpawn } from '@/lib/store/agent/agentTypes';
 
@@ -32,16 +33,17 @@ const linkedSupervisorParams = z
 /**
  * The frontend end of the agent-control socket (`docs/design-agent-control.md`).
  *
- * Rust answers list/read/send itself, but spawn and kill have bookkeeping only
- * the store owns (launch defaults, spawn configs for Retry, ticket and goal
- * side effects), so Rust hands them over as `control-request` and waits for
- * `control_respond`. Both go through the exact store actions the UI uses.
+ * Rust answers list/read/send itself, but spawn, kill and dismiss have
+ * bookkeeping only the store owns (launch defaults, spawn configs for Retry,
+ * ticket and goal side effects, the card list), so Rust hands them over as
+ * `control-request` and waits for `control_respond`. All go through the exact
+ * store actions the UI uses.
  */
 
 export interface ControlRequestEvent {
   reqId: string;
   /** `spawn_supervisor` comes from the supervisor link, the rest from `control.sock`. */
-  method: 'spawn' | 'kill' | typeof SPAWN_SUPERVISOR_METHOD;
+  method: 'spawn' | 'kill' | 'dismiss' | typeof SPAWN_SUPERVISOR_METHOD;
   params: unknown;
   /** Ms since epoch: when Rust stops waiting and answers `frontend_unavailable`. */
   expiresAt: number;
@@ -57,6 +59,7 @@ export interface ControlHost {
   agents: AgentInfo[];
   providers: ProviderInfo[];
   killRunningAgent: (agentId: string) => Promise<void>;
+  dismissFinishedAgent: (agentId: string) => void;
   spawnNewAgent: (config: AgentConfig) => Promise<AgentInfo>;
   spawnLinkedSupervisor?: (launch: LinkedSupervisorLaunch) => Promise<LinkedSupervisorSpawn>;
   recordAgentSentMessage: (agentId: string, text: string) => void;
@@ -73,6 +76,20 @@ async function killFromControl(params: ControlParams<'kill'>, host: ControlHost)
   await host.killRunningAgent(params.agentId);
   host.showToast?.(`${target.name} stopped by an MCP client`, 'info');
   return { agentId: params.agentId, killed: true as const };
+}
+
+/**
+ * Rust has checked the agent is not running; the store checks again, because
+ * the card is what a person sees. An agent whose card is already gone (the
+ * human cleared it) is dismissed all the same: the caller's goal holds.
+ */
+function dismissFromControl(params: ControlParams<'dismiss'>, host: ControlHost) {
+  const target = host.agents.find((entry) => entry.id === params.agentId);
+  if (target && !isFinishedAgent(target)) {
+    throw new ControlError('invalid_params', `${target.name} is still running`);
+  }
+  if (target) host.dismissFinishedAgent(params.agentId);
+  return { agentId: params.agentId, dismissed: true as const };
 }
 
 /**
@@ -305,6 +322,9 @@ async function respond(
 function answerControlRequest(event: ControlRequestEvent, host: ControlHost) {
   if (event.method === SPAWN_SUPERVISOR_METHOD) {
     return spawnSupervisorFromLink(event.params, host);
+  }
+  if (event.method === 'dismiss') {
+    return dismissFromControl(parseControlParams('dismiss', event.params), host);
   }
   return event.method === 'kill'
     ? killFromControl(parseControlParams('kill', event.params), host)

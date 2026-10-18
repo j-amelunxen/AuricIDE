@@ -15,6 +15,7 @@
 pub mod caller;
 mod link_policy;
 mod link_spawn;
+pub mod pingback;
 pub mod projects;
 pub mod protocol;
 mod supervised;
@@ -117,6 +118,11 @@ pub trait ControlBackend: Send + Sync {
     }
     /// Drops a notification into the inbox (a policy proposal).
     fn notify(&self, _input: crate::notifications::NotificationInput) {}
+    /// Whether the human is halfway through a message in the agent's
+    /// console (`agents/human_draft.rs`); the pingback waits for it.
+    fn human_drafting(&self, _agent_id: &str) -> bool {
+        false
+    }
 }
 
 /// Who sent a request, as the kernel's peer PID says (`Dispatcher::admit`).
@@ -377,6 +383,7 @@ impl Dispatcher {
             }),
             Request::AwaitResult(params) => self.await_result(params),
             Request::RemoveWorktree(params) => self.remove_worktree(params),
+            Request::Dismiss(params) => self.dismiss(params),
             Request::LinkPolicyGet(_) | Request::LinkPolicyPropose(_) => {
                 Err(link_policy::supervisors_only())
             }
@@ -540,6 +547,31 @@ impl Dispatcher {
         to_value(KillResult {
             agent_id: params.agent_id,
             killed: true,
+        })
+    }
+
+    /// Clears a finished agent from the IDE, as the card's Dismiss button
+    /// does, and forgets its kept result. A running or queued agent is
+    /// refused: dismissing is not stopping.
+    fn dismiss(&self, params: AgentIdParams) -> Outcome {
+        let agent_id = params.agent_id.as_str();
+        match self.find_agent(agent_id) {
+            Some(agent) if matches!(agent.status, AgentStatus::Running | AgentStatus::Queued) => {
+                return Err(ControlError::new(
+                    ErrorCode::InvalidParams,
+                    format!("{agent_id} is still running; await or kill it first"),
+                ));
+            }
+            Some(_) => {}
+            None if self.run_results.get(agent_id).is_some() || self.buffers.knows(agent_id) => {}
+            None => return Err(Self::unknown(agent_id)),
+        }
+        let params_value = to_value(&params)?;
+        self.via_frontend("dismiss", params_value)?;
+        self.run_results.forget(agent_id);
+        to_value(DismissResult {
+            agent_id: params.agent_id,
+            dismissed: true,
         })
     }
 
@@ -1003,6 +1035,13 @@ impl ControlBackend for TauriBackend {
             .try_state::<crate::providers::ProviderRegistryState>()
             .map(|registry| crate::supervisor::provider_modes(registry.inner(), policy))
             .unwrap_or_default()
+    }
+
+    fn human_drafting(&self, agent_id: &str) -> bool {
+        use tauri::Manager;
+        self.app
+            .try_state::<crate::agents::human_draft::HumanDraftsState>()
+            .is_some_and(|drafts| drafts.drafting(agent_id, std::time::Instant::now()))
     }
 
     fn write_input(&self, agent_id: &str, data: &str) -> Result<(), String> {

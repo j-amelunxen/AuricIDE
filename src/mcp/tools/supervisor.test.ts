@@ -18,6 +18,7 @@ const TOOL_METHODS: Record<string, string> = {
   send_agent_input: 'send_input',
   kill_agent: 'kill',
   remove_worktree: 'remove_worktree',
+  dismiss_agent: 'dismiss',
   link_policy_get: 'link_policy_get',
   link_policy_propose: 'link_policy_propose',
 };

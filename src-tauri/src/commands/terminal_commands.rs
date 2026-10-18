@@ -193,7 +193,13 @@ pub async fn shell_write(
     id: String,
     data: String,
     state: tauri::State<'_, TerminalState>,
+    drafts: tauri::State<'_, crate::agents::human_draft::HumanDraftsState>,
 ) -> Result<(), String> {
+    // The console's keystrokes are the human's: the supervisor pingback
+    // waits while they leave a message half typed.
+    if let Some(agent_id) = crate::agents::human_draft::agent_of_session(&id) {
+        drafts.observe(agent_id, &data, std::time::Instant::now());
+    }
     write_to_session(&state, &id, &data).await
 }
 

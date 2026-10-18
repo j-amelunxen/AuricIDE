@@ -6,13 +6,16 @@
 //! where a run's exit (or kill) is known. Each result remembers the supervisor
 //! that started the agent, so a supervisor's children stay readable after the
 //! supervisor itself ended, until its card is cleared
-//! (`agent_run_results_forget`).
+//! (`agent_run_results_forget`), and the agent as it was listed, so the
+//! supervisor's `list_agents` still shows it. A supervisor's finished child is
+//! also handed to every subscriber, which is how the supervisor hears of it
+//! (`control_socket/pingback.rs`).
 
-use super::types::AgentStatus;
+use super::types::{AgentInfo, AgentStatus};
 use crate::agent_usage::claude::CliResult;
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard};
 use std::time::Instant;
 
 /// How many finished runs are kept (`limits.runResultsKept`).
@@ -87,12 +90,24 @@ struct Entry {
     result: RunResult,
     /// The supervisor that started the agent, if one did.
     parent: Option<String>,
+    /// The agent as the manager listed it while it ran; `None` where the
+    /// recorder had no listing at hand.
+    agent: Option<AgentInfo>,
+}
+
+/// A finished agent a supervisor started, as handed to subscribers.
+#[derive(Debug, Clone)]
+pub struct FinishedChild {
+    pub supervisor_id: String,
+    pub agent: AgentInfo,
+    pub result: RunResult,
 }
 
 pub struct RunResults {
     entries: Mutex<VecDeque<Entry>>,
     changed: Condvar,
     capacity: usize,
+    subscribers: Mutex<Vec<mpsc::Sender<FinishedChild>>>,
 }
 
 impl Default for RunResults {
@@ -113,6 +128,7 @@ impl RunResults {
             entries: Mutex::new(VecDeque::new()),
             changed: Condvar::new(),
             capacity: capacity.max(1),
+            subscribers: Mutex::new(Vec::new()),
         }
     }
 
@@ -122,23 +138,89 @@ impl RunResults {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// A result without the agent's listing, as tests book one.
+    #[cfg(test)]
+    pub fn record(&self, result: RunResult, parent: Option<String>) {
+        self.insert(Entry {
+            result,
+            parent,
+            agent: None,
+        });
+    }
+
+    /// Books a run the manager listed: keeps the listing beside the result
+    /// and, for a supervisor's child, tells every subscriber.
+    pub fn record_finished(&self, result: RunResult, agent: AgentInfo) {
+        let parent = agent.spawned_by_agent_id.clone();
+        let child = parent.clone().map(|supervisor_id| FinishedChild {
+            supervisor_id,
+            agent: agent.clone(),
+            result: result.clone(),
+        });
+        let inserted = self.insert(Entry {
+            result,
+            parent,
+            agent: Some(agent),
+        });
+        if let (true, Some(child)) = (inserted, child) {
+            self.subscribers
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .retain(|subscriber| subscriber.send(child.clone()).is_ok());
+        }
+    }
+
     /// Keeps the first result recorded for an agent: a kill books its verdict
     /// before the output pump notices the process is gone, and that verdict
-    /// stands. Wakes every waiter.
-    pub fn record(&self, result: RunResult, parent: Option<String>) {
+    /// stands. Wakes every waiter. `false` when the agent already had one.
+    fn insert(&self, entry: Entry) -> bool {
         let mut entries = self.lock();
         if entries
             .iter()
-            .any(|entry| entry.result.agent_id == result.agent_id)
+            .any(|kept| kept.result.agent_id == entry.result.agent_id)
         {
-            return;
+            return false;
         }
-        entries.push_back(Entry { result, parent });
+        entries.push_back(entry);
         while entries.len() > self.capacity {
             entries.pop_front();
         }
         drop(entries);
         self.changed.notify_all();
+        true
+    }
+
+    /// Every supervisor's child that finishes from now on.
+    pub fn subscribe(&self) -> mpsc::Receiver<FinishedChild> {
+        let (sender, receiver) = mpsc::channel();
+        self.subscribers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(sender);
+        receiver
+    }
+
+    /// The finished agents `supervisor_id` started whose result is still
+    /// kept, newest first, each listed with the status it ended in.
+    pub fn finished_children_of(&self, supervisor_id: &str) -> Vec<AgentInfo> {
+        self.lock()
+            .iter()
+            .rev()
+            .filter(|entry| entry.parent.as_deref() == Some(supervisor_id))
+            .filter_map(|entry| {
+                let mut agent = entry.agent.clone()?;
+                agent.status = entry.result.status.clone();
+                Some(agent)
+            })
+            .collect()
+    }
+
+    /// Lets go of one agent's result. `false` when none was kept.
+    pub fn forget(&self, agent_id: &str) -> bool {
+        let mut entries = self.lock();
+        let before = entries.len();
+        entries.retain(|entry| entry.result.agent_id != agent_id);
+        before != entries.len()
     }
 
     pub fn get(&self, agent_id: &str) -> Option<RunResult> {
@@ -319,5 +401,57 @@ mod tests {
         assert_eq!(results.forget_children_of("sup"), 2);
         assert!(results.get("c1").is_none());
         assert!(results.get("other").is_some() && results.get("plain").is_some());
+    }
+
+    fn child(id: &str, parent: Option<&str>) -> AgentInfo {
+        let mut agent = crate::control_socket::protocol::tests::sample_agent();
+        agent.id = id.into();
+        agent.spawned_by_agent_id = parent.map(Into::into);
+        agent
+    }
+
+    #[test]
+    fn a_finished_child_is_listed_with_its_end_status_newest_first() {
+        let results = RunResults::default();
+        results.record_finished(result("c1"), child("c1", Some("sup")));
+        let mut failed = result("c2");
+        failed.status = AgentStatus::Error;
+        results.record_finished(failed, child("c2", Some("sup")));
+        results.record_finished(result("other"), child("other", Some("sup-2")));
+        results.record(result("unlisted"), Some("sup".into()));
+        let listed: Vec<(String, AgentStatus)> = results
+            .finished_children_of("sup")
+            .into_iter()
+            .map(|agent| (agent.id, agent.status))
+            .collect();
+        assert_eq!(
+            listed,
+            vec![
+                ("c2".to_string(), AgentStatus::Error),
+                ("c1".to_string(), AgentStatus::Idle)
+            ]
+        );
+        assert!(results.forget("c1"));
+        assert!(!results.forget("c1"));
+        assert_eq!(results.finished_children_of("sup").len(), 1);
+    }
+
+    #[test]
+    fn subscribers_hear_of_a_supervisors_children_once() {
+        let results = RunResults::default();
+        let heard = results.subscribe();
+        results.record_finished(result("c1"), child("c1", Some("sup")));
+        results.record_finished(result("c1"), child("c1", Some("sup")));
+        results.record_finished(result("plain"), child("plain", None));
+        let got: Vec<FinishedChild> = heard.try_iter().collect();
+        assert_eq!(got.len(), 1, "a repeat and a parentless run are not news");
+        assert_eq!(got[0].supervisor_id, "sup");
+        assert_eq!(got[0].agent.id, "c1");
+        drop(heard);
+        results.record_finished(result("c3"), child("c3", Some("sup")));
+        assert!(
+            results.subscribers.lock().unwrap().is_empty(),
+            "a gone subscriber is dropped"
+        );
     }
 }

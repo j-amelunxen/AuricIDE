@@ -57,6 +57,7 @@ function host(overrides: Partial<Host> = {}): Host {
     agents: [agent('agent-3')],
     providers: [],
     killRunningAgent: vi.fn(async () => undefined),
+    dismissFinishedAgent: vi.fn(),
     spawnNewAgent: vi.fn(async (config: AgentConfig) => agent('agent-4', { name: config.name })),
     recordAgentSentMessage: vi.fn(),
     showToast: vi.fn(() => 0),
@@ -79,6 +80,42 @@ beforeEach(() => {
   listeners.clear();
   listening.clear();
   unsubscribeMock.mockClear();
+});
+
+describe('control-request dismiss', () => {
+  const dismiss = (h: Host, agentId: string) =>
+    handleControlRequest(
+      { reqId: 'd1', method: 'dismiss', params: { agentId }, expiresAt: fresh() },
+      h
+    );
+
+  it('clears a finished agent with the store action and answers dismissed', async () => {
+    const h = host({ agents: [agent('agent-5', { status: 'idle' })] });
+    await dismiss(h, 'agent-5');
+
+    expect(h.dismissFinishedAgent).toHaveBeenCalledWith('agent-5');
+    expect(answered()[0].args).toEqual({
+      reqId: 'd1',
+      ok: true,
+      result: { agentId: 'agent-5', dismissed: true },
+    });
+  });
+
+  it('refuses a running agent and leaves it alone', async () => {
+    const h = host();
+    await dismiss(h, 'agent-3');
+
+    expect(h.dismissFinishedAgent).not.toHaveBeenCalled();
+    expect(answered()[0].args).toMatchObject({ ok: false, error: { code: 'invalid_params' } });
+  });
+
+  it('answers dismissed for a card the human already cleared', async () => {
+    const h = host({ agents: [] });
+    await dismiss(h, 'agent-5');
+
+    expect(h.dismissFinishedAgent).not.toHaveBeenCalled();
+    expect(answered()[0].args).toMatchObject({ ok: true, result: { dismissed: true } });
+  });
 });
 
 describe('control-request kill', () => {

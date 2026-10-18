@@ -250,8 +250,15 @@ const CLEANUP_RULES = [
     'branchAhead). Do not retry, do not merge, do not ask another agent to delete it. Tell the ' +
     'human the project, branch, path and what the work is, and that it waits for a merge in ' +
     "the IDE's Git panel; where the project has an auric-pm server, also record it with notify.",
-  '- **Before you end,** call list_my_agents and clean up the worktree of every finished agent ' +
-    'you started (its repoPath contains `.auric-wt`).',
+  '- **Finished agents stay listed until you clear them.** list_my_agents shows them with ' +
+    'status idle or error; their results are still there. After reading a result and removing ' +
+    "its worktree, call dismiss_agent so the human's Done list does not fill up.",
+  '- **A message starting with `[AuricIDE] Finished:` comes from the IDE**, not from the ' +
+    'human: it names agents of yours that just ended. Read and report their results and clean ' +
+    'up as above. An agent you no longer see in list_my_agents was dismissed or never yours; ' +
+    'never conclude that the IDE restarted or that agents were lost.',
+  '- **Before you end,** call list_my_agents and clean up every finished agent you started: ' +
+    'its worktree (repoPath contains `.auric-wt`), then dismiss_agent.',
 ].join('\n');
 
 /**

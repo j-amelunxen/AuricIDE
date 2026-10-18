@@ -40,6 +40,7 @@ describe('the supervisor tool surface', () => {
     const tools = capture(vi.fn() as unknown as ControlCaller);
     expect([...tools.keys()].sort()).toEqual([
       'await_agent_result',
+      'dismiss_agent',
       'kill_agent',
       'link_policy_get',
       'link_policy_propose',

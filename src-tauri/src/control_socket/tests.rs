@@ -1,6 +1,6 @@
 use super::protocol::tests::sample_agent;
 use super::*;
-use crate::agents::run_results::RunResult;
+use crate::agents::run_results::{FinishedChild, RunResult};
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
 
@@ -29,9 +29,19 @@ pub(crate) struct FakeBackend {
     pub(crate) notified: Mutex<Vec<crate::notifications::NotificationInput>>,
     /// Finished runs per provider, the same for every project.
     pub(crate) recent_runs: Mutex<BTreeMap<String, u32>>,
+    /// Agents whose console holds a half-typed message from the human.
+    pub(crate) drafting: Mutex<Vec<String>>,
 }
 
 impl ControlBackend for FakeBackend {
+    fn human_drafting(&self, agent_id: &str) -> bool {
+        self.drafting
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|id| id == agent_id)
+    }
+
     fn agents(&self) -> Vec<AgentInfo> {
         self.agents.lock().unwrap().clone()
     }
@@ -797,9 +807,10 @@ fn scope_policy(path: &str) -> SupervisorPolicy {
     .unwrap()
 }
 
-/// A supervisor `agent-sup` with one running child in an allowed project, a
-/// child of another supervisor, an agent the human started, and the stored
-/// result of a child whose supervisor is gone.
+/// A supervisor `agent-sup` with one running child in an allowed project and
+/// one finished child (`agent-done`), a child of another supervisor, an agent
+/// the human started, and the stored result of a child whose supervisor is
+/// gone.
 fn supervised_scope() -> Scope {
     let project = auric_project();
     let path = crate::supervisor::canonical_project_path(&project.path().to_string_lossy());
@@ -853,6 +864,17 @@ fn supervised_scope() -> Scope {
             1,
         ),
         Some("agent-dead".into()),
+    );
+    h.run_results.record_finished(
+        RunResult::from_finish(
+            "agent-done",
+            AgentStatus::Error,
+            Some(1),
+            None,
+            || Some("Error: tests failed".into()),
+            2,
+        ),
+        agent_in("agent-done", Some("agent-sup"), &path, AgentStatus::Running),
     );
     *h.backend.reply.lock().unwrap() = Some(FrontendReply {
         ok: true,
@@ -932,6 +954,7 @@ fn every_caller_scope_case_in_the_contract_holds() {
             Some("other_supervisors_child") => "agent-other",
             Some("self") => "agent-sup",
             Some("child_of_killed_supervisor") => "agent-orphan",
+            Some("own_finished_child") => "agent-done",
             _ => "agent-human",
         };
         let method = case["method"].as_str().unwrap();
@@ -965,7 +988,7 @@ fn every_caller_scope_case_in_the_contract_holds() {
                     .iter()
                     .map(|agent| agent["id"].as_str().unwrap())
                     .collect();
-                assert_eq!(ids, vec!["agent-child"], "{name}");
+                assert_eq!(ids, vec!["agent-child", "agent-done"], "{name}");
             }
             code => assert_eq!(error_code(&response), code, "{name}: {response}"),
         }
@@ -1330,7 +1353,7 @@ fn a_supervisor_is_admitted_over_a_real_socket_in_its_scope() {
         .iter()
         .map(|agent| agent["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, vec!["agent-child"]);
+    assert_eq!(ids, vec!["agent-child", "agent-done"]);
     let typed = roundtrip(
         &mut stream,
         &mut reader,
@@ -1623,4 +1646,169 @@ mod link_policy {
         );
         assert_eq!(error_code(&read), "internal");
     }
+}
+
+#[test]
+fn a_supervisor_lists_its_finished_child_with_the_status_it_ended_in() {
+    let s = supervised_scope();
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 1, "method": "list_agents", "params": {} }),
+    );
+    let agents = response["result"]["agents"].as_array().unwrap();
+    let done = agents.iter().find(|a| a["id"] == "agent-done").unwrap();
+    assert_eq!(done["status"], "error", "{response}");
+    assert_eq!(done["spawnedByAgentId"], "agent-sup");
+}
+
+#[test]
+fn dismiss_clears_the_card_through_the_frontend_and_forgets_the_result() {
+    let s = supervised_scope();
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 27, "method": "dismiss", "params": { "agentId": "agent-done" } }),
+    );
+    assert_eq!(
+        response["result"],
+        json!({ "agentId": "agent-done", "dismissed": true }),
+        "{response}"
+    );
+    let requests = s.h.backend.requests.lock().unwrap();
+    assert_eq!(requests[0].method, "dismiss");
+    assert_eq!(requests[0].params, json!({ "agentId": "agent-done" }));
+    drop(requests);
+    assert!(s.h.run_results.get("agent-done").is_none());
+    let again = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 28, "method": "dismiss", "params": { "agentId": "agent-done" } }),
+    );
+    assert_eq!(error_code(&again), "unknown_agent", "gone from its scope");
+}
+
+#[test]
+fn a_dismiss_the_frontend_refuses_keeps_the_result() {
+    let s = supervised_scope();
+    *s.h.backend.reply.lock().unwrap() = Some(FrontendReply {
+        ok: false,
+        result: None,
+        error: Some(FrontendError {
+            code: "internal".into(),
+            message: "store refused".into(),
+        }),
+    });
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 27, "method": "dismiss", "params": { "agentId": "agent-done" } }),
+    );
+    assert_eq!(response["ok"], false, "{response}");
+    assert!(s.h.run_results.get("agent-done").is_some(), "retryable");
+}
+
+fn finished_child(id: &str, supervisor: &str, status: AgentStatus) -> FinishedChild {
+    FinishedChild {
+        supervisor_id: supervisor.into(),
+        agent: AgentInfo {
+            id: id.into(),
+            name: format!("Task {id}"),
+            spawned_by_agent_id: Some(supervisor.into()),
+            ..sample_agent()
+        },
+        result: RunResult::from_finish(id, status, Some(0), None, || None, 1),
+    }
+}
+
+#[test]
+fn pingback_types_the_notice_only_into_a_listening_supervisor() {
+    let s = supervised_scope();
+    let mut headless_sup = agent("agent-sup-h", true);
+    headless_sup.role = AgentRole::Supervisor;
+    s.h.backend.agents.lock().unwrap().push(headless_sup);
+    let d = &s.h.dispatcher;
+    let wave = [
+        finished_child("agent-a", "agent-sup", AgentStatus::Idle),
+        finished_child("agent-b", "agent-sup", AgentStatus::Error),
+    ];
+    assert!(d.ping_supervisor("agent-sup", &wave));
+    for silent in ["agent-sup-h", "agent-gone", "agent-child"] {
+        assert!(!d.ping_supervisor(silent, &wave), "{silent}");
+    }
+    let written = s.h.backend.written.lock().unwrap();
+    assert_eq!(written.len(), 1);
+    let (to, data) = &written[0];
+    assert_eq!(to, "agent-sup");
+    assert!(
+        data.contains("agent-a \"Task agent-a\" (idle), agent-b \"Task agent-b\" (error)"),
+        "{data}"
+    );
+    assert!(data.contains("from the IDE, not from the human"), "{data}");
+    assert!(data.ends_with('\r'), "submitted: {data:?}");
+}
+
+#[test]
+fn pingback_waits_for_a_quiet_wave_or_the_max_delay() {
+    let quiet = Duration::from_secs(3);
+    let mut waves = super::pingback::Waves::new(quiet, Duration::from_secs(15));
+    let t = Instant::now();
+    waves.add(finished_child("a", "sup", AgentStatus::Idle), t);
+    waves.add(
+        finished_child("b", "sup", AgentStatus::Idle),
+        t + Duration::from_secs(2),
+    );
+    waves.add(finished_child("x", "sup-2", AgentStatus::Idle), t);
+    let due = waves.take_due(t + Duration::from_secs(4), |_| false);
+    assert_eq!(due.len(), 1, "sup-2 is quiet, sup is not yet");
+    assert_eq!(due[0].0, "sup-2");
+
+    for second in (4..15).step_by(2) {
+        let at = t + Duration::from_secs(second);
+        waves.add(
+            finished_child(&format!("c{second}"), "sup", AgentStatus::Idle),
+            at,
+        );
+        assert!(
+            waves.take_due(at, |_| false).is_empty(),
+            "never quiet at {second}s"
+        );
+    }
+    let due = waves.take_due(t + Duration::from_secs(15), |_| false);
+    assert_eq!(due[0].1.len(), 8, "overdue: one notice for the whole wave");
+    assert!(waves.is_empty());
+}
+
+#[test]
+fn pingback_holds_while_the_human_drafts_and_sends_once_they_stop() {
+    let s = supervised_scope();
+    let mut waves = super::pingback::Waves::new(Duration::ZERO, Duration::ZERO);
+    let t = Instant::now();
+    waves.add(finished_child("a", "agent-sup", AgentStatus::Idle), t);
+    s.h.backend
+        .drafting
+        .lock()
+        .unwrap()
+        .push("agent-sup".into());
+    let d = &s.h.dispatcher;
+    assert!(waves.take_due(t, |id| d.human_drafting(id)).is_empty());
+    waves.add(finished_child("b", "agent-sup", AgentStatus::Idle), t);
+    s.h.backend.drafting.lock().unwrap().clear();
+    let due = waves.take_due(t, |id| d.human_drafting(id));
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].1.len(), 2, "what waited goes out together");
+}
+
+#[test]
+fn pingback_limits_match_the_contract() {
+    let fixtures: Value = serde_json::from_str(super::protocol::tests::FIXTURES).unwrap();
+    let limits = &fixtures["limits"];
+    assert_eq!(
+        limits["pingbackQuietMs"],
+        super::pingback::PINGBACK_QUIET.as_millis() as u64
+    );
+    assert_eq!(
+        limits["pingbackMaxDelayMs"],
+        super::pingback::PINGBACK_MAX_DELAY.as_millis() as u64
+    );
 }

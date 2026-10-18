@@ -150,6 +150,7 @@ pub enum Request {
     ListProjects(EmptyParams),
     AwaitResult(AwaitResultParams),
     RemoveWorktree(AgentIdParams),
+    Dismiss(AgentIdParams),
     LinkPolicyGet(EmptyParams),
     LinkPolicyPropose(LinkPolicyProposeParams),
 }
@@ -163,7 +164,7 @@ pub struct LinkPolicyProposeParams {
     pub changes: Vec<crate::supervisor_link::proposals::PolicyChange>,
 }
 
-const METHODS: [&str; 10] = [
+const METHODS: [&str; 11] = [
     "list_agents",
     "read_output",
     "send_input",
@@ -172,6 +173,7 @@ const METHODS: [&str; 10] = [
     "list_projects",
     "await_result",
     "remove_worktree",
+    "dismiss",
     "link_policy_get",
     "link_policy_propose",
 ];
@@ -265,7 +267,9 @@ fn normalise(request: Request) -> Result<Request, String> {
             }
             Ok(Request::SendInput(params))
         }
-        Request::Kill(params) | Request::RemoveWorktree(params) if blank(&params.agent_id) => {
+        Request::Kill(params) | Request::RemoveWorktree(params) | Request::Dismiss(params)
+            if blank(&params.agent_id) =>
+        {
             Err("agentId must not be empty".into())
         }
         Request::LinkPolicyPropose(params)
@@ -344,6 +348,15 @@ pub struct SendInputResult {
 pub struct KillResult {
     pub agent_id: String,
     pub killed: bool,
+}
+
+/// `dismiss`: the finished agent's card is gone from the IDE and its kept
+/// result forgotten.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DismissResult {
+    pub agent_id: String,
+    pub dismissed: bool,
 }
 
 /// What `remove_worktree` did with an agent's worktree. `removed: false` is
@@ -788,6 +801,16 @@ pub(crate) mod tests {
             (
                 "remove_worktree",
                 ok_response(&json!(25), sample_worktree_removal(true, false)),
+            ),
+            (
+                "dismiss",
+                ok_response(
+                    &json!(27),
+                    DismissResult {
+                        agent_id: "agent-5".into(),
+                        dismissed: true,
+                    },
+                ),
             ),
             (
                 "link_policy_get",

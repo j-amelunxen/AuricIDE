@@ -24,9 +24,7 @@ use std::path::Path;
 impl Dispatcher {
     pub(super) fn dispatch_supervised(&self, supervisor: &str, request: Request) -> Outcome {
         match request {
-            Request::ListAgents(_) => {
-                self.list_agents(|agent| agent.spawned_by_agent_id.as_deref() == Some(supervisor))
-            }
+            Request::ListAgents(_) => self.list_own_children(supervisor),
             Request::ReadOutput(params) => {
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.read_output(params)
@@ -43,6 +41,10 @@ impl Dispatcher {
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.remove_worktree(params)
             }
+            Request::Dismiss(params) => {
+                self.ensure_child(supervisor, &params.agent_id)?;
+                self.dismiss(params)
+            }
             Request::SendInput(params) => {
                 self.ensure_child(supervisor, &params.agent_id)?;
                 self.send_input(params)
@@ -52,6 +54,30 @@ impl Dispatcher {
             Request::LinkPolicyGet(_) => self.link_policy_get(),
             Request::LinkPolicyPropose(params) => self.link_policy_propose(supervisor, params),
         }
+    }
+
+    /// The agents `supervisor` started: the live ones, then the finished ones
+    /// whose result is still kept, newest first. A finished agent leaves the
+    /// manager at once, so without the second half a supervisor whose
+    /// children all finished saw an empty list and took them for lost.
+    fn list_own_children(&self, supervisor: &str) -> Outcome {
+        let live: Vec<AgentSummary> = self
+            .summaries()
+            .into_iter()
+            .filter(|summary| summary.info.spawned_by_agent_id.as_deref() == Some(supervisor))
+            .collect();
+        let finished: Vec<AgentSummary> = self
+            .run_results
+            .finished_children_of(supervisor)
+            .into_iter()
+            .filter(|info| !live.iter().any(|summary| summary.info.id == info.id))
+            .map(|info| AgentSummary {
+                output_bytes: self.buffers.total_bytes(&info.id),
+                info,
+            })
+            .collect();
+        let agents = live.into_iter().chain(finished).collect();
+        to_value(ListAgentsResult { agents })
     }
 
     /// `Ok` only for an agent `supervisor` started, live or finished.

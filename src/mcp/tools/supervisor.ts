@@ -4,6 +4,7 @@ import { callControl } from '../controlClient';
 import {
   agentIdParam,
   awaitAgentResultTool,
+  dismissAgentTool,
   readAgentOutputTool,
   removeWorktreeTool,
   runControl,
@@ -70,8 +71,10 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
       'List the agents you started, across projects: id, name, provider, model, status ' +
       '(running | idle | queued | error), the task, project, repoPath (its working folder; a ' +
       'path containing ".auric-wt" is a worktree you must clean up), headless, and outputBytes (pass ' +
-      'it as sinceOffset to read_agent_output for only what is new). Agents the human or ' +
-      'another supervisor started are not listed.',
+      'it as sinceOffset to read_agent_output for only what is new). Finished agents stay ' +
+      'listed (status idle or error) until you clear them with dismiss_agent, so an agent ' +
+      'missing here was never yours or was dismissed, not lost. Agents the human or another ' +
+      'supervisor started are not listed.',
     parameters: z.object({}),
     execute: async () => runControl(call, 'list_agents', {}),
   });
@@ -105,6 +108,7 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
   });
 
   server.addTool(removeWorktreeTool(call, OWN_CHILDREN));
+  server.addTool(dismissAgentTool(call, OWN_CHILDREN));
   registerLinkPolicyTools(server, call);
 }
 

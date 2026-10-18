@@ -826,7 +826,7 @@ pub async fn spawn_agent_impl(
     let run_results = app
         .try_state::<super::run_results::RunResultsState>()
         .map(|results| results.inner().clone());
-    let parent_id = info.spawned_by_agent_id.clone();
+    let finished_info = info.clone();
 
     tauri::async_runtime::spawn(async move {
         // One counter for everything this agent emits, the error line below
@@ -911,7 +911,7 @@ pub async fn spawn_agent_impl(
                     })
                     .map(|slice| slice.text)
             };
-            results.record(
+            results.record_finished(
                 super::run_results::RunResult::from_finish(
                     &id_clone,
                     status.clone(),
@@ -920,7 +920,7 @@ pub async fn spawn_agent_impl(
                     console_tail,
                     now_ms(),
                 ),
-                parent_id,
+                finished_info,
             );
         }
         if let Some(buffers) = &output_buffers {
@@ -1184,7 +1184,7 @@ pub async fn kill_agent_impl(
                 })
                 .map(|slice| slice.text)
         };
-        results.record(
+        results.record_finished(
             super::run_results::RunResult::from_finish(
                 agent_id,
                 AgentStatus::Idle,
@@ -1193,7 +1193,7 @@ pub async fn kill_agent_impl(
                 console_tail,
                 now_ms(),
             ),
-            process.info.spawned_by_agent_id.clone(),
+            process.info.clone(),
         );
     }
     // Finished now, not when the PTY closes: a grandchild that inherited the

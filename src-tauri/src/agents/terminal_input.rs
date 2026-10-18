@@ -85,14 +85,17 @@ impl BracketedPasteTracker {
 /// A message from the IDE's own composers, written the way `send_input` on
 /// the control socket writes it, so both reach the agent alike.
 #[tauri::command]
+// code-gate: complexity-parameter-count - Tauri injects the State parameters; callers pass three
 pub async fn agent_send_message(
     agent_id: String,
     text: String,
     enter: bool,
     terminals: tauri::State<'_, crate::commands::TerminalState>,
     buffers: tauri::State<'_, super::output_buffer::OutputBuffersState>,
+    drafts: tauri::State<'_, super::human_draft::HumanDraftsState>,
 ) -> Result<(), String> {
     let data = compose_message(&text, enter, buffers.bracketed_paste(&agent_id));
+    drafts.observe(&agent_id, &data, std::time::Instant::now());
     crate::commands::write_to_session(&terminals, &format!("agent-{agent_id}"), &data).await
 }
 

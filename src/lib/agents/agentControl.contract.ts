@@ -23,6 +23,7 @@ export const CONTROL_METHODS = [
   'list_projects',
   'await_result',
   'remove_worktree',
+  'dismiss',
   'link_policy_get',
   'link_policy_propose',
 ] as const;
@@ -200,6 +201,7 @@ const PARAMS = {
         : {}),
     })),
   remove_worktree: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
+  dismiss: z.object({ agentId }).transform((p) => ({ agentId: p.agentId })),
   link_policy_get: noParams,
   /**
    * Only the op is checked here; Rust checks every field against the policy
@@ -389,6 +391,7 @@ const RESULTS = {
   }),
   send_input: z.object({ agentId: z.string(), bytesWritten: offset }),
   kill: z.object({ agentId: z.string(), killed: z.literal(true) }),
+  dismiss: z.object({ agentId: z.string(), dismissed: z.literal(true) }),
   spawn: z.object({ agentId: z.string() }),
   list_projects: z.object({
     projects: z.array(

@@ -70,6 +70,7 @@ All field names are camelCase on the wire.
 | `list_projects`   | —                                                                                                                                 | `{ projects: ProjectEntry[] }`      |
 | `await_result`    | `{ agentId, waitSeconds?: number (default 60, max 120), untilInput?: boolean, sinceOffset?: number }`                             | `AwaitResult`                       |
 | `remove_worktree` | `{ agentId }`                                                                                                                     | `WorktreeRemoval`                   |
+| `dismiss`         | `{ agentId }`                                                                                                                     | `{ agentId, dismissed: true }`      |
 
 `role` and `await_result` belong to the supervisor scope and are described
 there. `role: "worker"` is the same as leaving it out. `worktree` and
@@ -159,12 +160,13 @@ Refused with `headless_no_stdin` for a headless agent (the CLI does not read
 stdin), `agent_not_running` when the agent exists but is not `running`,
 `unknown_agent` when the id is not known at all.
 
-### `spawn` and `kill` go through the frontend
+### `spawn`, `kill` and `dismiss` go through the frontend
 
-Both have bookkeeping the UI path already owns (launch defaults per working
-directory, ticket/goal bookkeeping, spawn configs for Retry, kill side
-effects). Rust therefore does not call the impls directly. It emits the Tauri
-event `control-request` `{ reqId: string, method: "spawn" | "kill", params }`
+All three have bookkeeping the UI path already owns (launch defaults per
+working directory, ticket/goal bookkeeping, spawn configs for Retry, kill side
+effects, the card list). Rust therefore does not call the impls directly. It
+emits the Tauri event `control-request`
+`{ reqId: string, method: "spawn" | "kill" | "dismiss", params }`
 and waits up to **30 s** for the frontend to call the command
 `control_respond { reqId, ok: boolean, result?: any, error?: { code, message } }`.
 No answer in time → `frontend_unavailable`.
@@ -188,6 +190,12 @@ No answer in time → `frontend_unavailable`.
   directory that is an initialised AuricIDE project (`.auric/project.db`,
   ADR 0002), else `invalid_params` naming which of the two is missing.
 - `kill` uses the same store action as the UI kill button.
+- `dismiss` uses the same store action as a finished card's Dismiss button
+  (`dismissFinishedAgent`), then Rust forgets the agent's kept result. A
+  running or queued agent is refused (`invalid_params`) in Rust and again in
+  the bridge: dismissing is not stopping. A card the human already cleared is
+  answered `dismissed: true`. A refusal from the frontend keeps the result, so
+  the call can be retried.
 
 ## Goal start over MCP (not the control socket)
 
@@ -299,11 +307,12 @@ start another supervisor.
 | ----------------- | --------------------------------------------------------------------------------------------- |
 | `list_projects`   | only projects its policy allows, each with a `supervisor` block (below)                       |
 | `spawn`           | `provider`, `model` and `headless` required; checked against the policy; the child is its own |
-| `list_agents`     | its own children only                                                                         |
+| `list_agents`     | its own children only, live and finished                                                      |
 | `read_output`     | its own children only                                                                         |
 | `await_result`    | its own children only                                                                         |
 | `kill`            | its own children only                                                                         |
 | `remove_worktree` | its own children only                                                                         |
+| `dismiss`         | its own finished children only                                                                |
 | `send_input`      | its own children only                                                                         |
 
 - **Own children only.** Any other agent id, including the supervisor's own,
@@ -391,6 +400,50 @@ When a supervisor is killed, its children keep running. Their results stay
 readable, to external callers and in the UI, until the supervisor's card is
 cleared.
 
+**Finished children stay in its list.** A finished agent leaves the manager's
+live list at once. A supervisor's `list_agents` therefore adds its finished
+children whose result is still kept (`runResultsKept`), after the live ones,
+newest first, each with the status it ended in (`idle` or `error`). Before
+this, a supervisor whose children had all finished saw an empty list and
+concluded the IDE had restarted. A child leaves the list when the supervisor
+calls `dismiss`, when the result falls out of the store, or when the
+supervisor's card is cleared. External callers still get the live list only.
+
+### Pingback
+
+A supervisor is an interactive CLI: it acts on input. `await_result` wakes it
+while it waits on a child, but once it has handed its turn back to the human
+nothing told it that a child ended. So Rust types a notice into its console
+when its children finish (`control_socket/pingback.rs`), through the same
+path as `send_input` (bracketed paste when the TUI asked for it, then `\r`):
+
+```
+[AuricIDE] Finished: agent-27 "Fix parser" (idle), agent-35 "Docs pass" (error). Read each
+result with await_agent_result, remove its worktree with remove_worktree if it ran in one,
+then clear it with dismiss_agent. This notice comes from the IDE, not from the human.
+```
+
+- **Batched per wave.** Every notice costs the supervisor a turn, and a
+  fan-out of headless children ends within seconds. One notice per supervisor
+  once no further child has finished for `pingbackQuietMs` (3 s), or
+  `pingbackMaxDelayMs` (15 s) after the first finish at the latest.
+- **Only to a listening supervisor.** Running, interactive, still in the
+  manager. A finished, queued or headless supervisor gets none; its children
+  stay in its `list_agents` for whoever asks.
+- **The source is the result store.** `RunResults::record_finished` hands
+  every booked result of a supervisor's child to its subscribers, exactly
+  once per agent (a kill's verdict stands, the later exit is not news).
+- **Not into a half-typed message.** Typed while the human has a draft in
+  the supervisor's input box, the notice would join it and the Enter would
+  submit both. So the human's own keystrokes (`shell_write`,
+  `agent_send_message`) are observed in `agents/human_draft.rs`: printable
+  text opens a draft, Enter or Ctrl-C closes it. While a draft is open the
+  wave waits, and what finishes meanwhile joins it. The draft is read from
+  keystrokes, not from the screen, so one cleared another way (Esc, deleting
+  it) is not seen; a draft holds for `pingbackDraftHoldMs` (3 min) after its
+  last keystroke at most, so a forgotten one cannot keep the supervisor
+  uninformed.
+
 ### `await_result`
 
 Waits up to `waitSeconds` for the agent to finish, then answers:
@@ -467,6 +520,7 @@ stays in the Git panel's worktree list for a person.
 | `send_agent_input`   | `send_input`      |
 | `kill_agent`         | `kill`            |
 | `remove_worktree`    | `remove_worktree` |
+| `dismiss_agent`      | `dismiss`         |
 
 ## Error codes
 
@@ -497,6 +551,7 @@ exist or refuses the connection, `timeout` when no answer arrives in time, and
 | `list_projects`      | `list_projects`   |
 | `await_agent_result` | `await_result`    |
 | `remove_worktree`    | `remove_worktree` |
+| `dismiss_agent`      | `dismiss`         |
 
 Each tool returns the result as JSON text; a socket error becomes a tool error
 whose message names the code and the message, e.g.

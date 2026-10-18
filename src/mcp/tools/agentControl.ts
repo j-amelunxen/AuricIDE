@@ -107,6 +107,21 @@ export function removeWorktreeTool(call: ControlCaller, scopeNote = '') {
   };
 }
 
+/** `dismiss`, the same for the control and the supervisor server. */
+export function dismissAgentTool(call: ControlCaller, scopeNote = '') {
+  return {
+    name: 'dismiss_agent',
+    description:
+      'Clear a finished agent from the IDE, as its Dismiss button does: its card goes and its ' +
+      'kept result is forgotten, so read it with await_agent_result and remove its worktree ' +
+      'first. A running or queued agent is refused (invalid_params): this does not stop ' +
+      'anything. Returns { agentId, dismissed: true }.' +
+      scopeNote,
+    parameters: z.object({ agentId: agentIdParam }),
+    execute: async (args: ControlParamsInput<'dismiss'>) => runControl(call, 'dismiss', args),
+  };
+}
+
 /** `await_agent_result`, the same for the control and the supervisor server. */
 export function awaitAgentResultTool(call: ControlCaller, scopeNote = '') {
   return {
@@ -246,4 +261,5 @@ export function registerAgentControlTools(
   server.addTool(awaitAgentResultTool(call));
 
   server.addTool(removeWorktreeTool(call));
+  server.addTool(dismissAgentTool(call));
 }

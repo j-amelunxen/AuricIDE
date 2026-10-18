@@ -34,7 +34,10 @@
     "awaitClientGraceSeconds": 5,
     "inputQuietSeconds": 20,
     "runResultsKept": 200,
-    "consoleTailAnswerBytes": 8192
+    "consoleTailAnswerBytes": 8192,
+    "pingbackQuietMs": 3000,
+    "pingbackMaxDelayMs": 15000,
+    "pingbackDraftHoldMs": 180000
   },
   "enter": "\r",
   "environment": {
@@ -198,6 +201,17 @@
       "expected": {
         "id": 25,
         "method": "remove_worktree",
+        "params": {
+          "agentId": "agent-5"
+        }
+      }
+    },
+    {
+      "name": "dismiss",
+      "raw": "{\"id\":27,\"method\":\"dismiss\",\"params\":{\"agentId\":\"agent-5\"}}",
+      "expected": {
+        "id": 27,
+        "method": "dismiss",
         "params": {
           "agentId": "agent-5"
         }
@@ -406,6 +420,14 @@
       }
     },
     {
+      "name": "dismiss without agentId",
+      "raw": "{\"id\":28,\"method\":\"dismiss\",\"params\":{}}",
+      "expectedError": {
+        "id": 28,
+        "code": "invalid_params"
+      }
+    },
+    {
       "name": "await_result with negative waitSeconds",
       "raw": "{\"id\":23,\"method\":\"await_result\",\"params\":{\"agentId\":\"agent-5\",\"waitSeconds\":-1}}",
       "expectedError": {
@@ -577,6 +599,14 @@
         "removed": true,
         "dirty": false,
         "branchAhead": false
+      }
+    },
+    "dismiss": {
+      "id": 27,
+      "ok": true,
+      "result": {
+        "agentId": "agent-5",
+        "dismissed": true
       }
     },
     "link_policy_get": {
@@ -1214,7 +1244,8 @@
           "spawn",
           "list_projects",
           "await_result",
-          "remove_worktree"
+          "remove_worktree",
+          "dismiss"
         ],
         "scope": "all_agents",
         "mayPass": ["role", "permissionMode"],
@@ -1233,6 +1264,7 @@
           "spawn",
           "kill",
           "remove_worktree",
+          "dismiss",
           "link_policy_get",
           "link_policy_propose"
         ],
@@ -1252,7 +1284,9 @@
         },
         "worktrees": "spawn may pass worktree: true; remove_worktree removes an own child's worktree only when it holds no uncommitted change and no unmerged commit, otherwise answers removed: false and leaves it for a person. No path and no force are accepted: the folder is the child's own working directory.",
         "typing": "send_input reaches its own interactive children only, like read_output and kill. It can answer a child's question or permission prompt, so the launch prompt tells the supervisor which ones it may answer and which go to the human. A headless child still refuses it (headless_no_stdin).",
-        "linkPolicy": "link_policy_get reads the supervisor link policy (stored, effective with origins, pending proposals). link_policy_propose stores a pending proposal and raises an inbox ask with Apply and Discard; nothing changes until a person presses Apply in the IDE. No socket method decides a proposal. External callers, and so the supervisor link socket, are refused both (supervisorLink.fixtures.json, proposals)."
+        "linkPolicy": "link_policy_get reads the supervisor link policy (stored, effective with origins, pending proposals). link_policy_propose stores a pending proposal and raises an inbox ask with Apply and Discard; nothing changes until a person presses Apply in the IDE. No socket method decides a proposal. External callers, and so the supervisor link socket, are refused both (supervisorLink.fixtures.json, proposals).",
+        "finishedChildren": "list_agents lists its live children and its finished ones while their result is kept (runResultsKept), each finished one with status idle or error, so an empty list means it started nothing, never that its agents were lost. dismiss clears a finished own child from the IDE and forgets its kept result; a running or queued one is refused (invalid_params).",
+        "pingback": "When a child finishes, Rust types one notice into the running interactive supervisor's console (bracketed paste plus Enter, the send_input path). Finishes are batched: the notice goes out once no further child has finished for pingbackQuietMs, or pingbackMaxDelayMs after the first one at the latest. It names each agent by id, name and status and says the notice comes from the IDE. A headless or finished supervisor gets none. While the human has a message half typed in the supervisor's console (printable keystrokes since the last Enter or Ctrl-C, the last one less than pingbackDraftHoldMs ago) the notice waits, and what finishes meanwhile joins it."
       },
       "worker": {
         "methods": [],
@@ -1338,7 +1372,7 @@
         "expected": "unknown_agent"
       },
       {
-        "name": "list_agents lists own children only",
+        "name": "list_agents lists own children only, live and finished",
         "caller": "supervisor",
         "method": "list_agents",
         "expected": "ok_own_children_only"
@@ -1474,6 +1508,41 @@
         "name": "supervisor proposes a link policy change",
         "caller": "supervisor",
         "method": "link_policy_propose",
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor dismisses its finished child",
+        "caller": "supervisor",
+        "method": "dismiss",
+        "target": "own_finished_child",
+        "expected": "ok"
+      },
+      {
+        "name": "a running child is not dismissed",
+        "caller": "supervisor",
+        "method": "dismiss",
+        "target": "own_child",
+        "expected": "invalid_params"
+      },
+      {
+        "name": "supervisor cannot dismiss another supervisor's finished child",
+        "caller": "supervisor",
+        "method": "dismiss",
+        "target": "child_of_killed_supervisor",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "supervisor cannot dismiss an agent the human started",
+        "caller": "supervisor",
+        "method": "dismiss",
+        "target": "unrelated_agent",
+        "expected": "unknown_agent"
+      },
+      {
+        "name": "supervisor reads its finished child's result",
+        "caller": "supervisor",
+        "method": "await_result",
+        "target": "own_finished_child",
         "expected": "ok"
       }
     ]

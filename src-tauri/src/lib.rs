@@ -292,6 +292,7 @@ pub fn run() {
             // (`docs/design-supervisor-link.md`) shares its dispatcher.
             let dispatcher = control_socket::dispatcher(app.handle());
             control_socket::start(app.handle(), dispatcher.clone());
+            control_socket::pingback::start(dispatcher.clone());
             supervisor_link::start(app.handle(), dispatcher);
             Ok(())
         })
@@ -302,6 +303,7 @@ pub fn run() {
         .manage(agents::output_buffer::new_output_buffers_state())
         .manage(control_socket::PendingRequestsState::default())
         .manage(agents::run_results::new_run_results_state())
+        .manage(agents::human_draft::HumanDraftsState::default())
         .manage(mcp::McpServerState::new())
         .manage(Arc::new(recent_creations::RecentCreations::default()))
         .manage(WatcherState {
