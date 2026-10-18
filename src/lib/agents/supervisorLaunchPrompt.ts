@@ -116,7 +116,7 @@ function describeSkills(skills: SupervisorPromptSkill[], hasTools: boolean): str
   if (skills.length === 0) {
     return hasTools
       ? 'No skill is approved for you. Settings → Supervisor approves skills.'
-      : 'No skill is approved for you, and you have no shell. Settings → Supervisor approves skills.';
+      : 'No skill is approved for you; the shell only allows timer `sleep N`. Settings → Supervisor approves skills.';
   }
   const lines = skills.map((skill) =>
     skill.bash.length > 0
@@ -125,7 +125,7 @@ function describeSkills(skills: SupervisorPromptSkill[], hasTools: boolean): str
   );
   return [
     ...lines,
-    'A shell command outside these patterns is refused. A skill that needs one is work for an ' +
+    'Apart from timer `sleep N`, a shell command outside these patterns is refused. A skill that needs one is work for an ' +
       'agent you start.',
   ].join('\n');
 }
@@ -134,7 +134,7 @@ function describeSkills(skills: SupervisorPromptSkill[], hasTools: boolean): str
 function describeTools(tools: string[]): string {
   return (
     `You may run these CLI tools, with any arguments: ${tools.map((tool) => `\`${tool}\``).join(', ')}. ` +
-    'A shell command that starts with anything else is refused, and so is a chained command ' +
+    'Apart from timer `sleep N`, a shell command that starts with anything else is refused, and so is a chained command ' +
     '(`&&`, `|`, `;`) with one disallowed part. A job that needs more is work for an agent you start.'
   );
 }
@@ -187,7 +187,7 @@ const SPAWN_RULES = [
   'Before every spawn_agent call, state one line: which project, headless or interactive, ' +
     'which model, and why that model.',
   '- **An answer you need** (a question, a check, a short fix with a verdict): ' +
-    '`headless: true`, then call await_agent_result until done is true.',
+    '`headless: true`, then follow "Nie blockierend warten".',
   '- **Long-running or multi-step work, or work a human may need to answer**: ' +
     '`headless: false`, only where interactive runs are allowed. Report the agent id, then ' +
     'watch it as "Working with your agents" says.',
@@ -204,6 +204,14 @@ const SPAWN_RULES = [
   '- A refused spawn (supervisor_denied, provider_denied) is an answer: report it with its ' +
     'reason. Never switch provider or model to get around it.',
 ].join('\n');
+
+const WAIT_RULES =
+  'After spawning, schedule a later check with a background timer: Bash `sleep N`, ' +
+  '`run_in_background: true`, then end your turn; its completion wakes you. ' +
+  'On waking, call await_agent_result with `waitSeconds: 0`. Done or waiting for input: act; ' +
+  'otherwise set a new timer and end your turn. Never loop on blocking awaits or foreground ' +
+  'sleep. For interactive agents also pass `untilInput: true` and `sinceOffset` set to the ' +
+  'outputBytes you last read.';
 
 /**
  * A supervisor answers its children's questions so the human does not have to
@@ -251,7 +259,8 @@ const CLEANUP_RULES = [
     'human the project, branch, path and what the work is, and that it waits for a merge in ' +
     "the IDE's Git panel; where the project has an auric-pm server, also record it with notify.",
   '- **Finished agents stay listed until you clear them.** list_my_agents shows them with ' +
-    'status idle or error; their results are still there. After reading a result and removing ' +
+    'status done or error, finishedAt and answerPreview; their results are still there. ' +
+    'After reading a result and removing ' +
     "its worktree, call dismiss_agent so the human's Done list does not fill up.",
   '- **A message starting with `[AuricIDE] Finished:` comes from the IDE**, not from the ' +
     'human: it names agents of yours that just ended. Read and report their results and clean ' +
@@ -331,6 +340,8 @@ export function buildSupervisorLaunchPrompt(
       : []),
     '## Starting an agent',
     SPAWN_RULES,
+    '## Nie blockierend warten',
+    WAIT_RULES,
     '## Working with your agents',
     CHILD_RULES,
     '## Cleaning up',

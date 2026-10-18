@@ -68,7 +68,7 @@ All field names are camelCase on the wire.
 | `kill`            | `{ agentId }`                                                                                                                     | `{ agentId, killed: true }`         |
 | `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", worktree?: boolean }` | `{ agentId }`                       |
 | `list_projects`   | —                                                                                                                                 | `{ projects: ProjectEntry[] }`      |
-| `await_result`    | `{ agentId, waitSeconds?: number (default 60, max 120), untilInput?: boolean, sinceOffset?: number }`                             | `AwaitResult`                       |
+| `await_result`    | `{ agentId, waitSeconds?: number (default 0, max 15), untilInput?: boolean, sinceOffset?: number }`                               | `AwaitResult`                       |
 | `remove_worktree` | `{ agentId }`                                                                                                                     | `WorktreeRemoval`                   |
 | `dismiss`         | `{ agentId }`                                                                                                                     | `{ agentId, dismissed: true }`      |
 
@@ -253,12 +253,12 @@ A supervisor reaches the socket through its own MCP server,
 supervisor process is Claude, interactive, in a fresh run folder
 `~/.auric/supervisors/<start time>/`, with that one server
 (`--strict-mcp-config`) plus one `auric-pm-<folder>` server per permitted,
-initialised project, `--tools "Read,Write,Edit,Glob,Grep,Skill,ToolSearch"` and
+initialised project, `--tools "Read,Write,Edit,Glob,Grep,Skill,ToolSearch,Bash"` and
 `--restricted` (the file tools reach only the run folder, and the user's
 settings files with their allow rules are not read), those tools plus
 `mcp__auric-supervisor__*` in `--allowedTools`, and `--permission-mode dontAsk`:
 what is listed runs without asking, anything else is refused. It has no web
-tool, a shell only through an approved skill, and Claude in Chrome only when
+tool, shell access for timer `sleep N` plus approved skills/tools, and Claude in Chrome only when
 Settings → Supervisor switches it on (`supervisor.chrome`; `--chrome`, else
 `--no-chrome`).
 
@@ -275,8 +275,8 @@ one holding `SKILL.md`) and the `Bash(...)` patterns it may run. Rust links the
 approved folders into a per-run plugin under
 `<app_data_dir>/supervisor-skills/<run>/` (outside the run folder, so the
 supervisor cannot edit a skill it is about to run) and passes `--plugin-dir`.
-`Bash` joins `--tools` only while a loaded skill declares a pattern, and only
-those patterns are allowed. A skill's `dirs` (its workspace) are passed as
+`Bash` always has the timer rule `Bash(sleep *)`; a loaded skill adds only
+the patterns it declares. A skill's `dirs` (its workspace) are passed as
 `--add-dir`, so the file tools reach them too. A pattern is the user's statement that the command
 is safe unattended: a process such a command detaches is external to the PID
 walk (see ADR 0004).
@@ -286,8 +286,7 @@ name (`umi`, found by the shell's PATH) or by the absolute path of its binary,
 with optional `dirs` (passed as `--add-dir`, like a skill's). Each tool becomes
 exactly two rules, `Bash(<tool>)` and `Bash(<tool> *)`, so only a command that
 starts with that tool is allowed; Claude Code judges each part of a chained
-command (`&&`, `|`) on its own. `Bash` joins `--tools` as soon as one tool is
-approved. A key that is neither shape, or holds whitespace, brackets, quotes,
+command (`&&`, `|`) on its own. These rules extend the built-in timer grant. A key that is neither shape, or holds whitespace, brackets, quotes,
 `*` or a control character, is refused alone (`invalid_entry`, or
 `path_not_absolute` for a relative path) and listed as
 `{ project: null, tool, reason }`; a bare name needs a letter or digit, because
@@ -403,7 +402,9 @@ cleared.
 **Finished children stay in its list.** A finished agent leaves the manager's
 live list at once. A supervisor's `list_agents` therefore adds its finished
 children whose result is still kept (`runResultsKept`), after the live ones,
-newest first, each with the status it ended in (`idle` or `error`). Before
+newest first, with `status: done|error`, `finishedAt` and `answerPreview` (the first
+300 Unicode characters of the last ANSWER line, or null when absent). The
+`await_result` result retains its existing `idle|error` status. Before
 this, a supervisor whose children had all finished saw an empty list and
 concluded the IDE had restarted. A child leaves the list when the supervisor
 calls `dismiss`, when the result falls out of the store, or when the
@@ -445,6 +446,21 @@ then clear it with dismiss_agent. This notice comes from the IDE, not from the h
   uninformed.
 
 ### `await_result`
+
+**Look, do not loop waiting.** Default waitSeconds is 0; the socket clamps it
+at 15 seconds. After spawning, the supervisor ends its turn. For a later check
+it runs Bash `sleep N` with `run_in_background: true`, ends its turn, and on the
+completion notification calls `await_agent_result` with `waitSeconds: 0`.
+If neither done nor waiting for input, it starts another background timer.
+Interactive checks also use `untilInput: true` and the last read `outputBytes`
+as `sinceOffset`. The supervisor's restricted Claude launch always exposes
+Bash with `Bash(sleep *)`; other commands still need explicit skill/tool grants.
+
+The existing finish subscriber observes process exits, not interactive input
+pauses. Follow-up ticket `88d571fd` records the missing event path, delivery
+failure handling, and the design for per-turn input notifications. The older
+headless notification targets the human inbox and excludes supervisor children;
+it was never a message into the supervisor session.
 
 Waits up to `waitSeconds` for the agent to finish, then answers:
 

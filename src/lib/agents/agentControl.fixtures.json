@@ -29,8 +29,8 @@
     "finishedAgentsKept": 20,
     "frontendTimeoutMs": 30000,
     "connectionIdleTimeoutMs": 60000,
-    "defaultAwaitSeconds": 60,
-    "maxAwaitSeconds": 120,
+    "defaultAwaitSeconds": 0,
+    "maxAwaitSeconds": 15,
     "awaitClientGraceSeconds": 5,
     "inputQuietSeconds": 20,
     "runResultsKept": 200,
@@ -263,7 +263,7 @@
         "method": "await_result",
         "params": {
           "agentId": "agent-5",
-          "waitSeconds": 60
+          "waitSeconds": 0
         }
       }
     },
@@ -275,7 +275,7 @@
         "method": "await_result",
         "params": {
           "agentId": "agent-5",
-          "waitSeconds": 120
+          "waitSeconds": 15
         }
       }
     },
@@ -299,7 +299,7 @@
         "method": "await_result",
         "params": {
           "agentId": "agent-5",
-          "waitSeconds": 60,
+          "waitSeconds": 0,
           "untilInput": true,
           "sinceOffset": 2048
         }

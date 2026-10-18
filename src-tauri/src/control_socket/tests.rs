@@ -1660,6 +1660,8 @@ fn a_supervisor_lists_its_finished_child_with_the_status_it_ended_in() {
     let done = agents.iter().find(|a| a["id"] == "agent-done").unwrap();
     assert_eq!(done["status"], "error", "{response}");
     assert_eq!(done["spawnedByAgentId"], "agent-sup");
+    assert_eq!(done["finishedAt"], 2);
+    assert!(done["answerPreview"].is_null());
 }
 
 #[test]
@@ -1811,4 +1813,43 @@ fn pingback_limits_match_the_contract() {
         limits["pingbackMaxDelayMs"],
         super::pingback::PINGBACK_MAX_DELAY.as_millis() as u64
     );
+}
+
+#[test]
+fn supervisor_listing_keeps_a_finished_answer_preview_after_the_live_agent_is_gone() {
+    let s = supervised_scope();
+    let text = format!("progress\nANSWER: {}\ntrailing noise", "ü".repeat(400));
+    s.h.run_results.record_finished(
+        RunResult::from_finish(
+            "agent-success",
+            AgentStatus::Idle,
+            Some(0),
+            None,
+            || Some(text),
+            42,
+        ),
+        agent_in(
+            "agent-success",
+            Some("agent-sup"),
+            &s.path,
+            AgentStatus::Running,
+        ),
+    );
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 1, "method": "list_agents" }),
+    );
+    let agents = response["result"]["agents"].as_array().unwrap();
+    let done = agents.iter().find(|a| a["id"] == "agent-success").unwrap();
+    assert_eq!(done["status"], "done");
+    assert_eq!(done["finishedAt"], 42);
+    assert_eq!(
+        done["answerPreview"],
+        format!("ANSWER: {}", "ü".repeat(292))
+    );
+    assert!(!agents.iter().any(|a| a["id"] == "agent-orphan"));
+    let live = agents.iter().find(|a| a["id"] == "agent-child").unwrap();
+    assert_eq!(live["status"], "running");
+    assert!(live.get("finishedAt").is_none());
 }

@@ -93,6 +93,14 @@ describe('supervisorPromptProjects', () => {
 describe('buildSupervisorLaunchPrompt', () => {
   const prompt = buildSupervisorLaunchPrompt(projects);
 
+  it('keeps the human reachable while children work', () => {
+    expect(prompt).toContain('## Nie blockierend warten');
+    expect(prompt).toContain('run_in_background: true');
+    expect(prompt).toContain('waitSeconds: 0');
+    expect(prompt).toContain('end your turn');
+    expect(prompt).not.toContain('then call await_agent_result until done');
+  });
+
   it('matches the snapshot', () => {
     expect(prompt).toMatchSnapshot();
   });
@@ -139,9 +147,11 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(text).toContain('`auto` (Auto) — size unknown');
   });
 
-  it('names its tools and the run folder they reach, and no shell without a skill', () => {
+  it('names its tools and run folder, with only timer sleep without a skill', () => {
     expect(prompt).toContain('The file tools reach only your run folder');
-    expect(prompt).toContain('No skill is approved for you, and you have no shell.');
+    expect(prompt).toContain(
+      'No skill is approved for you; the shell only allows timer `sleep N`.'
+    );
     expect(prompt).not.toMatch(/Bash, Edit and every other tool ask/);
   });
 

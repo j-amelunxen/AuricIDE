@@ -69,10 +69,11 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
     name: 'list_my_agents',
     description:
       'List the agents you started, across projects: id, name, provider, model, status ' +
-      '(running | idle | queued | error), the task, project, repoPath (its working folder; a ' +
+      '(running | idle | queued | done | error), the task, project, repoPath (its working folder; a ' +
       'path containing ".auric-wt" is a worktree you must clean up), headless, and outputBytes (pass ' +
       'it as sinceOffset to read_agent_output for only what is new). Finished agents stay ' +
-      'listed (status idle or error) until you clear them with dismiss_agent, so an agent ' +
+      'listed (status done or error), with finishedAt and answerPreview (first 300 characters ' +
+      'of the ANSWER line, or null), until you clear them with dismiss_agent, so an agent ' +
       'missing here was never yours or was dismissed, not lost. Agents the human or another ' +
       'supervisor started are not listed.',
     parameters: z.object({}),
