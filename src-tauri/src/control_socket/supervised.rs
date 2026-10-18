@@ -78,6 +78,7 @@ impl Dispatcher {
             .filter(|info| !live.iter().any(|summary| summary.info.id == info.id))
             .map(|info| AgentSummary {
                 output_bytes: self.buffers.total_bytes(&info.id),
+                stall: Default::default(),
                 info,
             })
             .collect();

@@ -6,6 +6,7 @@ pub mod launch_runs;
 pub mod manager;
 pub mod output_buffer;
 pub mod persistence;
+pub mod progress_output;
 pub mod project_binding;
 pub mod run_results;
 pub mod shell_env;

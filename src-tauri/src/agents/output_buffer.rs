@@ -46,6 +46,7 @@ struct Ring {
     /// Cleaned bytes since the agent started, evicted ones included.
     total: u64,
     last_output: Option<Instant>,
+    progress: super::progress_output::ProgressOutput,
     final_status: Option<AgentStatus>,
     stripper: AnsiStripper,
     /// Read from the raw output, before cleaning removes the mode switches.
@@ -58,6 +59,7 @@ impl Default for Ring {
             bytes: VecDeque::new(),
             total: 0,
             last_output: None,
+            progress: super::progress_output::ProgressOutput::default(),
             final_status: None,
             stripper: AnsiStripper::console(),
             paste: BracketedPasteTracker::default(),
@@ -137,6 +139,7 @@ impl OutputBuffers {
         ring.paste.push(data);
         inner.scratch.clear();
         ring.stripper.push(data, &mut inner.scratch);
+        ring.progress.push(&inner.scratch);
         ring.append(inner.scratch.as_bytes(), self.capacity);
     }
 
@@ -173,6 +176,14 @@ impl OutputBuffers {
     /// The agent's running byte offset; 0 for an agent that printed nothing.
     pub fn total_bytes(&self, agent_id: &str) -> u64 {
         self.lock().rings.get(agent_id).map_or(0, |ring| ring.total)
+    }
+
+    /// Changes only for meaningful output; console offsets retain every byte.
+    pub fn progress_generation(&self, agent_id: &str) -> u64 {
+        self.lock()
+            .rings
+            .get_mut(agent_id)
+            .map_or(0, |ring| ring.progress.generation())
     }
 
     /// Time since cleaned output last grew, preserved across non-blocking checks.

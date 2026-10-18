@@ -39,7 +39,9 @@ export function registerSupervisorTools(server: FastMCP, call: ControlCaller = c
       'listed (status done or error), with finishedAt and answerPreview (first 300 characters ' +
       'of the ANSWER line, or null), until you clear them with dismiss_agent, so an agent ' +
       'missing here was never yours or was dismissed, not lost. Agents the human or another ' +
-      'supervisor started are not listed.',
+      'supervisor started are not listed. idleForMs is the IDE-observed inactivity duration; ' +
+      'stalledSinceMs is its stall onset (Unix ms), both nullable. The IDE nudges once and ' +
+      'escalates automatically; do not send another stall nudge.',
     parameters: z.object({}),
     execute: async () => runControl(call, 'list_agents', {}),
   });

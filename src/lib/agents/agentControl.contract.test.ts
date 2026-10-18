@@ -101,6 +101,27 @@ describe('agent control contract', () => {
       ).toEqual({ ok: true, result: { agents } });
     });
 
+    it('preserves watchdog metrics in list and pending await responses', () => {
+      const metrics = { idleForMs: 900000, stalledSinceMs: 42 };
+      const agents = [{ ...fixtures.responses.list_agents.result.agents[0], ...metrics }];
+      expect(parseControlResponse('list_agents', { id: 1, ok: true, result: { agents } })).toEqual({
+        ok: true,
+        result: { agents },
+      });
+      const result = {
+        done: false,
+        agentId: 'a',
+        status: 'running',
+        outputBytes: 0,
+        waitingForInput: false,
+        ...metrics,
+      };
+      expect(parseControlResponse('await_result', { id: 1, ok: true, result })).toEqual({
+        ok: true,
+        result,
+      });
+    });
+
     it('accepts the error fixture', () => {
       expect(parseControlResponse('send_input', error, 5)).toEqual({
         ok: false,

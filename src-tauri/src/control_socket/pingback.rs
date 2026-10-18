@@ -38,12 +38,44 @@ pub fn start(dispatcher: Arc<Dispatcher>) {
     let finished = dispatcher.run_results.subscribe();
     std::thread::spawn(move || {
         let mut waves = Waves::new(PINGBACK_QUIET, PINGBACK_MAX_DELAY);
+        let mut checked = Instant::now();
+        let stall_timeout = super::stall_watchdog::timeout();
         loop {
             match finished.recv_timeout(TICK) {
                 Ok(child) => waves.add(child, Instant::now()),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) if waves.is_empty() => return,
                 Err(RecvTimeoutError::Disconnected) => std::thread::sleep(TICK),
+            }
+            if checked.elapsed() >= Duration::from_secs(5) {
+                checked = Instant::now();
+                let watched: std::collections::HashSet<_> = dispatcher
+                    .backend
+                    .agents()
+                    .into_iter()
+                    .filter(|a| {
+                        a.status == AgentStatus::Running
+                            && a.spawned_by_agent_id.is_some()
+                            && dispatcher.run_results.get(&a.id).is_none()
+                    })
+                    .map(|a| a.id)
+                    .collect();
+                let roots = dispatcher.backend.agent_pids();
+                // Keep other agent roots as ancestry boundaries, but skip all
+                // process inspection when no supervised child is running.
+                let busy = if roots.values().any(|(id, _)| watched.contains(id)) {
+                    // Include all roots: nested supervisors must never lend
+                    // their child's activity to the outer agent.
+                    super::process_activity::busy_agents(&roots)
+                } else {
+                    Default::default()
+                };
+                dispatcher.watchdog_tick_at(
+                    Instant::now(),
+                    crate::supervisor_link::jobs::now_ms(),
+                    stall_timeout,
+                    &busy,
+                );
             }
             let due = waves.take_due(Instant::now(), |id| dispatcher.human_drafting(id));
             for (supervisor_id, children) in due {
@@ -148,16 +180,23 @@ impl Dispatcher {
     /// gone, finished, queued or headless gets none; its children stay in its
     /// `list_agents` for whoever asks. `true` when it was told.
     pub(crate) fn ping_supervisor(&self, supervisor_id: &str, children: &[FinishedChild]) -> bool {
+        if children.is_empty() {
+            return false;
+        }
+        self.ping_supervisor_text(supervisor_id, &notice(children))
+    }
+
+    pub(crate) fn ping_supervisor_text(&self, supervisor_id: &str, text: &str) -> bool {
         let listening = self.find_agent(supervisor_id).is_some_and(|agent| {
             agent.role == AgentRole::Supervisor
                 && agent.status == AgentStatus::Running
                 && !agent.headless
         });
-        if !listening || children.is_empty() {
+        if !listening || self.human_drafting(supervisor_id) {
             return false;
         }
         let data = crate::agents::terminal_input::compose_message(
-            &notice(children),
+            text,
             true,
             self.buffers.bracketed_paste(supervisor_id),
         );

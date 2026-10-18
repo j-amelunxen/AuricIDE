@@ -16,9 +16,11 @@ pub mod caller;
 mod link_policy;
 mod link_spawn;
 pub mod pingback;
+mod process_activity;
 pub mod projects;
 pub mod protocol;
 pub mod spawn_log;
+mod stall_watchdog;
 mod supervised;
 pub(crate) use link_spawn::LinkSpawn;
 
@@ -233,6 +235,7 @@ pub struct Dispatcher {
     worktrees: Mutex<HashMap<String, String>>,
     /// `INPUT_QUIET_SECONDS`, shorter in tests.
     input_quiet: Duration,
+    watchdog: Mutex<stall_watchdog::Watchdog>,
 }
 
 pub(crate) type Outcome = Result<Value, ControlError>;
@@ -260,6 +263,7 @@ impl Dispatcher {
             supervisor_spawn_gate: Mutex::new(()),
             worktrees: Mutex::new(HashMap::new()),
             input_quiet: Duration::from_secs(INPUT_QUIET_SECONDS),
+            watchdog: Mutex::new(stall_watchdog::Watchdog::default()),
         }
     }
 
@@ -394,6 +398,13 @@ impl Dispatcher {
             .into_iter()
             .map(|info| AgentSummary {
                 output_bytes: self.buffers.total_bytes(&info.id),
+                stall: if info.status == AgentStatus::Running
+                    && self.run_results.get(&info.id).is_none()
+                {
+                    self.stall_metrics(&info.id)
+                } else {
+                    Default::default()
+                },
                 info,
             })
             .collect()
@@ -607,11 +618,17 @@ impl Dispatcher {
         let status = self
             .find_agent(agent_id)
             .map_or(AgentStatus::Running, |agent| agent.status);
+        let stall = if status == AgentStatus::Running {
+            self.stall_metrics(agent_id)
+        } else {
+            Default::default()
+        };
         to_value(AwaitOutcome::pending(
             agent_id,
             status,
             self.buffers.total_bytes(agent_id),
             waiting_for_input,
+            stall,
         ))
     }
 

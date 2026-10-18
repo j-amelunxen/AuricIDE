@@ -38,6 +38,10 @@ Before every spawn_agent call, call list_projects with \`project\` set to the ta
 
 For headless children, end your turn and wait for the IDE finish pingback. For interactive children or as a fallback, schedule a check with a background timer: Bash \`sleep N\`, \`run_in_background: true\`, then end your turn; its completion wakes you. On waking, call await_agent_result with \`waitSeconds: 0\`. Done or waiting for input: act; otherwise set a new timer and end your turn. Never loop on blocking awaits or foreground sleep. For interactive agents also pass \`untilInput: true\` and \`sinceOffset\` set to the outputBytes you last read.
 
+## Stalled agents
+
+At each check compare outputBytes and activity with the last check. After 15 minutes (or the configured interval) unchanged, without waiting for input or a running tool, the IDE nudges an interactive child once; never duplicate that nudge. For headless children read the output and decide. If still unchanged after another interval, escalate to the human; never repeat nudges or block on waits.
+
 ## Working with your agents
 
 - **Child prompts stand alone.** The agent cannot see this conversation: give it the goal, the context it needs and what done means. End every child prompt with: "Finish with one line starting with ANSWER: that states the result."
