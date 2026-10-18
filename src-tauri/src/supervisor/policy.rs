@@ -12,6 +12,7 @@
 //! Any change to the rules starts by adding a case to that fixture file.
 
 use crate::provider_policy::{is_provider_allowed, ProviderPolicy};
+use crate::providers::ModelOption;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,6 +27,9 @@ pub const REJECTED_PERMISSION_MODES: [&str; 1] = ["bypassPermissions"];
 pub const MAX_PROVIDER_WEIGHT: u64 = 99;
 /// How far back `list_projects` counts the agents started in a project.
 pub const BALANCING_WINDOW_DAYS: u32 = 7;
+/// From this rank on, a supervisor's spawn has to say why it needs the model
+/// (fixture `reasonRequiredFromRank`).
+pub const REASON_REQUIRED_FROM_RANK: i64 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1022,6 +1026,164 @@ pub fn check_spawn(
     Ok(permission_mode)
 }
 
+// ── Which model a spawn runs ────────────────────────────────────────────────
+
+/// Why `resolve_model` refused (fixture `reasons.modelChoice`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelChoiceReason {
+    NoRankedModel,
+    ModelReasonRequired,
+}
+
+impl ModelChoiceReason {
+    pub fn key(self) -> String {
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelDenied {
+    pub reason: ModelChoiceReason,
+    /// For a person; the reason key is what callers match on.
+    pub message: String,
+}
+
+/// The model a spawn asks for, `None` for the smallest allowed one, and the
+/// reason it gives for that model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelRequest<'a> {
+    pub provider: &'a str,
+    pub project_path: &'a str,
+    pub model: Option<&'a str>,
+    pub reason: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelChoice {
+    pub model: String,
+    pub rank: Option<i64>,
+    /// The server picked it because the request named none.
+    pub picked: bool,
+}
+
+fn allowed_offers<'o>(
+    offered: &'o [ModelOption],
+    allowed: &'o [String],
+) -> impl Iterator<Item = &'o ModelOption> {
+    offered
+        .iter()
+        .filter(move |option| allowed.contains(&option.value))
+}
+
+/// The allowed model with the smallest rank, the first in the provider's
+/// order on a tie. Unranked models are never picked.
+pub fn smallest_ranked_model<'o>(
+    offered: &'o [ModelOption],
+    allowed: &'o [String],
+) -> Option<&'o ModelOption> {
+    allowed_offers(offered, allowed)
+        .filter(|option| option.rank.is_some())
+        .fold(None, |best: Option<&ModelOption>, option| match best {
+            Some(best) if best.rank <= option.rank => Some(best),
+            _ => Some(option),
+        })
+}
+
+fn size_word(rank: i64) -> &'static str {
+    if rank >= 4 {
+        "largest"
+    } else {
+        "large"
+    }
+}
+
+/// Settles the model before `check_spawn` (fixture `modelChoiceRules`): the
+/// smallest ranked allowed one when the request names none, then the size
+/// gate — a model from `REASON_REQUIRED_FROM_RANK` on needs a non-blank
+/// reason. A model outside `allowed` passes untouched; `check_spawn` refuses
+/// it with its own reason.
+pub fn resolve_model(
+    offered: &[ModelOption],
+    allowed: &[String],
+    request: &ModelRequest<'_>,
+) -> Result<ModelChoice, ModelDenied> {
+    let (provider, path) = (request.provider, request.project_path);
+    let (model, picked) = match request.model {
+        Some(model) => (model.to_string(), false),
+        None => match smallest_ranked_model(offered, allowed) {
+            Some(option) => (option.value.clone(), true),
+            None => {
+                return Err(ModelDenied {
+                    reason: ModelChoiceReason::NoRankedModel,
+                    message: format!(
+                        "No allowed {provider} model in {path} has a size (rank), so none is \
+                         picked by default. Name one."
+                    ),
+                })
+            }
+        },
+    };
+    let rank = allowed_offers(offered, allowed)
+        .find(|option| option.value == model)
+        .and_then(|option| option.rank);
+    let reasoned = request
+        .reason
+        .is_some_and(|reason| !reason.trim().is_empty());
+    match rank {
+        Some(size) if size >= REASON_REQUIRED_FROM_RANK && !reasoned => Err(ModelDenied {
+            reason: ModelChoiceReason::ModelReasonRequired,
+            message: reason_required_message(offered, allowed, request, &model, size),
+        }),
+        _ => Ok(ModelChoice {
+            model,
+            rank,
+            picked,
+        }),
+    }
+}
+
+fn reason_required_message(
+    offered: &[ModelOption],
+    allowed: &[String],
+    request: &ModelRequest<'_>,
+    model: &str,
+    rank: i64,
+) -> String {
+    let mut smaller: Vec<&ModelOption> = allowed_offers(offered, allowed)
+        .filter(|option| option.rank.is_some_and(|other| other < rank))
+        .collect();
+    smaller.sort_by_key(|option| option.rank);
+    let head = format!(
+        "Model '{model}' is {} (rank {rank}) for {} in {}.",
+        size_word(rank),
+        request.provider,
+        request.project_path
+    );
+    if smaller.is_empty() {
+        return format!(
+            "{head} No smaller model is allowed there: pass modelReason with why the task needs it."
+        );
+    }
+    let names: Vec<String> = smaller
+        .iter()
+        .map(|option| {
+            format!(
+                "{} (rank {})",
+                option.value,
+                option.rank.unwrap_or_default()
+            )
+        })
+        .collect();
+    format!(
+        "{head} Pass modelReason with why the task needs it, or take a smaller one: {}.",
+        names.join(", ")
+    )
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1211,6 +1373,89 @@ pub(crate) mod tests {
             };
             assert_eq!(&actual, expected, "{name}");
         }
+    }
+
+    #[test]
+    fn every_model_choice_case_matches_the_fixture() {
+        let fixtures = fixtures();
+        assert_eq!(
+            fixtures["reasonRequiredFromRank"],
+            REASON_REQUIRED_FROM_RANK
+        );
+        let mut keys: Vec<String> = [
+            ModelChoiceReason::NoRankedModel,
+            ModelChoiceReason::ModelReasonRequired,
+        ]
+        .iter()
+        .map(|reason| reason.key())
+        .collect();
+        let mut theirs: Vec<String> = fixtures["reasons"]["modelChoice"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        theirs.sort();
+        assert_eq!(keys, theirs);
+        let cases = fixtures["modelChoice"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let offered: Vec<ModelOption> =
+                serde_json::from_value(case["offered"].clone()).unwrap();
+            let allowed: Vec<String> = serde_json::from_value(case["allowed"].clone()).unwrap();
+            let request = &case["request"];
+            let outcome = resolve_model(
+                &offered,
+                &allowed,
+                &ModelRequest {
+                    provider: "claude",
+                    project_path: "/abs/project-a",
+                    model: request["model"].as_str(),
+                    reason: request["modelReason"].as_str(),
+                },
+            );
+            let actual = match outcome {
+                Ok(choice) => json!({ "ok": true, "model": choice.model, "picked": choice.picked }),
+                Err(denied) => {
+                    assert!(!denied.message.is_empty(), "{name}: message");
+                    json!({ "ok": false, "reason": denied.reason.key() })
+                }
+            };
+            assert_eq!(&actual, &case["expected"], "{name}");
+        }
+    }
+
+    #[test]
+    fn a_refused_large_model_names_the_smaller_allowed_ones() {
+        let offered: Vec<ModelOption> = serde_json::from_value(json!([
+            { "value": "opus", "label": "Opus", "rank": 3 },
+            { "value": "sonnet", "label": "Sonnet", "rank": 2 },
+            { "value": "haiku", "label": "Haiku", "rank": 1 },
+            { "value": "auto", "label": "Auto" }
+        ]))
+        .unwrap();
+        let allowed: Vec<String> = ["opus", "sonnet", "haiku", "auto"]
+            .map(String::from)
+            .to_vec();
+        let request = |model| ModelRequest {
+            provider: "claude",
+            project_path: "/abs/project-a",
+            model: Some(model),
+            reason: None,
+        };
+        let denied = resolve_model(&offered, &allowed, &request("opus")).unwrap_err();
+        assert_eq!(
+            denied.message,
+            "Model 'opus' is large (rank 3) for claude in /abs/project-a. Pass modelReason with \
+             why the task needs it, or take a smaller one: haiku (rank 1), sonnet (rank 2)."
+        );
+        let only_large = resolve_model(&offered, &["opus".to_string()], &request("opus"));
+        assert!(only_large
+            .unwrap_err()
+            .message
+            .contains("No smaller model is allowed"));
     }
 
     fn usable(weights: &[(&str, Option<u32>)]) -> Vec<VisibleProvider> {

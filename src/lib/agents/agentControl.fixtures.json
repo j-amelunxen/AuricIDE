@@ -19,6 +19,7 @@
     "forbidden_agent_caller",
     "supervisor_denied",
     "outside_supervisor_scope",
+    "unknown_project",
     "internal"
   ],
   "clientOnlyErrorCodes": ["app_not_running", "timeout", "contract_violation"],
@@ -79,6 +80,25 @@
         "id": "a",
         "method": "list_projects",
         "params": {}
+      }
+    },
+    {
+      "name": "list_projects for one project, by path or name",
+      "raw": "{\"id\":32,\"method\":\"list_projects\",\"params\":{\"project\":\"example-project\"}}",
+      "expected": {
+        "id": 32,
+        "method": "list_projects",
+        "params": {
+          "project": "example-project"
+        }
+      }
+    },
+    {
+      "name": "list_projects with an empty project",
+      "raw": "{\"id\":33,\"method\":\"list_projects\",\"params\":{\"project\":\" \"}}",
+      "expectedError": {
+        "id": 33,
+        "code": "invalid_params"
       }
     },
     {
@@ -192,6 +212,26 @@
           "name": null,
           "role": null,
           "worktree": true
+        }
+      }
+    },
+    {
+      "name": "spawn with a reason for a large model",
+      "raw": "{\"id\":34,\"method\":\"spawn\",\"params\":{\"projectPath\":\"/tmp/example-project\",\"prompt\":\"design the cache\",\"provider\":\"claude\",\"model\":\"opus\",\"headless\":true,\"modelReason\":\"Architecture across four modules\"}}",
+      "expected": {
+        "id": 34,
+        "method": "spawn",
+        "params": {
+          "projectPath": "/tmp/example-project",
+          "prompt": "design the cache",
+          "provider": "claude",
+          "model": "opus",
+          "permissionMode": null,
+          "headless": true,
+          "name": null,
+          "role": null,
+          "worktree": null,
+          "modelReason": "Architecture across four modules"
         }
       }
     },
@@ -1102,7 +1142,7 @@
       }
     },
     {
-      "name": "list_projects for a supervisor: allowed projects with what it may use there",
+      "name": "list_projects for a supervisor: allowed projects with what it may use there, models described once",
       "method": "list_projects",
       "raw": {
         "id": "a",
@@ -1120,43 +1160,6 @@
               "description": "A small example service that parses invoices.",
               "descriptionSource": "readme",
               "supervisor": {
-                "providers": [
-                  {
-                    "id": "claude",
-                    "permissionMode": null,
-                    "models": [
-                      {
-                        "id": "haiku",
-                        "label": "Haiku",
-                        "rank": 1
-                      },
-                      {
-                        "id": "sonnet",
-                        "label": "Sonnet",
-                        "rank": 2
-                      }
-                    ]
-                  },
-                  {
-                    "id": "codex",
-                    "permissionMode": "acceptEdits",
-                    "models": [
-                      {
-                        "id": "gpt-6-luna",
-                        "label": "GPT-6 Luna",
-                        "rank": 1
-                      },
-                      {
-                        "id": "auto",
-                        "label": "Auto",
-                        "rank": null
-                      }
-                    ]
-                  }
-                ],
-                "allowInteractive": true,
-                "runningChildren": 1,
-                "maxRunning": 2,
                 "balancing": {
                   "windowDays": 7,
                   "next": "codex",
@@ -1176,10 +1179,66 @@
                       "actualPercent": 25
                     }
                   ]
-                }
+                },
+                "providers": [
+                  {
+                    "id": "claude",
+                    "models": "all"
+                  },
+                  {
+                    "id": "codex",
+                    "permissionMode": "acceptEdits",
+                    "models": ["gpt-6-luna", "auto"]
+                  }
+                ],
+                "allowInteractive": true,
+                "runningChildren": 1,
+                "maxRunning": 2
               }
             }
-          ]
+          ],
+          "catalog": {
+            "claude": [
+              {
+                "id": "haiku",
+                "label": "Haiku",
+                "rank": 1,
+                "useFor": "Lookups, formatting, short checks.",
+                "relativeCost": 1
+              },
+              {
+                "id": "sonnet",
+                "label": "Sonnet",
+                "rank": 2,
+                "useFor": "The default: browsing, reading, normal coding.",
+                "relativeCost": 3
+              }
+            ],
+            "codex": [
+              {
+                "id": "gpt-6-luna",
+                "label": "GPT-6 Luna",
+                "rank": 1
+              },
+              {
+                "id": "auto",
+                "label": "Auto",
+                "rank": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "list_projects for a project the caller cannot see",
+      "method": "list_projects",
+      "raw": {
+        "id": 32,
+        "ok": false,
+        "error": {
+          "code": "unknown_project",
+          "message": "No project matches 'nope'. Call list_projects without project to see yours."
         }
       }
     },
@@ -1193,6 +1252,19 @@
           "code": "supervisor_denied",
           "message": "Model 'opus' is not allowed for claude in /tmp/example-project. Allowed: haiku, sonnet.",
           "reason": "model_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "spawn of a large model without a reason",
+      "method": "spawn",
+      "raw": {
+        "id": 7,
+        "ok": false,
+        "error": {
+          "code": "supervisor_denied",
+          "message": "Model 'opus' is large (rank 3) for claude in /tmp/example-project. Pass modelReason with why the task needs it, or take a smaller one: haiku (rank 1), sonnet (rank 2).",
+          "reason": "model_reason_required"
         }
       }
     },
@@ -1274,8 +1346,10 @@
           "role": "invalid_params",
           "permissionMode": "outside_supervisor_scope"
         },
-        "requiredSpawnParams": ["provider", "model", "headless"],
+        "requiredSpawnParams": ["headless"],
+        "modelChoice": "provider and model may be left out. Without provider, the project's balancing.next is taken, else the supervisor's own provider when the project allows it, else the first one it allows. Without model, the smallest ranked model the policy allows for that provider is taken (supervisorPolicy.fixtures.json modelChoice); none ranked is supervisor_denied (no_ranked_model). A resolved model of rank >= reasonRequiredFromRank needs a non-blank modelReason, else supervisor_denied (model_reason_required) naming the smaller allowed models. A spawn that goes ahead is appended to <app_data_dir>/supervisor-spawns.jsonl with its model, rank, modelReason and whether the model was picked by default.",
         "listProjects": "allowed_only_with_supervisor_block",
+        "listProjectsShape": "A supervisor's list_projects carries a top-level catalog { provider: [{ id, label, rank, useFor?, relativeCost? }] } with each model the listed projects allow, described once. Inside a project, the supervisor block's keys are sorted, so balancing precedes providers; providers[].permissionMode is left out for the provider's own default and providers[].models is \"all\" (every catalog model of that provider) or the allowed ids. params.project (a path or a project name) keeps only matching projects; none is unknown_project. The MCP server sends the result as compact JSON.",
         "spawnPolicy": "supervisorPolicy.fixtures.json checkSpawn; refusal is supervisor_denied with its reason",
         "children": {
           "role": "worker",
@@ -1426,14 +1500,14 @@
         "expected": "outside_supervisor_scope"
       },
       {
-        "name": "supervisor spawn without model",
+        "name": "supervisor spawn without model gets the smallest allowed one",
         "caller": "supervisor",
         "method": "spawn",
         "params": {
           "provider": "claude",
           "headless": true
         },
-        "expected": "invalid_params"
+        "expected": "ok"
       },
       {
         "name": "supervisor spawn the policy refuses",
@@ -1445,6 +1519,66 @@
           "headless": true
         },
         "expected": "supervisor_denied"
+      },
+      {
+        "name": "supervisor spawn without headless",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "provider": "claude",
+          "model": "haiku"
+        },
+        "expected": "invalid_params"
+      },
+      {
+        "name": "supervisor spawn without provider and model follows the policy",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "headless": true
+        },
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor spawn of a large model without a reason",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "provider": "codex",
+          "model": "gpt-6-sol",
+          "headless": true
+        },
+        "expected": "supervisor_denied"
+      },
+      {
+        "name": "supervisor spawn of a large model with a reason",
+        "caller": "supervisor",
+        "method": "spawn",
+        "params": {
+          "provider": "codex",
+          "model": "gpt-6-sol",
+          "headless": true,
+          "modelReason": "Untangle a race across three crates"
+        },
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor lists one of its projects by name",
+        "caller": "supervisor",
+        "method": "list_projects",
+        "params": {
+          "project": "<scope project name>"
+        },
+        "expected": "ok"
+      },
+      {
+        "name": "supervisor cannot list a project it may not use",
+        "caller": "supervisor",
+        "method": "list_projects",
+        "params": {
+          "project": "/abs/not-allowed"
+        },
+        "expected": "unknown_project"
       },
       {
         "name": "a killed supervisor's child result stays readable to external callers",

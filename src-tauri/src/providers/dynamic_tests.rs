@@ -1205,3 +1205,31 @@ fn a_model_rank_is_read_and_shown_and_a_missing_or_odd_one_is_none() {
         "an unranked model has no rank key"
     );
 }
+
+#[test]
+fn a_model_says_what_it_is_for_and_what_it_costs_and_odd_values_are_none() {
+    let mut config = get_claude_config();
+    config.info.models = serde_json::from_str(
+        r#"[
+          { "value": "haiku", "label": "Claude Haiku", "rank": 1,
+            "useFor": "Lookups and formatting.", "relativeCost": 1 },
+          { "value": "opus", "label": "Claude Opus", "rank": 3, "relativeCost": 5.5 },
+          { "value": "auto", "label": "Auto / Default" },
+          { "value": "odd", "label": "Odd", "useFor": 7, "relativeCost": "cheap" },
+          { "value": "blank", "label": "Blank", "useFor": "  ", "relativeCost": -1 }
+        ]"#,
+    )
+    .unwrap();
+    let info = DynamicProvider::new(config).info();
+    let use_for: Vec<Option<&str>> = info.models.iter().map(|m| m.use_for.as_deref()).collect();
+    assert_eq!(
+        use_for,
+        vec![Some("Lookups and formatting."), None, None, None, None]
+    );
+    let cost: Vec<Option<f64>> = info.models.iter().map(|m| m.relative_cost).collect();
+    assert_eq!(cost, vec![Some(1.0), Some(5.5), None, None, None]);
+    let shown = serde_json::to_value(&info.models).unwrap();
+    assert_eq!(shown[0]["useFor"], "Lookups and formatting.");
+    assert_eq!(shown[0]["relativeCost"], 1.0);
+    assert!(shown[2].get("useFor").is_none() && shown[2].get("relativeCost").is_none());
+}

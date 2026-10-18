@@ -1,4 +1,8 @@
-import type { VisibleProject } from '@/lib/config/supervisorPolicy';
+import {
+  REASON_REQUIRED_FROM_RANK,
+  smallestRankedModel,
+  type VisibleProject,
+} from '@/lib/config/supervisorPolicy';
 import type { ProviderInfo } from '@/lib/tauri/providers';
 
 /**
@@ -17,6 +21,10 @@ export interface SupervisorPromptModel {
   id: string;
   label: string;
   rank: number | null;
+  /** What work the model is enough for, from the provider config. */
+  useFor?: string;
+  /** Price against the provider's cheapest model (1). */
+  relativeCost?: number;
 }
 
 export interface SupervisorPromptProvider {
@@ -78,7 +86,13 @@ export function supervisorPromptProjects(
         weight: entry.weight,
         models: entry.models.map((id) => {
           const option = info?.models.find((model) => model.value === id);
-          return { id, label: option?.label ?? id, rank: option?.rank ?? null };
+          return {
+            id,
+            label: option?.label ?? id,
+            rank: option?.rank ?? null,
+            ...(option?.useFor ? { useFor: option.useFor } : {}),
+            ...(option?.relativeCost ? { relativeCost: option.relativeCost } : {}),
+          };
         }),
       };
     }),
@@ -139,9 +153,34 @@ function describeTools(tools: string[]): string {
   );
 }
 
-function describeModel(model: SupervisorPromptModel): string {
+/**
+ * One model line: size, relative cost, whether it needs a stated reason, and
+ * what it is for. `isDefault` marks the model a spawn without `model` runs.
+ */
+function describeModel(model: SupervisorPromptModel, isDefault: boolean): string {
   const label = model.label && model.label !== model.id ? ` (${model.label})` : '';
-  return `\`${model.id}\`${label} — ${modelSizeLabel(model.rank)}`;
+  const facts = [modelSizeLabel(model.rank)];
+  if (model.relativeCost) {
+    facts.push(`cost ${model.relativeCost}×${model.relativeCost === 1 ? ' (the cheapest)' : ''}`);
+  }
+  if (model.rank !== null && model.rank >= REASON_REQUIRED_FROM_RANK)
+    facts.push('needs modelReason');
+  const fallback = isDefault ? ' — picked when you leave model out' : '';
+  const useFor = model.useFor ? `. Use for: ${model.useFor}` : '';
+  return `\`${model.id}\`${label} — ${facts.join(', ')}${fallback}${useFor}`;
+}
+
+/** The model a spawn without `model` runs (`smallestRankedModel`, the Rust rule). */
+function defaultModelId(models: SupervisorPromptModel[]): string | undefined {
+  const options = models.map((model) => ({
+    value: model.id,
+    label: model.label,
+    rank: model.rank,
+  }));
+  return smallestRankedModel(
+    options,
+    models.map((model) => model.id)
+  )?.value;
 }
 
 /** `claude 2 : codex 1`, or `null` when no provider here has a weight above 0. */
@@ -178,25 +217,37 @@ function describeProject(project: SupervisorPromptProject): string {
       ? `permission mode ${provider.permissionMode}`
       : "the provider's default permission mode";
     lines.push(`- provider \`${provider.id}\` (${mode}):`);
-    for (const model of byRank(provider.models)) lines.push(`  - ${describeModel(model)}`);
+    const fallback = defaultModelId(provider.models);
+    for (const model of byRank(provider.models)) {
+      lines.push(`  - ${describeModel(model, model.id === fallback)}`);
+    }
   }
   return lines.join('\n');
 }
 
 const SPAWN_RULES = [
-  'Before every spawn_agent call, state one line: which project, headless or interactive, ' +
-    'which model, and why that model.',
+  'Before every spawn_agent call, call list_projects with `project` set to the target ' +
+    'project (one small, current answer instead of every project), then state one line: ' +
+    'which project, headless or interactive, which model, and why that model.',
   '- **An answer you need** (a question, a check, a short fix with a verdict): ' +
     '`headless: true`, then call await_agent_result until done is true.',
   '- **Long-running or multi-step work, or work a human may need to answer**: ' +
     '`headless: false`, only where interactive runs are allowed. Report the agent id, then ' +
     'watch it as "Working with your agents" says.',
   '- **Provider: follow the load balancing.** Where a project has it, take the provider ' +
-    'list_projects names as `balancing.next`. Take another one only when that provider has no ' +
-    'model the task needs, and say why in your spawn line.',
-  '- **Model: the smallest allowed one that fits.** Trivial → small, normal work → medium, ' +
-    'hard reasoning or architecture → large. Use the largest only with a stated reason. Never ' +
-    'pick a model of unknown size unless nothing else is allowed.',
+    'list_projects names as `balancing.next`; leaving `provider` out does exactly that. Take ' +
+    'another one only when that provider has no model the task needs, and say why in your ' +
+    'spawn line.',
+  '- **Model: by the kind of task, the smallest that fits.** Rank 1 for lookups, formatting ' +
+    'and yes/no checks. Rank 2 is the default: driving a browser, reading text or web pages, ' +
+    'collecting data, normal coding and fixes. Rank 3 only for architecture across modules or ' +
+    'tricky debugging a rank 2 agent could not crack. Rank 4 only for a reason the human gave ' +
+    'or one you can state concretely. Leaving `model` out picks the smallest allowed model with ' +
+    'a rank, often rank 1: right for lookups, so name a rank 2 model for the default work. ' +
+    'From rank 3 on, pass `modelReason` (one sentence on why a smaller model will not ' +
+    'do), or the spawn is refused. Publicly visible work or a matter of taste is no reason for ' +
+    'a bigger model when a human approves the result anyway. Never pick a model of unknown ' +
+    'size unless nothing else is allowed.',
   '- **Worktree: for code changes, not for questions.** Pass `worktree: true` when the agent ' +
     'changes code in a repository where the human or another agent may work at the same time; ' +
     'it then works on its own branch in its own folder. Leave it out for questions, checks and ' +
@@ -315,8 +366,8 @@ export function buildSupervisorLaunchPrompt(
   return [
     ROLE,
     '## Projects',
-    'What you may use when you started. Call list_projects for the live state: the policy, ' +
-      'the running counts and the allowed models can change.',
+    'What you may use when you started. Call list_projects with `project` for the live state ' +
+      'of a project: the policy, the running counts and the allowed models can change.',
     projectSection,
     '## Skills',
     describeSkills(skills, tools.length > 0),

@@ -42,6 +42,7 @@ export const CONTROL_ERROR_CODES = [
   'forbidden_agent_caller',
   'supervisor_denied',
   'outside_supervisor_scope',
+  'unknown_project',
   'internal',
 ] as const;
 export type ControlErrorCode = (typeof CONTROL_ERROR_CODES)[number];
@@ -79,11 +80,13 @@ export const RUN_RESULT_SOURCES = ['cli_result', 'console_tail'] as const;
 
 /**
  * The stable keys a `supervisor_denied` refusal names in `error.reason`
- * (`supervisorPolicy.fixtures.json`, `reasons.checkSpawn`).
+ * (`supervisorPolicy.fixtures.json`, `reasons.checkSpawn` and
+ * `reasons.modelChoice`).
  */
-export const SUPERVISOR_DENIED_REASONS = Object.keys(policyFixtures.reasons.checkSpawn).filter(
-  (key) => key !== '_comment'
-);
+export const SUPERVISOR_DENIED_REASONS = [
+  ...Object.keys(policyFixtures.reasons.checkSpawn),
+  ...Object.keys(policyFixtures.reasons.modelChoice),
+].filter((key) => key !== '_comment');
 
 /**
  * Set on every agent process the IDE spawns, and so inherited by any MCP
@@ -134,7 +137,13 @@ export const LINK_POLICY_OPS = linkFixtures.proposals.ops as [string, ...string[
 
 const PARAMS = {
   list_agents: noParams,
-  list_projects: noParams,
+  list_projects: z
+    .object({ project: z.string().nullish() })
+    .refine((p) => p.project === null || p.project === undefined || p.project.trim() !== '', {
+      message: 'project must not be empty; leave it out to list every project',
+      path: ['project'],
+    })
+    .transform((p) => (p.project ? { project: p.project } : {})),
   read_output: z
     .object({
       agentId,
@@ -168,6 +177,7 @@ const PARAMS = {
       name: optionalText,
       role: z.enum(AGENT_ROLES).nullish(),
       worktree: z.boolean().nullish(),
+      modelReason: optionalText,
     })
     .transform((p) => ({
       projectPath: p.projectPath,
@@ -180,6 +190,8 @@ const PARAMS = {
       // A worker is what every spawn starts anyway; only a supervisor is news.
       role: p.role === 'supervisor' ? ('supervisor' as const) : null,
       worktree: p.worktree ?? null,
+      // Left out when unset, as Rust serialises it.
+      ...(p.modelReason ? { modelReason: p.modelReason } : {}),
     })),
   await_result: z
     .object({
@@ -338,10 +350,10 @@ const supervisorProjectBlock = z.object({
   providers: z.array(
     z.object({
       id: z.string(),
-      permissionMode: z.string().nullable(),
-      models: z.array(
-        z.object({ id: z.string(), label: z.string(), rank: z.number().int().nullable() })
-      ),
+      /** Absent (or null from an older IDE): the provider's own default. */
+      permissionMode: z.string().nullish(),
+      /** `"all"`: every model the catalog lists for this provider. */
+      models: z.union([z.literal('all'), z.array(z.string())]),
     })
   ),
   allowInteractive: z.boolean(),
@@ -363,6 +375,15 @@ const supervisorProjectBlock = z.object({
       ),
     })
     .nullable(),
+});
+
+/** One model of a supervisor's `list_projects` catalog, described once. */
+const catalogModel = z.object({
+  id: z.string(),
+  label: z.string(),
+  rank: z.number().int().nullable(),
+  useFor: z.string().optional(),
+  relativeCost: z.number().positive().optional(),
 });
 
 const runResult = z.object({
@@ -408,6 +429,8 @@ const RESULTS = {
         supervisor: supervisorProjectBlock.optional(),
       })
     ),
+    /** Only a supervisor's answer carries it: provider id → the models its projects allow. */
+    catalog: z.record(z.string(), z.array(catalogModel)).optional(),
   }),
   await_result: z.discriminatedUnion('done', [
     z.object({

@@ -447,9 +447,34 @@ fn list_projects_passes_the_backend_list_through() {
         description_source: None,
         supervisor: None,
     };
-    *h.backend.projects.lock().unwrap() = vec![entry];
+    let other = ProjectEntry {
+        path: "/tmp/other-project".into(),
+        name: "other-project".into(),
+        ..entry.clone()
+    };
+    *h.backend.projects.lock().unwrap() = vec![entry, other];
     let response = call(&h, json!({ "id": "a", "method": "list_projects" }));
     assert_eq!(response["result"]["projects"][0]["isOpen"], true);
+    assert!(
+        response["result"].get("catalog").is_none(),
+        "only a supervisor gets a catalog"
+    );
+    let named = |project: &str| {
+        call(
+            &h,
+            json!({ "id": "a", "method": "list_projects", "params": { "project": project } }),
+        )
+    };
+    for wanted in ["Other-Project", "/tmp/other-project/"] {
+        let paths: Vec<Value> = named(wanted)["result"]["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["path"].clone())
+            .collect();
+        assert_eq!(paths, vec![json!("/tmp/other-project")], "{wanted}");
+    }
+    assert_eq!(error_code(&named("nope")), "unknown_project");
 }
 
 #[test]
@@ -775,6 +800,7 @@ fn model(value: &str, rank: Option<i64>) -> ModelOption {
         value: value.into(),
         label: format!("Label {value}"),
         rank,
+        ..Default::default()
     }
 }
 
@@ -811,6 +837,7 @@ fn scope_policy(path: &str) -> SupervisorPolicy {
 /// one finished child (`agent-done`), a child of another supervisor, an agent
 /// the human started, and the stored result of a child whose supervisor is
 /// gone.
+// code-gate: complexity-function-length - one fixture world; every caller-scope case reads all of it
 fn supervised_scope() -> Scope {
     let project = auric_project();
     let path = crate::supervisor::canonical_project_path(&project.path().to_string_lossy());
@@ -844,7 +871,11 @@ fn supervised_scope() -> Scope {
         ),
         (
             "codex".to_string(),
-            vec![model("gpt-6-luna", Some(1)), model("auto", None)],
+            vec![
+                model("gpt-6-luna", Some(1)),
+                model("gpt-6-sol", Some(3)),
+                model("auto", None),
+            ],
         ),
     ]);
     *h.backend.agent_pids.lock().unwrap() = HashMap::from([
@@ -971,7 +1002,11 @@ fn every_caller_scope_case_in_the_contract_holds() {
         };
         if let Some(extra) = case.get("params").and_then(Value::as_object) {
             for (key, value) in extra {
-                params[key] = value.clone();
+                params[key] = if value == "<scope project name>" {
+                    json!(super::projects::project_name(&s.path))
+                } else {
+                    value.clone()
+                };
             }
         }
         let response = call_as(
@@ -1267,16 +1302,23 @@ fn a_supervisor_lists_the_allowed_projects_with_what_it_may_use_there() {
     assert_eq!(
         listed["supervisor"],
         json!({
+            "balancing": null,
             "providers": [
-                { "id": "claude", "permissionMode": null,
-                  "models": [{ "id": "haiku", "label": "Label haiku", "rank": 1 }] },
-                { "id": "codex", "permissionMode": "acceptEdits",
-                  "models": [{ "id": "gpt-6-luna", "label": "Label gpt-6-luna", "rank": 1 },
-                             { "id": "auto", "label": "Label auto", "rank": null }] }
+                { "id": "claude", "models": "all" },
+                { "id": "codex", "permissionMode": "acceptEdits", "models": "all" }
             ],
-            "allowInteractive": true, "runningChildren": 1, "maxRunning": 2,
-            "balancing": null
+            "allowInteractive": true, "runningChildren": 1, "maxRunning": 2
         })
+    );
+    assert_eq!(
+        response["result"]["catalog"],
+        json!({
+            "claude": [{ "id": "haiku", "label": "Label haiku", "rank": 1 }],
+            "codex": [{ "id": "gpt-6-luna", "label": "Label gpt-6-luna", "rank": 1 },
+                      { "id": "gpt-6-sol", "label": "Label gpt-6-sol", "rank": 3 },
+                      { "id": "auto", "label": "Label auto", "rank": null }]
+        }),
+        "every allowed model, described once"
     );
     let built = projects
         .iter()
@@ -1323,6 +1365,175 @@ fn a_supervisor_is_told_which_provider_is_behind_its_load_balancing_share() {
                 { "id": "codex", "weight": 1, "spawns": 1, "targetPercent": 50, "actualPercent": 25 }
             ]
         })
+    );
+}
+
+#[test]
+fn a_supervisor_lists_one_project_with_balancing_first_and_only_its_models_described() {
+    let s = supervised_scope();
+    let other = auric_project();
+    let other_path = crate::supervisor::canonical_project_path(&other.path().to_string_lossy());
+    let mut policy = scope_policy(&s.path);
+    let mut rules = policy.projects[&s.path].clone();
+    rules.providers = Some(vec!["codex".into()]);
+    rules.models = BTreeMap::from([("codex".into(), vec!["gpt-6-luna".into()])]);
+    policy.projects.insert(other_path.clone(), rules);
+    *s.h.backend.policy.lock().unwrap() = policy;
+    let list = |project: Option<&str>| {
+        let params = project.map_or_else(|| json!({}), |p| json!({ "project": p }));
+        call_as(
+            &s.h,
+            &s.supervisor,
+            json!({ "id": "a", "method": "list_projects", "params": params }),
+        )
+    };
+    let all = list(None);
+    let other_entry = all["result"]["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["path"] == other_path.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(
+        other_entry["supervisor"]["providers"],
+        json!([{ "id": "codex", "permissionMode": "acceptEdits", "models": ["gpt-6-luna"] }]),
+        "a subset of the catalog is named by id"
+    );
+
+    let one = list(Some(&other_path));
+    let projects = one["result"]["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 1);
+    assert_eq!(
+        one["result"]["catalog"],
+        json!({ "codex": [{ "id": "gpt-6-luna", "label": "Label gpt-6-luna", "rank": 1 }] })
+    );
+    assert_eq!(projects[0]["supervisor"]["providers"][0]["models"], "all");
+    let text = serde_json::to_string(&one["result"]["projects"][0]["supervisor"]).unwrap();
+    assert!(
+        text.find("\"balancing\"") < text.find("\"providers\""),
+        "balancing is read before the providers: {text}"
+    );
+    assert_eq!(
+        error_code(&list(Some("/abs/not-allowed"))),
+        "unknown_project"
+    );
+}
+
+#[test]
+fn a_full_supervisor_project_list_stays_small() {
+    let s = supervised_scope();
+    let providers: Vec<String> = (1..=6).map(|n| format!("provider-{n}")).collect();
+    let mut offered = BTreeMap::new();
+    for provider in &providers {
+        let models = (1..=10)
+            .map(|n| ModelOption {
+                value: format!("{provider}-model-{n:02}"),
+                label: format!("Model {n}"),
+                rank: Some((n % 4) + 1),
+                use_for: Some("Reading, browsing and normal coding work.".into()),
+                relative_cost: Some(f64::from(n as u32)),
+            })
+            .collect();
+        offered.insert(provider.clone(), models);
+    }
+    *s.h.backend.offered.lock().unwrap() = offered;
+    let homes: Vec<tempfile::TempDir> = (0..15).map(|_| auric_project()).collect();
+    let mut policy = scope_policy(&s.path);
+    policy.projects.clear();
+    let mut rules = scope_policy(&s.path).projects[&s.path].clone();
+    rules.providers = None;
+    rules.models = BTreeMap::new();
+    rules.permission_mode = BTreeMap::new();
+    for home in &homes {
+        let path = crate::supervisor::canonical_project_path(&home.path().to_string_lossy());
+        policy.projects.insert(path, rules.clone());
+    }
+    *s.h.backend.policy.lock().unwrap() = policy;
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": "a", "method": "list_projects" }),
+    );
+    assert_eq!(response["result"]["projects"].as_array().unwrap().len(), 15);
+    let compact = serde_json::to_string(&response["result"]).unwrap();
+    assert!(
+        compact.len() < 16 * 1024,
+        "15 projects x 6 providers x 10 models took {} bytes",
+        compact.len()
+    );
+}
+
+#[test]
+fn a_supervisor_spawn_without_provider_or_model_takes_what_it_is_told_to() {
+    let s = supervised_scope();
+    let response = call_as(
+        &s.h,
+        &s.supervisor,
+        json!({ "id": 7, "method": "spawn", "params": {
+            "projectPath": s.path, "prompt": "reply PONG", "headless": true
+        } }),
+    );
+    assert_eq!(response["ok"], true, "{response}");
+    let requests = s.h.backend.requests.lock().unwrap();
+    assert_eq!(
+        requests[0].params["provider"], "claude",
+        "the supervisor's own"
+    );
+    assert_eq!(requests[0].params["model"], "haiku", "the smallest allowed");
+}
+
+#[test]
+fn a_large_model_needs_a_reason_and_the_spawn_log_keeps_it() {
+    let s = supervised_scope();
+    let app = tempfile::tempdir().unwrap();
+    *s.h.backend.app_data.lock().unwrap() = Some(app.path().to_path_buf());
+    let spawn = |reason: Option<&str>| {
+        let mut params = json!({
+            "projectPath": s.path, "prompt": "p", "provider": "codex",
+            "model": "gpt-6-sol", "headless": true
+        });
+        if let Some(reason) = reason {
+            params["modelReason"] = json!(reason);
+        }
+        call_as(
+            &s.h,
+            &s.supervisor,
+            json!({ "id": 7, "method": "spawn", "params": params }),
+        )
+    };
+    let refused = spawn(Some("  "));
+    assert_eq!(refused["error"]["reason"], "model_reason_required");
+    assert!(refused["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("gpt-6-luna (rank 1)"));
+    assert!(s.h.backend.requests.lock().unwrap().is_empty());
+
+    let started = spawn(Some("Untangle a race across three crates"));
+    assert_eq!(started["ok"], true, "{started}");
+    assert!(
+        s.h.backend.requests.lock().unwrap()[0]
+            .params
+            .get("modelReason")
+            .is_none(),
+        "the reason is booked in Rust, not handed to the frontend"
+    );
+    let log =
+        std::fs::read_to_string(app.path().join(super::spawn_log::SPAWN_LOG_FILE_NAME)).unwrap();
+    let lines: Vec<Value> = log
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 1, "only the spawn that went ahead");
+    assert_eq!(lines[0]["agentId"], "agent-new");
+    assert_eq!(lines[0]["supervisorId"], "agent-sup");
+    assert_eq!(lines[0]["model"], "gpt-6-sol");
+    assert_eq!(lines[0]["rank"], 3);
+    assert_eq!(lines[0]["picked"], false);
+    assert_eq!(
+        lines[0]["modelReason"],
+        "Untangle a race across three crates"
     );
 }
 

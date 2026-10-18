@@ -1,5 +1,5 @@
 import fixtures from './supervisorPolicy.fixtures.json';
-import type { ProviderInfo } from '../tauri/providers';
+import type { ModelOption, ProviderInfo } from '../tauri/providers';
 import { isProviderAllowed, type ProviderPolicy, DEFAULT_PROVIDER_POLICY } from './providerPolicy';
 export { supervisorProvidersOf } from './supervisorProviders';
 
@@ -118,6 +118,17 @@ export const SUPERVISOR_DENIED_REASON_TEXT = fixtures.reasons.checkSpawn as Reco
   SupervisorDeniedReason,
   string
 >;
+
+export type SupervisorModelChoiceReason = 'no_ranked_model' | 'model_reason_required';
+
+/** Human sentences for the reasons `resolveSupervisorModel` can give. */
+export const SUPERVISOR_MODEL_CHOICE_REASON_TEXT = fixtures.reasons.modelChoice as Record<
+  SupervisorModelChoiceReason,
+  string
+>;
+
+/** From this rank on, a supervisor's spawn has to say why it needs the model. */
+export const REASON_REQUIRED_FROM_RANK: number = fixtures.reasonRequiredFromRank;
 
 const DEFAULTS = fixtures.defaults;
 const CHECK_ORDER = fixtures.checkOrder as SupervisorDeniedReason[];
@@ -701,4 +712,47 @@ export function checkSupervisorSpawn(
   const failed = CHECK_ORDER.find((reason) => fails[reason]());
   if (failed) return { ok: false, code: 'supervisor_denied', reason: failed };
   return { ok: true, permissionMode: entry.permissionMode[provider] ?? null };
+}
+
+export type SupervisorModelDecision =
+  { ok: true; model: string; picked: boolean } | { ok: false; reason: SupervisorModelChoiceReason };
+
+function allowedOffers(offered: ModelOption[], allowed: string[]): ModelOption[] {
+  return offered.filter((option) => allowed.includes(option.value));
+}
+
+const hasRank = (option: ModelOption): option is ModelOption & { rank: number } =>
+  typeof option.rank === 'number' && Number.isInteger(option.rank);
+
+/**
+ * The model a supervisor's spawn runs when it names none: the allowed model
+ * with the smallest rank, the first in the provider's order on a tie.
+ */
+export function smallestRankedModel(offered: ModelOption[], allowed: string[]): ModelOption | null {
+  let best: (ModelOption & { rank: number }) | null = null;
+  for (const option of allowedOffers(offered, allowed).filter(hasRank)) {
+    if (best === null || option.rank < best.rank) best = option;
+  }
+  return best;
+}
+
+/**
+ * Which model a spawn runs, before `checkSupervisorSpawn` (the fixtures'
+ * `modelChoiceRules`): the smallest ranked allowed one when none is named,
+ * then the size gate. Rust's `resolve_model` is the gate; this tells the
+ * launch prompt which model "leave it out" means.
+ */
+export function resolveSupervisorModel(
+  offered: ModelOption[],
+  allowed: string[],
+  model: string | null,
+  modelReason: string | null
+): SupervisorModelDecision {
+  const picked = model === null;
+  const chosen = model ?? smallestRankedModel(offered, allowed)?.value ?? null;
+  if (chosen === null) return { ok: false, reason: 'no_ranked_model' };
+  const rank = allowedOffers(offered, allowed).find((option) => option.value === chosen)?.rank;
+  const large = typeof rank === 'number' && rank >= REASON_REQUIRED_FROM_RANK;
+  if (large && !modelReason?.trim()) return { ok: false, reason: 'model_reason_required' };
+  return { ok: true, model: chosen, picked };
 }

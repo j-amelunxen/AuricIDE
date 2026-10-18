@@ -60,17 +60,17 @@ external MCP client ─stdio─▶ auric-mcp --control ─unix socket─▶ Rust
 
 All field names are camelCase on the wire.
 
-| method            | params                                                                                                                            | result                              |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `list_agents`     | —                                                                                                                                 | `{ agents: AgentSummary[] }`        |
-| `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                               | `OutputChunk`                       |
-| `send_input`      | `{ agentId, text: string, enter?: boolean (default true) }`                                                                       | `{ agentId, bytesWritten: number }` |
-| `kill`            | `{ agentId }`                                                                                                                     | `{ agentId, killed: true }`         |
-| `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", worktree?: boolean }` | `{ agentId }`                       |
-| `list_projects`   | —                                                                                                                                 | `{ projects: ProjectEntry[] }`      |
-| `await_result`    | `{ agentId, waitSeconds?: number (default 60, max 120), untilInput?: boolean, sinceOffset?: number }`                             | `AwaitResult`                       |
-| `remove_worktree` | `{ agentId }`                                                                                                                     | `WorktreeRemoval`                   |
-| `dismiss`         | `{ agentId }`                                                                                                                     | `{ agentId, dismissed: true }`      |
+| method            | params                                                                                                                                                  | result                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `list_agents`     | —                                                                                                                                                       | `{ agents: AgentSummary[] }`             |
+| `read_output`     | `{ agentId, tailBytes?: number (default 16384, max 262144), sinceOffset?: number }`                                                                     | `OutputChunk`                            |
+| `send_input`      | `{ agentId, text: string, enter?: boolean (default true) }`                                                                                             | `{ agentId, bytesWritten: number }`      |
+| `kill`            | `{ agentId }`                                                                                                                                           | `{ agentId, killed: true }`              |
+| `spawn`           | `{ projectPath, prompt, provider?, model?, permissionMode?, headless?: boolean, name?, role?: "supervisor", worktree?: boolean, modelReason?: string }` | `{ agentId }`                            |
+| `list_projects`   | `{ project?: string }` (a path or a project name; none matching is `unknown_project`)                                                                   | `{ projects: ProjectEntry[], catalog? }` |
+| `await_result`    | `{ agentId, waitSeconds?: number (default 60, max 120), untilInput?: boolean, sinceOffset?: number }`                                                   | `AwaitResult`                            |
+| `remove_worktree` | `{ agentId }`                                                                                                                                           | `WorktreeRemoval`                        |
+| `dismiss`         | `{ agentId }`                                                                                                                                           | `{ agentId, dismissed: true }`           |
 
 `role` and `await_result` belong to the supervisor scope and are described
 there. `role: "worker"` is the same as leaving it out. `worktree` and
@@ -303,17 +303,17 @@ start another supervisor.
 
 ### Methods for a supervisor caller
 
-| method            | what a supervisor gets                                                                        |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| `list_projects`   | only projects its policy allows, each with a `supervisor` block (below)                       |
-| `spawn`           | `provider`, `model` and `headless` required; checked against the policy; the child is its own |
-| `list_agents`     | its own children only, live and finished                                                      |
-| `read_output`     | its own children only                                                                         |
-| `await_result`    | its own children only                                                                         |
-| `kill`            | its own children only                                                                         |
-| `remove_worktree` | its own children only                                                                         |
-| `dismiss`         | its own finished children only                                                                |
-| `send_input`      | its own children only                                                                         |
+| method            | what a supervisor gets                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `list_projects`   | only projects its policy allows, each with a `supervisor` block, plus one model `catalog` |
+| `spawn`           | `headless` required; provider and model default (below); checked against the policy       |
+| `list_agents`     | its own children only, live and finished                                                  |
+| `read_output`     | its own children only                                                                     |
+| `await_result`    | its own children only                                                                     |
+| `kill`            | its own children only                                                                     |
+| `remove_worktree` | its own children only                                                                     |
+| `dismiss`         | its own finished children only                                                            |
+| `send_input`      | its own children only                                                                     |
 
 - **Own children only.** Any other agent id, including the supervisor's own,
   an agent the human started and another supervisor's child, is answered with
@@ -335,8 +335,29 @@ start another supervisor.
 - **Refused parameters.** `role` on a supervisor's `spawn` is `invalid_params`:
   the field does not exist for that caller. `permissionMode` is
   `outside_supervisor_scope`: the policy names the mode, the supervisor does
-  not get to pick a different one. A missing `provider`, `model` or `headless`
-  is `invalid_params`; nothing is filled in from launch defaults.
+  not get to pick a different one. A missing `headless` is `invalid_params`.
+  Nothing is filled in from launch defaults.
+- **Provider and model default to what the supervisor is told to pick.**
+  Without `provider`, the project's `balancing.next` is taken, else the
+  supervisor's own provider when the project allows it, else the first one it
+  allows (`Dispatcher::preferred_provider`, shared with link jobs). Without
+  `model`, the allowed model with the smallest `rank` is taken, the first in
+  the provider's order on a tie; unranked models are never picked, and none
+  ranked is `supervisor_denied` with `no_ranked_model`
+  (`policy::smallest_ranked_model`, also what a link job runs).
+- **A large model needs a stated reason.** A resolved model of rank 3 or more
+  (`reasonRequiredFromRank`) without a non-blank `modelReason` is
+  `supervisor_denied` with `model_reason_required`, and the message names the
+  smaller allowed models. This runs before `checkSpawn`, on models the policy
+  allows only; a model outside it gets `checkSpawn`'s own reason. The rules
+  are `modelChoiceRules` / `modelChoice` in `supervisorPolicy.fixtures.json`,
+  twinned in `policy::resolve_model` and `resolveSupervisorModel`. It exists
+  because a supervisor picked the second-largest model for driving a browser
+  and reading text: the old prompt mapped "hard" to "large", and nothing on
+  the server asked. Every spawn that goes ahead is appended to
+  `<app_data_dir>/supervisor-spawns.jsonl` (0600): supervisor, agent, project,
+  provider, model, rank, `picked` (the server chose) and `modelReason`, so the
+  choice can be read afterwards. The frontend never sees the reason.
 - **The policy decides the spawn.** Rust runs `checkSpawn` from
   `supervisorPolicy.fixtures.json` in the dispatcher before the request reaches
   the frontend, and `spawn_agent_impl` runs it again for any agent whose parent
@@ -358,16 +379,36 @@ one is refused with `permission_mode_unattended`.
 `ProjectEntry.supervisor`, present only in a supervisor's `list_projects`:
 
 ```
-{ providers: [{ id, permissionMode: string | null,
-                models: [{ id, label, rank: number | null }] }],
-  allowInteractive: boolean, runningChildren: number, maxRunning: number,
-  balancing: null | { windowDays: number, next: string | null,
+{ balancing: null | { windowDays: number, next: string | null,
                       providers: [{ id, weight, spawns, targetPercent,
-                                    actualPercent: number | null }] } }
+                                    actualPercent: number | null }] },
+  providers: [{ id, permissionMode?: string, models: "all" | string[] }],
+  allowInteractive: boolean, runningChildren: number, maxRunning: number }
 ```
+
+and beside `projects`, once per answer:
+
+```
+catalog: { [provider]: [{ id, label, rank: number | null,
+                          useFor?: string, relativeCost?: number }] }
+```
+
+The catalog holds every model the listed projects allow, each described once;
+a project names its models by id, or `"all"` when it allows every model the
+catalog lists for that provider. `permissionMode` is left out for the
+provider's own default. This replaced a shape that repeated every model's
+label and rank in every project: with fifteen projects it reached 64 KB, was
+cut off before `balancing` (then the last key), and the supervisor chose
+without it. Now fifteen projects with six providers of ten models each stay
+under 16 KB (`a_full_supervisor_project_list_stays_small`), `project` narrows
+the answer to one entry, and the MCP server sends it as compact JSON. Keys are
+sorted on the wire, so `balancing` precedes `providers` and `catalog` precedes
+`projects`.
 
 `rank` orders models by size within a provider (higher is bigger); `null` is
 a model without a known size, which the supervisor does not pick by default.
+`useFor` and `relativeCost` come from the provider config
+(`dynamic-providers/README.md`) and go into the launch prompt as well.
 
 **Load balancing is advisory.** A project entry may carry `providerWeights`
 (provider id → a whole number 0..99, Settings: "Load-balancing share"), e.g.
@@ -380,7 +421,8 @@ agents still running, whoever started them. It counts agents, not tokens or
 cost: one provider's tokens say nothing about another's allowance, and cost is
 only known once a run ends. `next` is the provider with the fewest agents per
 share (a tie goes to the larger share, then the first id). The launch prompt
-tells the supervisor to take `next`, then the smallest model there that fits,
+tells the supervisor to take `next`, then the smallest model there that fits
+the kind of task,
 and to pick another provider only when the task needs a model `next` does not
 have, saying why. The rules for the field itself are `providerWeightsRules` in
 `supervisorPolicy.fixtures.json`; the arithmetic is `policy::balancing` in Rust
@@ -527,13 +569,14 @@ stays in the Git panel's worktree list for a person.
 `invalid_request`, `unknown_method`, `invalid_params`, `unknown_agent`,
 `agent_not_running`, `headless_no_stdin`, `provider_denied`,
 `frontend_unavailable`, `forbidden_agent_caller`, `supervisor_denied`,
-
-`outside_supervisor_scope`, `internal`.
+`outside_supervisor_scope`, `unknown_project`, `internal`.
 
 - `supervisor_denied`: the supervisor policy refuses this spawn. The error
   body carries `reason`, a stable key from `supervisorPolicy.fixtures.json`.
 - `outside_supervisor_scope`: a supervisor asked for something its scope never
   includes (a `permissionMode` of its own).
+- `unknown_project`: `list_projects { project }` matched nothing the caller
+  may see. For a supervisor that includes a project its policy does not allow.
 
 The client adds three of its own: `app_not_running` when the socket does not
 exist or refuses the connection, `timeout` when no answer arrives in time, and

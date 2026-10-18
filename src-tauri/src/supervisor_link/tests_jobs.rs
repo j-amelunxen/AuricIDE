@@ -20,6 +20,7 @@ fn model(value: &str, rank: Option<i64>) -> ModelOption {
         value: value.into(),
         label: value.into(),
         rank,
+        ..Default::default()
     }
 }
 

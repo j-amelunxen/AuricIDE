@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import fixtures from './supervisorPolicy.fixtures.json';
 import controlFixtures from '../agents/agentControl.fixtures.json';
 import type { ProviderPolicy } from './providerPolicy';
+import type { ModelOption } from '../tauri/providers';
 import {
   checkSupervisorSpawn,
   defaultSupervisorProjectPolicy,
+  REASON_REQUIRED_FROM_RANK,
+  resolveSupervisorModel,
+  SUPERVISOR_MODEL_CHOICE_REASON_TEXT,
   emptySupervisorPolicy,
   isUnrestrictedTool,
   toolKeyProblem,
@@ -72,6 +76,34 @@ describe('supervisor policy — shared contract', () => {
           )
         ).toEqual(testCase.expected);
       });
+    }
+  });
+});
+
+describe('modelChoice', () => {
+  it('requires a reason from the fixture rank on', () => {
+    expect(REASON_REQUIRED_FROM_RANK).toBe(fixtures.reasonRequiredFromRank);
+  });
+
+  for (const testCase of fixtures.modelChoice) {
+    it(testCase.name, () => {
+      expect(
+        resolveSupervisorModel(
+          testCase.offered as ModelOption[],
+          testCase.allowed,
+          testCase.request.model,
+          testCase.request.modelReason
+        )
+      ).toEqual(testCase.expected);
+    });
+  }
+
+  it('exercises every model choice reason', () => {
+    const used = new Set(
+      fixtures.modelChoice.map((c) => ('reason' in c.expected ? c.expected.reason : 'ok'))
+    );
+    for (const reason of Object.keys(SUPERVISOR_MODEL_CHOICE_REASON_TEXT)) {
+      expect(used, reason).toContain(reason);
     }
   });
 });

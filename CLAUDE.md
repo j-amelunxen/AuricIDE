@@ -484,9 +484,22 @@ ADR 0004.
   supervisor never merges and never forces; its prompt makes the cleanup its
   duty (`docs/design-agent-control.md`, "Worktrees").
 - **Model size is a `rank`** on `info.models` entries in
-  `dynamic-providers/*.json` (higher is bigger). The launch prompt
-  (`supervisorLaunchPrompt.ts`) asks for the smallest fitting one; unranked
-  models are never picked by default.
+  `dynamic-providers/*.json` (higher is bigger), next to optional `useFor`
+  (one sentence) and `relativeCost` (1 = the provider's cheapest). The launch
+  prompt (`supervisorLaunchPrompt.ts`) picks by the kind of task: rank 1
+  lookups, rank 2 the default (browser, reading, normal coding), rank 3
+  architecture or tricky debugging, rank 4 only with a reason. Rust enforces
+  the part that matters: a spawn without `model` gets the smallest ranked
+  allowed one (`policy::smallest_ranked_model`, shared with link jobs; unranked
+  models are never picked), and a model of rank 3 or more without
+  `modelReason` is refused (`model_reason_required`). Fixture
+  `modelChoice` in `supervisorPolicy.fixtures.json`; every spawn that goes
+  ahead lands in `<app_data_dir>/supervisor-spawns.jsonl` with its reason.
+- **A supervisor's `list_projects` is built to fit.** `project` narrows it to
+  one entry (the prompt says to call it so before each spawn); models are ids
+  per project (or `"all"`) plus one top-level `catalog`, and the MCP server
+  sends compact JSON. Fifteen projects × six providers × ten models stay under
+  16 KB; the old shape reached 64 KB and was cut off before `balancing`.
 - **Its tile is a Quick Access tile.** Hover or hold opens a skill wheel,
   right-click lists its skills, "Quick Access Settings" edits them
   (`useLaunchWheel` is shared with project tiles). The skills are

@@ -30,6 +30,7 @@ pub enum ErrorCode {
     ForbiddenAgentCaller,
     SupervisorDenied,
     OutsideSupervisorScope,
+    UnknownProject,
     Internal,
 }
 
@@ -120,6 +121,19 @@ pub struct SpawnParams {
     /// with `remove_worktree`.
     #[serde(default)]
     pub worktree: Option<bool>,
+    /// Why the task needs the model. A supervisor's spawn of a model from
+    /// `REASON_REQUIRED_FROM_RANK` on is refused without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_reason: Option<String>,
+}
+
+/// `list_projects`: `project`, a path or a project name, keeps only the
+/// projects it names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListProjectsParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,7 +161,7 @@ pub enum Request {
     SendInput(SendInputParams),
     Kill(AgentIdParams),
     Spawn(SpawnParams),
-    ListProjects(EmptyParams),
+    ListProjects(ListProjectsParams),
     AwaitResult(AwaitResultParams),
     RemoveWorktree(AgentIdParams),
     Dismiss(AgentIdParams),
@@ -276,6 +290,9 @@ fn normalise(request: Request) -> Result<Request, String> {
             if blank(&params.reason) || params.changes.is_empty() =>
         {
             Err("reason and at least one change are required".into())
+        }
+        Request::ListProjects(params) if params.project.as_deref().is_some_and(blank) => {
+            Err("project must not be empty; leave it out to list every project".into())
         }
         Request::Spawn(params) if blank(&params.project_path) || blank(&params.prompt) => {
             Err("projectPath and prompt must not be empty".into())
@@ -470,6 +487,8 @@ pub struct ProjectEntry {
     pub supervisor: Option<SupervisorAccess>,
 }
 
+/// One model in the `catalog` of a supervisor's `list_projects`, described
+/// once however many projects allow it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisorModelEntry {
@@ -477,30 +496,65 @@ pub struct SupervisorModelEntry {
     pub label: String,
     /// Higher is bigger; `None` is a model without a known size.
     pub rank: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_for: Option<String>,
+    #[serde(
+        serialize_with = "crate::providers::types::serialize_cost",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub relative_cost: Option<f64>,
+}
+
+/// The models a provider allows in one project: `"all"` for every model the
+/// catalog lists for it, else their ids.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AllowedModels {
+    All,
+    Ids(Vec<String>),
+}
+
+impl Serialize for AllowedModels {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::All => serializer.serialize_str("all"),
+            Self::Ids(ids) => ids.serialize(serializer),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisorProviderAccess {
     pub id: String,
+    /// Left out for the provider's own default.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<String>,
-    pub models: Vec<SupervisorModelEntry>,
+    pub models: AllowedModels,
 }
 
+/// The wire sorts keys (`serde_json` without `preserve_order`), which puts
+/// `balancing` ahead of `providers`: a reader that stops early still has the
+/// provider to take.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisorAccess {
+    /// The project's load balancing, `None` when it has none. Advisory.
+    pub balancing: Option<crate::supervisor::policy::Balancing>,
     pub providers: Vec<SupervisorProviderAccess>,
     pub allow_interactive: bool,
     pub running_children: u32,
     pub max_running: u32,
-    /// The project's load balancing, `None` when it has none. Advisory.
-    pub balancing: Option<crate::supervisor::policy::Balancing>,
 }
+
+/// Provider id → the models the listed projects allow, in the provider's order.
+pub type ModelCatalog = std::collections::BTreeMap<String, Vec<SupervisorModelEntry>>;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ListProjectsResult {
     pub projects: Vec<ProjectEntry>,
+    /// Only in a supervisor's `list_projects`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<ModelCatalog>,
 }
 
 #[cfg(test)]
@@ -558,6 +612,7 @@ pub(crate) mod tests {
             ErrorCode::ForbiddenAgentCaller,
             ErrorCode::SupervisorDenied,
             ErrorCode::OutsideSupervisorScope,
+            ErrorCode::UnknownProject,
             ErrorCode::Internal,
         ];
         let ours: Vec<Value> = codes
@@ -791,6 +846,7 @@ pub(crate) mod tests {
                                 supervisor: None,
                             },
                         ],
+                        catalog: None,
                     },
                 ),
             ),
@@ -880,7 +936,39 @@ pub(crate) mod tests {
             id: id.into(),
             label: label.into(),
             rank,
+            use_for: None,
+            relative_cost: None,
         };
+        let described =
+            |entry: SupervisorModelEntry, use_for: &str, cost: f64| SupervisorModelEntry {
+                use_for: Some(use_for.into()),
+                relative_cost: Some(cost),
+                ..entry
+            };
+        let catalog = ModelCatalog::from([
+            (
+                "claude".to_string(),
+                vec![
+                    described(
+                        model("haiku", "Haiku", Some(1)),
+                        "Lookups, formatting, short checks.",
+                        1.0,
+                    ),
+                    described(
+                        model("sonnet", "Sonnet", Some(2)),
+                        "The default: browsing, reading, normal coding.",
+                        3.0,
+                    ),
+                ],
+            ),
+            (
+                "codex".to_string(),
+                vec![
+                    model("gpt-6-luna", "GPT-6 Luna", Some(1)),
+                    model("auto", "Auto", None),
+                ],
+            ),
+        ]);
         let project = ProjectEntry {
             path: "/tmp/example-project".into(),
             name: "example-project".into(),
@@ -896,18 +984,12 @@ pub(crate) mod tests {
                     SupervisorProviderAccess {
                         id: "claude".into(),
                         permission_mode: None,
-                        models: vec![
-                            model("haiku", "Haiku", Some(1)),
-                            model("sonnet", "Sonnet", Some(2)),
-                        ],
+                        models: AllowedModels::All,
                     },
                     SupervisorProviderAccess {
                         id: "codex".into(),
                         permission_mode: Some("acceptEdits".into()),
-                        models: vec![
-                            model("gpt-6-luna", "GPT-6 Luna", Some(1)),
-                            model("auto", "Auto", None),
-                        ],
+                        models: AllowedModels::Ids(vec!["gpt-6-luna".into(), "auto".into()]),
                     },
                 ],
                 allow_interactive: true,
@@ -964,8 +1046,25 @@ pub(crate) mod tests {
                 ),
             ),
             (
-                "list_projects for a supervisor: allowed projects with what it may use there",
-                ok_response(&json!("a"), ListProjectsResult { projects: vec![project] }),
+                "list_projects for a supervisor: allowed projects with what it may use there, \
+                 models described once",
+                ok_response(
+                    &json!("a"),
+                    ListProjectsResult {
+                        projects: vec![project],
+                        catalog: Some(catalog),
+                    },
+                ),
+            ),
+            (
+                "list_projects for a project the caller cannot see",
+                error_response(
+                    &json!(32),
+                    &ControlError::new(
+                        ErrorCode::UnknownProject,
+                        "No project matches 'nope'. Call list_projects without project to see yours.",
+                    ),
+                ),
             ),
             (
                 "spawn refused by the supervisor policy carries a reason key",
@@ -976,6 +1075,19 @@ pub(crate) mod tests {
                         "Model 'opus' is not allowed for claude in /tmp/example-project. Allowed: haiku, sonnet.",
                     )
                     .with_reason("model_not_allowed"),
+                ),
+            ),
+            (
+                "spawn of a large model without a reason",
+                error_response(
+                    &json!(7),
+                    &ControlError::new(
+                        ErrorCode::SupervisorDenied,
+                        "Model 'opus' is large (rank 3) for claude in /tmp/example-project. Pass \
+                         modelReason with why the task needs it, or take a smaller one: haiku \
+                         (rank 1), sonnet (rank 2).",
+                    )
+                    .with_reason("model_reason_required"),
                 ),
             ),
             (

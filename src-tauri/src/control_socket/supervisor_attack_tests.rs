@@ -122,6 +122,7 @@ fn model(value: &str) -> ModelOption {
         value: value.into(),
         label: value.into(),
         rank: None,
+        ..Default::default()
     }
 }
 
@@ -491,8 +492,9 @@ fn guard_a_supervisor_cannot_name_a_role_or_a_permission_mode() {
             "outside_supervisor_scope",
         ),
         (json!({ "headless": null }), "invalid_params"),
-        (json!({ "provider": null }), "invalid_params"),
-        (json!({ "model": null }), "invalid_params"),
+        // Left out, the model is the smallest ranked one; this rig ranks none,
+        // and an unranked model is never filled in.
+        (json!({ "model": null }), "supervisor_denied"),
     ] {
         let response = ask(&r, &r.supervisor, spawn_request(&r, extra.clone()));
         assert_eq!(response["error"]["code"], code, "{extra}: {response}");

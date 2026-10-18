@@ -9,11 +9,11 @@
 //! headless and always in a worktree of its own.
 
 use super::protocol::*;
-use super::supervised::balancing_since;
 use super::{Dispatcher, Outcome};
 use crate::agents::{AgentRole, AgentStatus};
 use crate::supervisor::policy::{
-    check_spawn, visible_projects, RunningChildren, SpawnRequest, VisibleProject,
+    check_spawn, smallest_ranked_model, visible_projects, RunningChildren, SpawnRequest,
+    VisibleProvider,
 };
 use crate::supervisor::{canonical_project_path, model_names};
 use serde_json::Value;
@@ -35,37 +35,12 @@ fn denied(reason: &str, message: String) -> ControlError {
 }
 
 impl Dispatcher {
-    /// The provider a supervisor would pick here: the balancing `next`, else
-    /// the supervisor's own provider when the project allows it, else the
-    /// first one the project allows.
-    fn link_provider<'p>(
-        &self,
-        project: &'p VisibleProject,
-    ) -> Option<&'p crate::supervisor::policy::VisibleProvider> {
-        let agents = self.backend.agents();
-        let next = self
-            .project_balancing(project, &agents, &balancing_since())
-            .and_then(|balancing| balancing.next);
-        let preferred =
-            next.unwrap_or_else(|| self.backend.supervisor_policy().supervisor.provider);
-        project
-            .providers
-            .iter()
-            .find(|provider| provider.id == preferred)
-            .or_else(|| project.providers.first())
-    }
-
-    /// The smallest model of `provider` the project allows that has a size.
-    /// Unranked models are never picked by default, as for a supervisor.
-    fn link_model(&self, provider: &str, allowed: &[String]) -> Option<String> {
+    /// The smallest ranked model `provider` allows here, as for a supervisor
+    /// that names none.
+    fn link_model(&self, provider: &VisibleProvider) -> Option<String> {
         let offered = self.backend.offered_models();
-        offered
-            .get(provider)?
-            .iter()
-            .filter(|option| allowed.contains(&option.value))
-            .filter_map(|option| option.rank.map(|rank| (rank, option.value.clone())))
-            .min()
-            .map(|(_, model)| model)
+        let options = offered.get(&provider.id)?;
+        smallest_ranked_model(options, &provider.models).map(|option| option.value.clone())
     }
 
     /// Running and queued agents among `link_agents`, as children of one
@@ -115,13 +90,13 @@ impl Dispatcher {
                 ),
             ));
         };
-        let Some(provider) = self.link_provider(project) else {
+        let Some(provider) = self.preferred_provider(project) else {
             return Err(denied(
                 "provider_not_allowed",
                 format!("No provider is allowed for supervisors in {project_path}."),
             ));
         };
-        let Some(model) = self.link_model(&provider.id, &provider.models) else {
+        let Some(model) = self.link_model(provider) else {
             return Err(denied(
                 "no_ranked_model",
                 format!(
@@ -169,6 +144,7 @@ impl Dispatcher {
             role: Some(AgentRole::Worker),
             role_passed: false,
             worktree: Some(true),
+            model_reason: None,
         })
     }
 

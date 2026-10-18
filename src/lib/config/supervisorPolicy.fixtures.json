@@ -51,6 +51,10 @@
       "interactive_not_allowed": "An interactive run was requested and the project has allowInteractive: false.",
       "project_limit_reached": "The supervisor already has maxRunning children running in this project.",
       "global_limit_reached": "The supervisor already has maxRunningChildren children running in total."
+    },
+    "modelChoice": {
+      "no_ranked_model": "No model was named and none of the allowed models has a size (rank), so none is picked by default.",
+      "model_reason_required": "The model is large (rank at or above reasonRequiredFromRank) and the spawn names no modelReason."
     }
   },
   "checkOrder": [
@@ -3691,6 +3695,521 @@
         "ok": false,
         "code": "supervisor_denied",
         "reason": "model_not_offered"
+      }
+    }
+  ],
+  "reasonRequiredFromRank": 3,
+  "modelChoiceRules": [
+    "Which model a supervisor's spawn runs, decided before checkSpawn. offered is what the provider offers (value, rank),",
+    "allowed the models the policy leaves for it in that project (visibleProjects' models). request.model null means",
+    "the server picks: the allowed model with the smallest rank; unranked models are never picked; a tie goes to the",
+    "first in the provider's order. Nothing ranked: no_ranked_model. Then the size gate: if the resolved model is",
+    "allowed, offered and its rank is >= reasonRequiredFromRank, a modelReason that is missing or blank is",
+    "model_reason_required (the human-facing message names the smaller allowed models). A model outside allowed or",
+    "offered passes here untouched: checkSpawn refuses it with its own reason. picked says whether the server chose."
+  ],
+  "modelChoice": [
+    {
+      "name": "no model: the smallest ranked allowed one",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "fable", "sonnet", "opus", "haiku"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "haiku",
+        "picked": true
+      }
+    },
+    {
+      "name": "no model: the policy's list decides what is smallest",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["sonnet", "opus"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "sonnet",
+        "picked": true
+      }
+    },
+    {
+      "name": "no model: unranked models are never picked",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "sonnet"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "sonnet",
+        "picked": true
+      }
+    },
+    {
+      "name": "no model and nothing ranked allowed",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": false,
+        "reason": "no_ranked_model"
+      }
+    },
+    {
+      "name": "a named medium model needs no reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "fable", "sonnet", "opus", "haiku"],
+      "request": {
+        "model": "sonnet",
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "sonnet",
+        "picked": false
+      }
+    },
+    {
+      "name": "a named large model without a reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "fable", "sonnet", "opus", "haiku"],
+      "request": {
+        "model": "opus",
+        "modelReason": null
+      },
+      "expected": {
+        "ok": false,
+        "reason": "model_reason_required"
+      }
+    },
+    {
+      "name": "a blank reason is no reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "fable", "sonnet", "opus", "haiku"],
+      "request": {
+        "model": "opus",
+        "modelReason": "   "
+      },
+      "expected": {
+        "ok": false,
+        "reason": "model_reason_required"
+      }
+    },
+    {
+      "name": "a named large model with a reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "fable", "sonnet", "opus", "haiku"],
+      "request": {
+        "model": "opus",
+        "modelReason": "Architecture across four modules"
+      },
+      "expected": {
+        "ok": true,
+        "model": "opus",
+        "picked": false
+      }
+    },
+    {
+      "name": "the largest model with a reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "fable", "sonnet", "opus", "haiku"],
+      "request": {
+        "model": "fable",
+        "modelReason": "The human asked for it by name"
+      },
+      "expected": {
+        "ok": true,
+        "model": "fable",
+        "picked": false
+      }
+    },
+    {
+      "name": "a named unranked model needs no reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["auto", "fable", "sonnet", "opus", "haiku"],
+      "request": {
+        "model": "auto",
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "auto",
+        "picked": false
+      }
+    },
+    {
+      "name": "a picked default that is large still needs a reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["opus", "fable"],
+      "request": {
+        "model": null,
+        "modelReason": null
+      },
+      "expected": {
+        "ok": false,
+        "reason": "model_reason_required"
+      }
+    },
+    {
+      "name": "a picked large default with a reason",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["opus", "fable"],
+      "request": {
+        "model": null,
+        "modelReason": "Only large models are allowed here"
+      },
+      "expected": {
+        "ok": true,
+        "model": "opus",
+        "picked": true
+      }
+    },
+    {
+      "name": "a model outside the allowed list is left to checkSpawn",
+      "offered": [
+        {
+          "value": "auto",
+          "label": "Auto"
+        },
+        {
+          "value": "fable",
+          "label": "Fable",
+          "rank": 4
+        },
+        {
+          "value": "sonnet",
+          "label": "Sonnet",
+          "rank": 2
+        },
+        {
+          "value": "opus",
+          "label": "Opus",
+          "rank": 3
+        },
+        {
+          "value": "haiku",
+          "label": "Haiku",
+          "rank": 1
+        }
+      ],
+      "allowed": ["haiku"],
+      "request": {
+        "model": "opus",
+        "modelReason": null
+      },
+      "expected": {
+        "ok": true,
+        "model": "opus",
+        "picked": false
       }
     }
   ],

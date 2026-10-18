@@ -72,19 +72,18 @@ describe('the supervisor tool surface', () => {
     );
   });
 
-  it('requires provider, model and headless: nothing is filled in on the supervisor side', () => {
-    const spawn = capture(vi.fn() as unknown as ControlCaller).get('spawn_agent')!.parameters;
-    for (const missing of ['provider', 'model', 'headless'] as const) {
-      const args: Record<string, unknown> = {
-        projectPath: '/p',
-        prompt: 'x',
-        provider: 'claude',
-        model: 'haiku',
-        headless: true,
-      };
-      delete args[missing];
-      expect(spawn.safeParse(args).success, missing).toBe(false);
-    }
+  it('requires headless; provider and model are chosen by Rust, never by this server', async () => {
+    const call = vi.fn(async () => ({ agentId: 'agent-9' })) as unknown as ControlCaller;
+    const spawn = capture(call).get('spawn_agent')!;
+    const full = { projectPath: '/p', prompt: 'x', provider: 'claude', model: 'haiku' };
+    expect(spawn.parameters.safeParse(full).success, 'headless').toBe(false);
+    const bare = spawn.parameters.parse({
+      projectPath: '/p',
+      prompt: 'x',
+      headless: true,
+    }) as Record<string, unknown>;
+    await spawn.execute(bare);
+    expect(vi.mocked(call).mock.lastCall?.[1]).toEqual(bare);
   });
 
   it('shows a refusal with its reason key, never as a success', async () => {

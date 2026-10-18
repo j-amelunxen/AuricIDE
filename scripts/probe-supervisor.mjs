@@ -14,7 +14,7 @@
 //      0600, and that the socket answers.
 //   2. Starts a supervisor as an external client (`spawn { role: "supervisor" }`)
 //      with a scripted prompt. The prompt tells it to
-//        a. call list_projects,
+//        a. call list_projects for that project,
 //        b. spawn ONE headless agent in <projectPath> with the smallest-rank
 //           model the policy offers for it, prompt "Reply with exactly: ANSWER: PONG",
 //        c. await_agent_result and print a line   RESULT=<the answer's text after ANSWER:>
@@ -168,7 +168,7 @@ try {
 
 const PROMPT = [
   'You are being probed. Follow these steps exactly, using only your auric-supervisor tools.',
-  `1. Call list_projects. Find the project at ${project} and note the claude models it allows with their rank.`,
+  `1. Call list_projects with project ${project}. Note the claude models it allows there ("all" means every claude entry of the catalog) and their rank in the catalog.`,
   `2. Call spawn_agent once: projectPath ${project}, provider claude, headless true, model = the allowed claude model with the SMALLEST rank, prompt "Reply with exactly: ANSWER: PONG".`,
   '3. Call await_agent_result on the returned agentId until done is true (repeat on done false).',
   '4. Print one line that starts with RESULT= followed directly by the text after "ANSWER:" in the child\'s answer.',

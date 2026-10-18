@@ -18,6 +18,7 @@ mod link_spawn;
 pub mod pingback;
 pub mod projects;
 pub mod protocol;
+pub mod spawn_log;
 mod supervised;
 pub(crate) use link_spawn::LinkSpawn;
 
@@ -378,9 +379,7 @@ impl Dispatcher {
                 spawned_by_agent_id: None,
                 run_source: None,
             }),
-            Request::ListProjects(_) => to_value(ListProjectsResult {
-                projects: self.backend.projects(),
-            }),
+            Request::ListProjects(params) => self.list_projects(params.project.as_deref()),
             Request::AwaitResult(params) => self.await_result(params),
             Request::RemoveWorktree(params) => self.remove_worktree(params),
             Request::Dismiss(params) => self.dismiss(params),
@@ -388,6 +387,21 @@ impl Dispatcher {
                 Err(link_policy::supervisors_only())
             }
         }
+    }
+
+    /// Every project the IDE lists, or only those `wanted` names.
+    fn list_projects(&self, wanted: Option<&str>) -> Outcome {
+        let mut projects = self.backend.projects();
+        if let Some(wanted) = wanted {
+            projects.retain(|entry| supervised::names_project(entry, wanted));
+            if projects.is_empty() {
+                return Err(supervised::unknown_project(wanted));
+            }
+        }
+        to_value(ListProjectsResult {
+            projects,
+            catalog: None,
+        })
     }
 
     fn list_agents(&self, keep: impl Fn(&AgentInfo) -> bool) -> Outcome {

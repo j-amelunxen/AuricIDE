@@ -124,6 +124,29 @@ astra, whatever the version). A model without `rank` (`auto`, an untiered model)
 has no known size and is never picked by default. A `rank` that is not an
 integer is treated as absent rather than failing the config.
 
+`useFor` and `relativeCost` on a model are optional too, and only the
+supervisor reads them (its launch prompt and the `catalog` of its
+`list_projects`). `useFor` is one sentence on the work the model is enough
+for, e.g. `"The default: driving a browser, reading text, normal coding."`.
+`relativeCost` is the model's price against the provider's cheapest model,
+which is 1 (`3` means about three times as expensive). Like `rank`, a value of
+the wrong type (a `useFor` that is not text or is blank, a `relativeCost` that
+is not a positive number) is treated as absent:
+
+```json
+{
+  "value": "haiku",
+  "label": "Claude Haiku",
+  "rank": 1,
+  "useFor": "Lookups, formatting, yes/no checks.",
+  "relativeCost": 1
+}
+```
+
+From rank 3 on, a supervisor's spawn has to name a `modelReason`
+(`docs/design-agent-control.md`, "Supervisor scope"), so ranking a model 3 or
+4 also makes it an exception that needs a stated reason.
+
 `unattended` on a permission mode is optional and marks a mode in which the CLI
 acts without asking. Agents started by the supervisor never run in such a mode:
 the policy cannot be saved with one, and a spawn whose mode (the policy's, or

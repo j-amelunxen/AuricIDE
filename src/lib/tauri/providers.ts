@@ -6,6 +6,10 @@ export interface ModelOption {
    * `null` for a model without a known size (`dynamic-providers/README.md`).
    */
   rank?: number | null;
+  /** One sentence on the work the model is enough for; the supervisor reads it. */
+  useFor?: string | null;
+  /** Price relative to the provider's cheapest model, which is 1. */
+  relativeCost?: number | null;
 }
 
 export interface PermissionModeOption {

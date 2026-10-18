@@ -12,11 +12,13 @@ impl AgentProvider for CrushProvider {
                     value: "auto".to_string(),
                     label: "Auto / Default".to_string(),
                     rank: None,
+                    ..Default::default()
                 },
                 ModelOption {
                     value: "moonshotai/kimi-k2-thinking".to_string(),
                     label: "Moonshot Kimi k2 Thinking".to_string(),
                     rank: None,
+                    ..Default::default()
                 },
             ],
             permission_modes: vec![

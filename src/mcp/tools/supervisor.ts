@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { FastMCP } from 'fastmcp';
+import type { ControlParamsInput } from '../../lib/agents/agentControl.contract';
 import { callControl } from '../controlClient';
 import {
   agentIdParam,
@@ -25,45 +26,8 @@ import {
 const OWN_CHILDREN = ' Only agents you started exist for you; any other id is unknown_agent.';
 
 export function registerSupervisorTools(server: FastMCP, call: ControlCaller = callControl): void {
-  server.addTool({
-    name: 'list_projects',
-    description:
-      'List the projects you may start agents in. Each has path, name, description ' +
-      '(descriptionSource "user" is the owner\'s own words; trust it most), initialized, ' +
-      'runningAgents, and a supervisor block: providers [{ id, permissionMode, models ' +
-      '[{ id, label, rank }] }], allowInteractive, runningChildren, maxRunning. rank is the ' +
-      'model size within its provider (1 small … 4 largest, null unknown). balancing is null, ' +
-      'or the load balancing the human set: { windowDays, next, providers [{ id, weight, ' +
-      'spawns, targetPercent, actualPercent }] }; next is the provider furthest behind its ' +
-      'share, take it unless the task needs a model only another provider has. Only these ' +
-      'providers and models will spawn; anything else is refused. Call it before spawning, ' +
-      'the policy and the counts change.',
-    parameters: z.object({}),
-    execute: async () => runControl(call, 'list_projects', {}),
-  });
-
-  server.addTool({
-    name: 'spawn_agent',
-    description:
-      'Start an agent in one of your projects. provider, model and headless are required and ' +
-      'nothing is filled in. headless: true for a question, check or short fix whose answer ' +
-      'you need: then loop on await_agent_result. headless: false for long or multi-step work ' +
-      'a human may need to answer, only where allowInteractive is true; report its id and do ' +
-      'not wait. The permission mode comes from the policy, not from you. A refusal is ' +
-      'supervisor_denied with a reason (model_not_allowed, project_limit_reached, …) or ' +
-      'provider_denied: report it, never switch provider or model to get around it. The ' +
-      'agent cannot see this conversation: the prompt must stand alone. Returns { agentId }.',
-    parameters: z.object({
-      projectPath: z.string().describe('path of a project from list_projects'),
-      prompt: z.string().describe('Self-contained instruction; end it by asking for "ANSWER: …"'),
-      provider: z.string().describe("Provider id from that project's supervisor block"),
-      model: z.string().describe("Model id from that provider's list"),
-      headless: z.boolean().describe('true: runs unattended and returns an answer'),
-      name: z.string().optional().describe('Display name in the IDE'),
-      worktree: worktreeParam,
-    }),
-    execute: async (args) => runControl(call, 'spawn', args),
-  });
+  server.addTool(listProjectsTool(call));
+  server.addTool(spawnAgentTool(call));
 
   server.addTool({
     name: 'list_my_agents',
@@ -211,3 +175,77 @@ const policyChange = z.discriminatedUnion('op', [
     dailyLimit: limit.nullable(),
   }),
 ]);
+
+/** `list_projects`: small enough to read whole, one project at a time before a spawn. */
+function listProjectsTool(call: ControlCaller) {
+  return {
+    name: 'list_projects',
+    description:
+      'List the projects you may start agents in. Pass project (its path or name) before ' +
+      'every spawn to get just that one, small and current; leave it out only to find a ' +
+      'project. Each has path, name, description (descriptionSource "user" is the owner\'s ' +
+      'own words; trust it most), initialized, runningAgents, and a supervisor block: ' +
+      'balancing, providers [{ id, permissionMode (absent: the provider default), models }], ' +
+      'allowInteractive, runningChildren, maxRunning. models is "all" or a list of model ids; ' +
+      'the top-level catalog describes each model once per provider: { id, label, rank, ' +
+      'useFor, relativeCost }. rank is the size within its provider (1 small … 4 largest, ' +
+      'null unknown), useFor says what work it is enough for, relativeCost is its price ' +
+      'against the cheapest model of that provider (1). balancing is null, or the load ' +
+      'balancing the human set: { windowDays, next, providers [{ id, weight, spawns, ' +
+      'targetPercent, actualPercent }] }; next is the provider furthest behind its share, ' +
+      'take it unless the task needs a model only another provider has. Only these providers ' +
+      'and models will spawn; anything else is refused. A project you may not use is ' +
+      'unknown_project.',
+    parameters: z.object({
+      project: z
+        .string()
+        .optional()
+        .describe('Path or name of one project; leave it out to list all of them'),
+    }),
+    execute: async (args: { project?: string }) =>
+      runControl(call, 'list_projects', args.project ? { project: args.project } : {}, {
+        compact: true,
+      }),
+  };
+}
+
+/** `spawn_agent`: provider and model default in Rust; a large model needs a reason. */
+function spawnAgentTool(call: ControlCaller) {
+  return {
+    name: 'spawn_agent',
+    description:
+      'Start an agent in one of your projects. headless is required. provider may be left ' +
+      "out: the project's balancing.next is taken. model may be left out: the smallest " +
+      'allowed model with a rank is taken, which fits most work. A model of rank 3 or more ' +
+      'needs modelReason, one sentence on why the task cannot be done by a smaller one; ' +
+      'without it the spawn is refused (supervisor_denied, model_reason_required) and the ' +
+      'refusal names the smaller models. headless: true for a question, check or short fix ' +
+      'whose answer you need: then loop on await_agent_result. headless: false for long or ' +
+      'multi-step work a human may need to answer, only where allowInteractive is true; ' +
+      'report its id and do not wait. The permission mode comes from the policy, not from ' +
+      'you. A refusal is supervisor_denied with a reason (model_not_allowed, ' +
+      'project_limit_reached, …) or provider_denied: report it, never switch provider or ' +
+      'model to get around it. The agent cannot see this conversation: the prompt must stand ' +
+      'alone. Returns { agentId }.',
+    parameters: z.object({
+      projectPath: z.string().describe('path of a project from list_projects'),
+      prompt: z.string().describe('Self-contained instruction; end it by asking for "ANSWER: …"'),
+      provider: z
+        .string()
+        .optional()
+        .describe("Provider id from that project's supervisor block; default balancing.next"),
+      model: z
+        .string()
+        .optional()
+        .describe("Model id from that provider's list; default the smallest ranked one"),
+      modelReason: z
+        .string()
+        .optional()
+        .describe('Why the task needs this model; required from rank 3 on'),
+      headless: z.boolean().describe('true: runs unattended and returns an answer'),
+      name: z.string().optional().describe('Display name in the IDE'),
+      worktree: worktreeParam,
+    }),
+    execute: async (args: ControlParamsInput<'spawn'>) => runControl(call, 'spawn', args),
+  };
+}

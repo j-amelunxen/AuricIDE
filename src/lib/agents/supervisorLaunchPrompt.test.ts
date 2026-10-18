@@ -225,6 +225,64 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(text).toContain('No provider is usable here right now');
   });
 
+  it('describes each model by size, what it is for and its relative cost', () => {
+    const described: ProviderInfo = {
+      ...provider('claude', []),
+      models: [
+        {
+          value: 'sonnet',
+          label: 'Sonnet',
+          rank: 2,
+          useFor: 'Browsing, reading, coding.',
+          relativeCost: 3,
+        },
+        {
+          value: 'haiku',
+          label: 'Haiku',
+          rank: 1,
+          useFor: 'Lookups and formatting.',
+          relativeCost: 1,
+        },
+        { value: 'opus', label: 'Opus', rank: 3 },
+      ],
+    };
+    const [project] = supervisorPromptProjects(
+      [
+        {
+          path: '/abs/project-a',
+          allowInteractive: true,
+          maxRunning: 2,
+          providers: [
+            {
+              id: 'claude',
+              models: ['sonnet', 'haiku', 'opus'],
+              permissionMode: null,
+              weight: null,
+            },
+          ],
+        },
+      ],
+      [described]
+    );
+    const text = buildSupervisorLaunchPrompt([project]);
+    expect(text).toContain(
+      '`haiku` (Haiku) — small, cost 1× (the cheapest) — picked when you leave model out. ' +
+        'Use for: Lookups and formatting.'
+    );
+    expect(text).toContain(
+      '`sonnet` (Sonnet) — medium, cost 3×. Use for: Browsing, reading, coding.'
+    );
+    expect(text).toContain('`opus` (Opus) — large, needs modelReason');
+  });
+
+  it('picks models by the kind of task, and makes a large one a stated exception', () => {
+    expect(prompt).toContain('list_projects with `project`');
+    expect(prompt).toContain('Leaving `model` out picks the smallest');
+    expect(prompt).toContain('modelReason');
+    expect(prompt).toMatch(/rank 2 is the default: driving a browser, reading text/i);
+    expect(prompt).toContain('Publicly visible work or a matter of taste is no reason');
+  });
+
   it('states a load-balancing ratio only for a project that has one, unnamed providers at 0', () => {
     const weighted = policyFixtures.visibleProjects.find((c) => c.name.includes('its weight'))!;
     const [project] = supervisorPromptProjects(

@@ -22,14 +22,20 @@ export type ControlCaller = <M extends ControlMethod>(
   params: ControlParamsInput<M>
 ) => Promise<ControlResult<M>>;
 
-/** Calls one socket method; the result as JSON text, a refusal as `<code> (<reason>): <message>`. */
+/**
+ * Calls one socket method; the result as JSON text, a refusal as
+ * `<code> (<reason>): <message>`. `compact` drops the indentation, for answers
+ * large enough that a client would cut them off.
+ */
 export async function runControl<M extends ControlMethod>(
   call: ControlCaller,
   method: M,
-  params: ControlParamsInput<M>
+  params: ControlParamsInput<M>,
+  { compact = false }: { compact?: boolean } = {}
 ): Promise<string> {
   try {
-    return JSON.stringify(await call(method, params), null, 2);
+    const result = await call(method, params);
+    return compact ? JSON.stringify(result) : JSON.stringify(result, null, 2);
   } catch (error) {
     if (error instanceof ControlError) {
       const code = error.reason ? `${error.code} (${error.reason})` : error.code;

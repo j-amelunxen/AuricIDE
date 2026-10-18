@@ -59,7 +59,7 @@ describe('supervisor tools', () => {
     }
   });
 
-  it('spawn_agent requires provider, model and headless, and takes neither role nor mode', () => {
+  it('spawn_agent requires only headless, takes a model reason, and neither role nor mode', () => {
     const spawn = capture(vi.fn() as unknown as ControlCaller).get('spawn_agent')!;
     const shape = spawn.parameters.shape as Record<string, z.ZodType>;
     for (const required of scope.requiredSpawnParams) {
@@ -69,11 +69,28 @@ describe('supervisor tools', () => {
     for (const refused of Object.keys(scope.refusedParams)) {
       expect(shape[refused], refused).toBeUndefined();
     }
-    const base = { projectPath: '/tmp/example-project', prompt: 'x', provider: 'claude' };
-    expect(spawn.parameters.safeParse({ ...base, model: 'haiku' }).success).toBe(false);
-    expect(spawn.parameters.safeParse({ ...base, model: 'haiku', headless: true }).success).toBe(
-      true
-    );
+    const base = { projectPath: '/tmp/example-project', prompt: 'x' };
+    expect(spawn.parameters.safeParse({ ...base, provider: 'claude' }).success).toBe(false);
+    expect(spawn.parameters.safeParse({ ...base, headless: true }).success).toBe(true);
+    const large = { ...base, headless: true, provider: 'claude', model: 'opus' };
+    expect(spawn.parameters.parse({ ...large, modelReason: 'Architecture' })).toMatchObject({
+      modelReason: 'Architecture',
+    });
+  });
+
+  it('list_projects narrows to one project and answers in compact JSON', async () => {
+    const answer = fixtures.additionalResponses.find(
+      (entry) => entry.method === 'list_projects' && entry.raw.ok
+    )!.raw.result;
+    const call = vi.fn(async () => answer) as unknown as ControlCaller;
+    const list = capture(call).get('list_projects')!;
+    expect(list.parameters.safeParse({}).success).toBe(true);
+    const text = await list.execute(list.parameters.parse({ project: 'example-project' }));
+    expect(vi.mocked(call).mock.lastCall).toEqual([
+      'list_projects',
+      { project: 'example-project' },
+    ]);
+    expect(text).toBe(JSON.stringify(answer));
   });
 
   it('report a policy refusal with its code, so the model can name it', async () => {

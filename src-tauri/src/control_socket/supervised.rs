@@ -12,13 +12,16 @@
 use super::protocol::*;
 use super::{to_value, Dispatcher, Outcome};
 use crate::agents::{AgentInfo, AgentRole, AgentStatus};
+use crate::providers::ModelOption;
 use crate::supervisor::policy::{
-    balancing, check_spawn, normalize_provider_id, visible_projects, Balancing, SpawnRequest,
-    VisibleProject, BALANCING_WINDOW_DAYS,
+    balancing, check_spawn, normalize_provider_id, resolve_model, visible_projects, Balancing,
+    ModelChoice, ModelRequest, SpawnRequest, VisibleProject, VisibleProvider,
+    BALANCING_WINDOW_DAYS,
 };
 use crate::supervisor::{
     canonical_project_path, live_runs_by_provider, model_names, running_children,
 };
+use std::collections::BTreeMap;
 use std::path::Path;
 
 impl Dispatcher {
@@ -50,7 +53,9 @@ impl Dispatcher {
                 self.send_input(params)
             }
             Request::Spawn(params) => self.supervised_spawn(supervisor, params),
-            Request::ListProjects(_) => self.supervised_projects(supervisor),
+            Request::ListProjects(params) => {
+                self.supervised_projects(supervisor, params.project.as_deref())
+            }
             Request::LinkPolicyGet(_) => self.link_policy_get(),
             Request::LinkPolicyPropose(params) => self.link_policy_propose(supervisor, params),
         }
@@ -106,19 +111,15 @@ impl Dispatcher {
                 "A supervisor cannot choose a permission mode; the supervisor policy names it",
             ));
         }
-        let (Some(provider), Some(model), Some(headless)) = (
-            params.provider.clone(),
-            params.model.clone(),
-            params.headless,
-        ) else {
+        let Some(headless) = params.headless else {
             return Err(ControlError::new(
                 ErrorCode::InvalidParams,
-                "a supervisor's spawn needs provider, model and headless; nothing is filled in",
+                "a supervisor's spawn needs headless; provider and model may be left out",
             ));
         };
-
-        let provider = normalize_provider_id(&provider);
         let project_path = canonical_project_path(&params.project_path);
+        let (provider, choice) = self.supervised_choice(supervisor, &project_path, &params)?;
+        let model = choice.model.clone();
         let request = SpawnRequest {
             project_path: &project_path,
             provider: &provider,
@@ -137,7 +138,8 @@ impl Dispatcher {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let permission_mode = self.check_supervised_spawn(supervisor, &request)?;
 
-        self.spawn(FrontendSpawnParams {
+        let model_reason = params.model_reason.clone();
+        let started = self.spawn(FrontendSpawnParams {
             params: SpawnParams {
                 project_path: project_path.clone(),
                 provider: Some(provider.clone()),
@@ -145,11 +147,96 @@ impl Dispatcher {
                 headless: Some(headless),
                 permission_mode,
                 role: Some(AgentRole::Worker),
+                // Booked here, in the spawn log; the frontend has no use for it.
+                model_reason: None,
                 ..params
             },
             spawned_by_agent_id: Some(supervisor.to_string()),
             run_source: Some(RUN_SOURCE_SUPERVISOR.to_string()),
-        })
+        })?;
+        if let Some(dir) = self.backend.app_data_dir() {
+            super::spawn_log::append(
+                &dir,
+                &super::spawn_log::SpawnLogEntry {
+                    at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    supervisor_id: supervisor.to_string(),
+                    agent_id: started
+                        .get("agentId")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string),
+                    project_path,
+                    provider,
+                    model,
+                    rank: choice.rank,
+                    picked: choice.picked,
+                    model_reason,
+                },
+            );
+        }
+        Ok(started)
+    }
+
+    /// The provider and model a supervisor's spawn runs: what it named, else
+    /// what it is told to pick (`preferred_provider`, the smallest ranked
+    /// model), through the size gate (`resolve_model`).
+    fn supervised_choice(
+        &self,
+        supervisor: &str,
+        project_path: &str,
+        params: &SpawnParams,
+    ) -> Result<(String, ModelChoice), ControlError> {
+        let policy = self.backend.supervisor_policy();
+        let offered = self.backend.offered_models();
+        let project = visible_projects(
+            &policy,
+            |path| self.backend.project_provider_policy(Path::new(path)),
+            &model_names(&offered),
+            &self.backend.provider_modes(&policy),
+        )
+        .into_iter()
+        .find(|project| project.path == project_path);
+        let provider = match params.provider.as_deref() {
+            Some(named) => normalize_provider_id(named),
+            None => project
+                .as_ref()
+                .and_then(|project| self.preferred_provider(project))
+                .map_or_else(|| policy.supervisor.provider.clone(), |p| p.id.clone()),
+        };
+        let allowed = project
+            .as_ref()
+            .and_then(|project| project.providers.iter().find(|p| p.id == provider))
+            .map(|visible| visible.models.clone())
+            .unwrap_or_default();
+        let options: &[ModelOption] = offered.get(&provider).map_or(&[], Vec::as_slice);
+        if params.model.is_none() && allowed.is_empty() {
+            // Nothing this supervisor may use there to pick from: the policy
+            // check names why, as it would for a model that was named.
+            let placeholder = options.first().map(|o| o.value.clone()).unwrap_or_default();
+            self.check_supervised_spawn(
+                supervisor,
+                &SpawnRequest {
+                    project_path,
+                    provider: &provider,
+                    model: &placeholder,
+                    headless: params.headless.unwrap_or(true),
+                },
+            )?;
+        }
+        let choice = resolve_model(
+            options,
+            &allowed,
+            &ModelRequest {
+                provider: &provider,
+                project_path,
+                model: params.model.as_deref(),
+                reason: params.model_reason.as_deref(),
+            },
+        )
+        .map_err(|denied| {
+            ControlError::new(ErrorCode::SupervisorDenied, denied.message)
+                .with_reason(denied.reason.key())
+        })?;
+        Ok((provider, choice))
     }
 
     /// `check_spawn` against the policy, the offer and the running children
@@ -181,9 +268,11 @@ impl Dispatcher {
     }
 
     /// The projects the policy allows, sorted by path, each with what the
-    /// supervisor may use there. An allowed project the IDE does not list
-    /// (no longer recent or starred) is still shown, built from its folder.
-    fn supervised_projects(&self, supervisor: &str) -> Outcome {
+    /// supervisor may use there, and one catalog describing every model they
+    /// allow. An allowed project the IDE does not list (no longer recent or
+    /// starred) is still shown, built from its folder. `wanted` (a path or a
+    /// name) keeps only the projects it names; none is `unknown_project`.
+    fn supervised_projects(&self, supervisor: &str, wanted: Option<&str>) -> Outcome {
         let policy = self.backend.supervisor_policy();
         let offered = self.backend.offered_models();
         let visible = visible_projects(
@@ -196,39 +285,148 @@ impl Dispatcher {
         let running = running_children(&agents, supervisor);
         let listed = self.backend.projects();
         let since = balancing_since();
-        let projects = visible
+        let entries: Vec<(ProjectEntry, VisibleProject)> = visible
             .into_iter()
             .map(|project| {
-                let mut entry = listed
+                let entry = listed
                     .iter()
                     .find(|entry| canonical_project_path(&entry.path) == project.path)
                     .cloned()
                     .unwrap_or_else(|| unlisted_entry(&project.path, &agents));
+                (entry, project)
+            })
+            .filter(|(entry, _)| wanted.map_or(true, |wanted| names_project(entry, wanted)))
+            .collect();
+        if let Some(wanted) = wanted {
+            if entries.is_empty() {
+                return Err(unknown_project(wanted));
+            }
+        }
+        let catalog = model_catalog(&offered, entries.iter().map(|(_, project)| project));
+        let projects = entries
+            .into_iter()
+            .map(|(mut entry, project)| {
                 let balancing = self.project_balancing(&project, &agents, &since);
                 let providers = project
                     .providers
                     .into_iter()
                     .map(|provider| SupervisorProviderAccess {
-                        models: provider
-                            .models
-                            .iter()
-                            .map(|id| model_entry(&offered, &provider.id, id))
-                            .collect(),
+                        models: allowed_models(&catalog, &provider),
                         id: provider.id,
                         permission_mode: provider.permission_mode,
                     })
                     .collect();
                 entry.supervisor = Some(SupervisorAccess {
+                    balancing,
                     providers,
                     allow_interactive: project.allow_interactive,
                     running_children: running.by_project.get(&project.path).copied().unwrap_or(0),
                     max_running: project.max_running,
-                    balancing,
                 });
                 entry
             })
             .collect();
-        to_value(ListProjectsResult { projects })
+        to_value(ListProjectsResult {
+            projects,
+            catalog: Some(catalog),
+        })
+    }
+
+    /// The provider a supervisor is told to take in `project`: the balancing
+    /// `next`, else its own provider when the project allows it, else the
+    /// first one the project allows.
+    pub(super) fn preferred_provider<'p>(
+        &self,
+        project: &'p VisibleProject,
+    ) -> Option<&'p VisibleProvider> {
+        let agents = self.backend.agents();
+        let next = self
+            .project_balancing(project, &agents, &balancing_since())
+            .and_then(|balancing| balancing.next);
+        let preferred =
+            next.unwrap_or_else(|| self.backend.supervisor_policy().supervisor.provider);
+        project
+            .providers
+            .iter()
+            .find(|provider| provider.id == preferred)
+            .or_else(|| project.providers.first())
+    }
+}
+
+/// Whether `wanted` names the project: its path (any spelling of it) or its
+/// name, case aside.
+pub(super) fn names_project(entry: &ProjectEntry, wanted: &str) -> bool {
+    let wanted = wanted.trim();
+    if Path::new(wanted).is_absolute() {
+        return canonical_project_path(wanted) == canonical_project_path(&entry.path);
+    }
+    entry.name.eq_ignore_ascii_case(wanted)
+}
+
+pub(super) fn unknown_project(wanted: &str) -> ControlError {
+    ControlError::new(
+        ErrorCode::UnknownProject,
+        format!("No project matches '{wanted}'. Call list_projects without project to see yours."),
+    )
+}
+
+/// Every model the projects allow, once per provider, in the provider's own
+/// order.
+fn model_catalog<'p>(
+    offered: &BTreeMap<String, Vec<ModelOption>>,
+    projects: impl Iterator<Item = &'p VisibleProject>,
+) -> ModelCatalog {
+    let mut allowed: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for provider in projects.flat_map(|project| &project.providers) {
+        let ids = allowed.entry(provider.id.as_str()).or_default();
+        ids.extend(provider.models.iter().map(String::as_str));
+    }
+    allowed
+        .into_iter()
+        .map(|(provider, ids)| {
+            let options = offered.get(provider).map_or(&[][..], Vec::as_slice);
+            let mut entries: Vec<SupervisorModelEntry> = options
+                .iter()
+                .filter(|option| ids.contains(&option.value.as_str()))
+                .map(catalog_entry)
+                .collect();
+            // A model the policy keeps but the provider no longer describes.
+            for id in ids {
+                if !entries.iter().any(|entry| entry.id == id) {
+                    entries.push(SupervisorModelEntry {
+                        id: id.to_string(),
+                        label: id.to_string(),
+                        rank: None,
+                        use_for: None,
+                        relative_cost: None,
+                    });
+                }
+            }
+            (provider.to_string(), entries)
+        })
+        .collect()
+}
+
+fn catalog_entry(option: &ModelOption) -> SupervisorModelEntry {
+    SupervisorModelEntry {
+        id: option.value.clone(),
+        label: option.label.clone(),
+        rank: option.rank,
+        use_for: option.use_for.clone(),
+        relative_cost: option.relative_cost,
+    }
+}
+
+/// `"all"` when the provider allows every model the catalog lists for it.
+fn allowed_models(catalog: &ModelCatalog, provider: &VisibleProvider) -> AllowedModels {
+    let listed = catalog.get(&provider.id).map_or(&[][..], Vec::as_slice);
+    let everything = listed
+        .iter()
+        .all(|entry| provider.models.contains(&entry.id));
+    if everything {
+        AllowedModels::All
+    } else {
+        AllowedModels::Ids(provider.models.clone())
     }
 }
 
@@ -260,21 +458,6 @@ impl Dispatcher {
             *runs.entry(id).or_default() += live;
         }
         balancing(&project.providers, &runs)
-    }
-}
-
-fn model_entry(
-    offered: &std::collections::BTreeMap<String, Vec<crate::providers::ModelOption>>,
-    provider: &str,
-    model: &str,
-) -> SupervisorModelEntry {
-    let option = offered
-        .get(provider)
-        .and_then(|models| models.iter().find(|option| option.value == model));
-    SupervisorModelEntry {
-        id: model.to_string(),
-        label: option.map_or_else(|| model.to_string(), |option| option.label.clone()),
-        rank: option.and_then(|option| option.rank),
     }
 }
 

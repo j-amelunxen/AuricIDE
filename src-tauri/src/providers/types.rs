@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 
 // ── Serializable types for the frontend ──────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelOption {
     pub value: String,
@@ -17,6 +17,23 @@ pub struct ModelOption {
         skip_serializing_if = "Option::is_none"
     )]
     pub rank: Option<i64>,
+    /// One sentence on the work the model is enough for, read by the
+    /// supervisor when it picks a model. Absent when not a non-blank string.
+    #[serde(
+        default,
+        deserialize_with = "lenient_text",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub use_for: Option<String>,
+    /// Price relative to the provider's cheapest model, which is 1. Absent
+    /// when not a positive number.
+    #[serde(
+        default,
+        deserialize_with = "lenient_cost",
+        serialize_with = "serialize_cost",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub relative_cost: Option<f64>,
 }
 
 /// A `rank` that is not an integer is no rank, not a provider config that
@@ -27,6 +44,44 @@ where
 {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(value.as_i64())
+}
+
+/// Like `lenient_rank`: a description that is not text is no description.
+fn lenient_text<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_str()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string))
+}
+
+/// A whole cost as an integer (`3`, not `3.0`), as the config wrote it.
+pub fn serialize_cost<S: serde::Serializer>(
+    cost: &Option<f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match cost {
+        Some(value) if value.fract() == 0.0 && value.abs() < 1e15 => {
+            serializer.serialize_i64(*value as i64)
+        }
+        Some(value) => serializer.serialize_f64(*value),
+        None => serializer.serialize_none(),
+    }
+}
+
+/// Like `lenient_rank`: a cost that is not a positive number is no cost.
+fn lenient_cost<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_f64()
+        .filter(|cost| cost.is_finite() && *cost > 0.0))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
