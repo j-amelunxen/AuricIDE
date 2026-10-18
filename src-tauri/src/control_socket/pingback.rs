@@ -49,7 +49,27 @@ pub fn start(dispatcher: Arc<Dispatcher>) {
             }
             if checked.elapsed() >= Duration::from_secs(5) {
                 checked = Instant::now();
-                let busy = super::process_activity::busy_agents(&dispatcher.backend.agent_pids());
+                let watched: std::collections::HashSet<_> = dispatcher
+                    .backend
+                    .agents()
+                    .into_iter()
+                    .filter(|a| {
+                        a.status == AgentStatus::Running
+                            && a.spawned_by_agent_id.is_some()
+                            && dispatcher.run_results.get(&a.id).is_none()
+                    })
+                    .map(|a| a.id)
+                    .collect();
+                let roots = dispatcher.backend.agent_pids();
+                // Keep other agent roots as ancestry boundaries, but skip all
+                // process inspection when no supervised child is running.
+                let busy = if roots.values().any(|(id, _)| watched.contains(id)) {
+                    // Include all roots: nested supervisors must never lend
+                    // their child's activity to the outer agent.
+                    super::process_activity::busy_agents(&roots)
+                } else {
+                    Default::default()
+                };
                 dispatcher.watchdog_tick_at(
                     Instant::now(),
                     crate::supervisor_link::jobs::now_ms(),

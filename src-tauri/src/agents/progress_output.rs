@@ -37,7 +37,9 @@ impl ProgressOutput {
             || line
                 .chars()
                 .next()
-                .is_some_and(|ch| "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✶✳✢✻✽·|/\\".contains(ch))
+                .is_some_and(|ch| "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✶✳✢✻✽·".contains(ch))
+            || line.chars().next().is_some_and(|ch| "|/\\".contains(ch))
+                && line.chars().nth(1).is_some_and(char::is_whitespace)
             || line.strip_prefix("- ").is_some_and(|rest| {
                 ["Working", "Thinking", "Running", "Loading", "Waiting"]
                     .iter()
@@ -66,6 +68,16 @@ impl ProgressOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paths_are_real_output_not_ascii_spinner_frames() {
+        let mut output = ProgressOutput::default();
+        output.push("/workspace/first.rs\n");
+        let first = output.generation();
+        assert!(first > 0);
+        output.push("/workspace/second.rs\n");
+        assert!(output.generation() > first);
+    }
 
     #[test]
     fn ascii_spinner_timers_are_not_progress() {

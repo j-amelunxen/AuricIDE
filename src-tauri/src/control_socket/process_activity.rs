@@ -2,11 +2,15 @@
 use crate::agents::AgentRole;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 struct Process {
     parent: u32,
     command: String,
 }
 
+#[cfg(any(test, not(target_os = "macos")))]
 fn parse(snapshot: &str) -> HashMap<u32, Process> {
     snapshot
         .lines()
@@ -43,10 +47,17 @@ fn infrastructure(command: &str) -> bool {
     program.contains("mcp") || program.contains("claude") || program.contains("codex")
 }
 
+#[cfg(any(test, not(target_os = "macos")))]
 fn active(snapshot: &str, roots: &HashMap<u32, (String, AgentRole)>) -> HashSet<String> {
-    let processes = parse(snapshot);
+    classify(&parse(snapshot), roots)
+}
+
+fn classify(
+    processes: &HashMap<u32, Process>,
+    roots: &HashMap<u32, (String, AgentRole)>,
+) -> HashSet<String> {
     let mut busy = HashSet::new();
-    for (&pid, process) in &processes {
+    for (&pid, process) in processes {
         if roots.contains_key(&pid) || infrastructure(&process.command) {
             continue;
         }
@@ -109,16 +120,27 @@ pub(super) fn busy_agents(roots: &HashMap<u32, (String, AgentRole)>) -> HashSet<
     if roots.is_empty() {
         return HashSet::new();
     }
-    // ps is present on supported Unix desktops. Failure means "unknown", not
-    // "busy forever". The watchdog continues on cleaned output alone.
-    let snapshot = std::process::Command::new("/bin/ps")
-        .args(["-axo", "pid=,ppid=,args="])
-        .output();
-    match snapshot {
-        Ok(output) if output.status.success() => {
-            active(&String::from_utf8_lossy(&output.stdout), roots)
+    #[cfg(target_os = "macos")]
+    {
+        // An incomplete bounded scan cannot prove absence of an active tool.
+        macos::snapshot(roots).map_or_else(
+            || roots.values().map(|(id, _)| id.clone()).collect(),
+            |processes| classify(&processes, roots),
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // ps is present on supported Unix desktops. Failure means "unknown", not
+        // "busy forever". The watchdog continues on cleaned output alone.
+        let snapshot = std::process::Command::new("/bin/ps")
+            .args(["-axo", "pid=,ppid=,args="])
+            .output();
+        match snapshot {
+            Ok(output) if output.status.success() => {
+                active(&String::from_utf8_lossy(&output.stdout), roots)
+            }
+            _ => HashSet::new(),
         }
-        _ => HashSet::new(),
     }
 }
 
@@ -161,7 +183,13 @@ mod tests {
             .unwrap();
         let roots = HashMap::from([(command.id(), ("test".into(), AgentRole::Worker))]);
         let detected = (0..50).any(|_| {
-            if busy_agents(&roots).contains("test") {
+            #[cfg(target_os = "macos")]
+            let busy = macos::snapshot(&roots)
+                .map(|processes| classify(&processes, &roots))
+                .unwrap_or_default();
+            #[cfg(not(target_os = "macos"))]
+            let busy = busy_agents(&roots);
+            if busy.contains("test") {
                 return true;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));

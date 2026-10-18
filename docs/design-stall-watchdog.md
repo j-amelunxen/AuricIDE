@@ -28,7 +28,17 @@ lines, and the watchdog's own echoed message do not advance this signal.
 Repeated multi-line TUI redraws therefore do not keep an otherwise stuck run
 alive. The pending line is capped at 4096 bytes on UTF-8 character boundaries.
 
-The IDE also samples the local Unix process tree with `/bin/ps`. A running
+On macOS the IDE samples the local process tree directly with `libproc` and
+`sysctl`, without spawning a command. It skips sampling when no supervised
+child is running, caps the snapshot at 32768 PIDs, checks a 100-ms budget
+between kernel calls and ancestry steps, and reads at most 64 KiB of arguments
+per descendant. Only descendants of agent roots have their arguments inspected;
+environment entries are excluded from the parsed command. Zombies do not count.
+An incomplete or over-budget scan conservatively treats the roots as active for
+that poll, preventing an uncertain scan from producing a false stall. Other
+Unix desktops retain the `/bin/ps` fallback.
+
+The process classifier is shared across these snapshots. A running
 shell or recognized tool process below the agent's PTY process counts as
 activity even if it prints nothing. This covers, for example, a shell waiting
 for `cargo test` or `sleep`, and direct build tools or recognized Node/Python test runners. Generic runtime
@@ -54,7 +64,8 @@ shorter than five seconds. Detached/reparented jobs, remote tools, unfamiliar
 executables without a recognized shell ancestor, and requests executed inside
 a persistent MCP server without a recognizable child process cannot reliably
 be recognized. If process inspection is
-unavailable, output-only detection continues. A hung command still alive in
+unavailable on macOS, that poll conservatively counts as activity; other Unix
+snapshot failures retain output-only detection. A hung command still alive in
 the process tree is indistinguishable from an intentionally silent long command
 and suppresses the watchdog for as long as it runs.
 
@@ -81,7 +92,8 @@ produce a new notice/escalation, never another nudge.
 Supervisor notices use the finish-pingback delivery path, defer while the human
 has a draft there, and recheck that the supervisor is live and interactive.
 Failed deliveries retry at most three times, at five-second intervals, then
-leave a warning in the inbox. A finish/removal or recovery cancels pending stall
+leave a warning in the inbox. An escalation already delivered to the human
+is not delivered again if its supervisor pingback fails. A finish/removal or recovery cancels pending stall
 notices. Human escalation does not wait for a supervisor draft to be sent.
 
 ## API fields
@@ -140,3 +152,37 @@ completed separately with normal process access. The native suite passed with
 four test threads. An existing worktree birth-time race occurred in an earlier
 high-concurrency run; the clean baseline and final native run passed it.
 Local evidence logs: `/tmp/stall-watchdog-evidence/`.
+
+## Independent merge review (2026-10-18)
+
+Confirmed fixes with failing regression tests before implementation:
+
+- Absolute path lines were discarded as ASCII spinner rows. ASCII spinner
+  prefixes now require following whitespace; new path output counts as progress.
+- Escalation pingback exhaustion sent a second human notification. Exhaustion
+  now only falls back to the inbox before escalation, since escalation already
+  notified it.
+- Replaced macOS `ps` polling with the bounded native snapshot described above.
+  The native silent-child test exercises the production snapshot; the argv
+  parser test excludes executable padding and environment entries.
+
+Lifecycle tests cover removal and error exits while notices are deferred by a
+supervisor draft. Recovery followed by a new stall is explicitly verified to
+escalate once for the new episode while preserving the single nudge per run.
+The ticket's original “Kein Dauer-Stupsen” leaves the recovery budget implicit;
+its implementation notes and this review retain the conservative per-run budget.
+The nudge remains verbatim the ticket's suggested German text. The short prompt
+rule leaves polling and nudging to the IDE and preserves non-blocking waits.
+
+Independent verification against unchanged local main `6d75d4c`:
+
+| Suite                                             | Main baseline             | Reviewed branch           |
+| ------------------------------------------------- | ------------------------- | ------------------------- |
+| TypeScript                                        | 10,769 passed / 716 files | 10,770 passed / 716 files |
+| Native Rust (normal process access, four threads) | 1,584 passed / 11 ignored | 1,600 passed / 11 ignored |
+
+The main sandbox run failed the existing Seatbelt and real-grandchild tests;
+both pass with normal process access. All `check:all` gates are executed
+individually so an environmental failure cannot hide later checks; typecheck
+is run additionally. Evidence for this review is in
+`/tmp/stall-review-evidence/`. Main was clean at baseline. No browser was needed.

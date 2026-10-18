@@ -156,10 +156,12 @@ impl Dispatcher {
                     } else {
                         watch.attempts += 1;
                         if watch.attempts >= 3 {
-                            self.stall_notify(
-                                agent,
-                                &format!("Supervisor pingback failed after 3 attempts. {text}"),
-                            );
+                            if !watch.escalated {
+                                self.stall_notify(
+                                    agent,
+                                    &format!("Supervisor pingback failed after 3 attempts. {text}"),
+                                );
+                            }
                             watch.pending = None;
                         }
                     }

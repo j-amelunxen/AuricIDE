@@ -2269,6 +2269,20 @@ fn watchdog_noise_does_not_postpone_the_nudge_or_escalation() {
         1,
         "recovery never renews the nudge budget"
     );
+    for frame in 5..=7 {
+        s.h.dispatcher.watchdog_tick_at(
+            t + n * frame,
+            900000 * u64::from(frame),
+            n,
+            &HashSet::new(),
+        );
+    }
+    assert_eq!(
+        s.h.backend.notified.lock().unwrap().len(),
+        2,
+        "each silence episode escalates once, including after recovery"
+    );
+    assert_eq!(s.h.backend.input_events.lock().unwrap().len(), 1);
 }
 
 #[test]
@@ -2385,4 +2399,79 @@ fn watchdog_routes_each_stall_to_its_owner_and_orphans_reach_the_human() {
         .unwrap()
         .iter()
         .any(|n| n.ref_id.as_deref() == Some("agent-orphan-live")));
+}
+
+#[test]
+fn watchdog_escalation_delivery_failure_does_not_notify_the_human_twice() {
+    let s = watchdog_scope();
+    let t = Instant::now();
+    let n = Duration::from_secs(900);
+    s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+    s.h.dispatcher
+        .watchdog_tick_at(t + n, 900000, n, &HashSet::new());
+    s.h.backend
+        .fail_input
+        .lock()
+        .unwrap()
+        .insert("agent-sup".into());
+    for seconds in [1800, 1805, 1810, 2700] {
+        s.h.dispatcher.watchdog_tick_at(
+            t + Duration::from_secs(seconds),
+            seconds * 1000,
+            n,
+            &HashSet::new(),
+        );
+    }
+    assert_eq!(s.h.backend.notified.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn watchdog_exit_and_removal_cancel_deferred_notices() {
+    for remove in [false, true] {
+        let s = watchdog_scope();
+        let t = Instant::now();
+        let n = Duration::from_secs(900);
+        s.h.backend
+            .drafting
+            .lock()
+            .unwrap()
+            .push("agent-sup".into());
+        s.h.dispatcher.watchdog_tick_at(t, 0, n, &HashSet::new());
+        s.h.dispatcher
+            .watchdog_tick_at(t + n, 900000, n, &HashSet::new());
+        if remove {
+            s.h.backend
+                .agents
+                .lock()
+                .unwrap()
+                .retain(|a| a.id != "agent-child");
+        } else {
+            s.h.backend
+                .agents
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|a| a.id == "agent-child")
+                .unwrap()
+                .status = AgentStatus::Error;
+        }
+        s.h.backend.drafting.lock().unwrap().clear();
+        s.h.dispatcher
+            .watchdog_tick_at(t + n * 3, 2700000, n, &HashSet::new());
+        assert!(s.h.backend.notified.lock().unwrap().is_empty());
+        assert!(s
+            .h
+            .dispatcher
+            .stall_metrics("agent-child")
+            .idle_for_ms
+            .is_none());
+        assert!(!s
+            .h
+            .backend
+            .written
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(id, _)| id == "agent-sup"));
+    }
 }
