@@ -44,3 +44,31 @@ export async function openSupervisor(
     store.showToast(`Could not start the supervisor: ${detail}`, 'error');
   }
 }
+
+/**
+ * A new supervisor in an earlier run's folder (the tile's "Resume" entries
+ * and the runs browser). One supervisor at a time: while one runs, it is
+ * brought forward and nothing starts.
+ */
+export async function resumeSupervisor(
+  store: Pick<StoreState, 'spawnSupervisor' | 'showToast'>,
+  runDir: string,
+  hooks: OpenSupervisorHooks
+): Promise<void> {
+  try {
+    const result = await store.spawnSupervisor({ task: '', resumeRunDir: runDir });
+    if (result.kind === 'nothing-visible') {
+      store.showToast('Allow at least one project for the supervisor first', 'info');
+      hooks.onNothingVisible();
+      return;
+    }
+    if (result.kind === 'cancelled') return;
+    if (result.kind === 'running') {
+      store.showToast('A supervisor is already running. Stop it to resume an earlier run.', 'info');
+    }
+    hooks.onShow(result.agent.id);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    store.showToast(`Could not resume the supervisor: ${detail}`, 'error');
+  }
+}

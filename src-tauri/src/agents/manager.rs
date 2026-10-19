@@ -472,8 +472,13 @@ pub fn admit_spawn(
         let home = home.ok_or_else(|| {
             "The home directory is unavailable; the supervisor has nowhere to work".to_string()
         })?;
-        let started = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
-        let cwd = crate::supervisor::new_supervisor_run_dir(home, &started)?;
+        let cwd = match config.resume_run_dir.take() {
+            Some(requested) => crate::supervisor::reuse_supervisor_run_dir(home, &requested)?,
+            None => {
+                let started = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
+                crate::supervisor::new_supervisor_run_dir(home, &started)?
+            }
+        };
         return Ok(supervisor_config(config, &cwd));
     }
     let Some(supervisor_id) = config.spawned_by_agent_id.clone() else {

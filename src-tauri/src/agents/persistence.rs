@@ -1,4 +1,4 @@
-use super::types::AgentConfig;
+use super::types::{AgentConfig, AgentRole};
 use crate::agent_persistence::{AgentPersistenceState, PersistedAgent};
 use tauri::{AppHandle, Manager};
 
@@ -43,7 +43,6 @@ pub fn resumed_config(
         task: resume_task_prompt(&persisted.task),
         name: persisted.name,
         model: persisted.model,
-        cwd: persisted.cwd,
         // Never infer project authority from cwd. `None` is an explicit
         // general session and must stay projectless across restarts.
         project_path: persisted.project_path,
@@ -60,6 +59,12 @@ pub fn resumed_config(
         run_source: persisted.run_source,
         run_kind: persisted.run_kind,
         review_of_ticket_id: persisted.review_of_ticket_id,
+        // A supervisor picks its own run folder up again rather than
+        // starting over in an empty one.
+        resume_run_dir: (persisted.role == Some(AgentRole::Supervisor))
+            .then(|| persisted.cwd.clone())
+            .flatten(),
+        cwd: persisted.cwd,
         role: persisted.role,
         spawned_by_agent_id: persisted.spawned_by_agent_id,
     }

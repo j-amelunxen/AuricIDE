@@ -9,6 +9,7 @@
 
 pub mod attachments;
 pub mod policy;
+pub mod runs;
 
 use crate::agents::{AgentConfig, AgentInfo, AgentRole, AgentStatus};
 use crate::provider_policy::ProviderPolicy;
@@ -548,6 +549,16 @@ pub fn new_supervisor_run_dir(home: &Path, started: &str) -> Result<PathBuf, Str
         }
     }
     Err("Could not create the supervisor folder: too many runs started this second".to_string())
+}
+
+/// The folder of an earlier run, for a supervisor that resumes it. Only a
+/// run folder itself qualifies (`runs::resolve_run_dir`): the folder is all a
+/// restricted supervisor's file tools reach.
+pub fn reuse_supervisor_run_dir(home: &Path, requested: &str) -> Result<PathBuf, String> {
+    let root = supervisor_runs_root(home);
+    let dir = runs::resolve_run_dir(&root, requested)?;
+    let _ = pre_trust_claude_workspace(home, &[&root, &dir]);
+    Ok(dir)
 }
 
 /// The approved skills a run actually gets: folders that still hold a

@@ -311,6 +311,7 @@ fn test_persisted_from_config_captures_all_spawn_fields() {
         review_of_ticket_id: None,
         role: None,
         spawned_by_agent_id: None,
+        resume_run_dir: None,
     };
     let persisted = persisted_from_config(&config, "agent-4", "claude", 123);
     assert_eq!(persisted.id, "agent-4");
@@ -1088,4 +1089,68 @@ fn supervisor_codex_arguments_configures_mcp_servers() {
     assert!(joined.contains("mcp_servers.auric-pm-p1.required=true"));
     assert!(joined.contains("mcp_servers.auric-pm-p1.default_tools_approval_mode=\"approve\""));
     assert!(joined.contains("mcp_servers.auric-pm-p1.env={\"AURIC_PROJECT\"=\"p1\"}"));
+}
+
+#[test]
+fn a_resumed_supervisor_works_in_the_run_folder_it_names() {
+    let app_data = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let earlier =
+        crate::supervisor::new_supervisor_run_dir(home.path(), "2026-10-01_090000").unwrap();
+    std::fs::write(earlier.join("notes.md"), b"where we were").unwrap();
+    let resume = |dir: &std::path::Path| {
+        admit_spawn(
+            supervisor_test_config(serde_json::json!({
+                "role": "supervisor", "resumeRunDir": dir.to_string_lossy()
+            })),
+            Some(app_data.path()),
+            Some(home.path()),
+            &[],
+            &offered_claude(),
+            &no_modes,
+        )
+    };
+
+    let admitted = resume(&earlier).unwrap();
+    assert_eq!(
+        admitted.cwd.as_deref(),
+        Some(earlier.canonicalize().unwrap().to_string_lossy().as_ref())
+    );
+    assert_eq!(admitted.resume_run_dir, None);
+    assert_eq!(admitted.permission_mode.as_deref(), Some("default"));
+    let runs = std::fs::read_dir(earlier.parent().unwrap())
+        .unwrap()
+        .count();
+    assert_eq!(runs, 1, "no new folder next to the resumed one");
+
+    let outside = tempfile::tempdir().unwrap();
+    assert!(
+        resume(outside.path()).is_err(),
+        "a folder outside the runs root is refused"
+    );
+    assert!(
+        resume(earlier.parent().unwrap()).is_err(),
+        "the runs root itself is refused"
+    );
+}
+
+#[test]
+fn a_supervisor_restored_after_a_restart_resumes_its_own_folder() {
+    let mut persisted = persisted_from_config(
+        &supervisor_test_config(serde_json::json!({
+            "role": "supervisor", "cwd": "/Users/dev/.auric/supervisors/2026-10-01_090000"
+        })),
+        "agent-sup",
+        "claude",
+        0,
+    );
+    persisted.role = Some(AgentRole::Supervisor);
+    let resumed = resumed_config(persisted.clone(), None);
+    assert_eq!(
+        resumed.resume_run_dir.as_deref(),
+        Some("/Users/dev/.auric/supervisors/2026-10-01_090000")
+    );
+
+    persisted.role = Some(AgentRole::Worker);
+    assert_eq!(resumed_config(persisted, None).resume_run_dir, None);
 }

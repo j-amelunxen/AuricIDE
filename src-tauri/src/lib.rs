@@ -327,6 +327,8 @@ pub fn run() {
             supervisor_link::proposals::supervisor_link_proposals,
             supervisor_link::proposals::supervisor_link_proposal_decide,
             supervisor::supervisor_resolve_tool,
+            supervisor::runs::supervisor_runs_list,
+            supervisor::runs::supervisor_run_files,
             provider_policy::project_provider_policy_get,
             agent_window::open_agent_window,
             agent_window::focus_agent_window,

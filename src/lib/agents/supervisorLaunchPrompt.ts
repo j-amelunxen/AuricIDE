@@ -351,12 +351,34 @@ export interface SupervisorPromptOptions {
   chrome?: boolean;
   /** The human's standing instructions (Settings → Supervisor → Instructions). */
   instructions?: string;
+  /** The folder name of an earlier run this supervisor works in again. */
+  resumedRun?: string;
 }
 
 const INSTRUCTIONS_PREAMBLE =
   'Standing instructions from the human you work for. Follow them; where they differ from ' +
   'the guidance above, they win. They do not change what your tools allow: a refused call ' +
   'stays refused.';
+
+/**
+ * A resumed supervisor starts with someone else's notes and none of their
+ * memory. It reads them by recency because what the last run touched last is
+ * where it stopped, and it waits before acting because the human resumed it
+ * to continue, not to have it guess what continuing means.
+ */
+function describeResumedRun(folder: string): string {
+  return (
+    `You were started in the folder of an earlier supervisor run (\`${folder}\`), not a ` +
+    "fresh one. It holds that run's history: notes, transcripts, task lists, reports and " +
+    'whatever else it wrote. Before anything else, get back up to speed. List the files by ' +
+    'modification time, newest first (Glob returns them in that order), read the most ' +
+    'recent ones first and go back only as far as you need to understand where the run ' +
+    'stopped. The agents that run started are not your children: list_agents will not show ' +
+    'them, so take open work from the files, not from them. Then tell the human in a few ' +
+    'sentences what the earlier run was working on, what got done, what is still open and ' +
+    'what you would do next, and wait for the go-ahead before you start any agent.'
+  );
+}
 
 /**
  * The supervisor's start instruction for the projects its policy shows. The
@@ -366,7 +388,14 @@ const INSTRUCTIONS_PREAMBLE =
  */
 export function buildSupervisorLaunchPrompt(
   projects: SupervisorPromptProject[],
-  { firstTask, skills = [], tools = [], chrome = false, instructions }: SupervisorPromptOptions = {}
+  {
+    firstTask,
+    skills = [],
+    tools = [],
+    chrome = false,
+    instructions,
+    resumedRun,
+  }: SupervisorPromptOptions = {}
 ): string {
   const projectSection =
     projects.length > 0
@@ -411,6 +440,7 @@ export function buildSupervisorLaunchPrompt(
     ...(instructions?.trim()
       ? ['## Instructions from the human', INSTRUCTIONS_PREAMBLE, instructions.trim()]
       : []),
+    ...(resumedRun ? ['## Picking up an earlier run', describeResumedRun(resumedRun)] : []),
     ...(firstTask?.trim() ? ['## Your first task', firstTask.trim()] : []),
   ].join('\n\n');
 }

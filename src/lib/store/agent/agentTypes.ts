@@ -70,6 +70,11 @@ export interface SupervisorSkillLaunch {
   task: string;
   model?: string;
   provider?: string;
+  /**
+   * Work in this earlier run's folder instead of a new one. Never goes to a
+   * running supervisor: one at a time, and it already has a folder.
+   */
+  resumeRunDir?: string;
 }
 
 /** `supervisors.spawn` over the supervisor link (`docs/design-supervisor-link.md`). */

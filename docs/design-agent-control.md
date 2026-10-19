@@ -262,6 +262,18 @@ tool, shell access for timer `sleep N` plus approved skills/tools, and Claude in
 Settings → Supervisor switches it on (`supervisor.chrome`; `--chrome`, else
 `--no-chrome`).
 
+**Resuming a run.** A spawn may carry `resumeRunDir`, an earlier run's folder.
+Rust (`supervisor/runs.rs`) then reuses that folder instead of making a new one,
+but only if it resolves, symlinks followed, to a direct child of
+`~/.auric/supervisors/`: never the root, never a subfolder of a run, never
+anything outside. Everything else about the launch stays as above. The launch
+prompt adds "Picking up an earlier run": read the folder newest first, report
+where the run stopped, wait for the go-ahead. The earlier run's children stay
+out of scope, because scope is by agent id, and the new supervisor has a new
+one. A supervisor restored after an app restart resumes its own folder the same
+way. Listing is `supervisor_runs_list` / `supervisor_run_files` (Tauri only,
+not on any socket).
+
 **Image attachments** entered in the supervisor terminal are made durable before
 they reach Claude. Dropped image files, image clipboard data, and absolute PNG,
 JPG/JPEG, GIF, WEBP or HEIC paths in a submitted terminal line are copied (never

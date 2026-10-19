@@ -56,6 +56,11 @@ pub struct AgentConfig {
     /// any spawn that carries it.
     #[serde(default)]
     pub spawned_by_agent_id: Option<String>,
+    /// A supervisor only: the folder of an earlier run to work in again
+    /// instead of a new one. Rust checks it is one run folder under
+    /// `~/.auric/supervisors/` (`supervisor::runs::resolve_run_dir`).
+    #[serde(default)]
+    pub resume_run_dir: Option<String>,
 }
 
 impl AgentConfig {

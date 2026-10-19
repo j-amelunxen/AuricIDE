@@ -131,6 +131,35 @@ describe('spawnSupervisor', () => {
     expect(config.model).toBe('haiku');
   });
 
+  it('resumes an earlier run: its folder goes to Rust and nothing goes to a running one', async () => {
+    const policy = emptySupervisorPolicy();
+    policy.projects['/work/project-a'] = { ...defaultSupervisorProjectPolicy(), allowed: true };
+    vi.mocked(supervisorPolicyGet).mockResolvedValue({ policy, rejected: [] });
+    const folder = '/home/me/.auric/supervisors/2026-10-16_185017';
+
+    await store.getState().spawnSupervisor({ task: '', resumeRunDir: folder });
+    const config = vi.mocked(spawnAgent).mock.calls[0][0];
+    expect(config.resumeRunDir).toBe(folder);
+    expect(config.task).toContain('## Picking up an earlier run');
+
+    const running: AgentInfo = {
+      id: 'sup-0',
+      name: 'Supervisor',
+      model: 'sonnet',
+      provider: 'claude',
+      status: 'running',
+      startedAt: 1,
+      role: 'supervisor',
+    };
+    vi.mocked(spawnAgent).mockClear();
+    store.setState({ agents: [running], sendAgentInput: vi.fn() } as Partial<StoreState>);
+    expect(
+      await store.getState().spawnSupervisor({ task: 'carry on', resumeRunDir: folder })
+    ).toEqual({ kind: 'running', agent: running });
+    expect(store.getState().sendAgentInput).not.toHaveBeenCalled();
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
   it('sends a skill to the running supervisor instead of starting a second', async () => {
     const running: AgentInfo = {
       id: 'sup-0',

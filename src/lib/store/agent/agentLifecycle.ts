@@ -192,7 +192,7 @@ export async function handleSpawnSupervisor(
 ): Promise<SupervisorLaunch> {
   const task = skill?.task.trim() ?? '';
   const running = findRunningSupervisor(get().agents);
-  if (running && task) {
+  if (running && task && !skill?.resumeRunDir) {
     // Typed by the human through the tile, so the same wire as the composer.
     await get().sendAgentInput(running.id, `${task}${TERMINAL_ENTER}`);
     return { kind: 'sent', agent: running };
@@ -234,6 +234,7 @@ export async function handleSpawnSupervisor(
     provider: chosenProvider,
     task,
     model: skill?.model,
+    resumeRunDir: skill?.resumeRunDir,
   });
   if (!config) return { kind: 'nothing-visible' };
   return { kind: 'spawned', agent: await get().spawnNewAgent(config) };
@@ -250,7 +251,12 @@ async function supervisorConfigFor(
   host: SupervisorHost,
   policy: Awaited<ReturnType<typeof supervisorPolicyGet>>['policy'],
   providers: ProviderInfo[],
-  launch: { provider: string | undefined; task: string; model: string | undefined }
+  launch: {
+    provider: string | undefined;
+    task: string;
+    model: string | undefined;
+    resumeRunDir?: string;
+  }
 ): Promise<AgentConfig | null> {
   const allowedPaths = Object.entries(policy.projects)
     .filter(([, entry]) => entry.allowed)
@@ -266,6 +272,7 @@ async function supervisorConfigFor(
     firstTask: launch.task || undefined,
     model: launch.model,
     instructions: readSupervisorInstructions(launch.provider),
+    resumeRunDir: launch.resumeRunDir,
   });
 }
 

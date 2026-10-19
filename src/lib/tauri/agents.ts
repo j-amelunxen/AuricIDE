@@ -71,6 +71,11 @@ export interface AgentConfig {
    */
   projectPath?: string | null;
   cwd?: string;
+  /**
+   * A supervisor only: an earlier run's folder under `~/.auric/supervisors/`
+   * to work in again. Rust refuses anything that is not one run folder.
+   */
+  resumeRunDir?: string;
   permissionMode?: PermissionMode;
   dangerouslyIgnorePermissions?: boolean;
   autoAcceptEdits?: boolean;

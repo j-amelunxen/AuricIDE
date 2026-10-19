@@ -118,6 +118,28 @@ describe('supervisorSpawnConfig', () => {
     expect(config?.task).toMatch(/they win\.[^#]*\n\nAlways answer in German\.$/);
   });
 
+  it('asks Rust for the earlier run folder and tells the supervisor to catch up on it', () => {
+    const input = {
+      policy: policyWith({
+        '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },
+      }),
+      providers: [CLAUDE],
+      projectPolicies: {},
+      descriptions: {},
+    };
+    const fresh = supervisorSpawnConfig(input);
+    expect(fresh?.resumeRunDir).toBeUndefined();
+    expect(fresh?.task).not.toContain('## Picking up an earlier run');
+
+    const resumed = supervisorSpawnConfig({
+      ...input,
+      resumeRunDir: '/home/me/.auric/supervisors/2026-10-16_185017',
+    });
+    expect(resumed?.resumeRunDir).toBe('/home/me/.auric/supervisors/2026-10-16_185017');
+    expect(resumed?.task).toContain('## Picking up an earlier run');
+    expect(resumed?.task).toContain('2026-10-16_185017');
+  });
+
   it('tells the supervisor which CLI tools the policy approves', () => {
     const policy = policyWith({
       '/work/project-a': { ...defaultSupervisorProjectPolicy(), allowed: true },

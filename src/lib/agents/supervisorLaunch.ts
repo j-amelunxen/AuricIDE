@@ -67,6 +67,8 @@ export interface SupervisorSpawnInput {
   model?: string;
   /** The human's standing instructions from Settings → Supervisor. */
   instructions?: string;
+  /** An earlier run's folder to work in again; Rust checks it is one. */
+  resumeRunDir?: string;
 }
 
 /**
@@ -106,8 +108,10 @@ export function supervisorSpawnConfig(input: SupervisorSpawnInput): AgentConfig 
         tools: Object.keys(input.policy.tools ?? {}).sort(),
         chrome: input.policy.supervisor.chrome === true && providerId === 'claude',
         instructions: instructions || undefined,
+        resumedRun: input.resumeRunDir?.split('/').filter(Boolean).pop(),
       }
     ),
+    ...(input.resumeRunDir ? { resumeRunDir: input.resumeRunDir } : {}),
     projectPath: null,
     headless: false,
     runSource: 'ui',

@@ -222,6 +222,24 @@ describe('buildSupervisorLaunchPrompt', () => {
     expect(buildSupervisorLaunchPrompt(projects, { instructions: ' \n ' })).toBe(prompt);
   });
 
+  it('has a resumed supervisor catch up on its folder, newest first, before anything else', () => {
+    expect(prompt).not.toContain('## Picking up an earlier run');
+    const text = buildSupervisorLaunchPrompt(projects, {
+      resumedRun: '2026-10-16_185017',
+      firstTask: 'Ask every project for its status',
+    });
+    expect(text).toContain('## Picking up an earlier run');
+    expect(text).toContain('2026-10-16_185017');
+    expect(text).toContain('modification time, newest first');
+    expect(text).toContain('not your children');
+    expect(text.indexOf('## Reporting')).toBeLessThan(text.indexOf('## Picking up an earlier run'));
+    expect(text.indexOf('## Picking up an earlier run')).toBeLessThan(
+      text.indexOf('## Your first task')
+    );
+    const alone = buildSupervisorLaunchPrompt(projects, { resumedRun: '2026-10-16_185017' });
+    expect(alone.endsWith('wait for the go-ahead before you start any agent.')).toBe(true);
+  });
+
   it('says plainly when nothing is allowed', () => {
     expect(buildSupervisorLaunchPrompt([])).toContain('Settings → Supervisor');
   });
