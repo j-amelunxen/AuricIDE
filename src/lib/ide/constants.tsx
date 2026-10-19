@@ -33,6 +33,8 @@ export const activityItems: ActivityItem[] = [
   { id: 'inbox', icon: 'inbox', label: 'Inbox', badge: 0, section: 'tools' },
   { id: 'outline', icon: 'toc', label: 'Outline', section: 'tools', requiresProject: true },
   { id: 'scratches', icon: 'sticky_note_2', label: 'Scratches', section: 'tools' },
+  // Global like the scratches: earlier supervisor runs, browsable and resumable.
+  { id: 'supervisor-runs', icon: 'history', label: 'Supervisor Runs', section: 'tools' },
   { id: 'graph', icon: 'hub', label: 'Link Graph', section: 'tools', requiresProject: true },
   { id: 'qa', icon: 'fact_check', label: 'QA', section: 'tools', requiresProject: true },
   {

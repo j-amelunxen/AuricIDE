@@ -458,6 +458,17 @@ ADR 0004.
   `pmServerNames`, no `AURIC_AGENT_CWD`, so spawning stays with the policy),
   which is why `ToolSearch` is in its tool set. Claude in Chrome is the
   `supervisor.chrome` switch (`--chrome`, else explicitly `--no-chrome`).
+- **An earlier run can be resumed.** The run folders are browsable in the
+  rail (Supervisor Runs, `SupervisorRunsPanel`, most recently changed first,
+  newest file on top) and the tile's right-click menu offers the last five.
+  Resuming starts a new supervisor with `resumeRunDir`; Rust
+  (`supervisor/runs.rs`, `resolve_run_dir`) accepts only one run folder itself
+  after symlinks are resolved, never the root or anything below a run,
+  because that folder is all its `--restricted` file tools reach. The launch
+  prompt tells it to read the folder newest first, summarise where the run
+  stopped and wait before starting agents; the old run's children are not
+  its own. A supervisor restored after an app restart resumes its own folder
+  the same way. Never while another supervisor runs.
 - **What it may start is `<app_data_dir>/supervisor-policy.json`**, Rust-owned,
   0600, fail closed: an unlisted project allows nothing. It is intersected with
   the project's provider policy, and a mode that runs unattended is refused

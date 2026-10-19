@@ -11,7 +11,8 @@ import { useStore } from '@/lib/store';
 import type { AgentConfig, AgentInfo } from '@/lib/tauri/agents';
 import { QuickAccess } from './QuickAccess';
 
-const { spawnAgent, supervisorPolicyGet } = vi.hoisted(() => ({
+const { spawnAgent, supervisorPolicyGet, supervisorRunsList } = vi.hoisted(() => ({
+  supervisorRunsList: vi.fn(async (): Promise<unknown[]> => []),
   spawnAgent: vi.fn(async (config: AgentConfig) => ({
     id: 'sup-new',
     name: config.name,
@@ -30,6 +31,7 @@ vi.mock('@/lib/tauri/agents', async (importOriginal) => ({
   recordAgentPromptHistory: vi.fn(async () => undefined),
 }));
 vi.mock('@/lib/tauri/supervisorPolicy', () => ({ supervisorPolicyGet }));
+vi.mock('@/lib/tauri/supervisorRuns', () => ({ supervisorRunsList }));
 vi.mock('@/lib/tauri/providers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/tauri/providers')>()),
   listProviders: vi.fn(async () => [
@@ -219,6 +221,50 @@ describe('Supervisor tile as a Quick Access tile', () => {
     expect(useStore.getState().toasts.at(-1)?.message).toBe(
       'Sent "Status round" to the running supervisor'
     );
+  });
+
+  it('offers the most recent runs to resume, in the folder Rust is asked for', async () => {
+    supervisorPolicyGet.mockResolvedValue({ policy: allowing('/work/project-a'), rejected: [] });
+    const run = (name: string) => ({
+      name,
+      path: `/home/me/.auric/supervisors/${name}`,
+      modifiedAtMs: 1,
+      fileCount: 2,
+      truncated: false,
+    });
+    supervisorRunsList.mockResolvedValueOnce(
+      [
+        '2026-10-19_090000',
+        '2026-10-18_090000',
+        '2026-10-17_090000',
+        '2026-10-16_090000',
+        '2026-10-15_090000',
+        '2026-10-14_090000',
+      ].map(run)
+    );
+    const onSelectAgent = vi.fn();
+    render(<QuickAccess currentPath={null} onSelectAgent={onSelectAgent} />);
+
+    const menu = openMenu();
+    const latest = await within(menu).findByRole('menuitem', { name: 'Oct 19, 09:00' });
+    expect(within(menu).queryByRole('menuitem', { name: 'Oct 14, 09:00' })).toBeNull();
+    fireEvent.click(latest);
+
+    await waitFor(() => expect(onSelectAgent).toHaveBeenCalledWith('sup-new'));
+    const config = spawnAgent.mock.calls[0][0];
+    expect(config.resumeRunDir).toBe('/home/me/.auric/supervisors/2026-10-19_090000');
+    expect(config.task).toContain('## Picking up an earlier run');
+  });
+
+  it('offers no resume while a supervisor runs', async () => {
+    supervisorRunsList.mockResolvedValueOnce([
+      { name: '2026-10-19_090000', path: '/r/x', modifiedAtMs: 1, fileCount: 1, truncated: false },
+    ]);
+    useStore.setState({ agents: [running] });
+    render(<QuickAccess currentPath={null} />);
+    const menu = openMenu();
+    await waitFor(() => expect(supervisorRunsList).toHaveBeenCalled());
+    expect(within(menu).queryByText('Resume Supervisor')).toBeNull();
   });
 
   it('opens Settings → Supervisor from the menu', () => {

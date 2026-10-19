@@ -14,6 +14,7 @@ const LEFT_PANEL_ACTIVITIES: ReadonlySet<string> = new Set([
   'extensions',
   'qa',
   'scratches',
+  'supervisor-runs',
   'notifications',
   'inbox',
 ]);

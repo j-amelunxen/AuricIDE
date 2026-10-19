@@ -12,6 +12,7 @@ import { QAPanel } from '../qa/QAPanel';
 import { ScratchPanel } from '../scratch/ScratchPanel';
 import { NotificationsSidebar } from '../notifications/NotificationsSidebar';
 import { InboxPanel } from '../inbox/InboxPanel';
+import { SupervisorRunsPanel } from '../agents/SupervisorRunsPanel';
 import { AuricIcon } from '../ui/AuricIcon';
 
 const MemoizedFileExplorer = memo(FileExplorer);
@@ -202,6 +203,13 @@ export function LeftSidebarPanel({ state, handlers }: LeftSidebarPanelProps) {
           onDelete={(path) => void handlers.handleDeleteScratch(path)}
           onDeleteAll={() => void handlers.handleCleanAllScratches()}
           onRefresh={() => void state.refreshScratches()}
+        />
+      );
+    case 'supervisor-runs':
+      return (
+        <SupervisorRunsPanel
+          onOpenFile={handlers.handleFileSelect}
+          onSelectAgent={handlers.handleSelectAgent}
         />
       );
     case 'notifications':

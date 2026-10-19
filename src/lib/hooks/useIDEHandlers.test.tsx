@@ -2590,6 +2590,7 @@ describe('useIDEHandlers', () => {
         'notifications',
         'inbox',
         'scratches',
+        'supervisor-runs',
         'extensions',
         'settings',
       ]);
@@ -2608,6 +2609,7 @@ describe('useIDEHandlers', () => {
         'inbox',
         'outline',
         'scratches',
+        'supervisor-runs',
         'graph',
         'qa',
         'blueprints',

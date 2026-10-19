@@ -18,6 +18,7 @@ describe('activityItems — the rail leads with the loop', () => {
       'inbox',
       'outline',
       'scratches',
+      'supervisor-runs',
       'graph',
       'qa',
       'blueprints',
@@ -57,7 +58,14 @@ describe('activityItems — the rail leads with the loop', () => {
 
   it('leaves app-wide tools usable without a project', () => {
     const always = activityItems.filter((i) => !i.requiresProject).map((i) => i.id);
-    expect(always).toEqual(['notifications', 'inbox', 'scratches', 'extensions', 'settings']);
+    expect(always).toEqual([
+      'notifications',
+      'inbox',
+      'scratches',
+      'supervisor-runs',
+      'extensions',
+      'settings',
+    ]);
   });
 });
 
@@ -71,6 +79,7 @@ describe('visibleActivityItems', () => {
       'notifications',
       'inbox',
       'scratches',
+      'supervisor-runs',
       'extensions',
       'settings',
     ]);

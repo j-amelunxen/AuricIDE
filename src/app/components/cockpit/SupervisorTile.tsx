@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { findRunningSupervisor } from '@/lib/agents/supervisorLaunch';
-import { openSupervisor } from '@/lib/agents/openSupervisor';
+import { openSupervisor, resumeSupervisor } from '@/lib/agents/openSupervisor';
+import { RECENT_RUNS_IN_MENU, supervisorRunLabel } from '@/lib/agents/supervisorRuns';
 import { launchEntries } from '@/lib/quickAccess/launchSkills';
 import { menuSkillEntries, pinSlottedLibrarySkills } from '@/lib/quickAccess/menuSkills';
 import { saveSupervisorPresets } from '@/lib/quickAccess/supervisorPresets';
@@ -10,6 +11,7 @@ import { useSupervisorPresets } from '@/lib/quickAccess/useSupervisorPresets';
 import { loadAuricSkills } from '@/lib/settings/auricSkills';
 import { useStore } from '@/lib/store';
 import type { QuickAccessSkill } from '@/lib/store/starredProjectsSlice';
+import { supervisorRunsList, type SupervisorRun } from '@/lib/tauri/supervisorRuns';
 import { ContextMenu, type ContextMenuOption } from '@/app/components/ide/ContextMenu';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { SupervisorQuickAccessDialog } from './QuickAccessSettingsDialog';
@@ -60,6 +62,7 @@ export function SupervisorTile({
   const [starting, setStarting] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [recentRuns, setRecentRuns] = useState<SupervisorRun[]>([]);
 
   const show = (agentId: string) => (onSelectAgent ?? selectAgent)(agentId);
 
@@ -74,6 +77,28 @@ export function SupervisorTile({
     } finally {
       setStarting(false);
     }
+  };
+
+  const resume = async (run: SupervisorRun) => {
+    if (starting) return;
+    setStarting(true);
+    try {
+      await resumeSupervisor({ spawnSupervisor, showToast }, run.path, {
+        onNothingVisible: () => onOpenSettings?.('supervisor'),
+        onShow: show,
+      });
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const openMenu = (x: number, y: number) => {
+    setMenu({ x, y });
+    // Read on every opening: runs end while the app is open, and nothing
+    // watches the folder. Until it answers the menu simply has no entries.
+    supervisorRunsList()
+      .then((runs) => setRecentRuns(runs.slice(0, RECENT_RUNS_IN_MENU)))
+      .catch(() => setRecentRuns([]));
   };
 
   const {
@@ -129,6 +154,18 @@ export function SupervisorTile({
       icon: 'bolt',
       action: () => void open(),
     },
+    // One supervisor at a time: while one runs there is nothing to resume into.
+    ...(!runningId && recentRuns.length > 0
+      ? ([
+          { type: 'header', label: 'Resume Supervisor' },
+          ...recentRuns.map((run) => ({
+            label: supervisorRunLabel(run.name),
+            icon: 'history',
+            action: () => void resume(run),
+          })),
+          { type: 'separator' },
+        ] as ContextMenuOption[])
+      : []),
     {
       label: 'Supervisor Permissions…',
       icon: 'shield',
@@ -162,7 +199,7 @@ export function SupervisorTile({
           }}
           onContextMenu={(event) => {
             event.preventDefault();
-            setMenu({ x: event.clientX, y: event.clientY });
+            openMenu(event.clientX, event.clientY);
           }}
           {...buttonHandlers}
           disabled={starting}
