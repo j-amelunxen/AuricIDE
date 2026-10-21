@@ -6,6 +6,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const DEFAULT_STARTUP_TIMEOUT_S: u64 = 30;
+
+fn default_startup_timeout_s() -> u64 {
+    DEFAULT_STARTUP_TIMEOUT_S
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Launch {
@@ -14,6 +20,9 @@ pub struct Launch {
     pub args: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Time allowed for the stdio MCP client to start and connect.
+    #[serde(default = "default_startup_timeout_s")]
+    pub startup_timeout_s: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -111,6 +120,7 @@ impl Manifest {
         semver::Version::parse(&self.version).map_err(|e| e.to_string())?;
         if self.launch.command.is_empty()
             || self.launch.command.contains('\0')
+            || self.launch.startup_timeout_s == 0
             || self.briefing.len() > 16_384
             || !unique(&self.scopes)
             || self
@@ -197,6 +207,7 @@ pub struct ResolvedConnector {
     pub command: String,
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
+    pub startup_timeout_s: u64,
     pub allowed_tools: Vec<String>,
     pub denied_tools: Vec<String>,
     pub briefing: String,
@@ -265,6 +276,7 @@ pub fn resolve(
                     .map(|s| substitute_arg(s, &project_name, &root_text))
                     .collect(),
                 env: manifest.launch.env,
+                startup_timeout_s: manifest.launch.startup_timeout_s,
                 allowed_tools: allowed.iter().map(|t| t.name.clone()).collect(),
                 denied_tools: denied.iter().map(|t| t.name.clone()).collect(),
                 briefing: manifest.briefing,

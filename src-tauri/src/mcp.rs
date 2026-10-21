@@ -181,7 +181,10 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
         servers.insert(
             connector.server_name(),
             serde_json::json!({
-                "command": connector.command, "args": connector.args, "env": connector.env
+                "command": connector.command,
+                "args": connector.args,
+                "env": connector.env,
+                "timeout": connector.startup_timeout_s,
             }),
         );
     }
@@ -193,7 +196,9 @@ pub(crate) fn write_agent_mcp_configs_with_connectors(
     let mut crush_servers = servers.clone();
     for server in crush_servers.values_mut() {
         server["type"] = serde_json::json!("stdio");
-        server["timeout"] = serde_json::json!(30);
+        if server.get("timeout").is_none() {
+            server["timeout"] = serde_json::json!(30);
+        }
     }
     for connector in connectors {
         crush_servers[&connector.server_name()]["enabled_tools"] =

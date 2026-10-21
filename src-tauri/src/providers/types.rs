@@ -350,6 +350,10 @@ pub fn codex_project_binding_injection(
                 "enabled_tools",
                 serde_json::to_string(&connector.allowed_tools).map_err(|e| e.to_string())?,
             ),
+            (
+                "startup_timeout_sec",
+                connector.startup_timeout_s.to_string(),
+            ),
             ("enabled", "true".into()),
         ];
         for (key, value) in settings {

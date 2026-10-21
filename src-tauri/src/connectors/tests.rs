@@ -200,6 +200,53 @@ fn generated_config_launches_real_stdio_fixture_with_host_project_arguments() {
     assert_eq!(args, json!(["project a", a]));
 }
 #[test]
+fn manifest_startup_timeout_defaults_and_flows_into_stdio_mcp_configurations() {
+    let (temp, mut policy, a, _) = setup();
+    assert_eq!(
+        policy.connectors.registry["test-catalog"]
+            .manifest
+            .launch
+            .startup_timeout_s,
+        30
+    );
+
+    let assert_timeout = |policy: &SupervisorPolicy, expected| {
+        let connectors = resolve(policy, &a);
+        let configs = crate::mcp::write_agent_mcp_configs_with_connectors(
+            temp.path(),
+            Path::new("/runtime"),
+            &a,
+            &BTreeMap::new(),
+            &connectors,
+        )
+        .unwrap();
+        for (path, key) in [(&configs.standard, "mcpServers"), (&configs.crush, "mcp")] {
+            let config: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            assert_eq!(config[key]["connector-test-catalog"]["timeout"], expected);
+        }
+        let mut codex_binding = binding(&a);
+        codex_binding.connectors = connectors;
+        let injection = crate::providers::codex_project_binding_injection(&codex_binding).unwrap();
+        assert!(injection
+            .arguments
+            .iter()
+            .any(|argument| argument.contains(&format!("startup_timeout_sec={expected}"))));
+    };
+
+    assert_timeout(&policy, json!(30));
+    let path = policy.connectors.registry["test-catalog"].path.clone();
+    let manifest = std::fs::read_to_string(&path).unwrap().replace(
+        "  env: { CONNECTOR_MODE: fixture }",
+        "  env: { CONNECTOR_MODE: fixture }\n  startup_timeout_s: 47",
+    );
+    std::fs::write(&path, manifest).unwrap();
+    policy
+        .connectors
+        .registry
+        .insert("test-catalog".into(), inspect(&path).unwrap());
+    assert_timeout(&policy, json!(47));
+}
+#[test]
 fn digest_drift_disables_until_explicit_reapproval_and_old_snapshot_stays_fixed() {
     let (temp, mut pinned_policy, a2, _) = setup();
     let before = resolve(&pinned_policy, &a2);
