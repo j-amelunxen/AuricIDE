@@ -1,12 +1,59 @@
+use super::model_catalog;
 use super::types::*;
+use std::path::PathBuf;
 
 pub struct DynamicProvider {
     config: ProviderConfig,
+    /// `<app_data_dir>/model-catalog` when the registry knows the app data dir.
+    catalog_cache_dir: Option<PathBuf>,
 }
 
 impl DynamicProvider {
     pub fn new(config: ProviderConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            catalog_cache_dir: None,
+        }
+    }
+
+    pub fn with_catalog_cache_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.catalog_cache_dir = dir;
+        self
+    }
+
+    /// Live catalog merged with static metadata (`model_catalog`).
+    fn resolved_models(&self) -> Vec<ModelOption> {
+        model_catalog::resolve_models(
+            &self.config.id,
+            &self.config.executable,
+            self.config.models_discovery.as_ref(),
+            &self.config.info.models,
+            self.catalog_cache_dir.as_deref(),
+        )
+    }
+
+    /// The configured default when it is still offered; otherwise `auto` or the
+    /// first available model so a stale default does not stick in the picker.
+    fn resolved_default_model(&self, models: &[ModelOption]) -> String {
+        let configured = self.config.info.default_model.trim();
+        if !configured.is_empty()
+            && models
+                .iter()
+                .any(|model| model.value == configured && model.is_available())
+        {
+            return configured.to_string();
+        }
+        if models
+            .iter()
+            .any(|model| model.value == "auto" && model.is_available())
+        {
+            return "auto".to_string();
+        }
+        models
+            .iter()
+            .find(|model| model.is_available())
+            .map(|model| model.value.clone())
+            .unwrap_or_else(|| self.config.info.default_model.clone())
     }
 
     /// The permission mode a launch runs under: the requested one, the legacy
@@ -68,12 +115,14 @@ impl DynamicProvider {
 
 impl AgentProvider for DynamicProvider {
     fn info(&self) -> ProviderInfo {
+        let models = self.resolved_models();
+        let default_model = self.resolved_default_model(&models);
         ProviderInfo {
             id: self.config.id.clone(),
             name: self.config.name.clone(),
-            models: self.config.info.models.clone(),
+            models,
             permission_modes: self.config.info.permission_modes.clone(),
-            default_model: self.config.info.default_model.clone(),
+            default_model,
             default_permission_mode: self.config.info.default_permission_mode.clone(),
         }
     }

@@ -10,6 +10,17 @@ export interface ModelOption {
   useFor?: string | null;
   /** Price relative to the provider's cheapest model, which is 1. */
   relativeCost?: number | null;
+  /**
+   * Whether the provider CLI still accepts this id. Absent or true means yes;
+   * false means a stale static entry kept so Settings can mark it without
+   * rewriting user policy.
+   */
+  available?: boolean;
+}
+
+/** A model the CLI still accepts (missing `available` counts as yes). */
+export function isModelAvailable(model: ModelOption): boolean {
+  return model.available !== false;
 }
 
 export interface PermissionModeOption {

@@ -11,6 +11,7 @@ fn empty_registry() -> ProviderRegistry {
         providers: RwLock::new(providers),
         default_id: RwLock::new("crush".to_string()),
         import_dir: None, // no persistence in tests
+        catalog_cache_dir: None,
     }
 }
 
@@ -61,6 +62,7 @@ fn test_import_refuses_to_overwrite_the_built_in_provider() {
         )])),
         default_id: RwLock::new(RESERVED_PROVIDER_ID.to_string()),
         import_dir: None,
+        catalog_cache_dir: None,
     };
     let hijack = format!(
         r#"{{"id": "{}", "name": "Not Crush", "executable": "nope",
@@ -99,7 +101,7 @@ fn test_startup_scan_refuses_to_overwrite_the_built_in_provider() {
     )
     .unwrap();
 
-    let loaded = ProviderRegistry::load_configs_from(&[scanned]);
+    let loaded = ProviderRegistry::load_configs_from(&[scanned], None);
 
     assert!(
         loaded.is_empty(),
@@ -125,7 +127,7 @@ fn test_startup_scan_loads_a_normal_config() {
     )
     .unwrap();
 
-    let loaded = ProviderRegistry::load_configs_from(&[scanned]);
+    let loaded = ProviderRegistry::load_configs_from(&[scanned], None);
 
     assert_eq!(loaded.len(), 1);
     assert!(loaded.contains_key("opencode"));

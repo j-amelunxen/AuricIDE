@@ -119,7 +119,9 @@ export function useSpawnAgentDialog({
     if (saved && saved.providerId === currentProvider.id) {
       savedDefaultsRef.current = null;
       setModel(
-        currentProvider.models.some((m) => m.value === saved.model)
+        currentProvider.models.some(
+          (m) => m.value === saved.model && m.available !== false
+        )
           ? saved.model
           : currentProvider.defaultModel
       );

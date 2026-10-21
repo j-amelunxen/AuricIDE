@@ -703,6 +703,16 @@ pub async fn spawn_agent_impl(
     if is_supervisor {
         check_supervisor_provider(provider_id)?;
     }
+    // Refuse models the CLI no longer accepts. Supervisor policy already
+    // filters via model_names; this covers every other spawn path (UI, retry,
+    // notification Start) so a stale last-launch default cannot reach the CLI.
+    let provider_info = provider.info();
+    crate::providers::model_catalog::refuse_unavailable_model(
+        &provider_info.name,
+        provider_id,
+        &config.model,
+        &provider_info.models,
+    )?;
 
     // Only the canonical logical project selects grants. No cwd, task, env or kv_store fallback.
     let mut connectors = if !is_supervisor {

@@ -1,6 +1,6 @@
 import { InfoTooltip } from '@/app/components/ui/InfoTooltip';
 import { GUIDANCE } from '@/lib/ui/descriptions';
-import type { ProviderInfo } from '@/lib/tauri/providers';
+import { isModelAvailable, type ProviderInfo } from '@/lib/tauri/providers';
 import type { PermissionMode } from '@/lib/tauri/agents';
 import type { PmGoal } from '@/lib/tauri/goals';
 import { SelectChevron } from './SelectChevron';
@@ -118,14 +118,23 @@ export function ProviderModelSection({
               onChange={(e) => onModelChange(e.target.value)}
               className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 pr-8 text-xs text-foreground outline-none focus:border-primary/50 transition-colors appearance-none"
             >
-              {currentProvider.models.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
+              {currentProvider.models.map((opt) => {
+                const available = isModelAvailable(opt);
+                return (
+                  <option key={opt.value} value={opt.value} disabled={!available}>
+                    {available ? opt.label : `${opt.label} (unavailable)`}
+                  </option>
+                );
+              })}
             </select>
             <SelectChevron />
           </div>
+          {currentProvider.models.some((opt) => opt.value === model && !isModelAvailable(opt)) && (
+            <p role="alert" className="text-[11px] text-amber-400">
+              This model is no longer offered by {currentProvider.name}. Pick a current one —
+              settings were left unchanged.
+            </p>
+          )}
         </div>
 
         <div className="space-y-1.5">
