@@ -12,6 +12,10 @@ fn default_startup_timeout_s() -> u64 {
     DEFAULT_STARTUP_TIMEOUT_S
 }
 
+fn is_default_startup_timeout_s(value: &u64) -> bool {
+    *value == DEFAULT_STARTUP_TIMEOUT_S
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Launch {
@@ -21,7 +25,10 @@ pub struct Launch {
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     /// Time allowed for the stdio MCP client to start and connect.
-    #[serde(default = "default_startup_timeout_s")]
+    #[serde(
+        default = "default_startup_timeout_s",
+        skip_serializing_if = "is_default_startup_timeout_s"
+    )]
     pub startup_timeout_s: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
