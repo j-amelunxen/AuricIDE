@@ -26,6 +26,13 @@ describe('tabBreadcrumbs', () => {
     ]);
   });
 
+  it('names a graph tab by its title, never by the repo path in its id', () => {
+    const id = 'git-graph:/private/var/folders/x/repo';
+    expect(
+      tabBreadcrumbs(id, { id, path: '/private/var/folders/x/repo', name: 'repo Graph' })
+    ).toEqual(['AuricIDE', 'repo Graph']);
+  });
+
   it('names a merge tab by its repo-relative file', () => {
     const id = 'merge:/repo:src/invoice.txt';
     expect(

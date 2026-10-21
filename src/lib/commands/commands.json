@@ -66,6 +66,7 @@
       "requiresProject": true
     },
     { "id": "git.show-changes", "label": "Show Changes", "category": "git" },
+    { "id": "git.show-graph", "label": "Show Graph", "category": "git", "shortcut": "⌥⌘G" },
     {
       "id": "git.unstage-all",
       "label": "Unstage All Changes",

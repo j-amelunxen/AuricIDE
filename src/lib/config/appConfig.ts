@@ -59,6 +59,7 @@ export const APP_CONFIG_KEYS = {
   pmTicketUsageColumns: 'auric.pm.ticket-usage-columns',
   goalTableColumns: 'auric.goals.table-columns',
   goalsDetailView: 'auric.goals.detail-view',
+  gitGraphInspectorWidth: 'auric.git-graph.inspector-width',
   notificationSoundEnabled: 'auric.notifications.sound',
   notificationSound: 'auric.notifications.sound-id',
 } as const;

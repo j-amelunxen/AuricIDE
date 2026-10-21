@@ -821,6 +821,23 @@ repo). From there **the repository is resolved per path, never from
 - Left as it was, deliberately: goal-line evidence (`gitLogSince(rootPath)`)
   and opening a _subfolder_ of a repo (no upward discovery).
 
+### The git graph tab
+
+A full-width editor tab (`git-graph:<repoPath>`, ⌥⌘G, "Show Graph" in
+History) that draws every branch, remote and tag as a commit graph and runs
+light local operations: checkout, branch create/rename/delete, tag
+create/delete, cherry-pick, revert. Nothing pushes or fetches. Contract and
+the rules QA added: `docs/design-git-graph.md`.
+
+- **Rust walks, TypeScript lays out.** `git/graph.rs` returns commits in
+  topological order with parents; lanes are `src/lib/git/graphLayout.ts`,
+  tested against `gitGraph.fixtures.json` and a seeded fuzz. Lane 0 is
+  HEAD's first-parent line.
+- **Writes never force.** `git/refs_ops.rs` refuses with a coded sentence
+  (`<code>: <sentence>`); unmerged deletes need an explicit second confirm.
+  Cherry-pick and revert use the real `git` CLI, so conflicts land in the
+  state the merge panel's `git_operation_step` already finishes.
+
 ## Requirements vs. Tickets
 
 Requirements and Tickets serve fundamentally different purposes:

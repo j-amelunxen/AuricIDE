@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { SourceControlPanel, type RepoView, type SourceControlProps } from './SourceControlPanel';
 import type { GitFileStatus } from '@/lib/tauri/git';
 
+const mockShowGraph = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/git/graphEntry', () => ({ showGraph: mockShowGraph }));
+
 const ROOT_PATH = '/workspace';
 const OTHER_PATH = '/workspace/api';
 
@@ -709,6 +712,15 @@ describe('SourceControlPanel – view tabs', () => {
     expect(screen.getByTestId('git-history-list')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Commit message')).not.toBeInTheDocument();
     expect(screen.queryByTestId('staged-files')).not.toBeInTheDocument();
+  });
+
+  it('offers the commit graph from the History view, and only there', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<SourceControlPanel {...defaultProps} scmView="changes" />);
+    expect(screen.queryByRole('button', { name: 'Show Graph' })).toBeNull();
+    rerender(<SourceControlPanel {...defaultProps} scmView="history" />);
+    await user.click(screen.getByRole('button', { name: 'Show Graph' }));
+    expect(mockShowGraph).toHaveBeenCalledTimes(1);
   });
 
   it('switches to Compare and shows the branch select', async () => {

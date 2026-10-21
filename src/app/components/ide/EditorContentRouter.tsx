@@ -2,7 +2,9 @@ import type { DiffTabState } from '@/lib/git/diffTab';
 import type { useIDEState } from '@/lib/hooks/useIDEState';
 import type { useIDEHandlers } from '@/lib/hooks/useIDEHandlers';
 import { DiffViewer } from '../editor/DiffViewer';
+import { GitGraphView } from '../git/graph/GitGraphView';
 import { MergeView } from '../git/merge/MergeView';
+import { repoPathFromGraphTabId } from '@/lib/git/graphTabId';
 import { ReviewView } from '../git/review/ReviewView';
 import { useStore } from '@/lib/store';
 import { ImageViewer } from '../editor/ImageViewer';
@@ -50,6 +52,9 @@ export function EditorContentRouter({ state, handlers, diffTab }: EditorContentR
       />
     );
   }
+
+  const graphRepoPath = repoPathFromGraphTabId(state.activeTabId);
+  if (graphRepoPath) return <GitGraphView key={graphRepoPath} repoPath={graphRepoPath} />;
 
   if (handlers.isMergeTab) {
     return (

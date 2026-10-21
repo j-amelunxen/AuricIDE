@@ -20,6 +20,9 @@ const mockExists = vi.fn();
 const mockDeleteFile = vi.fn();
 
 // The agent window's host listens for another window; none exists here.
+const mockShowGraph = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/git/graphEntry', () => ({ showGraph: mockShowGraph }));
+
 vi.mock('@/lib/agents/agentWindowHost', () => ({
   installAgentWindowHost: () => () => {},
   setAgentWindowHandover: vi.fn(),
@@ -2487,6 +2490,14 @@ describe('useIDEHandlers', () => {
       expect(mockState.setActiveActivity).toHaveBeenCalledWith('source-control');
       expect(mockSetScmView).toHaveBeenCalledWith('compare');
       expect(mockLoadBranches).toHaveBeenCalledWith('/p');
+    });
+
+    it('git.show-graph opens the git graph', () => {
+      const { result } = renderHook(() => useIDEHandlers(mockState));
+
+      result.current.commands.find((c) => c.id === 'git.show-graph')!.action();
+
+      expect(mockShowGraph).toHaveBeenCalledTimes(1);
     });
 
     it('git.toggle-blame flips blame visibility', () => {

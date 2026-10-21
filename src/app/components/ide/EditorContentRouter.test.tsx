@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { graphTabId } from '@/lib/git/graphTabId';
 import { patchHash, viewedMarksKey, reviewTabId } from '@/lib/git/review/reviewSession';
 import { useStore } from '@/lib/store';
 import { EditorContentRouter } from './EditorContentRouter';
@@ -49,5 +50,29 @@ describe('EditorContentRouter review tabs', () => {
     expect(useStore.getState().commitFocusRequest?.repoPath).toBe(REPO);
     expect(useStore.getState().openTabs).toEqual([]);
     expect(useStore.getState().reviewSessions[tabId]).toBeUndefined();
+  });
+});
+
+describe('EditorContentRouter graph tabs', () => {
+  const GRAPH_REPO = '/work/app';
+
+  beforeEach(() => {
+    useStore.setState({
+      repos: [{ path: GRAPH_REPO, name: 'app', relativePath: '', kind: 'root' }],
+      graphs: {},
+      openGraph: vi.fn(async () => undefined),
+    } as never);
+  });
+
+  it('renders the git graph of the repo named by the tab id', () => {
+    render(
+      <EditorContentRouter
+        state={{ activeTabId: graphTabId(GRAPH_REPO) } as never}
+        handlers={{ isDiffTab: false, isMergeTab: false, isReviewTab: false } as never}
+        diffTab={undefined}
+      />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Loading history');
+    expect(useStore.getState().openGraph).toHaveBeenCalledWith(GRAPH_REPO);
   });
 });

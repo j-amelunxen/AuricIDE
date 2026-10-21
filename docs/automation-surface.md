@@ -35,6 +35,7 @@ What AuricIDE can be told to do from outside, and how to address it.
 | `Git > Commit Changes` | `git.commit` | — | yes |
 | `Git > Stage All Changes` | `git.stage-all` | — | yes |
 | `Git > Show Changes` | `git.show-changes` | — | no |
+| `Git > Show Graph` | `git.show-graph` | `⌥⌘G` | no |
 | `Git > Unstage All Changes` | `git.unstage-all` | — | yes |
 | `Git > File History` | `git.file-history` | — | yes |
 | `Git > Toggle Blame` | `git.toggle-blame` | — | yes |

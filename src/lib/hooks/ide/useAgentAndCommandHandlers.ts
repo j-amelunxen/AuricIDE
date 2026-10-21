@@ -21,6 +21,8 @@ import {
 } from '@/lib/project/newProject';
 import { showAgentInWindow } from '@/lib/agents/agentWindowHost';
 import { hasTerminal } from '@/lib/agents/fleet';
+import { showGraph } from '@/lib/git/graphEntry';
+import { useShowGraphShortcut } from '../useShowGraphShortcut';
 import { repoForGlobalGitAction } from './useGitActionHandlers';
 import type { IDEState } from './liveIDEState';
 
@@ -82,6 +84,7 @@ export function useAgentAndCommandHandlers({
   handleNewScratch,
   showFileHistory,
 }: UseAgentAndCommandHandlersProps) {
+  useShowGraphShortcut();
   const handleSelectionSpawn = useCallback(
     (selection: string) => {
       state.setInitialAgentTask(`Context Selection:\n${selection}\n\nTask: `);
@@ -337,6 +340,7 @@ export function useAgentAndCommandHandlers({
         if (repoPath) void store.unstageAll(repoPath);
       },
       'git.show-changes': () => state.setActiveActivity('source-control'),
+      'git.show-graph': showGraph,
       'git.file-history': () => {
         state.setActiveActivity('source-control');
         showFileHistory();

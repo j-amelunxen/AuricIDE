@@ -4,6 +4,7 @@ import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { HistoryView } from './HistoryView';
 import { CompareView } from './CompareView';
 import { AgentWorktreesPanel } from './AgentWorktreesPanel';
+import { showGraph } from '@/lib/git/graphEntry';
 import type { RepoView, SourceControlProps } from './sourceControl/types';
 import { AgenticControls } from './sourceControl/AgenticControls';
 import { RepoBody } from './sourceControl/RepoBody';
@@ -98,6 +99,18 @@ export function SourceControlPanel({
               onChange={onActiveRepoChange}
             />
           )}
+          <div className="flex items-center justify-between px-3 pb-2">
+            <span className="text-[11px] font-medium text-foreground-muted">File history</span>
+            <button
+              type="button"
+              onClick={showGraph}
+              title="Show every branch of this repository as a graph (⌥⌘G)"
+              className="inline-flex min-h-6 items-center gap-1 rounded px-2 text-[11px] font-medium text-foreground-muted transition-[background-color,color,transform] duration-100 ease-out hover:bg-primary/10 hover:text-foreground active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
+            >
+              <AuricIcon name="account_tree" aria-hidden="true" className="text-xs" />
+              Show Graph
+            </button>
+          </div>
           <HistoryView
             historyPath={historyPath}
             commits={historyCommits}
