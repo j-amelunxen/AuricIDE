@@ -94,7 +94,7 @@ Static JSON entries carry explicit ranks where known; inference only fills gaps.
 ## Commit and merge
 
 - **Branch:** `auric/fix-veraltete-provider-modellkat-590f1ad7`
-- **Commit:** 
+- **Commit:** `07c7712e7d18b700d3cfabae5691690ea301db59` (branch tip may add a follow-up docs commit)
 - **Merge:** not performed (per task: leave merge to the starter)
 
 ## IDE restart
