@@ -1,4 +1,6 @@
+import type { AgentInfo } from '../tauri/agents';
 import { agentColorHex, type AgentColor } from './colors';
+import { supervisorFamilyRoots } from './supervisorFamily';
 
 /**
  * Identity colours for reading a merged stream — which agent is talking right
@@ -87,6 +89,26 @@ export function distinctStreamColors(
     ).find((hex) => !taken.has(hex));
     colors[id] = free ?? STREAM_COLORS[wanted];
     taken.add(colors[id]);
+  }
+  return colors;
+}
+
+/**
+ * One hue per supervisor family, so the tabs show which child belongs to
+ * which supervisor. Each family root gets a distinct hue
+ * (`distinctStreamColors`); a marker on the supervisor colours the whole
+ * family, a marker on a child only that child. Agents outside every family get
+ * no entry, and with no supervisor listed the answer is empty.
+ */
+export function supervisorFamilyColors(
+  agents: readonly AgentInfo[],
+  markers: Readonly<Record<string, AgentColor | undefined>>
+): Record<string, string> {
+  const roots = supervisorFamilyRoots(agents);
+  const familyHues = distinctStreamColors([...new Set(roots.values())], markers);
+  const colors: Record<string, string> = {};
+  for (const [agentId, rootId] of roots) {
+    colors[agentId] = agentColorHex(markers[agentId]) ?? familyHues[rootId];
   }
   return colors;
 }

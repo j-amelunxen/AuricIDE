@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { groupAgentTabs } from './tabGroups';
 import type { AgentInfo } from '../tauri/agents';
 
-function makeAgent(id: string, repoPath?: string): AgentInfo {
+function makeAgent(id: string, repoPath?: string, extra: Partial<AgentInfo> = {}): AgentInfo {
   return {
     id,
     name: id,
@@ -11,6 +11,7 @@ function makeAgent(id: string, repoPath?: string): AgentInfo {
     provider: 'claude',
     startedAt: 0,
     ...(repoPath !== undefined ? { repoPath } : {}),
+    ...extra,
   };
 }
 
@@ -89,5 +90,70 @@ describe('groupAgentTabs', () => {
     ];
     const ids = groupAgentTabs(agents).flatMap((g) => g.agents.map((a) => a.id));
     expect(ids.sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('groupAgentTabs with supervisors', () => {
+  const RUN_A = '/home/me/.auric/supervisors/2026-10-21_090000';
+  const RUN_B = '/home/me/.auric/supervisors/2026-10-21_100000';
+
+  it('keys a repo group by its path and the ungrouped one by the shared key', () => {
+    const groups = groupAgentTabs([makeAgent('a', '/work/alpha'), makeAgent('b')]);
+    expect(groups.map((g) => g.key)).toEqual(['/work/alpha', 'Unknown']);
+    expect(groups.every((g) => g.supervisorId === null)).toBe(true);
+  });
+
+  it('makes one group per supervisor family, across repositories, supervisor first', () => {
+    const groups = groupAgentTabs([
+      makeAgent('a-1', '/work/alpha', { spawnedByAgentId: 'sup-a' }),
+      makeAgent('plain', '/work/alpha'),
+      makeAgent('sup-a', RUN_A, { role: 'supervisor', name: 'Supervisor' }),
+      makeAgent('a-2', '/work/beta', { spawnedByAgentId: 'sup-a' }),
+      makeAgent('sup-b', RUN_B, { role: 'supervisor', supervisorKey: 'mail-triage' }),
+      makeAgent('a-1-1', '/work/gamma', { spawnedByAgentId: 'a-1' }),
+      makeAgent('b-1', '/work/alpha', { spawnedByAgentId: 'sup-b' }),
+    ]);
+
+    expect(groups.map((g) => g.key)).toEqual([
+      'supervisor:sup-a',
+      '/work/alpha',
+      'supervisor:sup-b',
+    ]);
+    expect(groups[0].agents.map((a) => a.id)).toEqual(['sup-a', 'a-1', 'a-2', 'a-1-1']);
+    expect(groups[0]).toMatchObject({ label: 'Supervisor', supervisorId: 'sup-a', repoPath: null });
+    expect(groups[1].agents.map((a) => a.id)).toEqual(['plain']);
+    expect(groups[2]).toMatchObject({ label: 'mail-triage', supervisorId: 'sup-b' });
+    expect(groups[2].agents.map((a) => a.id)).toEqual(['sup-b', 'b-1']);
+  });
+
+  it('leaves a child whose supervisor is gone from the list in its repo group', () => {
+    const groups = groupAgentTabs([
+      makeAgent('sup', RUN_A, { role: 'supervisor' }),
+      makeAgent('orphan', '/work/alpha', { spawnedByAgentId: 'cleared' }),
+    ]);
+    expect(groups.map((g) => g.key)).toEqual(['supervisor:sup', '/work/alpha']);
+    expect(groups[1].agents.map((a) => a.id)).toEqual(['orphan']);
+  });
+
+  it('groups by repo as before when families are switched off', () => {
+    const groups = groupAgentTabs(
+      [
+        makeAgent('sup', RUN_A, { role: 'supervisor' }),
+        makeAgent('child', '/work/alpha', { spawnedByAgentId: 'sup' }),
+      ],
+      { families: false }
+    );
+    expect(groups.map((g) => g.key)).toEqual([RUN_A, '/work/alpha']);
+  });
+
+  it('keeps every agent exactly once, so the strip order is the flattened groups', () => {
+    const agents = [
+      makeAgent('c', '/work/alpha', { spawnedByAgentId: 'sup' }),
+      makeAgent('x'),
+      makeAgent('sup', RUN_A, { role: 'supervisor' }),
+      makeAgent('d', '/work/alpha'),
+    ];
+    const order = groupAgentTabs(agents).flatMap((g) => g.agents.map((a) => a.id));
+    expect(order).toEqual(['sup', 'c', 'd', 'x']);
   });
 });

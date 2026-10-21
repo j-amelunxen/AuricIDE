@@ -13,14 +13,14 @@ import {
 import type { AgentInfo } from '@/lib/tauri/agents';
 import { useStore } from '@/lib/store';
 import { loadAppConfig } from '@/lib/config/appConfig';
-import { distinctStreamColors } from '@/lib/agents/streamColors';
+import { distinctStreamColors, supervisorFamilyColors } from '@/lib/agents/streamColors';
 import { useNow } from '@/lib/hooks/useNow';
 import { useAltHeld } from '@/lib/hooks/useAltHeld';
 import type { ConfirmRequest } from '@/lib/hooks/useConfirm';
 import { isAgentLive } from '@/lib/agents/liveness';
 import { isFinishedAgent, splitTerminalAgents } from '@/lib/agents/fleet';
 import { agentState, agentStateLabel } from '@/lib/agents/state';
-import { groupAgentTabs } from '@/lib/agents/tabGroups';
+import { groupAgentTabs, type AgentTabGroup } from '@/lib/agents/tabGroups';
 import {
   autoPlace,
   isSplit,
@@ -36,7 +36,6 @@ import {
   type GridCells,
   type PresetPanes,
 } from '@/lib/agents/terminalGrid';
-import { UNGROUPED_REPO_KEY } from '@/lib/store/agentSlice';
 import { AuricIcon } from '@/app/components/ui/AuricIcon';
 import { ComboProgressBadge } from './ComboProgressBadge';
 import { AgentTab } from './AgentTab';
@@ -90,12 +89,28 @@ interface AgentTerminalWorkspaceProps {
  * the end. Takes the agents in the order the strip draws them, not the order
  * the fleet arrives in.
  */
-function neighborAfterClose(agents: AgentInfo[], closingId: string): AgentInfo | null {
+function neighborIn(agents: AgentInfo[], closingId: string): AgentInfo | null {
   const idx = agents.findIndex((a) => a.id === closingId);
   const remaining = agents.filter((a) => a.id !== closingId);
   if (remaining.length === 0) return null;
   if (idx < 0) return remaining[0];
   return remaining[Math.min(idx, remaining.length - 1)];
+}
+
+/**
+ * Stays inside the closed tab's group while it has others — the last child of
+ * a supervisor family lands on its sibling, not on the next family — and only
+ * then moves on along the whole strip.
+ */
+function neighborAfterClose(groups: AgentTabGroup[], closingId: string): AgentInfo | null {
+  const group = groups.find((g) => g.agents.some((a) => a.id === closingId));
+  return (
+    (group && neighborIn(group.agents, closingId)) ??
+    neighborIn(
+      groups.flatMap((g) => g.agents),
+      closingId
+    )
+  );
 }
 
 /**
@@ -362,22 +377,29 @@ export function AgentTerminalWorkspace({
   // Grouping reorders the strip, so "the tab beside this one" has to be read
   // off the strip — the raw list would send the user to another project.
   const tabOrder = useMemo(() => tabGroups.flatMap((group) => group.agents), [tabGroups]);
-  // The same name the strip prints above a group, so a pane and its tab agree.
+  // The project name a repo group would print, so a pane says where its agent
+  // works — also inside a supervisor family, whose group spans repositories.
   const projectLabels = useMemo(() => {
     const labels: Record<string, string> = {};
-    for (const group of tabGroups) {
+    for (const group of groupAgentTabs(agents ?? [], { families: false })) {
       if (group.repoPath === null) continue;
       for (const a of group.agents) labels[a.id] = group.label;
     }
     return labels;
-  }, [tabGroups]);
+  }, [agents]);
 
   const splitView = isSplit(grid.cells);
   const markers = useStore((s) => s.agentColors);
-  // Colour is a lookup, not a permanent coat: it shows while Alt is held, so the
-  // panes stay calm until the user asks who is who. One agent has no one to be
-  // told apart from, so it would only be noise there.
+  // A supervisor family always wears its colour: which child belongs to which
+  // supervisor is a standing question once several run. Everything else is a
+  // lookup: per-agent colours show while Alt is held, so the panes stay calm
+  // until the user asks who is who. One agent has no one to be told apart
+  // from, so it would only be noise there.
   const altHeld = useAltHeld();
+  const familyColors = useMemo(
+    () => supervisorFamilyColors(agents ?? [], markers),
+    [agents, markers]
+  );
   const accents = useMemo(
     () =>
       altHeld && (agents?.length ?? 0) > 1
@@ -385,8 +407,8 @@ export function AgentTerminalWorkspace({
             (agents ?? []).map((a) => a.id),
             markers
           )
-        : {},
-    [agents, markers, altHeld]
+        : familyColors,
+    [agents, markers, altHeld, familyColors]
   );
 
   const canEnd = useCallback(
@@ -410,14 +432,14 @@ export function AgentTerminalWorkspace({
       // Leave the dying tab before the process dies, so the screen does not
       // sit on a snapshot of an agent that is already gone.
       if (target.id === agent.id) {
-        const next = neighborAfterClose(tabOrder, target.id);
+        const next = neighborAfterClose(tabGroups, target.id);
         if (next) onSwitchAgent?.(next);
         else onClose();
       }
 
       await onEndAgent(target);
     },
-    [agent.id, tabOrder, canEnd, confirm, onClose, onEndAgent, onSwitchAgent]
+    [agent.id, tabGroups, canEnd, confirm, onClose, onEndAgent, onSwitchAgent]
   );
 
   const saveVisibleScreen = useCallback(() => {
@@ -531,55 +553,72 @@ export function AgentTerminalWorkspace({
           aria-label="Active agents"
           className="flex items-center gap-1 px-3 py-1.5 border-b border-white/10 bg-black/40 overflow-x-auto no-scrollbar flex-shrink-0"
         >
-          {tabGroups.map((group, groupIndex) => (
-            <div
-              key={group.repoPath ?? UNGROUPED_REPO_KEY}
-              data-testid={`agent-tab-group-${group.repoPath ?? UNGROUPED_REPO_KEY}`}
-              style={{
-                flexGrow: group.agents.length,
-                flexShrink: 0,
-                flexBasis: 0,
-                minWidth: showTabGroupLabels
-                  ? `calc(${group.agents.length} * 10rem + 8rem)`
-                  : `calc(${group.agents.length} * 10rem)`,
-              }}
-              className={`flex items-center gap-1 overflow-hidden ${
-                groupIndex > 0 ? 'ml-1 border-l border-white/10 pl-2' : ''
-              }`}
-            >
-              {showTabGroupLabels && (
-                <span
-                  title={group.repoPath ?? undefined}
-                  className="mr-0.5 max-w-[120px] flex-shrink-0 truncate text-[8px] font-black uppercase tracking-widest text-foreground-muted/70"
-                >
-                  {group.label}
-                </span>
-              )}
-              {group.agents.map((a) => {
-                const isActive = a.id === agent.id;
-                return (
-                  <AgentTab
-                    key={a.id}
-                    agent={a}
-                    isActive={isActive}
-                    now={now}
-                    onSelect={() => {
-                      if (tabDrag.consumeClick()) return;
-                      if (maximizedId && a.id !== maximizedId) setMaximizedPick(null);
-                      grid.show(a.id);
-                    }}
-                    onDragStart={
-                      (agents?.length ?? 0) > 1 ? (event) => tabDrag.begin(a.id, event) : undefined
+          {tabGroups.map((group, groupIndex) => {
+            // A family's edge is its colour, so the group reads as one even
+            // when Alt has switched the tabs to per-agent colours.
+            const familyAccent = group.supervisorId ? familyColors[group.supervisorId] : undefined;
+            return (
+              <div
+                key={group.key}
+                data-testid={`agent-tab-group-${group.key}`}
+                data-accent={familyAccent}
+                style={{
+                  flexGrow: group.agents.length,
+                  flexShrink: 0,
+                  flexBasis: 0,
+                  minWidth: showTabGroupLabels
+                    ? `calc(${group.agents.length} * 10rem + 8rem)`
+                    : `calc(${group.agents.length} * 10rem)`,
+                  ...(familyAccent ? { borderLeftColor: familyAccent } : {}),
+                }}
+                className={`flex items-center gap-1 overflow-hidden ${
+                  familyAccent
+                    ? `border-l-2 pl-2 ${groupIndex > 0 ? 'ml-1' : ''}`
+                    : groupIndex > 0
+                      ? 'ml-1 border-l border-white/10 pl-2'
+                      : ''
+                }`}
+              >
+                {showTabGroupLabels && (
+                  <span
+                    title={
+                      group.supervisorId
+                        ? `${group.label} and the agents it started`
+                        : (group.repoPath ?? undefined)
                     }
-                    accent={accents[a.id]}
-                    inView={splitView && grid.cells.includes(a.id)}
-                    onEnd={canEnd(a) ? () => void closeTab(a) : undefined}
-                    onSaveScreen={isActive && onSaveScreen ? saveVisibleScreen : undefined}
-                  />
-                );
-              })}
-            </div>
-          ))}
+                    className="mr-0.5 max-w-[120px] flex-shrink-0 truncate text-[8px] font-black uppercase tracking-widest text-foreground-muted/70"
+                  >
+                    {group.label}
+                  </span>
+                )}
+                {group.agents.map((a) => {
+                  const isActive = a.id === agent.id;
+                  return (
+                    <AgentTab
+                      key={a.id}
+                      agent={a}
+                      isActive={isActive}
+                      now={now}
+                      onSelect={() => {
+                        if (tabDrag.consumeClick()) return;
+                        if (maximizedId && a.id !== maximizedId) setMaximizedPick(null);
+                        grid.show(a.id);
+                      }}
+                      onDragStart={
+                        (agents?.length ?? 0) > 1
+                          ? (event) => tabDrag.begin(a.id, event)
+                          : undefined
+                      }
+                      accent={accents[a.id]}
+                      inView={splitView && grid.cells.includes(a.id)}
+                      onEnd={canEnd(a) ? () => void closeTab(a) : undefined}
+                      onSaveScreen={isActive && onSaveScreen ? saveVisibleScreen : undefined}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       )}
 

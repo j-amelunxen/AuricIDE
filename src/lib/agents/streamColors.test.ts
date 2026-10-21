@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { distinctStreamColors, STREAM_COLORS, streamColorFor } from './streamColors';
+import {
+  distinctStreamColors,
+  STREAM_COLORS,
+  streamColorFor,
+  supervisorFamilyColors,
+} from './streamColors';
 import { AGENT_COLORS } from './colors';
+import type { AgentInfo } from '../tauri/agents';
 
 describe('streamColorFor', () => {
   it('gives the same agent the same colour every time', () => {
@@ -86,5 +92,95 @@ describe('distinctStreamColors', () => {
     const colors = distinctStreamColors(ids.slice(0, 20), {});
     expect(Object.keys(colors)).toHaveLength(20);
     for (const hex of Object.values(colors)) expect(STREAM_COLORS).toContain(hex);
+  });
+});
+
+describe('supervisorFamilyColors', () => {
+  const agent = (id: string, extra: Partial<AgentInfo> = {}): AgentInfo => ({
+    id,
+    name: id,
+    status: 'running',
+    model: 'sonnet',
+    provider: 'claude',
+    startedAt: 0,
+    ...extra,
+  });
+  const red = AGENT_COLORS.find((c) => c.key === 'red')?.hex;
+  const blue = AGENT_COLORS.find((c) => c.key === 'blue')?.hex;
+
+  it('is empty while no supervisor is listed', () => {
+    expect(
+      supervisorFamilyColors([agent('a'), agent('b', { spawnedByAgentId: 'gone' })], {})
+    ).toEqual({});
+  });
+
+  it('gives two supervisors two hues and each child its supervisor’s, grandchildren included', () => {
+    const colors = supervisorFamilyColors(
+      [
+        agent('sup-a', { role: 'supervisor' }),
+        agent('sup-b', { role: 'supervisor' }),
+        agent('a-1', { spawnedByAgentId: 'sup-a' }),
+        agent('b-1', { spawnedByAgentId: 'sup-b' }),
+        agent('a-1-1', { spawnedByAgentId: 'a-1' }),
+      ],
+      {}
+    );
+    expect(colors['sup-a']).not.toBe(colors['sup-b']);
+    expect(colors['a-1']).toBe(colors['sup-a']);
+    expect(colors['a-1-1']).toBe(colors['sup-a']);
+    expect(colors['b-1']).toBe(colors['sup-b']);
+    expect(STREAM_COLORS).toContain(colors['sup-a']);
+  });
+
+  it('leaves agents outside every family without an entry', () => {
+    const colors = supervisorFamilyColors(
+      [
+        agent('sup', { role: 'supervisor' }),
+        agent('plain'),
+        // Its supervisor was cleared from the list: no family to belong to.
+        agent('orphan', { spawnedByAgentId: 'cleared' }),
+      ],
+      {}
+    );
+    expect(Object.keys(colors)).toEqual(['sup']);
+  });
+
+  it('colours the whole family with a marker on the supervisor, a child marker only the child', () => {
+    const colors = supervisorFamilyColors(
+      [
+        agent('sup', { role: 'supervisor' }),
+        agent('child', { spawnedByAgentId: 'sup' }),
+        agent('marked', { spawnedByAgentId: 'sup' }),
+      ],
+      { sup: 'red', marked: 'blue' }
+    );
+    expect(colors.sup).toBe(red);
+    expect(colors.child).toBe(red);
+    expect(colors.marked).toBe(blue);
+  });
+
+  it('puts a supervisor started by another supervisor into the top one’s family', () => {
+    const colors = supervisorFamilyColors(
+      [
+        agent('top', { role: 'supervisor' }),
+        agent('nested', { role: 'supervisor', spawnedByAgentId: 'top' }),
+        agent('leaf', { spawnedByAgentId: 'nested' }),
+      ],
+      {}
+    );
+    expect(colors.nested).toBe(colors.top);
+    expect(colors.leaf).toBe(colors.top);
+  });
+
+  it('survives a parent chain that loops', () => {
+    const colors = supervisorFamilyColors(
+      [
+        agent('sup', { role: 'supervisor' }),
+        agent('x', { spawnedByAgentId: 'y' }),
+        agent('y', { spawnedByAgentId: 'x' }),
+      ],
+      {}
+    );
+    expect(Object.keys(colors)).toEqual(['sup']);
   });
 });
