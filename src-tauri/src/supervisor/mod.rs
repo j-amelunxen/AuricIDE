@@ -69,7 +69,13 @@ pub fn canonical_project_path(path: &str) -> String {
 /// The policy with every project key canonicalised, ready for lookup. Two
 /// spellings of one folder (a symlink and its target) merge to the stricter
 /// entry, so a deny never loses to an allow by how the keys sort.
-pub fn with_canonical_keys(policy: SupervisorPolicy) -> SupervisorPolicy {
+pub fn with_canonical_keys(mut policy: SupervisorPolicy) -> SupervisorPolicy {
+    policy.connectors.bindings = policy
+        .connectors
+        .bindings
+        .into_iter()
+        .map(|(root, grants)| (canonical_project_path(&root), grants))
+        .collect();
     let mut projects = BTreeMap::new();
     for (path, rules) in policy.projects {
         insert_stricter(&mut projects, canonical_project_path(&path), rules);
@@ -723,6 +729,10 @@ pub async fn supervisor_resolve_tool(name: String) -> Option<String> {
 pub fn supervisor_policy_set(app: tauri::AppHandle, policy: Value) -> Result<ParsedPolicy, String> {
     let path = policy_path_in(&app_data_dir(&app)?);
     let policy = validate_for_write(policy)?;
+    crate::connectors::validate_registration_changes(
+        &read_policy_file(&path).policy.connectors,
+        &policy.connectors,
+    )?;
     if let Some(registry) = app.try_state::<crate::providers::ProviderRegistryState>() {
         reject_unattended_modes(&policy, &provider_modes(registry.inner(), &policy))?;
     }

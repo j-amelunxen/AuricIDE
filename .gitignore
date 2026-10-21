@@ -106,3 +106,6 @@ tmp/
 docs/actionplan-overlay-flows.md
 docs/design-scheduled-skill-combo-notifications.md
 docs/invariants-scheduled-skill-combo.md
+
+# Local connector concept (owner decision, 2026-10-21)
+docs/concepts/connectors-concept.md

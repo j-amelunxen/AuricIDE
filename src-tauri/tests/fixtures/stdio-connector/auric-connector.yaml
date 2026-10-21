@@ -1,0 +1,16 @@
+schema: auric-connector/v0
+id: test-catalog
+version: 0.1.0
+transport: stdio-mcp
+launch:
+  command: ./fake-mcp.py
+  args: ['${AURIC_PROJECT_NAME}', '${AURIC_PROJECT_ROOT}']
+  env: { CONNECTOR_MODE: fixture }
+scopes: [catalog.read, catalog.write]
+tools:
+  - name: catalog_list
+    scopes: [catalog.read]
+  - name: catalog_change
+    scopes: [catalog.read, catalog.write]
+briefing: Use catalog_list for this project's test catalog.
+auth: none

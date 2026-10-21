@@ -148,6 +148,7 @@ fn bind_to_project_mcp(
     binding: &super::project_binding::ResolvedProjectBinding,
     provider: (&str, &dyn crate::providers::AgentProvider),
     cwd: Option<&str>,
+    connectors: &[crate::connectors::ResolvedConnector],
 ) -> Result<crate::providers::SpawnCommand, String> {
     let runtime_entrypoint = crate::mcp::runtime_entrypoint(app)?;
     let notifications_db = app
@@ -163,13 +164,15 @@ fn bind_to_project_mcp(
             .map(|registry| registry.as_ref()),
         agent_cwd.as_deref(),
     );
-    let mcp_configs = crate::mcp::ensure_agent_mcp_config(app, binding.project_root(), &mcp_env)?;
-    let provider_binding = binding
+    let mcp_configs =
+        crate::mcp::ensure_agent_mcp_config(app, binding.project_root(), &mcp_env, connectors)?;
+    let mut provider_binding = binding
         .provider_binding()
         .with_mcp_config_path(mcp_configs.standard.to_string_lossy().into_owned())
         .with_crush_config_path(mcp_configs.crush.to_string_lossy().into_owned())
         .with_runtime_entrypoint(runtime_entrypoint.to_string_lossy().into_owned())
         .with_mcp_env(mcp_env);
+    provider_binding.connectors = connectors.to_vec();
     let (provider_id, provider) = provider;
     // Spawning honours `allowUnboundMcp`; `list_agent_providers` deliberately
     // does not (see `providers::supports_isolated_mcp_binding`), so agents
@@ -179,7 +182,9 @@ fn bind_to_project_mcp(
         crate::providers::project_binding_material(provider_id, provider, &provider_binding)?,
         provider.allows_unbound_mcp(),
     )?;
-    let spawn_cmd = spawn_cmd.with_injection(provider_injection);
+    let spawn_cmd = spawn_cmd.with_injection(provider_injection).with_injection(
+        crate::providers::connector_tool_filter_injection(provider_id, connectors),
+    );
     // Reserved Auric variables are applied after provider material so a
     // provider config cannot accidentally point MCP at a different project.
     Ok(spawn_cmd.with_injection(crate::providers::SpawnInjection {
@@ -699,13 +704,42 @@ pub async fn spawn_agent_impl(
         check_supervisor_provider(provider_id)?;
     }
 
+    // Only the canonical logical project selects grants. No cwd, task, env or kv_store fallback.
+    let mut connectors = if !is_supervisor {
+        project_binding
+            .as_ref()
+            .map(|binding| {
+                app.path()
+                    .app_data_dir()
+                    .map(|dir| {
+                        crate::connectors::resolve(
+                            &crate::supervisor::current_policy(&dir),
+                            binding.project_root(),
+                        )
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    if let Some(binding) = project_binding.as_ref() {
+        connectors = crate::connectors::for_provider(
+            connectors,
+            provider_id,
+            provider.as_ref(),
+            binding.provider_binding(),
+        )?;
+    }
+    let launch_task = crate::connectors::launch_context(&config.task, &connectors);
+
     // Removed with the agent's process entry, or here if the spawn fails.
     let mut launch_file: Option<OwnedFile> = None;
     let usage_config = provider.usage_config();
     let (mut spawn_cmd, usage_session_id) = crate::agent_usage::launch::with_session_id(
         provider.build_spawn_command(
             &config.model,
-            &config.task,
+            &launch_task,
             config.permission_mode.as_deref(),
             config.dangerously_ignore_permissions.unwrap_or(false),
             config.auto_accept_edits.unwrap_or(false),
@@ -725,6 +759,7 @@ pub async fn spawn_agent_impl(
             binding,
             (provider_id, provider.as_ref()),
             config.cwd.as_deref(),
+            &connectors,
         )?;
         if runs_claude_code(&spawn_cmd) {
             super::claude_mcp_guard::check_auric_pm_enabled(

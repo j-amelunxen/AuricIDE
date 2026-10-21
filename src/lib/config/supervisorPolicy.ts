@@ -1,3 +1,4 @@
+import { connectorPolicySchema, type ConnectorPolicy } from './connectorPolicy';
 import fixtures from './supervisorPolicy.fixtures.json';
 import type { ModelOption, ProviderInfo } from '../tauri/providers';
 import { isProviderAllowed, type ProviderPolicy, DEFAULT_PROVIDER_POLICY } from './providerPolicy';
@@ -58,6 +59,7 @@ export interface SupervisorToolPolicy {
 }
 
 export interface SupervisorPolicy {
+  connectors?: ConnectorPolicy;
   version: 1;
   /** `chrome`: Claude in Chrome, the user's own logged-in browser; off unless switched on. */
   supervisor: {
@@ -510,6 +512,16 @@ export function parseSupervisorPolicy(raw: string | null | undefined): ParsedSup
   policy.supervisor = parseSupervisorBlock(parsed.supervisor);
   if (isLimit(parsed.maxRunningChildren)) policy.maxRunningChildren = parsed.maxRunningChildren;
 
+  if (parsed.connectors !== undefined) {
+    const connectors = connectorPolicySchema.safeParse(parsed.connectors);
+    if (!connectors.success) return refuse('invalid_entry');
+    if (
+      Object.keys(connectors.data.registry).length ||
+      Object.keys(connectors.data.bindings).length
+    ) {
+      policy.connectors = connectors.data;
+    }
+  }
   const rejected: SupervisorPolicyRejection[] = [];
   if (parsed.projects !== undefined && parsed.projects !== null && !isObject(parsed.projects)) {
     return refuse('malformed');

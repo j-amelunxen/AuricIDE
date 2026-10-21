@@ -8,6 +8,7 @@ mod app_config;
 mod cc_usage;
 mod clipboard;
 pub mod commands;
+mod connectors;
 mod control_socket;
 pub mod crashlog;
 mod database;
@@ -318,6 +319,7 @@ pub fn run() {
             copy_supervisor_image_attachments,
             agents::run_results::agent_run_results_forget,
             menu_bar::menu_bar_sync,
+            connectors::connector_inspect,
             supervisor::supervisor_policy_get,
             supervisor::supervisor_policy_set,
             supervisor_link::policy::supervisor_link_policy_get,

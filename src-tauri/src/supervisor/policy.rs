@@ -137,6 +137,11 @@ pub struct ToolRules {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisorPolicy {
+    #[serde(
+        default,
+        skip_serializing_if = "crate::connectors::ConnectorPolicy::is_empty"
+    )]
+    pub connectors: crate::connectors::ConnectorPolicy,
     pub version: u64,
     pub supervisor: SupervisorModel,
     pub max_running_children: u32,
@@ -152,6 +157,7 @@ impl Default for SupervisorPolicy {
     fn default() -> Self {
         Self {
             version: POLICY_VERSION,
+            connectors: Default::default(),
             supervisor: SupervisorModel::default(),
             max_running_children: DEFAULT_MAX_RUNNING_CHILDREN,
             projects: BTreeMap::new(),
@@ -246,6 +252,17 @@ pub fn parse(raw: Option<&str>) -> ParsedPolicy {
             .unwrap_or(DEFAULT_MAX_RUNNING_CHILDREN),
         ..SupervisorPolicy::default()
     };
+    if let Some(value) = source.get("connectors") {
+        let Ok(connectors) =
+            serde_json::from_value::<crate::connectors::ConnectorPolicy>(value.clone())
+        else {
+            return refused(ParseReason::InvalidEntry);
+        };
+        if connectors.validate().is_err() {
+            return refused(ParseReason::InvalidEntry);
+        }
+        policy.connectors = connectors;
+    }
     let mut rejected = Vec::new();
     for (key, entry) in &projects {
         match parse_project(key, entry) {
