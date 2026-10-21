@@ -209,6 +209,12 @@ fn manifest_startup_timeout_defaults_and_flows_into_stdio_mcp_configurations() {
             .startup_timeout_s,
         30
     );
+    assert!(
+        serde_json::to_value(&policy.connectors.registry["test-catalog"].manifest).unwrap()
+            ["launch"]
+            .get("startup_timeout_s")
+            .is_none()
+    );
 
     let assert_timeout = |policy: &SupervisorPolicy, expected| {
         let connectors = resolve(policy, &a);
